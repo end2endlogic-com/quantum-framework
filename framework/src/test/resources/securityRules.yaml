@@ -1,0 +1,84 @@
+  -
+      name: an accountAdmin can take any action on any entity in their account
+      description: allow accountAdmins to administer the account
+      securityURI:
+        header:
+          identity: accountAdmin
+          area: '*'
+          functionalDomain: '*'
+          action: '*'
+        body:
+          realm: b2bi
+          accountNumber: '*'
+          tenantId: '*'
+          dataSegment: '*'
+          ownerId: '*'
+          resourceId: '*'
+      preconditionScript:
+      postconditionScript: pcontext.accountId === rcontext.accountId
+      effect: ALLOW
+      priority: 90
+      finalRule: true
+  -
+      name: any identity can only view items in their own account && tenantId
+      description: allow a given user with role user to read their own profile
+      securityURI:
+        header:
+          identity: user
+          area: '*'
+          functionalDomain: '*'
+          action: view
+        body:
+          realm: b2bi
+          accountNumber: '*'
+          tenantId: '*'
+          dataSegment: '*'
+          ownerId: '*'
+          resourceId: '*'
+      preconditionScript:
+      postconditionScript: (pcontext.accountId === rcontext.accountId) &&   (pcontext.tenantId === rcontext.tenantId)
+      effect: ALLOW
+      priority: 50
+      finalRule: false
+  -
+      name: userProfile can be read by owner
+      description: deny a user to only read their own profile
+      securityURI:
+          header:
+            identity: user
+            area: security
+            functionalDomain: userProfile
+            action: view
+          body:
+            realm: b2bi
+            accountNumber: '*'
+            tenantId: '*'
+            dataSegment: '*'
+            ownerId: '*'
+            resourceId: '*'
+      preconditionScript:
+      postconditionScript: pcontext.ownerId != rcontext.ownerId
+      effect: DENY
+      priority: 100
+      finalRule: false
+  -
+    name: Anonymous can create contact us records
+    description: allow an anonymous user to create contact us records
+    securityURI:
+      header:
+        identity: anonymous@b2bintegrator.com
+        area: website
+        functionalDomain: contactUs
+        action: view
+      body:
+        realm: b2bi
+        accountNumber: '*'
+        tenantId: '*'
+        dataSegment: '*'
+        ownerId: '*'
+        resourceId: '*'
+    preconditionScript:
+    postconditionScript:
+    effect: DENY
+    priority: 100
+    finalRule: false
