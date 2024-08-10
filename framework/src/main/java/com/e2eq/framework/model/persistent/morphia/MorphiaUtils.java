@@ -4,6 +4,7 @@ import com.e2eq.framework.grammar .BIAPIQueryLexer;
 import com.e2eq.framework.grammar.BIAPIQueryParser;
 import com.e2eq.framework.model.security.PrincipalContext;
 import com.e2eq.framework.model.security.ResourceContext;
+import dev.morphia.query.Sort;
 import dev.morphia.query.filters.Filter;
 import org.antlr.v4.runtime.*;
 import org.antlr.v4.runtime.tree.ParseTree;
@@ -11,10 +12,59 @@ import org.antlr.v4.runtime.tree.ParseTreeWalker;
 import org.apache.commons.text.StringSubstitutor;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class MorphiaUtils {
+
+
+   public static class SortParameter {
+      public enum SortOrderEnum {
+         ASC, DESC
+      }
+
+      private String fieldName;
+      private SortParameter.SortOrderEnum sortOrder;
+
+      public SortParameter(String fieldName, SortParameter.SortOrderEnum sortOrder) {
+         this.fieldName = fieldName;
+         this.sortOrder = sortOrder;
+      }
+
+      public String getFieldName() {
+         return fieldName;
+      }
+
+      public SortParameter.SortOrderEnum getSortOrder() {
+         return sortOrder;
+      }
+   }
+
+   public static List<Sort> buildSort(List<SortParameter> sortFields, String sortField, String sortDirection) {
+      List<Sort> sorts = new ArrayList<>();
+      if (sortField != null && sortDirection != null) {
+         if ("DESC".equals(sortDirection)) {
+            sorts.add(Sort.descending(sortField));
+         } else {
+            sorts.add(Sort.ascending(sortField));
+         }
+      }
+
+      if (sortFields != null && !sortFields.isEmpty()) {
+         for (SortParameter field : sortFields) {
+            if (SortParameter.SortOrderEnum.DESC.equals(field.getSortOrder())) {
+               sorts.add(Sort.descending(field.getFieldName()));
+            } else {
+               sorts.add(Sort.ascending(field.getFieldName()));
+            }
+         }
+      }
+
+      return sorts;
+   }
+
 
    public static Filter convertToFilter(String queryString) {
       return MorphiaUtils.convertToFilterWContext(queryString, null, null);

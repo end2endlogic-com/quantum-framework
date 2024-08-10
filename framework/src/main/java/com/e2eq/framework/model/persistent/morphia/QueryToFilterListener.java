@@ -12,10 +12,13 @@ import com.e2eq.framework.model.security.PrincipalContext;
 import com.e2eq.framework.model.security.ResourceContext;
 
 import java.util.*;
+import java.util.regex.Pattern;
 
 public class QueryToFilterListener extends BIAPIQueryBaseListener {
-   protected Stack<Filter> filterStack = new Stack<>();
-   protected Stack<Integer> opTypeStack = new Stack<>();
+    private static final Pattern SPECIAL_REGEX_CHARS = Pattern.compile("[{}()\\[\\].+*?^$\\\\|\\-]");
+
+    protected Stack<Filter> filterStack = new Stack<>();
+    protected Stack<Integer> opTypeStack = new Stack<>();
 
    protected boolean complete = false;
 
@@ -51,7 +54,51 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
       }
    }
 
-   @Override
+    @Override
+    public void enterNullExpr(BIAPIQueryParser.NullExprContext ctx) {
+        if (ctx.op.getType() == BIAPIQueryParser.EQ) {
+            filterStack.push(Filters.eq(ctx.field.getText(), null));
+        } else if (ctx.op.getType() == BIAPIQueryParser.NEQ) {
+            filterStack.push(Filters.ne(ctx.field.getText(), null));
+        }
+    }
+
+    @Override
+    public void exitNullExpr(BIAPIQueryParser.NullExprContext ctx) {
+        super.exitNullExpr(ctx);
+    }
+
+    private String escapeRegexChars(String inputString) {
+        if (inputString != null) {
+            //. ^ $ * + - ? ( ) [ ] { } \ |
+            return SPECIAL_REGEX_CHARS.matcher(inputString).replaceAll("\\\\$0");
+        } else {
+            return inputString;
+        }
+    }
+
+    @Override
+    public void enterRegexExpr(BIAPIQueryParser.RegexExprContext ctx) {
+        String field = ctx.field.getText();
+        String pattern = ctx.regex().value.getText();
+
+       String escapedValue = escapeRegexChars(ctx.regex().value.getText());
+        String regex = (ctx.regex().leftW==null?"^":"")
+                + escapedValue + (ctx.regex().rightW==null?"$":"");
+        if (ctx.op.getType() == BIAPIQueryParser.EQ) {
+            Filter regexFilter = Filters.regex(field, pattern);
+            filterStack.push(regexFilter);
+
+        } else if (ctx.op.getType() == BIAPIQueryParser.NOT_EQ) {
+            Filter regexFilter = Filters.nor(Filters.regex(field, pattern));
+            filterStack.push(regexFilter);
+        } else {
+            throw new IllegalArgumentException("Operator not recognized: " + ctx.op.getText());
+        }
+    }
+
+
+    @Override
    public void enterQuery (BIAPIQueryParser.QueryContext ctx) {
       complete = false;
    }
@@ -92,7 +139,6 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
          int opType = opTypeStack.pop();
          switch (opType) {
             case BIAPIQueryParser.AND:
-               //TODO: consider if or is already in progress or not like we are doing for and
                andFilters.add(filterStack.pop());
                break;
             case BIAPIQueryParser.OR:
@@ -148,10 +194,6 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
       filterStack.push(f);
    }
 
-   @Override
-   public void exitExistsExpr (BIAPIQueryParser.ExistsExprContext ctx) {
-
-   }
 
    @Override
    public void enterExprGroup (BIAPIQueryParser.ExprGroupContext ctx) {
@@ -193,16 +235,6 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
       Filter f = Filters.in(ctx.field.getText(), values);
 
       filterStack.push(f);
-   }
-
-   @Override
-   public void enterValueListExpr (BIAPIQueryParser.ValueListExprContext ctx) {
-
-   }
-
-   @Override
-   public void exitValueListExpr (BIAPIQueryParser.ValueListExprContext ctx) {
-
    }
 
    @Override
@@ -296,4 +328,8 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
       filterStack.push(f);
    }
 
+    @Override
+    public void enterCompoundExpr(BIAPIQueryParser.CompoundExprContext ctx) {
+        super.enterCompoundExpr(ctx);
+    }
 }
