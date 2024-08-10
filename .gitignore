@@ -15,7 +15,7 @@ target/
 .idea
 .env
 .quarkus
-
+bak/
 
 
 # Package Files #

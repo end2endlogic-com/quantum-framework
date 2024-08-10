@@ -1,5 +1,7 @@
 package com.e2eq.framework.api.grammar;
 
+import com.e2eq.framework.grammar.BIAPIQueryLexer;
+import com.e2eq.framework.grammar.BIAPIQueryParser;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
 import com.e2eq.framework.model.security.PrincipalContext;
@@ -18,8 +20,7 @@ import jakarta.validation.Validator;
 import java.io.*;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 @QuarkusTest
 public class TestGrammar {
@@ -41,9 +42,10 @@ public class TestGrammar {
             lcount++;
             continue;
          }
+         Log.info("Processing query: " + line);
 
-         com.e2eq.framework.grammar.BIAPIQueryLexer lexer = new com.e2eq.framework.grammar.BIAPIQueryLexer(CharStreams.fromString(line));
-         com.e2eq.framework.grammar.BIAPIQueryParser parser = new com.e2eq.framework.grammar.BIAPIQueryParser(new CommonTokenStream(lexer));
+         BIAPIQueryLexer lexer = new BIAPIQueryLexer(CharStreams.fromString(line));
+         BIAPIQueryParser parser = new BIAPIQueryParser(new CommonTokenStream(lexer));
          final int fline = lcount;
           parser.addErrorListener(new BaseErrorListener() {
              @Override
@@ -77,11 +79,21 @@ public class TestGrammar {
                   continue;
                }
 
+               Log.info("Processing query: " + line);
+
                Filter f = MorphiaUtils.convertToFilter(line);
+               Log.info("Filter:" + f.toString());
                lcount++;
             }
          }
       }
+   }
+   @Test
+   public void testIndividualString() {
+      String testString = "field:1&&field2:2";
+      Log.info("Testing String:" + testString);
+      Filter f = MorphiaUtils.convertToFilter(testString);
+      Log.info("Filter:" + f.toString());
    }
 
 

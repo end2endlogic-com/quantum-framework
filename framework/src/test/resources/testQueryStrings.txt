@@ -53,11 +53,6 @@ field.subfield.subsubfield:"deeplyNestedString"
 !!field:FALSE
 !!field.subfield:##123.456
 
-#-- EXISTS Operator tests
-field:~
-field.subfield:~
-field.subfield.subsubfield:~
-
 #-- IN Operator tests
 field:^[value1,value2,value3]
 field.subfield:^[subvalue1,subvalue2]
@@ -74,8 +69,66 @@ field1:##123.45||field2:#12345&&field3:FALSE
 
 #-- Edge cases
 field:""
-# field:## - will fail
-# field:# - will fail
 field:TRUE&&field:FALSE
 field:TRUE||field:FALSE
 field:TRUE&&field:FALSE||field:TRUE
+
+#-- Null Expressions
+field:null
+
+#-- Exists Expressions
+field:~
+
+#--Grouping Tests
+field:x&y&&field:y&z&&field:blah
+field:1||field2:go, inc
+(field33:1&&field:2)&&field1:4
+field1:4||(field:1&&field:2)
+(field1:4)&&(field:1&&field:2)
+(field:1&&field1.blah:4)&&(field:1&&field:2)
+
+
+(otherfield:1&&field:2)&&(field:1||field1.blah:4)&&(field:1&&field:2)
+(somefield:null&&field:2)&&(field:1&&field1.blah:4)&&(field:1&&field:2)
+
+(field:1&&field:2)||((field:1&&field1.blah:4)&&(field:1&&field:2))
+((field:1&&field:2)||(field:1&&field1.blah:4))&&(field:1&&field:2)
+
+
+field:1&&field:bob@mycompany.com
+field:^[value1,value2,value3]
+field:1&&field:^[value1,value2,value3]
+(field:1&&field:^[value1,value2,value3])||(field:1&&field:^[value1,value2,value3])
+field:"fieldValue"
+field:"fieldValueWith:inIt"
+field:_edfs&&field2:^[value1,value2,value3]
+
+(status:Assigned||status:Pending||status:Acknowledged)&&(displayName:"%Route Exception in Route:To[b2bmbScript://com.ghurka/updateQuickbooksPO]%")
+field:". ^ $ % + - ? ( ) [ ] { } \ |"
+field:"abcdefghijklmnopqrstuvwxyz1234567890!@#$^&()`~%-_=+[{]}\|;:'""*,<.>/?"
+
+# Test wild cards
+(field:1&&field1.blah:4)&&((field:1&&field:2)&&field2:%blah)
+(field:1&&field1.blah:4)&&((field:1&&field:2)&&field2:%bla'h)
+(field:1&&field1.blah:4)&&((field:1&&field:2)&&field2:%blah w/ cream)
+(field:1&&field1.blah:4)&&((field:1&&field:2)&&field2:%blah blah%)
+(field:null&&field:%x%)||(field:1&&field1.blah:4)&&(field:1&&field:2)
+(field:null&&field:%x%)&&(field:1&&field1.blah:4)&&(field:1&&field:#2)
+((field:dfefe%&&field:2)||(field:1&&field1.blah:4))&&(field:1&&field:2)
+field:". ^ $ * + %- % ( ) [ ] { } \ |"
+field:"%. ^ $ * + - % ( ) [ ] { } \ |"
+field:". ^ $ * + - % ( ) [ ] { } \ |"
+field:%__edfs&&field2:^[value1,value2,value3]
+field:"%15"" LAPTOP SLEEVE-Black Twill%"
+
+# --DATEs
+#((field:dfefe%&&field:2)||(field:1&&field1.blah:4))&&(field:1&&field:2015-04-04)
+#((field:dfefe%&&field:2)||(field:1&&field1.blah:4))&&(field:1||field:2015-04-04T12:12:33)
+#((field:dfefe%&&field:>2)||(field:1&&field1.blah:4))&&(field:1||field:2015-04-04T12:12:33)
+#((field:dfefe%&&field:<#2)||(field:1&&field1.blah:4))&&(field:1||field:2015-04-04T12:12:33)
+#((field:dfefe%&&field:<#2)||(field:<=#1&&field1.blah:>=4))&&(field:1||field:2015-04-04T12:12:33)
+#((field:true&&field:<#2)||(field:<=#1&&field1.blah:>=4))&&(field:1||field:2015-04-04T12:12:33)
+#((field:false&&field:<#2)||(field:<=#1&&field1.blah.blah:>=4))&&(field:1||field:2015-04-04T12:12:33)
+#((field:false&&field:<#2)||(field:<=#1&&field1.blah.blah:>=4))&&(field:1||field:2015-04-04)
+#(((field:false&&field:<#2)||(field:<=#1&&field1.blah.blah:>=4))&&(field:1||field:2015-04-04))
+
