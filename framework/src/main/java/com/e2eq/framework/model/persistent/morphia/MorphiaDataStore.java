@@ -77,13 +77,10 @@ public class MorphiaDataStore {
          classes.addAll(classScanner.scanForEntityBeans("com.e2eq.framework.model.persistent.base"));
          // classes.addAll(classScanner.scanForEntityBeans("com.e2eq.app.integration.tp.model"));
 
-
-
-
          datastore.getMapper().mapPackage( "com.e2eq.framework.security.model.persistent.models.security");
          datastore.getMapper().mapPackage( "com.e2eq.framework.security.model.persistent.morphia");
          datastore.getMapper().mapPackage( "com.e2eq.framework.model.persistent.base");
-          datastore.getMapper().mapPackage( "com.e2eq.framework.model.persistent.migration.base");
+         datastore.getMapper().mapPackage( "com.e2eq.framework.model.persistent.migration.base");
 
 
           Log.info("Found " + classes.size() +" Entities");

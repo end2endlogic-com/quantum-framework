@@ -7,7 +7,9 @@ field:stringvalue
 field:TRUE
 field:FALSE
 field:#12343
+field:#-1234
 filed:##12.4
+field:##-12.3
 
 #-- Math Operators
 field:<##12.4
@@ -40,3 +42,40 @@ field:${principalId}
 field:${functionalDomain}
 field:${ownerId}
 field:^[value1,value2,${ownerId}]
+
+#-- Complex field equals tests
+field.subfield.subsubfield:##123.456
+field.subfield.subsubfield:#123456
+field.subfield.subsubfield:"deeplyNestedString"
+
+#-- NOT Operator tests
+!!field:TRUE
+!!field:FALSE
+!!field.subfield:##123.456
+
+#-- EXISTS Operator tests
+field:~
+field.subfield:~
+field.subfield.subsubfield:~
+
+#-- IN Operator tests
+field:^[value1,value2,value3]
+field.subfield:^[subvalue1,subvalue2]
+field.subfield.subsubfield:^[deepvalue1,deepvalue2]
+
+#-- Combination of Operators
+(field:1&&field2:2)||field3:3
+field1:1&&(field2:2||field3:3)
+(field1:1||field2:2)&&field3:3
+
+#-- Mixed data types
+field1:100&&field2:"string"||field3:TRUE
+field1:##123.45||field2:#12345&&field3:FALSE
+
+#-- Edge cases
+field:""
+# field:## - will fail
+# field:# - will fail
+field:TRUE&&field:FALSE
+field:TRUE||field:FALSE
+field:TRUE&&field:FALSE||field:TRUE
