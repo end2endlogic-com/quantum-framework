@@ -339,6 +339,10 @@
                 <goals>
                   <goal>antlr4</goal>
                 </goals>
+                <configuration>
+                  <sourceDirectory>${project.basedir}/src/main/antlr4</sourceDirectory>
+                  <outputDirectory>${project.build.directory}/generated-sources/antlr4</outputDirectory>
+                </configuration>
               </execution>
             </executions>
           </plugin>
