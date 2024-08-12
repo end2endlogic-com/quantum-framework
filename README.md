@@ -3,14 +3,31 @@
 Provides AUTHZ and AUTHN for quarkus in a multi-tenant SAAS context
 
 ## Getting Started:
-## Running the application in dev mode
+
+### Setting up your environment:
+You will need to create a .env file with your local settings and credentials
+There is a template file located in the root.  Copy this to .env and fill in the values
+```
+MONGODB_USERNAME= {{ YOUR USER ID }}
+MONGODB_PASSWORD= {{ YOUR PASSWORD }}
+MONGODB_DATABASE= {{ YOUR DATABASE }}
+MONGODB_HOST= {{ YOUR HOST }}
+MONGODB_DEFAULT_SCHEMA={{ YOUR SCHEMA }}
+POSTMARK_API_KEY= {{ YOUR KEY }}
+POSTMARK_DEFAULT_FROM_EMAIL= {{ YOUR EMAIL ADDRESS }}
+POSTMARK_DEFAULT_TO_EMAIL={{ YOUR EMAIL ADDRESS }}
+AWS_ROLE_ARN= {{ YOUR ARN }}
+AWS_REGION= {{ YOUR REGION }}
+QUARKUS_HTTP_CORS_ORIGINS={{ YOUR COMMA SEPERATED LIST OF HOSTS }}
+
+```
+
+### Running the application in dev mode
 
 You can run your application in dev mode that enables live coding using:
 ```shell script
 ./mvnw compile quarkus:dev
 ```
-
-
 
 > **_NOTE:_**  Quarkus now ships with a Dev UI, which is available in dev mode only at http://localhost:8080/q/dev/.
 
