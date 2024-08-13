@@ -2,7 +2,7 @@ package com.e2eq.framework.blob;
 
 import com.e2eq.framework.model.general.GetUploadSignedURLRequest;
 import com.e2eq.framework.cloud.aws.AwsClient;
-import com.e2eq.framework.config.B2BIntegratorConfig;
+import com.e2eq.framework.config.AWSConfig;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -22,11 +22,17 @@ import java.util.Map;
 @ApplicationScoped
 public class S3BlobStore implements BlobStore {
     @Inject
-    B2BIntegratorConfig b2bIntegratorConfig;
+    AWSConfig awsConfig;
     @Inject
     AwsClient awsClient;
 
 
+    public boolean isEnabled() {
+        if (awsConfig.awsRoleArn().isPresent() && awsConfig.region().isPresent())
+            return true;
+        else
+            return false;
+    }
     public String determineBucket() {
         return "b2bintegrator-mailboxdata-000000";
     }
@@ -65,11 +71,16 @@ public class S3BlobStore implements BlobStore {
 
     @Override
     public List<Blob> getBlobList(String regexPattern, String sessionName) throws BlobStoreException {
-        AwsSessionCredentials credentials = awsClient.assumeRole(b2bIntegratorConfig.awsRoleArn(), sessionName);
+
+        if (!awsConfig.region().isPresent() ||!awsConfig.awsRoleArn().isPresent())
+        {
+            throw new IllegalStateException("AWS credentials not provided.");
+        }
+        AwsSessionCredentials credentials = awsClient.assumeRole(awsConfig.awsRoleArn().get(), sessionName);
 
         try(S3Client s3 = S3Client.builder()
                 .credentialsProvider(StaticCredentialsProvider.create(credentials))
-                .region(Region.of(b2bIntegratorConfig.region()))
+                .region(Region.of(awsConfig.region().get()))
                 .build()) {
             // List out the contents of a specific bucket.
             List<S3Object> contents = awsClient.listBucketContents(credentials, determineBucket(), regexPattern);
@@ -91,10 +102,13 @@ public class S3BlobStore implements BlobStore {
         request.setContentType( MediaType.valueOf(metadata.getContentType()));
 
         if (request.validate()) {
+            if (!awsConfig.region().isPresent() ||!awsConfig.awsRoleArn().isPresent()) {
+                throw new IllegalStateException("AWS credentials not provided.");
+            }
 
             // Set up developer role.
             // AwsSessionCredentials credentials = AwsClient.assumeRole("arn:aws:iam::103417400819:role/b2bintegrator-mailbox-access-000000", "testSession-001");
-            AwsSessionCredentials credentials = awsClient.assumeRole(b2bIntegratorConfig.awsRoleArn(), "testSession-001");
+            AwsSessionCredentials credentials = awsClient.assumeRole(awsConfig.awsRoleArn().get(), "testSession-001");
 
             // List things in the bucket
             if (credentials != null)

@@ -64,6 +64,15 @@ public class ClassScanner {
       Set<Class> classes = nonNativeScanForEntityBeans(packageName);
       if (classes.isEmpty()) {
          Log.error(" >> Could not find classes with in package:" + packageName);
+         ClassLoader loader = Thread.currentThread().getContextClassLoader();
+         String path = packageName.replace(".", "/");
+         InputStream in = loader.getResourceAsStream(path);
+         BufferedReader reader = new BufferedReader(new InputStreamReader(in));
+         reader.lines()
+                 .filter(line -> line.endsWith(".class"))
+                 .forEach(System.out::println);
+
+
       }
       for (Class c : classes) {
          if (c.isAnnotationPresent(Entity.class)) {
