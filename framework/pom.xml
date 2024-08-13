@@ -12,6 +12,20 @@
     <version>1.0.0-SNAPSHOT</version>
     <relativePath>../parent/pom.xml</relativePath>
   </parent>
+  <licenses>
+    <license>
+      <name>The Apache License, Version 2.0</name>
+      <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+  <developers>
+    <developer>
+      <id>mingardia</id>
+      <name>Michael Ingardia</name>
+      <email>mingardia@end2endlogic.com</email>
+    </developer>
+  </developers>
 
   <dependencyManagement>
          <dependencies>
@@ -101,10 +115,18 @@
       <version>2.10.1</version>
     </dependency>
     <dependency>
-      <groupId>com.end2endlogic.moneta</groupId>
+      <groupId>com.end2endlogic</groupId>
       <artifactId>quarkus-moneta</artifactId>
-      <version>2.1.0-SNAPSHOT</version>
+      <version>2.1.0a</version>
     </dependency>
+<!--
+    <dependency>
+      <groupId>com.github.end2endlogic-com.quarkus-moneta</groupId>
+      <artifactId>quarkus-moneta</artifactId>
+      <version>2.1.0a</version>
+    </dependency>
+    -->
+
     <!-- Future dependencies for moving to newer graal version<dependency>
       <groupId>org.graalvm.truffle</groupId>
       <artifactId>truffle-api</artifactId>
@@ -342,6 +364,33 @@
           <release>17</release>
         </configuration>
       </plugin>
+      <!--<plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-source-plugin</artifactId>
+        <version>3.2.1</version>
+        <executions>
+          <execution>
+            <id>attach-sources</id>
+            <goals>
+              <goal>jar-no-fork</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-gpg-plugin</artifactId>
+        <version>1.6</version>
+        <executions>
+          <execution>
+            <id>sign-artifacts</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>sign</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin> -->
     </plugins>
   </build>
   <profiles>
@@ -410,4 +459,10 @@
       </properties>
     </profile>
   </profiles>
+  <!--<repositories>
+    <repository>
+      <id>jitpack.io</id>
+      <url>https://jitpack.io</url>
+    </repository>
+  </repositories> -->
 </project>
