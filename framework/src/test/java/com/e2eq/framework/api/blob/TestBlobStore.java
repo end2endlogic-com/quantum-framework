@@ -17,6 +17,11 @@ public class TestBlobStore {
     S3BlobStore blobStore;
     @Test
     public void testListBlobs() throws BlobStoreException {
+        if (!blobStore.isEnabled()) {
+            Log.warn("Skipping test as S3 blob store is not enabled. Please set up AWS credentials in your config");
+            return;
+        }
+
         List<Blob> blobs = blobStore.getBlobList();
         blobs.forEach( blob -> {
             Log.info(blob.getPathString());
@@ -25,6 +30,11 @@ public class TestBlobStore {
 
     @Test
     void testUpload() throws BlobStoreException, IOException {
+        if (!blobStore.isEnabled()) {
+            Log.warn("Skipping test as S3 blob store is not enabled. Please set up AWS credentials in your config");
+            return;
+        }
+
         String fileContent;
        try (InputStream in  = this.getClass().getClassLoader().getResourceAsStream("testData/test.txt")) {
            BlobMetadata metadata = new S3Metadata();
@@ -38,6 +48,10 @@ public class TestBlobStore {
 
     @Test
     public void testSignedURL() throws BlobStoreException, IOException {
+        if (!blobStore.isEnabled()) {
+            Log.warn("Skipping test as S3 blob store is not enabled. Please set up AWS credentials in your config");
+            return;
+        }
 
         String fileContent;
        try (InputStream in  = this.getClass().getClassLoader().getResourceAsStream("testData/test.txt")) {

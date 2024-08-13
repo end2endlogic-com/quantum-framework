@@ -1,7 +1,7 @@
 package com.e2eq.framework.security.model.persistent.models.migration.changesets;
 
 import com.e2eq.framework.rest.models.Role;
-import com.e2eq.framework.config.B2BIntegratorConfig;
+import com.e2eq.framework.config.AWSConfig;
 import com.e2eq.framework.model.persistent.base.Counter;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.migration.annotations.Execution;
@@ -60,14 +60,14 @@ public class InitializeDatabase implements ChangeSetBean {
    CounterRepo counterRepo;
 
    @Inject
-   B2BIntegratorConfig config;
+   AWSConfig config;
 
 
    @Execution
    public void execute(String realm) throws Exception{
       // get flag from app config
 
-      if (config.checkMigration()) {
+      if (config.checkMigration().isPresent() && config.checkMigration().get().booleanValue()) {
          try (MorphiaSession session = dataStore.getDataStore().startSession()) {
             try {
                session.startTransaction();
@@ -96,7 +96,7 @@ public class InitializeDatabase implements ChangeSetBean {
    }
 
    public Counter ensureCounter (String counterName, long initialValue) {
-      // check if counter exists if not create it
+      // check if counter exists; if not create it
       Optional<Counter> oCounter =  counterRepo.findByRefName(counterName);
       Counter counter;
 

@@ -1,7 +1,7 @@
 package com.e2eq.framework.api.cloud.aws;
 
 
-import com.e2eq.framework.config.B2BIntegratorConfig;
+import com.e2eq.framework.config.AWSConfig;
 import com.e2eq.framework.model.general.GetUploadSignedURLRequest;
 import com.e2eq.framework.cloud.aws.AwsClient;
 import io.quarkus.logging.Log;
@@ -19,56 +19,72 @@ import java.util.Map;
 @QuarkusTest
 public class TestS3 {
     @Inject
-    B2BIntegratorConfig b2bIntegratorConfig;
+    AWSConfig config;
 
     @Inject
     AwsClient awsClient;
 
     @Test
     public void testConfig() {
-        Log.info("RoleURN:" + b2bIntegratorConfig.awsRoleArn());
+        if (config.awsRoleArn().isPresent()) {
+            Log.info("Configured");
+        }
     }
+
 
     @Test
     public void testGenerateSignedURL() {
-        GetUploadSignedURLRequest request = new GetUploadSignedURLRequest();
-        request.setFileName("testFileName");
 
-        if (request.validate()) {
-            // Set up developer role.
-            // AwsSessionCredentials credentials = AwsClient.assumeRole("arn:aws:iam::103417400819:role/b2bintegrator-mailbox-access-000000", "testSession-001");
-            AwsSessionCredentials credentials = awsClient.assumeRole(b2bIntegratorConfig.awsRoleArn(), "testSession-001");
+            if (config.awsRoleArn().isPresent()) {
+                GetUploadSignedURLRequest request = new GetUploadSignedURLRequest();
+                request.setFileName("testFileName");
 
-            // List things in the bucket
+                if (request.validate()) {
+                    // Set up developer role.
+                    // AwsSessionCredentials credentials = AwsClient.assumeRole("arn:aws:iam::103417400819:role/b2bintegrator-mailbox-access-000000", "testSession-001");
+                    AwsSessionCredentials credentials = awsClient.assumeRole(config.awsRoleArn().get(), "testSession-001");
 
-            if (credentials != null)
-                Log.info(credentials.accessKeyId());
-            else
-                throw new RuntimeException("Failed");
+                    // List things in the bucket
 
-            awsClient.listBuckets(credentials);
+                    if (credentials != null)
+                        Log.info(credentials.accessKeyId());
+                    else
+                        throw new RuntimeException("Failed");
 
-            Map<String, String> metadata = request.getMetaData();
+                    awsClient.listBuckets(credentials);
 
-            URL url = awsClient.generateSignedURL(credentials, "b2bintegrator-mailboxdata-000000", request.getFileName(), metadata, request.getContentType().toString());
-            Log.info("Generated Signed URL:" + url.toString());
+                    Map<String, String> metadata = request.getMetaData();
 
-        }
+                    URL url = awsClient.generateSignedURL(credentials, "b2bintegrator-mailboxdata-000000", request.getFileName(), metadata, request.getContentType().toString());
+                    Log.info("Generated Signed URL:" + url.toString());
+
+                } else {
+                    throw new RuntimeException("Invalid request");
+                }
+            }
     }
 
     @Test
     public void testListBuckets() {
-        AwsSessionCredentials creds = awsClient.assumeRole(b2bIntegratorConfig.awsRoleArn(), "testSession-001");
-       List<Bucket> buckets = awsClient.listBuckets(creds);
-        for (Bucket b:buckets) {
-            Log.info(b.name());
 
+        if (config.awsRoleArn().isPresent()) {
+            AwsSessionCredentials creds = awsClient.assumeRole(config.awsRoleArn().get(), "testSession-001");
+            List<Bucket> buckets = awsClient.listBuckets(creds);
+            for (Bucket b : buckets) {
+                Log.info(b.name());
+            }
+        } else {
+            Log.warn("Skipping test as AWS credentials are not configured. Please set up AWS credentials in your config");
         }
     }
 
     @Test
     public void testListBucketContents() {
-        AwsSessionCredentials creds = awsClient.assumeRole(b2bIntegratorConfig.awsRoleArn(), "testSession-001");
+        if (!config.awsRoleArn().isPresent()) {
+            Log.warn("Skipping test as AWS credentials are not configured. Please set up AWS credentials in your config");
+            return;
+        }
+        AwsSessionCredentials creds = awsClient.assumeRole(config.awsRoleArn().get(), "testSession-001");
         // List out the contents of a specific bucket.
         List<S3Object> contends = awsClient.listBucketContents(creds, "b2bintegrator-mailboxdata-000000", null);
         for (S3Object c:contends) {

@@ -1,6 +1,6 @@
 package com.e2eq.framework.cloud.aws;
 
-import com.e2eq.framework.config.B2BIntegratorConfig;
+import com.e2eq.framework.config.AWSConfig;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jetbrains.annotations.NotNull;
@@ -30,14 +30,18 @@ import java.util.Map;
 @ApplicationScoped
 public class AwsClient {
     @Inject
-    B2BIntegratorConfig b2bIntegratorConfig;
+    AWSConfig config;
 
 
     public void createFile(String content, String bucket, String path, String contentType)  {
-        AwsSessionCredentials credentials =  assumeRole(b2bIntegratorConfig.awsRoleArn(), "testSessionName");
+        if (!config.awsRoleArn().isPresent()) {
+            throw new IllegalStateException("AWS Role ARN not configured");
+        }
+
+        AwsSessionCredentials credentials =  assumeRole(config.awsRoleArn().get(), "testSessionName");
         try(S3Client s3 = S3Client.builder()
                 .credentialsProvider(StaticCredentialsProvider.create(credentials))
-                .region(Region.of(b2bIntegratorConfig.region()))
+                .region(Region.of(config.region().get()))
                 .build()) {
             RequestBody body = RequestBody.fromString(content);
             PutObjectRequest objectRequest = PutObjectRequest.builder()
@@ -51,10 +55,13 @@ public class AwsClient {
 
     public void createFile(InputStream inputStream, long length, String bucket, String path, String contentType)  {
 
-        AwsSessionCredentials credentials =  assumeRole(b2bIntegratorConfig.awsRoleArn(), "testSessionName");
+        if (!config.awsRoleArn().isPresent() || !config.region().isPresent()) {
+            throw new IllegalStateException("AWS Role ARN not configured");
+        }
+        AwsSessionCredentials credentials =  assumeRole(config.awsRoleArn().get(), "testSessionName");
         try(S3Client s3 = S3Client.builder()
                 .credentialsProvider(StaticCredentialsProvider.create(credentials))
-                .region(Region.of(b2bIntegratorConfig.region()))
+                .region(Region.of(config.region().get()))
                 .build()) {
             RequestBody body = RequestBody.fromInputStream(inputStream, length);
             PutObjectRequest objectRequest = PutObjectRequest.builder()
@@ -71,8 +78,12 @@ public class AwsClient {
         // and has read-only permissions when it accesses Amazon S3.
 
         // The default credentials provider chain will find the single sign-on settings in the [default] profile.
+        if (!config.awsRoleArn().isPresent() ||!config.region().isPresent()) {
+            throw new IllegalStateException("AWS Role ARN or region not configured");
+        }
+
         StsClient stsClient = StsClient.builder()
-                .region(Region.of(b2bIntegratorConfig.region()))
+                .region(Region.of(config.region().get()))
                 .build();
 
         AwsSessionCredentials creds = null;
@@ -95,10 +106,14 @@ public class AwsClient {
 
     public List<Bucket> listBuckets(AwsSessionCredentials creds) {
         // List all buckets in the account using the temporary credentials retrieved by invoking assumeRole.
+        if (!config.region().isPresent()) {
+            throw new IllegalStateException("AWS Region not configured");
+        }
+
 
         try(S3Client s3 = S3Client.builder()
                 .credentialsProvider(StaticCredentialsProvider.create(creds))
-                .region(Region.of(b2bIntegratorConfig.region()))
+                .region(Region.of(config.region().get()))
                 .build()) {
 
             List<Bucket> buckets = s3.listBuckets().buckets();
@@ -111,9 +126,13 @@ public class AwsClient {
 
     public List<S3Object> listBucketContents(@NotNull AwsSessionCredentials creds, @NotNull String bucketName, String regexPattern) {
 
+        if (!config.region().isPresent()) {
+            throw new IllegalStateException("AWS Region not configured");
+        }
+
         try (S3Client s3 = S3Client.builder()
                 .credentialsProvider(StaticCredentialsProvider.create(creds))
-                .region(Region.of(b2bIntegratorConfig.region()))
+                .region(Region.of(config.region().get()))
                 .build()) {
 
             ListObjectsV2Request listObjectsRequest = ListObjectsV2Request.builder()
@@ -138,10 +157,13 @@ public class AwsClient {
     }
 
     public InputStream getBlob(AwsSessionCredentials creds, String bucketName, String objectKey) {
+        if (!config.region().isPresent()) {
+            throw new IllegalStateException("AWS Region not configured");
+        }
 
         S3Client s3 = S3Client.builder()
                 .credentialsProvider(StaticCredentialsProvider.create(creds))
-                .region(Region.of(b2bIntegratorConfig.region()))
+                .region(Region.of(config.region().get()))
                 .build();
 
             GetObjectRequest getObjectRequest = GetObjectRequest.builder()
@@ -155,8 +177,12 @@ public class AwsClient {
 
     public URL generateSignedURL(AwsSessionCredentials credentials, String bucketName, String objectKey, Map<String, String> metadata, String contentType ) {
 
+        if (!config.region().isPresent()) {
+            throw new IllegalStateException("AWS Region not configured");
+        }
+
         S3Presigner s3Presigner = S3Presigner.builder()
-                .region(Region.of(b2bIntegratorConfig.region())) // Change this to your desired AWS region
+                .region(Region.of(config.region().get())) // Change this to your desired AWS region
                 .credentialsProvider(StaticCredentialsProvider.create(credentials))
                 .build();
 
@@ -187,9 +213,13 @@ public class AwsClient {
     }
 
     public void deleteBlob(AwsSessionCredentials credentials, String bucketName, String objectKey) {
+        if (!config.region().isPresent()) {
+            throw new IllegalStateException("AWS Region not configured");
+        }
+
         try (S3Client s3 = S3Client.builder()
                 .credentialsProvider(StaticCredentialsProvider.create(credentials))
-                .region(Region.of(b2bIntegratorConfig.region()))
+                .region(Region.of(config.region().get()))
                 .build()) {
 
             DeleteObjectRequest deleteObjectRequest = DeleteObjectRequest.builder()

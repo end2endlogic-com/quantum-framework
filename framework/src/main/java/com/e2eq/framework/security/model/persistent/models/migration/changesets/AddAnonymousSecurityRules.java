@@ -1,6 +1,6 @@
 package com.e2eq.framework.security.model.persistent.models.migration.changesets;
 
-import com.e2eq.framework.config.B2BIntegratorConfig;
+import com.e2eq.framework.config.AWSConfig;
 import com.e2eq.framework.model.persistent.migration.base.ChangeSetBean;
 import com.e2eq.framework.model.security.RuleEffect;
 import com.e2eq.framework.model.security.SecurityURI;
@@ -23,7 +23,7 @@ public class AddAnonymousSecurityRules implements ChangeSetBean {
     PolicyRepo policyRepo;
 
     @Inject
-    B2BIntegratorConfig config;
+    AWSConfig config;
 
     @Override
     public String getId() {
@@ -67,7 +67,7 @@ public class AddAnonymousSecurityRules implements ChangeSetBean {
 
     @Override
     public void execute(String realm) throws Exception {
-        if (config.checkMigration()) {
+        if (config.checkMigration().isPresent() && config.checkMigration().get().booleanValue()) {
             // So this will match any user that has the role "user"
             // for "any area, any domain, and any action i.e. all areas, domains, and actions
             SecurityURIHeader header = new SecurityURIHeader.Builder()
@@ -111,7 +111,7 @@ public class AddAnonymousSecurityRules implements ChangeSetBean {
 
         } else {
             if (Log.isInfoEnabled())
-                Log.info("Skipping Add AnonymousSecurityRules");
+                Log.warn("Skipping Add AnonymousSecurityRules");
         }
 
 

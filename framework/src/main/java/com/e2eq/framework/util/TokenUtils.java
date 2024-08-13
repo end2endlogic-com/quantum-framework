@@ -118,7 +118,8 @@ public class TokenUtils {
 	}
 
 	public static PrivateKey readPrivateKey(final String pemResName) throws Exception {
-		try (InputStream contentIS = TokenUtils.class.getResourceAsStream(pemResName)) {
+		ClassLoader loader = Thread.currentThread().getContextClassLoader();
+		try (InputStream contentIS = loader.getResourceAsStream(pemResName)) {
 			if (contentIS == null ) {
 				throw new Exception("Could not find Private Key with ResourceName:" + pemResName);
 			}
