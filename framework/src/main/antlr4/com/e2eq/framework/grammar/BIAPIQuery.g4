@@ -21,9 +21,9 @@ regex: ((leftW=WILDCARD value=STRING rightW=WILDCARD)
 | (leftW=WILDCARD value=STRING)
 | (value=STRING rightW=WILDCARD));
 
-regexExpr: field=STRING op=(EQ | NOT_EQ) regex;
+regexExpr: field=STRING op=(EQ | NEQ) regex;
 
-nullExpr: field=STRING op=(EQ | NOT_EQ) value=NULL;
+nullExpr: field=STRING op=(EQ | NEQ) value=NULL;
 
 // Operators
 EQ: ':';

@@ -26,6 +26,10 @@
       <email>mingardia@end2endlogic.com</email>
     </developer>
   </developers>
+  <properties>
+    <maven.compiler.release>17</maven.compiler.release>
+  </properties>
+
 
   <dependencyManagement>
          <dependencies>
@@ -53,7 +57,8 @@
     </dependency>
     <dependency>
       <groupId>io.quarkus</groupId>
-      <artifactId>quarkus-resteasy-reactive-jackson</artifactId>
+      <artifactId>quarkus-rest-jackson</artifactId>
+      <version>3.12.3</version>
     </dependency>
     <!-- comment out for local development, uncomment for sam deploy
     <dependency>
@@ -181,7 +186,7 @@
       <artifactId>vault-java-driver</artifactId>
       <version>6.2.0</version>
     </dependency>
-    <!-- this is dependent on the newest way to include polygot with out gu.  This is introduced in JDK 21 and above
+    <!-- this is dependent on the newest way to include polygot with out gu.  This is introduced in JDK 21 and above -->
      <dependency>
       <groupId>org.graalvm.polyglot</groupId>
       <artifactId>polyglot</artifactId>
@@ -192,11 +197,11 @@
       <artifactId>js-community</artifactId>
       <version>${graalvm.version}</version>
       <type>pom</type>
-    </dependency> -->
+    </dependency>
     <dependency>
       <groupId>org.graalvm.sdk</groupId>
-      <artifactId>graal-sdk</artifactId>
-      <version>23.0.1</version>
+      <artifactId>nativeimage</artifactId>
+      <version>23.1.2</version>
     </dependency>
     <dependency>
       <groupId>at.favre.lib</groupId>
@@ -320,7 +325,6 @@
       <plugin>
         <groupId>${quarkus.platform.group-id}</groupId>
         <artifactId>quarkus-maven-plugin</artifactId>
-        <version>${quarkus.platform.version}</version>
         <extensions>true</extensions>
         <executions>
           <execution>
@@ -334,7 +338,6 @@
       </plugin>
       <plugin>
         <artifactId>maven-surefire-plugin</artifactId>
-        <version>${surefire-plugin.version}</version>
         <configuration>
           <systemPropertyVariables>
             <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
@@ -356,7 +359,6 @@
       </plugin>
       <plugin>
         <artifactId>maven-compiler-plugin</artifactId>
-        <version>${compiler-plugin.version}</version>
         <configuration>
           <compilerArgs>
             <arg>-Xlint:all,-try,-options,-path </arg>
@@ -455,7 +457,8 @@
         </plugins>
       </build>
       <properties>
-        <quarkus.package.type>native</quarkus.package.type>
+        <quarkus.native.enabled>true</quarkus.native.enabled>
+        <quarkus.package.jar.enabled>false</quarkus.package.jar.enabled>
       </properties>
     </profile>
   </profiles>

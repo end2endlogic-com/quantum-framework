@@ -89,7 +89,7 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
             Filter regexFilter = Filters.regex(field, pattern);
             filterStack.push(regexFilter);
 
-        } else if (ctx.op.getType() == BIAPIQueryParser.NOT_EQ) {
+        } else if (ctx.op.getType() == BIAPIQueryParser.NEQ) {
             Filter regexFilter = Filters.nor(Filters.regex(field, pattern));
             filterStack.push(regexFilter);
         } else {
