@@ -8,9 +8,9 @@
     <name>quantum - parent </name>
 
     <properties>
-      <antlr.version>4.13.1</antlr.version>
+      <antlr.version>4.13.2</antlr.version>
       <assembly-plugin.version>3.1.0</assembly-plugin.version>
-      <compiler-plugin.version>3.12.1</compiler-plugin.version>
+      <compiler-plugin.version>3.13.0</compiler-plugin.version>
       <jackson.version>2.14.1</jackson.version>
       <maven.compiler.release>17</maven.compiler.release>
       <morphia.version>2.4.10</morphia.version>
@@ -18,11 +18,11 @@
       <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
       <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
       <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
-      <quarkus.platform.version>3.7.1</quarkus.platform.version>
+      <quarkus.platform.version>3.13.2</quarkus.platform.version>
       <skipITs>true</skipITs>
       <surefire-plugin.version>3.2.5</surefire-plugin.version>
-      <graalvm.version>23.0.2</graalvm.version>
-      <lombrok.version>1.18.28</lombrok.version>
+      <graalvm.version>24.0.2</graalvm.version>
+      <lombrok.version>1.18.34</lombrok.version>
     </properties>
 
     <dependencyManagement>
