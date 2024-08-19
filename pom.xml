@@ -11,4 +11,5 @@
         <module>parent</module>
         <module>framework</module>
     </modules>
+    <!-- All your other configuration -->
 </project>

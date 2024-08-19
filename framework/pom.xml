@@ -83,9 +83,21 @@
       <artifactId>quarkus-smallrye-openapi</artifactId>
     </dependency>
     <dependency>
+      <groupId>com.end2endlogic</groupId>
+      <artifactId>quantum-extension</artifactId>
+      <version>1.0.0-SNAPSHOT</version>
+    </dependency>
+    <dependency>
+      <groupId>dev.morphia.morphia</groupId>
+      <artifactId>morphia-core</artifactId>
+      <version>${morphia.version}</version>
+    </dependency>
+    <!--<dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-mongodb-client</artifactId>
     </dependency>
+     -->
+
     <!--<dependency>
       <groupId>org.neo4j</groupId>
       <artifactId>neo4j-ogm-quarkus</artifactId>
@@ -216,11 +228,7 @@
     </dependency>  -->
 
 
-    <dependency>
-      <groupId>dev.morphia.morphia</groupId>
-      <artifactId>morphia-core</artifactId>
-      <version>${morphia.version}</version>
-    </dependency>
+
     <dependency>
       <groupId>com.google.guava</groupId>
       <artifactId>guava</artifactId>
@@ -337,6 +345,19 @@
         </executions>
       </plugin>
       <plugin>
+        <groupId>io.smallrye</groupId>
+        <artifactId>jandex-maven-plugin</artifactId>
+        <version>3.2.2</version>
+        <executions>
+          <execution>
+            <id>make-index</id>
+            <goals>
+              <goal>jandex</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
           <systemPropertyVariables>
@@ -357,15 +378,7 @@
           </execution>
         </executions>
       </plugin>
-      <plugin>
-        <artifactId>maven-compiler-plugin</artifactId>
-        <configuration>
-          <compilerArgs>
-            <arg>-Xlint:all,-try,-options,-path </arg>
-          </compilerArgs>
-          <release>17</release>
-        </configuration>
-      </plugin>
+
       <!--<plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-source-plugin</artifactId>
@@ -425,7 +438,7 @@
           <plugin>
             <groupId>io.smallrye</groupId>
             <artifactId>jandex-maven-plugin</artifactId>
-            <version>3.1.6</version>
+            <version>3.2.2</version>
             <executions>
               <execution>
                 <id>make-index</id>
@@ -462,10 +475,16 @@
       </properties>
     </profile>
   </profiles>
-  <!--<repositories>
+  <repositories>
     <repository>
-      <id>jitpack.io</id>
-      <url>https://jitpack.io</url>
+      <!--
+      The username and password are retrieved by looking for the Repository
+      Id in the $HOME/.m2/settings.xml file.
+      -->
+      <!-- id Must Match the Unique Identifier in settings.xml -->
+      <id>io.cloudrepo</id>
+      <url>https://end2endlogic.mycloudrepo.io/repositories/end2endlogic-opensource-release</url>
+      <releases/>
     </repository>
-  </repositories> -->
+  </repositories>
 </project>

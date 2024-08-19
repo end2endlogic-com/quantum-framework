@@ -84,27 +84,48 @@
                     </configuration>
                 </plugin>
                 <plugin>
-                  <groupId>io.smallrye</groupId>
-                  <artifactId>jandex-maven-plugin</artifactId>
-                  <version>3.1.6</version>
-                  <executions>
-                    <execution>
-                      <id>make-index</id>
-                      <goals>
-                        <goal>jandex</goal>
-                      </goals>
-                    </execution>
-                  </executions>
-                </plugin>
-                <plugin>
-                  <artifactId>maven-compiler-plugin</artifactId>
-                  <version>${compiler-plugin.version}</version>
-                  <configuration>
-                    <compilerArgs>
-                      <arg>-Xlint:all,-options,-path</arg>
-                    </compilerArgs>
-                    <release>17</release>
-                  </configuration>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <configuration>
+                        <compilerArgs>
+                            <arg>-Xlint:all,-try,-options,-path </arg>
+                        </compilerArgs>
+                        <annotationProcessorPaths>
+                            <path>
+                                <groupId>io.quarkus</groupId>
+                                <artifactId>quarkus-extension-processor</artifactId>
+                                <version>${quarkus.platform.version}</version>
+                            </path>
+                            <path>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok</artifactId>
+                                <version>${lombrok.version}</version>
+                            </path>
+                            <path>
+                                <groupId>io.quarkus</groupId>
+                                <artifactId>quarkus-resteasy</artifactId>
+                            </path>
+                            <path>
+                                <groupId>io.quarkus</groupId>
+                                <artifactId>quarkus-hibernate-validator</artifactId>
+                            </path>
+                            <path>
+                                <groupId>dev.morphia.morphia</groupId>
+                                <artifactId>morphia-core</artifactId>
+                                <version>${morphia.version}</version>
+                            </path>
+                            <path>
+                                <groupId>com.fasterxml.jackson.core</groupId>
+                                <artifactId>jackson-annotations</artifactId>
+                                <version>${jackson.version}</version>
+                            </path>
+                            <path>
+                                <groupId>org.jetbrains</groupId>
+                                <artifactId>annotations</artifactId>
+                                <version>24.0.1</version>
+                            </path>
+                        </annotationProcessorPaths>
+                        <release>17</release>
+                    </configuration>
                 </plugin>
             </plugins>
         </pluginManagement>
@@ -126,4 +147,11 @@
             <version>24.0.1</version>
         </dependency>
     </dependencies>
+    <distributionManagement>
+        <repository>
+            <id>io.cloudrepo</id> <!-- Must Match the Unique Identifier in settings.xml -->
+            <name>My First Cloud Repo Repository</name>
+            <url>https://end2endlogic.mycloudrepo.io/repositories/end2endlogic-opensource-release</url>
+        </repository>
+    </distributionManagement>
 </project>

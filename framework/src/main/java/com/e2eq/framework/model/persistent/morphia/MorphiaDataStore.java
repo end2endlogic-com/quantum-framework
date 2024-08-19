@@ -67,7 +67,7 @@ public class MorphiaDataStore {
        //           .build();
        // datastore = Morphia.createDatastore(mongoClient, realm, mapperOptions);
          Log.warn("Created Datastore, for realm:" + realm);
-         datastore.getMapper().addInterceptor(permissionRuleInterceptor);
+      /*   datastore.getMapper().addInterceptor(permissionRuleInterceptor);
          datastore.getMapper().addInterceptor(validationInterceptor);
          datastore.getMapper().addInterceptor(auditInterceptor);
 
@@ -75,7 +75,7 @@ public class MorphiaDataStore {
         Set<Class> classes = classScanner.scanForEntityBeans("com.e2eq.framework.security.model.persistent.models.security");
 
          classes.addAll(classScanner.scanForEntityBeans("com.e2eq.framework.model.persistent.base"));
-         // classes.addAll(classScanner.scanForEntityBeans("com.e2eq.app.integration.tp.model"));
+
 
          datastore.getMapper().mapPackage( "com.e2eq.framework.security.model.persistent.models.security");
          datastore.getMapper().mapPackage( "com.e2eq.framework.security.model.persistent.morphia");
@@ -90,7 +90,7 @@ public class MorphiaDataStore {
           }
          datastore.ensureIndexes();
 
-
+       */
 
          datastoreMap.put(datastore.getDatabase().getName(), datastore);
       }
