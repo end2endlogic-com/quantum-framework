@@ -59,7 +59,7 @@ public class TokenUtils {
 		if (issuer == null) {
 			throw new ValidationException("Issuer can not be null");
 		}
-		String privateKeyLocation = "/privateKey.pem";
+		String privateKeyLocation = "privateKey.pem";
 		PrivateKey privateKey = readPrivateKey(privateKeyLocation);
 		
 		JwtClaimsBuilder claimsBuilder = Jwt.claims();
@@ -94,7 +94,7 @@ public class TokenUtils {
 		Set<String> groups = new HashSet<>(Arrays.asList(roles));
 
 
-		String privateKeyLocation = "/privateKey.pem";
+		String privateKeyLocation = "privateKey.pem";
 		PrivateKey privateKey = readPrivateKey(privateKeyLocation);
 		JwtClaimsBuilder claimsBuilder = Jwt.claims();
 		long currentTimeInSecs = currentTimeInSecs();
@@ -133,7 +133,11 @@ public class TokenUtils {
 	}
 
 	public static PublicKey readPublicKey(String pemResName) throws Exception {
-		try (InputStream contentIS = TokenUtils.class.getResourceAsStream(pemResName)) {
+		ClassLoader loader = Thread.currentThread().getContextClassLoader();
+		try (InputStream contentIS = loader.getResourceAsStream(pemResName)) {
+			if (contentIS == null ) {
+				throw new Exception("Could not find Public Key with ResourceName:" + pemResName);
+			}
 			byte[] tmp = new byte[4096];
 			assert contentIS != null;
 			int length = contentIS.read(tmp);
