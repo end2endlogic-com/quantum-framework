@@ -67,7 +67,7 @@ public class PermissionPreFilter implements ContainerRequestFilter, ContainerRes
       String authorizationHeader =
          requestContext.getHeaderString(HttpHeaders.AUTHORIZATION);
 
-      // Extract the token from the Authorization header
+      // Extract the token from the Authorization header if one is presented
       if (authorizationHeader != null) {
          String token = authorizationHeader
             .substring(AUTHENTICATION_SCHEME.length()).trim();
@@ -81,6 +81,7 @@ public class PermissionPreFilter implements ContainerRequestFilter, ContainerRes
          String[] roles = new String[0];
 
          try {
+            // The parser will check the public key and signature of the token
             JsonWebToken jwt = parser.parse(token);
             orgRefName = jwt.getClaim("orgRefName");
             tenantId = jwt.getClaim("tenantId");
@@ -106,8 +107,6 @@ public class PermissionPreFilter implements ContainerRequestFilter, ContainerRes
                .build();
 
 
-
-
            /* SecurityCheckResponse sresp = ruleContext.check(pcontext, rcontext);
             if (sresp.getFinalEffect() != RuleEffect.ALLOW) {
                requestContext.abortWith(Response.status(Response.Status.FORBIDDEN).entity(sresp).build());
@@ -118,12 +117,14 @@ public class PermissionPreFilter implements ContainerRequestFilter, ContainerRes
             requestContext.abortWith(Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(e.getMessage()).build());
          }
 
-      } else {
-         // check that the method is annotated as "public"
-         //  ((ContainerRequestContextImpl) requestContext).quarkusRestContext.getMethodAnnotations().length
-         ContainerRequestContextImpl crequestContext = ((ContainerRequestContextImpl) requestContext);
-         //crequestContext.quarkusRestContext.getMethodAnnotations();
       }
+      // Just let it pass through as a unauthenticated request
+      //else {
+         //
+         //  ((ContainerRequestContextImpl) requestContext).quarkusRestContext.getMethodAnnotations().length
+         //ContainerRequestContextImpl crequestContext = ((ContainerRequestContextImpl) requestContext);
+         //crequestContext.quarkusRestContext.getMethodAnnotations();
+        //}
    }
 
    @Override

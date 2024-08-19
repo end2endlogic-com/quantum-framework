@@ -95,6 +95,7 @@ public class RequestFilter implements ContainerRequestFilter {
    }
 
    /*
+        TODO Determine why this is commented out.
         // Check if the method is annotated.
          Method method = ((ContainerRequestContextImpl) requestContext).getServerRequestContext().getResteasyReactiveResourceInfo().getMethod();
 
@@ -174,7 +175,6 @@ public class RequestFilter implements ContainerRequestFilter {
       }
 
       return rcontext;
-
    }
 
    protected PrincipalContext determinePrincipalContext(ContainerRequestContext requestContext) {
@@ -305,6 +305,4 @@ public class RequestFilter implements ContainerRequestFilter {
 
       return pcontext;
    }
-
-
 }
