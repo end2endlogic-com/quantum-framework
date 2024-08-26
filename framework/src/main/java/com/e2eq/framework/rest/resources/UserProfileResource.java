@@ -1,11 +1,11 @@
 package com.e2eq.framework.rest.resources;
 
 import com.e2eq.framework.rest.models.Role;
-import com.e2eq.framework.model.security.SecurityContext;
+import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.rest.filters.PermissionCheck;
 import com.e2eq.framework.rest.models.RestError;
-import com.e2eq.framework.security.model.persistent.models.security.UserProfile;
-import com.e2eq.framework.security.model.persistent.morphia.UserProfileRepo;
+import com.e2eq.framework.model.persistent.security.UserProfile;
+import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.*;
@@ -17,7 +17,7 @@ import java.util.Optional;
 import java.util.Set;
 
 @Path("/user/userProfile")
-@RolesAllowed("user")
+@RolesAllowed({"user", "admin"})
 public class UserProfileResource extends BaseResource<UserProfile, UserProfileRepo> {
 
    UserProfileResource (UserProfileRepo repo ) {

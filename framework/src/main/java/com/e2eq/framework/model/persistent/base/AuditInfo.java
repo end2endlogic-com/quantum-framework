@@ -1,5 +1,6 @@
 package com.e2eq.framework.model.persistent.base;
 
+import dev.morphia.annotations.Entity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import lombok.EqualsAndHashCode;
 
@@ -7,6 +8,7 @@ import java.util.Date;
 
 @RegisterForReflection
 @EqualsAndHashCode
+@Entity
 public class AuditInfo {
    protected Date lastUpdateTs;
    protected String lastUpdateIdentity;

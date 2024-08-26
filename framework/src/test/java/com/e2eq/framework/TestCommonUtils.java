@@ -53,8 +53,10 @@ public class TestCommonUtils {
 
         java.util.Collection<List<String>> obj = CommonUtils.permutations(lists);
 
-        for (List<String> l : obj) {
-            Log.info("l:" + l.toString());
+        if (Log.isDebugEnabled()) {
+            for (List<String> l : obj) {
+                Log.debug("l:" + l.toString());
+            }
         }
 
     }

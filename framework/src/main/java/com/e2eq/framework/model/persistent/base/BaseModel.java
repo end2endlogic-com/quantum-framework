@@ -1,6 +1,8 @@
 package com.e2eq.framework.model.persistent.base;
 
 import com.e2eq.framework.rest.models.ObjectIdJsonSerializer;
+import com.e2eq.framework.rest.models.UIAction;
+import com.e2eq.framework.rest.models.UIActionList;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -18,7 +20,7 @@ import org.bson.types.ObjectId;
 import java.util.*;
 
 import static dev.morphia.utils.IndexType.DESC;
-
+@Entity
 @Indexes({
             @Index(fields={@Field( value="refName", type=DESC),
                     @Field(value="dataDomain.orgRefName", type=DESC),

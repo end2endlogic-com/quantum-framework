@@ -1,7 +1,7 @@
 package com.e2eq.framework.model.persistent.morphia.interceptors;
 
-import com.e2eq.framework.model.security.rules.RuleContext;
-import com.e2eq.framework.model.security.*;
+import com.e2eq.framework.model.securityrules.RuleContext;
+import com.e2eq.framework.model.securityrules.*;
 import dev.morphia.Datastore;
 import dev.morphia.EntityListener;
 import io.quarkus.logging.Log;

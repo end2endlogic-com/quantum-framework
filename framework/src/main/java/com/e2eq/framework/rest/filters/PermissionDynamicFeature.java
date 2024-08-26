@@ -1,6 +1,6 @@
 package com.e2eq.framework.rest.filters;
 
-import com.e2eq.framework.model.security.rules.RuleContext;
+import com.e2eq.framework.model.securityrules.RuleContext;
 import io.quarkus.logging.Log;
 import io.smallrye.jwt.auth.principal.JWTParser;
 
@@ -24,11 +24,13 @@ public class PermissionDynamicFeature implements DynamicFeature {
 
       PermissionCheck checkAnnotation = resourceInfo.getResourceMethod().getAnnotation(PermissionCheck.class);
       if (checkAnnotation == null) return;
-      Log.info(">> Adding dynamic feature to method:" + resourceInfo.getResourceClass().getSimpleName() + ":" + resourceInfo.getResourceMethod());
+      if (Log.isDebugEnabled())
+         Log.debug(">> Adding dynamic feature to method:" + resourceInfo.getResourceClass().getSimpleName() + ":" + resourceInfo.getResourceMethod());
       PermissionPreFilter filter = new PermissionPreFilter( ruleContext, parser, checkAnnotation.area(),
          checkAnnotation.functionalDomain(),
          checkAnnotation.action());
       context.register(filter);
-      Log.info("Added permission check to method:" + resourceInfo.getResourceClass() + ":" + resourceInfo.getResourceMethod());
+      if (Log.isDebugEnabled())
+         Log.debug("Added permission check to method:" + resourceInfo.getResourceClass() + ":" + resourceInfo.getResourceMethod());
    }
 }

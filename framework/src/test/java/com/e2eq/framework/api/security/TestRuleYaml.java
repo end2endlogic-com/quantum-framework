@@ -1,7 +1,7 @@
 package com.e2eq.framework.api.security;
 
-import com.e2eq.framework.security.model.persistent.models.security.FunctionalDomain;
-import com.e2eq.framework.security.model.persistent.models.security.Rule;
+import com.e2eq.framework.model.persistent.security.FunctionalDomain;
+import com.e2eq.framework.model.persistent.security.Rule;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.type.CollectionType;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
@@ -34,8 +34,12 @@ public class TestRuleYaml {
       List<FunctionalDomain> rules = mapper.readValue(new File("src/test/resources/securityModel.yaml"), listType);
 
       rules.forEach((f) -> {
-         Log.info("FunctionalDomain:" + f.getDisplayName());
-         f.getFunctionalActions().forEach((fa) -> { Log.infof("    Fa:%s", fa.getDisplayName()); } );
+         if (Log.isDebugEnabled()) {
+            Log.debugf("FunctionalDomain:%s" , f.getDisplayName());
+            f.getFunctionalActions().forEach((fa) -> {
+               Log.debugf("    Fa:%s", fa.getDisplayName());
+            });
+         }
       } );
    }
 }

@@ -1,24 +1,25 @@
 package com.e2eq.framework.util;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
-import com.e2eq.framework.security.model.persistent.models.security.Rule;
-import com.e2eq.framework.model.security.rules.RuleContext;
-import com.e2eq.framework.model.security.*;
+import com.e2eq.framework.model.persistent.security.Rule;
+import com.e2eq.framework.model.securityrules.RuleContext;
+import com.e2eq.framework.model.securityrules.*;
 
 
 public class SecurityUtils {
    // system context values
-   public static final String anonymousUserId = "anonymous@b2bintegrator.com";
-   public static final String systemOrgRefName = "b2bintegrator.com";
+   public static final String anonymousUserId = "anonymous@system.com";
+   public static final String systemOrgRefName = "system.com";
    public static final String systemAccountNumber = "0000000000";
-   public  static final String systemTenantId = "b2bintegrator-com";
-   public  static final String systemRealm = "b2bintegrator-com";
-   public  static final String systemUserId = "system@b2bintegrator.com";
+   public  static final String systemTenantId = "system-com";
+   public  static final String systemRealm = "system-com";
+   public  static final String systemUserId = "system@system.com";
    public  static final String any = "*";
    protected  static final String securityArea = "security";
    public  static final String name = "System Process";
    public  static final String[] systemRole = {"system"};
    public static final int defaultDataSegment = 0;
+   public static final String defaultRealm = "system-com";
 
    public static final DataDomain systemDataDomain = new DataDomain(systemOrgRefName, systemAccountNumber, systemTenantId, defaultDataSegment, systemUserId);
 

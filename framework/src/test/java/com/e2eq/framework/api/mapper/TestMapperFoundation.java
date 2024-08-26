@@ -92,43 +92,56 @@ public class TestMapperFoundation {
    public void displayToken(JsonToken token,JsonParser parser  ) throws IOException {
       switch (token) {
          case NOT_AVAILABLE:
-            Log.info("pause");
+            if (Log.isDebugEnabled())
+               Log.debug("pause");
             break;
          case START_OBJECT:
-            Log.info("{> Start Object");
+            if (Log.isDebugEnabled())
+               Log.debug("{> Start Object");
             break;
          case END_OBJECT:
-            Log.info("}< End Object");
+            if (Log.isDebugEnabled())
+               Log.debug("}< End Object");
             break;
          case START_ARRAY:
-            Log.info("[>> Start Array");
+            if (Log.isDebugEnabled())
+               Log.debug("[>> Start Array");
             break;
          case END_ARRAY:
-            Log.info("}<< End Array");
+            if (Log.isDebugEnabled())
+               Log.debug("}<< End Array");
             break;
          case FIELD_NAME:
-            Log.info("  Field Name:" + parser.getCurrentName());
+            if (Log.isDebugEnabled())
+               Log.debug("  Field Name:" + parser.getCurrentName());
             break;
          case VALUE_STRING:
-            Log.info("   String:" + parser.getValueAsString());
+            if (Log.isDebugEnabled())
+               Log.debug("   String:" + parser.getValueAsString());
             break;
          case VALUE_NUMBER_INT:
-            Log.info("   Int:" + parser.getValueAsInt());
+            if (Log.isDebugEnabled())
+               Log.debugf("   Int:%d" , parser.getValueAsInt());
             break;
          case VALUE_NUMBER_FLOAT:
-            Log.info("   Float:" + parser.getValueAsDouble());
+            if (Log.isDebugEnabled())
+               Log.debugf("   Float:%f" , parser.getValueAsDouble());
             break;
          case VALUE_TRUE:
-            Log.info("   TBoolean:" + parser.getValueAsBoolean());
+            if (Log.isDebugEnabled())
+               Log.debugf("   TBoolean:%s" ,parser.getValueAsBoolean());
             break;
          case VALUE_FALSE:
-            Log.info("   FBoolean:" + parser.getValueAsBoolean());
+            if (Log.isDebugEnabled())
+               Log.debugf("   FBoolean:%s" , parser.getValueAsBoolean());
             break;
          case VALUE_NULL:
-            Log.info("   NULL VALUE:");
+            if (Log.isDebugEnabled())
+               Log.debug("   NULL VALUE:");
             break;
          case VALUE_EMBEDDED_OBJECT:
-            Log.info("   EmbeddedObject:");
+            if (Log.isDebugEnabled())
+               Log.debug("   EmbeddedObject:");
       }
    }
 

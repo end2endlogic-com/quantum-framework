@@ -1,5 +1,6 @@
 package com.e2eq.framework.model.persistent.base;
 
+import com.e2eq.framework.model.general.ValidationViolation;
 import com.e2eq.framework.model.persistent.interfaces.Archivable;
 import com.e2eq.framework.model.persistent.interfaces.Expirable;
 import com.e2eq.framework.model.persistent.interfaces.InvalidSavable;

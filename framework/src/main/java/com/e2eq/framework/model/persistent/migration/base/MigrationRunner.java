@@ -1,9 +1,9 @@
 package com.e2eq.framework.model.persistent.migration.base;
 
-import com.e2eq.framework.model.security.SecuritySession;
-import com.e2eq.framework.model.security.rules.RuleContext;
-import com.e2eq.framework.security.model.persistent.morphia.ChangeSetRecordRepo;
-import com.e2eq.framework.security.model.persistent.morphia.DatabaseVersionRepo;
+import com.e2eq.framework.model.securityrules.SecuritySession;
+import com.e2eq.framework.model.securityrules.RuleContext;
+import com.e2eq.framework.model.persistent.morphia.ChangeSetRecordRepo;
+import com.e2eq.framework.model.persistent.morphia.DatabaseVersionRepo;
 import com.e2eq.framework.util.SecurityUtils;
 import com.google.common.collect.Ordering;
 import io.quarkus.logging.Log;
@@ -50,7 +50,7 @@ public class MigrationRunner {
    public void init() throws Exception {
 
       if (enabled) {
-         Log.warn(">> Running Migration scripts <<");
+         Log.warn(">> Checking Migration scripts <<");
       }
 
       //TODO: attempt to insert record into lock table
@@ -67,7 +67,7 @@ public class MigrationRunner {
            Log.warn("Database is already at target level:" + targetDatabaseVersion);
             return;
          } else {
-            Log.warn("Database is not at target level:" + targetDatabaseVersion + " current database version is:" + odbv.get().getCurrentVersion());
+            Log.warn("!!! >> Database is not at target level:" + targetDatabaseVersion + " current database version is:" + odbv.get().getCurrentVersion());
          }
       }
 
@@ -76,9 +76,12 @@ public class MigrationRunner {
 
       Set<Bean<?>> changeSets = beanManager.getBeans(ChangeSetBean.class);
       if (!changeSets.isEmpty()) {
-         Log.info("found beans:" + changeSets.size());
+         Log.info(" >> Number of ChangeSet Beans:" + changeSets.size());
+         for (Bean bean : changeSets) {
+            Log.info("     ChangeSet Bean:" + bean.getBeanClass().getName());
+         }
       } else {
-         Log.warn("No changeset beans found");
+         Log.warn("!!! No changeset beans found");
       }
 
       Set<ChangeSetBean> changeSetBeans = new HashSet<>();
@@ -86,18 +89,22 @@ public class MigrationRunner {
          CreationalContext<?> creationalContext = beanManager.createCreationalContext(bean);
          ChangeSetBean chb = (ChangeSetBean)   beanManager.getReference(bean, bean.getBeanClass(), creationalContext);
 
-         if (chb.getDbFromVersion().equals(currentDatabaseVersion)) {
+         if (chb.getDbFromVersion() >= currentDatabaseVersion) {
             changeSetBeans.add(chb);
+         } else {
+            Log.warn(">> Ignoring Change Set:" + chb.getName() + " because it is not for the current database version:" + currentDatabaseVersion);
          }
       }
 
       List<ChangeSetBean> changeSetList = new LinkedList<>();
       changeSetList.addAll(changeSetBeans);
+      Log.info(">> Number of ChangeSet Beans:" + changeSetBeans.size());
+      Log.info(">> Number in ChangeSet List:" + changeSetList.size());
 
       Ordering<ChangeSetBean> byPriority= new Ordering<ChangeSetBean>() {
          @Override
          public int compare (ChangeSetBean left, ChangeSetBean right) {
-            return left.getPriority() - right.getPriority();
+            return right.getPriority() - left.getPriority();
          }
       };
       // sort by priority
@@ -126,18 +133,25 @@ public class MigrationRunner {
 
          // Now Remove the ones that have already been run:
          Map<String, ChangeSetRecord> allReadyExecutedChangeSetRecords = changesetRecordRepo.getAllReadyExecutedChangeSetRecordMap(Float.parseFloat(targetDatabaseVersion));
+         Log.warn(">> Number of ChangeSet Record Already Run:" + allReadyExecutedChangeSetRecords.size());
+         Log.warn(">> ChangeSet Size:" + changeSetList.size());
          changeSetList.forEach(changeSetBean -> {
             if (allReadyExecutedChangeSetRecords.containsKey(changeSetBean.getName())) {
+               Log.warn(" >> Ignoring Change Set:" + changeSetBean.getName() + " because it has already been executed." );
                changeSetList.remove(changeSetBean);
+            } else {
+               Log.info(">> Should execute:" + changeSetBean.getName());
             }
          });
+         // increment the database number
+         double version = currentDatabaseVersion;
+
 
          for (ChangeSetBean h : changeSetList) {
-
-            Log.warn("--- Executing Change Set:" + h.getName() + " on realm: b2bi" );
-            h.execute("b2bi");
+            Log.warn("--- Executing Change Set:" + h.getName() + " on realm:" + SecurityUtils.defaultRealm );
+            h.execute(SecurityUtils.defaultRealm);
             ChangeSetRecord record = new ChangeSetRecord();
-            record.setRealm("b2bi");
+            record.setRealm(SecurityUtils.defaultRealm);
             record.setRefName(h.getName());
             record.setDataDomain(SecurityUtils.systemDataDomain);
             record.setAuthor(h.getAuthor());
@@ -149,13 +163,11 @@ public class MigrationRunner {
             record.setLastExecutedDate(new Date());
             record.setScope(h.getScope());
             record.setSuccessful(true);
-
             changesetRecordRepo.save(record);
+            version = h.getDbToVersion();
          }
 
-         // increment the database number
-         double version = currentDatabaseVersion;
-         version = version + 0.1d;
+
 
          DatabaseVersion dbVersion = new DatabaseVersion();
          dbVersion.setCurrentVersion((Double.toString(version)));

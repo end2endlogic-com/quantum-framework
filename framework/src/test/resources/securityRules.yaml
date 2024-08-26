@@ -8,7 +8,7 @@
           functionalDomain: '*'
           action: '*'
         body:
-          realm: b2bi
+          realm: system-com
           accountNumber: '*'
           tenantId: '*'
           dataSegment: '*'
@@ -29,7 +29,7 @@
           functionalDomain: '*'
           action: view
         body:
-          realm: b2bi
+          realm: system-com
           accountNumber: '*'
           tenantId: '*'
           dataSegment: '*'
@@ -50,7 +50,7 @@
             functionalDomain: userProfile
             action: view
           body:
-            realm: b2bi
+            realm: system-com
             accountNumber: '*'
             tenantId: '*'
             dataSegment: '*'
@@ -71,7 +71,7 @@
         functionalDomain: contactUs
         action: view
       body:
-        realm: b2bi
+        realm: system-com
         accountNumber: '*'
         tenantId: '*'
         dataSegment: '*'

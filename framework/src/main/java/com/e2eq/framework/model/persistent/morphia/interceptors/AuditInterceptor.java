@@ -2,7 +2,7 @@ package com.e2eq.framework.model.persistent.morphia.interceptors;
 
 import com.e2eq.framework.model.persistent.base.AuditInfo;
 import com.e2eq.framework.model.persistent.base.BaseModel;
-import com.e2eq.framework.model.security.SecurityContext;
+import com.e2eq.framework.model.securityrules.SecurityContext;
 import dev.morphia.Datastore;
 import dev.morphia.EntityListener;
 import jakarta.enterprise.context.ApplicationScoped;

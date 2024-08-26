@@ -21,6 +21,4 @@ public @Data @NoArgsConstructor class  BaseCollection <T> {
    protected List<String> columns = new ArrayList<>();
    protected SortType sortType;
    protected List<T> rows;
-
-
 }

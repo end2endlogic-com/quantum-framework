@@ -1,15 +1,16 @@
 package com.e2eq.framework.persistent;
 
+import com.e2eq.framework.util.SecurityUtils;
 import com.mongodb.client.MongoCursor;
 import dev.morphia.query.FindOptions;
 import dev.morphia.query.Query;
 import dev.morphia.query.filters.Filter;
 import io.quarkus.test.junit.QuarkusTest;
-import com.e2eq.framework.security.model.persistent.models.security.ApplicationRegistration;
-import com.e2eq.framework.security.model.persistent.models.security.UserProfile;
+import com.e2eq.framework.model.persistent.security.ApplicationRegistration;
+import com.e2eq.framework.model.persistent.security.UserProfile;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
 import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
-import com.e2eq.framework.security.model.persistent.morphia.UserProfileRepo;
+import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -35,7 +36,7 @@ public class TestBasicRepo {
 
    @Test
    public void testUserProfileRepo() {
-     Optional<UserProfile> oup =  userProfileRepo.findByRefName("admin@b2bintegrator.com");
+     Optional<UserProfile> oup =  userProfileRepo.findByRefName(SecurityUtils.systemUserId);
      assertTrue(oup.isPresent());
    }
 
@@ -43,7 +44,7 @@ public class TestBasicRepo {
    @Test
    public void testUserProfileFilteredQuery() {
 
-      Filter x = MorphiaUtils.convertToFilter("refName:admin@b2bintegrator.com");
+      Filter x = MorphiaUtils.convertToFilter("refName:" + SecurityUtils.systemUserId);
    /*   Filter f = MorphiaUtils.convertToFilter("userId:Test");
       Filter y = Filters.eq("userId", "Test");
       Filter z = Filters.eq("userId", 100); */
@@ -63,7 +64,7 @@ public class TestBasicRepo {
    // the functionality his covered however in the previous test
    public void testRegistrationFilteredQuery() {
 
-      Filter x = MorphiaUtils.convertToFilter("userId:tuser@test-b2bintegrator.com");
+      Filter x = MorphiaUtils.convertToFilter("userId:tuser@test-system.com");
       Query<ApplicationRegistration> q = dataStore.getDataStore().find(ApplicationRegistration.class);
       MongoCursor<ApplicationRegistration> cursor = q.filter(x).iterator(new FindOptions().skip(0).limit(10));
 

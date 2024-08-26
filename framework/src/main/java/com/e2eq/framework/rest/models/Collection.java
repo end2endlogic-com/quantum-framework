@@ -1,6 +1,5 @@
 package com.e2eq.framework.rest.models;
 
-import com.e2eq.framework.model.persistent.base.UIActionList;
 import dev.morphia.annotations.Transient;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import lombok.Data;

@@ -4,8 +4,8 @@ import com.e2eq.framework.grammar.BIAPIQueryLexer;
 import com.e2eq.framework.grammar.BIAPIQueryParser;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
-import com.e2eq.framework.model.security.PrincipalContext;
-import com.e2eq.framework.model.security.ResourceContext;
+import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.util.TestUtils;
 import dev.morphia.query.filters.Filter;
 import io.quarkus.logging.Log;
@@ -42,7 +42,8 @@ public class TestGrammar {
             lcount++;
             continue;
          }
-         Log.info("Processing query: " + line);
+         if (Log.isDebugEnabled())
+            Log.debug("Processing query: " + line);
 
          BIAPIQueryLexer lexer = new BIAPIQueryLexer(CharStreams.fromString(line));
          BIAPIQueryParser parser = new BIAPIQueryParser(new CommonTokenStream(lexer));
@@ -79,10 +80,10 @@ public class TestGrammar {
                   continue;
                }
 
-               Log.info("Processing query: " + line);
+               Log.debug("Processing query: " + line);
 
                Filter f = MorphiaUtils.convertToFilter(line);
-               Log.info("Filter:" + f.toString());
+               Log.debug("Filter:" + f.toString());
                lcount++;
             }
          }
@@ -91,9 +92,9 @@ public class TestGrammar {
    @Test
    public void testIndividualString() {
       String testString = "field:1&&field2:2";
-      Log.info("Testing String:" + testString);
+      Log.debug("Testing String:" + testString);
       Filter f = MorphiaUtils.convertToFilter(testString);
-      Log.info("Filter:" + f.toString());
+      Log.debug("Filter:" + f.toString());
    }
 
 
@@ -123,12 +124,12 @@ public class TestGrammar {
 
       String queryString = "field1:${action}";
       Filter f = MorphiaUtils.convertToFilterWContext(queryString, pcontext, rcontext);
-      Log.info("Value:" + f.getValue());
+      Log.debugf("Value:%s" , f.getValue());
       assertEquals("action", f.getValue());
 
       queryString = "field1:^[testval1,${action}]";
       f = MorphiaUtils.convertToFilterWContext(queryString, pcontext, rcontext);
-      Log.info("Value:" + f.getValue());
+      Log.debugf("Value:%s" + f.getValue());
       assertEquals("[testval1, action]", f.getValue().toString());
 
    }

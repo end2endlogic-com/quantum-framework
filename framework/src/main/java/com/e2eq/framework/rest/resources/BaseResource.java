@@ -2,8 +2,8 @@ package com.e2eq.framework.rest.resources;
 
 import com.e2eq.framework.model.persistent.base.BaseModel;
 import com.e2eq.framework.model.persistent.morphia.BaseRepo;
-import com.e2eq.framework.model.security.SecurityCheckException;
-import com.e2eq.framework.model.security.rules.RuleContext;
+import com.e2eq.framework.model.securityrules.SecurityCheckException;
+import com.e2eq.framework.model.securityrules.RuleContext;
 import com.e2eq.framework.rest.models.Collection;
 import com.e2eq.framework.rest.models.RestError;
 import com.e2eq.framework.util.JSONUtils;

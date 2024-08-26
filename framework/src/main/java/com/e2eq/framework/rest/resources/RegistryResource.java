@@ -4,10 +4,11 @@ package com.e2eq.framework.rest.resources;
 import com.e2eq.framework.exceptions.E2eqValidationException;
 import com.e2eq.framework.model.persistent.morphia.BaseRepo;
 import com.e2eq.framework.rest.filters.PermissionCheck;
-import com.e2eq.framework.security.model.persistent.models.security.ApplicationRegistration;
-import com.e2eq.framework.security.model.persistent.morphia.ApplicationRegistrationRequestRepo;
+import com.e2eq.framework.model.persistent.security.ApplicationRegistration;
+import com.e2eq.framework.model.persistent.morphia.ApplicationRegistrationRequestRepo;
 
 
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
@@ -17,6 +18,7 @@ import jakarta.ws.rs.core.Response;
 import java.util.Optional;
 
 @Path("/onboarding/registrationRequest")
+@RolesAllowed({ "user", "admin" })
 public class RegistryResource extends BaseResource<ApplicationRegistration, BaseRepo<ApplicationRegistration>> {
 
    public RegistryResource (ApplicationRegistrationRequestRepo repo ) {

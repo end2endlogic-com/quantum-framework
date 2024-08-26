@@ -1,9 +1,9 @@
 package com.e2eq.framework.util;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
-import com.e2eq.framework.security.model.persistent.models.security.Rule;
-import com.e2eq.framework.model.security.rules.RuleContext;
-import com.e2eq.framework.model.security.*;
+import com.e2eq.framework.model.persistent.security.Rule;
+import com.e2eq.framework.model.securityrules.RuleContext;
+import com.e2eq.framework.model.securityrules.*;
 
 
 public class TestUtils {
@@ -11,8 +11,8 @@ public class TestUtils {
    public static final String orgRefName = SecurityUtils.systemOrgRefName;
    public static final String tenantId = SecurityUtils.systemTenantId;
    public static final String defaultRealm = SecurityUtils.systemRealm;
-   public static final String userId = "admin@b2bintegrator.com";
-   public static final String email = "admin@b2bintegrator.com";
+   public static final String userId = SecurityUtils.systemUserId;
+   public static final String email = SecurityUtils.systemUserId;
    public static final String area = "security";
    public static final String name = "Michael Ingardia";
    public static final DataDomain dataDomain = new DataDomain(orgRefName, accountNumber, tenantId, 0, userId);

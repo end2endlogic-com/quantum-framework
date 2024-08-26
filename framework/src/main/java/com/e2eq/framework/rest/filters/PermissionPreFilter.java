@@ -1,10 +1,10 @@
 package com.e2eq.framework.rest.filters;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
-import com.e2eq.framework.model.security.PrincipalContext;
-import com.e2eq.framework.model.security.ResourceContext;
-import com.e2eq.framework.model.security.SecurityContext;
-import com.e2eq.framework.model.security.rules.RuleContext;
+import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.ResourceContext;
+import com.e2eq.framework.model.securityrules.SecurityContext;
+import com.e2eq.framework.model.securityrules.RuleContext;
 import io.smallrye.jwt.auth.principal.JWTParser;
 import io.smallrye.jwt.auth.principal.ParseException;
 import jakarta.validation.constraints.NotNull;
@@ -15,7 +15,6 @@ import jakarta.ws.rs.container.ContainerResponseFilter;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.jwt.JsonWebToken;
-import org.jboss.resteasy.reactive.server.jaxrs.ContainerRequestContextImpl;
 
 import java.io.IOException;
 //TODO refactor this to utilize url vs. annotation and look to add pcontext with out a permission annotation

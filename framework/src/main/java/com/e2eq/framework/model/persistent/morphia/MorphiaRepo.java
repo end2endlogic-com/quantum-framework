@@ -2,12 +2,14 @@ package com.e2eq.framework.model.persistent.morphia;
 
 import com.e2eq.framework.model.persistent.base.BaseModel;
 import com.e2eq.framework.model.persistent.base.DataDomain;
-import com.e2eq.framework.model.persistent.base.UIAction;
-import com.e2eq.framework.model.persistent.base.UIActionList;
-import com.e2eq.framework.model.security.rules.RuleContext;
+import com.e2eq.framework.model.persistent.base.DynamicSearchRequest;
+import com.e2eq.framework.model.persistent.base.SortField;
+import com.e2eq.framework.rest.models.UIAction;
+import com.e2eq.framework.rest.models.UIActionList;
+import com.e2eq.framework.model.securityrules.RuleContext;
 import com.e2eq.framework.rest.models.Collection;
-import com.e2eq.framework.security.model.persistent.models.security.FunctionalDomain;
-import com.e2eq.framework.model.security.*;
+import com.e2eq.framework.model.persistent.security.FunctionalDomain;
+import com.e2eq.framework.model.securityrules.*;
 import com.fasterxml.jackson.module.jsonSchema.JsonSchema;
 import com.google.common.reflect.TypeToken;
 import com.mongodb.client.result.DeleteResult;
@@ -73,28 +75,7 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseRepo<T> {
         return (Class<T>) paramClazz.getRawType();
    }
 
-   public MorphiaSession startSession(String realm) {
-      return dataStore.getDataStore(realm).startSession();
-   }
 
-   public T save(MorphiaSession session, T value) {
-      return session.save(value);
-   }
-
-   @Override
-   public T save( T value) {
-      //ruleContext.check(SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get());
-      return this.save(getDefaultRealmId(), value);
-   }
-
-   @Override
-   public T save(String realmId, T value) {
-      if (realmId == null || realmId.isEmpty()) {
-         throw new IllegalArgumentException("Realm can not be empty or null");
-      }
-
-      return dataStore.getDataStore(realmId).save(value);
-   }
 
    protected List<String> getDefaultUIActionsFromFD(@NotNull String fdRefName){
 
@@ -321,6 +302,33 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseRepo<T> {
       return list;
    }
 
+   // Update / Write based api/s
+   // TODO consider breaking this apart into to seperate classes and injecting them seperately so you can
+   // have different implementations for read vs. write.
+
+   public MorphiaSession startSession(String realm) {
+      return dataStore.getDataStore(realm).startSession();
+   }
+
+   public T save(MorphiaSession session, T value) {
+      return session.save(value);
+   }
+
+   @Override
+   public T save( T value) {
+      //ruleContext.check(SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get());
+      return this.save(getDefaultRealmId(), value);
+   }
+
+   @Override
+   public T save(String realmId, T value) {
+      if (realmId == null || realmId.isEmpty()) {
+         throw new IllegalArgumentException("Realm can not be empty or null");
+      }
+
+      return dataStore.getDataStore(realmId).save(value);
+   }
+
    @Override
    public long delete (T obj) {
        DeleteResult result = dataStore.getDataStore(getDefaultRealmId()).delete(obj);
@@ -446,5 +454,10 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseRepo<T> {
 
 
       return collection;
+   }
+
+   @Override
+   public long getCount(DynamicSearchRequest searchRequest) {
+      return 0;
    }
 }

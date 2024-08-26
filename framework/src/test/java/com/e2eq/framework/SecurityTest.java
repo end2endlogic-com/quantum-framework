@@ -2,11 +2,12 @@ package com.e2eq.framework;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.rest.models.RegistrationRequest;
-import com.e2eq.framework.security.model.persistent.morphia.CredentialRepo;
-import com.e2eq.framework.security.model.persistent.morphia.UserProfileRepo;
-import com.e2eq.framework.model.security.PrincipalContext;
-import com.e2eq.framework.model.security.ResourceContext;
-import com.e2eq.framework.model.security.rules.RuleContext;
+import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
+import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
+import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.ResourceContext;
+import com.e2eq.framework.model.securityrules.RuleContext;
+import com.e2eq.framework.util.SecurityUtils;
 import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.module.paramnames.ParameterNamesModule;
@@ -14,13 +15,13 @@ import io.quarkus.logging.Log;
 import io.restassured.response.Response;
 import io.smallrye.common.constraint.Assert;
 import com.e2eq.framework.rest.models.AuthRequest;
-import com.e2eq.framework.security.model.persistent.models.security.ApplicationRegistration;
+import com.e2eq.framework.model.persistent.security.ApplicationRegistration;
 
-import com.e2eq.framework.security.model.persistent.models.security.CredentialUserIdPassword;
-import com.e2eq.framework.security.model.persistent.models.security.UserProfile;
+import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
+import com.e2eq.framework.model.persistent.security.UserProfile;
 import com.e2eq.framework.util.EncryptionUtils;
 
-import com.e2eq.framework.model.security.SecuritySession;
+import com.e2eq.framework.model.securityrules.SecuritySession;
 import com.e2eq.framework.util.TestUtils;
 import org.junit.jupiter.api.Test;
 
@@ -197,9 +198,9 @@ public class SecurityTest {
     @Test
     public void testLoginAPI() throws JsonProcessingException {
         AuthRequest request = new AuthRequest();
-        request.setUserId("admin@b2bintegrator.com");
+        request.setUserId(SecurityUtils.systemUserId);
         request.setPassword("test123456");
-        request.setTenantId("b2bintegrator.com");
+        request.setTenantId(SecurityUtils.systemTenantId);
 
         ObjectMapper mapper = new ObjectMapper();
         String value = mapper.writeValueAsString(request);
