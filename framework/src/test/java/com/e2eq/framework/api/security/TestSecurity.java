@@ -3,13 +3,13 @@ package com.e2eq.framework.api.security;
 //import com.fasterxml.jackson.databind.ObjectMapper;
 //import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 
-import com.e2eq.framework.model.security.rules.RuleContext;
-import com.e2eq.framework.security.model.persistent.models.security.Rule;
+import com.e2eq.framework.model.securityrules.RuleContext;
+import com.e2eq.framework.model.persistent.security.Rule;
 import com.e2eq.framework.util.IOCase;
 import com.e2eq.framework.util.SecurityUtils;
 import com.e2eq.framework.util.TestUtils;
 import com.e2eq.framework.util.WildCardMatcher;
-import com.e2eq.framework.model.security.*;
+import com.e2eq.framework.model.securityrules.*;
 import io.quarkus.logging.Log;
 import io.quarkus.test.junit.QuarkusTest;
 import org.graalvm.polyglot.Context;
@@ -117,7 +117,7 @@ public class TestSecurity {
       String[] roles = new String[]{"user", "admin"};
 
       PrincipalContext pcontext = new PrincipalContext.Builder()
-         .withDefaultRealm("b2bintegrator-com")
+         .withDefaultRealm(SecurityUtils.defaultRealm)
          .withUserId(TestUtils.userId)
          .withRoles(roles)
          .withDataDomain(TestUtils.dataDomain)
@@ -202,9 +202,9 @@ public class TestSecurity {
       SecurityCheckResponse rc = ruleContext.check(pcontext, rcontext);
 
       if (rc.getFinalEffect() == RuleEffect.ALLOW) {
-         Log.info("Allowed");
+         Log.debug("Allowed");
       } else {
-         Log.info("Denied");
+         Log.debug("Denied");
       }
 
       assertTrue(rc.getFinalEffect() == RuleEffect.ALLOW);

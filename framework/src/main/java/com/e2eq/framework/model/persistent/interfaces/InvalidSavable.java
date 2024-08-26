@@ -1,6 +1,6 @@
 package com.e2eq.framework.model.persistent.interfaces;
 
-import com.e2eq.framework.model.persistent.base.ValidationViolation;
+import com.e2eq.framework.model.general.ValidationViolation;
 
 import java.util.Set;
 

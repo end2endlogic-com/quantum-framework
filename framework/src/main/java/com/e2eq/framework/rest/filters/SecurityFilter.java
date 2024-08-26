@@ -2,14 +2,14 @@ package com.e2eq.framework.rest.filters;
 
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
-import com.e2eq.framework.model.security.PrincipalContext;
-import com.e2eq.framework.model.security.ResourceContext;
-import com.e2eq.framework.model.security.SecurityContext;
-import com.e2eq.framework.model.security.rules.RuleContext;
-import com.e2eq.framework.security.model.persistent.models.security.CredentialUserIdPassword;
-import com.e2eq.framework.security.model.persistent.models.security.Realm;
-import com.e2eq.framework.security.model.persistent.morphia.CredentialRepo;
-import com.e2eq.framework.security.model.persistent.morphia.RealmRepo;
+import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.ResourceContext;
+import com.e2eq.framework.model.securityrules.SecurityContext;
+import com.e2eq.framework.model.securityrules.RuleContext;
+import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
+import com.e2eq.framework.model.persistent.security.Realm;
+import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
+import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import com.e2eq.framework.util.SecurityUtils;
 import io.quarkus.logging.Log;
 import io.smallrye.jwt.auth.principal.JWTParser;

@@ -2,13 +2,19 @@ package com.e2eq.framework.model.persistent.morphia;
 
 import com.e2eq.framework.grammar .BIAPIQueryLexer;
 import com.e2eq.framework.grammar.BIAPIQueryParser;
-import com.e2eq.framework.model.security.PrincipalContext;
-import com.e2eq.framework.model.security.ResourceContext;
+import com.e2eq.framework.model.persistent.base.*;
+import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.ResourceContext;
+import dev.morphia.query.Query;
+import dev.morphia.query.QueryFactory;
 import dev.morphia.query.Sort;
 import dev.morphia.query.filters.Filter;
+import dev.morphia.query.filters.Filters;
+import dev.morphia.query.filters.RegexFilter;
 import org.antlr.v4.runtime.*;
 import org.antlr.v4.runtime.tree.ParseTree;
 import org.antlr.v4.runtime.tree.ParseTreeWalker;
+import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.text.StringSubstitutor;
 import org.jetbrains.annotations.NotNull;
 
@@ -94,10 +100,10 @@ public class MorphiaUtils {
          BIAPIQueryParser parser = new BIAPIQueryParser(new CommonTokenStream(lexer));
          parser.addErrorListener(new BaseErrorListener() {
             @Override
-            public void syntaxError (Recognizer<?, ?> recognizer, Object offendingSymbol, int line,
-                                     int charPositionInLine, String msg, RecognitionException e) {
+            public void syntaxError(Recognizer<?, ?> recognizer, Object offendingSymbol, int line,
+                                    int charPositionInLine, String msg, RecognitionException e) {
                throw new IllegalArgumentException("Failed to parse " + queryString + " at position "
-                                                     + charPositionInLine + " due to " + msg, e);
+                       + charPositionInLine + " due to " + msg, e);
             }
          });
          ParseTree tree = parser.query();
@@ -110,24 +116,23 @@ public class MorphiaUtils {
          }
          walker.walk(listener, tree);
          return listener.getFilter();
-      }
-      else {
+      } else {
          throw new IllegalArgumentException("Null or empty query string is not valid");
       }
    }
 
 
-   public static Filter convertToFilterWContext(String queryString, PrincipalContext pcontext,  ResourceContext rcontext) {
+   public static Filter convertToFilterWContext(String queryString, PrincipalContext pcontext, ResourceContext rcontext) {
 
       if (queryString != null && !queryString.isEmpty()) {
          BIAPIQueryLexer lexer = new BIAPIQueryLexer(CharStreams.fromString(queryString));
          BIAPIQueryParser parser = new BIAPIQueryParser(new CommonTokenStream(lexer));
          parser.addErrorListener(new BaseErrorListener() {
             @Override
-            public void syntaxError (Recognizer<?, ?> recognizer, Object offendingSymbol, int line,
-                                     int charPositionInLine, String msg, RecognitionException e) {
+            public void syntaxError(Recognizer<?, ?> recognizer, Object offendingSymbol, int line,
+                                    int charPositionInLine, String msg, RecognitionException e) {
                throw new IllegalArgumentException("syntax error in query string: Failed to parse " + queryString + " at position "
-                                                     + charPositionInLine + " due to " + msg, e);
+                       + charPositionInLine + " due to " + msg, e);
             }
          });
          ParseTree tree = parser.query();
@@ -141,10 +146,47 @@ public class MorphiaUtils {
          }
          walker.walk(listener, tree);
          return listener.getFilter();
-      }
-      else {
+      } else {
          throw new IllegalArgumentException("Null or empty query string is not valid");
       }
 
+   }
+
+   public Filter buildDynamicSearchQuery(Class<?> clazz, DynamicSearchRequest searchRequest) {
+      List<Filter> filters = new ArrayList<>();
+
+      DynamicAttributeSet systemFields = searchRequest.getSystemFields();
+      if (systemFields != null && systemFields.getAttributes() != null) {
+         // Add system fields to the query
+      }
+
+      DynamicAttributeSet attributeSet = searchRequest.getSearchFields();
+      Filter finalFilter;
+      for (DynamicAttribute attribute : attributeSet.getAttributes().values()) {
+         Filter f;
+         if (!searchRequest.isExactMatches() || attribute.getType().equals(DynamicAttributeType.Regex)) {
+            RegexFilter rf = Filters.regex(attribute.getName(), attribute.getValue().toString());
+            if (searchRequest.isCaseInsensitive()) {
+               f = rf.caseInsensitive();
+            } else {
+               f = rf;
+            }
+            filters.add(f);
+         } else if (!searchRequest.isExactMatches() ||
+                 attribute.getType().equals(DynamicAttributeType.Exclude)) {
+            f = Filters.regex(attribute.getName(), attribute.getValue().toString()).not();
+            filters.add(f);
+         }
+      }
+
+      if (searchRequest.getSearchCondition() == SearchCondition.AND) {
+         finalFilter = Filters.and(filters.toArray(new Filter[filters.size()]));
+      } else if (searchRequest.getSearchCondition() == SearchCondition.OR) {
+         finalFilter = Filters.or(filters.toArray(new Filter[filters.size()]));
+      } else {
+         throw new NotImplementedException("Unsupported search condition: " + searchRequest.getSearchCondition());
+      }
+
+      return finalFilter;
    }
 }

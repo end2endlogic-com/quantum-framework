@@ -2,17 +2,17 @@ package com.e2eq.framework.rest.resources;
 
 
 import com.e2eq.framework.rest.models.Role;
-import com.e2eq.framework.model.security.SecurityCheckException;
+import com.e2eq.framework.model.securityrules.SecurityCheckException;
 import com.e2eq.framework.rest.models.AuthRequest;
 import com.e2eq.framework.rest.models.AuthResponse;
 import com.e2eq.framework.rest.models.RegistrationRequest;
 import com.e2eq.framework.rest.models.RestError;
-import com.e2eq.framework.security.model.persistent.models.security.ApplicationRegistration;
-import com.e2eq.framework.security.model.persistent.models.security.CredentialUserIdPassword;
-import com.e2eq.framework.security.model.persistent.models.security.UserProfile;
-import com.e2eq.framework.security.model.persistent.morphia.ApplicationRegistrationRequestRepo;
-import com.e2eq.framework.security.model.persistent.morphia.CredentialRepo;
-import com.e2eq.framework.security.model.persistent.morphia.UserProfileRepo;
+import com.e2eq.framework.model.persistent.security.ApplicationRegistration;
+import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
+import com.e2eq.framework.model.persistent.security.UserProfile;
+import com.e2eq.framework.model.persistent.morphia.ApplicationRegistrationRequestRepo;
+import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
+import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import com.e2eq.framework.util.EncryptionUtils;
 import com.e2eq.framework.util.TokenUtils;
 import com.e2eq.framework.util.ValidateUtils;
@@ -348,7 +348,7 @@ public class SecurityResource {
         if (Log.isInfoEnabled())
             Log.info("-Logout-");
 
-        com.e2eq.framework.model.security.SecurityContext.clear();
+        com.e2eq.framework.model.securityrules.SecurityContext.clear();
         return Response.ok().build();
     }
 

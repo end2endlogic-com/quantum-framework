@@ -2,9 +2,9 @@ package com.e2eq.framework.rest.resources;
 
 import com.e2eq.framework.model.persistent.base.Counter;
 import com.e2eq.framework.model.persistent.base.DataDomain;
-import com.e2eq.framework.model.security.SecurityContext;
+import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.rest.models.RestError;
-import com.e2eq.framework.security.model.persistent.morphia.CounterRepo;
+import com.e2eq.framework.model.persistent.morphia.CounterRepo;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;

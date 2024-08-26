@@ -24,6 +24,7 @@ public @Data class Counter extends BaseModel {
    long currentValue;
 
 
+
    @Override
    public String bmFunctionalArea() {
       return "APP";

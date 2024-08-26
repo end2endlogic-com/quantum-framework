@@ -2,8 +2,8 @@ package com.e2eq.framework.rest.resources;
 
 import com.e2eq.framework.rest.models.ChangePasswordRequest;
 import com.e2eq.framework.rest.models.RestError;
-import com.e2eq.framework.security.model.persistent.models.security.CredentialUserIdPassword;
-import com.e2eq.framework.security.model.persistent.morphia.CredentialRepo;
+import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
+import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.util.EncryptionUtils;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.Consumes;
@@ -15,6 +15,7 @@ import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.SecurityContext;
 
 @Path("/user/credentials")
+@RolesAllowed({ "user", "admin" })
 public class CredentialsResource extends BaseResource<CredentialUserIdPassword, CredentialRepo> {
 
     CredentialsResource (CredentialRepo repo ) {

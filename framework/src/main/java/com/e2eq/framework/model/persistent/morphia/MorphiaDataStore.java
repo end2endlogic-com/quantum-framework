@@ -5,6 +5,7 @@ import com.e2eq.framework.model.persistent.morphia.interceptors.AuditInterceptor
 import com.e2eq.framework.model.persistent.morphia.interceptors.PermissionRuleInterceptor;
 import com.e2eq.framework.model.persistent.morphia.interceptors.ValidationInterceptor;
 import com.e2eq.framework.util.ClassScanner;
+import com.e2eq.framework.util.SecurityUtils;
 import com.mongodb.client.MongoClient;
 import dev.morphia.Datastore;
 import dev.morphia.Morphia;
@@ -52,7 +53,7 @@ public class MorphiaDataStore {
 
       if (!ENABLE_ONE_DB_PER_TENANT) {
          // one realm per tenant implies we just use a single realm for all tenants
-         realm = "b2bintegrator-com";
+         realm = SecurityUtils.systemRealm;
       }
 
 

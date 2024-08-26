@@ -1,16 +1,17 @@
 package com.e2eq.framework.api.security;
 
-import com.e2eq.framework.model.security.PrincipalContext;
-import com.e2eq.framework.model.security.ResourceContext;
-import com.e2eq.framework.model.security.SecurityCheckException;
-import com.e2eq.framework.model.security.SecuritySession;
-import com.e2eq.framework.model.security.rules.RuleContext;
-import com.e2eq.framework.security.model.persistent.models.security.ApplicationRegistration;
-import com.e2eq.framework.security.model.persistent.models.security.CredentialUserIdPassword;
-import com.e2eq.framework.security.model.persistent.models.security.UserProfile;
-import com.e2eq.framework.security.model.persistent.morphia.ApplicationRegistrationRequestRepo;
-import com.e2eq.framework.security.model.persistent.morphia.CredentialRepo;
-import com.e2eq.framework.security.model.persistent.morphia.UserProfileRepo;
+import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.ResourceContext;
+import com.e2eq.framework.model.securityrules.SecurityCheckException;
+import com.e2eq.framework.model.securityrules.SecuritySession;
+import com.e2eq.framework.model.securityrules.RuleContext;
+import com.e2eq.framework.model.persistent.security.ApplicationRegistration;
+import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
+import com.e2eq.framework.model.persistent.security.UserProfile;
+import com.e2eq.framework.model.persistent.morphia.ApplicationRegistrationRequestRepo;
+import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
+import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
+import com.e2eq.framework.util.SecurityUtils;
 import com.e2eq.framework.util.TestUtils;
 import io.quarkus.logging.Log;
 import io.quarkus.test.junit.QuarkusTest;
@@ -45,7 +46,7 @@ public class TestUserProfile  {
         PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.userId, roles);
         ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "save");
         try(final SecuritySession ignored = new SecuritySession(pContext, rContext)) {
-            Optional<CredentialUserIdPassword> opCreds = credentialRepo.findByUserId("admin@b2bintegrator.com");
+            Optional<CredentialUserIdPassword> opCreds = credentialRepo.findByUserId(SecurityUtils.systemUserId);
             if (opCreds.isPresent()) {
                 Log.debug("Found it");
             } else {
@@ -58,7 +59,7 @@ public class TestUserProfile  {
     }
 
     @Test void testCredentialsNoSecuritySession() {
-        Optional<CredentialUserIdPassword> opCreds = credentialRepo.findByUserId("admin@b2bintegrator.com");
+        Optional<CredentialUserIdPassword> opCreds = credentialRepo.findByUserId(SecurityUtils.systemUserId);
         if (opCreds.isPresent()) {
             Log.debug("Found it");
         } else {
@@ -165,7 +166,7 @@ public class TestUserProfile  {
   // need to introduce the not ion of a profile and this test should only be executed under that profile.
     public void testRegistrationApproval() throws Exception {
         String[] roles = {"admin"};
-        PrincipalContext pContext = TestUtils.getPrincipalContext("admin@b2bintegrator.com", roles);
+        PrincipalContext pContext = TestUtils.getPrincipalContext(SecurityUtils.systemUserId, roles);
         ResourceContext rContext = TestUtils.getResourceContext("onboarding", "registration", "update");
         TestUtils.initRules(ruleContext, "onboarding", "registration", "admin@b2bintegrator.com");
 

@@ -4,8 +4,8 @@ package com.e2eq.framework.rest.resources;
 import com.e2eq.framework.model.persistent.morphia.BaseRepo;
 import com.e2eq.framework.rest.filters.PermissionCheck;
 import com.e2eq.framework.rest.models.RestError;
-import com.e2eq.framework.security.model.persistent.models.security.Realm;
-import com.e2eq.framework.security.model.persistent.morphia.RealmRepo;
+import com.e2eq.framework.model.persistent.security.Realm;
+import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.Response;
@@ -14,6 +14,7 @@ import java.util.Optional;
 
 
 @Path("/security/realm")
+@RolesAllowed({ "admin" })
 public class RealmResource extends BaseResource<Realm, BaseRepo<Realm>> {
    protected RealmResource (RealmRepo repo) {
       super(repo);
