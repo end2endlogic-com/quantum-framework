@@ -34,6 +34,7 @@ public interface BaseRepo<T extends BaseModel> {
    // Write based API's
    public T save(T value);
    public T save(String realm, T value);
+   public List<T> save(List<T> entities);
    public long delete(T obj);
    public long update (@NotNull String id, @NotNull Pair<String, Object>... pairs);
    public long update (@NotNull ObjectId id, @NotNull Pair<String, Object>... pairs);

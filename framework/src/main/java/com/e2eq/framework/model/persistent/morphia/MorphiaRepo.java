@@ -13,6 +13,7 @@ import com.e2eq.framework.model.securityrules.*;
 import com.fasterxml.jackson.module.jsonSchema.JsonSchema;
 import com.google.common.reflect.TypeToken;
 import com.mongodb.client.result.DeleteResult;
+import com.mongodb.client.result.InsertManyResult;
 import dev.morphia.query.FindOptions;
 import dev.morphia.query.MorphiaCursor;
 import dev.morphia.query.Query;
@@ -320,6 +321,12 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseRepo<T> {
       return this.save(getDefaultRealmId(), value);
    }
 
+
+   @Override
+   public List<T> save(List<T> entities) {
+      return dataStore.getDataStore().save(entities);
+   }
+
    @Override
    public T save(String realmId, T value) {
       if (realmId == null || realmId.isEmpty()) {
@@ -460,4 +467,6 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseRepo<T> {
    public long getCount(DynamicSearchRequest searchRequest) {
       return 0;
    }
+
+
 }
