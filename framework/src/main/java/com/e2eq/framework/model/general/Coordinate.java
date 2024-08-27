@@ -10,5 +10,7 @@ import lombok.ToString;
 @ToString
 public @Data class Coordinate {
     private double[] position = new double[2];
-    protected boolean exact;
+    protected boolean exact= true;
+    protected Double latitude;
+    protected Double longitude;
 }
