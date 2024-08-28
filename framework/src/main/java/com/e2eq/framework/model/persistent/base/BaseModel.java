@@ -77,7 +77,8 @@ public abstract @Data @NoArgsConstructor class BaseModel {
     /**
      The set of tags associated with this record.  A tag can be used for billing purposes, searching purposes or other purposes.
      */
-    protected Set<Tag> tags = new HashSet<>();
+    protected String[] tags;
+    protected Set<Tag> advancedTags = new HashSet<>();
 
     protected AuditInfo auditInfo = new AuditInfo();
 
