@@ -9,7 +9,9 @@ import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import dev.morphia.annotations.*;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
@@ -48,6 +50,8 @@ public abstract @Data @NoArgsConstructor class BaseModel {
      */
     @JsonProperty(required = true)
     @NotNull
+    @NotEmpty
+    @Size(min=3)
     @NonNull
     protected String refName;
 
@@ -56,6 +60,8 @@ public abstract @Data @NoArgsConstructor class BaseModel {
      */
     @NotNull
     @NonNull
+    @NotEmpty
+    @Size(min=3)
     protected String displayName;
 
     /**
