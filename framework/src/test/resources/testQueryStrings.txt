@@ -108,18 +108,18 @@ field:". ^ $ % + - ? ( ) [ ] { } \ |"
 field:"abcdefghijklmnopqrstuvwxyz1234567890!@#$^&()`~%-_=+[{]}\|;:'""*,<.>/?"
 
 # Test wild cards
-(field:1&&field1.blah:4)&&((field:1&&field:2)&&field2:%blah)
-(field:1&&field1.blah:4)&&((field:1&&field:2)&&field2:%bla'h)
-(field:1&&field1.blah:4)&&((field:1&&field:2)&&field2:%blah w/ cream)
-(field:1&&field1.blah:4)&&((field:1&&field:2)&&field2:%blah blah%)
-(field:null&&field:%x%)||(field:1&&field1.blah:4)&&(field:1&&field:2)
-(field:null&&field:%x%)&&(field:1&&field1.blah:4)&&(field:1&&field:#2)
-((field:dfefe%&&field:2)||(field:1&&field1.blah:4))&&(field:1&&field:2)
-field:". ^ $ * + %- % ( ) [ ] { } \ |"
-field:"%. ^ $ * + - % ( ) [ ] { } \ |"
-field:". ^ $ * + - % ( ) [ ] { } \ |"
-field:%__edfs&&field2:^[value1,value2,value3]
-field:"%15"" LAPTOP SLEEVE-Black Twill%"
+(field:1&&field1.blah:4)&&((field:1&&field:2)&&field2:*blah)
+(field:1&&field1.blah:4)&&((field:1&&field:2)&&field2:*bla'h)
+(field:1&&field1.blah:4)&&((field:1&&field:2)&&field2:*blah w/ cream)
+(field:1&&field1.blah:4)&&((field:1&&field:2)&&field2:*blah blah*)
+(field:null&&field:*x*)||(field:1&&field1.blah:4)&&(field:1&&field:2)
+(field:null&&field:*x*)&&(field:1&&field1.blah:4)&&(field:1&&field:#2)
+((field:dfefe*&&field:2)||(field:1&&field1.blah:4))&&(field:1&&field:2)
+field:". ^ $ * + *- * ( ) [ ] { } \ |"
+field:"*. ^ $ * + - * ( ) [ ] { } \ |"
+field:". ^ $ * + - * ( ) [ ] { } \ |"
+field:*__edfs&&field2:^[value1,value2,value3]
+field:"*15"" LAPTOP SLEEVE-Black Twill*"
 
 # --DATEs
 #((field:dfefe%&&field:2)||(field:1&&field1.blah:4))&&(field:1&&field:2015-04-04)

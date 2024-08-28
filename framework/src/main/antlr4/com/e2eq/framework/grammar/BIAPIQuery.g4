@@ -18,12 +18,16 @@ basicExpr: field=STRING op=(EQ|NEQ|LT|GT|LTE|GTE|EXISTS|IN) value=(STRING|VARIAB
 notExpr: NOT allowedExpr;
 
 regex: ((leftW=WILDCARD value=STRING rightW=WILDCARD)
+| (leftw=WILDCARD value=QUOTED_STRING rightW=WILDCARD)
 | (leftW=WILDCARD value=STRING)
-| (value=STRING rightW=WILDCARD));
+| (leftW=WILDCARD value=QUOTED_STRING)
+| (value=STRING rightW=WILDCARD)
+| (value=QUOTED_STRING rightW=WILDCARD));
 
 regexExpr: field=STRING op=(EQ | NEQ) regex;
 
 nullExpr: field=STRING op=(EQ | NEQ) value=NULL;
+
 
 // Operators
 EQ: ':';
@@ -35,6 +39,7 @@ GTE: ':>=';
 EXISTS: ':~';
 IN: ':^';
 NULL: 'null';
+COLIN: '::';
 
 // Logical
 AND: '&&';
@@ -52,8 +57,8 @@ RBRKT :']';
 LBRKT :'[';
 
 // Special Values
-//WILDCARD: '*';
-WILDCARD: '%';
+WILDCARD: '*';
+//WILDCARD: '%';
 WILDCHAR:'?';
 VAR:'$';
 

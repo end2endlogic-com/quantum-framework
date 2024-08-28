@@ -80,10 +80,10 @@ public class TestGrammar {
                   continue;
                }
 
-               Log.debug("Processing query: " + line);
+               Log.info("Processing query: " + line);
 
                Filter f = MorphiaUtils.convertToFilter(line);
-               Log.debug("Filter:" + f.toString());
+               Log.info("Filter:" + f.toString());
                lcount++;
             }
          }
@@ -91,10 +91,10 @@ public class TestGrammar {
    }
    @Test
    public void testIndividualString() {
-      String testString = "field:1&&field2:2";
-      Log.debug("Testing String:" + testString);
+      String testString = "field:\"test:123\"*";
+      Log.info("Testing String:" + testString);
       Filter f = MorphiaUtils.convertToFilter(testString);
-      Log.debug("Filter:" + f.toString());
+      Log.info("Filter:" + f.toString());
    }
 
 

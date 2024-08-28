@@ -83,10 +83,10 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         String pattern = ctx.regex().value.getText();
 
        String escapedValue = escapeRegexChars(ctx.regex().value.getText());
-        String regex = (ctx.regex().leftW==null?"^":"")
-                + escapedValue + (ctx.regex().rightW==null?"$":"");
+        String regex = (ctx.regex().leftW==null?"^":".*")
+                + escapedValue + (ctx.regex().rightW==null?"$":".*");
         if (ctx.op.getType() == BIAPIQueryParser.EQ) {
-            Filter regexFilter = Filters.regex(field, pattern);
+            Filter regexFilter = Filters.regex(field, regex);
             filterStack.push(regexFilter);
 
         } else if (ctx.op.getType() == BIAPIQueryParser.NEQ) {
