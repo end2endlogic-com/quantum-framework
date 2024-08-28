@@ -1,7 +1,7 @@
 package com.e2eq.framework.util;
 
 import com.e2eq.framework.annotations.ValidMailingAddress;
-import com.e2eq.framework.model.general.MailingAddress;
+import com.e2eq.framework.model.persistent.base.MailingAddress;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
 import org.apache.commons.lang3.StringUtils;
