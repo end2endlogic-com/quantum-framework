@@ -17,9 +17,13 @@ public class ResourceContext {
 
    public static ResourceContext DEFAULT_ANONYMOUS_CONTEXT = new ResourceContext("NONE", "NONE", "NONE", "NONE", null);
 
-   ResourceContext(@NotNull String realm,  @NotNull String area,
-                   @NotNull String functionalDomain, @NotNull String action,
+   ResourceContext(@NotNull(message="realmId can not be null") String realm,
+                   @NotNull(message="area can not be null") String area,
+                   @NotNull(message="functional domain can not be null") String functionalDomain,
+                   @NotNull(message="action can not be null") String action,
                    String resourceId) {
+
+
       this.realm = realm;
       this.area = area;
       this.functionalDomain = functionalDomain;
