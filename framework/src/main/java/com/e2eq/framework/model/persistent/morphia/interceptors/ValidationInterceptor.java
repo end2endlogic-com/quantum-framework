@@ -49,6 +49,9 @@ public class ValidationInterceptor implements EntityListener<Object> {
          if (SecurityContext.getPrincipalContext().isPresent()) {
             if (bm.getDataDomain() == null) {
                DataDomain dd = SecurityContext.getPrincipalDataDomain().get();
+               if (dd == null) {
+                  throw new IllegalArgumentException(("Principal context not providing a data domain, ensure your logged in, or passing a data domain structure"));
+               }
                bm.setDataDomain(dd);
                     /*DataDomain dd = new DataDomain();
                     dd.setOrgRefName(SecurityContext.getPrincipalContext().get().getDataDomain().getOrgRefName());
