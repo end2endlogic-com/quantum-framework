@@ -1,6 +1,7 @@
 package com.e2eq.framework.rest.resources;
 
 import com.e2eq.framework.model.persistent.base.Counter;
+import com.e2eq.framework.model.persistent.base.CounterResponse;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.rest.models.RestError;
@@ -16,10 +17,7 @@ import lombok.EqualsAndHashCode;
 @Path("/integration/counters")
 @RolesAllowed({ "user", "admin" })
 public class CounterResource extends BaseResource<Counter, CounterRepo> {
-    @EqualsAndHashCode
-   public @Data class CounterResponse {
-       long value;
-   }
+
     protected CounterResource(CounterRepo repo) {
         super(repo);
     }

@@ -10,6 +10,7 @@ import org.antlr.v4.runtime.Token;
 import org.apache.commons.text.StringSubstitutor;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
+import org.bson.types.ObjectId;
 
 import java.util.*;
 import java.util.regex.Pattern;
@@ -75,6 +76,13 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         } else {
             return inputString;
         }
+    }
+
+    @Override
+    public void enterOidExpr(BIAPIQueryParser.OidExprContext ctx) {
+        String field = ctx.field.getText();
+        String oid = ctx.value.getText();
+        filterStack.push(Filters.eq(field, new ObjectId(oid)));
     }
 
     @Override

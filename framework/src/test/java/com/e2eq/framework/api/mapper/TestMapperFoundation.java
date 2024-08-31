@@ -113,7 +113,7 @@ public class TestMapperFoundation {
             break;
          case FIELD_NAME:
             if (Log.isDebugEnabled())
-               Log.debug("  Field Name:" + parser.getCurrentName());
+               Log.debug("  Field Name:" + parser.currentName());
             break;
          case VALUE_STRING:
             if (Log.isDebugEnabled())
