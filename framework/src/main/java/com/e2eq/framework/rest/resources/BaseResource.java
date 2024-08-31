@@ -1,6 +1,6 @@
 package com.e2eq.framework.rest.resources;
 
-import com.e2eq.framework.model.persistent.base.BaseModel;
+import com.e2eq.framework.model.persistent.base.*;
 import com.e2eq.framework.model.persistent.morphia.BaseRepo;
 import com.e2eq.framework.model.securityrules.SecurityCheckException;
 import com.e2eq.framework.model.securityrules.RuleContext;
@@ -9,6 +9,8 @@ import com.e2eq.framework.rest.models.RestError;
 import com.e2eq.framework.util.JSONUtils;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.module.jsonSchema.JsonSchema;
+
+import dev.morphia.query.Sort;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
@@ -16,8 +18,14 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.apache.commons.lang3.tuple.Pair;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+
+
+
+import static dev.morphia.query.Sort.ascending;
+import static dev.morphia.query.Sort.descending;
 
 /**
  A base resource class
@@ -76,12 +84,93 @@ public class BaseResource<T extends BaseModel, R extends BaseRepo<T>> {
       return response;
    }
 
+   protected List<SortField> convertToSortField(String sort) {
+      List<SortField> sortFields = new ArrayList();
+      if (sort != null) {
+         for (String sortPart : sort.split(",")) {
+            String cleanSortPart = sortPart.trim();
+            if (cleanSortPart.startsWith("-")) {
+               sortFields.add(new SortField(cleanSortPart.substring(1),
+                       SortField.SortDirection.DESC));
+            } else if (cleanSortPart.startsWith("+")) {
+               sortFields.add(new SortField(cleanSortPart.substring(1),
+                       SortField.SortDirection.ASC));
+            } else {
+               sortFields.add(new SortField(cleanSortPart,
+                       SortField.SortDirection.ASC));
+            }
+         }
+      }
+      return sortFields;
+   }
+
+   protected List<ProjectionField> convertProjectionFields(String projection) {
+      List<ProjectionField> projectionFields = new ArrayList();
+      if (projection != null) {
+         for (String projectionPart : projection.split(",")) {
+            String cleanProjectionPart = projectionPart.trim();
+            if (cleanProjectionPart.startsWith("-")) {
+               projectionFields.add(new ProjectionField(cleanProjectionPart.substring(1),
+                       ProjectionField.ProjectionType.EXCLUDE));
+            } else if (cleanProjectionPart.startsWith("+")) {
+               projectionFields.add(new ProjectionField(
+                       cleanProjectionPart.substring(1),
+                       ProjectionField.ProjectionType.INCLUDE));
+            } else {
+               projectionFields.add(new ProjectionField(cleanProjectionPart,
+                       ProjectionField.ProjectionType.INCLUDE));
+            }
+         }
+      }
+      return projectionFields;
+   }
+
+   @Path("count")
+   @GET
+   @Produces(MediaType.APPLICATION_JSON)
+   public Response getCount(@QueryParam("filter") String filter) {
+      long count = repo.getCount(filter);
+      CounterResponse response = new CounterResponse(count);
+      return Response.ok().entity(response).build();
+   }
+
    @Path("list")
    @GET
    @Produces(MediaType.APPLICATION_JSON)
-   public Response getList(@DefaultValue("0") @QueryParam("skip") int skip,  @DefaultValue("50")@QueryParam("limit") int limit, @QueryParam("filter") String filter) {
+   public Response getList(@DefaultValue("0")
+                           @QueryParam("skip") int skip,
+                           @DefaultValue("50")@QueryParam("limit") int limit,
+                           @QueryParam("filter") String filter,
+                           @QueryParam("sort") String sort,
+                           @QueryParam("projection") String projection) {
+
+      List<ProjectionField> projectionFields = null;
+      List<SortField> sortFields = null;
       try {
-         List<T> ups = repo.getListByQuery(skip, limit, filter);
+         if (sort != null || projection != null) {
+
+            if (sort!=null) {
+               sortFields = convertToSortField(sort);
+
+               /*List<Sort> sorts = new ArrayList<>();
+               for (SortParameter sortField : sortFields) {
+                  if (sortField.getDirection().equals(SortParameter.SortOrderEnum.ASC)) {
+                     sorts.add(ascending(sortField.getFieldName()));
+                  } else {
+                     sorts.add(descending(sortField.getFieldName()));
+                  }
+               } */
+            } else {
+               sortFields = null;
+            }
+
+
+            projectionFields = convertProjectionFields(projection);
+
+         }
+
+
+         List<T> ups = repo.getListByQuery(skip, limit, filter, sortFields, projectionFields);
          Collection<T> collection = new Collection<>(ups, skip, limit, filter);
          // fill in ui-actions
          collection = repo.fillUIActions(collection);

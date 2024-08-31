@@ -3,13 +3,13 @@ grammar BIAPIQuery;
 query: (exprGroup | compoundExpr) (exprOp (exprGroup | compoundExpr))*;
 exprGroup: lp=LPAREN (exprGroup | compoundExpr) (exprOp (exprGroup | compoundExpr))* rp=RPAREN;
 compoundExpr: allowedExpr (exprOp allowedExpr)*;
-allowedExpr: inExpr | basicExpr | | nullExpr | existsExpr | booleanExpr | notExpr | regexExpr;
+allowedExpr: oidExpr| inExpr | basicExpr |  nullExpr | existsExpr | booleanExpr | notExpr | regexExpr;
 exprOp: op=(AND | OR);
 existsExpr: field=STRING op=EXISTS;
 booleanExpr: field=STRING op=(EQ | NEQ) value=(TRUE | FALSE);
 inExpr : field=STRING op=IN value=valueListExpr;
 valueListExpr: lp=LBRKT value=(STRING | ',' | VARIABLE)+ rp=RBRKT;
-
+oidExpr: field=STRING op=OID value=(STRING | VARIABLE);
 basicExpr: field=STRING op=(EQ|NEQ|LT|GT|LTE|GTE|EXISTS|IN) value=(STRING|VARIABLE) #stringExpr
 | field=STRING op=(EQ | NEQ ) value=QUOTED_STRING #quotedExpr
 | field=STRING op=(EQ | LT | GT | NEQ | LTE | GTE) value=NUMBER #numberExpr
@@ -39,7 +39,7 @@ GTE: ':>=';
 EXISTS: ':~';
 IN: ':^';
 NULL: 'null';
-COLIN: '::';
+OID: ':@';
 
 // Logical
 AND: '&&';

@@ -3,6 +3,7 @@ package com.e2eq.framework.model.persistent.morphia;
 
 import com.e2eq.framework.model.persistent.base.BaseModel;
 import com.e2eq.framework.model.persistent.base.DynamicSearchRequest;
+import com.e2eq.framework.model.persistent.base.ProjectionField;
 import com.e2eq.framework.model.persistent.base.SortField;
 import com.e2eq.framework.rest.models.Collection;
 import com.fasterxml.jackson.module.jsonSchema.JsonSchema;
@@ -27,9 +28,9 @@ public interface BaseRepo<T extends BaseModel> {
    public JsonSchema getSchema();
    public List<T> getAllList();
    public List<T> getListByQuery(int skip, int limit, String query);
-   public List<T> getListByQuery(int skip, int limit, String query, List<SortField> sortFields, List<String> projectedProperties);
+   public List<T> getListByQuery(int skip, int limit, String query, List<SortField> sortFields, List<ProjectionField> projectedProperties);
    public List<T>  getList(int skip, int limit, List<String> columns, List<Filter> filters, List<SortField> sortFields);
-   public long getCount(DynamicSearchRequest searchRequest);
+   public long getCount(String filter);
 
    // Write based API's
    public T save(T value);
