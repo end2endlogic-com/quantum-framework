@@ -35,6 +35,7 @@ public class AuditInterceptor implements EntityListener<Object> {
                 AuditInfo auditInfo = new AuditInfo();
                 auditInfo.setCreationTs(new Date());
                 auditInfo.setCreationIdentity(SecurityContext.getPrincipalContext().isPresent() ? SecurityContext.getPrincipalContext().get().getUserId() : "ANONYMOUS");
+                bm.setAuditInfo(auditInfo);
             } else {
                 bm.getAuditInfo().setLastUpdateTs(new Date());
                 bm.getAuditInfo().setLastUpdateIdentity(SecurityContext.getPrincipalContext().isPresent() ? SecurityContext.getPrincipalContext().get().getUserId() : "ANONYMOUS");

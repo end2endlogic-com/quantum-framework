@@ -2,7 +2,7 @@ package com.e2eq.framework.rest.resources;
 
 
 import com.e2eq.framework.exceptions.E2eqValidationException;
-import com.e2eq.framework.model.persistent.morphia.BaseRepo;
+import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
 import com.e2eq.framework.rest.filters.PermissionCheck;
 import com.e2eq.framework.model.persistent.security.ApplicationRegistration;
 import com.e2eq.framework.model.persistent.morphia.ApplicationRegistrationRequestRepo;
@@ -19,7 +19,7 @@ import java.util.Optional;
 
 @Path("/onboarding/registrationRequest")
 @RolesAllowed({ "user", "admin" })
-public class RegistryResource extends BaseResource<ApplicationRegistration, BaseRepo<ApplicationRegistration>> {
+public class RegistryResource extends BaseResource<ApplicationRegistration, BaseMorphiaRepo<ApplicationRegistration>> {
 
    public RegistryResource (ApplicationRegistrationRequestRepo repo ) {
       super(repo);

@@ -1,7 +1,7 @@
 package com.e2eq.framework.rest.resources;
 
 import com.e2eq.framework.model.persistent.base.*;
-import com.e2eq.framework.model.persistent.morphia.BaseRepo;
+import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
 import com.e2eq.framework.model.securityrules.SecurityCheckException;
 import com.e2eq.framework.model.securityrules.RuleContext;
 import com.e2eq.framework.rest.models.Collection;
@@ -10,7 +10,6 @@ import com.e2eq.framework.util.JSONUtils;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.module.jsonSchema.JsonSchema;
 
-import dev.morphia.query.Sort;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
@@ -22,16 +21,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-
-
-import static dev.morphia.query.Sort.ascending;
-import static dev.morphia.query.Sort.descending;
-
 /**
  A base resource class
  */
 @RolesAllowed({ "user", "admin" })
-public class BaseResource<T extends BaseModel, R extends BaseRepo<T>> {
+public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
    protected R repo;
 
    @Inject
