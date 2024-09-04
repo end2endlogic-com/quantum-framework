@@ -67,7 +67,7 @@ public class InitializeDatabase implements ChangeSetBean {
       // get flag from app config
 
       if (config.checkMigration().isPresent() && config.checkMigration().get().booleanValue()) {
-         try (MorphiaSession session = dataStore.getDataStore().startSession()) {
+         try (MorphiaSession session = dataStore.getDefaultSystemDataStore().startSession()) {
             try {
                session.startTransaction();
                ensureCounter("accountNumber", 2000);

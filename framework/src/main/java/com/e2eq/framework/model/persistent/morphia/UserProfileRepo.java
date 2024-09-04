@@ -29,7 +29,7 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
 
 
    public Optional<UserProfile> updateStatus(@NotNull String userId, @NotNull UserProfile.Status status) {
-     UserProfile p = this.dataStore.getDataStore(getDefaultRealmId())
+     UserProfile p = this.dataStore.getDataStore(getSecurityContextRealmId())
              .find(UserProfile.class)
              .filter(Filters.eq("userId", userId)).modify(new ModifyOptions().returnDocument(ReturnDocument.AFTER), UpdateOperators.set("status", status.value()));
 
@@ -37,7 +37,7 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
    }
 
    public Optional<UserProfile> getByUserId(@NotNull String userId) {
-      Query<UserProfile> q = this.dataStore.getDataStore(getDefaultRealmId()).find(this.getPersistentClass()).filter(
+      Query<UserProfile> q = this.dataStore.getDataStore(getSecurityContextRealmId()).find(this.getPersistentClass()).filter(
          Filters.and(
             Filters.eq("userId", userId)
             )

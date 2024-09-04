@@ -10,7 +10,7 @@ import static com.e2eq.framework.model.securityrules.RuleContext.DefaultRealm;
 public class FunctionalDomainRepo extends MorphiaRepo<FunctionalDomain>{
 
    @Override
-   public String getDefaultRealmId () {
+   public String getSecurityContextRealmId() {
       return DefaultRealm;
    }
 }

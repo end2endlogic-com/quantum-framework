@@ -3,6 +3,7 @@ package com.e2eq.framework.model.persistent.morphia;
 
 import com.e2eq.framework.model.persistent.morphia.interceptors.AuditInterceptor;
 import com.e2eq.framework.model.persistent.morphia.interceptors.PermissionRuleInterceptor;
+import com.e2eq.framework.model.persistent.morphia.interceptors.ReferenceInterceptor;
 import com.e2eq.framework.model.persistent.morphia.interceptors.ValidationInterceptor;
 import com.e2eq.framework.util.ClassScanner;
 import com.e2eq.framework.util.SecurityUtils;
@@ -16,7 +17,6 @@ import jakarta.validation.constraints.NotNull;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Set;
 
 @ApplicationScoped
 public class MorphiaDataStore {
@@ -28,6 +28,8 @@ public class MorphiaDataStore {
    ValidationInterceptor validationInterceptor;
    @Inject
    AuditInterceptor auditInterceptor;
+   @Inject
+   ReferenceInterceptor referenceInterceptor;
 
    @Inject
    ClassScanner classScanner;
@@ -41,8 +43,8 @@ public class MorphiaDataStore {
    public MorphiaDataStore() {
    }
 
-   public Datastore getDataStore() {
-      return getDataStore("b2bintegrator-com");
+   public Datastore getDefaultSystemDataStore() {
+      return getDataStore(SecurityUtils.systemRealm);
    }
 
    public synchronized Datastore getDataStore(@NotNull String realm) {
@@ -71,6 +73,7 @@ public class MorphiaDataStore {
          datastore.getMapper().addInterceptor(permissionRuleInterceptor);
          datastore.getMapper().addInterceptor(validationInterceptor);
          datastore.getMapper().addInterceptor(auditInterceptor);
+         datastore.getMapper().addInterceptor(referenceInterceptor);
       /*
         Set<Class> classes = classScanner.scanForEntityBeans("com.e2eq.framework.security.model.persistent.models.security");
 

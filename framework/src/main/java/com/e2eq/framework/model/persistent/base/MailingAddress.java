@@ -28,16 +28,20 @@ public @Data class MailingAddress {
     protected String addressLine2;
     protected String addressLine3;
     protected String city;
-    @Size(min=2, max=2)
+    // Handled in the ValidMailingAddressValidator
+    //@Size(min=2, max=2)
     protected String stateTwoLetterCode;
     protected String state;
     protected String zip;
-    @Size(min=4, max=4)
+    // Handled in the ValidMailingAddressValidator
+    //@Size(min=4, max=4)
     protected String zip4;
-    @Size(min=5, max=5)
+    // Handled in the ValidMailingAddressValidator
+    //@Size(min=5, max=5)
     protected String zip5;
     protected String postalCode;
-    @Size(min=2, max=2)
+    // Handled in the ValidMailingAddressValidator
+    //@Size(min=2, max=2)
     protected String countryTwoLetterCode;
     protected String country;
     protected boolean validated=false;

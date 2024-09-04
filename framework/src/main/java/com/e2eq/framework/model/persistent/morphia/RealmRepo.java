@@ -18,7 +18,7 @@ public class RealmRepo extends MorphiaRepo<Realm> {
       filters.add(Filters.eq("emailDomain", emailDomain));
       Filter[] qfilters = getFilterArray(filters);
 
-      Query<Realm> query = dataStore.getDataStore(getDefaultRealmId()).find(getPersistentClass()).filter(qfilters);
+      Query<Realm> query = dataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass()).filter(qfilters);
       Realm obj = query.first();
       return Optional.ofNullable(obj);
    }
@@ -28,7 +28,7 @@ public class RealmRepo extends MorphiaRepo<Realm> {
       filters.add(Filters.eq("tenantId", tenantId));
       Filter[] qfilters = getFilterArray(filters);
 
-      Query<Realm> query = dataStore.getDataStore(getDefaultRealmId()).find(getPersistentClass()).filter(qfilters);
+      Query<Realm> query = dataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass()).filter(qfilters);
       Realm obj = query.first();
       return Optional.ofNullable(obj);
    }

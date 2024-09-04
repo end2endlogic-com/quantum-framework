@@ -2,15 +2,18 @@ package com.e2eq.framework.persistent;
 
 import com.e2eq.framework.util.SecurityUtils;
 import com.mongodb.client.MongoCursor;
+import dev.morphia.Datastore;
 import dev.morphia.query.FindOptions;
 import dev.morphia.query.Query;
 import dev.morphia.query.filters.Filter;
+import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.test.junit.QuarkusTest;
 import com.e2eq.framework.model.persistent.security.ApplicationRegistration;
 import com.e2eq.framework.model.persistent.security.UserProfile;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
 import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
 import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -45,12 +48,8 @@ public class TestBasicRepo {
    public void testUserProfileFilteredQuery() {
 
       Filter x = MorphiaUtils.convertToFilter("refName:" + SecurityUtils.systemUserId);
-   /*   Filter f = MorphiaUtils.convertToFilter("userId:Test");
-      Filter y = Filters.eq("userId", "Test");
-      Filter z = Filters.eq("userId", 100); */
 
-
-      Query<UserProfile> q = dataStore.getDataStore().find(UserProfile.class);
+      Query<UserProfile> q = dataStore.getDefaultSystemDataStore().find(UserProfile.class);
       MongoCursor<UserProfile> cursor = q.filter(x).iterator(new FindOptions().skip(0).limit(10));
 
       List<UserProfile> list = new ArrayList<>();
@@ -58,14 +57,26 @@ public class TestBasicRepo {
       assertTrue(!list.isEmpty());
    }
 
+   @Test
+   public void testTransactions() {
+      Datastore ds = dataStore.getDefaultSystemDataStore();
+      try (MorphiaSession session = ds.startSession()) {
+         session.startTransaction();
+         Optional<UserProfile> u = userProfileRepo.findByRefName(SecurityUtils.systemUserId);
+         Assertions.assertTrue(u.isPresent());
+         userProfileRepo.findById(session, u.get().getId());
+         session.commitTransaction();
+      }
+   }
 
-  // @Test
+
+   // @Test
    // Commented out because the reference data does not have a user registered thus this fails
    // the functionality his covered however in the previous test
    public void testRegistrationFilteredQuery() {
 
       Filter x = MorphiaUtils.convertToFilter("userId:tuser@test-system.com");
-      Query<ApplicationRegistration> q = dataStore.getDataStore().find(ApplicationRegistration.class);
+      Query<ApplicationRegistration> q = dataStore.getDefaultSystemDataStore().find(ApplicationRegistration.class);
       MongoCursor<ApplicationRegistration> cursor = q.filter(x).iterator(new FindOptions().skip(0).limit(10));
 
       List<ApplicationRegistration> list = new ArrayList<>();

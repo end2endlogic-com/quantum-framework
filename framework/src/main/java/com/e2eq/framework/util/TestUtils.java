@@ -1,9 +1,12 @@
 package com.e2eq.framework.util;
 
+import com.e2eq.framework.model.persistent.base.AuditInfo;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.security.Rule;
 import com.e2eq.framework.model.securityrules.RuleContext;
 import com.e2eq.framework.model.securityrules.*;
+
+import java.util.Date;
 
 
 public class TestUtils {
@@ -26,6 +29,10 @@ public class TestUtils {
                 .withRoles(roles).build();
 
       return c;
+   }
+
+   public static AuditInfo createAuditInfo() {
+       return new AuditInfo(new Date(), userId, new Date(), userId);
    }
 
    public static ResourceContext getResourceContext(String area, String functionalDomain, String action) {

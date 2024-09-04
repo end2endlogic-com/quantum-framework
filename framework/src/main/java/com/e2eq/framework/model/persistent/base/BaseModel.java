@@ -88,6 +88,8 @@ public abstract @Data @NoArgsConstructor class BaseModel {
 
     protected AuditInfo auditInfo = new AuditInfo();
 
+    protected Set<ReferenceEntry> references = new HashSet<>();
+
     @Transient
     protected UIActionList actionList;
 

@@ -10,9 +10,11 @@ import com.e2eq.framework.model.securityrules.*;
 import com.fasterxml.jackson.module.jsonSchema.JsonSchema;
 import com.google.common.reflect.TypeToken;
 import com.mongodb.client.result.DeleteResult;
-import com.mongodb.client.result.InsertManyResult;
-import dev.morphia.aggregation.Aggregation;
-import dev.morphia.aggregation.stages.Out;
+import dev.morphia.Datastore;
+import dev.morphia.annotations.Reference;
+import dev.morphia.mapping.Mapper;
+import dev.morphia.mapping.codec.pojo.EntityModel;
+import dev.morphia.mapping.codec.pojo.PropertyModel;
 import dev.morphia.query.*;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
@@ -21,7 +23,6 @@ import dev.morphia.query.updates.UpdateOperators;
 import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.logging.Log;
 import jakarta.inject.Inject;
-import jakarta.validation.constraints.NotEmpty;
 import org.apache.commons.lang3.tuple.Pair;
 import org.bson.types.ObjectId;
 import org.jetbrains.annotations.NotNull;
@@ -39,7 +40,7 @@ import static dev.morphia.query.Sort.descending;
  *
  * @param <T> The model class this repo will use.
  */
-public abstract class MorphiaRepo<T extends BaseModel> implements BaseRepo<T> {
+public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRepo<T> {
     @Inject
     protected MorphiaDataStore dataStore;
 
@@ -49,7 +50,7 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseRepo<T> {
     TypeToken<T> paramClazz = new TypeToken<>(getClass()) {
     };
 
-    public String getDefaultRealmId() {
+    public String getSecurityContextRealmId() {
         String realmId = RuleContext.DefaultRealm;
 
         if (SecurityContext.getPrincipalContext().isPresent() && SecurityContext.getResourceContext().isPresent()) {
@@ -83,7 +84,7 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseRepo<T> {
 
         Filter f = MorphiaUtils.convertToFilter("refName:" + fdRefName);
 
-        Query<FunctionalDomain> q = dataStore.getDataStore(getDefaultRealmId()).find(FunctionalDomain.class).filter(f);
+        Query<FunctionalDomain> q = dataStore.getDataStore(getSecurityContextRealmId()).find(FunctionalDomain.class).filter(f);
         FunctionalDomain fd = q.first();
 
         List<String> actions;
@@ -108,15 +109,22 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseRepo<T> {
         ObjectId oid = new ObjectId(id);
         return findById(oid);
     }
-
     @Override
     public Optional<T> findById(@NotNull ObjectId id) {
+        if (id == null) {
+            throw new IllegalArgumentException("parameter id can not be null");
+        }
+        return findById(dataStore.getDataStore(getSecurityContextRealmId()), id);
+    }
+
+    @Override
+    public Optional<T> findById(Datastore datastore, @NotNull ObjectId id) {
         List<Filter> filters = new ArrayList<>();
         filters.add(Filters.eq("_id", id));
         // Add filters based upon rule and resourceContext;
         Filter[] qfilters = getFilterArray(filters);
 
-        Query<T> query = dataStore.getDataStore(getDefaultRealmId()).find(getPersistentClass()).filter(qfilters);
+        Query<T> query = datastore.find(getPersistentClass()).filter(qfilters);
         T obj = query.first();
 
         if (obj != null) {
@@ -138,7 +146,7 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseRepo<T> {
         // Add filters based upon rule and resourceContext;
         Filter[] qfilters = getFilterArray(filters);
 
-        Query<T> query = dataStore.getDataStore(getDefaultRealmId()).find(getPersistentClass()).filter(qfilters);
+        Query<T> query = dataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass()).filter(qfilters);
         T obj = query.first();
 
         if (obj != null) {
@@ -150,6 +158,8 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseRepo<T> {
 
         return Optional.ofNullable(obj);
     }
+
+
 
     @Override
     public JsonSchema getSchema() {
@@ -225,7 +235,7 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseRepo<T> {
     }
 
     @Override
-    public List<T> getListByQuery(int skip, int limit, @Nullable String query, List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields) {
+    public List<T> getListByQuery(Datastore datastore, int skip, int limit, @Nullable String query, List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields) {
 
         if (skip < 0 || limit < 0) {
             throw new IllegalArgumentException("skip and or limit can not be negative");
@@ -253,14 +263,14 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseRepo<T> {
             Filter[] filterArray = new Filter[filters.size()];
             Query<T> q;
 
-            cursor = dataStore.getDataStore(getDefaultRealmId()).find(getPersistentClass())
+            cursor = datastore.find(getPersistentClass())
                     .filter(filters.toArray(filterArray))
                     .iterator(findOptions);
         } else {
             Filter[] filterArray = new Filter[filters.size()];
             Query<T> q;
 
-            cursor = dataStore.getDataStore(getDefaultRealmId()).find(getPersistentClass())
+            cursor = datastore.find(getPersistentClass())
                     .filter(filters.toArray(filterArray))
                     .iterator(findOptions);
         }
@@ -288,6 +298,9 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseRepo<T> {
         }
 
         return list;
+    }
+    public List<T> getListByQuery(int skip, int limit, @Nullable String query, List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields) {
+        return getListByQuery(dataStore.getDataStore(getSecurityContextRealmId()), skip, limit, query, sortFields, projectionFields);
     }
 
     @Override
@@ -318,12 +331,12 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseRepo<T> {
 
         MorphiaCursor<T> cursor;
         if (limit > 0) {
-            cursor = dataStore.getDataStore(getDefaultRealmId()).find(getPersistentClass())
+            cursor = dataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass())
                     .filter(filters.toArray(filterArray))
                     .iterator(new FindOptions().skip(skip).limit(limit));
         } else {
 
-            cursor = dataStore.getDataStore(getDefaultRealmId()).find(getPersistentClass())
+            cursor = dataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass())
                     .filter(filters.toArray(filterArray))
                     .iterator();
         }
@@ -355,6 +368,12 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseRepo<T> {
 
     @Override
     public long getCount(@Nullable String query) {
+        return getCount(dataStore.getDataStore(getSecurityContextRealmId()), query);
+    }
+
+
+    @Override
+    public long getCount(Datastore datastore, @Nullable String query) {
         List<Filter> filters = new ArrayList<>();
 
         if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
@@ -373,7 +392,7 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseRepo<T> {
             }
         }
         Filter[] filterArray = new Filter[filters.size()];
-        long count = dataStore.getDataStore(getDefaultRealmId()).find(getPersistentClass())
+        long count = datastore.find(getPersistentClass())
                 .filter(filters.toArray(filterArray))
                 .count();
         return count;
@@ -394,28 +413,127 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseRepo<T> {
     @Override
     public T save(T value) {
         //ruleContext.check(SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get());
-        return this.save(getDefaultRealmId(), value);
+        return this.save(getSecurityContextRealmId(), value);
     }
 
 
     @Override
     public List<T> save(List<T> entities) {
-        return dataStore.getDataStore().save(entities);
+        return save(dataStore.getDataStore(getSecurityContextRealmId()),entities);
+    }
+
+    @Override
+    public List<T> save(Datastore datastore, List<T> entities) {
+        return datastore.save(entities);
     }
 
     @Override
     public T save(String realmId, T value) {
-        if (realmId == null || realmId.isEmpty()) {
-            throw new IllegalArgumentException("Realm can not be empty or null");
-        }
+        return save(dataStore.getDataStore(realmId), value);
+    }
 
-        return dataStore.getDataStore(realmId).save(value);
+    @Override
+    public T save(Datastore datastore, T value) {
+        return datastore.save(value);
+    }
+
+
+
+    public void removeReferenceConstraint(T obj, MorphiaSession session) {
+        Mapper mapper = dataStore.getDataStore(getSecurityContextRealmId()).getMapper();
+        EntityModel mappedClass = mapper.getEntityModel(obj.getClass());
+
+        for (PropertyModel mappedField : mappedClass.getProperties()) {
+            if (mappedField.isReference()) {
+                if (BaseModel.class.isAssignableFrom(mappedField.getEntityModel().getType())) {
+                    BaseModel baseModel = (mappedField.getAccessor().get(obj) != null) ? (BaseModel) mappedField.getAccessor().get(obj) : null;
+                    if (baseModel != null) {
+                        if (!baseModel.getReferences().contains(obj)) {
+                            baseModel.getReferences().remove(obj);
+                            session.save(mappedField.getAccessor().get(obj));
+                        }
+                    }
+                }
+            }
+        }
     }
 
     @Override
     public long delete(T obj) {
-        DeleteResult result = dataStore.getDataStore(getDefaultRealmId()).delete(obj);
-        return result.getDeletedCount();
+        DeleteResult result;
+        if (obj.getReferences() == null || obj.getReferences().isEmpty()) {
+            try (MorphiaSession s = dataStore.getDataStore(getSecurityContextRealmId()).startSession()) {
+                s.startTransaction();
+                removeReferenceConstraint(obj, s);
+                result = s.delete(obj);
+                s.commitTransaction();
+            }
+            return result.getDeletedCount();
+        } else {
+            Set<ReferenceEntry> entriesToRemove = new HashSet<>();
+            // Iterate through references in this class and ensure that there are actually references and that the list of references is not stale
+            for (ReferenceEntry reference : obj.getReferences()) {
+                try (MorphiaSession s = dataStore.getDataStore(getSecurityContextRealmId()).startSession()) {
+                    s.startTransaction();
+                    try {
+                        Class<?> clazz = Class.forName(reference.getType());
+                        Query<?> q = s.find(clazz).filter(Filters.eq("_id", reference.getReferencedId()));
+                        if (q.count() == 0) {
+                            entriesToRemove.add(reference);
+                        }
+                    } catch (ClassNotFoundException e) {
+                        entriesToRemove.add(reference);
+                    }
+                }
+            }
+            obj.getReferences().removeAll(entriesToRemove);
+
+            if (obj.getReferences().isEmpty()) {
+                try (MorphiaSession s = dataStore.getDataStore(getSecurityContextRealmId()).startSession()) {
+                    s.startTransaction();
+                    removeReferenceConstraint(obj, s);
+                    result = s.delete(obj);
+                    s.commitTransaction();
+                }
+                return result.getDeletedCount();
+            } else {
+                throw new IllegalStateException("Can not delete object because it has references from other objects to this one that would corrupt the relationship.  Check references attribute to see what objects reference this one: ");
+            }
+        }
+    }
+
+    @Override
+    public long delete(MorphiaSession s, T obj) {
+        DeleteResult result;
+        if (obj.getReferences() == null || obj.getReferences().isEmpty()) {
+            removeReferenceConstraint(obj, s);
+            result = s.delete(obj);
+            return result.getDeletedCount();
+        } else {
+            Set<ReferenceEntry> entriesToRemove = new HashSet<>();
+            // Iterate through references in this class and ensure that there are actually references and that the list of references is not stale
+            for (ReferenceEntry reference : obj.getReferences()) {
+                try {
+                    Class<?> clazz = Class.forName(reference.getType());
+                    Query<?> q = s.find(clazz).filter(Filters.eq("_id", reference.getReferencedId()));
+                    if (q.count() == 0) {
+                        entriesToRemove.add(reference);
+                    }
+                } catch (ClassNotFoundException e) {
+                    entriesToRemove.add(reference);
+                }
+            }
+            obj.getReferences().removeAll(entriesToRemove);
+
+            if (obj.getReferences().isEmpty()) {
+                    removeReferenceConstraint(obj, s);
+                    result = s.delete(obj);
+                    s.commitTransaction();
+                return result.getDeletedCount();
+            } else {
+                throw new IllegalStateException("Can not delete object because it has references from other objects to this one that would corrupt the relationship.  Check references attribute to see what objects reference this one: ");
+            }
+        }
     }
 
 
@@ -426,13 +544,31 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseRepo<T> {
         return update(oid, pairs);
     }
 
-    public long update(@NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) {
+
+    @Override
+    public long update (@NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) {
+        return update(dataStore.getDataStore(getSecurityContextRealmId()), id, pairs);
+    }
+
+    @Override
+    public long update(Datastore datastore, @NotNull String id, @NotNull Pair<String, Object>... pairs) {
+        ObjectId oid = new ObjectId(id);
+        return update(datastore, oid, pairs);
+    }
+
+    public long update(Datastore datastore, @NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) {
         List<UpdateOperator> updateOperators = new ArrayList<>();
         for (Pair<String, Object> pair : pairs) {
             // check that the pair key corresponds to a field in the persistent class that is an enum
             Field field = null;
             try {
                 field = getPersistentClass().getDeclaredField(pair.getKey());
+                Reference ref = field.getAnnotation(Reference.class);
+                if (ref!= null) {
+                    //TODO fix this case where there is an update to a reference field
+                    Log.warn("Update to class that contains references");
+                }
+
                 if (field.getType().isEnum()) {
                     // check that the pair value is a valid enum value of te field
                     if (!Arrays.stream(field.getType().getEnumConstants()).anyMatch(e -> e.toString().equals(pair.getValue().toString()))) {
@@ -446,7 +582,8 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseRepo<T> {
             updateOperators.add(UpdateOperators.set(pair.getKey(), pair.getValue()));
         }
 
-        Update<T> update = dataStore.getDataStore(getDefaultRealmId()).find(getPersistentClass()).filter(Filters.eq("_id", id))
+
+        Update<T> update = datastore.find(getPersistentClass()).filter(Filters.eq("_id", id))
                 .update(updateOperators);
 
         return update.execute().getModifiedCount();
