@@ -168,7 +168,7 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
 
 
     public List<T> getAllList() {
-        return this.getList(0, 0, null, null, null);
+        return this.getList(0, 0,  null, null);
     }
 
     @Override
@@ -237,7 +237,7 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
     @Override
     public List<T> getListByQuery(Datastore datastore, int skip, int limit, @Nullable String query, List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields) {
 
-        if (skip < 0 || limit < 0) {
+        if (skip < 0 ) {
             throw new IllegalArgumentException("skip and or limit can not be negative");
         }
 
@@ -304,10 +304,10 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
     }
 
     @Override
-    public List<T> getList(int skip, int limit, List<String> columns, @Nullable List<Filter> filters, @Nullable List<SortField> sortFields) {
+    public List<T> getList(int skip, int limit, @Nullable List<Filter> filters, @Nullable List<SortField> sortFields) {
 
-        if (skip < 0 || limit < 0) {
-            throw new IllegalArgumentException("skip and or limit can not be negative");
+        if (skip < 0 ) {
+            throw new IllegalArgumentException("skip can not be negative");
         }
 
         if (filters == null) {

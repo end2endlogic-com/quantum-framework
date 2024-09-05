@@ -31,9 +31,9 @@ public interface BaseMorphiaRepo<T extends BaseModel> {
    public JsonSchema getSchema();
 
    public List<T> getAllList();
-   public List<T> getListByQuery(int skip, int limit, String query);
-   public List<T> getListByQuery(int skip, int limit, String query, List<SortField> sortFields, List<ProjectionField> projectedProperties);
-   public List<T>  getList(int skip, int limit, List<String> columns, List<Filter> filters, List<SortField> sortFields);
+   public List<T> getListByQuery(int skip, int limit, String filter);
+   public List<T> getListByQuery(int skip, int limit, String filter, List<SortField> sortFields, List<ProjectionField> projectedProperties);
+   public List<T>  getList(int skip, int limit, List<Filter> filters, List<SortField> sortFields);
    public List<T> getListByQuery(Datastore datastore, int skip, int limit, String query, List<SortField> sortFields, List<ProjectionField> projectionFields);
 
    public long getCount(String filter);

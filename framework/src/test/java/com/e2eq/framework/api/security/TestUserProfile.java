@@ -130,7 +130,7 @@ public class TestUserProfile  {
         ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "view");
         TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.userId);
         try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
-            List<UserProfile> userProfiles = userProfileRepo.getList(0, 10, null, null, null);
+            List<UserProfile> userProfiles = userProfileRepo.getList(0, 10, null, null);
             Assertions.assertTrue(!userProfiles.isEmpty());
             userProfiles.forEach((up) -> {
                 Log.info(up.getId().toString() + ":" + up.getUserId() + ":" + up.getUserName());
