@@ -4,13 +4,12 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.end2endlogic</groupId>
   <artifactId>quantum-framework</artifactId>
-  <version>1.0.0-SNAPSHOT</version>
+  <version>1.0.0</version>
 
   <parent>
     <groupId>com.end2endlogic</groupId>
     <artifactId>quantum-parent</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
-    <relativePath>../parent/pom.xml</relativePath>
+    <version>1.0.0</version>
   </parent>
   <licenses>
     <license>
@@ -85,7 +84,7 @@
     <dependency>
       <groupId>com.end2endlogic</groupId>
       <artifactId>quantum-extension</artifactId>
-      <version>1.0.0-SNAPSHOT</version>
+      <version>1.0.0</version>
     </dependency>
     <dependency>
       <groupId>dev.morphia.morphia</groupId>
@@ -378,8 +377,30 @@
           </execution>
         </executions>
       </plugin>
-
-      <!--<plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+        <version>3.5.0</version>
+        <executions>
+          <execution>
+            <id>enforce-java</id>
+            <goals>
+              <goal>enforce</goal>
+            </goals>
+            <configuration>
+              <rules>
+                <requireJavaVersion>
+                  <version>17</version>
+                </requireJavaVersion>
+                <requireMavenVersion>
+                  <version>[3.9.8,)</version>
+                </requireMavenVersion>
+              </rules>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-source-plugin</artifactId>
         <version>3.2.1</version>
@@ -392,6 +413,7 @@
           </execution>
         </executions>
       </plugin>
+      <!--
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-gpg-plugin</artifactId>

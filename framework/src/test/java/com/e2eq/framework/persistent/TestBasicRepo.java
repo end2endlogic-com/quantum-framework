@@ -1,6 +1,11 @@
 package com.e2eq.framework.persistent;
 
+import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.ResourceContext;
+import com.e2eq.framework.model.securityrules.RuleContext;
+import com.e2eq.framework.model.securityrules.SecuritySession;
 import com.e2eq.framework.util.SecurityUtils;
+import com.e2eq.framework.util.TestUtils;
 import com.mongodb.client.MongoCursor;
 import dev.morphia.Datastore;
 import dev.morphia.query.FindOptions;
@@ -32,6 +37,9 @@ public class TestBasicRepo {
    @Inject
    UserProfileRepo userProfileRepo;
 
+   @Inject
+   RuleContext ruleContext;
+
    @BeforeAll
    static public void setUpData() {
 
@@ -39,33 +47,51 @@ public class TestBasicRepo {
 
    @Test
    public void testUserProfileRepo() {
-     Optional<UserProfile> oup =  userProfileRepo.findByRefName(SecurityUtils.systemUserId);
-     assertTrue(oup.isPresent());
+      String[] roles = {"user"};
+      PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.userId, roles);
+      ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "view");
+      TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.userId);
+      try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
+         Optional<UserProfile> oup = userProfileRepo.findByRefName(SecurityUtils.systemUserId);
+         assertTrue(oup.isPresent());
+      }
    }
 
 
    @Test
    public void testUserProfileFilteredQuery() {
 
-      Filter x = MorphiaUtils.convertToFilter("refName:" + SecurityUtils.systemUserId);
+      String[] roles = {"user"};
+      PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.userId, roles);
+      ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "view");
+      TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.userId);
+      try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
+         Filter x = MorphiaUtils.convertToFilter("refName:" + SecurityUtils.systemUserId);
 
-      Query<UserProfile> q = dataStore.getDefaultSystemDataStore().find(UserProfile.class);
-      MongoCursor<UserProfile> cursor = q.filter(x).iterator(new FindOptions().skip(0).limit(10));
+         Query<UserProfile> q = dataStore.getDefaultSystemDataStore().find(UserProfile.class);
+         MongoCursor<UserProfile> cursor = q.filter(x).iterator(new FindOptions().skip(0).limit(10));
 
-      List<UserProfile> list = new ArrayList<>();
-      cursor.forEachRemaining( (u) -> list.add(u));
-      assertTrue(!list.isEmpty());
+         List<UserProfile> list = new ArrayList<>();
+         cursor.forEachRemaining((u) -> list.add(u));
+         assertTrue(!list.isEmpty());
+      }
    }
 
    @Test
    public void testTransactions() {
       Datastore ds = dataStore.getDefaultSystemDataStore();
-      try (MorphiaSession session = ds.startSession()) {
-         session.startTransaction();
-         Optional<UserProfile> u = userProfileRepo.findByRefName(SecurityUtils.systemUserId);
-         Assertions.assertTrue(u.isPresent());
-         userProfileRepo.findById(session, u.get().getId());
-         session.commitTransaction();
+      String[] roles = {"user"};
+      PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.userId, roles);
+      ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "view");
+      TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.userId);
+      try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
+         try (MorphiaSession session = ds.startSession()) {
+            session.startTransaction();
+            Optional<UserProfile> u = userProfileRepo.findByRefName(SecurityUtils.systemUserId);
+            Assertions.assertTrue(u.isPresent());
+            userProfileRepo.findById(session, u.get().getId());
+            session.commitTransaction();
+         }
       }
    }
 
