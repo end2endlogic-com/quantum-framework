@@ -68,6 +68,8 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
     public Filter[] getFilterArray(@NotNull List<Filter> filters) {
         if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
             filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get());
+        } else {
+            throw new RuntimeException("Logic error SecurityContext should be present; this implies that an attempt to call a method was made where the user was not logged in");
         }
 
         Filter[] qfilters = new Filter[filters.size()];
@@ -319,15 +321,16 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
         }
 
         // Add filters based upon rule and resourceContext;
-        if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
+        Filter[] filterArray = getFilterArray(filters);
+
+       /* if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
             filters = ruleContext.getFilters(filters,
                     SecurityContext.getPrincipalContext().get(),
                     SecurityContext.getResourceContext().get());
         } else {
             throw new RuntimeException("Resource Context is not set in thread, check security configuration");
-        }
+        } */
 
-        Filter[] filterArray = new Filter[0];
 
         MorphiaCursor<T> cursor;
         if (limit > 0) {
@@ -412,7 +415,6 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
 
     @Override
     public T save(T value) {
-        //ruleContext.check(SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get());
         return this.save(getSecurityContextRealmId(), value);
     }
 
@@ -424,6 +426,8 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
 
     @Override
     public List<T> save(Datastore datastore, List<T> entities) {
+        ruleContext.check(SecurityContext.getPrincipalContext().get(),
+                SecurityContext.getResourceContext().get());
         return datastore.save(entities);
     }
 

@@ -13,10 +13,6 @@ public class TestMongoDB {
 
     @Inject
     MongoClient mongoClient;
-    @Inject
-    MorphiaDataStore morphiaDataStore;
-    @Inject
-    ObjectMapper mapper;
 
     @Test
     public void testInjection() {
