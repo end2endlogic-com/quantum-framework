@@ -7,7 +7,8 @@ import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 import lombok.ToString;
 
-import static dev.morphia.utils.IndexType.DESC;
+import static dev.morphia.mapping.IndexType.DESC;
+
 
 @Indexes({
    @Index(fields=@Field( value="refName", type=DESC),

@@ -18,9 +18,13 @@ public @Data class DynamicAttribute {
     protected DynamicAttributeType type;
     protected Object value;
     protected Object defaultValue;
+    @Builder.Default
     boolean required=false;
+    @Builder.Default
     boolean inheritable=false;
+    @Builder.Default
     boolean hidden=false;
+    @Builder.Default
     boolean caseSensitive=false;
 
     protected String className;

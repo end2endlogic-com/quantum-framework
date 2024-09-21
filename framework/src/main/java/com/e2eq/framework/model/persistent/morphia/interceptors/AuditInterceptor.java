@@ -5,6 +5,7 @@ import com.e2eq.framework.model.persistent.base.BaseModel;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import dev.morphia.Datastore;
 import dev.morphia.EntityListener;
+import dev.morphia.annotations.PrePersist;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.bson.Document;
 
@@ -14,6 +15,7 @@ import java.util.Date;
 @ApplicationScoped
 public class AuditInterceptor implements EntityListener<Object> {
     @Override
+    @PrePersist
     public void prePersist(Object ent, Document document, Datastore datastore) {
         BaseModel bm = null;
         if (ent instanceof BaseModel) {

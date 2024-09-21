@@ -1,6 +1,7 @@
 package com.e2eq.framework.exceptions;
 
 public class E2eqException extends Exception {
+    private static final long serialVersionUID = 1L;
     public E2eqException() {
         super();
     }

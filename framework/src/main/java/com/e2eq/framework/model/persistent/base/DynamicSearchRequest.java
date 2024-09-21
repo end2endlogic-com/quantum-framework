@@ -13,10 +13,18 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 public class DynamicSearchRequest {
-    protected DynamicAttributeSet systemFields = new DynamicAttributeSet();
-    protected DynamicAttributeSet searchFields = new DynamicAttributeSet();
+    protected final DynamicAttributeSet systemFields = new DynamicAttributeSet();
+    protected final DynamicAttributeSet searchFields = new DynamicAttributeSet();
+    @Builder.Default
     protected boolean caseInsensitive = false;
+    @Builder.Default
     protected boolean exactMatches = true;
+    @Builder.Default
+    protected int pageNumber = 1;
+    @Builder.Default
+    protected int pageSize = 10;
+    @Builder.Default
     protected List<SortParameter> sortFields = Collections.EMPTY_LIST;
+    @Builder.Default
     protected SearchCondition searchCondition = SearchCondition.AND;
 }

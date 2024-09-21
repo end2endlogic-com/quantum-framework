@@ -21,7 +21,7 @@ public class ClassScanner {
    BeanManager beanManager;
 
 
-   private Set<Class> nonNativeScanForEntityBeans(String packageName) {
+   private Set<Class<?>> nonNativeScanForEntityBeans(String packageName) {
       ClassLoader loader = Thread.currentThread().getContextClassLoader();
       InputStream in = loader.getResourceAsStream(packageName.replaceAll("[.]", "/"));
       if (in == null)
@@ -31,7 +31,7 @@ public class ClassScanner {
       }
 
       BufferedReader reader = new BufferedReader(new InputStreamReader(in));
-      Set<Class> classes = reader.lines()
+      Set classes = reader.lines()
                               .filter(line -> line.endsWith(".class"))
                               .map(line -> getClass(line, packageName))
                               .filter(c -> c.isAnnotationPresent(Entity.class))
@@ -58,10 +58,10 @@ public class ClassScanner {
    } */
 
 
-   public Set<Class> scanForEntityBeans (String packageName) {
+   public Set<Class<?>> scanForEntityBeans (String packageName) {
       Log.info("Scanning for entity beans in package:" + packageName);
 
-      Set<Class> classes = nonNativeScanForEntityBeans(packageName);
+      Set<Class<?>> classes = nonNativeScanForEntityBeans(packageName);
       if (classes.isEmpty()) {
          Log.error(" >> Could not find classes with in package:" + packageName);
          ClassLoader loader = Thread.currentThread().getContextClassLoader();

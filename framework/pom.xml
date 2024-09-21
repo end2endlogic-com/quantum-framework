@@ -4,12 +4,12 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.end2endlogic</groupId>
   <artifactId>quantum-framework</artifactId>
-  <version>1.0.0</version>
+  <version>1.1.0-SNAPSHOT</version>
 
   <parent>
     <groupId>com.end2endlogic</groupId>
     <artifactId>quantum-parent</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0-SNAPSHOT</version>
   </parent>
   <licenses>
     <license>
@@ -84,13 +84,13 @@
     <dependency>
       <groupId>com.end2endlogic</groupId>
       <artifactId>quantum-extension</artifactId>
-      <version>1.0.0</version>
+      <version>1.1.0-SNAPSHOT</version>
     </dependency>
-    <dependency>
+   <!-- <dependency>
       <groupId>dev.morphia.morphia</groupId>
       <artifactId>morphia-core</artifactId>
       <version>${morphia.version}</version>
-    </dependency>
+    </dependency> -->
     <!--<dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-mongodb-client</artifactId>
@@ -143,28 +143,7 @@
     </dependency>
     -->
 
-    <!-- Future dependencies for moving to newer graal version<dependency>
-      <groupId>org.graalvm.truffle</groupId>
-      <artifactId>truffle-api</artifactId>
-      <version>24.0.2</version> - or any later version
-    </dependency>
-    <dependency>
-      <groupId>org.graalvm.truffle</groupId>
-      <artifactId>truffle-dsl-processor</artifactId>
-      <version>24.0.2</version>
-      <scope>provided</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.graalvm.polyglot</groupId>
-      <artifactId>polyglot</artifactId>
-      <version>${graalvm.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>org.graalvm.polyglot</groupId>
-      <artifactId>js</artifactId>
-      <version>${graalvm.version}</version>
-      <type>pom</type>
-    </dependency> -->
+
 
 
     <dependency>
@@ -197,7 +176,32 @@
       <artifactId>vault-java-driver</artifactId>
       <version>6.2.0</version>
     </dependency>
-    <!-- this is dependent on the newest way to include polygot with out gu.  This is introduced in JDK 21 and above -->
+
+    <!-- Future dependencies for moving to newer graal version<dependency>
+
+  <dependency>
+    <groupId>org.graalvm.polyglot</groupId>
+    <artifactId>polyglot</artifactId>
+    <version>${graalvm.version}</version>
+  </dependency>
+  <dependency>
+    <groupId>org.graalvm.polyglot</groupId>
+    <artifactId>js</artifactId>
+    <version>${graalvm.version}</version>
+    <type>pom</type>
+  </dependency> -->
+    <!-- this is dependent on the newest way to include polygot with out gu.  This is introduced in JDK 21 and above
+  <dependency>
+    <groupId>org.graalvm.truffle</groupId>
+    <artifactId>truffle-api</artifactId>
+    <version>${graalvm.version}</version>
+  </dependency>
+  <dependency>
+    <groupId>org.graalvm.truffle</groupId>
+    <artifactId>truffle-dsl-processor</artifactId>
+    <version>${graalvm.version}</version>
+    <scope>provided</scope>
+  </dependency> -->
      <dependency>
       <groupId>org.graalvm.polyglot</groupId>
       <artifactId>polyglot</artifactId>
@@ -212,7 +216,7 @@
     <dependency>
       <groupId>org.graalvm.sdk</groupId>
       <artifactId>nativeimage</artifactId>
-      <version>23.1.2</version>
+      <version>${graalvm.version}</version>
     </dependency>
     <dependency>
       <groupId>at.favre.lib</groupId>

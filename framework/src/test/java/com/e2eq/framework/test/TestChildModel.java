@@ -15,9 +15,9 @@ import lombok.NoArgsConstructor;
 @Entity
 public class TestChildModel extends BaseModel {
 
-    String testField;
+    protected String testField;
 
-    @Reference
+    @Reference(ignoreMissing = true)
     TestParentModel parent;
 
     @Override

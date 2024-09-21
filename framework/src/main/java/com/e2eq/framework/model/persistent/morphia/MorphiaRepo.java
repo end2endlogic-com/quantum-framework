@@ -10,6 +10,7 @@ import com.e2eq.framework.model.securityrules.*;
 import com.fasterxml.jackson.module.jsonSchema.JsonSchema;
 import com.google.common.reflect.TypeToken;
 import com.mongodb.client.result.DeleteResult;
+import com.mongodb.client.result.UpdateResult;
 import dev.morphia.Datastore;
 import dev.morphia.annotations.Reference;
 import dev.morphia.mapping.Mapper;
@@ -449,12 +450,28 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
 
         for (PropertyModel mappedField : mappedClass.getProperties()) {
             if (mappedField.isReference()) {
-                if (BaseModel.class.isAssignableFrom(mappedField.getEntityModel().getType())) {
+                if (BaseModel.class.isAssignableFrom(mappedField.getAccessor().get(obj).getClass())) {
                     BaseModel baseModel = (mappedField.getAccessor().get(obj) != null) ? (BaseModel) mappedField.getAccessor().get(obj) : null;
                     if (baseModel != null) {
                         if (!baseModel.getReferences().contains(obj)) {
                             baseModel.getReferences().remove(obj);
                             session.save(mappedField.getAccessor().get(obj));
+                        }
+                    }
+                } else
+                if (java.util.Collection.class.isAssignableFrom(mappedField.getAccessor().get(obj).getClass())) {
+                    {
+                        java.util.Collection<BaseModel> baseModels = (java.util.Collection<BaseModel>) mappedField.getAccessor().get(obj);
+                        if (baseModels != null) {
+                            for (BaseModel baseModel : baseModels) {
+                                ReferenceEntry entry = new ReferenceEntry(obj.getId(), obj.getClass().getTypeName());
+                                if (baseModel.getReferences().contains(entry)) {
+                                    if (!baseModel.getReferences().remove(entry)) {
+                                        Log.warn("Reference entry not found in baseModel: " + entry.toString());
+                                    }
+                                    session.save(baseModel);
+                                }
+                            }
                         }
                     }
                 }
@@ -585,12 +602,21 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
             }
             updateOperators.add(UpdateOperators.set(pair.getKey(), pair.getValue()));
         }
+        if (updateOperators.isEmpty()) {
+            return 0;
+        }
 
+        UpdateResult update;
+        if (updateOperators.size() == 1) {
+            update = datastore.find(getPersistentClass()).filter(Filters.eq("_id", id))
+                    .update(updateOperators.get(0));
+        } else {
+            UpdateOperator[] ops = updateOperators.toArray(new UpdateOperator[0]);
+            update = datastore.find(getPersistentClass()).filter(Filters.eq("_id", id))
+                    .update(ops[0], Arrays.copyOfRange(ops, 1, ops.length));
+        }
 
-        Update<T> update = datastore.find(getPersistentClass()).filter(Filters.eq("_id", id))
-                .update(updateOperators);
-
-        return update.execute().getModifiedCount();
+        return update.getModifiedCount();
     }
 
 

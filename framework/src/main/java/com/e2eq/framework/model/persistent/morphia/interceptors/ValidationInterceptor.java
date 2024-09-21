@@ -10,6 +10,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.morphia.Datastore;
 import dev.morphia.EntityListener;
+import dev.morphia.annotations.PrePersist;
 import io.quarkus.logging.Log;
 import org.bson.Document;
 
@@ -40,8 +41,6 @@ public class ValidationInterceptor implements EntityListener<Object> {
 
    @Override
    public void prePersist (Object ent, Document document, Datastore datastore) {
-
-
       BaseModel bm = null;
       if (ent instanceof BaseModel) {
          bm = (BaseModel) ent;

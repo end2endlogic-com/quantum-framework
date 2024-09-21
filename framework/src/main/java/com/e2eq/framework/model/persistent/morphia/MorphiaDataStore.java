@@ -5,11 +5,12 @@ import com.e2eq.framework.model.persistent.morphia.interceptors.AuditInterceptor
 import com.e2eq.framework.model.persistent.morphia.interceptors.PermissionRuleInterceptor;
 import com.e2eq.framework.model.persistent.morphia.interceptors.ReferenceInterceptor;
 import com.e2eq.framework.model.persistent.morphia.interceptors.ValidationInterceptor;
-import com.e2eq.framework.util.ClassScanner;
 import com.e2eq.framework.util.SecurityUtils;
 import com.mongodb.client.MongoClient;
 import dev.morphia.Datastore;
 import dev.morphia.Morphia;
+import dev.morphia.MorphiaDatastore;
+import dev.morphia.config.MorphiaConfig;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -31,12 +32,10 @@ public class MorphiaDataStore {
    @Inject
    ReferenceInterceptor referenceInterceptor;
 
-   @Inject
-   ClassScanner classScanner;
 
   // @ConfigProperty(name = "quarkus.mongodb.database") public String databaseName;
 
-   protected Map<String, Datastore> datastoreMap = new HashMap<>();
+   protected Map<String, MorphiaDatastore> datastoreMap = new HashMap<>();
 
    protected static final boolean ENABLE_ONE_DB_PER_TENANT = false;
 
@@ -47,7 +46,7 @@ public class MorphiaDataStore {
       return getDataStore(SecurityUtils.systemRealm);
    }
 
-   public synchronized Datastore getDataStore(@NotNull String realm) {
+   public synchronized MorphiaDatastore getDataStore(@NotNull String realm) {
 
       if (realm == null || realm.isEmpty()) {
          throw new IllegalArgumentException("parameter realm needs to be non null and non-empty");
@@ -59,21 +58,29 @@ public class MorphiaDataStore {
       }
 
 
-      Datastore datastore = datastoreMap.get(realm);
+      MorphiaDatastore datastore = datastoreMap.get(realm);
+
 
       if (datastore == null) {
          Log.warn("DataStore Null:  --- > Connecting to realm:" + realm);
-         datastore = Morphia.createDatastore(mongoClient, realm);
+         MorphiaConfig c = MorphiaConfig.load();
+         c = c.database(realm);
+         datastore = (MorphiaDatastore) Morphia.createDatastore(mongoClient, c);
 
        //   MapperOptions mapperOptions = MapperOptions.builder()
        //           .propertyDiscovery(MapperOptions.PropertyDiscovery.METHODS)
        //           .build();
        // datastore = Morphia.createDatastore(mongoClient, realm, mapperOptions);
          Log.warn("Created Datastore, for realm:" + realm);
-         datastore.getMapper().addInterceptor(permissionRuleInterceptor);
-         datastore.getMapper().addInterceptor(validationInterceptor);
-         datastore.getMapper().addInterceptor(auditInterceptor);
-         datastore.getMapper().addInterceptor(referenceInterceptor);
+       //  datastore.getMapper().addInterceptor(permissionRuleInterceptor);
+
+       if (datastore instanceof MorphiaDatastore){
+            MorphiaDatastore morphiaDatastore = (MorphiaDatastore) datastore;
+            morphiaDatastore.getMapper().addInterceptor(validationInterceptor);
+            morphiaDatastore.getMapper().addInterceptor(auditInterceptor);
+            morphiaDatastore.getMapper().addInterceptor(referenceInterceptor);
+         }
+
       /*
         Set<Class> classes = classScanner.scanForEntityBeans("com.e2eq.framework.security.model.persistent.models.security");
 

@@ -6,6 +6,7 @@ import com.e2eq.framework.model.persistent.base.ReferenceEntry;
 import dev.morphia.Datastore;
 import dev.morphia.EntityListener;
 
+import dev.morphia.MorphiaDatastore;
 import dev.morphia.annotations.Reference;
 import dev.morphia.mapping.Mapper;
 import dev.morphia.mapping.codec.pojo.EntityModel;
@@ -25,13 +26,14 @@ public class ReferenceInterceptor implements EntityListener<Object> {
     }
 
     @Override
+
     public void prePersist (Object childEntity, Document childDocument, Datastore datastore) {
         // The entity is the class that is about to be persisted
         // The document is the BSON document that will be written to the database
         // The datastore is the Datastore instance that is handling the persistence
 
 
-        Mapper mapper = datastore.getMapper();
+        Mapper mapper = ((MorphiaDatastore)datastore).getMapper();
         // Get the mapped class information for the class that is being persisted
         EntityModel child = mapper.getEntityModel(childEntity.getClass());
 

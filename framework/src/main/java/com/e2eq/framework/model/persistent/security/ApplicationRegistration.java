@@ -17,7 +17,8 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
-import static dev.morphia.utils.IndexType.DESC;
+import static dev.morphia.mapping.IndexType.DESC;
+
 
 @Indexes({
    @Index(fields=@Field( value="refName", type=DESC),
