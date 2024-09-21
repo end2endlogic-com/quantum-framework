@@ -221,6 +221,10 @@ public class AwsClient {
                 .credentialsProvider(StaticCredentialsProvider.create(credentials))
                 .region(Region.of(config.region().get()))
                 .build()) {
+      /*  try (S3Client s3 = S3Client.builder()
+                .credentialsProvider(StaticCredentialsProvider.create(credentials))
+                .region(Region.of(config.region().get()))
+                .build()) { */
 
             DeleteObjectRequest deleteObjectRequest = DeleteObjectRequest.builder()
                     .bucket(bucketName)

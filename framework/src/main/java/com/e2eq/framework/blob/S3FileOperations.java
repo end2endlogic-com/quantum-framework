@@ -41,8 +41,8 @@ public class S3FileOperations {
 
     public void moveFile(String bucketName, String sourceKey, String destinationKey) {
         CopyObjectRequest copyRequest = CopyObjectRequest.builder()
-                .sourceBucket(bucketName)
-                .sourceKey(sourceKey)
+                .copySource(bucketName)
+                .copySourceSSECustomerKey(sourceKey)
                 .destinationBucket(bucketName)
                 .destinationKey(destinationKey)
                 .build();
