@@ -1,6 +1,7 @@
 package com.e2eq.framework.blob;
 
 public class BlobStoreException extends Exception {
+    private static final long serialVersionUID = 1L;
     public BlobStoreException() {
     }
 

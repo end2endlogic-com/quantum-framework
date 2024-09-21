@@ -4,7 +4,7 @@ import com.e2eq.framework.model.persistent.base.Counter;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import dev.morphia.Datastore;
 import dev.morphia.ModifyOptions;
-import dev.morphia.query.Modify;
+
 import dev.morphia.query.filters.Filters;
 import dev.morphia.query.updates.UpdateOperators;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -20,7 +20,8 @@ public class CounterRepo extends MorphiaRepo<Counter> {
    public long getAndIncrement(@NotNull @NotEmpty  String name, @Valid DataDomain dataDomain,
                                long incrementAmount){
       Datastore ds = dataStore.getDataStore(getSecurityContextRealmId());
-      Modify<Counter> mod = ds.find(Counter.class).filter(Filters.eq("refName", name),
+
+      Counter v = ds.find(Counter.class).filter(Filters.eq("refName", name),
          Filters.eq("dataDomain.accountNum",dataDomain.getAccountNum()),
          Filters.eq("dataDomain.tenantId", dataDomain.getTenantId()),
          // in this case we should not care about an ownerId, and there should not
@@ -29,9 +30,8 @@ public class CounterRepo extends MorphiaRepo<Counter> {
          Filters.eq("dataDomain.orgRefName", dataDomain.getOrgRefName()),
          Filters.eq("dataDomain.dataSegment", dataDomain.getDataSegment()))
          .modify(UpdateOperators.inc("currentValue", incrementAmount));
-     Counter v = mod.execute(new ModifyOptions());
+
      if (v == null) {
-         v = new Counter();
          v.setDisplayName(name);
          v.setRefName(name);
          v.setCurrentValue(0);

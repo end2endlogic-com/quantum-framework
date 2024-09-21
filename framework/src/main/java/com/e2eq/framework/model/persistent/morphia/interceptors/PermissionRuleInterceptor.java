@@ -4,6 +4,7 @@ import com.e2eq.framework.model.securityrules.RuleContext;
 import com.e2eq.framework.model.securityrules.*;
 import dev.morphia.Datastore;
 import dev.morphia.EntityListener;
+import dev.morphia.annotations.PrePersist;
 import io.quarkus.logging.Log;
 import org.bson.Document;
 import org.jboss.logging.Logger;
@@ -23,7 +24,9 @@ public class PermissionRuleInterceptor implements EntityListener {
       return false;
    }
 
+
    @Override
+   @PrePersist
    public void prePersist(Object entity, Document document, Datastore datastore) {
       EntityListener.super.prePersist(entity, document, datastore);
       // Check that we have the permission to write

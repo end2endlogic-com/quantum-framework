@@ -1,6 +1,7 @@
 package com.e2eq.framework.rest.resources;
 
 import dev.morphia.Datastore;
+import dev.morphia.MorphiaDatastore;
 import jakarta.enterprise.inject.Default;
 
 import jakarta.inject.Inject;
@@ -23,7 +24,7 @@ public class SystemResource {
     @Path("/mapping")
     @Produces("application/text")
     public Response mapping() {
-        var list = datastore.getMapper().getMappedEntities().stream()
+        var list = ((MorphiaDatastore)datastore).getMapper().getMappedEntities().stream()
                 .map(EntityModel::getName).sorted()
                 .collect(Collectors.joining(", "));
 

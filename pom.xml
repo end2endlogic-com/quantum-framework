@@ -3,7 +3,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.end2endlogic</groupId>
     <artifactId>quantum-parent</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0-SNAPSHOT</version>
     <packaging>pom</packaging>
     <name>quantum - parent </name>
 
@@ -13,12 +13,12 @@
         <compiler-plugin.version>3.13.0</compiler-plugin.version>
         <jackson.version>2.14.1</jackson.version>
         <maven.compiler.release>17</maven.compiler.release>
-        <morphia.version>2.4.10</morphia.version>
+        <morphia.version>3.0.0-SNAPSHOT</morphia.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
         <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
-        <quarkus.platform.version>3.13.2</quarkus.platform.version>
+        <quarkus.platform.version>3.14.2</quarkus.platform.version>
         <skipITs>true</skipITs>
         <surefire-plugin.version>3.2.5</surefire-plugin.version>
         <graalvm.version>24.0.2</graalvm.version>
@@ -112,7 +112,7 @@
                                 <groupId>io.quarkus</groupId>
                                 <artifactId>quarkus-hibernate-validator</artifactId>
                             </path>
-                            <path>
+                           <path>
                                 <groupId>dev.morphia.morphia</groupId>
                                 <artifactId>morphia-core</artifactId>
                                 <version>${morphia.version}</version>

@@ -12,7 +12,7 @@ import lombok.EqualsAndHashCode;
 @EqualsAndHashCode(callSuper = true)
 public class TestParentModel extends BaseModel {
 
-    String testField;
+    protected String testField;
 
     @Override
     public String bmFunctionalArea() {

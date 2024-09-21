@@ -1,5 +1,8 @@
 package com.e2eq.framework.model.persistent.base;
 
+import com.e2eq.framework.model.persistent.morphia.interceptors.AuditInterceptor;
+import com.e2eq.framework.model.persistent.morphia.interceptors.ReferenceInterceptor;
+import com.e2eq.framework.model.persistent.morphia.interceptors.ValidationInterceptor;
 import com.e2eq.framework.rest.models.ObjectIdJsonSerializer;
 import com.e2eq.framework.rest.models.UIAction;
 import com.e2eq.framework.rest.models.UIActionList;
@@ -21,8 +24,10 @@ import org.bson.types.ObjectId;
 
 import java.util.*;
 
-import static dev.morphia.utils.IndexType.DESC;
+import static dev.morphia.mapping.IndexType.DESC;
+
 @Entity
+//@EntityListeners({ReferenceInterceptor.class, ValidationInterceptor.class, AuditInterceptor.class})
 @Indexes({
             @Index(fields={@Field( value="refName", type=DESC),
                     @Field(value="dataDomain.orgRefName", type=DESC),

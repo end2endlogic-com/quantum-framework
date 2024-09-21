@@ -79,7 +79,7 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
    }
 
    protected List<SortField> convertToSortField(String sort) {
-      List<SortField> sortFields = new ArrayList();
+      List<SortField> sortFields = new ArrayList<>();
       if (sort != null) {
          for (String sortPart : sort.split(",")) {
             String cleanSortPart = sortPart.trim();
@@ -99,7 +99,7 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
    }
 
    protected List<ProjectionField> convertProjectionFields(String projection) {
-      List<ProjectionField> projectionFields = new ArrayList();
+      List<ProjectionField> projectionFields = new ArrayList<>();
       if (projection != null) {
          for (String projectionPart : projection.split(",")) {
             String cleanProjectionPart = projectionPart.trim();

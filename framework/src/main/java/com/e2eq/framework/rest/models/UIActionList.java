@@ -10,7 +10,7 @@ import java.util.Collection;
 
 @RegisterForReflection
 public class UIActionList extends ArrayList<UIAction> {
-
+   private static final long serialVersionUID = 1L;
    public UIActionList (int initialCapacity) {
       super(initialCapacity);
    }

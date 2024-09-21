@@ -11,6 +11,7 @@ import com.e2eq.framework.test.TestChildListModel;
 import com.e2eq.framework.test.TestChildModel;
 import com.e2eq.framework.test.TestParentModel;
 import com.e2eq.framework.util.TestUtils;
+import dev.morphia.MorphiaDatastore;
 import dev.morphia.mapping.Mapper;
 import dev.morphia.mapping.codec.pojo.EntityModel;
 import dev.morphia.mapping.codec.pojo.PropertyModel;
@@ -105,55 +106,6 @@ public class TestReferenceInterceptorLogic {
     }
 
 
-
-
-    //@Test
-    public void testLogic() {
-
-        TestParentModel parent = getOrCreateParent();
-        TestChildModel child = getOrCreateChild(parent);
-        Mapper mapper = dataStore.getDefaultSystemDataStore().getMapper();
-        // Get the mapped class information
-        EntityModel mappedClass = mapper.getEntityModel(child.getClass());
-
-        for (PropertyModel mappedField : mappedClass.getProperties()) {
-            if (mappedField.isReference() ) {
-                //Reference ref = mappedField.getAnnotation(Reference.class);
-                if (BaseModel.class.isAssignableFrom(mappedField.getEntityModel().getType())) {
-                    if (mappedField.getAccessor().get(child) != null){
-                        BaseModel baseModel = (BaseModel) mappedField.getAccessor().get(child);
-                        ReferenceEntry entry = new ReferenceEntry(child.getId(), mappedField.getEntityModel().getType().getTypeName());
-                        baseModel.getReferences().add(entry);
-                        // Update the bloom filter if necessary
-                        // calculateBloomFilter(baseModel.getReferences());
-                        dataStore.getDefaultSystemDataStore().save(mappedField.getAccessor().get(child));
-                    }
-                }
-            }
-        }
-
-        Optional<TestParentModel> op = parentRepo.findByRefName("Test1");
-        Assertions.assertTrue(op.isPresent());
-        Assertions.assertTrue(op.get().getReferences().contains(new ReferenceEntry(child.getId(), TestChildModel.class.getName())));
-        try {
-            parentRepo.delete(op.get());
-            Assertions.assertTrue(false); // should throw because there is a referencing child
-        } catch (IllegalStateException e) {
-            // expected
-        }
-
-        try (MorphiaSession s= dataStore.getDefaultSystemDataStore().startSession()) {
-            s.startTransaction();
-            s.delete(child);
-            s.delete(parent);
-            s.commitTransaction();
-        } catch (Throwable t ) {
-            Assertions.assertTrue(false);
-        }
-
-    }
-
-
     @Test
     public void testInterceptor() {
         TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.userId);
@@ -187,7 +139,7 @@ public class TestReferenceInterceptorLogic {
     }
 
 
-    //@Test
+    @Test
     public void testBasicsOfListReferences() {
         TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.userId);
         String[] roles = {"user"};
@@ -198,11 +150,7 @@ public class TestReferenceInterceptorLogic {
         }
     }
 
- //   @Test
-
-    /**
-     * Not Supported in this version of the framework
-     */
+    @Test
     public void testInterceptorWithCollection() {
 
         TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.userId);

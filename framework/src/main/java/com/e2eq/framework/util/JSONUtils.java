@@ -23,12 +23,12 @@ public class JSONUtils {
       return instance;
    }
 
-   public String getSchemaAsString(Class clazz) throws JsonProcessingException {
+   public String getSchemaAsString(Class<?> clazz) throws JsonProcessingException {
       JsonSchema schema = schemaGen.generateSchema(clazz);
       return mapper.writerWithDefaultPrettyPrinter().writeValueAsString(schema);
    }
 
-   public JsonSchema getSchema(Class clazz) throws JsonMappingException {
+   public JsonSchema getSchema(Class<?> clazz) throws JsonMappingException {
       return schemaGen.generateSchema(clazz);
    }
 }
