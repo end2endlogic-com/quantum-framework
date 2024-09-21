@@ -21,7 +21,6 @@
         <quarkus.platform.version>3.14.2</quarkus.platform.version>
         <skipITs>true</skipITs>
         <surefire-plugin.version>3.2.5</surefire-plugin.version>
-        <graalvm.version>24.0.2</graalvm.version>
         <lombrok.version>1.18.34</lombrok.version>
     </properties>
 
@@ -38,13 +37,6 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
-            <!--  <dependency>
-                <groupId>software.amazon.awssdk</groupId>
-                <artifactId>bom</artifactId>
-                <version>${aws.sdk.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency> -->
         </dependencies>
     </dependencyManagement>
     <build>

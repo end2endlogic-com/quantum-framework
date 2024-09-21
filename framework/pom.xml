@@ -27,8 +27,9 @@
   </developers>
   <properties>
     <maven.compiler.release>17</maven.compiler.release>
+    <graalvm.version>24.0.2</graalvm.version>
+    <quarkus-amazon-services.version>2.16.2</quarkus-amazon-services.version>
   </properties>
-
 
   <dependencyManagement>
          <dependencies>
@@ -39,13 +40,13 @@
              <type>pom</type>
              <scope>import</scope>
          </dependency>
-         <!--  <dependency>
+         <dependency>
              <groupId>software.amazon.awssdk</groupId>
              <artifactId>bom</artifactId>
-             <version>${aws.sdk.version}</version>
+             <version>${quarkus-amazon-services.version}</version>
              <type>pom</type>
              <scope>import</scope>
-         </dependency> -->
+         </dependency>
          </dependencies>
    </dependencyManagement>
 
@@ -57,7 +58,6 @@
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-rest-jackson</artifactId>
-      <version>3.12.3</version>
     </dependency>
     <!-- comment out for local development, uncomment for sam deploy
     <dependency>
@@ -86,7 +86,9 @@
       <artifactId>quantum-extension</artifactId>
       <version>1.1.0-SNAPSHOT</version>
     </dependency>
-   <!-- <dependency>
+   <!--
+    Not needed here is in the quantum extension
+   <dependency>
       <groupId>dev.morphia.morphia</groupId>
       <artifactId>morphia-core</artifactId>
       <version>${morphia.version}</version>
@@ -121,40 +123,31 @@
       <artifactId>quarkus-hibernate-validator</artifactId>
     </dependency>
     <dependency>
-      <groupId>io.quarkiverse.amazonservices</groupId>
-      <artifactId>quarkus-amazon-s3</artifactId>
-      <version>2.10.1</version>
-    </dependency>
-    <dependency>
-      <groupId>io.quarkiverse.amazonservices</groupId>
-      <artifactId>quarkus-amazon-crt-client-internal</artifactId>
-      <version>2.10.1</version>
-    </dependency>
-    <dependency>
       <groupId>com.end2endlogic</groupId>
       <artifactId>quarkus-moneta</artifactId>
       <version>2.1.0a</version>
     </dependency>
 <!--
+    Is part of the quantum framework
     <dependency>
       <groupId>com.github.end2endlogic-com.quarkus-moneta</groupId>
       <artifactId>quarkus-moneta</artifactId>
       <version>2.1.0a</version>
     </dependency>
     -->
-
-
-
-
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>s3</artifactId>
+    </dependency>
     <dependency>
       <groupId>software.amazon.awssdk</groupId>
       <artifactId>sts</artifactId>
-      <version>2.23.0</version>
     </dependency>
-   <!-- <dependency>
+    <dependency>
       <groupId>software.amazon.awssdk</groupId>
       <artifactId>url-connection-client</artifactId>
     </dependency>
+    <!-- use this OR the netty client
     <dependency>
       <groupId>software.amazon.awssdk</groupId>
       <artifactId>apache-client</artifactId>
@@ -177,19 +170,7 @@
       <version>6.2.0</version>
     </dependency>
 
-    <!-- Future dependencies for moving to newer graal version<dependency>
-
-  <dependency>
-    <groupId>org.graalvm.polyglot</groupId>
-    <artifactId>polyglot</artifactId>
-    <version>${graalvm.version}</version>
-  </dependency>
-  <dependency>
-    <groupId>org.graalvm.polyglot</groupId>
-    <artifactId>js</artifactId>
-    <version>${graalvm.version}</version>
-    <type>pom</type>
-  </dependency> -->
+    <!-- Future dependencies for moving to newer graal version<dependency>-->
     <!-- this is dependent on the newest way to include polygot with out gu.  This is introduced in JDK 21 and above
   <dependency>
     <groupId>org.graalvm.truffle</groupId>
@@ -213,11 +194,11 @@
       <version>${graalvm.version}</version>
       <type>pom</type>
     </dependency>
-    <dependency>
+   <!-- <dependency>
       <groupId>org.graalvm.sdk</groupId>
       <artifactId>nativeimage</artifactId>
       <version>${graalvm.version}</version>
-    </dependency>
+    </dependency> -->
     <dependency>
       <groupId>at.favre.lib</groupId>
       <artifactId>bcrypt</artifactId>
@@ -291,15 +272,6 @@
       <version>1.11.1</version>
     </dependency>
 
-
-    <!--<dependency>
-      <groupId>software.amazon.awssdk</groupId>
-      <artifactId>s3</artifactId>
-    </dependency>
-     <dependency>
-      <groupId>software.amazon.awssdk</groupId>
-      <artifactId>sts</artifactId>
-    </dependency> -->
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-container-image-docker</artifactId>
