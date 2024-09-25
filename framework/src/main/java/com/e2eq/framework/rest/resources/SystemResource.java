@@ -19,14 +19,14 @@ import dev.morphia.mapping.codec.pojo.EntityModel;
 public class SystemResource {
     @Inject
     @Default
-    Datastore datastore;
+    MorphiaDatastore datastore;
 
 
     @GET
     @Path("/mapping")
     @Produces("application/text")
     public Response mapping() {
-        MorphiaDatastore ds = dataStore;
+        MorphiaDatastore ds = datastore;
         var entities = ds.getMapper().getMappedEntities();
         var list = entities.stream()
                     .map(EntityModel::getName).sorted()
