@@ -1,5 +1,7 @@
 package com.e2eq.framework.rest.resources;
 
+import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
+import com.e2eq.framework.util.SecurityUtils;
 import dev.morphia.Datastore;
 import dev.morphia.MorphiaDatastore;
 import jakarta.enterprise.inject.Default;
@@ -24,10 +26,11 @@ public class SystemResource {
     @Path("/mapping")
     @Produces("application/text")
     public Response mapping() {
-        var list = ((MorphiaDatastore)datastore).getMapper().getMappedEntities().stream()
-                .map(EntityModel::getName).sorted()
-                .collect(Collectors.joining(", "));
-
-        return Response.ok(list).build();
+        MorphiaDatastore ds = dataStore;
+        var entities = ds.getMapper().getMappedEntities();
+        var list = entities.stream()
+                    .map(EntityModel::getName).sorted()
+                    .collect(Collectors.joining(", "));
+            return Response.ok(list).build();
     }
 }

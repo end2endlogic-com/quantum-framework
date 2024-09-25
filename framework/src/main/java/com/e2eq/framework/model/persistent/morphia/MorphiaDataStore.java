@@ -22,7 +22,9 @@ import java.util.Map;
 @ApplicationScoped
 public class MorphiaDataStore {
    @Inject
-   MongoClient mongoClient;
+   MorphiaDatastore dataStore;
+   /*@Inject
+   MongoClient mongoClient; */
    @Inject
    PermissionRuleInterceptor permissionRuleInterceptor;
    @Inject
@@ -58,10 +60,17 @@ public class MorphiaDataStore {
       }
 
 
-      MorphiaDatastore datastore = datastoreMap.get(realm);
-
-
-      if (datastore == null) {
+      MorphiaDatastore mdatastore = datastoreMap.get(realm);
+      if (mdatastore == null) {
+         dataStore.getMapper().addInterceptor(validationInterceptor);
+         dataStore.getMapper().addInterceptor(permissionRuleInterceptor);
+         dataStore.getMapper().addInterceptor(auditInterceptor);
+         dataStore.getMapper().addInterceptor(referenceInterceptor);
+         //dataStore.applyIndexes();
+         datastoreMap.put(realm, dataStore);
+         mdatastore = dataStore;
+      }
+       /*if (mdatastore == null) {
          Log.warn("DataStore Null:  --- > Connecting to realm:" + realm);
          MorphiaConfig c = MorphiaConfig.load();
          c = c.database(realm);
@@ -74,7 +83,7 @@ public class MorphiaDataStore {
          Log.warn("Created Datastore, for realm:" + realm);
        //  datastore.getMapper().addInterceptor(permissionRuleInterceptor);
 
-       if (datastore instanceof MorphiaDatastore){
+       if (datastore.getClass().isAssignableFrom(MorphiaDatastore.class) ){
             MorphiaDatastore morphiaDatastore = (MorphiaDatastore) datastore;
             morphiaDatastore.getMapper().addInterceptor(validationInterceptor);
             morphiaDatastore.getMapper().addInterceptor(auditInterceptor);
@@ -99,17 +108,15 @@ public class MorphiaDataStore {
               datastore.getMapper().map(c);
           }
          datastore.ensureIndexes();
+  datastoreMap.put(datastore.getDatabase().getName(), datastore);
 
-       */
-
-         datastoreMap.put(datastore.getDatabase().getName(), datastore);
       }
       else {
          if (Log.isDebugEnabled()) {
             Log.debug("Data Store already connected for realm:" + realm + " database name:" + datastore.getDatabase().getName());
          }
-      }
-      return datastore;
+      } */
+      return mdatastore;
    }
 
 }
