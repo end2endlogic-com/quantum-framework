@@ -27,7 +27,7 @@
   </developers>
   <properties>
     <maven.compiler.release>17</maven.compiler.release>
-    <graalvm.version>24.0.2</graalvm.version>
+    <graalvm.version>24.1.0</graalvm.version>
     <quarkus-amazon-services.version>2.18.1</quarkus-amazon-services.version>
   </properties>
 
@@ -40,13 +40,7 @@
              <type>pom</type>
              <scope>import</scope>
          </dependency>
-         <dependency>
-             <groupId>software.amazon.awssdk</groupId>
-             <artifactId>bom</artifactId>
-             <version>${quarkus-amazon-services.version}</version>
-             <type>pom</type>
-             <scope>import</scope>
-         </dependency>
+
          </dependencies>
    </dependencyManagement>
 
@@ -114,7 +108,7 @@
       <artifactId>quarkus-qute</artifactId>
     </dependency>
 
-     <dependency>
+    <dependency>
       <groupId>com.github.jnr</groupId>
       <artifactId>jnr-unixsocket</artifactId>
       <version>0.38.22</version>
@@ -137,9 +131,9 @@
       <version>2.1.0b</version>
     </dependency>
     <dependency>
-      <groupId>org.acme</groupId>
+      <groupId>com.end2endlogic</groupId>
       <artifactId>jakarta-transformer-extension</artifactId>
-      <version>0.0.1-SNAPSHOT</version>
+      <version>0.0.1</version>
     </dependency>
 <!--
     Is part of the quantum framework
@@ -149,35 +143,8 @@
       <version>2.1.0a</version>
     </dependency>
     -->
-    <dependency>
-      <groupId>software.amazon.awssdk</groupId>
-      <artifactId>s3</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>software.amazon.awssdk</groupId>
-      <artifactId>sts</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>software.amazon.awssdk</groupId>
-      <artifactId>url-connection-client</artifactId>
-    </dependency>
-    <!-- use this OR the netty client
-    <dependency>
-      <groupId>software.amazon.awssdk</groupId>
-      <artifactId>apache-client</artifactId>
-    </dependency> -->
-    <dependency>
-      <groupId>software.amazon.awssdk</groupId>
-      <artifactId>netty-nio-client</artifactId>
-      <version>2.23.17</version>
-    </dependency>
-    <dependency>
-      <groupId>io.netty</groupId>
-      <artifactId>netty-resolver-dns-native-macos</artifactId>
-      <version>4.1.99.Final</version>
-      <classifier>osx-aarch_64</classifier>
-      <!-- <classifier>osx-x86_64</classifier> -->
-    </dependency>
+
+
     <dependency>
       <groupId>io.github.jopenlibs</groupId>
       <artifactId>vault-java-driver</artifactId>
@@ -204,7 +171,7 @@
     </dependency>
     <dependency>
       <groupId>org.graalvm.polyglot</groupId>
-      <artifactId>js</artifactId>
+      <artifactId>js-community</artifactId>
       <version>${graalvm.version}</version>
       <type>pom</type>
     </dependency>
