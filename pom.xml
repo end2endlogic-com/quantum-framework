@@ -18,7 +18,7 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
         <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
-        <quarkus.platform.version>3.14.2</quarkus.platform.version>
+        <quarkus.platform.version>3.15.0</quarkus.platform.version>
         <skipITs>true</skipITs>
         <surefire-plugin.version>3.2.5</surefire-plugin.version>
         <lombrok.version>1.18.34</lombrok.version>
@@ -45,7 +45,8 @@
                 <plugin>
                     <groupId>${quarkus.platform.group-id}</groupId>
                     <artifactId>quarkus-maven-plugin</artifactId>
-                    <version>${quarkus.platform.version}</version>
+                   <!-- <version>${quarkus.platform.version}</version> -->
+                    <version>3.14.4</version>
                     <extensions>true</extensions>
                     <executions>
                         <execution>

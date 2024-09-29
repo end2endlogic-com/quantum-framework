@@ -3,7 +3,7 @@ package com.e2eq.framework.model.persistent.morphia.changesets;
 import com.e2eq.framework.model.persistent.morphia.*;
 import com.e2eq.framework.model.persistent.security.*;
 import com.e2eq.framework.rest.models.Role;
-import com.e2eq.framework.config.AWSConfig;
+
 import com.e2eq.framework.model.persistent.base.Counter;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.migration.annotations.Execution;
@@ -58,15 +58,13 @@ public class InitializeDatabase implements ChangeSetBean {
    @Inject
    CounterRepo counterRepo;
 
-   @Inject
-   AWSConfig config;
 
 
    @Execution
    public void execute(String realm) throws Exception{
       // get flag from app config
 
-      if (config.checkMigration().isPresent() && config.checkMigration().get().booleanValue()) {
+
          try (MorphiaSession session = dataStore.getDefaultSystemDataStore().startSession()) {
             try {
                session.startTransaction();
@@ -87,11 +85,7 @@ public class InitializeDatabase implements ChangeSetBean {
          // start transaction
          // do action
          // end transaction
-      } else {
-         if (Log.isInfoEnabled()) {
-            Log.infof("Skipping database migration due to configuration: checkMigration is Present %s.  Value: %s ",config.checkMigration().isPresent(), (config.checkMigration().isPresent()) ? config.checkMigration().get().booleanValue() : "Null");
-         }
-      }
+
    }
 
    public Counter ensureCounter (String counterName, long initialValue) {
