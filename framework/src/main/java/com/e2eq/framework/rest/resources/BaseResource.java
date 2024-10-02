@@ -5,7 +5,9 @@ import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
 import com.e2eq.framework.model.securityrules.SecurityCheckException;
 import com.e2eq.framework.model.securityrules.RuleContext;
 import com.e2eq.framework.rest.models.Collection;
+import com.e2eq.framework.rest.models.CounterResponse;
 import com.e2eq.framework.rest.models.RestError;
+import com.e2eq.framework.rest.models.SuccessResponse;
 import com.e2eq.framework.util.JSONUtils;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.module.jsonSchema.JsonSchema;
@@ -125,6 +127,8 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
    public Response getCount(@QueryParam("filter") String filter) {
       long count = repo.getCount(filter);
       CounterResponse response = new CounterResponse(count);
+      response.setStatusCode(Response.Status.OK.getStatusCode());
+      response.setMessage(String.format("Count: %d", count));
       return Response.ok().entity(response).build();
    }
 
@@ -179,8 +183,6 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
       }
    }
 
-
-
    @Path("schema")
    @GET
    @Produces(MediaType.APPLICATION_JSON)
@@ -205,9 +207,15 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
    public Response update(@QueryParam("id") String id, @QueryParam("pairs") Pair<String,Object>... pairs) {
       long updated = repo.update(id, pairs);
       if (updated > 0) {
-         return Response.ok().build();
+         SuccessResponse r =  new SuccessResponse();
+         r.setMessage("Update successful");
+         r.setStatusCode(Response.Status.OK.getStatusCode());
+         return Response.ok().entity(r).build();
       } else {
-         return Response.status(Response.Status.NOT_FOUND).entity("Entity not found for ID: " + id).build();
+         RestError error = RestError.builder()
+                 .status(Response.Status.NOT_FOUND.getStatusCode())
+                 .statusMessage("Id:" + id + " was not found").build();
+         return Response.status(Response.Status.NOT_FOUND).entity(error).build();
       }
    }
 
@@ -216,10 +224,26 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
    public Response delete(@QueryParam("id") String id) {
       Optional<T> model = repo.findById(id);
       if (model.isPresent()) {
-         repo.delete(model.get());
-         return Response.ok().entity("Entity deleted successfully").build();
+         long deletedCount = repo.delete(model.get());
+         if (deletedCount != 0) {
+            SuccessResponse r =  new SuccessResponse();
+            r.setMessage("Delete successful");
+            r.setStatusCode(Response.Status.OK.getStatusCode());
+            return Response.ok().entity(r).build();
+         } else {
+            RestError error = RestError.builder()
+                    .statusMessage("Entity with Id:" + id + " was found but delete returned 0 indicating the entity may not have been deleted.  Retry your request")
+                    .reasonMessage("Delete Operation returned 0 when 1 was expected")
+                    .debugMessage("MongoDB delete operation returned 0")
+                    .build();
+
+            return Response.status(Response.Status.NOT_MODIFIED).entity(error).build();
+         }
       } else {
-         return Response.status(Response.Status.NOT_FOUND).entity("Entity not found for ID: " + id).build();
+         RestError error = RestError.builder()
+                 .status(Response.Status.NOT_FOUND.getStatusCode())
+                 .statusMessage("Id:" + id + " was not found").build();
+         return Response.status(Response.Status.NOT_FOUND).entity(error).build();
       }
    }
 }

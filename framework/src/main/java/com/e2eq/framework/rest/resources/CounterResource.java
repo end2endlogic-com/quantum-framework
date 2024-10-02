@@ -1,7 +1,7 @@
 package com.e2eq.framework.rest.resources;
 
 import com.e2eq.framework.model.persistent.base.Counter;
-import com.e2eq.framework.model.persistent.base.CounterResponse;
+import com.e2eq.framework.rest.models.CounterResponse;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.rest.models.RestError;
@@ -11,8 +11,6 @@ import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.Response;
-import lombok.Data;
-import lombok.EqualsAndHashCode;
 
 @Path("/integration/counters")
 @RolesAllowed({ "user", "admin" })
