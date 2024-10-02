@@ -1,4 +1,4 @@
-package com.e2eq.framework.model.persistent.base;
+package com.e2eq.framework.rest.models;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -8,6 +8,6 @@ import lombok.NoArgsConstructor;
 @EqualsAndHashCode
 @AllArgsConstructor
 @NoArgsConstructor
-public @Data class CounterResponse {
+public @Data class CounterResponse extends ResponseBase {
        long value;
    }

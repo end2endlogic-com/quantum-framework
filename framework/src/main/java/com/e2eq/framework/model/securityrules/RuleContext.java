@@ -460,7 +460,7 @@ public class RuleContext {
       return new SecurityURI(header, body);
    }
 
-   public List<Filter> getFilters (List<Filter> filters, @Valid @NotNull PrincipalContext pcontext, @Valid @NotNull ResourceContext rcontext) {
+   public List<Filter> getFilters (List<Filter> filters, @Valid @NotNull( message="Principal Context can not be null" ) PrincipalContext pcontext, @Valid @NotNull (message="Resource Context can not be null") ResourceContext rcontext) {
 
       // Find applicable rules
      List<SecurityURI> uris =  this.buildFromContext(pcontext, rcontext);
