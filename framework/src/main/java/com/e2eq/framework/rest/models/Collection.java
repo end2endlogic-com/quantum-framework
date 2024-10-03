@@ -17,6 +17,7 @@ public @Data class Collection<T> {
    protected List<String> sortFields= Collections.emptyList();
 
    protected List<T> rows;
+   protected int rowCount;
 
    protected String filter;
 
@@ -25,6 +26,7 @@ public @Data class Collection<T> {
 
    public Collection(List<T> rows, int offset, int limit, String filter) {
       this.rows = rows;
+      this.rowCount = (rows==null) ? 0 : rows.size();
       this.offset = offset;
       this.limit = limit;
       this.filter = filter;

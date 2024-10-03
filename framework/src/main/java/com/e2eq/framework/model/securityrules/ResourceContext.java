@@ -9,11 +9,11 @@ import java.util.Optional;
 
 @RegisterForReflection
 public class ResourceContext {
-  @NotNull String realm;              // The realm this resource is in
-  @NotNull  String area;               // the area the resource resides in
-  @NotNull String functionalDomain;   // the functional domain with in the area
-  @NotNull String action;             // the action we are trying to take
-  @NotNull String resourceId;         // the id (objectId) if known
+  protected @NotNull String realm;              // The realm this resource is in
+  protected @NotNull  String area;               // the area the resource resides in
+  protected @NotNull String functionalDomain;   // the functional domain with in the area
+  protected @NotNull String action;             // the action we are trying to take
+  protected String resourceId;         // the id (objectId) if known
 
    public static ResourceContext DEFAULT_ANONYMOUS_CONTEXT = new ResourceContext("NONE", "NONE", "NONE", "NONE", null);
 
