@@ -161,15 +161,13 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
             } else {
                sortFields = null;
             }
-
-
             projectionFields = convertProjectionFields(projection);
-
          }
 
 
          List<T> ups = repo.getListByQuery(skip, limit, filter, sortFields, projectionFields);
-         Collection<T> collection = new Collection<>(ups, skip, limit, filter);
+         long count = repo.getCount(filter);
+         Collection<T> collection = new Collection<>(ups, skip, limit, filter, count);
          // fill in ui-actions
          collection = repo.fillUIActions(collection);
 
