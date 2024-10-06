@@ -34,7 +34,7 @@ public class RegistryResource extends BaseResource<ApplicationRegistration, Base
            functionalDomain="registrationRequest",
            action="create"
    )
-   public Response create(ApplicationRegistration request) {
+   public ApplicationRegistration create(ApplicationRegistration request) {
       return super.save(request);
    }
 
