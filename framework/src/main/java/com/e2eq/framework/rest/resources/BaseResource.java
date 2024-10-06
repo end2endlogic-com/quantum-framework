@@ -18,6 +18,10 @@ import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.apache.commons.lang3.tuple.Pair;
+import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -121,21 +125,23 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
       return projectionFields;
    }
 
+
    @Path("count")
    @GET
    @Produces(MediaType.APPLICATION_JSON)
-   public Response getCount(@QueryParam("filter") String filter) {
+   public CounterResponse getCount(@QueryParam("filter") String filter) {
       long count = repo.getCount(filter);
       CounterResponse response = new CounterResponse(count);
       response.setStatusCode(Response.Status.OK.getStatusCode());
       response.setMessage(String.format("Count: %d", count));
-      return Response.ok().entity(response).build();
+      return response;
    }
+
 
    @Path("list")
    @GET
    @Produces(MediaType.APPLICATION_JSON)
-   public Response getList(@DefaultValue("0")
+   public Collection<T> getList(@DefaultValue("0")
                            @QueryParam("skip") int skip,
                            @DefaultValue("50")@QueryParam("limit") int limit,
                            @QueryParam("filter") String filter,
@@ -144,7 +150,6 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
 
       List<ProjectionField> projectionFields = null;
       List<SortField> sortFields = null;
-      try {
          if (sort != null || projection != null) {
 
             if (sort!=null) {
@@ -171,33 +176,31 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
          // fill in ui-actions
          collection = repo.fillUIActions(collection);
 
-         return Response.ok().entity(collection).build();
-      } catch (SecurityCheckException ex) {
-         RestError error = RestError.builder()
-                 .status(Response.Status.UNAUTHORIZED.getStatusCode())
-                 .statusMessage(ex.getMessage())
-                 .securityResponse(ex.getResponse()).build();
-         return Response.status(Response.Status.UNAUTHORIZED).entity(error).build();
-      }
+         return collection;
+
    }
 
    @Path("schema")
    @GET
    @Produces(MediaType.APPLICATION_JSON)
-   public Response getSchema() throws JsonMappingException {
+   public JsonSchema getSchema() throws JsonMappingException {
       JSONUtils utils = JSONUtils.instance();
       JsonSchema schema = utils.getSchema(repo.getPersistentClass());
-      return Response.ok().entity(schema).build();
+      return schema;
    }
 
    @POST
    @Produces(MediaType.APPLICATION_JSON)
    @Consumes(MediaType.APPLICATION_JSON)
-   public Response save(T model) {
+   public T save(T model) {
       model = repo.save(model);
-      return Response.ok().entity(model).status(Response.Status.CREATED).build();
+      return model;
    }
 
+   @APIResponses(value = {
+           @APIResponse(responseCode = "200", description = "Success", content = @Content(mediaType = "application/json", schema = @Schema(implementation = SuccessResponse.class))),
+           @APIResponse(responseCode = "404", description = "Not Found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
+   })
    @Path("set")
    @PUT
    @Produces(MediaType.APPLICATION_JSON)
