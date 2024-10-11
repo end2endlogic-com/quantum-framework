@@ -21,6 +21,7 @@ import lombok.NoArgsConstructor;
 import lombok.NonNull;
 import org.apache.commons.text.WordUtils;
 import org.bson.types.ObjectId;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 import java.util.*;
 
@@ -42,6 +43,7 @@ public abstract @Data @NoArgsConstructor class BaseModel {
 
     @Id
     @JsonSerialize(using = ObjectIdJsonSerializer.class)
+    @Schema(implementation = String.class, description = "MongoDB ObjectId as String")
     protected ObjectId id;
 
     /**
