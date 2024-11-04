@@ -55,6 +55,8 @@ public class DataDomain {
 
     protected String businessTransactionId;
 
+    protected String locationId;
+
     public DataDomain() {}
 
     public DataDomain(
@@ -147,6 +149,14 @@ public class DataDomain {
         return this.businessTransactionId;
     }
 
+    public void setLocationId(String locationId) {
+        this.locationId = locationId;
+    }
+
+    public String getLocationId() {
+        return this.locationId;
+    }
+
     public DataDomain clone() throws CloneNotSupportedException {
         DataDomain rc = new DataDomain();
         rc.setAccountNum(this.accountNum);
@@ -154,11 +164,9 @@ public class DataDomain {
         rc.setTenantId(this.tenantId);
         rc.setOwnerId(this.ownerId);
         rc.setDataSegment(this.dataSegment);
+        rc.setBusinessTransactionId(this.businessTransactionId);
+        rc.setLocationId(this.locationId);
         return rc;
     }
-    /**  public String getKey() {
-      return orgRefName + ":" + accountNum + ":" + tenantId + ":" + ownerId + ":" + dataSegment;
-   }
-   public void setKey(String key) {} **/
 
 }

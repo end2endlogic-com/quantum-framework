@@ -95,6 +95,51 @@ public class TestBasicRepo {
       }
    }
 
+   @Test
+   public void testMerge() {
+      Datastore ds = dataStore.getDefaultSystemDataStore();
+      String[] roles = {"user"};
+      PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.userId, roles);
+      ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "save");
+      TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.userId);
+      // Create a test user
+      try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
+         // see if the test user is already there  ( dirty database )
+         Optional<UserProfile> u = userProfileRepo.findByRefName("tuser@test-system.com");
+         if (u.isPresent()) {
+            userProfileRepo.delete(u.get());
+         }
+
+         UserProfile userProfile = new UserProfile();
+         userProfile.setRefName("tuser@test-system.com");
+         userProfile.setEmail("tuser@test-system.com");
+         userProfile.setDisplayName("Test");
+         userProfile.setUserName("tuser@test-system.com");
+         userProfile.setUserId("tuser@test-system.com");
+         userProfile.setDataDomain(TestUtils.dataDomain);
+         userProfile = userProfileRepo.save(userProfile);
+         assertTrue(userProfile.getId()!= null);
+
+         UserProfile userProfile2 = new UserProfile();
+         // so in the end we will need to look up the id, and the version any way so its debatable if
+         // using the built in merge is worth it, as the record will need to be read twice for every merge.
+         userProfile2.setId(userProfile.getId());
+         userProfile2.setVersion(userProfile.getVersion()); // need to deal with this somehow.
+
+         // if this is the only thing we want to change
+         userProfile2.setUserName("changed");
+         userProfile2.setSkipValidation(true);
+         userProfileRepo.merge(userProfile2);
+
+         UserProfile dbProfile = userProfileRepo.findById(userProfile.getId()).get();
+         assertTrue(dbProfile.getUserName().equals("changed"));
+         assertTrue(dbProfile.getUserId().equals("tuser@test-system.com"));
+         assertTrue(dbProfile.getDisplayName().equals("Test"));
+         userProfileRepo.delete(dbProfile);
+
+      }
+   }
+
 
    // @Test
    // Commented out because the reference data does not have a user registered thus this fails

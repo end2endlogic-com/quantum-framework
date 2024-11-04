@@ -18,10 +18,15 @@ import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.apache.commons.lang3.tuple.Pair;
+import org.eclipse.microprofile.jwt.JsonWebToken;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.enums.SecuritySchemeType;
 import org.eclipse.microprofile.openapi.annotations.media.Content;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
+import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement;
+import org.eclipse.microprofile.openapi.annotations.security.SecurityScheme;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -30,9 +35,19 @@ import java.util.Optional;
 /**
  A base resource class
  */
+@SecurityScheme(
+        securitySchemeName = "bearerAuth",
+        type = SecuritySchemeType.HTTP,
+        scheme = "bearer",
+        bearerFormat = "JWT"
+)
 @RolesAllowed({ "user", "admin" })
 public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
    protected R repo;
+
+   @Inject
+   JsonWebToken jwt;
+
 
    @Inject
    RuleContext ruleContext;
@@ -44,6 +59,9 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
    @Path("refName")
    @GET
    @Produces(MediaType.APPLICATION_JSON)
+   @Operation(summary = "Get The entity by refName",
+           description = "Will get the entity or return a 404 if not found")
+   @SecurityRequirement(name = "bearerAuth")
    public Response byRefName (@QueryParam("refName") String refName) {
       Response response;
       Optional<T> opModel = repo.findByRefName(refName);
@@ -66,6 +84,7 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
    @Path("id")
    @GET
    @Produces(MediaType.APPLICATION_JSON)
+   @SecurityRequirement(name = "bearerAuth")
    public Response byId(@QueryParam("id") String id) {
       Response response;
       Optional<T> opModel = repo.findById(id);
@@ -129,6 +148,8 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
    @Path("count")
    @GET
    @Produces(MediaType.APPLICATION_JSON)
+   @Consumes(MediaType.APPLICATION_JSON)
+   @SecurityRequirement(name = "bearerAuth")
    public CounterResponse getCount(@QueryParam("filter") String filter) {
       long count = repo.getCount(filter);
       CounterResponse response = new CounterResponse(count);
@@ -141,6 +162,7 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
    @Path("list")
    @GET
    @Produces(MediaType.APPLICATION_JSON)
+   @SecurityRequirement(name = "bearerAuth")
    public Collection<T> getList(@DefaultValue("0")
                            @QueryParam("skip") int skip,
                            @DefaultValue("50")@QueryParam("limit") int limit,
@@ -183,6 +205,7 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
    @Path("schema")
    @GET
    @Produces(MediaType.APPLICATION_JSON)
+   @SecurityRequirement(name = "bearerAuth")
    public JsonSchema getSchema() throws JsonMappingException {
       JSONUtils utils = JSONUtils.instance();
       JsonSchema schema = utils.getSchema(repo.getPersistentClass());
@@ -192,6 +215,7 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
    @POST
    @Produces(MediaType.APPLICATION_JSON)
    @Consumes(MediaType.APPLICATION_JSON)
+   @SecurityRequirement(name = "bearerAuth")
    public T save(T model) {
       model = repo.save(model);
       return model;
@@ -205,6 +229,7 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
    @PUT
    @Produces(MediaType.APPLICATION_JSON)
    @Consumes(MediaType.APPLICATION_JSON)
+   @SecurityRequirement(name = "bearerAuth")
    public Response update(@QueryParam("id") String id, @QueryParam("pairs") Pair<String,Object>... pairs) {
       long updated = repo.update(id, pairs);
       if (updated > 0) {
@@ -222,6 +247,9 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
 
    @Path("id")
    @DELETE
+   @Produces(MediaType.APPLICATION_JSON)
+   @Consumes(MediaType.APPLICATION_JSON)
+   @SecurityRequirement(name = "bearerAuth")
    public Response delete(@QueryParam("id") String id) {
       Optional<T> model = repo.findById(id);
       if (model.isPresent()) {
