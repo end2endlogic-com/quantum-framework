@@ -1,0 +1,994 @@
+= Project CALIBRE
+
+Java backend for core services backed by Mongodb
+
+== Getting Started Installation:
+I recommend that you use brew to install maven, and that you download the GaalVM from https://www.graalvm.org/downloads/ and install it on MacOS in your /Libraries/Java/JavaVirtualMachines directory.  Then you must set your JAVA_HOME environment variable to point to the directory/Contents/Home location.
+
+You can also use SDK Man, and other means to install the JDK. The build process will ensure you are running GraalVM community at a 17 language level, and will complain if that is not the case. Since we use the polygot capabilities of the JVM you will need to install language support for nodejs.  To do this you can follow these instructions to install javascript support in the JVM: https://www.graalvm.org/jdk17/reference-manual/js/
+
+You will also need docker installed on your machine and available as the build system in certain configurations uses docker to automatically start various dependencies such as mongodb, and or other components
+
+For local builds, you will also need mongodb installed.  To install Mongodb I recommend that you use brew to install it, as that is the easiest way to install it and keep it up to date.  You can follow these instructions: https://www.mongodb.com/docs/manual/tutorial/install-mongodb-on-os-x/
+
+=== Setting up Mongodb
+The system utilizes transactional access in cases where it needs to update more than one collection, or more than one document at a time.  Mongodb requires a replication cluster to support transactions.  As a result there is some more set up needed to run mongo locally in a way to support transactions.
+
+To run a replica set locally you can kick up mongodb from the command line using this command:
+```
+mongod --wiredTigerCacheSizeGB 1 --dbpath /Users/yourUserId/data/test --replSet rs0 --bind_ip localhost
+```
+
+The first time you run this command you will need to shell into the mongodb instance using the command:
+
+```
+mongosh
+```
+
+Then execute this command in the shell:
+
+```
+rs.initiate()
+```
+
+IMPORTANT: you will need to create the directory /data/test so that mongodb can utilize that for its data files.  There is no requirement on the location, or name of the directory except that it has to exist in advance and the executing user needs write access to it.
+
+
+
+=== Quarkus command line:
+Install the quarkus command line tool using:
+
+`brew install quarkus`
+
+
+== Building and Running the Application:
+
+==== Requirements
+
+Java JDK Version: GraalVM Community ( https://www.graalvm.org/downloads/ ) version Java 17.
+
+IMPORTANT: For various reasons Java 21 is not currently supported, this is something that will happen shortly but currently the system has been tested and developed against 17.
+
+Maven Version: At a minimum version 3.9.8+
+
+Mongodb Version: 7.0.12+
+
+NOTE: Docker files are provided in the source code and utilized to build native compiled applications for various targeted Operating systems.  Current development has focused on the JVM deployment, and while native compiles will reduce startup times in lambda, and have lower memory footprints, it is an optimization that is deferred until we get further into production deployments.  There are some complications when building native executables on OSX when targeting a Linux OS for example.  The system will use docker to do the build and the resulting binary will not natively execute on OSX, but will on a linux VM.  The build system will be using github actions for building on github which at that time will be running on linux anyway so a preference to use that as the means to generate native binaries is preferable.
+
+== Setting up Code Repositories:
+Maven uses a file called settings.xml to specify what servers it utilizes for retrieving dependent libraries.  This project depends on various open source libraries.  For multi-module development there is a need for a centralized private maven /npm /docker repository to utilize for development, and other artifacts that are potentially not available to the public. AWS provides code artifact, and there several other options.  One of the down sides to code artifact is that it is cumbersome to configure, and use for developers.  One of the easiest solutions to set up and use is io.cloudrepo.  Movista will need to determine the best artifact repo to use going forward but for now the system uses io.cloudrepo for artifact dependency management.   You have to configure maven to pull the dependencies from io.cloudrepo.  To do this create a file in under the directory ~/.m2/settings.xml
+
+[source,xml]
+----
+<settings>
+  <servers>
+    <server>
+      <!-- id is a unique identifier for a single repository.-->
+      <id>io.cloudrepo</id>
+      <username>Your User ID</username>
+      <!-- Password of the Repository User. -->
+      <password>Your Password</password>
+    </server>
+  </servers>
+</settings>
+----
+Contact your system administrator to get a userid and password.
+
+==== Building the Application:
+
+You can build the application using the following command(s):
+
+For a local build:
+
+`mvn clean package` - will compile the code, run unit tests, and create artifacts located under the target directory.
+
+==== Running the application locally
+You will need to have mongodb running locally and a .env file will need to be created in the root directory of project.  There is a env_example file in the root of the project you can use.  Copy this file to .env and modify accordingly
+
+[source,json]
+----
+{
+    "Parameters": {
+      "MONGODB_CONNECTION_STRING":"mongodb://localhost:27017/?retryWrites=false",
+      "QUARKUS_HTTP_CORS_ORIGINS":"http://localhost:3000,http://localhost:8080,http://dev-j.movista.com,https://dev-j.movista.com",
+      "POSTMARK_API_KEY":"<< Your Key >>",
+      "POSTMARK_DEFAULT_FROM_EMAIL":"noreply@movista.com",
+      "POSTMARK_DEFAULT_TO_EMAIL":"postmark@movista.com",
+      "AWS_REGION":"us-east-1"
+    }
+}
+----
+
+`quarkus dev` - will call the maven build system if needed and then run the application.
+
+NOTE: the server will run on port 8080
+
+== Developer Guide
+
+1. The application uses Quarkus, a Kubernetes Native Java framework.  As such there are various base concepts that the developer is expected to know such as general java language knowledge, dependency injection concepts, common logging patterns, coding best practices, memory management, multi-threading concepts, streaming concepts, typical maven directory layout and conventions.
+
+2. The application uses Rest Easy for JAXRS ( Rest API ) support.  You can find the documentation for REST easy at: https://resteasy.dev/
+
+As a brief introduction this is a typical rest easy class:
+
+[source, java]
+----
+@Path("/library")
+public class Library {
+
+   @GET
+   @Path("/books")
+   public String getBooks() {}
+
+   @GET
+   @Path("/book/{isbn}")
+   public String getBook(@PathParam("isbn") String id) {
+      // search my database and get a string representation and return it
+   }
+
+   @PUT
+   @Path("/book/{isbn}")
+   public void addBook(@PathParam("isbn") String id, @QueryParam("name") String name) {}
+
+   @DELETE
+   @Path("/book/{id}")
+   public void removeBook(@PathParam("id") String id) {}
+
+}
+----
+
+The concepts are mostly self-explanatory, path provides the url that will be used to access the API.  GET / PUT / POST etc specify the Method for HTTP, and you can have path parameters, query parameters, and various context's passed to you based upon the method signature.
+
+=== Quantum Framework
+The quantum framework builds on top of Morphia, Quarkus, and RestEasy to provide base functionality needed for a typical Software as a Service solutions.  It includes ways to rapidly build CRUDL ( create, read, update, delete, list) REST API's, provide security mechanisms for complex data segmentation, and multi-tenancy scenarios, and various design patterns such as extensible security concepts ( user defined roles, and permissions ), extensible models using dynamic atttributes,basic and advanced tagging, optimistic locking, create ts/ update ts  auditing, and static based validations, internationalization / I18N / I10N, error handling and exception management, distributed trust,  referencial integrity checking and more.
+
+Refer to the quantum site for more details:
+https://github.com/end2endlogic-com/quantum-framework
+
+=== Lombrok annotations
+The system uses Lombrok to generate alot of the boilerplate typically associated with Java based development:  You can get more information at:
+https://projectlombok.org/
+
+A brief introduction however is this.  When creating java objects that represent entities that will be stored in mongodb typically these objects will be made up a set of properties, and need getters, setters, equals, hash, and toString methods created for them.  Instead of having to implement all that boilerplate which can often reduce the readability of the file, and introduce potential bugs due to inconsistent implementations a cleaner / clearer way is to leverage lombrok:
+
+Here is a example model class:
+
+[source, java]
+----
+@EqualsAndHashCode(callSuper = true)
+@Entity
+@RegisterForReflection
+@NoArgsConstructor
+@ToString()
+@Data
+public class Location extends BaseModel {
+
+    protected String title;
+    @NotNull
+    @NotEmpty
+    protected String type;
+    @Valid
+    protected MailingAddress address;
+    protected List<DynamicAttributeSet> dynamicAttributeSets;
+
+    @Override
+    public String bmFunctionalArea() {
+        return "Location";
+    }
+
+    @Override
+    public String bmFunctionalDomain() {
+        return "MULTI-JOB";
+    }
+}
+----
+
+Pretty simple right.  This will create a full java class with getters, setters, equals, hashcode, toString and appropriate constructors.
+
+There are two quantum specific functions required ( bmFunctionalArea, and bmFunctionalDomain) these return strings that are used in the permission system which we will get into later in this document.  For now just know they are way to categorize and group various models together so later they can be notion about from a permission perspective.
+
+There are two special annotations
+```
+@Entity
+@RegisterForReflection
+```
+
+That are used by Morphia, and are required for Quarkus Native compiles.
+
+
+The system leverages Hibernative Validation annotations:
+https://hibernate.org/validator/
+
+Which provides annotations such as NotNull, Min / Max and many other such ways to specify constraints on properties to determine if the values contained with in them are "valid" or not.
+
+The way to make the Model Persistent and Exposed as a rest api is just as easy.
+
+To create a code that will provide create, update, read, list, and most base functionality to interact with mongodb requires this simple class:
+
+[source, java]
+----
+
+@ApplicationScoped
+public class LocationRepo extends MorphiaRepo<Location>  {
+}
+
+----
+
+Yep thats it.
+
+Then to expose a standard set of REST APIs add this class:
+
+[source, java]
+----
+@Path("/locations")
+public class LocationResource extends BaseResource<Location, LocationRepo> {
+    protected LocationResource(LocationRepo repo) {
+        super(repo);
+    }
+
+    // provide a list of distinct location lists
+}
+----
+
+And you are done! You can now look at the api's in the swagger documentation on your server located at
+http://localhost:8080/swagger-ui/index.html
+
+All the methods to create, update, search, export, import, list, validate, get the json schema, are all available including embedded security etc.
+
+
+=== Modeling Concepts:
+
+==== Standard Structure BaseModel
+Models in quantum have the following out of the box attributes and requirements:
+
+**id** - This is a ObjectId in Bson terms used as the "record id" and globally unique, and indexed on all collections.  It is automatically created if not passed in on creation and returned to caller when calling the save api.
+
+**refName** - this is referentially consistent key ( perhaps will rename it to refKey one day ). It is user assigned, required to be provided for all objects, and is unique with in a data domain, but not globally unique.  An easy example is say a userProfile class.  The refName would most likely be the userId.  RefNames make it easier to call rest apis, make references without having to deal with GUID's, or ObjectID strings.  For example if you created a userId say myuser and you wanted to retrieve it, its straight forward to call /users/list?refName=myuser vs. having to know the id that was assigned when the user was created.
+
+**displayName** - This is set to the refName by default, but can be specified seperately.  It is a required field that has to be passed on creation of the object.  The intent is this is the string that is used in user interfaces and represents the "pretty human readable" version of the refName
+
+**dataDomain** - This is the structure the is used for multi-tenancy and data segmentation.  It represents the third dimension to permissions, where a permission is loosely defined by a FunctionalDomain:Action:DataDomain.  Example might me UserProfile:View:Movista.com where this would be read as a permission granting the action "view" if the user is with in the "Movista.com" data domain.  More on this when we get into the security framework.
+
+**version** - This is created and set by morphia and is updated every time the record is changed.  It is used for optimistic locking, and allows for patterns where you read a record, which say have version 1 and then you update the record and call an update api, the api will check if the version of the record in the  database is still 1 and update it accordingly if it is also incrementing the version as it does so.  In Mongodb this is an atomic operation, and can be done out-side the boundaries of a transaction as a result.  If two different callers read the record ( say at version 1)  each then updates it and calls the update api, one of them will fail because the version will get updated and the check will fail when the other caller attempts to do the update.
+
+**tags** - Simple array of strings.  There are not constraints on the strings, so you can add things like mycategory:xxx and creation your own psedo hiearchy.  The tags are searchable and can be indexed
+
+**advancedTags** - This is a more robust structure that provides a seperate json object with a category, tagDisplayName, and a list of additionalData that can be provided as strings.
+
+**auditInfo** - A structure that has a creation timestamp, last updated timestamp, creation user, and update user embedded with in it.
+
+**references** - A structure of reference entries that provide a way to know what other entities in the system refer to this one.  This is automatically maintained by the framework, and will prevent deletion of an object that is referred by other entities.
+
+==== Transient Attributes
+These attributes are no persisted and are added by the framework at runtime when returning entities for REST APIs.
+
+**actionList** - This is a list of actions that the currently authenticated user / caller of the api can take on this record.
+
+**defaultUIActions** - This is a list of actions that the user "could" possibly take on the record if they had the permissions to do so.
+
+**checked** - ignore for now here as a place holder for future use.
+
+Example Object:
+[source,json]
+----
+{
+    "_id" : ObjectId("66da6d3eae45c572ee7a495e"),
+    "_t" : "Project",
+    "refName" : "Test Project 1",
+    "displayName" : "Test Project 1",
+    "dataDomain" : {
+        "orgRefName" : "system.com",
+        "accountNum" : "0000000000",
+        "tenantId" : "system-com",
+        "dataSegment" : NumberInt(0),
+        "ownerId" : "system@system.com"
+    },
+    "version" : NumberLong(2),
+    "auditInfo" : {
+        "_t" : "AuditInfo",
+        "creationTs" : ISODate("2024-09-06T02:47:26.570+0000"),
+        "creationIdentity" : "system@system.com",
+        "lastUpdateTs" : ISODate("2024-09-06T02:47:26.674+0000"),
+        "lastUpdateIdentity" : "system@system.com"
+    },
+    "references" : [
+        {
+            "referencedId" : ObjectId("66da6d3eae45c572ee7a495f"),
+            "type" : "com.movista.models.JobPlan"
+        }
+    ],
+    "title" : "Test Project 1"
+}
+----
+
+
+#### Full Base Model
+
+The full base model provides additional attributes on top of the base model.  Not all entities are full base models, but to make an entity a full base model simply derive from FullBaseModel vs. BaseModel
+
+**archiveDate** - the date the record was archived.
+
+**markedForArchive** - the record has been marked for achiveal and will shortly be removed from the system and archived.
+
+**archived** - the record is archived and frozen
+
+**expirationDate** - the record will expire after this date and be removed from the system
+
+**markedForDeletion** - the record has been marked for deletion and will be removed shortly.
+
+**expired** the record has expired
+
+**invalid** the record fails its validation tests but was saved any way.
+
+**canSaveInvalid** will allow the record to be saved even if its not valid.
+
+**violationSet** the set of violations the record currently has
+
+
+== Morphia
+
+The system uses Morphia to interact with Mongodb.  Documentation for morphia can be found at:
+https://morphia.dev/morphia/3.0/index.html
+
+Generally the way you model an object is by annotating it with the Entity annotation.  See documentation for more information on how to use Filters, sorts, paging, mapping, serialization, codec's etc.
+
+
+== Morphia Concepts
+
+Morphia is an Object-Document Mapper (ODM) that simplifies the interaction between Java objects and MongoDB documents. It helps Java developers manage data persistence with MongoDB using a simple, annotation-driven approach. The main concepts in Morphia revolve around the following:
+
+- *Entities*: Java classes that represent MongoDB documents.
+- *Annotations*: Used to map Java fields to MongoDB document fields.
+- *Datastore*: The interface used to perform operations like save, delete, query, and update.
+- *Validation*: Supports MongoDB’s document validation mechanisms.
+- *Hooks*: Morphia provides hooks for lifecycle events such as post-persist, pre-load, and pre-delete.
+
+== References
+
+References in Morphia are used to create relationships between entities in different collections. This is done using the `@Reference` annotation, which stores only the `_id` field of the referenced document.
+
+=== One to One
+
+For one-to-one relationships, each document in one collection corresponds to one document in another.
+[source, java]
+----
+@Entity("users")
+public class User {
+    @Id
+    private ObjectId id;
+    private String name;
+
+    @Reference
+    private Address address;
+}
+
+@Entity("addresses")
+public class Address {
+    @Id
+    private ObjectId id;
+    private String city;
+}
+----
+
+===== One to Many
+
+A one-to-many relationship is represented by one document referencing multiple documents in another collection.
+[source,java]
+----
+@Entity("customers")
+public class Customer {
+    @Id
+    private ObjectId id;
+    private String name;
+
+    @Reference
+    private List<Order> orders;
+}
+
+@Entity("orders")
+public class Order {
+    @Id
+    private ObjectId id;
+    private String orderNumber;
+}
+----
+
+===== Many to One
+The inverse of one-to-many, a many-to-one relationship is where multiple documents reference a single document in another collection.
+[source,java]
+----
+@Entity("orders")
+public class Order {
+    @Id
+    private ObjectId id;
+    private String orderNumber;
+
+    @Reference
+    private Customer customer;
+}
+
+----
+
+===== Many to Many
+In a many-to-many relationship, both collections can have references to multiple entities from each other.
+
+[source, java]
+----
+@Entity("students")
+public class Student {
+    @Id
+    private ObjectId id;
+    private String name;
+
+    @Reference
+    private List<Course> courses;
+}
+
+@Entity("courses")
+public class Course {
+    @Id
+    private ObjectId id;
+    private String courseName;
+
+    @Reference
+    private List<Student> students;
+}
+
+----
+
+==== Inheritance
+Morphia supports inheritance, where child classes inherit fields from a parent class. The fields in the parent class can be stored in the same collection.
+
+[source,java]
+----
+@Entity("vehicles")
+@Inheritance
+public class Vehicle {
+    @Id
+    private ObjectId id;
+    private String make;
+}
+
+@Entity
+public class Car extends Vehicle {
+    private int numberOfDoors;
+}
+
+@Entity
+public class Truck extends Vehicle {
+    private int payloadCapacity;
+}
+
+----
+
+==== Embedding
+Embedding is the practice of storing related documents inside another document. This reduces the need for joins or additional queries.
+
+[source,java]
+----
+@Entity("users")
+public class User {
+    @Id
+    private ObjectId id;
+    private String name;
+
+    @Embedded
+    private List<Address> addresses;
+}
+
+@Entity
+public class Address {
+    // note there is no id field so this is assumed to be
+    // embedded in another entity class
+    private String city;
+    private String street;
+}
+----
+
+==== Indexing
+Indexes improve the performance of queries. You can define indexes using the @Indexes annotation at the entity level. They can also be used to enforce uniqueness on combinations of properties or a single property
+
+[source,java]
+----
+@Entity("users")
+@Indexes({
+    @Index(fields = @Field("name")),
+    @Index(fields = @Field("email"), options = @IndexOptions(unique = true))
+})
+public class User {
+    @Id
+    private ObjectId id;
+    private String name;
+    private String email;
+}
+
+----
+
+==== Common Patterns in Mongodb Modeling:
+
+When modeling relationships in MongoDB, the approach differs significantly from traditional relational databases and pure object-oriented (OO) programming in Java. MongoDB, being a NoSQL document database, offers flexibility and performance advantages, but it requires a different mindset to optimize for queries and data retrieval. Hereis how to model relationships in MongoDB and the key differences when compared to relational database design and OO programming:
+
+**Nested / Embedded Structures**
+
+MongoDB encourages denormalization through embedding. Instead of normalizing data across multiple collections, related data is often embedded inside the same document. This reduces the need for joins and allows for faster reads, as all the necessary information is stored together.
+
+**Example:** Instead of having separate tables for User and Address, you can embed the addresses directly inside the User document:
+
+[source,json]
+----
+{
+    "_id": 1,
+    "name": "Alice",
+    "addresses": [
+        { "street": "123 Main St", "city": "New York" },
+        { "street": "456 Side St", "city": "Boston" }
+    ]
+}
+----
+
+This reduces the number of collections and allows quick access to user addresses without additional queries or joins.
+
+==== Date Fields
+
+If you're coming from a PHP and MariaDB background, handling dates in Java and Morphia can feel different at first. Here's a comprehensive breakdown of how dates are handled in Java, how to work with them in Morphia, and the key differences between date types like java.util.Date, LocalDate, and LocalDateTime. Additionally, I'll touch on using the Calendar API to manage dates in Java.
+
+#### Java Dates
+Java's handling of dates involves different classes depending on the level of precision and time zone handling you need. With the introduction of the Java 8 Time API, date and time handling became more robust and easier to work with.
+
+* Java’s java.util.Date class has been around since the early versions, but it has limitations and is mostly considered outdated.
+
+* Newer Date and Time classes introduced in Java 8 (LocalDate, LocalDateTime, ZonedDateTime, etc.) are much more flexible and robust.
+
+* Java supports more precise control over time zones and date formats.
+
+==== Local Date Calculations
+
+[source, java]
+----
+import java.time.LocalDate;
+
+public class Example {
+    public static void main(String[] args) {
+        LocalDate today = LocalDate.now();  // Current date
+        LocalDate nextWeek = today.plusDays(7);  // Add 7 days
+        LocalDate lastWeek = today.minusDays(7);  // Subtract 7 days
+
+        System.out.println("Today: " + today);
+        System.out.println("Next Week: " + nextWeek);
+        System.out.println("Last Week: " + lastWeek);
+    }
+}
+
+----
+
+MongoDB stores dates in ISODate format (UTC).
+
+* If you use java.util.Date, Morphia handles the conversion seamlessly.
+
+* With LocalDate and LocalDateTime, you’re dealing with "local" time, and Morphia will still convert these to ISODate when stored in MongoDB
+
+
+==== Representing Money
+
+ In Java, using primitive types like float or double to represen money is discouraged due to potential floating-point precision issues. Instead, Java offers a robust solution for representing money using the Moneta API, which is the reference implementation of JSR 354: Java Money and Currency API.
+
+===== Why not use double or float for money?
+
+Inaccuracies can arise when using float or double because these types use floating-point arithmetic, which can lead to rounding errors. For example, adding or subtracting 0.1 in double may not give the expected result due to precision limitations.
+
+[source, java]
+----
+double price = 0.1 + 0.2;
+System.out.println(price);  // Outputs: 0.30000000000000004
+----
+
+This problem is not limited to java, it happens in most programming languages.  Here is an example in javascript:
+
+[source,javascript]
+----
+// Example of representing money with floating-point numbers in JavaScript
+
+const price1 = 0.1; // 10 cents
+const price2 = 0.2; // 20 cents
+
+// Adding two prices
+const total = price1 + price2;
+
+console.log("Total using floating-point numbers: ", total); // Expected: 0.3, Actual: 0.30000000000000004
+----
+
+JavaScript uses the IEEE 754 standard for representing floating-point numbers, which leads to precision issues when working with decimal numbers. Numbers like 0.1 and 0.2 cannot be represented exactly as floating-point numbers in binary form, leading to small errors during arithmetic operations.
+
+==== Java Money API ( Monet )
+The Java Money and Currency API (javax.money) provides a more suitable and robust solution for handling monetary amounts. It separates the representation of currency from the monetary amount and offers a comprehensive way to manage currency conversions, formatting, and operations across different locales.
+
+The Moneta API introduces key classes such as:
+
+MonetaryAmount: Represents the monetary value, which consists of an amount and a currency.
+CurrencyUnit: Represents the currency (e.g., USD, EUR).
+Monetary: Provides static factory methods for creating MonetaryAmount and CurrencyUnit instances.
+
+Key Features of Java Money:
+
+* Precision: Uses BigDecimal internally to represent the monetary amount, ensuring precision even for very large numbers.
+
+* Currency-Safe Calculations: Ensures that operations involving different currencies are handled properly.
+
+* Currency Conversion: Supports conversion between different currencies using exchange rates.
+
+* Formatting: Provides formatting and parsing capabilities that respect different locales.
+
+===== Basic Usage:
+To create a monetary amount, you need to specify the currency and the amount. The Monetary.getDefaultAmountFactory() method is commonly used to create a MonetaryAmount object.
+
+[source,java]
+----
+import javax.money.CurrencyUnit;
+import javax.money.Monetary;
+import javax.money.MonetaryAmount;
+
+public class Example {
+    public static void main(String[] args) {
+        // Create a CurrencyUnit instance for USD
+        CurrencyUnit usd = Monetary.getCurrency("USD");
+
+        // Create a MonetaryAmount for $100
+        MonetaryAmount amount = Monetary.getDefaultAmountFactory().setCurrency(usd).setNumber(100).create();
+
+        System.out.println(amount);  // Outputs: USD 100
+    }
+}
+
+----
+
+==== Performing Operations on Money
+You can perform arithmetic operations like addition, subtraction, multiplication, and division on MonetaryAmount objects.
+
+[source,java]
+----
+import javax.money.CurrencyUnit;
+import javax.money.Monetary;
+import javax.money.MonetaryAmount;
+
+public class Example {
+    public static void main(String[] args) {
+        CurrencyUnit usd = Monetary.getCurrency("USD");
+        MonetaryAmount amount1 = Monetary.getDefaultAmountFactory().setCurrency(usd).setNumber(100).create();
+        MonetaryAmount amount2 = Monetary.getDefaultAmountFactory().setCurrency(usd).setNumber(50).create();
+
+        // Add amounts
+        MonetaryAmount total = amount1.add(amount2);
+        System.out.println("Total: " + total);  // Outputs: USD 150
+
+        // Subtract amounts
+        MonetaryAmount difference = amount1.subtract(amount2);
+        System.out.println("Difference: " + difference);  // Outputs: USD 50
+
+        // Multiply amount
+        MonetaryAmount multiplied = amount1.multiply(2);
+        System.out.println("Multiplied: " + multiplied);  // Outputs: USD 200
+    }
+}
+----
+
+==== Currency Conversion
+The API prevents incorrect operations between different currencies. If you try to add or subtract amounts in different currencies, an ArithmeticException is thrown.
+
+[source, java]
+----
+import javax.money.CurrencyUnit;
+import javax.money.Monetary;
+import javax.money.MonetaryAmount;
+
+public class Example {
+    public static void main(String[] args) {
+        // Create monetary amounts in different currencies
+        CurrencyUnit usd = Monetary.getCurrency("USD");
+        CurrencyUnit eur = Monetary.getCurrency("EUR");
+
+        MonetaryAmount amountUsd = Monetary.getDefaultAmountFactory().setCurrency(usd).setNumber(100).create();
+        MonetaryAmount amountEur = Monetary.getDefaultAmountFactory().setCurrency(eur).setNumber(100).create();
+
+        // Attempting to add or subtract amounts in different currencies will throw an error
+        try {
+            MonetaryAmount invalidOperation = amountUsd.add(amountEur);
+        } catch (ArithmeticException e) {
+            System.out.println("Error: Cannot perform operations between different currencies.");
+        }
+    }
+}
+----
+
+===== Formatting and Parsing
+You can format and parse monetary amounts based on different locales using MonetaryAmountFormat.
+
+[source,java]
+----
+import javax.money.MonetaryAmount;
+import javax.money.format.MonetaryAmountFormat;
+import javax.money.format.MonetaryFormats;
+import java.util.Locale;
+
+public class Example {
+    public static void main(String[] args) {
+        // Create a monetary amount
+        MonetaryAmount amount = Monetary.getDefaultAmountFactory().setCurrency("USD").setNumber(1234.56).create();
+
+        // Format the amount for US locale
+        MonetaryAmountFormat format = MonetaryFormats.getAmountFormat(Locale.US);
+        System.out.println("Formatted Amount: " + format.format(amount));  // Outputs: USD 1,234.56
+
+        // Parse a formatted string back to a MonetaryAmount
+        MonetaryAmount parsedAmount = format.parse("USD 1,234.56");
+        System.out.println("Parsed Amount: " + parsedAmount);  // Outputs: USD 1234.56
+    }
+}
+----
+
+==== Geospatial
+Before diving into the technical details of how to use MongoDB and Morphia for geospatial data, it’s important to understand some key concepts related to geospatial data in MongoDB.
+
+MongoDB provides two types of geospatial data formats:
+
+* 2D Points: Represents points on a flat, two-dimensional plane.
+* 2D Spherical Points (GeoJSON): Represents data in the GeoJSON format (which can handle Earth-like spherical surfaces). Common GeoJSON types include:
+    ** Point: A single point with latitude and longitude.
+    ** LineString: A series of connected points forming a line.
+    ** Polygon: A set of points forming a polygonal area.
+
+**Indexing**
+
+MongoDB supports two types of geospatial indexes:
+
+2D Index: Used for flat 2D plane queries (not Earth-based).
+2D Sphere Index: Used for Earth-based geospatial queries and supports spherical calculations like distance in meters.
+
+
+== REST API Concepts
+
+=== List API
+The QuantumQuery grammar provides a powerful and flexible way to create complex filters for querying MongoDB collections. This grammar allows you to construct queries using various expressions and operators, enabling you to filter data based on multiple criteria. Below is an overview of how you can use this grammar to create filters for the List API.
+
+==== Basic Structure
+The basic structure of a query consists of expressions grouped together using logical operators (AND, OR). Each expression can be a simple comparison, a boolean check, a null check, or more complex structures like regular expressions and nested expressions.
+
+**Basic Expressions**
+* Equality: ```field: value```
+* Inequality: ```field:! value```
+* Less Than: ```field:< value```
+* Greater Than: ```field:> value```
+* Less Than or Equal: ```field:<= value```
+* Greater Than or Equal: ```field:>= value```
+* Exists: ```field:~``
+* In: ```field:^ [value1, value2, ...]```
+
+**Boolean Expressions**
+* True/False: ```field: TRUE or field: FALSE```
+
+**Null Expressions**
+* Null Check: ```field: null or field:! null```
+
+
+**Regular Expressions**
+* Regex Match end: ```field: "value*"```
+* Wildcard Match middle: ```field: "\*value*"```
+
+**ObjectID Expressions:**
+Object ID: ```field:@value```
+
+**Logical Operators**
+* AND: ```&&```
+* OR: ```||```
+* NOT: ```!!```
+
+**Examples**
+
+---
+ name:'John Doe'  -- name equals John Doe
+age:>30&&status:active -- age greater than 30 and status equals active
+
+---
+
+==== Pagination
+The list api provides support for skip and length parameters.  so //localhost/location?skip=10;length=50
+
+would skip the first 10 records and then provide the next 50.  If length is not provided 50 is assumed, and skip defaults to 0
+
+==== Sorting
+a sorting parameter can be provided allowing for sorting either decending or acending:
+use + for acending and - for decending
+
+so for example
+ //localhost/location?sort=-name;+id. would first sort by name decending and then by id ascending.
+
+== Conventions / Static Analysis / Coding Standards
+
+=== Logging and Tracing
+=== Runtime Log changes
+=== Observation and Monitoring
+==== Events and Instrumentation
+
+== Security
+==== AuthN
+Authentication is handled via a user id password combination that is exchanged for a JWT access and renew token.  The access token expires after a certain period of time, and you can use the refresh token to get a new access token with in that time period.  The JWT token is signed using public / private key encryption and their are interceptors that look for that token check its signature and ensure that it has been signed.  You can find the public / private key under the resource directory, and these should be moved to a vault like concept that all instances use.  A enveloping strategy could also be employed to wrap the keys so that key rotation can be handled but that has not been implemented yet.  Passwords are never stored, they are salted, and hashed, and the resulting hash is stored.
+
+Future work to be done.  To support OIDC and SAML some research has been done around using either AUTH0 ( https://auth0.com/ ) or SuperToken ( https://supertokens.com/).  Quarkus also has some out of the box support for OIDC and OAUTH workflows which can be found here:
+
+https://quarkus.io/guides/security-overview
+
+And
+
+https://quarkus.io/guides/security-authentication-mechanisms
+
+
+The main aspect would be to replace the keycloak server with the native mongodb IDP to avoid the extra overhead of having to run keycloak.  Right now the code supports JWT using smallrye
+
+
+==== AuthZ
+A lot of time and research has been done in this area( literally nearly 25% of my career over the last 25 years has been spent in some aspect on this problem, as it relates to several software stacks found today at IBM, Blueyonder, Various other supplychain and SAAS companies I have worked for and recent work with companies like Amazon, Google, and Microsoft.
+
+Some interesting frameworks over the years have taken various aspects of this work, be it from me or those I interacted with or just similarly minded folks building similar things.
+
+Here is a quick list of the frameworks I track, and have a good understanding of:
+
+Zanzabar - Googles Authorization Framework used in various products lke gmail, google docs etc.
+
+https://www.usenix.org/conference/atc19/presentation/pang
+
+ORY - https://www.ory.sh/permissions/
+Cerbos - https://www.cerbos.dev/
+Amazon IAM
+pac4j - https://www.pac4j.org/
+Shibboleth - https://www.shibboleth.net/
+Shiro - https://shiro.apache.org/
+
+Great artical on permission graphs with alot of the work borrowing ideas from this paper:
+
+https://parsec.app/blog/using-a-directed-acyclic-graph-to-manage-link-sharing-permissions-for-online-co-play-with-friends-1b3c71a829bc
+
+And of course the commercial libraries like:
+Supertokens, Auth0, and OKTA ( which were derived from shiro and its founders as well other frameworks above), as well as various zanzibar implementations like https://permify.co/
+
+
+So this topic as you can see is large.  To summarize it role based security can only get you so far, and often you wind up needing permission based security but that can be complex to manage and difficult for users to deal with ( just look at AWS IAM as an example of a high overhead version of that ).
+
+Property based access control methods like zanzibar rely on relations and graph traversal to determine access control.  Add an extra dimension of multi-tenancy and how that relates back to data access and data segmentation and things get a lot more complex than just role based security.
+
+You can represent graphs / relations using formal notions such as Directed graphs, or you can also represent relations and graphs in flat rows and columns that represent various connections between nodes, transitions, etc.  In the end you start building in effect RETE TREE based rule sets ( https://en.wikipedia.org/wiki/Rete_algorithm ) which is what the quantum framework uses
+
+With out getting into all the details behind it, lets use a top down approach.  In the resource directory there is a file called securityModel.yaml that contains entries that look like this:
+
+[source, yaml]
+----
+- area: quantum
+  displayName: UserProfile
+  refName: USER_PROFILE
+  functionalActions:
+    - displayName: Change Password
+      refName: CHANGE_PASSWORD
+      tags:
+        - brief
+    -
+      displayName: Disable
+      refName: DISABLE
+      tags:
+        - brief
+    - displayName: Enable
+      refName: ENABLE
+      tags:
+        - brief
+    - displayName: View
+      refName: VIEW
+      tags:
+        - default
+    - displayName: Create
+      refName: CREATE
+      tags:
+        - default
+    - displayName: Update
+      refName: UPDATE
+      tags:
+        - default
+    - displayName: Archive
+      refName: ARCHIVE
+      tags:
+        - default
+    - displayName: Delete
+      refName: DELETE
+      tags:
+        - default
+----
+
+This file defines an extensible runtime defined security model that can be then referenced by the framework to notion against in terms of defining what identities have what rights on the "area":"funcitonal domain": and possible actions that can be taken on data that is part of a defined data domain.
+
+You will then find another file called securityRules.yaml that contains a rule based which in the end builds a in memory set of relations that are used to determine rights.
+
+[source,yaml]
+----
+      name: an accountAdmin can take any action on any entity in their account
+      description: allow accountAdmins to administer the account
+      securityURI:
+        header:
+          identity: accountAdmin
+          area: '*'
+          functionalDomain: '*'
+          action: '*'
+        body:
+          realm: system-com
+          accountNumber: '*'
+          tenantId: '*'
+          dataSegment: '*'
+          ownerId: '*'
+          resourceId: '*'
+      preconditionScript:
+      postconditionScript: pcontext.accountId === rcontext.accountId
+      effect: ALLOW
+      priority: 90
+      finalRule: true
+----
+
+The rule above defines a securityURI which as a header, and a body.  The header is used for matching the identity ( account admin) to areas, functional domains, and actions, in this case any area, any functional domain, and any action.  The body provides the scope that the effect will be applied to, in this case "any account number, tenantid, data segment, ownerId, or resourceId in the realm "system-com".
+
+Two variables are injected into the rule base, one being a principal context the other being a resource context, these are calculated and passed to the framework from the handler chain for processing rest api calls.  The principal context represents the current identity and its related calculated identities ( think roles ) and the resource context is the api / entity / resource that they are executing an action on.
+
+Precondition and postcondition scripts are javascipt expressions that are evaluated in this case its saying ensure that the principals accountId is equal to the resource's accountId.  In other words only allow this rule to fire if the that condition is true.
+
+The effect of the rule is to either return "ALLOW" or "DENY", the priority determins the order in which this rule is evaluated in relation to other rules, and finalRule is a boolan that determines if the process should stop here, or if should continue evaluating other rules to see if the outcome changes.
+
+These rules can be stored in a database, file, or various other ways to get the rules, and can be cached locally in VM memory making the overhead of executing them very inexpensive.  This is what is currently in place, and allows for a very fine gained way to notion about permissions define roles, etc.
+
+
+
+==== OIDC / SAML / Single Sign on
+
+==== Distributed Trust
+
+
+
+==== Encryption
+==== Role Based Security Annotations
+==== Policy Based Security Definitions
+==== Realms / Multi-Tenancy
+==== Data Segmentation
+
+
+=== Error Handling and Exceptions
+
+=== Unit Testing / API Testing
+
+=== CI/CD Git Hub Actions
+
+== Deploying
+
+=== Development Deployment using SAM / AWS Lamda
+
+==== Running SAM locally
+`sam local start-api --template target/sam.jvm.yaml`
+
+==== Deploying
+`sam sync -t ./target/sam.jvm.yaml --stack-name=movista-jbackend --profile=movista-dev --region=us-east-1`
+
+=== Building Docker Images / Fargate deployments
+after building native executable
+```
+quarkus build -Dquarkus.container-image.build=true -Dquarkus.native.reuse-existing=true --no-tests
+```
+=== CI/CD
+
+=== Building Native Linux from OSX
+ quarkus build --native --no-tests -Dquarkus.native.remote-container-build=true -Dquarkus.native.builder-image=graalvm
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

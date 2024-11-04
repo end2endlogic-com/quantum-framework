@@ -56,19 +56,19 @@ public abstract @Data @NoArgsConstructor class BaseModel {
      be easier for the developer to use, with the default being that the refId will be the same value as the ID.
      */
     @JsonProperty(required = true)
-    @NotNull
-    @NotEmpty
-    @Size(min=3)
+    @NotNull( message = "ref name must not be null"  )
+    @NotEmpty ( message = "ref name must not be empty"  )
+    @Size(min=3, message = "ref name must have a min size of 3 characters" )
     @NonNull
     protected String refName;
 
     /**
      This string to use to display on a User Interface.  Human friendly identifier of this object
      */
-    @NotNull
+    @NotNull ( message = "display name must not be null or empty" )
     @NonNull
-    @NotEmpty
-    @Size(min=3)
+    @NotEmpty (message = "display name must not be empty, and have a min size of 3" )
+    @Size(min=3, message = "display name must have a min size of 3" )
     protected String displayName;
 
     /**
@@ -76,7 +76,7 @@ public abstract @Data @NoArgsConstructor class BaseModel {
      ( includes references to account, org, owner etc.
      */
     @Valid
-    @NotNull
+    @NotNull ( message = "data domain must not be null" )
     @NonNull
     @JsonProperty(required = true)
     protected DataDomain dataDomain;
@@ -102,7 +102,7 @@ public abstract @Data @NoArgsConstructor class BaseModel {
 
     // purposefully not included in equals or hash as well
     @Transient
-    protected boolean checked=false;
+    protected boolean skipValidation=false;
 
     // purposefully not included in equals or hash as well
 

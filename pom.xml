@@ -46,8 +46,8 @@
                 <plugin>
                     <groupId>${quarkus.platform.group-id}</groupId>
                     <artifactId>quarkus-maven-plugin</artifactId>
-                   <!-- <version>${quarkus.platform.version}</version> -->
-                    <version>3.14.4</version>
+                   <version>${quarkus.platform.version}</version>
+                    <!-- <version>3.14.4</version> -->
                     <extensions>true</extensions>
                     <executions>
                         <execution>

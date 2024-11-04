@@ -43,8 +43,10 @@ public interface BaseMorphiaRepo<T extends BaseModel> {
    public T save(T value);
    public T save(String realm, T value);
    public T save(Datastore datastore, T value);
+   public T save(MorphiaSession session, T value);
    public List<T> save(List<T> entities);
    public List<T> save(Datastore datastore, List<T> entities);
+   public List<T> save(MorphiaSession datastore, List<T> entities);
 
    public long delete(T obj);
    public long delete(MorphiaSession s, T obj);
@@ -52,9 +54,18 @@ public interface BaseMorphiaRepo<T extends BaseModel> {
 
    public long update (@NotNull String id, @NotNull Pair<String, Object>... pairs);
    public long update(Datastore datastore, @NotNull String id, @NotNull Pair<String, Object>... pairs);
+   public long update(MorphiaSession session, @NotNull String id, @NotNull Pair<String, Object>... pairs);
    public long update (@NotNull ObjectId id, @NotNull Pair<String, Object>... pairs);
    public long update(Datastore datastore, @NotNull ObjectId id, @NotNull Pair<String, Object>... pairs);
+   public long update(MorphiaSession session, @NotNull ObjectId id, @NotNull Pair<String, Object>... pairs);
 
+   public T merge(@NotNull T entity);
+   public T merge(Datastore datastore, @NotNull T entity);
+   public T merge(MorphiaSession session, @NotNull T entity);
+
+   public List<T> merge(List<T> entities);
+   public List<T> merge(Datastore datastore, List<T> entities);
+   public List<T> merge(MorphiaSession session, List<T> entities);
 
 
 }

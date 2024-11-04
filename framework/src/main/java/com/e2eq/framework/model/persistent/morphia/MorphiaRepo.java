@@ -433,6 +433,13 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
     }
 
     @Override
+    public List<T> save(MorphiaSession session, List<T> entities) {
+        return session.save(entities);
+    }
+
+
+
+    @Override
     public T save(String realmId, T value) {
         return save(dataStore.getDataStore(realmId), value);
     }
@@ -441,6 +448,7 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
     public T save(Datastore datastore, T value) {
         return datastore.save(value);
     }
+
 
 
 
@@ -572,11 +580,55 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
     }
 
     @Override
+    public long update(MorphiaSession session, @NotNull String id, @NotNull Pair<String, Object>... pairs) {
+        List<UpdateOperator> updateOperators = new ArrayList<>();
+        for (Pair<String, Object> pair : pairs) {
+            // check that the pair key corresponds to a field in the persistent class that is an enum
+            Field field = null;
+            try {
+                field = getPersistentClass().getDeclaredField(pair.getKey());
+                Reference ref = field.getAnnotation(Reference.class);
+                if (ref!= null) {
+                    //TODO fix this case where there is an update to a reference field
+                    Log.warn("Update to class that contains references");
+                }
+
+                if (field.getType().isEnum()) {
+                    // check that the pair value is a valid enum value of te field
+                    if (!Arrays.stream(field.getType().getEnumConstants()).anyMatch(e -> e.toString().equals(pair.getValue().toString()))) {
+                        throw new IllegalArgumentException("Invalid value for enum field " + pair.getKey() + " can't set value:" + pair.getValue());
+                    }
+
+                }
+            } catch (NoSuchFieldException e) {
+                throw new RuntimeException(e);
+            }
+            updateOperators.add(UpdateOperators.set(pair.getKey(), pair.getValue()));
+        }
+        if (updateOperators.isEmpty()) {
+            return 0;
+        }
+
+        UpdateResult update;
+        if (updateOperators.size() == 1) {
+            update = session.find(getPersistentClass()).filter(Filters.eq("_id", id))
+                    .update(updateOperators.get(0));
+        } else {
+            UpdateOperator[] ops = updateOperators.toArray(new UpdateOperator[0]);
+            update = session.find(getPersistentClass()).filter(Filters.eq("_id", id))
+                    .update(ops[0], Arrays.copyOfRange(ops, 1, ops.length));
+        }
+
+        return update.getModifiedCount();
+    }
+
+    @Override
     public long update(Datastore datastore, @NotNull String id, @NotNull Pair<String, Object>... pairs) {
         ObjectId oid = new ObjectId(id);
         return update(datastore, oid, pairs);
     }
 
+    @Override
     public long update(Datastore datastore, @NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) {
         List<UpdateOperator> updateOperators = new ArrayList<>();
         for (Pair<String, Object> pair : pairs) {
@@ -619,6 +671,78 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
         return update.getModifiedCount();
     }
 
+    @Override
+    public long update(MorphiaSession session, @NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) {
+        List<UpdateOperator> updateOperators = new ArrayList<>();
+        for (Pair<String, Object> pair : pairs) {
+            // check that the pair key corresponds to a field in the persistent class that is an enum
+            Field field = null;
+            try {
+                field = getPersistentClass().getDeclaredField(pair.getKey());
+                Reference ref = field.getAnnotation(Reference.class);
+                if (ref!= null) {
+                    //TODO fix this case where there is an update to a reference field
+                    Log.warn("Update to class that contains references");
+                }
+
+                if (field.getType().isEnum()) {
+                    // check that the pair value is a valid enum value of te field
+                    if (!Arrays.stream(field.getType().getEnumConstants()).anyMatch(e -> e.toString().equals(pair.getValue().toString()))) {
+                        throw new IllegalArgumentException("Invalid value for enum field " + pair.getKey() + " can't set value:" + pair.getValue());
+                    }
+
+                }
+            } catch (NoSuchFieldException e) {
+                throw new RuntimeException(e);
+            }
+            updateOperators.add(UpdateOperators.set(pair.getKey(), pair.getValue()));
+        }
+        if (updateOperators.isEmpty()) {
+            return 0;
+        }
+
+        UpdateResult update;
+        if (updateOperators.size() == 1) {
+            update = session.find(getPersistentClass()).filter(Filters.eq("_id", id))
+                    .update(updateOperators.get(0));
+        } else {
+            UpdateOperator[] ops = updateOperators.toArray(new UpdateOperator[0]);
+            update = session.find(getPersistentClass()).filter(Filters.eq("_id", id))
+                    .update(ops[0], Arrays.copyOfRange(ops, 1, ops.length));
+        }
+
+        return update.getModifiedCount();
+    }
+
+    @Override
+    public T merge(@NotNull T entity){
+        return merge(dataStore.getDataStore(getSecurityContextRealmId()), entity);
+    }
+
+    @Override
+    public T merge(Datastore datastore, @NotNull T entity) {
+        return datastore.merge(entity);
+    }
+
+    @Override
+    public T merge(MorphiaSession session, @NotNull T entity) {
+        return session.merge(entity);
+    }
+
+    @Override
+    public List<T> merge(List<T> entities) {
+        return merge(dataStore.getDataStore(getSecurityContextRealmId()), entities);
+    }
+
+    @Override
+    public List<T> merge(Datastore datastore, List<T> entities) {
+        return datastore.merge(entities);
+    }
+
+    @Override
+    public List<T> merge(MorphiaSession session, List<T> entities) {
+        return session.merge(entities);
+    }
 
     public T fillUIActions(@NotNull T model) {
         Objects.requireNonNull(model);

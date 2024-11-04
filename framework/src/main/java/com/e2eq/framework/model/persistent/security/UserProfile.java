@@ -46,11 +46,11 @@ public @Data class UserProfile extends BaseModel {
 
     @Indexed(options= @IndexOptions(unique=true))
     @JsonProperty(required = true)
-    @NotNull
+    @NotNull( message = "userId must not be null")
     @NonNull
     protected String userId;
 
-    @NotNull
+    @NotNull( message = "userName must not be null")
     @NonNull
     protected String userName;
 
@@ -58,7 +58,7 @@ public @Data class UserProfile extends BaseModel {
     protected String lname;
 
     @JsonProperty(required = true)
-    @NotNull
+    @NotNull (message = "email must not be null")
     @NonNull
     protected String email;
     protected String phoneNumber;
