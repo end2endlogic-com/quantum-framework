@@ -175,11 +175,11 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
     }
 
     @Override
-    public List<T> getListByQuery(int skip, int limit, String query) {
+    public List<T> getListByQuery(int skip, int limit, @Nullable String query) {
         return this.getListByQuery(skip, limit, query, null, null);
     }
 
-    protected List<Sort> convertToSort(List<SortField> sortFields) {
+    protected List<Sort> convertToSort(@NotNull List<SortField> sortFields) {
         List<Sort> sorts = new ArrayList<>();
         if (sortFields != null && !sortFields.isEmpty()) {
             for (SortField sortField : sortFields) {
@@ -193,7 +193,7 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
         return sorts;
     }
 
-    protected FindOptions convertToProjection(FindOptions options, List<ProjectionField> projectionFields) {
+    protected FindOptions convertToProjection(FindOptions options, @NotNull List<ProjectionField> projectionFields) {
         List<String> includedFields = new ArrayList<>();
         List<String> excludedFields = new ArrayList<>();
         for (ProjectionField projectionField : projectionFields) {
@@ -224,12 +224,12 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
             findOptions = findOptions.limit(limit);
         }
 
-        if (sortFields != null) {
+        if (sortFields != null && !sortFields.isEmpty()) {
             List<Sort> sorts = convertToSort(sortFields);
             findOptions = findOptions.sort(sorts.toArray(new Sort[sorts.size()]));
         }
 
-        if (projectionFields != null) {
+        if (projectionFields != null && !projectionFields.isEmpty()) {
             findOptions = findOptions.projection().knownFields();
             findOptions = convertToProjection(findOptions, projectionFields);
         }
@@ -238,7 +238,7 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
     }
 
     @Override
-    public List<T> getListByQuery(Datastore datastore, int skip, int limit, @Nullable String query, List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields) {
+    public List<T> getListByQuery(Datastore datastore, int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields) {
 
         if (skip < 0 ) {
             throw new IllegalArgumentException("skip and or limit can not be negative");
