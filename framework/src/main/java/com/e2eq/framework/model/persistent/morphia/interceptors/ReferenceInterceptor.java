@@ -3,6 +3,7 @@ package com.e2eq.framework.model.persistent.morphia.interceptors;
 import com.e2eq.framework.model.persistent.base.BaseModel;
 import com.e2eq.framework.model.persistent.base.ReferenceEntry;
 
+import com.e2eq.framework.model.persistent.morphia.RepoUtils;
 import dev.morphia.Datastore;
 import dev.morphia.EntityListener;
 
@@ -12,6 +13,7 @@ import dev.morphia.mapping.Mapper;
 import dev.morphia.mapping.codec.pojo.EntityModel;
 import dev.morphia.mapping.codec.pojo.PropertyModel;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import org.bson.Document;
 import java.lang.annotation.Annotation;
 import java.util.Collection;
@@ -20,13 +22,14 @@ import java.util.Collection;
 @ApplicationScoped
 public class ReferenceInterceptor implements EntityListener<Object> {
 
+    @Inject
+    RepoUtils repoUtils;
 
     public ReferenceInterceptor() {
         // Default constructor
     }
 
     @Override
-
     public void prePersist (Object childEntity, Document childDocument, Datastore datastore) {
         // The entity is the class that is about to be persisted
         // The document is the BSON document that will be written to the database
@@ -37,11 +40,10 @@ public class ReferenceInterceptor implements EntityListener<Object> {
         // Get the mapped class information for the class that is being persisted
         EntityModel child = mapper.getEntityModel(childEntity.getClass());
 
-
         // Iterate over all the properties of the class that is being persisted
         for (PropertyModel childField : child.getProperties()) {
             // if the class is annotated as a reference
-            if (childField.isReference()) {
+            if (childField.isReference() && childField.getAccessor().get(childEntity) != null) {
                 Class parentClass = childField.getAccessor().get(childEntity).getClass();
 
                 // check if the parent is to another BaseModel
@@ -50,6 +52,7 @@ public class ReferenceInterceptor implements EntityListener<Object> {
                     BaseModel parentBaseModel = (BaseModel) childField.getAccessor().get(childEntity);
 
                     if (parentBaseModel != null) {
+
                         if (BaseModel.class.isAssignableFrom(childEntity.getClass())){
                             ReferenceEntry entry = new ReferenceEntry(((BaseModel)childEntity).getId(), childField.getEntityModel().getType().getTypeName());
                             if (!parentBaseModel.getReferences().contains(entry)){
