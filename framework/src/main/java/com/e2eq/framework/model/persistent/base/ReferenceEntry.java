@@ -14,5 +14,5 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 public class ReferenceEntry {
     @Schema(implementation = String.class, description = "MongoDB ObjectId as String")
     private ObjectId referencedId;
-    private String type; // For example, the class name of the referencing entity
+    private String type;
 }
