@@ -52,9 +52,9 @@ public class ReferenceInterceptor implements EntityListener<Object> {
                     BaseModel parentBaseModel = (BaseModel) childField.getAccessor().get(childEntity);
 
                     if (parentBaseModel != null) {
-
                         if (BaseModel.class.isAssignableFrom(childEntity.getClass())){
-                            ReferenceEntry entry = new ReferenceEntry(((BaseModel)childEntity).getId(), childField.getEntityModel().getType().getTypeName());
+                            ReferenceEntry entry = new ReferenceEntry(((BaseModel)childEntity).getId(), childField.getEntityModel().getType().getTypeName(),
+                                    ((BaseModel)childEntity).getRefName()   );
                             if (!parentBaseModel.getReferences().contains(entry)){
                                 parentBaseModel.getReferences().add(entry);
                                 datastore.save(childField.getAccessor().get(childEntity));
@@ -74,7 +74,9 @@ public class ReferenceInterceptor implements EntityListener<Object> {
                         for (BaseModel parentBaseModel : parentBaseModels) {
                             if (BaseModel.class.isAssignableFrom(childEntity.getClass())){
                                // ReferenceEntry entry = new ReferenceEntry(parentBaseModel.getId(), parentBaseModel.getClass().getTypeName());
-                                ReferenceEntry entry = new ReferenceEntry(((BaseModel)childEntity).getId(), childField.getEntityModel().getType().getTypeName());
+                                ReferenceEntry entry = new ReferenceEntry(((BaseModel)childEntity).getId(),
+                                                        childField.getEntityModel().getType().getTypeName(),
+                                                        ((BaseModel)childEntity).getRefName());
                                 if (!parentBaseModel.getReferences().contains(entry)){
                                     parentBaseModel.getReferences().add(entry);
                                     datastore.save(parentBaseModel);

@@ -1,9 +1,11 @@
 package com.e2eq.framework.persistent;
 
+import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.base.BaseModel;
 import com.e2eq.framework.model.persistent.base.ReferenceEntry;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
 import com.e2eq.framework.model.persistent.morphia.RepoUtils;
+import com.e2eq.framework.model.persistent.security.UserProfile;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.RuleContext;
@@ -17,6 +19,7 @@ import dev.morphia.mapping.Mapper;
 import dev.morphia.mapping.codec.pojo.EntityModel;
 import dev.morphia.mapping.codec.pojo.PropertyModel;
 import dev.morphia.transactions.MorphiaSession;
+import io.quarkus.logging.Log;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Assertions;
@@ -119,12 +122,15 @@ public class TestReferenceInterceptorLogic {
             TestParentModel parent = getOrCreateParent();
             TestChildModel child = getOrCreateChild(parent);
 
-            Assertions.assertTrue(parent.getReferences().contains(new ReferenceEntry(child.getId(), TestChildModel.class.getTypeName())));
+            Assertions.assertTrue(parent.getReferences().contains(new ReferenceEntry(child.getId(), TestChildModel.class.getTypeName(),
+                    child.getRefName())));
+
+            // delete the parent, the child should be deleted as well)));
 
             try {
                 parentRepo.delete(parent);
                 Assertions.assertTrue(false); // should throw because there is a referencing child
-            } catch (IllegalStateException e) {
+            } catch (ReferentialIntegrityViolationException e) {
                 // expected
             }
 
@@ -139,21 +145,8 @@ public class TestReferenceInterceptorLogic {
         }
     }
 
-
-    @Test
-    public void testBasicsOfListReferences() {
-        TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.userId);
-        String[] roles = {"user"};
-        PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.userId, roles);
-        ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "save");
-        try (final SecuritySession ss = new SecuritySession(pContext, rContext)) {
-            childListRepo.getAllList();
-        }
-    }
-
     @Test
     public void testInterceptorWithCollection() {
-
         TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.userId);
         String[] roles = {"user"};
         PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.userId, roles);
@@ -165,17 +158,15 @@ public class TestReferenceInterceptorLogic {
             TestChildListModel child = getOrCreateChild("Test2", parents);
 
             for (TestParentModel p : parents) {
-                Assertions.assertTrue(p.getReferences().contains(new ReferenceEntry(child.getId(), TestChildListModel.class.getTypeName())));
+                Assertions.assertTrue(p.getReferences().contains(new ReferenceEntry(child.getId(),
+                        TestChildListModel.class.getTypeName(), child.getRefName())));
             }
             childListRepo.delete(child);
             for (TestParentModel p : parents) {
-                Assertions.assertFalse(p.getReferences().contains(new ReferenceEntry(child.getId(), TestChildListModel.class.getTypeName())));
+                Assertions.assertFalse(p.getReferences().contains(new ReferenceEntry(child.getId(), TestChildListModel.class.getTypeName(),
+                        child.getRefName())));
                 parentRepo.delete(p);
             }
-
         }
     }
-
-
-
 }

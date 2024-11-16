@@ -1,10 +1,13 @@
 package com.e2eq.framework.util;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
+import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
+import java.security.spec.InvalidKeySpecException;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.*;
@@ -13,6 +16,7 @@ import io.smallrye.jwt.build.Jwt;
 import io.smallrye.jwt.build.JwtClaimsBuilder;
 
 import jakarta.validation.ValidationException;
+import jakarta.ws.rs.NotFoundException;
 
 
 /**
@@ -33,7 +37,7 @@ public class TokenUtils {
 														 String accountId,
 														 String[] roles,
 														 long durationInSeconds,
-														 String issuer) throws Exception {
+														 String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
 
 		if ( username == null ) {
 			throw new ValidationException("UserName can not be null");
@@ -90,7 +94,7 @@ public class TokenUtils {
 	}
 
 	public static String generateRefreshToken(String username, String tenantId, String defaultRealm, Map<String, String> realmOverrides, String orgRefName,
-															String accountId, String[] roles,  long durationInSeconds, String issuer) throws Exception {
+															String accountId, String[] roles,  long durationInSeconds, String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
 		Set<String> groups = new HashSet<>(Arrays.asList(roles));
 
 
@@ -117,16 +121,16 @@ public class TokenUtils {
 		return claimsBuilder.jws().keyId(privateKeyLocation).sign(privateKey);
 	}
 
-	public static PrivateKey readPrivateKey(final String pemResName) throws Exception {
+	public static PrivateKey readPrivateKey(final String pemResName) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
 		ClassLoader loader = Thread.currentThread().getContextClassLoader();
 		try (InputStream contentIS = loader.getResourceAsStream(pemResName)) {
 			if (contentIS == null ) {
-				throw new Exception("Could not find Private Key with ResourceName:" + pemResName);
+				throw new IOException("Could not find Private Key with ResourceName:" + pemResName);
 			}
 			byte[] tmp = new byte[4096];
 			int length = contentIS.read(tmp);
 			if (length == 0) {
-				throw new Exception("Could not find private key");
+				throw new IOException("Could not find private key");
 			}
 			return decodePrivateKey(new String(tmp, 0, length, StandardCharsets.UTF_8));
 		}
@@ -154,7 +158,7 @@ public class TokenUtils {
 		return kf.generatePublic(spec);
 	}
 
-	public static PrivateKey decodePrivateKey(final String pemEncoded) throws Exception {
+	public static PrivateKey decodePrivateKey(final String pemEncoded) throws NoSuchAlgorithmException, InvalidKeySpecException {
 		byte[] encodedBytes = toEncodedBytes(pemEncoded);
 
 		PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(encodedBytes);

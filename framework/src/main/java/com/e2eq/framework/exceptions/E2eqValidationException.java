@@ -44,7 +44,7 @@ public class E2eqValidationException extends ValidationException {
 
    @Override
    public String toString() {
-      return "B2BiValidationException{" +
+      return "QValidationException{" +
               "violationSet=" + violationSet +
               ", jsonData='" + jsonData + '\'' +
               '}';

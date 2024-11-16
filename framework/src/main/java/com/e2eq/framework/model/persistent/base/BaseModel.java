@@ -1,8 +1,6 @@
 package com.e2eq.framework.model.persistent.base;
 
-import com.e2eq.framework.model.persistent.morphia.interceptors.AuditInterceptor;
-import com.e2eq.framework.model.persistent.morphia.interceptors.ReferenceInterceptor;
-import com.e2eq.framework.model.persistent.morphia.interceptors.ValidationInterceptor;
+
 import com.e2eq.framework.rest.models.ObjectIdJsonSerializer;
 import com.e2eq.framework.rest.models.UIAction;
 import com.e2eq.framework.rest.models.UIActionList;
