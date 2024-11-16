@@ -1,5 +1,6 @@
 package com.e2eq.framework.model.persistent.morphia;
 
+import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.base.*;
 import com.e2eq.framework.rest.models.UIAction;
 import com.e2eq.framework.rest.models.UIActionList;
@@ -31,6 +32,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.lang.reflect.Field;
 import java.util.*;
+import java.util.stream.Collectors;
 
 import static dev.morphia.query.Sort.ascending;
 import static dev.morphia.query.Sort.descending;
@@ -458,7 +460,7 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
 
         for (PropertyModel mappedField : mappedClass.getProperties()) {
             if (mappedField.isReference()) {
-                if (BaseModel.class.isAssignableFrom(mappedField.getAccessor().get(obj).getClass())) {
+                if (mappedField.getAccessor().get(obj)!= null && BaseModel.class.isAssignableFrom(mappedField.getAccessor().get(obj).getClass())) {
                     BaseModel baseModel = (mappedField.getAccessor().get(obj) != null) ? (BaseModel) mappedField.getAccessor().get(obj) : null;
                     if (baseModel != null) {
                         if (!baseModel.getReferences().contains(obj)) {
@@ -467,12 +469,13 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
                         }
                     }
                 } else
-                if (java.util.Collection.class.isAssignableFrom(mappedField.getAccessor().get(obj).getClass())) {
+                if (mappedField.getAccessor().get(obj)!=null && java.util.Collection.class.isAssignableFrom(mappedField.getAccessor().get(obj).getClass())) {
                     {
                         java.util.Collection<BaseModel> baseModels = (java.util.Collection<BaseModel>) mappedField.getAccessor().get(obj);
                         if (baseModels != null) {
                             for (BaseModel baseModel : baseModels) {
-                                ReferenceEntry entry = new ReferenceEntry(obj.getId(), obj.getClass().getTypeName());
+                                ReferenceEntry entry = new ReferenceEntry(obj.getId(), obj.getClass().getTypeName(),
+                                        obj.getRefName());
                                 if (baseModel.getReferences().contains(entry)) {
                                     if (!baseModel.getReferences().remove(entry)) {
                                         Log.warn("Reference entry not found in baseModel: " + entry.toString());
@@ -489,6 +492,7 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
 
     @Override
     public long delete(T obj) {
+        Objects.requireNonNull(obj, "Null argument passed to delete, api requires a non-null object");
         DeleteResult result;
         if (obj.getReferences() == null || obj.getReferences().isEmpty()) {
             try (MorphiaSession s = dataStore.getDataStore(getSecurityContextRealmId()).startSession()) {
@@ -500,23 +504,27 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
             return result.getDeletedCount();
         } else {
             Set<ReferenceEntry> entriesToRemove = new HashSet<>();
-            // Iterate through references in this class and ensure that there are actually references and that the list of references is not stale
+            // Iterate through references in this class and ensure that there are
+            // actually references and that the list of references is not stale
             for (ReferenceEntry reference : obj.getReferences()) {
                 try (MorphiaSession s = dataStore.getDataStore(getSecurityContextRealmId()).startSession()) {
                     s.startTransaction();
                     try {
-                        Class<?> clazz = Class.forName(reference.getType());
+                        ClassLoader classLoader = this.getClass().getClassLoader();
+                        Class<?> clazz = classLoader.loadClass(reference.getType());
                         Query<?> q = s.find(clazz).filter(Filters.eq("_id", reference.getReferencedId()));
                         if (q.count() == 0) {
                             entriesToRemove.add(reference);
                         }
                     } catch (ClassNotFoundException e) {
+                        Log.warn("Failed to load class: " + reference.getType() + "removing reference");
                         entriesToRemove.add(reference);
                     }
                 }
             }
             obj.getReferences().removeAll(entriesToRemove);
 
+            // There may still be valid reference left if so complain
             if (obj.getReferences().isEmpty()) {
                 try (MorphiaSession s = dataStore.getDataStore(getSecurityContextRealmId()).startSession()) {
                     s.startTransaction();
@@ -526,41 +534,55 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
                 }
                 return result.getDeletedCount();
             } else {
-                throw new IllegalStateException("Can not delete object because it has references from other objects to this one that would corrupt the relationship.  Check references attribute to see what objects reference this one: ");
+                HashSet<String> referencingClasses = new HashSet<>();
+                for (ReferenceEntry reference : obj.getReferences()) {
+                    referencingClasses.add(reference.getType());
+                }
+                String buffereferencingClassesString = referencingClasses.stream().collect(Collectors.joining(", "));
+                throw new ReferentialIntegrityViolationException("Can not delete object because it has references from other objects to this one that would corrupt the relationship. Referencing classes: " + buffereferencingClassesString);
             }
         }
     }
 
     @Override
     public long delete(MorphiaSession s, T obj) {
+        Objects.requireNonNull(obj, "Null argument passed to delete, api requires a non-null object");
         DeleteResult result;
         if (obj.getReferences() == null || obj.getReferences().isEmpty()) {
-            removeReferenceConstraint(obj, s);
-            result = s.delete(obj);
-            return result.getDeletedCount();
+                removeReferenceConstraint(obj, s);
+                result = s.delete(obj);
+                return result.getDeletedCount();
         } else {
             Set<ReferenceEntry> entriesToRemove = new HashSet<>();
-            // Iterate through references in this class and ensure that there are actually references and that the list of references is not stale
+            // Iterate through references in this class and ensure that there are
+            // actually references and that the list of references is not stale
             for (ReferenceEntry reference : obj.getReferences()) {
                 try {
-                    Class<?> clazz = Class.forName(reference.getType());
+                    ClassLoader classLoader = this.getClass().getClassLoader();
+                    Class<?> clazz = classLoader.loadClass(reference.getType());
                     Query<?> q = s.find(clazz).filter(Filters.eq("_id", reference.getReferencedId()));
                     if (q.count() == 0) {
                         entriesToRemove.add(reference);
                     }
                 } catch (ClassNotFoundException e) {
+                    Log.warn("Failed to load class: " + reference.getType() + "removing reference");
                     entriesToRemove.add(reference);
                 }
             }
             obj.getReferences().removeAll(entriesToRemove);
 
+            // There may still be valid reference left if so complain
             if (obj.getReferences().isEmpty()) {
-                    removeReferenceConstraint(obj, s);
-                    result = s.delete(obj);
-                    s.commitTransaction();
+                removeReferenceConstraint(obj, s);
+                result = s.delete(obj);
                 return result.getDeletedCount();
             } else {
-                throw new IllegalStateException("Can not delete object because it has references from other objects to this one that would corrupt the relationship.  Check references attribute to see what objects reference this one: ");
+                HashSet<String> referencingClasses = new HashSet<>();
+                for (ReferenceEntry reference : obj.getReferences()) {
+                    referencingClasses.add(reference.getType());
+                }
+                String buffereferencingClassesString = referencingClasses.stream().collect(Collectors.joining(", "));
+                throw new ReferentialIntegrityViolationException("Can not delete object because it has references from other objects to this one that would corrupt the relationship. Referencing classes: " + buffereferencingClassesString);
             }
         }
     }

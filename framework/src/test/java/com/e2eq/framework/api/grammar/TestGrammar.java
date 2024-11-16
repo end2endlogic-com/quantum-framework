@@ -91,7 +91,8 @@ public class TestGrammar {
    }
    @Test
    public void testIndividualString() {
-      String testString = "field:\"test:123\"*";
+      //String testString = "field:\"test:123\"*";
+      String testString = "field:^[67340babd762702b5c6fd57f]";
       Log.info("Testing String:" + testString);
       Filter f = MorphiaUtils.convertToFilter(testString);
       Log.info("Filter:" + f.toString());

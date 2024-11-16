@@ -12,6 +12,7 @@ import com.e2eq.framework.util.JSONUtils;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.module.jsonSchema.JsonSchema;
 
+import dev.morphia.query.ValidationException;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
@@ -23,6 +24,7 @@ import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.enums.SecuritySchemeType;
 import org.eclipse.microprofile.openapi.annotations.media.Content;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement;
@@ -62,7 +64,13 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
    @Operation(summary = "Get The entity by refName",
            description = "Will get the entity or return a 404 if not found")
    @SecurityRequirement(name = "bearerAuth")
-   public Response byRefName (@QueryParam("refName") String refName) {
+   @APIResponses(value = {
+           @APIResponse(responseCode = "200", description = "Entity found", content = @Content(mediaType = "application/json")),
+           @APIResponse(responseCode = "404", description = "Entity not found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
+   })
+   public Response byRefName (
+           @Parameter(description = "Reference name of the entity", required = true)
+                   @QueryParam("refName") String refName) {
       Response response;
       Optional<T> opModel = repo.findByRefName(refName);
 
@@ -85,7 +93,13 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
    @GET
    @Produces(MediaType.APPLICATION_JSON)
    @SecurityRequirement(name = "bearerAuth")
-   public Response byId(@QueryParam("id") String id) {
+   @APIResponses(value = {
+           @APIResponse(responseCode = "200", description = "Entity found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = BaseModel.class))),
+           @APIResponse(responseCode = "404", description = "Entity not found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
+   })
+   public Response byId(
+           @Parameter(description = "Id of the entity", required = true)
+           @QueryParam("id") String id) {
       Response response;
       Optional<T> opModel = repo.findById(id);
 
@@ -150,12 +164,23 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
    @Produces(MediaType.APPLICATION_JSON)
    @Consumes(MediaType.APPLICATION_JSON)
    @SecurityRequirement(name = "bearerAuth")
+   @APIResponses(value = {
+           @APIResponse(responseCode = "200", description = "Success", content = @Content(mediaType = "application/json", schema = @Schema(implementation = CounterResponse.class))),
+           @APIResponse(responseCode = "400", description = "Bad Request - bad arguments", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
+   })
    public CounterResponse getCount(@QueryParam("filter") String filter) {
-      long count = repo.getCount(filter);
-      CounterResponse response = new CounterResponse(count);
-      response.setStatusCode(Response.Status.OK.getStatusCode());
-      response.setMessage(String.format("Count: %d", count));
-      return response;
+      try {
+         long count = repo.getCount(filter);
+         CounterResponse response = new CounterResponse(count);
+         response.setStatusCode(Response.Status.OK.getStatusCode());
+         response.setMessage(String.format("Count: %d", count));
+         return response;
+      } catch (IllegalArgumentException | ValidationException e) {
+         RestError error = RestError.builder()
+                 .status(Response.Status.BAD_REQUEST.getStatusCode())
+                 .statusMessage(e.getMessage()).build();
+         throw new WebApplicationException(Response.status(Response.Status.BAD_REQUEST).entity(error).build());
+      }
    }
 
 
@@ -163,6 +188,10 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
    @GET
    @Produces(MediaType.APPLICATION_JSON)
    @SecurityRequirement(name = "bearerAuth")
+   @APIResponses(value = {
+           @APIResponse(responseCode = "200", description = "Success", content = @Content(mediaType = "application/json", schema = @Schema(implementation = Collection.class))),
+           @APIResponse(responseCode = "400", description = "Bad Request / bad argument", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
+   })
    public Collection<T> getList(@DefaultValue("0")
                            @QueryParam("skip") int skip,
                            @DefaultValue("50")@QueryParam("limit") int limit,
@@ -170,11 +199,12 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
                            @QueryParam("sort") String sort,
                            @QueryParam("projection") String projection) {
 
-      List<ProjectionField> projectionFields = null;
-      List<SortField> sortFields = null;
+      try {
+         List<ProjectionField> projectionFields = null;
+         List<SortField> sortFields = null;
          if (sort != null || projection != null) {
 
-            if (sort!=null) {
+            if (sort != null) {
                sortFields = convertToSortField(sort);
 
                /*List<Sort> sorts = new ArrayList<>();
@@ -199,6 +229,13 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
          collection = repo.fillUIActions(collection);
 
          return collection;
+      } catch (IllegalArgumentException | ValidationException e) {
+         RestError error = RestError.builder()
+                 .status(Response.Status.BAD_REQUEST.getStatusCode())
+                 .statusMessage(e.getMessage()).build();
+         throw new WebApplicationException(Response.status(Response.Status.BAD_REQUEST).entity(error).build());
+
+      }
 
    }
 
@@ -250,6 +287,10 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
    @Produces(MediaType.APPLICATION_JSON)
    @Consumes(MediaType.APPLICATION_JSON)
    @SecurityRequirement(name = "bearerAuth")
+   @APIResponses(value = {
+           @APIResponse(responseCode = "200", description = "Entity found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = SuccessResponse.class))),
+           @APIResponse(responseCode = "404", description = "Entity not found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
+   })
    public Response delete(@QueryParam("id") String id) {
       Optional<T> model = repo.findById(id);
       if (model.isPresent()) {

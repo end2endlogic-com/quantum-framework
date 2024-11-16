@@ -35,7 +35,10 @@ import org.eclipse.microprofile.openapi.annotations.info.Info;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.logging.Logger;
 
+import java.io.IOException;
 import java.io.StringWriter;
+import java.security.NoSuchAlgorithmException;
+import java.security.spec.InvalidKeySpecException;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -217,7 +220,7 @@ public class SecurityResource {
     @Consumes(MediaType.APPLICATION_JSON)
     //  @APIResponse(responseCode="403", description="The credentials provided did not match"))
     //  @APIResponse(responseCode="200", description"successful"))
-    public Response login(@Context HttpHeaders headers, AuthRequest authRequest) throws Exception {
+    public Response login(@Context HttpHeaders headers, AuthRequest authRequest) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
         Response rc;
 
         String remoteAddress = headers.getRequestHeaders().getFirst("X-FORWARDED_FOR");
@@ -275,7 +278,7 @@ public class SecurityResource {
                                              @NotNull String[] roles,
                                              long durationInSeconds,
                                              long incrementRefreshDuration,
-                                             @NotNull String issuer) throws Exception {
+                                             @NotNull String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
         String userToken = TokenUtils.generateUserToken(
                 userId,
                 tenantId,

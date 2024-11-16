@@ -56,17 +56,23 @@ field.subfield.subsubfield:"deeplyNestedString"
 
 #-- IN Operator tests
 field:^[value1,value2,value3]
+field:^[value1,66d9251c81f40f046efd39ef]
 field.subfield:^[subvalue1,subvalue2]
+field.subfield:^[subvalue1,subvalue2,66d9251c81f40f046efd39ef]
+field.subfield:^[subvalue1,subvalue2,'66d9251c81f40f046efd39ef']
 field.subfield.subsubfield:^[deepvalue1,deepvalue2]
+
 
 #-- Combination of Operators
 (field:1&&field2:2)||field3:3
 field1:1&&(field2:2||field3:3)
 (field1:1||field2:2)&&field3:3
+(field1:1||field2:@66d9251c81f40f046efd39ef)
 
 #-- Mixed data types
 field1:100&&field2:"string"||field3:TRUE
 field1:##123.45||field2:#12345&&field3:FALSE
+field1:##123.45||field2:#12345&&field3:FALSE||field4:@66d9251c81f40f046efd39ef
 
 #-- Edge cases
 field:""

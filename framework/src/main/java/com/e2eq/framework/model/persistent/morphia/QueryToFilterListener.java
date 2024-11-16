@@ -78,12 +78,12 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         }
     }
 
-    @Override
+    /*@Override
     public void enterOidExpr(BIAPIQueryParser.OidExprContext ctx) {
         String field = ctx.field.getText();
         String oid = ctx.value.getText();
         filterStack.push(Filters.eq(field, new ObjectId(oid)));
-    }
+    }*/
 
     @Override
     public void enterRegexExpr(BIAPIQueryParser.RegexExprContext ctx) {
@@ -233,13 +233,18 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
    @Override
    public void enterInExpr (BIAPIQueryParser.InExprContext ctx) {
       // convert values array to individual values
-      List<String> values = new ArrayList<>();
+      List<Object> values = new ArrayList<>();
       StringTokenizer tokenizer = new StringTokenizer(ctx.value.getText().substring(1,
          ctx.value.getText().length() - 1), ",");
       while (tokenizer.hasMoreTokens()) {
          String value = (variableMap != null ) ? sub.replace(tokenizer.nextToken()) : tokenizer.nextToken();
+         if (((CommonToken)ctx.value.value).getType() == BIAPIQueryParser.OID) {
+             values.add(new ObjectId(value));
+         } else {
          values.add(value);
+         }
       }
+
       Filter f = Filters.in(ctx.field.getText(), values);
 
       filterStack.push(f);
@@ -271,6 +276,9 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
                break;
             case BIAPIQueryParser.QUOTED_STRING:
                value = tok.getText();
+               break;
+            case BIAPIQueryParser.OID:
+                value = new ObjectId(tok.getText());
                break;
             case BIAPIQueryParser.VARIABLE:
                value = tok.getText();

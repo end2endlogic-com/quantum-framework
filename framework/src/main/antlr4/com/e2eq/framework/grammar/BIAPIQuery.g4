@@ -3,16 +3,17 @@ grammar BIAPIQuery;
 query: (exprGroup | compoundExpr) (exprOp (exprGroup | compoundExpr))*;
 exprGroup: lp=LPAREN (exprGroup | compoundExpr) (exprOp (exprGroup | compoundExpr))* rp=RPAREN;
 compoundExpr: allowedExpr (exprOp allowedExpr)*;
-allowedExpr: oidExpr| inExpr | basicExpr |  nullExpr | existsExpr | booleanExpr | notExpr | regexExpr;
+allowedExpr: inExpr | basicExpr |  nullExpr | existsExpr | booleanExpr | notExpr | regexExpr;
 exprOp: op=(AND | OR);
 existsExpr: field=STRING op=EXISTS;
 booleanExpr: field=STRING op=(EQ | NEQ) value=(TRUE | FALSE);
 inExpr : field=STRING op=IN value=valueListExpr;
-valueListExpr: lp=LBRKT value=(STRING | ',' | VARIABLE)+ rp=RBRKT;
-oidExpr: field=STRING op=OID value=(STRING | VARIABLE);
-basicExpr: field=STRING op=(EQ|NEQ|LT|GT|LTE|GTE|EXISTS|IN) value=(STRING|VARIABLE) #stringExpr
+valueListExpr: lp=LBRKT value=(STRING |QUOTED_STRING| ',' | VARIABLE | OID)+ rp=RBRKT;
+
+basicExpr: field=STRING op=(EQ|NEQ|LT|GT|LTE|GTE|EXISTS|IN) value=(STRING|VARIABLE|OID) #stringExpr
 | field=STRING op=(EQ | NEQ ) value=QUOTED_STRING #quotedExpr
 | field=STRING op=(EQ | LT | GT | NEQ | LTE | GTE) value=NUMBER #numberExpr
+
 | field=STRING op=(EQ | LT | GT | NEQ | LTE | GTE) value=WHOLENUMBER #wholenumberExpr;
 
 notExpr: NOT allowedExpr;
@@ -39,7 +40,6 @@ GTE: ':>=';
 EXISTS: ':~';
 IN: ':^';
 NULL: 'null';
-OID: ':@';
 
 // Logical
 AND: '&&';
@@ -81,7 +81,15 @@ NUMBER:'##'('-'?[0-9]+'.'[0-9]+)
    }
    ;
 VARIABLE:'$''{'('ownerId'|'principalId'|'resourceId'|'action'|'functionalDomain'|'pTenantId'|'pAccountId'|'rTenantId'|'rAccountId'|'realm'|'area')'}';
+OID:[0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]
+       [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]
+       [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]
+       [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]
+       [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]
+       [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]
+     ;
 STRING: ([a-zA-Z0-9_.-]|' '|'\''|','|'/'|'@')+ ('&' STRING)*;
+
 QUOTED_STRING
  : '"' (~[\r\n"] | '""')* '"'
    {
