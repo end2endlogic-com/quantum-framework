@@ -491,7 +491,7 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
     }
 
     @Override
-    public long delete(T obj) {
+    public long delete(T obj) throws ReferentialIntegrityViolationException{
         Objects.requireNonNull(obj, "Null argument passed to delete, api requires a non-null object");
         DeleteResult result;
         if (obj.getReferences() == null || obj.getReferences().isEmpty()) {
@@ -545,7 +545,7 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
     }
 
     @Override
-    public long delete(MorphiaSession s, T obj) {
+    public long delete(MorphiaSession s, T obj) throws ReferentialIntegrityViolationException{
         Objects.requireNonNull(obj, "Null argument passed to delete, api requires a non-null object");
         DeleteResult result;
         if (obj.getReferences() == null || obj.getReferences().isEmpty()) {

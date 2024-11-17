@@ -1,5 +1,6 @@
 package com.e2eq.framework.persistent;
 
+import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.RuleContext;
@@ -96,7 +97,7 @@ public class TestBasicRepo {
    }
 
    @Test
-   public void testMerge() {
+   public void testMerge() throws ReferentialIntegrityViolationException {
       Datastore ds = dataStore.getDefaultSystemDataStore();
       String[] roles = {"user"};
       PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.userId, roles);

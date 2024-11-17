@@ -1,6 +1,6 @@
 package com.e2eq.framework.exceptions;
 
-public class ReferentialIntegrityViolationException extends RuntimeException {
+public class ReferentialIntegrityViolationException extends Exception {
     protected String referringClass;
     protected String referringId;
     protected String referringIdType;
