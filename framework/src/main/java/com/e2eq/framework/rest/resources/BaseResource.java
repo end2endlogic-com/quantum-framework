@@ -1,5 +1,6 @@
 package com.e2eq.framework.rest.resources;
 
+import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.base.*;
 import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
 import com.e2eq.framework.model.securityrules.SecurityCheckException;
@@ -291,7 +292,7 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
            @APIResponse(responseCode = "200", description = "Entity found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = SuccessResponse.class))),
            @APIResponse(responseCode = "404", description = "Entity not found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
    })
-   public Response delete(@QueryParam("id") String id) {
+   public Response delete(@QueryParam("id") String id) throws ReferentialIntegrityViolationException {
       Optional<T> model = repo.findById(id);
       if (model.isPresent()) {
          long deletedCount = repo.delete(model.get());

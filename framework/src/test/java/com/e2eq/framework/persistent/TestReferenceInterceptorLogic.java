@@ -146,7 +146,7 @@ public class TestReferenceInterceptorLogic {
     }
 
     @Test
-    public void testInterceptorWithCollection() {
+    public void testInterceptorWithCollection() throws ReferentialIntegrityViolationException {
         TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.userId);
         String[] roles = {"user"};
         PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.userId, roles);

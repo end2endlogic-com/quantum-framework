@@ -32,6 +32,7 @@ public class CounterRepo extends MorphiaRepo<Counter> {
          .modify(UpdateOperators.inc("currentValue", incrementAmount));
 
      if (v == null) {
+         v = new Counter();
          v.setDisplayName(name);
          v.setRefName(name);
          v.setCurrentValue(0);

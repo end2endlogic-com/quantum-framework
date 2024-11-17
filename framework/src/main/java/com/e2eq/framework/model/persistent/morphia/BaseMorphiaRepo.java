@@ -1,6 +1,7 @@
 package com.e2eq.framework.model.persistent.morphia;
 
 
+import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.base.BaseModel;
 import com.e2eq.framework.model.persistent.base.ProjectionField;
 import com.e2eq.framework.model.persistent.base.SortField;
@@ -48,8 +49,8 @@ public interface BaseMorphiaRepo<T extends BaseModel> {
    public List<T> save(Datastore datastore, List<T> entities);
    public List<T> save(MorphiaSession datastore, List<T> entities);
 
-   public long delete(T obj);
-   public long delete(MorphiaSession s, T obj);
+   public long delete(T obj) throws ReferentialIntegrityViolationException;
+   public long delete(MorphiaSession s, T obj) throws ReferentialIntegrityViolationException;
 
 
    public long update (@NotNull String id, @NotNull Pair<String, Object>... pairs);
