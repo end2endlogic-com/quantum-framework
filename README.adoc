@@ -1,4 +1,4 @@
-= Project CALIBRE
+= Quantum
 
 Java backend for core services backed by Mongodb
 
@@ -253,11 +253,60 @@ Models in quantum have the following out of the box attributes and requirements:
 
 **tags** - Simple array of strings.  There are not constraints on the strings, so you can add things like mycategory:xxx and creation your own psedo hiearchy.  The tags are searchable and can be indexed
 
-**advancedTags** - This is a more robust structure that provides a seperate json object with a category, tagDisplayName, and a list of additionalData that can be provided as strings.
+**advancedTags** - This is a more robust structure that provides a separate json object with a category, tagDisplayName, and a list of additionalData that can be provided as strings.
 
 **auditInfo** - A structure that has a creation timestamp, last updated timestamp, creation user, and update user embedded with in it.
 
 **references** - A structure of reference entries that provide a way to know what other entities in the system refer to this one.  This is automatically maintained by the framework, and will prevent deletion of an object that is referred by other entities.
+
+
+==== Dynamic Attributes
+Dynamic Attributes can be added to an entity.  They are grouped into DynamicAttributeSets where a set contains multiple attributes.  The set has a name, so you can create a set for say logistics where you have attributes like shippingNumber, VAT Number, Container Number etc.  The group will then be consistent and in a UI can be added as a group to an object for example.  The attributes have the following structure
+
+``` JAVA
+    protected String id;
+    protected String name;
+    protected String label;
+    protected String description;
+    protected DynamicAttributeType type;
+    protected Object value;
+    protected Object defaultValue;
+    @Builder.Default
+    boolean required=false;
+    @Builder.Default
+    boolean inheritable=false;
+    @Builder.Default
+    boolean hidden=false;
+    @Builder.Default
+    boolean caseSensitive=false;
+```
+
+
+The id is a unique identifier of the attribute, the name is the name of the attribute, label is what you see in a ui, the description is a short description of the attribute.  The value is of a certain type
+
+``` JAVA
+public enum DynamicAttributeType {
+        String,
+        Text,
+        Integer,
+        Long,
+        Float,
+        Double,
+        Date,
+        Object,
+        DateTime,
+        Boolean,
+        Select,
+        MultiSelect,
+        Regex,
+        Exclude,
+        ObjectRef;
+}
+```
+
+It can be any of the types shown above.
+
+A default value can be specified.  If the attribute is required the api will ensure its part of the object at create and update time.  The hidden flag can be used to hide the attribute from the ui.  Inheritance is a concept where groups can be set up into parent child relationships and you can there for have a parent and "inherit" attributes from that parent into a child.
 
 ==== Transient Attributes
 These attributes are no persisted and are added by the framework at runtime when returning entities for REST APIs.
@@ -774,12 +823,21 @@ The basic structure of a query consists of expressions grouped together using lo
 * Wildcard Match middle: ```field: "\*value*"```
 
 **ObjectID Expressions:**
-Object ID: ```field:@value```
+Object ID: ```field:value```
+As long as the value is a 24 character valid objectID it will be identified as a objectID automatically.
 
 **Logical Operators**
 * AND: ```&&```
 * OR: ```||```
 * NOT: ```!!```
+
+```
+field:1&&field2:2
+field:1||field:2
+!!field:TRUE
+!!field:FALSE
+!!field.subfield:##123.456
+```
 
 **Examples**
 
@@ -788,6 +846,63 @@ Object ID: ```field:@value```
 age:>30&&status:active -- age greater than 30 and status equals active
 
 ---
+
+**Combinations**
+```
+(field:1&&field2:2)||field3:3
+field1:1&&(field2:2||field3:3)
+(field1:1||field2:2)&&field3:3
+(field1:1||field2:@66d9251c81f40f046efd39ef)
+```
+
+**Mixed Data Types**
+```
+#-- Mixed data types
+field1:100&&field2:"string"||field3:TRUE
+field1:##123.45||field2:#12345&&field3:FALSE
+field1:##123.45||field2:#12345&&field3:FALSE||field4:66d9251c81f40f046efd39ef
+```
+
+**Exists Operator**
+```
+field:~
+```
+
+**Grouping**
+```
+field:x&y&&field:y&z&&field:blah
+field:1||field2:go, inc
+(field33:1&&field:2)&&field1:4
+field1:4||(field:1&&field:2)
+(field1:4)&&(field:1&&field:2)
+(field:1&&field1.blah:4)&&(field:1&&field:2)
+```
+
+**Dates**
+# --DATEs
+#((field:dfefe%&&field:2)||(field:1&&field1.blah:4))&&(field:1&&field:2015-04-04)
+#((field:dfefe%&&field:2)||(field:1&&field1.blah:4))&&(field:1||field:2015-04-04T12:12:33)
+#((field:dfefe%&&field:>2)||(field:1&&field1.blah:4))&&(field:1||field:2015-04-04T12:12:33)
+#((field:dfefe%&&field:<#2)||(field:1&&field1.blah:4))&&(field:1||field:2015-04-04T12:12:33)
+#((field:dfefe%&&field:<#2)||(field:<=#1&&field1.blah:>=4))&&(field:1||field:2015-04-04T12:12:33)
+#((field:true&&field:<#2)||(field:<=#1&&field1.blah:>=4))&&(field:1||field:2015-04-04T12:12:33)
+#((field:false&&field:<#2)||(field:<=#1&&field1.blah.blah:>=4))&&(field:1||field:2015-04-04T12:12:33)
+#((field:false&&field:<#2)||(field:<=#1&&field1.blah.blah:>=4))&&(field:1||field:2015-04-04)
+#(((field:false&&field:<#2)||(field:<=#1&&field1.blah.blah:>=4))&&(field:1||field:2015-04-04))
+
+**Variables**
+Several Variables are available and can be referenced in the list api that correspond to the current user or attributes of the data domain of the record.
+
+```
+field:${principalId}
+field:${functionalDomain}
+field:${ownerId}
+field:^[value1,value2,${ownerId}]
+```
+
+ - principalId - who is logged in
+ - ownerId - who "ownes the record defaults to userId of the user that created it"
+ - functionalDomain - which domain is the record a part of
 
 ==== Pagination
 The list api provides support for skip and length parameters.  so //localhost/location?skip=10;length=50
