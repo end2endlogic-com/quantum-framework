@@ -11,7 +11,7 @@ import java.lang.annotation.*;
 @Constraint(validatedBy = {MailingAddressValidator.class})
 @Documented
 public @interface ValidMailingAddress {
-    String message() default "{com.b2bi.framework.v1.model.validator.ValidMailingAddress.message}";
+    String message() default "Invalid Mailing Address";
 
     Class<?>[] groups() default {};
 

@@ -17,6 +17,7 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 import lombok.NonNull;
+import lombok.experimental.SuperBuilder;
 import org.apache.commons.text.WordUtils;
 import org.bson.types.ObjectId;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
@@ -37,6 +38,7 @@ import static dev.morphia.mapping.IndexType.DESC;
 })
 @RegisterForReflection
 @EqualsAndHashCode
+@SuperBuilder
 public abstract @Data @NoArgsConstructor class BaseModel {
 
     @Id
