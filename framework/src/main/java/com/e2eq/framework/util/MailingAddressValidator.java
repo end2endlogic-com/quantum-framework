@@ -36,74 +36,131 @@ public class MailingAddressValidator implements ConstraintValidator<ValidMailing
         if (address == null) {
             rc = true;
         } else {
-            // Look at
-            if (StringUtils.isBlank(address.getCountryTwoLetterCode())) {
+            // first check that the address has a address name
+            // check if the address has a address line 1 that is none null none empty
+            // check if the address has a city that is none null and non empty
+            // check if the address either has a state or a stateTwoLetterCode but not both
+            // if there is a stateLetterTwoCode ensure its only two characters
+            // check if there is a countryTwoLetterCode or a countyName is provided
+            // if neither is provided then ensure zip, or zip5 is provided.
+            // if neither is provided, or countryTwoLettercode is provided and its value is US or
+            // country is provided and its value is USA or united states, or united states of america then
+            // either zip or zip5 must be non-null.  If zip5 is provided it must be 5 numbers.
+            // if zip is provided it must be 5 numbers.
+            // if zip5 is provided it must be 5 numbers.
 
-                violationMessage = "Country is mandatory, but is not provided in the mailing address";
-                constraintValidatorContext.buildConstraintViolationWithTemplate(violationMessage).addPropertyNode
-                        ("country").addConstraintViolation();
+            if (StringUtils.isBlank(address.getAddressName())) {
+                violationMessage = "Address Name is mandatory, but is not provided in the mailing address";
+                constraintValidatorContext.buildConstraintViolationWithTemplate(violationMessage)
+                       .addPropertyNode("addressName").addConstraintViolation();
                 violationMessages.add(violationMessage);
-
                 rc = false;
+            }
 
-            } else {
-                if ("US".equals(address.getCountryTwoLetterCode()) || "USA".equals(address.getCountryTwoLetterCode())) {
-                    if (StringUtils.isBlank(address.getStateTwoLetterCode())) {
-                        violationMessage = "Country is US, however state Code is not the provided state: " + address
-                                .getStateTwoLetterCode() + " Note stateName may be filled, or be null in but state code is " +
-                                "required, stateName: " + address.getStateTwoLetterCode();
-                        constraintValidatorContext.buildConstraintViolationWithTemplate(violationMessage)
-                                .addPropertyNode("state").addConstraintViolation();
-                        violationMessages.add(violationMessage);
-                        rc = false;
-                    } else if (!US_STATE_PATTERN.matcher(address.getStateTwoLetterCode()).matches()) {
-                        violationMessage = "Country is US, however state Code does not comply with the pattern for 2 " +
-                                "letter capital case: " + address.getStateTwoLetterCode() + " Note stateName may be filled, or be " +
-                                "null in but state code is required to comply with the pattern, stateName: " +
-                                address.getStateTwoLetterCode();
-                        constraintValidatorContext.buildConstraintViolationWithTemplate(violationMessage)
-                                .addPropertyNode("state").addConstraintViolation();
-                        violationMessages.add(violationMessage);
-                        rc = false;
-                    }
-                    if (StringUtils.isBlank(address.getZip4()) && StringUtils.isBlank(address.getZip5())) {
-                        violationMessage = "Country is US, hence either zip5 / zip4 needs to be provided";
-                        constraintValidatorContext.buildConstraintViolationWithTemplate(violationMessage)
-                                .addPropertyNode("zip4").addPropertyNode("zip5").addConstraintViolation();
-                        violationMessages.add(violationMessage);
-                        rc = false;
-                    } else if (StringUtils.isNotBlank(address.getZip4()) && !ZIP4_PATTERN.matcher(address.getZip4())
-                            .matches()) {
-                        violationMessage = "Country is US and zip4 is provided, however zip4 does not comply with " +
-                                "being numeric with the right number of digits. zip4:" + address.getZip4();
-                        constraintValidatorContext.buildConstraintViolationWithTemplate(violationMessage)
-                                .addPropertyNode("zip4").addConstraintViolation();
-                        violationMessages.add(violationMessage);
-                        rc = false;
-                    } else if (StringUtils.isNotBlank(address.getZip5()) && !ZIP5_PATTERN.matcher(address.getZip5())
-                            .matches()) {
-                        violationMessage = "Country is US and zip5 is provided, however zip5 does not comply with " +
-                                "being numeric with the right number of digits. zip5:" + address.getZip5();
+            if (StringUtils.isBlank(address.getAddressLine1())) {
+                violationMessage = "Address Line 1 is mandatory, but is not provided in the mailing address";
+                constraintValidatorContext.buildConstraintViolationWithTemplate(violationMessage)
+                       .addPropertyNode("addressLine1").addConstraintViolation();
+                violationMessages.add(violationMessage);
+                rc = false;
+            }
+            if (StringUtils.isBlank(address.getCity())) {
+                violationMessage = "City is mandatory, but is not provided in the mailing address";
+                constraintValidatorContext.buildConstraintViolationWithTemplate(violationMessage)
+                       .addPropertyNode("city").addConstraintViolation();
+                violationMessages.add(violationMessage);
+                rc = false;
+            }
+
+            if (address.getCountryTwoLetterCode() == null && address.getCountry() == null) {
+                violationMessage = "Country is mandatory either countryTwoLettercode or country must be provided";
+                constraintValidatorContext.buildConstraintViolationWithTemplate(violationMessage)
+                        .addPropertyNode("country").addConstraintViolation();
+                violationMessages.add(violationMessage);
+                rc = false;
+            } else
+            if (address.getCountryTwoLetterCode()!= null &&! US_STATE_PATTERN.matcher(address.getCountryTwoLetterCode()).matches()) {
+                violationMessage = "Country Two Letter Code is not valid";
+                constraintValidatorContext.buildConstraintViolationWithTemplate(violationMessage)
+                        .addPropertyNode("countryTwoLetterCode").addConstraintViolation();
+                violationMessages.add(violationMessage);
+                rc = false;
+            }  else
+           if ((address.getCountry() != null && !address.getCountry().isBlank()) && (address.getCountryTwoLetterCode() != null || !address.getCountryTwoLetterCode().isBlank())) {
+               violationMessage = "Can't provide both country and countryTwoLetterCode";
+               constraintValidatorContext.buildConstraintViolationWithTemplate(violationMessage)
+                       .addPropertyNode("countryTwoLetterCode").addConstraintViolation();
+               violationMessages.add(violationMessage);
+               rc = false;
+           }
+           else
+            if (((
+                    (address.getCountry() == null || address.getCountry().isBlank()) &&
+                    (address.getCountryTwoLetterCode() == null || address.getCountryTwoLetterCode().isBlank())
+            ) ||
+                    (  address.getCountry() != null && (
+                    "united states".equalsIgnoreCase(address.getCountry()) ||
+                    "united states of america".equalsIgnoreCase(address.getCountry()) ||
+                    "us".equalsIgnoreCase(address.getCountry()) ||
+                    "usa".equalsIgnoreCase(address.getCountry() )))  || (
+                       address.getCountryTwoLetterCode()!= null &&
+                           "US".equals(address.getCountryTwoLetterCode())
+                    ))) {
+                        if ((address.getState() ==null || address.getState().isBlank()) && (
+                                address.getStateTwoLetterCode() == null || address.getStateTwoLetterCode().isBlank()
+                                )) {
+                            violationMessage = "State is mandatory, but is not provided in the mailing address";
+                            constraintValidatorContext.buildConstraintViolationWithTemplate(violationMessage)
+                                    .addPropertyNode("state").addConstraintViolation();
+                            violationMessages.add(violationMessage);
+                            rc = false;
+                        }
+
+                    if ( (address.getZip() != null && !address.getZip().isBlank()) &&
+                            (address.getZip5() != null && !address.getZip5().isBlank())) {
+                        violationMessage = "Can't provide both zip and zip5";
                         constraintValidatorContext.buildConstraintViolationWithTemplate(violationMessage)
                                 .addPropertyNode("zip5").addConstraintViolation();
                         violationMessages.add(violationMessage);
                         rc = false;
-                    }
-                } else {
-                    if (StringUtils.isBlank(address.getPostalCode())) {
-                        violationMessage = "Country is international, yet postal code is missing postalCode:" +
-                                address.getPostalCode() + ".";
+                    } else
+                    if ((address.getZip() == null || address.getZip().isBlank()) &&
+                            ( address.getZip5() == null || address.getZip5().isBlank()))  {
+                       violationMessage = "Zip is mandatory, but is not provided in the mailing address or is not valid";
                         constraintValidatorContext.buildConstraintViolationWithTemplate(violationMessage)
-                                .addPropertyNode("postalCode").addConstraintViolation();
-                        violationMessages.add(violationMessage);
+                                .addPropertyNode("zip").addConstraintViolation();
                         rc = false;
                     }
+
+                    if (address.getZip5() != null && !ZIP5_PATTERN.matcher(address.getZip5()).matches()) {
+                        violationMessage = "Zip5 is not valid";
+                        constraintValidatorContext.buildConstraintViolationWithTemplate(violationMessage)
+                                .addPropertyNode("zip5").addConstraintViolation();
+                        rc = false;
+                    }
+            } else  {
+                if (address.getPostalCode() == null || address.getPostalCode().isBlank()) {
+                    violationMessage = "Postal Code is mandatory for non domestic addresses, but is not provided in the mailing address";
+                    constraintValidatorContext.buildConstraintViolationWithTemplate(violationMessage)
+                            .addPropertyNode("postalCode").addConstraintViolation();
+                    violationMessages.add(violationMessage);
+                    rc = false;
                 }
             }
-            if (!rc) {
-                address.setValidationMessage(String.valueOf(violationMessages));
+
+            if ((address.getState() != null && !address.getState().isBlank() ) &&
+                    (address.getStateTwoLetterCode() != null && !address.getStateTwoLetterCode().isBlank())) {
+                violationMessage= "Can't provide both state and stateTwoLetterCode";
+                constraintValidatorContext.buildConstraintViolationWithTemplate(violationMessage)
+                        .addPropertyNode("stateTwoLetterCode").addConstraintViolation();
+                violationMessages.add(violationMessage);
+                rc = false;
             }
-            address.setLastValidationAttempt(new Date());
+
+        }
+
+        if (!rc) {
+            address.setValidationMessage(String.valueOf(violationMessages));
         }
 
         return rc;

@@ -7,7 +7,9 @@ import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+import lombok.NoArgsConstructor;
 import lombok.ToString;
+import lombok.experimental.SuperBuilder;
 
 import java.util.Date;
 import java.util.HashSet;
@@ -19,9 +21,11 @@ import java.util.Set;
  */
 @Entity
 @RegisterForReflection
-@ValidMailingAddress(message = "Invalid address")
+@ValidMailingAddress
 @EqualsAndHashCode
 @ToString
+@NoArgsConstructor
+@SuperBuilder
 public @Data class MailingAddress {
     protected String addressName;
     protected String addressLine1;
