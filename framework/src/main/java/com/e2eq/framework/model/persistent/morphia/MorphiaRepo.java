@@ -25,6 +25,7 @@ import dev.morphia.query.updates.UpdateOperators;
 import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.logging.Log;
 import jakarta.inject.Inject;
+import jakarta.validation.Valid;
 import org.apache.commons.lang3.tuple.Pair;
 import org.bson.types.ObjectId;
 import org.jetbrains.annotations.NotNull;
@@ -412,12 +413,12 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
         return dataStore.getDataStore(realm).startSession();
     }
 
-    public T save(MorphiaSession session, T value) {
+    public T save(@NotNull MorphiaSession session, @Valid T value) {
         return session.save(value);
     }
 
     @Override
-    public T save(T value) {
+    public T save(@Valid T value) {
         return this.save(getSecurityContextRealmId(), value);
     }
 
@@ -428,26 +429,26 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
     }
 
     @Override
-    public List<T> save(Datastore datastore, List<T> entities) {
+    public List<T> save(@NotNull Datastore datastore, List<T> entities) {
         ruleContext.check(SecurityContext.getPrincipalContext().get(),
                 SecurityContext.getResourceContext().get());
         return datastore.save(entities);
     }
 
     @Override
-    public List<T> save(MorphiaSession session, List<T> entities) {
+    public List<T> save(@NotNull MorphiaSession session, List<T> entities) {
         return session.save(entities);
     }
 
 
 
     @Override
-    public T save(String realmId, T value) {
+    public T save(@NotNull String realmId, @Valid T value) {
         return save(dataStore.getDataStore(realmId), value);
     }
 
     @Override
-    public T save(Datastore datastore, T value) {
+    public T save(@NotNull Datastore datastore, @Valid T value) {
         return datastore.save(value);
     }
 

@@ -67,7 +67,7 @@ field.subfield.subsubfield:^[deepvalue1,deepvalue2]
 (field:1&&field2:2)||field3:3
 field1:1&&(field2:2||field3:3)
 (field1:1||field2:2)&&field3:3
-(field1:1||field2:@66d9251c81f40f046efd39ef)
+(field1:1||field2:66d9251c81f40f046efd39ef)
 
 #-- Mixed data types
 field1:100&&field2:"string"||field3:TRUE

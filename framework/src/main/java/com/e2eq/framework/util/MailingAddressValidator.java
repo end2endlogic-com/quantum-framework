@@ -49,14 +49,6 @@ public class MailingAddressValidator implements ConstraintValidator<ValidMailing
             // if zip is provided it must be 5 numbers.
             // if zip5 is provided it must be 5 numbers.
 
-            if (StringUtils.isBlank(address.getAddressName())) {
-                violationMessage = "Address Name is mandatory, but is not provided in the mailing address";
-                constraintValidatorContext.buildConstraintViolationWithTemplate(violationMessage)
-                       .addPropertyNode("addressName").addConstraintViolation();
-                violationMessages.add(violationMessage);
-                rc = false;
-            }
-
             if (StringUtils.isBlank(address.getAddressLine1())) {
                 violationMessage = "Address Line 1 is mandatory, but is not provided in the mailing address";
                 constraintValidatorContext.buildConstraintViolationWithTemplate(violationMessage)

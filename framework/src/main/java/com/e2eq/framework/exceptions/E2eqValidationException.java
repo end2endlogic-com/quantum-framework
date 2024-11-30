@@ -7,15 +7,12 @@ import java.util.Set;
 public class E2eqValidationException extends ValidationException {
    private static final long serialVersionUID = 1L;
    protected Set<ConstraintViolation<Object>> violationSet;
-
    protected String jsonData;
 
-   public E2eqValidationException(String message) {
-      super(message);
-   }
-
-   public E2eqValidationException() {
+   public E2eqValidationException(Set<ConstraintViolation<Object>> violationSet, String jsonData) {
       super();
+      this.violationSet = violationSet;
+      this.jsonData = jsonData;
    }
 
    public E2eqValidationException(String message, Throwable cause) {
@@ -40,6 +37,20 @@ public class E2eqValidationException extends ValidationException {
 
    public void setJsonData(String jsonData) {
       this.jsonData = jsonData;
+   }
+
+   @Override
+   public String getMessage() {
+     // using a string template add in the violation details into the message
+      if (violationSet != null && violationSet.size() > 0) {
+         StringBuilder sb = new StringBuilder();
+         for (ConstraintViolation<?> violation : violationSet) {
+            sb.append(violation.getMessage()).append(" : ").append(violation.getPropertyPath()).append(" : ").append(violation.getRootBean().getClass().getName()).append("\n");
+         }
+         return sb.toString();
+      } else {
+         return super.getMessage();
+      }
    }
 
    @Override

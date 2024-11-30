@@ -10,6 +10,7 @@ import com.fasterxml.jackson.module.jsonSchema.JsonSchema;
 import dev.morphia.Datastore;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.transactions.MorphiaSession;
+import jakarta.validation.Valid;
 import org.apache.commons.lang3.tuple.Pair;
 import org.bson.types.ObjectId;
 import org.jetbrains.annotations.NotNull;
@@ -41,16 +42,16 @@ public interface BaseMorphiaRepo<T extends BaseModel> {
    public long getCount(Datastore datastore,String filter);
 
    // Write based API's
-   public T save(T value);
-   public T save(String realm, T value);
-   public T save(Datastore datastore, T value);
-   public T save(MorphiaSession session, T value);
+   public T save(@Valid T value);
+   public T save(@NotNull String realm, @Valid T value);
+   public T save(@NotNull Datastore datastore, @Valid T value);
+   public T save(@NotNull MorphiaSession session, @Valid T value);
    public List<T> save(List<T> entities);
-   public List<T> save(Datastore datastore, List<T> entities);
-   public List<T> save(MorphiaSession datastore, List<T> entities);
+   public List<T> save(@NotNull Datastore datastore, List<T> entities);
+   public List<T> save(@NotNull MorphiaSession datastore, List<T> entities);
 
-   public long delete(T obj) throws ReferentialIntegrityViolationException;
-   public long delete(MorphiaSession s, T obj) throws ReferentialIntegrityViolationException;
+   public long delete(@Valid T obj) throws ReferentialIntegrityViolationException;
+   public long delete(@NotNull MorphiaSession s, @Valid T obj) throws ReferentialIntegrityViolationException;
 
 
    public long update (@NotNull String id, @NotNull Pair<String, Object>... pairs);

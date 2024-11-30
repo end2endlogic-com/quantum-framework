@@ -85,7 +85,7 @@ public class ValidationInterceptor implements EntityListener<Object> {
                isaveable.setViolationSet(null);
                isaveable.setViolationSet(violations);
             } else {
-               E2eqValidationException ex = new E2eqValidationException();
+               E2eqValidationException ex = new E2eqValidationException(violationSet, document.toJson().toString());
                ex.setViolationSet(violationSet);
                ex.setJsonData(document.toJson().toString());
                violationSet.forEach(violation -> Log.error(violation.getMessage() + " :" + violation.getPropertyPath() + ":" + violation.getRootBean().getClass().getName()));
@@ -93,6 +93,7 @@ public class ValidationInterceptor implements EntityListener<Object> {
                try {
                   Log.error(objectMapper.writeValueAsString(ent));
                } catch (JsonProcessingException e) {
+                  Log.error("Error processing entity for validation:", e);
                   throw new RuntimeException(e);
                }
                throw ex;

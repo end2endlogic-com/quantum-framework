@@ -1,5 +1,6 @@
 package com.e2eq.framework.rest.models;
 
+import com.e2eq.framework.model.persistent.base.SortField;
 import dev.morphia.annotations.Transient;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import lombok.Data;
@@ -41,6 +42,18 @@ public @Data class Collection<T> {
       this.offset = offset;
       this.limit = limit;
       this.filter = filter;
+      asOf = new Date();
+   }
+
+   public Collection(List<T> rows, int offset, int limit, String filter, Long totalCount, List<SortField> sortFields) {
+      this.rows = rows;
+      this.rowCount = (rows==null) ? 0 : rows.size();
+      this.totalCount = (totalCount == null) ? null : totalCount;
+      this.offset = offset;
+      this.limit = limit;
+      this.filter = filter;
+      this.sortFields = sortFields.stream().map(SortField::toString).toList();
+
       asOf = new Date();
    }
 
