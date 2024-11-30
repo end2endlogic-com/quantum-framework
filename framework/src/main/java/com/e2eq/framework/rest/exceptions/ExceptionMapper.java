@@ -1,7 +1,6 @@
 package com.e2eq.framework.rest.exceptions;
 
 import com.e2eq.framework.rest.models.RestError;
-import jakarta.validation.ValidationException;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.Provider;
 

@@ -65,20 +65,13 @@ public abstract @Data @NoArgsConstructor class BaseModel {
     /**
      This string to use to display on a User Interface.  Human friendly identifier of this object
      */
-    @NotNull ( message = "display name must not be null or empty" )
-    @NonNull
-    @NotEmpty (message = "display name must not be empty, and have a min size of 3" )
-    @Size(min=3, message = "display name must have a min size of 3" )
     protected String displayName;
 
     /**
      The data domain this is a part of
-     ( includes references to account, org, owner etc.
+      includes references to account, org, owner etc.
      */
     @Valid
-    @NotNull ( message = "data domain must not be null" )
-    @NonNull
-    @JsonProperty(required = true)
     protected DataDomain dataDomain;
 
     /**

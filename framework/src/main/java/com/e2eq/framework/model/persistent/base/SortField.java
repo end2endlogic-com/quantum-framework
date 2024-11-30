@@ -44,6 +44,11 @@ public class SortField {
       return sortDirection == sortField.sortDirection;
    }
 
+   public String toString() {
+      String pre = (sortDirection == SortDirection.ASC) ? "+" : "-";
+      return pre + fieldName;
+   }
+
    @Override
    public int hashCode () {
       int result = fieldName != null ? fieldName.hashCode() : 0;

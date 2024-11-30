@@ -225,7 +225,13 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
 
          List<T> ups = repo.getListByQuery(skip, limit, filter, sortFields, projectionFields);
          long count = repo.getCount(filter);
-         Collection<T> collection = new Collection<>(ups, skip, limit, filter, count);
+
+         Collection<T> collection;
+         if (sortFields == null )
+            collection = new Collection<>(ups, skip, limit, filter, count);
+         else
+            collection = new Collection<>(ups, skip, limit, filter, count, sortFields);
+
          // fill in ui-actions
          collection = repo.fillUIActions(collection);
 
@@ -283,6 +289,20 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
       }
    }
 
+   @Path("refName")
+   @DELETE
+   @Produces(MediaType.APPLICATION_JSON)
+   @Consumes(MediaType.APPLICATION_JSON)
+   @SecurityRequirement(name = "bearerAuth")
+   @APIResponses(value = {
+           @APIResponse(responseCode = "200", description = "Entity found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = SuccessResponse.class))),
+           @APIResponse(responseCode = "404", description = "Entity not found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
+   })
+   public Response deleteByRefName(@QueryParam("refName") String refName) throws ReferentialIntegrityViolationException {
+      Optional<T> model = repo.findByRefName(refName);
+      return deleteEntity(refName, model);
+   }
+
    @Path("id")
    @DELETE
    @Produces(MediaType.APPLICATION_JSON)
@@ -293,7 +313,11 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
            @APIResponse(responseCode = "404", description = "Entity not found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
    })
    public Response delete(@QueryParam("id") String id) throws ReferentialIntegrityViolationException {
-      Optional<T> model = repo.findById(id);
+     Optional<T> model = repo.findById(id);
+     return deleteEntity(id, model);
+   }
+
+   protected Response deleteEntity(String id, Optional<T> model) throws ReferentialIntegrityViolationException {
       if (model.isPresent()) {
          long deletedCount = repo.delete(model.get());
          if (deletedCount != 0) {
@@ -303,7 +327,7 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
             return Response.ok().entity(r).build();
          } else {
             RestError error = RestError.builder()
-                    .statusMessage("Entity with Id:" + id + " was found but delete returned 0 indicating the entity may not have been deleted.  Retry your request")
+                    .statusMessage("Entity with identifier:" +  id + " was found but delete returned 0 indicating the entity may not have been deleted.  Retry your request")
                     .reasonMessage("Delete Operation returned 0 when 1 was expected")
                     .debugMessage("MongoDB delete operation returned 0")
                     .build();
@@ -313,7 +337,7 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
       } else {
          RestError error = RestError.builder()
                  .status(Response.Status.NOT_FOUND.getStatusCode())
-                 .statusMessage("Id:" + id + " was not found").build();
+                 .statusMessage("identifier:" + id + " was not found").build();
          return Response.status(Response.Status.NOT_FOUND).entity(error).build();
       }
    }

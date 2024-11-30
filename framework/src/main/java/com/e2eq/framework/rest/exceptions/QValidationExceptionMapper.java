@@ -23,7 +23,6 @@ public class QValidationExceptionMapper implements ExceptionMapper<E2eqValidatio
         PrintWriter pw = new PrintWriter(sw);
         e.printStackTrace(pw);
         String stackTrace = sw.toString();
-
         error.setDebugMessage(stackTrace);
 
         return Response.status(Response.Status.BAD_REQUEST).entity(error).build();

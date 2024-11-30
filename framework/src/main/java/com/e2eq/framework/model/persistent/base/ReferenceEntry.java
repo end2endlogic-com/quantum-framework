@@ -22,10 +22,13 @@ public class ReferenceEntry {
     @Schema(implementation = String.class, description = "MongoDB ObjectId as String")
     @JsonSerialize(using = ObjectIdJsonSerializer.class)
     private ObjectId referencedId;
+
     @NotNull
     private String type;
+
     /**
-     * the refName is not used for the look up as it would require the datadomain as well to ensure uniquness, however it provides a better visual than just the id") **/
+     * The refName is not used for the look up as it would require the datadomain as well to ensure uniquness, however it provides a better visual than just the id")
+     * **/
     private String refName;
 
 }
