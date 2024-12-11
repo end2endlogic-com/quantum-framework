@@ -1,14 +1,19 @@
 package com.e2eq.framework.rest.models;
 
+import com.e2eq.framework.model.general.ValidationViolation;
 import com.e2eq.framework.model.securityrules.SecurityCheckResponse;
 import io.quarkus.runtime.annotations.RegisterForReflection;
+import jakarta.validation.ConstraintViolation;
 import lombok.Builder;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+import lombok.experimental.SuperBuilder;
+
+import java.util.Set;
 
 @Data
 @EqualsAndHashCode
-@Builder
+@SuperBuilder
 @RegisterForReflection
 public class RestError {
    protected int status;
@@ -17,4 +22,5 @@ public class RestError {
    protected String reasonMessage;
    protected String debugMessage;
    protected SecurityCheckResponse securityResponse;
+   protected Set<String> constraintViolations;
 }

@@ -5,6 +5,7 @@ import dev.morphia.annotations.Entity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import lombok.Builder;
 import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 import lombok.ToString;
@@ -46,7 +47,7 @@ public class DataDomain {
     The datasegment is again another level of indirection with in account, tenant to provide even more granularity at a permission level.
     */
     @JsonProperty(required = true)
-    protected int dataSegment = 0;
+    protected int dataSegment;
 
     /**
     The userId of the owner of this object, that user typically will be considered to have additional privileges vs. non owners

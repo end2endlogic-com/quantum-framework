@@ -1,7 +1,6 @@
 package com.e2eq.framework.model.persistent.base;
 
-import io.quarkus.arc.All;
-import jakarta.validation.constraints.NotEmpty;
+
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Data;

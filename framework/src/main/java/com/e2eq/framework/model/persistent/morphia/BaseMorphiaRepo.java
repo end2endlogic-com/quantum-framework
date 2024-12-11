@@ -3,6 +3,7 @@ package com.e2eq.framework.model.persistent.morphia;
 
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.base.BaseModel;
+import com.e2eq.framework.model.persistent.base.CloseableIterator;
 import com.e2eq.framework.model.persistent.base.ProjectionField;
 import com.e2eq.framework.model.persistent.base.SortField;
 import com.e2eq.framework.rest.models.Collection;
@@ -14,6 +15,7 @@ import jakarta.validation.Valid;
 import org.apache.commons.lang3.tuple.Pair;
 import org.bson.types.ObjectId;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 import java.util.Optional;
@@ -37,6 +39,8 @@ public interface BaseMorphiaRepo<T extends BaseModel> {
    public List<T> getListByQuery(int skip, int limit, String filter, List<SortField> sortFields, List<ProjectionField> projectedProperties);
    public List<T>  getList(int skip, int limit, List<Filter> filters, List<SortField> sortFields);
    public List<T> getListByQuery(Datastore datastore, int skip, int limit, String query, List<SortField> sortFields, List<ProjectionField> projectionFields);
+
+   public CloseableIterator<T> getStreamByQuery(int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields);
 
    public long getCount(String filter);
    public long getCount(Datastore datastore,String filter);

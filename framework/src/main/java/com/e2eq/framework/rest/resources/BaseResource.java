@@ -9,6 +9,8 @@ import com.e2eq.framework.rest.models.Collection;
 import com.e2eq.framework.rest.models.CounterResponse;
 import com.e2eq.framework.rest.models.RestError;
 import com.e2eq.framework.rest.models.SuccessResponse;
+import com.e2eq.framework.util.CSVExportHelper;
+import com.e2eq.framework.util.FilterUtils;
 import com.e2eq.framework.util.JSONUtils;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.module.jsonSchema.JsonSchema;
@@ -17,8 +19,7 @@ import dev.morphia.query.ValidationException;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
-import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.*;
 import org.apache.commons.lang3.tuple.Pair;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.eclipse.microprofile.openapi.annotations.Operation;
@@ -31,9 +32,15 @@ import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement;
 import org.eclipse.microprofile.openapi.annotations.security.SecurityScheme;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
+import java.io.UnsupportedEncodingException;
+import java.net.URLEncoder;
+import java.nio.charset.Charset;
+import java.nio.charset.IllegalCharsetNameException;
+import java.nio.charset.UnsupportedCharsetException;
+import java.util.*;
+import java.util.regex.Pattern;
+
+import static java.lang.String.format;
 
 /**
  A base resource class
@@ -49,11 +56,13 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
    protected R repo;
 
    @Inject
-   JsonWebToken jwt;
-
+   protected JsonWebToken jwt;
 
    @Inject
-   RuleContext ruleContext;
+   protected RuleContext ruleContext;
+
+   private static final int MAXIMUM_REJECTS_SHOWN = 5;
+
 
    protected BaseResource(R repo) {
       this.repo = repo;
@@ -89,6 +98,8 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
 
       return response;
    }
+
+
 
    @Path("id")
    @GET
@@ -138,26 +149,7 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
       return sortFields;
    }
 
-   protected List<ProjectionField> convertProjectionFields(String projection) {
-      List<ProjectionField> projectionFields = new ArrayList<>();
-      if (projection != null) {
-         for (String projectionPart : projection.split(",")) {
-            String cleanProjectionPart = projectionPart.trim();
-            if (cleanProjectionPart.startsWith("-")) {
-               projectionFields.add(new ProjectionField(cleanProjectionPart.substring(1),
-                       ProjectionField.ProjectionType.EXCLUDE));
-            } else if (cleanProjectionPart.startsWith("+")) {
-               projectionFields.add(new ProjectionField(
-                       cleanProjectionPart.substring(1),
-                       ProjectionField.ProjectionType.INCLUDE));
-            } else {
-               projectionFields.add(new ProjectionField(cleanProjectionPart,
-                       ProjectionField.ProjectionType.INCLUDE));
-            }
-         }
-      }
-      return projectionFields;
-   }
+
 
 
    @Path("count")
@@ -183,6 +175,123 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
          throw new WebApplicationException(Response.status(Response.Status.BAD_REQUEST).entity(error).build());
       }
    }
+
+   @GET
+   @Path("/csv")
+   @Operation(summary = "Retrieve a list of Account in CSV format")
+   @APIResponses({@APIResponse(responseCode = "401", description = "Not Authorized, caller does not have the privilege assigned to" +
+           " their id"),
+           @APIResponse(responseCode = "403", description = "Not authenticated caller did not authenticate before making the call"),
+           @APIResponse(responseCode = "500", description = "Internal System error, ask operator to check server side logs")})
+   @Produces({"text/csv", MediaType.TEXT_PLAIN, MediaType.WILDCARD})
+   public Response getListAsCSV(
+           @Context UriInfo info,
+
+           @Parameter(description="the character that must be used to separate fields of the same record")
+           @QueryParam("fieldSeparator")
+           @DefaultValue(",") final String fieldSeparator,
+
+           @Parameter(description="a non-empty list of the names of the columns expected in the delimited text;"
+                   + " if unspecified, refName is returned."
+                   + " It would be very unusual for this list to contain duplicates but that is not expressly"
+                   + " prohibited")
+           @QueryParam("requestedColumns")
+           @DefaultValue("refName")
+           final List<String> requestedColumns,
+
+           @Parameter(description="the choice of strategy for the way in which columns are quoted when"
+                   + " they contain values that embed the quoteChar character. One of \"QUOTE_WHERE_ESSENTIAL\""
+                   + " or \"QUOTE_ALL_COLUMNS\"")
+           @QueryParam("quotingStrategy")
+           @DefaultValue("QUOTE_WHERE_ESSENTIAL")
+           final String quotingStrategy,
+
+           @Parameter(description="the character that is used to surround the values of specific (or all)"
+                   + "fields to protect them from being fragmented up when loaded back later")
+           @QueryParam("quoteChar")
+           @DefaultValue("\"") final String quoteChar,
+
+           @Parameter(description="the character that must be used when formatting a decimal value to separate the integer"
+                   + " part from the fractional part")
+           @QueryParam("decimalSeparator")
+           @DefaultValue(".") String decimalSeparator,
+
+           @Parameter(description="the charset to which the CSV file must be encoded, including in some cases the choice"
+                   + " of whether or not a \"byte order mark\" (BOM) must precede the CSV data. These are supported:"
+                   + "US-ASCII, UTF-8-without-BOM, UTF-8-with-BOM, UTF-16-with-BOM, UTF-16BE and UTF-16LE")
+           @QueryParam("charsetEncoding")
+           @DefaultValue("UTF-8-without-BOM")
+           String charsetEncoding,
+
+           @Parameter(description="a String that represents a syntactically valid filter expression; if set to null, the"
+                   + " implication is that filtering must be performed")
+           @QueryParam("filter")
+           String filter,
+
+           @Parameter(description="the name of the file that's created as a result of this request; if set to null, an"
+                   + " arbitrary name will be chosen")
+           @QueryParam("filename")
+           @DefaultValue("downloaded.csv")
+           String filename,
+
+           @Parameter(description="the position of the record from which to start converting into delimited values")
+           @QueryParam("offset")
+           @DefaultValue("0")
+           int offset,
+
+           @Parameter(description="the maximum number of records to convert into delimited values, starting from" +
+                   " offset.  Pass -1 to specify all records")
+           @QueryParam("length")
+           @DefaultValue("1000")
+           int length,
+
+           @Parameter(description="when set to 'true', the first row is to contain the name of each requested column" +
+                   " (which implies it is erroneous to set this parameter when requestedColumns hasn't been)." +
+                   " The names to use for each column can be overridden using the preferredColumnNames parameter")
+           @QueryParam("prependHeaderRow")
+           final boolean prependHeaderRow,
+
+           @Parameter(description ="a list of column names meant to match those in requestedColumns that must appear in" +
+                   " the column header row (which implies it is erroneous to set this parameter when" +
+                   " requestedColumns and prependHeaderRow are not both set). This list of column names is allowed" +
+                   " to have fewer entries than requestedColumns (in which case, the default names will be used" +
+                   " for unmatched columns) but is not allowed to have more. Any entry in the list that is an" +
+                   " empty string also signifies that the default name is acceptable for that column")
+           @QueryParam("preferredColumnNames")
+           List<String> preferredColumnNames) {
+      rejectUnrecognizedQueryParams(info, "fieldSeparator", "requestedColumns", "quotingStrategy",
+              "quoteChar", "decimalSeparator", "charsetEncoding", "filter", "filename", "offset", "length",
+              "prependHeaderRow", "preferredColumnNames");
+
+      CSVExportHelper csvExportHelper = new CSVExportHelper();
+      String charsetName = charsetEncoding.replaceAll("-with.*", ""); // "UTF-8-with-BOM" becomes "UTF-8"
+      final Charset chosenCharset;
+      final boolean mustUseBOM;
+
+      try {
+         chosenCharset = Charset.forName(charsetName);
+         mustUseBOM = charsetEncoding.contains("-with-BOM");
+      } catch (UnsupportedCharsetException | IllegalCharsetNameException e) {
+         throw new ValidationException(format("The value %s is not one of the supported charsetEncodings",
+                 charsetEncoding));
+      }
+
+      StreamingOutput streamingOutput = csvExportHelper.streamCSVOut(repo, fieldSeparator.charAt(0), requestedColumns,
+              quotingStrategy, quoteChar.charAt(0), chosenCharset, mustUseBOM, filter, offset,
+              length, prependHeaderRow, preferredColumnNames);
+
+      try {
+         return Response.ok(streamingOutput)
+                 .type("text/csv; charset=" + chosenCharset.name())
+                 .header("Content-Disposition", "attachment; filename=" + URLEncoder.encode(filename, "UTF-8"))
+                 .build();
+      } catch (UnsupportedEncodingException e) {
+         throw new IllegalStateException("Impossible situation where the UTF-8 charset could not be found", e);
+      }
+   }
+
+
+
 
 
    @Path("list")
@@ -219,7 +328,7 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
             } else {
                sortFields = null;
             }
-            projectionFields = convertProjectionFields(projection);
+            projectionFields = FilterUtils.convertProjectionFields(projection);
          }
 
 
@@ -256,6 +365,10 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
       return schema;
    }
 
+   @APIResponses(value = {
+           @APIResponse(responseCode = "200", description = "Success", content = @Content(mediaType = "application/json", schema = @Schema(implementation = SuccessResponse.class))),
+           @APIResponse(responseCode = "400", description = "Validation Error", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
+   })
    @POST
    @Produces(MediaType.APPLICATION_JSON)
    @Consumes(MediaType.APPLICATION_JSON)
@@ -299,6 +412,7 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
            @APIResponse(responseCode = "404", description = "Entity not found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
    })
    public Response deleteByRefName(@QueryParam("refName") String refName) throws ReferentialIntegrityViolationException {
+      Objects.requireNonNull(refName, "Null argument passed to delete, api requires a non-null refName");
       Optional<T> model = repo.findByRefName(refName);
       return deleteEntity(refName, model);
    }
@@ -313,6 +427,7 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
            @APIResponse(responseCode = "404", description = "Entity not found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
    })
    public Response delete(@QueryParam("id") String id) throws ReferentialIntegrityViolationException {
+     Objects.requireNonNull(id, "Null argument passed to delete, api requires a non-null id");
      Optional<T> model = repo.findById(id);
      return deleteEntity(id, model);
    }
@@ -339,6 +454,24 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
                  .status(Response.Status.NOT_FOUND.getStatusCode())
                  .statusMessage("identifier:" + id + " was not found").build();
          return Response.status(Response.Status.NOT_FOUND).entity(error).build();
+      }
+   }
+   protected void rejectUnrecognizedQueryParams(UriInfo info, String... recognizedQueryParams)
+           throws ValidationException {
+
+      Set<String> supplied = new HashSet<>(info.getQueryParameters().keySet());
+
+      supplied.removeAll(Arrays.asList(recognizedQueryParams));
+
+      if (! supplied.isEmpty()) {
+         List sampleRejects = new ArrayList(supplied);
+
+         if (supplied.size() > MAXIMUM_REJECTS_SHOWN) {
+            sampleRejects = sampleRejects.subList(0, MAXIMUM_REJECTS_SHOWN);
+         }
+
+         throw new ValidationException(format("Several unrecognized query parameters were supplied, including %s",
+                 sampleRejects));
       }
    }
 }
