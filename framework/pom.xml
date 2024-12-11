@@ -4,12 +4,12 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.end2endlogic</groupId>
   <artifactId>quantum-framework</artifactId>
-  <version>1.1.1-SNAPSHOT</version>
+  <version>1.1.2-SNAPSHOT</version>
 
   <parent>
     <groupId>com.end2endlogic</groupId>
     <artifactId>quantum-parent</artifactId>
-    <version>1.1.1-SNAPSHOT</version>
+    <version>1.1.1</version>
   </parent>
   <licenses>
     <license>
@@ -78,7 +78,7 @@
     <dependency>
       <groupId>com.end2endlogic</groupId>
       <artifactId>quantum-extension</artifactId>
-      <version>1.1.0-SNAPSHOT</version>
+      <version>1.1.1</version>
     </dependency>
    <!--
     Not needed here is in the quantum extension
@@ -128,22 +128,13 @@
     <dependency>
       <groupId>com.end2endlogic</groupId>
       <artifactId>quarkus-moneta</artifactId>
-      <version>2.1.0c</version>
+      <version>2.1.0d</version>
     </dependency>
     <dependency>
       <groupId>com.end2endlogic</groupId>
       <artifactId>jakarta-transformer-extension</artifactId>
       <version>0.0.1</version>
     </dependency>
-<!--
-    Is part of the quantum framework
-    <dependency>
-      <groupId>com.github.end2endlogic-com.quarkus-moneta</groupId>
-      <artifactId>quarkus-moneta</artifactId>
-      <version>2.1.0a</version>
-    </dependency>
-    -->
-
 
     <dependency>
       <groupId>io.github.jopenlibs</groupId>
@@ -213,6 +204,33 @@
       <groupId>com.fasterxml.jackson.module</groupId>
       <artifactId>jackson-module-jsonSchema</artifactId>
       <version>${jackson.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>com.github.wnameless.json</groupId>
+      <artifactId>json-flattener</artifactId>
+      <version>0.16.6</version>
+    </dependency>
+
+    <dependency>
+      <groupId>net.sf.supercsv</groupId>
+      <artifactId>super-csv</artifactId>
+      <version>2.4.0</version>
+    </dependency>
+    <dependency>
+      <groupId>net.sf.supercsv</groupId>
+      <artifactId>super-csv-dozer</artifactId>
+      <version>2.4.0</version>
+    </dependency>
+    <dependency>
+      <groupId>net.sf.supercsv</groupId>
+      <artifactId>super-csv-java8</artifactId>
+      <version>2.4.0</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-lang3</artifactId>
+      <version>3.12.0</version>
     </dependency>
 
     <dependency>

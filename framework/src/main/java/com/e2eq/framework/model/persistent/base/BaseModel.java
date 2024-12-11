@@ -54,12 +54,10 @@ public abstract @Data @NoArgsConstructor class BaseModel {
      concept and uses the "id".  We may need to fork Morphia or create our own equivalent to handle these references if its
      truly important.  Like wise the use of an annotation to define the fields that should be used to build the refId may also
      be easier for the developer to use, with the default being that the refId will be the same value as the ID.
+
+     The id will default to the objectId if it is not set
      */
-    @JsonProperty(required = true)
-    @NotNull( message = "ref name must not be null"  )
-    @NotEmpty ( message = "ref name must not be empty"  )
     @Size(min=3, message = "ref name must have a min size of 3 characters" )
-    @NonNull
     protected String refName;
 
     /**
@@ -104,9 +102,10 @@ public abstract @Data @NoArgsConstructor class BaseModel {
 
     @PrePersist
     public void prePersist() {
-        if (displayName == null) {
-            displayName = refName;
-        }
+    }
+
+    @PostPersist
+    public void postPersist() {
     }
 
     @Transient

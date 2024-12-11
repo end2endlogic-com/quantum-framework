@@ -1,5 +1,6 @@
 package com.e2eq.framework.model.persistent.base;
 
+import jakarta.validation.constraints.NotNull;
 import lombok.*;
 import org.checkerframework.checker.units.qual.N;
 
@@ -12,10 +13,12 @@ import java.util.List;
 @ToString
 public @Data class DynamicAttribute {
     protected String id;
+    @NotNull
     protected String name;
     protected String label;
     protected String description;
     protected DynamicAttributeType type;
+    @NotNull
     protected Object value;
     protected Object defaultValue;
     @Builder.Default

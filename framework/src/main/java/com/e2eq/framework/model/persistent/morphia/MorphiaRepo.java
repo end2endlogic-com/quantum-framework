@@ -44,7 +44,7 @@ import static dev.morphia.query.Sort.descending;
  *
  * @param <T> The model class this repo will use.
  */
-public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRepo<T> {
+public  abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRepo<T> {
     @Inject
     protected MorphiaDataStore dataStore;
 
@@ -240,6 +240,62 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
         return findOptions;
     }
 
+    public CloseableIterator<T> getStreamByQuery(Datastore datastore, int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields) {
+        if (skip < 0) {
+            throw new IllegalArgumentException("skip cannot be negative");
+        }
+    
+        List<Filter> filters = new ArrayList<>();
+    
+        if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
+            filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get());
+        } else {
+            Log.info("Context not set?");
+            throw new RuntimeException("Resource Context is not set in thread, check security configuration");
+        }
+    
+        FindOptions findOptions = buildFindOptions(skip, limit, sortFields, projectionFields);
+    
+        if (query != null && !query.isEmpty()) {
+            String cleanQuery = query.trim();
+            if (!cleanQuery.isEmpty()) {
+                Filter filter = MorphiaUtils.convertToFilter(query);
+                filters.add(Filters.and(filter));
+            }
+        }
+    
+        Filter[] filterArray = new Filter[filters.size()];
+        MorphiaCursor<T> cursor = datastore.find(getPersistentClass())
+                .filter(filters.toArray(filterArray))
+                .iterator(findOptions);
+    
+        return new CloseableIterator<T>() {
+            @Override
+            public void close() {
+                cursor.close();
+            }
+    
+            @Override
+            public boolean hasNext() {
+                return cursor.hasNext();
+            }
+    
+            @Override
+            public T next() {
+                T model = cursor.next();
+                if (model != null) {
+                    List<String> actions = getDefaultUIActionsFromFD(model.bmFunctionalDomain());
+                    if (!actions.isEmpty()) {
+                        model.setDefaultUIActions(actions);
+                    }
+                    UIActionList uiActions = model.calculateStateBasedUIActions();
+                    model.setActionList(uiActions);
+                }
+                return model;
+            }
+        };
+    }
+
     @Override
     public List<T> getListByQuery(Datastore datastore, int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields) {
 
@@ -305,6 +361,15 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
 
         return list;
     }
+
+    // Convenience method that uses the default datastore
+    @Override
+    public CloseableIterator<T> getStreamByQuery(int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields) {
+        return getStreamByQuery(dataStore.getDataStore(getSecurityContextRealmId()), skip, limit, query, sortFields, projectionFields);
+    }
+
+
+    @Override
     public List<T> getListByQuery(int skip, int limit, @Nullable String query, List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields) {
         return getListByQuery(dataStore.getDataStore(getSecurityContextRealmId()), skip, limit, query, sortFields, projectionFields);
     }
@@ -326,15 +391,6 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
 
         // Add filters based upon rule and resourceContext;
         Filter[] filterArray = getFilterArray(filters);
-
-       /* if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
-            filters = ruleContext.getFilters(filters,
-                    SecurityContext.getPrincipalContext().get(),
-                    SecurityContext.getResourceContext().get());
-        } else {
-            throw new RuntimeException("Resource Context is not set in thread, check security configuration");
-        } */
-
 
         MorphiaCursor<T> cursor;
         if (limit > 0) {
@@ -413,13 +469,28 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
         return dataStore.getDataStore(realm).startSession();
     }
 
+    protected void setDefaultValues(T model) {
+        if (model.getId() == null) {
+            model.setId(new ObjectId());
+        }
+
+        if (model.getRefName() == null || model.getRefName().trim().isEmpty()) {
+            model.setRefName (model.getId().toString());
+        }
+
+        if (model.getDisplayName() == null) {
+            model.setDisplayName(model.getRefName());
+        }
+    }
+
     public T save(@NotNull MorphiaSession session, @Valid T value) {
+        setDefaultValues(value);
         return session.save(value);
     }
 
     @Override
     public T save(@Valid T value) {
-        return this.save(getSecurityContextRealmId(), value);
+        return save(getSecurityContextRealmId(), value);
     }
 
 
@@ -430,16 +501,15 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
 
     @Override
     public List<T> save(@NotNull Datastore datastore, List<T> entities) {
-        ruleContext.check(SecurityContext.getPrincipalContext().get(),
-                SecurityContext.getResourceContext().get());
+        entities.forEach(this::setDefaultValues);
         return datastore.save(entities);
     }
 
     @Override
     public List<T> save(@NotNull MorphiaSession session, List<T> entities) {
+        entities.forEach(this::setDefaultValues);
         return session.save(entities);
     }
-
 
 
     @Override
@@ -449,10 +519,9 @@ public abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRep
 
     @Override
     public T save(@NotNull Datastore datastore, @Valid T value) {
+        setDefaultValues(value);
         return datastore.save(value);
     }
-
-
 
 
     public void removeReferenceConstraint(T obj, MorphiaSession session) {

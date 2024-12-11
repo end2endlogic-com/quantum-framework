@@ -7,7 +7,7 @@ import jakarta.ws.rs.ext.Provider;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 
-@Provider
+//@Provider
 public class ExceptionMapper implements jakarta.ws.rs.ext.ExceptionMapper<Exception> {
     @Override
     public Response toResponse(Exception exception) {

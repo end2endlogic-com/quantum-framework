@@ -110,7 +110,7 @@ field:"fieldValue"
 field:"fieldValueWith:inIt"
 field:_edfs&&field2:^[value1,value2,value3]
 
-(status:Assigned||status:Pending||status:Acknowledged)&&(displayName:"%Route Exception in Route:To[b2bmbScript://com.xxx/updateQuickbooksPO]%")
+(status:Assigned||status:Pending||status:Acknowledged)&&(displayName:"%Route Exception in Route:To[http://com.xxx/update]%")
 field:". ^ $ % + - ? ( ) [ ] { } \ |"
 field:"abcdefghijklmnopqrstuvwxyz1234567890!@#$^&()`~%-_=+[{]}\|;:'""*,<.>/?"
 

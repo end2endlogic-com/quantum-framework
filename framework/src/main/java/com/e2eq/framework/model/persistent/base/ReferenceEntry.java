@@ -18,13 +18,17 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 @Data
 @ToString
 public class ReferenceEntry {
+
+
     @NotNull
     @Schema(implementation = String.class, description = "MongoDB ObjectId as String")
     @JsonSerialize(using = ObjectIdJsonSerializer.class)
     private ObjectId referencedId;
 
+    /** the type that this reference is ie. the collection it is associated with */
     @NotNull
     private String type;
+
 
     /**
      * The refName is not used for the look up as it would require the datadomain as well to ensure uniquness, however it provides a better visual than just the id")

@@ -162,7 +162,7 @@ public class MorphiaUtils {
 
       DynamicAttributeSet attributeSet = searchRequest.getSearchFields();
       Filter finalFilter;
-      for (DynamicAttribute attribute : attributeSet.getAttributes().values()) {
+      for (DynamicAttribute attribute : attributeSet.getAttributes()) {
          Filter f;
          if (!searchRequest.isExactMatches() || attribute.getType().equals(DynamicAttributeType.Regex)) {
             RegexFilter rf = Filters.regex(attribute.getName(), attribute.getValue().toString());
