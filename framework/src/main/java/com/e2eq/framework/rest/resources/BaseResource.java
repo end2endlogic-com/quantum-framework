@@ -32,13 +32,11 @@ import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement;
 import org.eclipse.microprofile.openapi.annotations.security.SecurityScheme;
 
-import java.io.UnsupportedEncodingException;
-import java.net.URLEncoder;
 import java.nio.charset.Charset;
 import java.nio.charset.IllegalCharsetNameException;
 import java.nio.charset.UnsupportedCharsetException;
 import java.util.*;
-import java.util.regex.Pattern;
+
 
 import static java.lang.String.format;
 
@@ -62,7 +60,6 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
    protected RuleContext ruleContext;
 
    private static final int MAXIMUM_REJECTS_SHOWN = 5;
-
 
    protected BaseResource(R repo) {
       this.repo = repo;
@@ -154,6 +151,7 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
 
    @Path("count")
    @GET
+   @Operation(summary = "Provides the count of entities")
    @Produces(MediaType.APPLICATION_JSON)
    @Consumes(MediaType.APPLICATION_JSON)
    @SecurityRequirement(name = "bearerAuth")
@@ -280,14 +278,12 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
               quotingStrategy, quoteChar.charAt(0), chosenCharset, mustUseBOM, filter, offset,
               length, prependHeaderRow, preferredColumnNames);
 
-      try {
-         return Response.ok(streamingOutput)
-                 .type("text/csv; charset=" + chosenCharset.name())
-                 .header("Content-Disposition", "attachment; filename=" + URLEncoder.encode(filename, "UTF-8"))
-                 .build();
-      } catch (UnsupportedEncodingException e) {
-         throw new IllegalStateException("Impossible situation where the UTF-8 charset could not be found", e);
-      }
+
+      return Response
+              .ok(streamingOutput)
+              .header("Content-Disposition", "attachment; filename=\"export.csv\"")
+              .header("Content-Type", "text/csv")
+              .build();
    }
 
 
