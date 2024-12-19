@@ -78,7 +78,8 @@ public  abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRe
         }
 
         Filter[] qfilters = new Filter[filters.size()];
-        return filters.toArray(qfilters);
+        Filter[] f = filters.toArray(qfilters);
+        return f;
     }
 
     @Override
@@ -174,6 +175,7 @@ public  abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRe
     }
 
 
+    @Override
     public List<T> getAllList() {
         return this.getList(0, 0,  null, null);
     }
@@ -422,12 +424,11 @@ public  abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRe
         MorphiaCursor<T> cursor;
         if (limit > 0) {
             cursor = dataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass())
-                    .filter(filters.toArray(filterArray))
+                    .filter(filterArray)
                     .iterator(new FindOptions().skip(skip).limit(limit));
         } else {
-
             cursor = dataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass())
-                    .filter(filters.toArray(filterArray))
+                    .filter(filterArray)
                     .iterator();
         }
 

@@ -27,23 +27,32 @@ public interface BaseMorphiaRepo<T extends BaseModel> {
    Collection<T> fillUIActions(@NotNull Collection<T> collection);
 
    // Read based API's
-   public Optional<T> findById(String id);
-   public Optional<T> findById(Datastore s, ObjectId id);
-   public Optional<T> findById(ObjectId id);
-   public Optional<T> findByRefName (String refId);
+   public Optional<T> findById(@NotNull String id);
+   public Optional<T> findById(@NotNull Datastore s, @NotNull ObjectId id);
+   public Optional<T> findById(@NotNull ObjectId id);
+   public Optional<T> findByRefName (@NotNull String refId);
 
    public JsonSchema getSchema();
 
    public List<T> getAllList();
-   public List<T> getListByQuery(int skip, int limit, String filter);
-   public List<T> getListByQuery(int skip, int limit, String filter, List<SortField> sortFields, List<ProjectionField> projectedProperties);
-   public List<T>  getList(int skip, int limit, List<Filter> filters, List<SortField> sortFields);
-   public List<T> getListByQuery(Datastore datastore, int skip, int limit, String query, List<SortField> sortFields, List<ProjectionField> projectionFields);
+
+   /**
+    *
+    * @param skip must be 0 or greater
+    * @param limit can be 0 or a negative number in which case  all records are returned,
+    *              a positive number and only the amount specified will be returned
+    * @param filter can be null but if given must follow Filter syntax
+    * @return
+    */
+   public List<T> getListByQuery(int skip, int limit, @Nullable String filter);
+   public List<T> getListByQuery(int skip, int limit, @Nullable String filter, List<SortField> sortFields, List<ProjectionField> projectedProperties);
+   public List<T>  getList(int skip, int limit, @Nullable List<Filter> filters, @Nullable List<SortField> sortFields);
+   public List<T> getListByQuery(@NotNull Datastore datastore, int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields, List<ProjectionField> projectionFields);
 
    public CloseableIterator<T> getStreamByQuery(int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields);
 
-   public long getCount(String filter);
-   public long getCount(Datastore datastore,String filter);
+   public long getCount(@Nullable String filter);
+   public long getCount(@NotNull Datastore datastore,@Nullable String filter);
 
    // Write based API's
    public T save(@Valid T value);

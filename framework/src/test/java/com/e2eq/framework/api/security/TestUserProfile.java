@@ -13,12 +13,15 @@ import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import com.e2eq.framework.util.SecurityUtils;
 import com.e2eq.framework.util.TestUtils;
+import com.fasterxml.jackson.databind.ser.FilterProvider;
+import dev.morphia.query.filters.Filter;
 import io.quarkus.logging.Log;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -136,6 +139,46 @@ public class TestUserProfile  {
                 Log.info(up.getId().toString() + ":" + up.getUserId() + ":" + up.getUserName());
             });
         } finally {
+            ruleContext.clear();
+        }
+    }
+
+    @Test
+    public void testGetFiltersWithLimit() {
+        TestUtils.initRules(ruleContext, "security", "userProfile", TestUtils.userId);
+        String[] roles = {"user"};
+        PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.userId, roles);
+        ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "LocationList", "save");
+
+        try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
+            //List<Filter> filters = new ArrayList<>();
+            //Filter[] filterArray = userProfileRepo.getFilterArray(filters);
+            List<UserProfile> userProfiles = userProfileRepo.getList(0,10,null, null);
+            for (UserProfile up : userProfiles) {
+                Log.info(up.getId().toString() + ":" + up.getUserId() + ":" + up.getUserName());
+            }
+        }
+        finally {
+            ruleContext.clear();
+        }
+    }
+
+    @Test
+    public void testGetFiltersWithNoLimit() {
+        TestUtils.initRules(ruleContext, "security", "userProfile", TestUtils.userId);
+        String[] roles = {"user"};
+        PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.userId, roles);
+        ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "LocationList", "save");
+
+        try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
+            //List<Filter> filters = new ArrayList<>();
+            //Filter[] filterArray = userProfileRepo.getFilterArray(filters);
+            List<UserProfile> userProfiles = userProfileRepo.getAllList();
+            for (UserProfile up : userProfiles) {
+                Log.info(up.getId().toString() + ":" + up.getUserId() + ":" + up.getUserName());
+            }
+        }
+        finally {
             ruleContext.clear();
         }
     }
