@@ -269,22 +269,46 @@ public  abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRe
         MorphiaCursor<T> cursor = datastore.find(getPersistentClass())
                 .filter(filters.toArray(filterArray))
                 .iterator(findOptions);
-    
+
         return new CloseableIterator<T>() {
-            List<String> actions = null;
+            private static final int BATCH_SIZE = 1000; // Adjust this value as needed
+            private List<String> actions = null;
+            private final List<T> batch = new ArrayList<>(BATCH_SIZE);
+            private int currentIndex = 0;
+
             @Override
             public void close() {
                 cursor.close();
             }
-    
+
             @Override
             public boolean hasNext() {
-                return cursor.hasNext();
+                if (currentIndex < batch.size()) {
+                    return true;
+                }
+                return fetchNextBatch();
             }
-    
+
             @Override
             public T next() {
-                T model = cursor.next();
+                if (currentIndex >= batch.size() && !fetchNextBatch()) {
+                    return null;
+                }
+                T model = batch.get(currentIndex++);
+                processModel(model);
+                return model;
+            }
+
+            private boolean fetchNextBatch() {
+                batch.clear();
+                currentIndex = 0;
+                for (int i = 0; i < BATCH_SIZE && cursor.hasNext(); i++) {
+                    batch.add(cursor.next());
+                }
+                return !batch.isEmpty();
+            }
+
+            private void processModel(T model) {
                 if (model != null) {
                     if (actions == null) {
                         actions = getDefaultUIActionsFromFD(model.bmFunctionalDomain());
@@ -295,7 +319,6 @@ public  abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRe
                     UIActionList uiActions = model.calculateStateBasedUIActions();
                     model.setActionList(uiActions);
                 }
-                return model;
             }
         };
     }
