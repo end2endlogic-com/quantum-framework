@@ -7,10 +7,10 @@ import jakarta.ws.rs.ext.Provider;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 
-//@Provider
-public class ExceptionMapper implements jakarta.ws.rs.ext.ExceptionMapper<Exception> {
+@Provider
+public class ExceptionMapper implements jakarta.ws.rs.ext.ExceptionMapper<RuntimeException> {
     @Override
-    public Response toResponse(Exception exception) {
+    public Response toResponse(RuntimeException exception) {
         RestError error =RestError.builder().build();
         error.setStatusMessage(exception.getMessage());
         error.setStatus(Response.Status.INTERNAL_SERVER_ERROR.getStatusCode());

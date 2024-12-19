@@ -49,14 +49,14 @@ public class MailingAddressValidator implements ConstraintValidator<ValidMailing
             // if zip is provided it must be 5 numbers.
             // if zip5 is provided it must be 5 numbers.
 
-            if (StringUtils.isBlank(address.getAddressLine1())) {
+            if (address.getAddressLine1() == null | StringUtils.isBlank(address.getAddressLine1())) {
                 violationMessage = "Address Line 1 is mandatory, but is not provided in the mailing address";
                 constraintValidatorContext.buildConstraintViolationWithTemplate(violationMessage)
                        .addPropertyNode("addressLine1").addConstraintViolation();
                 violationMessages.add(violationMessage);
                 rc = false;
             }
-            if (StringUtils.isBlank(address.getCity())) {
+            if (address.getCity() == null || StringUtils.isBlank(address.getCity())) {
                 violationMessage = "City is mandatory, but is not provided in the mailing address";
                 constraintValidatorContext.buildConstraintViolationWithTemplate(violationMessage)
                        .addPropertyNode("city").addConstraintViolation();
@@ -78,7 +78,7 @@ public class MailingAddressValidator implements ConstraintValidator<ValidMailing
                 violationMessages.add(violationMessage);
                 rc = false;
             }  else
-           if ((address.getCountry() != null && !address.getCountry().isBlank()) && (address.getCountryTwoLetterCode() != null || !address.getCountryTwoLetterCode().isBlank())) {
+           if ((address.getCountry() != null && !address.getCountry().isBlank()) && address.getCountryTwoLetterCode() != null && !address.getCountryTwoLetterCode().isBlank()) {
                violationMessage = "Can't provide both country and countryTwoLetterCode";
                constraintValidatorContext.buildConstraintViolationWithTemplate(violationMessage)
                        .addPropertyNode("countryTwoLetterCode").addConstraintViolation();

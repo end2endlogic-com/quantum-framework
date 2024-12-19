@@ -26,6 +26,7 @@ import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.logging.Log;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
+import jakarta.ws.rs.NotSupportedException;
 import org.apache.commons.lang3.tuple.Pair;
 import org.bson.types.ObjectId;
 import org.jetbrains.annotations.NotNull;
@@ -270,6 +271,7 @@ public  abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRe
                 .iterator(findOptions);
     
         return new CloseableIterator<T>() {
+            List<String> actions = null;
             @Override
             public void close() {
                 cursor.close();
@@ -284,7 +286,9 @@ public  abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRe
             public T next() {
                 T model = cursor.next();
                 if (model != null) {
-                    List<String> actions = getDefaultUIActionsFromFD(model.bmFunctionalDomain());
+                    if (actions == null) {
+                        actions = getDefaultUIActionsFromFD(model.bmFunctionalDomain());
+                    }
                     if (!actions.isEmpty()) {
                         model.setDefaultUIActions(actions);
                     }
@@ -671,6 +675,20 @@ public  abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRe
         return update(dataStore.getDataStore(getSecurityContextRealmId()), id, pairs);
     }
 
+    private Field getFieldFromHierarchy(Class<?> clazz, String fieldName)  throws NoSuchFieldException {
+        Class<?> currentClass = clazz;
+        while (currentClass != null) {
+            try {
+                return currentClass.getDeclaredField(fieldName);
+            } catch (NoSuchFieldException e) {
+                // Field not found in current class, move to the superclass
+                currentClass = currentClass.getSuperclass();
+            }
+        }
+        // If we've exhausted the hierarchy without finding the field, throw an exception
+        throw new NoSuchFieldException("Field '" + fieldName + "' not found in class hierarchy of " + clazz.getName());
+    }
+
     @Override
     public long update(MorphiaSession session, @NotNull String id, @NotNull Pair<String, Object>... pairs) {
         List<UpdateOperator> updateOperators = new ArrayList<>();
@@ -678,11 +696,12 @@ public  abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRe
             // check that the pair key corresponds to a field in the persistent class that is an enum
             Field field = null;
             try {
-                field = getPersistentClass().getDeclaredField(pair.getKey());
+                field = getFieldFromHierarchy(getPersistentClass(),pair.getKey());
                 Reference ref = field.getAnnotation(Reference.class);
                 if (ref!= null) {
                     //TODO fix this case where there is an update to a reference field
                     Log.warn("Update to class that contains references");
+                    throw new NotSupportedException("Field:" + field + " is a managed reference, and not updatable via put.  Use Post");
                 }
 
                 if (field.getType().isEnum()) {
@@ -727,11 +746,10 @@ public  abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRe
             // check that the pair key corresponds to a field in the persistent class that is an enum
             Field field = null;
             try {
-                field = getPersistentClass().getDeclaredField(pair.getKey());
+                field = getFieldFromHierarchy(getPersistentClass(),pair.getKey());
                 Reference ref = field.getAnnotation(Reference.class);
                 if (ref!= null) {
-                    //TODO fix this case where there is an update to a reference field
-                    Log.warn("Update to class that contains references");
+                    throw new NotSupportedException("Field:" + field + " is a managed reference, and not updatable via put.  Use Post");
                 }
 
                 if (field.getType().isEnum()) {
@@ -770,11 +788,10 @@ public  abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRe
             // check that the pair key corresponds to a field in the persistent class that is an enum
             Field field = null;
             try {
-                field = getPersistentClass().getDeclaredField(pair.getKey());
+                field = getFieldFromHierarchy(getPersistentClass(),pair.getKey());
                 Reference ref = field.getAnnotation(Reference.class);
                 if (ref!= null) {
-                    //TODO fix this case where there is an update to a reference field
-                    Log.warn("Update to class that contains references");
+                    throw new NotSupportedException("Field:" + field + " is a managed reference, and not updatable via put.  Use Post");
                 }
 
                 if (field.getType().isEnum()) {
