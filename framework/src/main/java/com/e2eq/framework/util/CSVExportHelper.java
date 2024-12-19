@@ -133,7 +133,7 @@ public class CSVExportHelper {
                     writeBOM(output, chosenCharset);
                 }
 
-                Writer writer = new BufferedWriter(new OutputStreamWriter(output, chosenCharset));
+                Writer writer = new BufferedWriter(new OutputStreamWriter(output, chosenCharset), 16384);
 
                 final CellProcessor[] processors = new CellProcessor[requestedColumns.size()];
                 ListCellProcessor listProcessor = new ListCellProcessor();
