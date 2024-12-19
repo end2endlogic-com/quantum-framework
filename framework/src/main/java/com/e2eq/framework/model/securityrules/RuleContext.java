@@ -460,20 +460,24 @@ public class RuleContext {
       return new SecurityURI(header, body);
    }
 
-   public List<Filter> getFilters (List<Filter> filters, @Valid @NotNull( message="Principal Context can not be null" ) PrincipalContext pcontext, @Valid @NotNull (message="Resource Context can not be null") ResourceContext rcontext) {
+   public List<Filter> getFilters (List<Filter> ifilters, @Valid @NotNull( message="Principal Context can not be null" ) PrincipalContext pcontext, @Valid @NotNull (message="Resource Context can not be null") ResourceContext rcontext) {
+
+      Set<Filter> filters = new HashSet<Filter>();
+      filters.addAll(ifilters);
 
       // Find applicable rules
      List<SecurityURI> uris =  this.buildFromContext(pcontext, rcontext);
 
-      uris.forEach((uri) -> {
+      for (SecurityURI uri : uris) {
          Optional<List<Rule>> orules = this.rulesFor(uri.getHeader());
          List<Filter> andFilters = new ArrayList<>();
          List<Filter> orFilters = new ArrayList<>();
+         boolean done = false;
          if (orules.isPresent()) {
             Map<String, String> variables = MorphiaUtils.createVariableMapFrom(pcontext, rcontext);
             StringSubstitutor sub = new StringSubstitutor(variables);
             List<Rule> rules = orules.get();
-            rules.forEach((rule) -> {
+            for (Rule rule : rules) {
                if (rule.getAndFilterString() != null && !rule.getAndFilterString().isEmpty()) {
                   andFilters.add(MorphiaUtils.convertToFilter(rule.getAndFilterString(), variables, sub));
                }
@@ -496,20 +500,6 @@ public class RuleContext {
                      orFilters.add(Filters.and(andFilters.toArray(new Filter[andFilters.size()])));
                      filters.add(Filters.and(orFilters.toArray( new Filter[orFilters.size()])));
                   }
-
-                  //Filter andFilter = Filters.and(andFilters.toArray(new Filter[andFilters.size()]));
-                  //Filter orFilter = Filters.or(orFilters.toArray(new Filter[orFilters.size()]));
-                  /* switch ( joinOp) {
-                     case AND:
-                        filters.add(Filters.and(andFilter, orFilter));
-                        break;
-                     case OR:
-                        filters.add(Filters.or(andFilter, orFilter));
-                        break;
-                     default:
-                        throw new UnsupportedOperationException("Operation not support for joinOp:");
-                  }
-                  */
                }  else {
                   if (!andFilters.isEmpty()) {
                      filters.addAll(andFilters);
@@ -522,11 +512,24 @@ public class RuleContext {
                      }
                   }
                }
-            });
+               if (rule.isFinalRule()) {
+                  done = true;
+                  break;
+               }
+            };
          }
-      });
+         if (done) {
+            break;
+         }
+      };
 
-      return filters;
+      // Sucks that we have to do this but Filter does not implement equals there for
+      // gets hosed if your using a set.
+      List<Filter> rc = new ArrayList<>();
+      HashMap<String, Filter> filterMap = new HashMap<>();
+      filters.forEach( filter -> {filterMap.put(filter.toString(), filter);  });
+      rc.addAll(filterMap.values());
+      return rc;
    }
 
    public String getRealmId (PrincipalContext principalContext, ResourceContext resourceContext) {
