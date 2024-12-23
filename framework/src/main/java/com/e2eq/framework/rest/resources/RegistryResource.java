@@ -15,10 +15,13 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
+
 import java.util.Optional;
 
 @Path("/onboarding/registrationRequest")
 @RolesAllowed({ "user", "admin" })
+@Tag(name = "onboarding", description = "Operations related to onboarding new tenants")
 public class RegistryResource extends BaseResource<ApplicationRegistration, BaseMorphiaRepo<ApplicationRegistration>> {
 
    public RegistryResource (ApplicationRegistrationRequestRepo repo ) {

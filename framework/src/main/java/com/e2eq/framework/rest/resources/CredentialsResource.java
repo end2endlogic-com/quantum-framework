@@ -13,9 +13,11 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.SecurityContext;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 @Path("/user/credentials")
 @RolesAllowed({ "user", "admin" })
+@Tag(name = "user", description = "Operations related to managing users")
 public class CredentialsResource extends BaseResource<CredentialUserIdPassword, CredentialRepo> {
 
     CredentialsResource (CredentialRepo repo ) {

@@ -9,12 +9,14 @@ import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.Response;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 import java.util.Optional;
 
 
 @Path("/security/realm")
 @RolesAllowed({ "admin" })
+@Tag(name = "security", description = "Operations related to security")
 public class RealmResource extends BaseResource<Realm, BaseMorphiaRepo<Realm>> {
    protected RealmResource (RealmRepo repo) {
       super(repo);

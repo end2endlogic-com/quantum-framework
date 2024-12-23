@@ -11,6 +11,7 @@ import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 import java.util.HashSet;
 import java.util.Optional;
@@ -18,6 +19,7 @@ import java.util.Set;
 
 @Path("/user/userProfile")
 @RolesAllowed({"user", "admin"})
+@Tag(name = "users", description = "Operations related to managing users")
 public class UserProfileResource extends BaseResource<UserProfile, UserProfileRepo> {
 
    UserProfileResource (UserProfileRepo repo ) {

@@ -5,11 +5,10 @@ import com.e2eq.framework.model.persistent.base.*;
 import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
 import com.e2eq.framework.model.securityrules.SecurityCheckException;
 import com.e2eq.framework.model.securityrules.RuleContext;
+import com.e2eq.framework.rest.models.*;
 import com.e2eq.framework.rest.models.Collection;
-import com.e2eq.framework.rest.models.CounterResponse;
-import com.e2eq.framework.rest.models.RestError;
-import com.e2eq.framework.rest.models.SuccessResponse;
 import com.e2eq.framework.util.CSVExportHelper;
+import com.e2eq.framework.util.CSVImportHelper;
 import com.e2eq.framework.util.FilterUtils;
 import com.e2eq.framework.util.JSONUtils;
 import com.fasterxml.jackson.databind.JsonMappingException;
@@ -31,12 +30,20 @@ import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement;
 import org.eclipse.microprofile.openapi.annotations.security.SecurityScheme;
+import org.jboss.resteasy.reactive.MultipartForm;
 
+import org.supercsv.cellprocessor.ift.CellProcessor;
+import org.supercsv.io.CsvBeanReader;
+import org.supercsv.io.ICsvBeanReader;
+
+import org.supercsv.prefs.CsvPreference;
+
+import java.io.*;
 import java.nio.charset.Charset;
 import java.nio.charset.IllegalCharsetNameException;
 import java.nio.charset.UnsupportedCharsetException;
 import java.util.*;
-
+import java.lang.reflect.Field;
 
 import static java.lang.String.format;
 
@@ -63,6 +70,21 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
 
    protected BaseResource(R repo) {
       this.repo = repo;
+   }
+
+   @Path("refName/{refName}")
+   @GET
+   @Produces(MediaType.APPLICATION_JSON)
+   @Operation(summary = "Get The entity by refName",
+           description = "Will get the entity or return a 404 if not found")
+   @SecurityRequirement(name = "bearerAuth")
+   @APIResponses(value = {
+           @APIResponse(responseCode = "200", description = "Entity found", content = @Content(mediaType = "application/json")),
+           @APIResponse(responseCode = "404", description = "Entity not found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
+   })
+   public Response byPathRefName (@Parameter(description = "refName of the entity", required = true)
+                                     @PathParam("refName") String refName) {
+      return byRefName(refName);
    }
 
    @Path("refName")
@@ -97,6 +119,19 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
    }
 
 
+   @Path("id/{id}")
+   @GET
+   @Produces(MediaType.APPLICATION_JSON)
+   @SecurityRequirement(name = "bearerAuth")
+   @APIResponses(value = {
+           @APIResponse(responseCode = "200", description = "Entity found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = BaseModel.class))),
+           @APIResponse(responseCode = "404", description = "Entity not found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
+   })
+   public Response byPathId(
+           @Parameter(description = "Id of the entity", required = true)
+           @PathParam("id") String id) {
+      return byId(id);
+   }
 
    @Path("id")
    @GET
@@ -174,8 +209,94 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
       }
    }
 
+    @POST
+    @Path("csv")
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    @Produces(MediaType.APPLICATION_JSON)
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(summary = "Import a list of entities from a CSV file")
+    @APIResponses({
+            @APIResponse(responseCode = "200", description = "CSV file successfully imported"),
+            @APIResponse(responseCode = "400", description = "Bad request - invalid CSV file or data")
+    })
+    public Response importCSVList(
+            @Context UriInfo info,
+            @BeanParam FileUpload fileUpload,
+            @Parameter(description = "The character that must be used to separate fields of the same record")
+            @QueryParam("fieldSeparator") @DefaultValue(",") String fieldSeparator,
+            @Parameter(description = "The choice of strategy for quoting columns. One of \"QUOTE_WHERE_ESSENTIAL\" or \"QUOTE_ALL_COLUMNS\"")
+            @QueryParam("quotingStrategy") @DefaultValue("QUOTE_WHERE_ESSENTIAL") String quotingStrategy,
+            @Parameter(description = "The character that is used to surround the values of specific (or all) fields")
+            @QueryParam("quoteChar") @DefaultValue("\"") String quoteChar,
+            @Parameter(description = "Whether to skip the header row in the CSV file")
+            @QueryParam("skipHeaderRow") @DefaultValue("true") boolean skipHeaderRow,
+            @Parameter(description = "The charset encoding to use for the file")
+            @QueryParam("charsetEncoding") @DefaultValue("UTF-8-without-BOM") String charsetEncoding,
+            @Parameter(description = "A non-empty list of the names of the columns expected in the CSV file")
+            @QueryParam("requestedColumns") List<String> requestedColumns,
+            @Parameter(description = "A list of preferred column names to use in place of the requested columns")
+            @QueryParam("preferredColumnNames") List<String> preferredColumnNames) {
+        try {
+            if (fileUpload.file == null) {
+                throw new WebApplicationException("No file uploaded", Response.Status.BAD_REQUEST);
+            }
+            rejectUnrecognizedQueryParams(info, "fieldSeparator", "quotingStrategy",
+                    "quoteChar", "skipHeaderRow", "charsetEncoding",
+                    "requestedColumns", "preferredColumnNames");
+    
+            String charsetName = charsetEncoding.replaceAll("-with.*", "");
+            final Charset chosenCharset;
+            final boolean mustUseBOM;
+    
+            try {
+                chosenCharset = Charset.forName(charsetName);
+                mustUseBOM = charsetEncoding.contains("-with-BOM");
+            } catch (UnsupportedCharsetException | IllegalCharsetNameException e) {
+                throw new ValidationException(format("The value %s is not one of the supported charsetEncodings",
+                        charsetEncoding));
+            }
+    
+            List<T> failedRecords = new ArrayList<>();
+            CSVImportHelper.FailedRecordHandler<T> failedRecordHandler = failedRecords::add;
+    
+            CSVImportHelper.ImportResult<T> result = CSVImportHelper.importCSV(
+                    repo,
+                    new FileInputStream(fileUpload.file),
+                    fieldSeparator.charAt(0),
+                    quoteChar.charAt(0),
+                    skipHeaderRow,
+                    requestedColumns,
+                    preferredColumnNames,
+                    chosenCharset,
+                    mustUseBOM,
+                    quotingStrategy,
+                    failedRecordHandler
+            );
+    
+            String message = String.format("Successfully imported %d entities. Failed to import %d entities.",
+                    result.getImportedCount(), result.getFailedCount());
+    
+            return Response.ok()
+                    .entity(result)
+                    .header("X-Import-Success-Count", result.getImportedCount())
+                    .header("X-Import-Failed-Count", result.getFailedCount())
+                    .header("X-Import-Message", message)
+                    .build();
+    
+        } catch (Exception e) {
+            RestError error = RestError.builder()
+                    .status(Response.Status.BAD_REQUEST.getStatusCode())
+                    .statusMessage("Error processing CSV file: " + e.getMessage())
+                    .build();
+            return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+        }
+    }
+
+
+
    @GET
-   @Path("/csv")
+   @Path("csv")
+   @SecurityRequirement(name = "bearerAuth")
    @Operation(summary = "Retrieve a list of Account in CSV format")
    @APIResponses({@APIResponse(responseCode = "401", description = "Not Authorized, caller does not have the privilege assigned to" +
            " their id"),
@@ -398,6 +519,19 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
       }
    }
 
+   @Path("refName/{refName}")
+   @DELETE
+   @Produces(MediaType.APPLICATION_JSON)
+   @Consumes(MediaType.APPLICATION_JSON)
+   @SecurityRequirement(name = "bearerAuth")
+   @APIResponses(value = {
+           @APIResponse(responseCode = "200", description = "Entity found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = SuccessResponse.class))),
+           @APIResponse(responseCode = "404", description = "Entity not found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
+   })
+   public Response deleteByPathRefName(@PathParam("refName") String refName) throws ReferentialIntegrityViolationException {
+      return deleteByRefName(refName);
+   }
+
    @Path("refName")
    @DELETE
    @Produces(MediaType.APPLICATION_JSON)
@@ -411,6 +545,20 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
       Objects.requireNonNull(refName, "Null argument passed to delete, api requires a non-null refName");
       Optional<T> model = repo.findByRefName(refName);
       return deleteEntity(refName, model);
+   }
+
+
+   @Path("id/{id}")
+   @DELETE
+   @Produces(MediaType.APPLICATION_JSON)
+   @Consumes(MediaType.APPLICATION_JSON)
+   @SecurityRequirement(name = "bearerAuth")
+   @APIResponses(value = {
+           @APIResponse(responseCode = "200", description = "Entity found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = SuccessResponse.class))),
+           @APIResponse(responseCode = "404", description = "Entity not found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
+   })
+   public Response deleteByPathId(@PathParam("id") String id) throws ReferentialIntegrityViolationException {
+      return delete(id);
    }
 
    @Path("id")

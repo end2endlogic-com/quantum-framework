@@ -6,6 +6,7 @@ import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.openapi.annotations.enums.SecuritySchemeType;
 import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement;
 import org.eclipse.microprofile.openapi.annotations.security.SecurityScheme;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 /** Needed to add security auth to resources for swagger-ui **/
 @SecurityScheme(
@@ -14,7 +15,8 @@ import org.eclipse.microprofile.openapi.annotations.security.SecurityScheme;
     scheme = "bearer",
     bearerFormat = "JWT"
 )
-@Path("/secure")
+@Path("/test/secure")
+@Tag(name = "test", description = "test Operations")
 public class TestSecureResource {
 
     @GET
