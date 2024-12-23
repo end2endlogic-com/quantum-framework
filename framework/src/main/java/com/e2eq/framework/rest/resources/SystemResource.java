@@ -25,8 +25,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 import dev.morphia.mapping.codec.pojo.EntityModel;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 @Path("/system")
+@Tag(name = "System", description = "System operations")
 public class SystemResource {
     @Inject
     @Default

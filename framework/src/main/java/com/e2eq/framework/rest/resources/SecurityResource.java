@@ -54,6 +54,7 @@ import java.util.*;
         )
 )
 @Path("/security")
+@Tag(name = "security", description = "Operations related to security")
 @RequestScoped
 public class SecurityResource {
     @Inject

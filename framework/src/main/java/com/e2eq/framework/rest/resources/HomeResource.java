@@ -6,10 +6,12 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import org.eclipse.microprofile.jwt.JsonWebToken;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 
 @Path("/tenant/{tenant}")
 @RolesAllowed({ "user", "admin" })
+@Tag(name = "tenancy", description = "Operations related to managing multiple tenants")
 public class HomeResource {
 
    /**

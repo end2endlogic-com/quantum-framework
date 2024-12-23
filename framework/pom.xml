@@ -336,6 +336,11 @@
             </goals>
           </execution>
         </executions>
+        <configuration>
+          <indexName>jandex.idx</indexName>
+          <verbose>true</verbose>
+          <jar/>
+        </configuration>
       </plugin>
       <plugin>
         <artifactId>maven-surefire-plugin</artifactId>
