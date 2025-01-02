@@ -5,8 +5,6 @@ import com.e2eq.framework.grammar.BIAPIQueryParser;
 import com.e2eq.framework.model.persistent.base.*;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
-import dev.morphia.query.Query;
-import dev.morphia.query.QueryFactory;
 import dev.morphia.query.Sort;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
@@ -76,7 +74,7 @@ public class MorphiaUtils {
       return MorphiaUtils.convertToFilterWContext(queryString, null, null);
    }
 
-   public static Map<String, String> createVariableMapFrom(PrincipalContext pcontext, ResourceContext rcontext) {
+   public static Map<String, String> createStandardVariableMapFrom(PrincipalContext pcontext, ResourceContext rcontext) {
       Map<String, String> variableMap = new HashMap<>();
       variableMap.put("principalId", pcontext.getUserId());
       variableMap.put("pAccountId", pcontext.getDataDomain().getAccountNum());

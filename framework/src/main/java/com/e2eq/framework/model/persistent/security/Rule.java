@@ -7,6 +7,7 @@ import com.e2eq.framework.model.securityrules.SecurityURI;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
+import jakarta.xml.bind.annotation.XmlType;
 
 
 @RegisterForReflection
@@ -24,6 +25,7 @@ public class Rule  {
    @NotNull RuleEffect effect;
    int priority;
    boolean finalRule;
+   public static int DEFAULT_PRIORITY = 10;
 
    public Rule() {
        super();
@@ -60,7 +62,7 @@ public class Rule  {
       String orFilterString;
       FilterJoinOp joinOp;
       RuleEffect effect;
-      int priority = 10;
+      int priority = DEFAULT_PRIORITY;
       boolean finalRule = false;
 
 

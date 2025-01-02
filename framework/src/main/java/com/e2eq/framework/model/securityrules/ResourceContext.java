@@ -1,11 +1,19 @@
 package com.e2eq.framework.model.securityrules;
 
 import io.quarkus.runtime.annotations.RegisterForReflection;
+import lombok.Builder;
 import org.graalvm.polyglot.HostAccess;
 
 import jakarta.validation.constraints.NotNull;
 import java.util.Optional;
 
+/**
+ * ResourceContext holds the contextual information about the resource being accessed.
+ * The resource is part of a certain realm, area, and functional domain.  An action is being performed on the resource
+ * by a resourceId, and the resource is owned by an ownerId.
+ *
+ * This information is then used by rules to determine if the action should take place or not
+ */
 
 @RegisterForReflection
 public class ResourceContext {
@@ -13,15 +21,17 @@ public class ResourceContext {
   protected @NotNull  String area;               // the area the resource resides in
   protected @NotNull String functionalDomain;   // the functional domain with in the area
   protected @NotNull String action;             // the action we are trying to take
-  protected String resourceId;         // the id (objectId) if known
+  protected String resourceId; // the id (objectId) if known
+  protected String ownerId; // the id (ownerId) if known
 
-   public static ResourceContext DEFAULT_ANONYMOUS_CONTEXT = new ResourceContext("NONE", "NONE", "NONE", "NONE", null);
+   public static ResourceContext DEFAULT_ANONYMOUS_CONTEXT = new ResourceContext("NONE", "NONE", "NONE", "NONE", null, null);
 
    ResourceContext(@NotNull(message="realmId can not be null") String realm,
                    @NotNull(message="area can not be null") String area,
                    @NotNull(message="functional domain can not be null") String functionalDomain,
                    @NotNull(message="action can not be null") String action,
-                   String resourceId) {
+                   String resourceId,
+                   String ownerId) {
 
 
       this.realm = realm;
@@ -29,6 +39,7 @@ public class ResourceContext {
       this.functionalDomain = functionalDomain;
       this.action = action;
       this.resourceId = resourceId;
+      this.ownerId = ownerId;
    }
 
    public static class Builder {
@@ -39,6 +50,7 @@ public class ResourceContext {
       String functionalDomain = any;
       String action = any;
       String resourceId = any;
+      String ownerId = any;
 
       public Builder withRealm(String realm) {
          this.realm = realm;
@@ -64,10 +76,14 @@ public class ResourceContext {
          this.resourceId = resourceId;
          return this;
       }
+       public Builder withOwnerId(String id) {
+           this.ownerId = id;
+           return this;
+       }
 
       public ResourceContext build() {
          return new ResourceContext( realm, area,
-            functionalDomain, action, resourceId);
+            functionalDomain, action, resourceId, ownerId);
       }
    };
 
@@ -102,6 +118,10 @@ public class ResourceContext {
    public void setResourceId (String resourceId) {
       this.resourceId = resourceId;
    }
+
+   @HostAccess.Export
+   public Optional<String> getOwnerId () {return Optional.ofNullable(ownerId);}
+   public void setOwnerId (String ownerId) {this.ownerId = ownerId;}
 
    @HostAccess.Export
    @Override

@@ -135,19 +135,19 @@ public class SecurityTest {
 
     @Test
     public void testLoginRepo() throws Exception {
-        TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.userId);
+        TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.systemUserId);
         String[] roles = {"user"};
-        PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.userId, roles);
+        PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.systemUserId, roles);
         ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "save");
         try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
 
-            Optional<CredentialUserIdPassword> credop = credRepo.findByUserId(TestUtils.userId);
+            Optional<CredentialUserIdPassword> credop = credRepo.findByUserId(TestUtils.systemUserId);
 
             if (credop.isPresent()) {
                 Log.info("cred:" + credop.get().getUserId());
             } else {
                 CredentialUserIdPassword cred = new CredentialUserIdPassword();
-                cred.setUserId(TestUtils.userId);
+                cred.setUserId(TestUtils.systemUserId);
                 cred.setPasswordHash("$2a$12$76wQJLgSAdm6ZTHFHtzksuSkWG9eW0qe5YXMXaZIBo52ncXHO0EDy"); //Test123456å
 
                 cred.setRoles(roles);
@@ -158,13 +158,13 @@ public class SecurityTest {
                 dataDomain.setOrgRefName(TestUtils.orgRefName);
                 dataDomain.setAccountNum(TestUtils.accountNumber);
                 dataDomain.setTenantId(TestUtils.tenantId);
-                dataDomain.setOwnerId(TestUtils.userId);
+                dataDomain.setOwnerId(TestUtils.systemUserId);
                 cred.setDataDomain(dataDomain);
 
                 credRepo.save(cred);
             }
 
-            Optional<UserProfile> userProfileOp = userProfileRepo.getByUserId(TestUtils.userId);
+            Optional<UserProfile> userProfileOp = userProfileRepo.getByUserId(TestUtils.systemUserId);
 
             if (userProfileOp.isPresent()) {
                 Log.info("User Name:" + userProfileOp.get().getUserName());
@@ -186,7 +186,7 @@ public class SecurityTest {
                 profile = userProfileRepo.save(profile);
                 Assert.assertNotNull(profile.getId());
                 userProfileRepo.delete(profile);
-                userProfileOp = userProfileRepo.getByUserId(TestUtils.userId);
+                userProfileOp = userProfileRepo.getByUserId(TestUtils.systemUserId);
                 Assert.assertTrue(!userProfileOp.isPresent());
             }
         } finally {

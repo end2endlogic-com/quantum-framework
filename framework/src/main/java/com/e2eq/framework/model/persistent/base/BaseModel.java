@@ -5,18 +5,16 @@ import com.e2eq.framework.rest.models.ObjectIdJsonSerializer;
 import com.e2eq.framework.rest.models.UIAction;
 import com.e2eq.framework.rest.models.UIActionList;
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import dev.morphia.annotations.*;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotEmpty;
-import jakarta.validation.constraints.NotNull;
+
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
-import lombok.NonNull;
+
 import lombok.experimental.SuperBuilder;
 import org.apache.commons.text.WordUtils;
 import org.bson.types.ObjectId;
@@ -82,11 +80,11 @@ public abstract @Data @NoArgsConstructor class BaseModel {
      The set of tags associated with this record.  A tag can be used for billing purposes, searching purposes or other purposes.
      */
     protected String[] tags;
-    protected Set<Tag> advancedTags = new HashSet<>();
+    protected Set<Tag> advancedTags;
 
-    protected AuditInfo auditInfo = new AuditInfo();
+    protected AuditInfo auditInfo;
 
-    protected Set<ReferenceEntry> references = new HashSet<>();
+    protected Set<ReferenceEntry> references;
 
     @Transient
     protected UIActionList actionList;
@@ -100,13 +98,7 @@ public abstract @Data @NoArgsConstructor class BaseModel {
     @Transient
     List<String> defaultUIActions = Arrays.asList("CREATE", "UPDATE", "VIEW", "DELETE", "ARCHIVE");
 
-    @PrePersist
-    public void prePersist() {
-    }
 
-    @PostPersist
-    public void postPersist() {
-    }
 
     @Transient
     public List<String> defaultUIActions() {

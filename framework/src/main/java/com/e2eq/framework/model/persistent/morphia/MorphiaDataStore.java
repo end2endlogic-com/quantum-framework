@@ -1,10 +1,7 @@
 package com.e2eq.framework.model.persistent.morphia;
 
 
-import com.e2eq.framework.model.persistent.morphia.interceptors.AuditInterceptor;
-import com.e2eq.framework.model.persistent.morphia.interceptors.PermissionRuleInterceptor;
-import com.e2eq.framework.model.persistent.morphia.interceptors.ReferenceInterceptor;
-import com.e2eq.framework.model.persistent.morphia.interceptors.ValidationInterceptor;
+import com.e2eq.framework.model.persistent.morphia.interceptors.*;
 import com.e2eq.framework.util.SecurityUtils;
 import com.mongodb.client.MongoClient;
 import dev.morphia.Datastore;
@@ -33,6 +30,7 @@ public class MorphiaDataStore {
    AuditInterceptor auditInterceptor;
    @Inject
    ReferenceInterceptor referenceInterceptor;
+
 
 
   // @ConfigProperty(name = "quarkus.mongodb.database") public String databaseName;

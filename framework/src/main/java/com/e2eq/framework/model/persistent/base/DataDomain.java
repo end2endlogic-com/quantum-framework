@@ -64,9 +64,20 @@ public class DataDomain {
     public DataDomain() {}
 
     public DataDomain(
+            @NotNull String orgRefName,
+            @NotNull @NotEmpty String accountNum,
+            @NotEmpty @NotNull String tenantId,
+            int dataSegment,
+            @NotNull String ownerId
+    ) {
+        this(orgRefName, accountNum, tenantId, null, dataSegment, ownerId);
+    }
+
+    public DataDomain(
         @NotNull String orgRefName,
         @NotNull @NotEmpty String accountNum,
         @NotEmpty @NotNull String tenantId,
+        String locationId,
         int dataSegment,
         @NotNull String ownerId
     ) {
@@ -83,8 +94,9 @@ public class DataDomain {
         this.orgRefName = orgRefName;
         this.accountNum = accountNum;
         this.tenantId = tenantId;
-        this.dataSegment = dataSegment;
+        this.locationId = locationId;
         this.ownerId = ownerId;
+        this.dataSegment = dataSegment;
     }
 
     public String getOrgRefName() {

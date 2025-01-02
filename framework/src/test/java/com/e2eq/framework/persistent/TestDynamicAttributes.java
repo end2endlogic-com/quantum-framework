@@ -3,7 +3,6 @@ package com.e2eq.framework.persistent;
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.base.DynamicAttribute;
 import com.e2eq.framework.model.persistent.base.DynamicAttributeSet;
-import com.e2eq.framework.model.persistent.security.Rule;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.RuleContext;
@@ -13,6 +12,9 @@ import com.e2eq.framework.util.TestUtils;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
+
+import java.util.ArrayList;
+import java.util.List;
 
 @QuarkusTest
 public class TestDynamicAttributes {
@@ -32,12 +34,14 @@ public class TestDynamicAttributes {
         DynamicAttribute dynamicAttribute = new DynamicAttribute();
         dynamicAttribute.setName("testAttribute");
         dynamicAttribute.setValue("testAttributeValue");
-        dynamicAttributeSet.getAttributes().add(dynamicAttribute);
+        List< DynamicAttribute> attributes = new ArrayList<>();
+        attributes.add(dynamicAttribute);
+        dynamicAttributeSet.setAttributes(attributes);
         model.getDynamicAttributeSets().add(dynamicAttributeSet);
 
-        TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.userId);
+        TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.systemUserId);
         String[] roles = {"user"};
-        PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.userId, roles);
+        PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.systemUserId, roles);
         ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "save");
 
         try (final SecuritySession ss = new SecuritySession(pContext, rContext)) {

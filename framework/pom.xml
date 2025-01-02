@@ -126,6 +126,10 @@
       <artifactId>quarkus-hibernate-validator</artifactId>
     </dependency>
     <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-scheduler</artifactId>
+    </dependency>
+    <dependency>
       <groupId>com.end2endlogic</groupId>
       <artifactId>quarkus-moneta</artifactId>
       <version>2.1.0d</version>
@@ -160,17 +164,26 @@
       <artifactId>polyglot</artifactId>
       <version>${graalvm.version}</version>
     </dependency>
+    <!-- java script support -->
     <dependency>
       <groupId>org.graalvm.polyglot</groupId>
       <artifactId>js-community</artifactId>
       <version>${graalvm.version}</version>
       <type>pom</type>
     </dependency>
-   <!-- this has been replaced by the polygot library <dependency>
-      <groupId>org.graalvm.sdk</groupId>
-      <artifactId>nativeimage</artifactId>
+    <!-- python support -->
+    <dependency>
+      <groupId>org.graalvm.polyglot</groupId>
+      <artifactId>python</artifactId>
       <version>${graalvm.version}</version>
-    </dependency> -->
+      <type>pom</type>
+    </dependency>
+
+    <!-- this has been replaced by the polygot library <dependency>
+       <groupId>org.graalvm.sdk</groupId>
+       <artifactId>nativeimage</artifactId>
+       <version>${graalvm.version}</version>
+     </dependency> -->
     <dependency>
       <groupId>at.favre.lib</groupId>
       <artifactId>bcrypt</artifactId>
