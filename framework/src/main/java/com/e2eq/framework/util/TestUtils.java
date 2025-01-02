@@ -14,11 +14,11 @@ public class TestUtils {
    public static final String orgRefName = SecurityUtils.systemOrgRefName;
    public static final String tenantId = SecurityUtils.systemTenantId;
    public static final String defaultRealm = SecurityUtils.systemRealm;
-   public static final String userId = SecurityUtils.systemUserId;
+   public static final String systemUserId = SecurityUtils.systemUserId;
    public static final String email = SecurityUtils.systemUserId;
    public static final String area = "security";
-   public static final String name = "Michael Ingardia";
-   public static final DataDomain dataDomain = new DataDomain(orgRefName, accountNumber, tenantId, 0, userId);
+   public static final String name = "Admin";
+   public static final DataDomain dataDomain = new DataDomain(orgRefName, accountNumber, tenantId, 0, systemUserId);
 
    public static PrincipalContext getPrincipalContext (String userId, String[] roles) {
       PrincipalContext c =  new PrincipalContext.Builder()
@@ -32,7 +32,7 @@ public class TestUtils {
    }
 
    public static AuditInfo createAuditInfo() {
-       return new AuditInfo(new Date(), userId, new Date(), userId);
+       return new AuditInfo(new Date(), systemUserId, new Date(), systemUserId);
    }
 
    public static ResourceContext getResourceContext(String area, String functionalDomain, String action) {

@@ -17,10 +17,10 @@ import java.util.List;
 @ToString
 public class SecurityCheckResponse {
    ResourceContext resourceContext;
-   List<SecurityURI> requestSecurityURIs;
+   List<MatchEvent> matchEvents = new ArrayList<>();
    PrincipalContext principalContext;
    RuleEffect finalEffect;
-   List<SecurityURI> applicablePrincipalURIs = new ArrayList<>();
+   List<SecurityURI> applicableSecurityURIs = new ArrayList<>();
    List<Rule> evaluatedRules = new ArrayList<>();
    List<RuleResult> matchedRuleResults = new ArrayList<>();
 }

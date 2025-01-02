@@ -17,6 +17,7 @@ import jakarta.inject.Inject;
 import org.bson.Document;
 import java.lang.annotation.Annotation;
 import java.util.Collection;
+import java.util.HashSet;
 
 
 @ApplicationScoped
@@ -55,7 +56,12 @@ public class ReferenceInterceptor implements EntityListener<Object> {
                         if (BaseModel.class.isAssignableFrom(childEntity.getClass())){
                             ReferenceEntry entry = new ReferenceEntry(((BaseModel)childEntity).getId(), childField.getEntityModel().getType().getTypeName(),
                                     ((BaseModel)childEntity).getRefName()   );
-                            if (!parentBaseModel.getReferences().contains(entry)){
+
+
+                            if (parentBaseModel.getReferences() == null || !parentBaseModel.getReferences().contains(entry)){
+                                if (parentBaseModel.getReferences() == null){
+                                    parentBaseModel.setReferences(new HashSet<>());
+                                }
                                 parentBaseModel.getReferences().add(entry);
                                 datastore.save(childField.getAccessor().get(childEntity));
                             }
@@ -77,7 +83,10 @@ public class ReferenceInterceptor implements EntityListener<Object> {
                                 ReferenceEntry entry = new ReferenceEntry(((BaseModel)childEntity).getId(),
                                                         childField.getEntityModel().getType().getTypeName(),
                                                         ((BaseModel)childEntity).getRefName());
-                                if (!parentBaseModel.getReferences().contains(entry)){
+                                if (parentBaseModel.getReferences() == null || !parentBaseModel.getReferences().contains(entry)){
+                                    if (parentBaseModel.getReferences() == null){
+                                        parentBaseModel.setReferences(new HashSet<>());
+                                    }
                                     parentBaseModel.getReferences().add(entry);
                                     datastore.save(parentBaseModel);
                                 }

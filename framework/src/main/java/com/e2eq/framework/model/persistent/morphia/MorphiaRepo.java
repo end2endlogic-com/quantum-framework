@@ -908,7 +908,7 @@ public  abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRe
                     throw new IllegalStateException("Principal Context should be non null");
                 }
 
-                SecurityCheckResponse sr = ruleContext.check(pcontext, rcontext);
+                SecurityCheckResponse sr = ruleContext.checkRules(pcontext, rcontext);
                 if (sr.getFinalEffect().equals(RuleEffect.ALLOW)) {
                     mactions.add(action);
                 } else {

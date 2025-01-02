@@ -69,7 +69,7 @@ public class TestSecurity {
       PrincipalContext pcontext = new PrincipalContext.Builder()
          .withDataDomain(TestUtils.dataDomain)
          .withDefaultRealm(SecurityUtils.systemRealm)
-         .withUserId(TestUtils.userId)
+         .withUserId(TestUtils.systemUserId)
          .withRoles(roles)
          .build();
 
@@ -118,7 +118,7 @@ public class TestSecurity {
 
       PrincipalContext pcontext = new PrincipalContext.Builder()
          .withDefaultRealm(SecurityUtils.defaultRealm)
-         .withUserId(TestUtils.userId)
+         .withUserId(TestUtils.systemUserId)
          .withRoles(roles)
          .withDataDomain(TestUtils.dataDomain)
          .build();
@@ -199,7 +199,7 @@ public class TestSecurity {
       r = b.build();
       ruleContext.addRule(uri.getHeader(), r);
 
-      SecurityCheckResponse rc = ruleContext.check(pcontext, rcontext);
+      SecurityCheckResponse rc = ruleContext.checkRules(pcontext, rcontext);
 
       if (rc.getFinalEffect() == RuleEffect.ALLOW) {
          Log.debug("Allowed");

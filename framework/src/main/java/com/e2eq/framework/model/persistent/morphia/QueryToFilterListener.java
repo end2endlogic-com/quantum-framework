@@ -38,7 +38,7 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
    }
 
    public QueryToFilterListener(PrincipalContext pcontext, ResourceContext rcontext) {
-      this.variableMap = MorphiaUtils.createVariableMapFrom(pcontext, rcontext);
+      this.variableMap = MorphiaUtils.createStandardVariableMapFrom(pcontext, rcontext);
        sub = new StringSubstitutor(variableMap);
    }
 

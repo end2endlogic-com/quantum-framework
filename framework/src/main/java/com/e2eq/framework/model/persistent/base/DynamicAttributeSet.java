@@ -13,5 +13,5 @@ import java.util.List;
 @Data
 public class DynamicAttributeSet {
     protected String name;
-    protected List< DynamicAttribute> attributes = new ArrayList<>();
+    protected List< DynamicAttribute> attributes;
 }

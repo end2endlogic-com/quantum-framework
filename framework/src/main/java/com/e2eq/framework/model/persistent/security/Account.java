@@ -1,6 +1,7 @@
 package com.e2eq.framework.model.persistent.security;
 
 import dev.morphia.annotations.Entity;
+import dev.morphia.annotations.PrePersist;
 import dev.morphia.annotations.Reference;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import com.e2eq.framework.model.persistent.base.FullBaseModel;
@@ -21,7 +22,7 @@ public class Account extends FullBaseModel {
    }
 
 
-   @Override
+   @PrePersist
    public void prePersist () {
       if (displayName == null ) {
          displayName = owningOrg.getDisplayName();

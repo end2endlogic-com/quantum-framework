@@ -8,6 +8,13 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.util.Arrays;
 
+/**
+ * PrincipalContext holds the contextual information about the authenticated principal.
+ * This includes the realm that this principal was authenticated against,
+ * the Data Domain that the principal is associated with.  The userId of the principal,
+ * the roles the principal has been assigned.
+ * The scope of the authentication that is taking place
+ */
 @RegisterForReflection
 public final class PrincipalContext {
    @NotNull String defaultRealm;           // The realm that this Principal came from
@@ -15,7 +22,7 @@ public final class PrincipalContext {
    DataDomain dataDomain;  // org, account, tenant, ds, owner
    @NotNull String userId;          // The userId, of this principal
    @NotNull String[] roles;         // The roles associated with this principal
-   @NotNull String scope;           // The scope of the authentication ( either auth or refresh )
+   @NotNull String scope;           // The scope under which this context was built, be that for authentication purposes or refresh purposes
 
    PrincipalContext(@NotNull String defaultRealm, @Valid @NotNull DataDomain dataDomain, @NotNull String userId,
                     @NotNull String[] roles,

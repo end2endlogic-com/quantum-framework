@@ -1,11 +1,8 @@
 package com.e2eq.framework.persistent;
 
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
-import com.e2eq.framework.model.persistent.base.BaseModel;
 import com.e2eq.framework.model.persistent.base.ReferenceEntry;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
-import com.e2eq.framework.model.persistent.morphia.RepoUtils;
-import com.e2eq.framework.model.persistent.security.UserProfile;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.RuleContext;
@@ -14,12 +11,7 @@ import com.e2eq.framework.test.TestChildListModel;
 import com.e2eq.framework.test.TestChildModel;
 import com.e2eq.framework.test.TestParentModel;
 import com.e2eq.framework.util.TestUtils;
-import dev.morphia.MorphiaDatastore;
-import dev.morphia.mapping.Mapper;
-import dev.morphia.mapping.codec.pojo.EntityModel;
-import dev.morphia.mapping.codec.pojo.PropertyModel;
 import dev.morphia.transactions.MorphiaSession;
-import io.quarkus.logging.Log;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Assertions;
@@ -112,9 +104,9 @@ public class TestReferenceInterceptorLogic {
 
     @Test
     public void testInterceptor() {
-        TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.userId);
+        TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.systemUserId);
         String[] roles = {"user"};
-        PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.userId, roles);
+        PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.systemUserId, roles);
         ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "save");
 
         try (final SecuritySession ss = new SecuritySession(pContext, rContext)) {
@@ -147,9 +139,9 @@ public class TestReferenceInterceptorLogic {
 
     @Test
     public void testInterceptorWithCollection() throws ReferentialIntegrityViolationException {
-        TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.userId);
+        TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.systemUserId);
         String[] roles = {"user"};
-        PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.userId, roles);
+        PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.systemUserId, roles);
         ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "save");
 
         try (final SecuritySession ss = new SecuritySession(pContext, rContext)) {

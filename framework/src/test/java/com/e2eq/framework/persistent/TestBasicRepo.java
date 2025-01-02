@@ -49,9 +49,9 @@ public class TestBasicRepo {
    @Test
    public void testUserProfileRepo() {
       String[] roles = {"user"};
-      PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.userId, roles);
+      PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.systemUserId, roles);
       ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "view");
-      TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.userId);
+      TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.systemUserId);
       try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
          Optional<UserProfile> oup = userProfileRepo.findByRefName(SecurityUtils.systemUserId);
          assertTrue(oup.isPresent());
@@ -63,9 +63,9 @@ public class TestBasicRepo {
    public void testUserProfileFilteredQuery() {
 
       String[] roles = {"user"};
-      PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.userId, roles);
+      PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.systemUserId, roles);
       ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "view");
-      TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.userId);
+      TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.systemUserId);
       try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
          Filter x = MorphiaUtils.convertToFilter("refName:" + SecurityUtils.systemUserId);
 
@@ -82,9 +82,9 @@ public class TestBasicRepo {
    public void testTransactions() {
       Datastore ds = dataStore.getDefaultSystemDataStore();
       String[] roles = {"user"};
-      PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.userId, roles);
+      PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.systemUserId, roles);
       ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "view");
-      TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.userId);
+      TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.systemUserId);
       try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
          try (MorphiaSession session = ds.startSession()) {
             session.startTransaction();
@@ -100,9 +100,9 @@ public class TestBasicRepo {
    public void testMerge() throws ReferentialIntegrityViolationException {
       Datastore ds = dataStore.getDefaultSystemDataStore();
       String[] roles = {"user"};
-      PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.userId, roles);
+      PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.systemUserId, roles);
       ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "save");
-      TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.userId);
+      TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.systemUserId);
       // Create a test user
       try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
          // see if the test user is already there  ( dirty database )

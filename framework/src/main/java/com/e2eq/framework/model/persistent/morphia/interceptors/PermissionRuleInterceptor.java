@@ -55,7 +55,7 @@ public class PermissionRuleInterceptor implements EntityListener {
          if (opResourceContext.isPresent()) {
             PrincipalContext pContext = opPrincipalContext.get();
             ResourceContext rContext = opResourceContext.get();
-            SecurityCheckResponse response = ruleContext.check(pContext, rContext);
+            SecurityCheckResponse response = ruleContext.checkRules(pContext, rContext);
             if (!response.getFinalEffect().equals(RuleEffect.ALLOW)) {
                Log.error(response.toString());
                throw new SecurityCheckException(response);

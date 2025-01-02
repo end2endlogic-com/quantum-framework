@@ -14,6 +14,11 @@ public final class SecurityURIBody {
   @NotNull String dataSegment;
   String resourceId;
 
+    /**
+     * The body determines the "scope" that the rule applies to from a rule point of view.
+     * So if a given rule applies based upon it matching the header, the body then provides the means to
+     * define a scope, and can be used to build a filter or do other checks pre or post the action being taken.
+     */
    public SecurityURIBody() {
       String any = "*";
       realm = any;
