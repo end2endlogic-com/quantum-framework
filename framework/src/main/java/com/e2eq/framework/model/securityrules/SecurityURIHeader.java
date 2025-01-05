@@ -154,7 +154,7 @@ public final class SecurityURIHeader {
         return result;
     }
 
-    public String toString() {
+    public String getURIString() {
         return identity + ":" + area + ":" + functionalDomain + ":" + action;
     }
 }

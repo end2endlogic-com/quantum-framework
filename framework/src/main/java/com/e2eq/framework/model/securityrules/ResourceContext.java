@@ -5,6 +5,8 @@ import lombok.Builder;
 import org.graalvm.polyglot.HostAccess;
 
 import jakarta.validation.constraints.NotNull;
+import org.jetbrains.annotations.Nullable;
+
 import java.util.Optional;
 
 /**
@@ -112,15 +114,15 @@ public class ResourceContext {
    }
 
    @HostAccess.Export
-   public Optional<String> getResourceId () {
-      return Optional.ofNullable(resourceId);
+   public @Nullable String getResourceId () {
+      return resourceId;
    }
    public void setResourceId (String resourceId) {
       this.resourceId = resourceId;
    }
 
    @HostAccess.Export
-   public Optional<String> getOwnerId () {return Optional.ofNullable(ownerId);}
+   public @Nullable String getOwnerId () {return ownerId;}
    public void setOwnerId (String ownerId) {this.ownerId = ownerId;}
 
    @HostAccess.Export

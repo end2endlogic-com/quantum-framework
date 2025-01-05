@@ -42,8 +42,8 @@ public class SecurityURI {
       return new SecurityURI(nh, nb);
    }
 
-   public String toString() {
-      return header.toString() + ":" + body.toString();
+   public String getURIString() {
+      return header.getURIString() + ":" + body.getURIString();
    }
 
    @Override

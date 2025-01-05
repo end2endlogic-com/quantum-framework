@@ -24,8 +24,8 @@ public class SecurityUtils {
    public static final DataDomain systemDataDomain = new DataDomain(systemOrgRefName, systemAccountNumber, systemTenantId, defaultDataSegment, systemUserId);
 
    public static final SecurityURIHeader systemSecurityHeader = new SecurityURIHeader.Builder()
-      .withAction(any)
       .withIdentity(systemUserId)
+      .withAction(any)
       .withArea(securityArea)
       .withFunctionalDomain(any).build();
 
