@@ -40,7 +40,7 @@ public class TestSecurity {
 
     @Test
     void testWildCardMatcherExactMatch() {
-        boolean matches = WildCardMatcher.wildcardMatch("user:secuirty:userProfile:view:b2bi:0000000001:end2endlogic.com:0", "user:secuirty:userProfile:view:b2bi:0000000001:end2endlogic.com:0", IOCase.INSENSITIVE);
+        boolean matches = WildCardMatcher.wildcardMatch("user:security:userProfile:view:b2bi:0000000001:end2endlogic.com:0", "user:security:userProfile:view:b2bi:0000000001:end2endlogic.com:0", IOCase.INSENSITIVE);
         if (matches) {
             Log.debug("Matches");
         } else {
@@ -115,7 +115,7 @@ public class TestSecurity {
                 .build();
 
         // The body then scopes this to a "then" clause so if we matched the header, then we provide the following scope
-        // which in this case is any thing due to all the *s
+        // which in this case is anything due to all the *s
         SecurityURIBody body = new SecurityURIBody.Builder()
                 .withOrgRefName("*")
                 .withAccountNumber("*")
@@ -165,7 +165,7 @@ public class TestSecurity {
                 // this would imply that the rule is only applied under this condition
                 // reality is we want to apply the rule in every case where the header matches ie its a user rule
                 // so the filter is then appropriately applied
-               // .withPostconditionScript("pcontext.getUserId() == rcontext.getOwnerId()")
+                .withPostconditionScript("pcontext.getUserId() == rcontext.getOwnerId()")
                 .withAndFilterString("dataDomain.ownerId:${principalId}");
         rule = b.build();
         ruleContext.addRule(userSecurityUserProfileViewURI.getHeader(), rule);
@@ -232,8 +232,8 @@ public class TestSecurity {
                 sysAdminUserProfileRC,
                 checkRulesResponse,
                 filters1);
-        assertFalse(checkRulesResponse.getFinalEffect().equals(RuleEffect.DENY));
-        assertTrue(!filters1.isEmpty());
+        assertTrue(checkRulesResponse.getFinalEffect().equals(RuleEffect.DENY));
+        assertTrue(filters1.isEmpty()); // will be empty because the post condition will cause the rule to be ignored / NA and the default is deny
 
         // show that its really about the default not an explicit rule
         checkRulesResponse = ruleContext.checkRules(mingardiaUserIdPC, sysAdminUserProfileRC, RuleEffect.ALLOW);
@@ -246,7 +246,19 @@ public class TestSecurity {
                 filters1);
         assertTrue(checkRulesResponse.getFinalEffect().equals(RuleEffect.ALLOW));
 
-        // now lets see if they can see someone else's userProfile
+        // now lets see if they can see our own
+        // since we are assuming the default deny is applied only if there is a rule that allows it
+        // should it be allowed.  The only rule that will has a post condition that has to evaluate to true
+        checkRulesResponse = ruleContext.checkRules(mingardiaUserIdPC, mingardiaUserProfileRC); // default deny
+        filters.clear();
+        filters1 = ruleContext.getFilters(filters, mingardiaUserIdPC, mingardiaUserProfileRC);
+        logRuleResults("show that its really about the default not an explicit rule",
+                mingardiaUserIdPC,
+                sysAdminUserProfileRC,
+                checkRulesResponse,
+                filters1);
+        assertTrue(checkRulesResponse.getFinalEffect().equals(RuleEffect.ALLOW));
+
 
     }
 
@@ -340,10 +352,9 @@ public class TestSecurity {
         Log.info("Final Effect:" + securityCheckResponse.getFinalEffect());
         Log.info("Match Results:");
         securityCheckResponse.getMatchEvents().forEach(m -> Log.info(m.toString()));
-        Log.info("Filters:");
         if (filters.isEmpty()) Log.info("NoFilters");
         else {
-            Log.info("Filters:");
+            Log.info("**** Filters:");
             filters.forEach(f -> Log.info(f.toString()));
         }
     }

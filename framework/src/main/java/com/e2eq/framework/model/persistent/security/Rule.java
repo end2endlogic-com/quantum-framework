@@ -13,18 +13,31 @@ import jakarta.xml.bind.annotation.XmlType;
 @RegisterForReflection
 public class Rule  {
 
-   int id=-1;
-   @NotNull String name;
-   String description;
-  @Valid @NotNull SecurityURI securityURI;
-   String preconditionScript;
-   String postconditionScript;
-   String andFilterString;
+   protected int id=-1;
+   protected @NotNull String name;
+   protected String description;
+   protected @Valid @NotNull SecurityURI securityURI;
+   protected String preconditionScript;
+   protected String postconditionScript;
+
+   // set this if you want to add to the set of filters that are anded together
+   protected String andFilterString;
+
+   // set this if you want to add to the set of filters that are ored together
    String orFilterString;
+
+   // if you need to join the anded filters and the ored filters together using a join operator set this
    FilterJoinOp joinOp;
+
+   // the rules effect
    @NotNull RuleEffect effect;
+
+   // the rules priority
    int priority;
+
+   // if this rule is executed should we continue to execute rules after it or stop here
    boolean finalRule;
+
    public static int DEFAULT_PRIORITY = 10;
 
    public Rule() {
@@ -53,15 +66,15 @@ public class Rule  {
 
 
    public static class Builder {
-      String name;
+      @NotNull String name;
       String description;
-      SecurityURI securityURI;
+      @NotNull SecurityURI securityURI;
       String preconditionScript;
       String postconditionScript;
       String andFilterString;
       String orFilterString;
       FilterJoinOp joinOp;
-      RuleEffect effect;
+      @NotNull RuleEffect effect;
       int priority = DEFAULT_PRIORITY;
       boolean finalRule = false;
 

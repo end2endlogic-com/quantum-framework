@@ -6,13 +6,13 @@ import jakarta.validation.constraints.NotNull;
 
 @RegisterForReflection
 public final class SecurityURIBody {
-  @NotNull String realm;
-  @NotNull String orgRefName;
-  @NotNull String accountNumber;
-  @NotNull String tenantId;
-  @NotNull String ownerId;
-  @NotNull String dataSegment;
-  String resourceId;
+  protected @NotNull String realm;
+  protected @NotNull String orgRefName;
+  protected @NotNull String accountNumber;
+  protected @NotNull String tenantId;
+  protected @NotNull String ownerId;
+  protected @NotNull String dataSegment;
+  protected String resourceId;
 
     /**
      * The body determines the "scope" that the rule applies to from a rule point of view.
@@ -184,7 +184,7 @@ public final class SecurityURIBody {
       return result;
    }
 
-   public String toString () {
+   public String getURIString() {
       String rc = realm + ":" + orgRefName + ":" + accountNumber + ":" + tenantId + ":" + dataSegment + ":" + ownerId;
 
       if (resourceId != null) {

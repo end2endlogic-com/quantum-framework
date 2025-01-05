@@ -51,7 +51,7 @@ public class RuleContext {
             addSystemRules();
         } else {
             // Look for system Rules
-            if (rulesFor(SecurityUtils.systemSecurityHeader).isEmpty()) {
+            if (rulesForIdentity(SecurityUtils.systemSecurityHeader.getIdentity()).isEmpty()) {
                 addSystemRules();
             }
         }
@@ -222,44 +222,7 @@ public class RuleContext {
         this.addRule(header, r);
 
 
-        // Now we are creating another URI, however this one is more specific than the last one
-        // in this case we are creating something that is again for the role "user",
-        // however this time it will only match any area, and FD, but only the "view" action
-        //
-        // The body says only for resources from the b2bi realm that are owned by "system@b2bintegrator.com"
-        // ie. are system objects
-     /* header = new SecurityURIHeader.Builder()
-         .withIdentity("user")
-         .withArea("*")                      // any area
-         .withFunctionalDomain("*")          // any domain
-         .withAction("view")                 // view action
-         .build();
-      body = new SecurityURIBody.Builder()
-         .withOrgRefName(SecurityUtils.systemOrgRefName)
-         .withAccountNumber("*")             // any account
-         .withRealm(SecurityUtils.systemRealm)     // within just the b2bi realm
-         .withTenantId("*")                  // any tenant
-         .withOwnerId(SecurityUtils.systemUserId)  // system owner
-         .withDataSegment("*")               // any data segment
-         .build();
 
-      uri = new SecurityURI(header, body);
-
-      // Now we are adding a rule that says that we will allow with this
-      // matching criteria, however the filter string here is for "ownerId:system@b2bintegrator.com"
-      // its or'ed in which means that if this were to be added we would or this filter compared to
-      // others.
-      b = new Rule.Builder()
-         .withName("view system resources")
-         .withSecurityURI(uri)
-         .withEffect(RuleEffect.ALLOW)
-         .withFinalRule(true)
-         // can't have both a rule on ownerId that looks for id and then "or" system as the or will have to be
-         // independently evaluation.  Consider removing or functionality as it nullifies the and criteria
-         .withAndFilterString("dataDomain.ownerId:system@b2bintegrator.com");
-
-      r = b.build();
-      this.addRule(header, r); */
 
     }
 
@@ -292,13 +255,13 @@ public class RuleContext {
     /**
      * Returns all the rules for a given identity
      *
-     * @param key the identity to get the rules for
+     * @param identity the identity to get the rules for
      * @return an optional list of rules
      */
-    public Optional<List<Rule>> rulesFor(@NotNull @Valid SecurityURIHeader key) {
+    public Optional<List<Rule>> rulesForIdentity(@NotNull String identity) {
 
         // return all the rules for this identity
-        List<Rule> ruleList = rules.get(key.getIdentity());
+        List<Rule> ruleList = rules.get(identity);
 
         if (ruleList == null) {
             return Optional.empty();
@@ -309,7 +272,7 @@ public class RuleContext {
 
     /**
      * This will execute a script with a given principal and resource context, it will return true or false
-     * based upon the evaulation of the script.  The script is assumed to return a boolean value
+     * based upon the evaluation of the script.  The script is assumed to return a boolean value
      *
      * @param pcontext the principal context
      * @param rcontext the resource context
@@ -343,16 +306,7 @@ public class RuleContext {
                 .build();
     }
 
-    /**
-     * This will check the rules for the given principal and resource context, it assumes a DENY final effect.
-     *
-     * @param pcontext the principal context
-     * @param rcontext the resource context
-     * @return
-     */
-    public SecurityCheckResponse checkRules(@Valid @NotNull PrincipalContext pcontext, @Valid @NotNull ResourceContext rcontext) {
-        return checkRules(pcontext, rcontext, RuleEffect.DENY);
-    }
+
 
 
     List<Rule> getApplicableRulesForPrincipalAndAssociatedRoles(PrincipalContext pcontext, ResourceContext rcontext) {
@@ -362,23 +316,22 @@ public class RuleContext {
         SecurityURIHeader h = createHeaderFor(pcontext.getUserId(), rcontext);
 
         // find the rules that match this header
-        Optional<List<Rule>> listop = rulesFor(h);
+        Optional<List<Rule>> identityRules = rulesForIdentity(h.getIdentity());
 
-        if (listop.isPresent()) {
-            applicableRules.addAll(listop.get());
+        if (identityRules.isPresent()) {
+            applicableRules.addAll(identityRules.get());
         }
 
         // Add role rules
         for (String role : pcontext.getRoles()) {
-            h = createHeaderFor(role, rcontext);
-            listop = rulesFor(h);
-            if (listop.isPresent()) {
-                applicableRules.addAll(listop.get());
+            identityRules = rulesForIdentity(role);
+            if (identityRules.isPresent()) {
+                applicableRules.addAll(identityRules.get());
             }
         }
 
         if (!applicableRules.isEmpty()) {
-            // Build SecurityURI
+            // order the rules by priority if there are more than one.
             if (applicableRules.size() > 1) {
                 Ordering<Rule> orderingByPriority = new Ordering<Rule>() {
                     @Override
@@ -393,10 +346,20 @@ public class RuleContext {
     }
 
 
+    /**
+     * This will check the rules for the given principal and resource context, it assumes a DENY final effect.
+     *
+     * @param pcontext the principal context
+     * @param rcontext the resource context
+     * @return
+     */
+    public SecurityCheckResponse checkRules(@Valid @NotNull PrincipalContext pcontext, @Valid @NotNull ResourceContext rcontext) {
+        return checkRules(pcontext, rcontext, RuleEffect.DENY);
+    }
 
     /**
-     * @param pcontext
-     * @param rcontext
+     * @param pcontext the context that represents the main user making the request
+     * @param rcontext the resource that the user wants to take an action on
      * @param defaultFinalEffect the default effect that we start out with.  This typically can start out with DENY and then rules add
      *                           permissions, but sometimes we want to assume ALLOW and just remove permissions. This parameeter determins
      *                           this default behavior.
@@ -409,23 +372,23 @@ public class RuleContext {
         }
 
         // Create a response to show how we came to the conclusion
-        SecurityCheckResponse response = new SecurityCheckResponse();
-        // Record the pcontext and rcontext in the response
-        response.setPrincipalContext(pcontext);
-        response.setResourceContext(rcontext);
+        SecurityCheckResponse response = new SecurityCheckResponse(pcontext, rcontext);
+
+
         // the final effect is defined by the defaultFinalEffect being passed in.
         // typically this will be DENY unless we have rules that allow it.
         // the rule base will have a default set in it.
         response.setFinalEffect(defaultFinalEffect);
 
-        // Get the applicalble rules for this pcontext and rcontext this will include
+        // Get the applicable rules for this pcontext and rcontext this will include
         // the roles associated with the pcontext
         List<Rule> applicableRules = getApplicableRulesForPrincipalAndAssociatedRoles(pcontext, rcontext);
 
-        // expand the set of uri's for this pcontext and rcontext
-        List<SecurityURI> expanedUris = expandURIPrincipalIdentities(pcontext, rcontext);
-        response.getApplicableSecurityURIs().addAll(expanedUris);
-       // response.setUnexpandedSecurityURIs( would need the original urls prior to expansion unsure why we need that);
+        // expand the set of uri's for this pcontext and rcontext and save it for debug purposes into the response
+        // not this is not used in the logic that follows and is just for debug
+        // TODO refactor getApplicableRules to take in the expanded set of uri's that way its only calculated once
+        List<SecurityURI> expandedUris = expandURIPrincipalIdentities(pcontext, rcontext);
+        response.getApplicableSecurityURIs().addAll(expandedUris);
 
         if (Log.isDebugEnabled()) {
             Log.debug("");
@@ -439,30 +402,30 @@ public class RuleContext {
             response.getEvaluatedRules().add(r);
 
             if (Log.isDebugEnabled()) {
-                Log.debug(" rule:" + r.getName() + "compared to uris:" + expanedUris.size());
+                Log.debug(" rule:" + r.getName() + "compared to uris:" + expandedUris.size());
             }
 
             // for each uri in the expanded set of uris which includes the principal userId and associated roles
-            for (SecurityURI expanedPrincipalUri : expanedUris) {
+            for (SecurityURI uri : expandedUris) {
 
                 if (Log.isDebugEnabled()) {
-                    Log.debug("Comparing:" + expanedPrincipalUri.toString());
-                    Log.debug("To ruleName:" + r.getName() + " URI:" + r.getSecurityURI().toString());
+                    Log.debug("Comparing:" + uri.getURIString());
+                    Log.debug("To ruleName:" + r.getName() + " URI:" + r.getSecurityURI().getURIString());
                     Log.debug("");
                 }
 
                 // compare the uri to the rule uri to see if it matches ie. the rule is applicable
-                if (WildCardMatcher.getInstance().wildcardMatch(expanedPrincipalUri.toString(), r.getSecurityURI().toString(),
+                if (WildCardMatcher.getInstance().wildcardMatch(uri.getURIString(), r.getSecurityURI().getURIString(),
                         IOCase.INSENSITIVE)) {
                     // the rule is applicable.  Check the precondition and post conditions scripts
                     RuleResult result = new RuleResult(r);
                     MatchEvent matchEvent =
                             MatchEvent.builder()
-                                    .principalUriString(expanedPrincipalUri.toString())
-                                    .ruleUriString(r.getSecurityURI().toString())
+                                    .principalUriString(uri.getURIString())
+                                    .ruleUriString(r.getSecurityURI().getURIString())
                                     .ruleName(r.getName())
                                     .matched(true)
-                                    .difference(StringUtils.difference(expanedPrincipalUri.toString(), r.getSecurityURI().toString()))
+                                    .difference(StringUtils.difference(uri.getURIString(), r.getSecurityURI().getURIString()))
                                     .build();
 
 
@@ -489,11 +452,11 @@ public class RuleContext {
                         break;
                     }
                 } else {
-                    String difference = StringUtils.difference(expanedPrincipalUri.toString(), r.getSecurityURI().toString());
+                    String difference = StringUtils.difference(uri.getURIString(), r.getSecurityURI().getURIString());
                     response.getMatchEvents().add(
                             MatchEvent.builder()
-                                    .principalUriString(expanedPrincipalUri.toString())
-                                    .ruleUriString(r.getSecurityURI().toString())
+                                    .principalUriString(uri.getURIString())
+                                    .ruleUriString(r.getSecurityURI().getURIString())
                                     .ruleName(r.getName())
                                     .matched(false)
                                     .difference(difference)
@@ -567,10 +530,7 @@ public class RuleContext {
                 .withOwnerId(identity) // TODO not sure of this but here a given role would be the owner
                 .withDataSegment(Integer.toString(pcontext.getDataDomain().getDataSegment()));
 
-        if (rcontext.getResourceId().isPresent()) {
-            buri.withResourceId(rcontext.getResourceId().get());
-        }
-
+        buri.withResourceId(rcontext.getResourceId()); // can't be optional because its used in scripts
         SecurityURIHeader header = huri.build();
         SecurityURIBody body = buri.build();
 
@@ -578,100 +538,14 @@ public class RuleContext {
     }
 
     /**
-     * Retrieve a list of filters that match a given principal ( and the associated roles ) for a given resource context
-     *
-     * @param ifilters existing filters that may already have been applied from prior rules
-     * @param pcontext the principal context
-     * @param rcontext the resource context
-     * @return the list containing now what ever was passed in with ifilters and any addiitional rules to apply
-
+     * Get the list of filters that are applicable for the given principal and resource context.
+     * @param ifilters
+     * @param pcontext
+     * @param rcontext
+     * @return
+     */
     public List<Filter> getFilters(List<Filter> ifilters, @Valid @NotNull(message = "Principal Context can not be null") PrincipalContext pcontext, @Valid @NotNull(message = "Resource Context can not be null") ResourceContext rcontext) {
-
-        Set<Filter> filters = new HashSet<Filter>();
-        filters.addAll(ifilters);
-
-        // Find applicable uris to search for based upon the principal and resource.  This will expand
-        // the set of uris to include roles of the associated principal
-        List<SecurityURI> uris = this.expandURIPrincipalIdentities(pcontext, rcontext);
-
-        // For each url,
-        for (SecurityURI uri : uris) {
-            // Find the rules that match the header of the uri
-            Optional<List<Rule>> orules = this.rulesFor(uri.getHeader());
-
-            boolean done = false;
-            if (orules.isPresent()) {
-
-                // allocate an array list for and and or filters
-                // TODO we should only create these if we need them
-                List<Filter> andFilters = new ArrayList<>();
-                List<Filter> orFilters = new ArrayList<>();
-
-                // Create a map of variables we  can pass to scripts.
-
-                Map<String, String> variables = MorphiaUtils.createStandardVariableMapFrom(pcontext, rcontext);
-                variables.put("identity", uri.getHeader().getIdentity());
-                StringSubstitutor sub = new StringSubstitutor(variables);
-                List<Rule> rules = orules.get();
-                for (Rule rule : rules) {
-                        if (rule.getAndFilterString() != null && !rule.getAndFilterString().isEmpty()) {
-                            andFilters.add(MorphiaUtils.convertToFilter(rule.getAndFilterString(), variables, sub));
-                        }
-
-                    if (rule.getOrFilterString() != null && !rule.getOrFilterString().isEmpty()) {
-                        orFilters.add(MorphiaUtils.convertToFilter(rule.getOrFilterString(), variables, sub));
-                    }
-
-                    if (!andFilters.isEmpty() && !orFilters.isEmpty()) {
-                        FilterJoinOp joinOp;
-                        if (rule.getJoinOp() != null) {
-                            joinOp = rule.getJoinOp();
-                        } else {
-                            joinOp = FilterJoinOp.AND;
-                        }
-                        if (joinOp == FilterJoinOp.AND) {
-                            andFilters.add(Filters.or(orFilters.toArray(new Filter[orFilters.size()])));
-                            filters.add(Filters.and(andFilters.toArray(new Filter[andFilters.size()])));
-                        } else {
-                            orFilters.add(Filters.and(andFilters.toArray(new Filter[andFilters.size()])));
-                            filters.add(Filters.and(orFilters.toArray(new Filter[orFilters.size()])));
-                        }
-                    } else {
-                        if (!andFilters.isEmpty()) {
-                            filters.addAll(andFilters);
-                            andFilters.clear();
-                        } else {
-                            if (!orFilters.isEmpty()) {
-                                filters.add(Filters.or(orFilters.toArray(new Filter[orFilters.size()])));
-                                orFilters.clear();
-                            }
-                        }
-                    }
-                    if (rule.isFinalRule()) {
-                        done = true;
-                        break;
-                    }
-                } ;
-            }
-            if (done) {
-                break;
-            }
-        } ;
-
-        // Sucks that we have to do this but Filter does not implement equals there for
-        // gets hosed if your using a set.
-        List<Filter> rc = new ArrayList<>();
-        HashMap<String, Filter> filterMap = new HashMap<>();
-        filters.forEach(filter -> {
-            filterMap.put(filter.toString(), filter);
-        });
-        rc.addAll(filterMap.values());
-        return rc;
-    }
-    */
-
-    public List<Filter> getFilters(List<Filter> ifilters, @Valid @NotNull(message = "Principal Context can not be null") PrincipalContext pcontext, @Valid @NotNull(message = "Resource Context can not be null") ResourceContext rcontext) {
-        Set<Filter> filters = new HashSet<Filter>();
+        List<Filter> filters = new ArrayList<>();
         filters.addAll(ifilters);
 
         SecurityCheckResponse response = this.checkRules(pcontext, rcontext);
@@ -682,9 +556,11 @@ public class RuleContext {
         StringSubstitutor sub = new StringSubstitutor(variables);
 
         for (RuleResult result : response.getMatchedRuleResults()) {
+            // ignore Not Applicable rules
             if (result.getDeterminedEffect() == RuleDeterminedEffect.NOT_APPLICABLE) {
                 continue;
             }
+
             Rule rule = result.getRule();
             if (rule.getAndFilterString() != null && !rule.getAndFilterString().isEmpty()) {
                 andFilters.add(MorphiaUtils.convertToFilter(rule.getAndFilterString(), variables, sub));
@@ -724,6 +600,7 @@ public class RuleContext {
             }
         }
 
+
         // Sucks that we have to do this but Filter does not implement equals there for
         // gets hosed if your using a set.
         List<Filter> rc = new ArrayList<>();
@@ -732,6 +609,7 @@ public class RuleContext {
             filterMap.put(filter.toString(), filter);
         });
         rc.addAll(filterMap.values());
+
         return rc;
     }
 

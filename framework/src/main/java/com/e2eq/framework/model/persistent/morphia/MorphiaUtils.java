@@ -81,10 +81,8 @@ public class MorphiaUtils {
       variableMap.put("pTenantId", pcontext.getDataDomain().getTenantId());
       variableMap.put("ownerId", pcontext.getDataDomain().getOwnerId());
       variableMap.put("orgRefName", pcontext.getDataDomain().getOrgRefName());
+      variableMap.put("resourceId", rcontext.getResourceId());
 
-      if (rcontext.getResourceId().isPresent()) {
-         variableMap.put("resourceId", rcontext.getResourceId().get());
-      }
       variableMap.put("action", rcontext.getAction());
       variableMap.put("functionalDomain", rcontext.getFunctionalDomain());
       variableMap.put("area", rcontext.getArea());
