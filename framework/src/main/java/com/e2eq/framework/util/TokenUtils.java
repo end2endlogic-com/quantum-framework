@@ -85,8 +85,8 @@ public class TokenUtils {
 		claimsBuilder.claim("scope", AUTH_SCOPE);
 
 		Map<String, String> area2Realm = new HashMap<>();
-		area2Realm.put("security", "b2bi");
-		area2Realm.put("signup", "b2bi");
+		area2Realm.put("security", "system-com");
+		area2Realm.put("signup", "system-com");
 		claimsBuilder.claim("realmOverrides", area2Realm);
 
 

@@ -2,6 +2,8 @@ package com.e2eq.framework.rest.filters;
 
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
+import com.e2eq.framework.model.persistent.security.UserProfile;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
@@ -12,6 +14,7 @@ import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import com.e2eq.framework.util.SecurityUtils;
 import io.quarkus.logging.Log;
+import io.quarkus.security.identity.SecurityIdentity;
 import io.smallrye.jwt.auth.principal.JWTParser;
 import io.smallrye.jwt.auth.principal.ParseException;
 import jakarta.inject.Inject;
@@ -49,6 +52,14 @@ public class SecurityFilter implements ContainerRequestFilter {
    @Inject
    CredentialRepo credentialRepo;
 
+   @Inject
+   SecurityIdentity securityIdentity;
+
+   @Inject
+   UserProfileRepo userProfileRepo;
+
+   private ContainerRequestContext requestContext;
+
    @Override
    public void filter (ContainerRequestContext requestContext) throws IOException {
       // the context may be set in an upstream filter specifically in the PermissionPreFilter based upon
@@ -57,7 +68,7 @@ public class SecurityFilter implements ContainerRequestFilter {
       // left around, determine how to clear the context after the action is complete, vs, upfront here.
 
       //SecurityContext.clear();
-
+      this.requestContext = requestContext;
       ResourceContext resourceContext = determineResourceContext(requestContext);
       PrincipalContext principalContext = determinePrincipalContext(requestContext);
       if (principalContext == null) {
@@ -89,6 +100,11 @@ public class SecurityFilter implements ContainerRequestFilter {
 
          @Override
          public boolean isSecure() {
+            if (requestContext != null) {
+               // Get the URI scheme from the request context
+               String scheme = requestContext.getUriInfo().getRequestUri().getScheme();
+               return "https".equalsIgnoreCase(scheme);
+            }
             return false;
          }
 
@@ -190,15 +206,14 @@ public class SecurityFilter implements ContainerRequestFilter {
       if (authorizationHeader != null) {
          String token = authorizationHeader
                            .substring(AUTHENTICATION_SCHEME.length()).trim();
-
          String orgRefName;
          String tenantId;
          String accountId;
          String defaultRealm;
          String principal;
          String scope;
-
          String[] roles = new String[0];
+
          try {
             JsonWebToken jwt = parser.parse(token);
 
@@ -222,7 +237,29 @@ public class SecurityFilter implements ContainerRequestFilter {
                }
                Log.debug("scope:" + scope);
             }
-            principal = requestContext.getSecurityContext().getUserPrincipal().getName();
+           // principal = requestContext.getSecurityContext().getUserPrincipal().getName();
+            // the same as  the following but more consistent as its from the token and we can't predict
+            // whats happen upsstream of this.
+            principal = jwt.getSubject();
+            // so normally you might think this would work but since its based upon all the other
+            // infratructure you caught in a catch 22 where this code needs the prinicpal context to form the rules
+            // which don't exist yet, so in reality we probably need a different machanism
+            Optional<UserProfile> ouserProfile = userProfileRepo.getByUserId(principal);
+            if (ouserProfile.isPresent()) {
+               UserProfile userProfile = ouserProfile.get();
+               if (userProfile.getOrgRefName() != null)
+                  orgRefName = userProfile.getOrgRefName();
+               if (userProfile.getTenantId()!= null)
+                  tenantId = userProfile.getTenantId();
+               if (userProfile.getDefaultRealm()!= null)
+                  defaultRealm = userProfile.getDefaultRealm();
+               if (userProfile.getAccountNumber() != null )
+                  accountId = userProfile.getAccountNumber();
+            }
+
+            if (orgRefName == null || tenantId == null || defaultRealm == null) {
+               throw new IllegalStateException(String.format("Could not determine orgRefName, tenantId, or defaultRealm from token or user profile with principal:%s token: %s \n",principal, token));
+            }
 
             DataDomain dataDomain = new DataDomain();
             dataDomain.setOrgRefName(orgRefName);
@@ -238,10 +275,6 @@ public class SecurityFilter implements ContainerRequestFilter {
                                            .withRoles(roles)
                                            .withScope(scope)
                                            .build();
-
-
-
-
          } catch (ParseException e) {
             e.printStackTrace();
             requestContext.abortWith(Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity("Token:" + token + "Msg:" + e.getMessage()).build());

@@ -21,13 +21,12 @@ public class ContentLengthFilter implements ContainerRequestFilter, ContainerRes
 
     @Override
     public void filter(ContainerRequestContext requestContext) {
-
+        Log.warn("** Filter call in ContentLengthFilter.filter() being ignored **");
     }
 
     @Override
     public void filter(ContainerRequestContext requestContext, ContainerResponseContext responseContext) throws JsonProcessingException {
         // Add content length header to responses
-
         if (responseContext.getEntity() != null && responseContext.getMediaType()!= null && responseContext.getMediaType().toString().equals("application/json;charset=UTF-8")) {
             String entity = mapper.writeValueAsString(responseContext.getEntity());
             responseContext.setEntity(entity);

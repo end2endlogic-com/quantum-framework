@@ -1,4 +1,4 @@
-package com.e2eq.framework.rest.filters;
+package com.e2eq.framework.rest.filters.inactive;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
