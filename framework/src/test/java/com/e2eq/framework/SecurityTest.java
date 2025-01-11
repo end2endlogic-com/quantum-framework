@@ -213,4 +213,43 @@ public class SecurityTest {
                 .statusCode(200);
     }
 
+    @Test
+    public void testGetUserProfileRESTAPI() throws JsonProcessingException {
+        AuthRequest request = new AuthRequest();
+        request.setUserId(SecurityUtils.systemUserId);
+        request.setPassword("test123456");
+        request.setTenantId(SecurityUtils.systemTenantId);
+
+        ObjectMapper mapper = new ObjectMapper();
+        String value = mapper.writeValueAsString(request);
+        // ensure that the status code is 200 but also get the access token and refresh token from the response
+        Response response = given()
+                .header("Content-type", "application/json")
+                .and()
+                .body(value)
+                .when().post("/security/login")
+                .then()
+                .statusCode(200)
+                .extract().response();
+
+        String accessToken = response.jsonPath().getString("access_token");
+        String refreshToken = response.jsonPath().getString("refresh_token");
+
+        Assert.assertNotNull(accessToken);
+        Assert.assertNotNull(refreshToken);
+
+        // make a GET request to the user profile API /userProfile/list
+        Response response2 = given()
+                .header("Content-type", "application/json")
+                .header("Authorization", "Bearer " + accessToken)
+                .when().get("/user/userProfile/list")
+                .then()
+                .statusCode(200)
+                .extract().response();
+        String userProfileJson = response2.jsonPath().prettify();
+        Log.info(userProfileJson);
+
+
+    }
+
 }

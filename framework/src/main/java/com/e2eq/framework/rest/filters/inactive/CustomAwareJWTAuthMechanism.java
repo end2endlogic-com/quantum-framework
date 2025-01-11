@@ -1,4 +1,4 @@
-package com.e2eq.framework.rest.filters;
+package com.e2eq.framework.rest.filters.inactive;
 
 
 //@Alternative

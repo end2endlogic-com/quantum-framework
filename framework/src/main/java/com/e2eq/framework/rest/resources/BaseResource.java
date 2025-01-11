@@ -399,10 +399,11 @@ public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
               quotingStrategy, quoteChar.charAt(0), chosenCharset, mustUseBOM, filter, offset,
               length, prependHeaderRow, preferredColumnNames);
 
+      // using a string template generate a header
 
       return Response
               .ok(streamingOutput)
-              .header("Content-Disposition", "attachment; filename=\"export.csv\"")
+              .header("Content-Disposition", String.format("attachment; filename=\"%s\"", filename))
               .header("Content-Type", "text/csv")
               .build();
    }

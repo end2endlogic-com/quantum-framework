@@ -71,6 +71,21 @@ public @Data class UserProfile extends BaseModel {
     protected DataDomainPolicy dataDomainPolicy;
     protected Status status = Status.ACTIVE;
 
+   /**
+    * Seperated out here vs. using the data domain to define how the
+    * user that is associated with this profile gets mapped from a PrincipalConext
+    * which is different perhaps than the data domain settings that the user profile exists in.
+    * Also, this is separate from a credential because we may not be the source of truth for
+    * authentication
+    * */
+
+    protected String orgRefName;
+    protected String accountNumber;
+    protected String tenantId;
+    protected String defaultRealm;
+
+
+
     @Override
     public String bmFunctionalArea() {
         return "SECURITY";

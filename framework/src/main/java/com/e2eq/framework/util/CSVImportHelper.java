@@ -60,20 +60,45 @@ public class CSVImportHelper {
     }
 
     public static class ImportResult<T> {
-        private final int importedCount;
-        private final int failedCount;
+        private int importedCount;
+        private int failedCount;
+        private final List<String> failedRecordsFeedback;
 
         public ImportResult(int importedCount, int failedCount) {
             this.importedCount = importedCount;
             this.failedCount = failedCount;
+            this.failedRecordsFeedback = new ArrayList<>();
         }
 
         public int getImportedCount() {
             return importedCount;
         }
 
+        public void incrementFailedCount() {
+            incrementFailedCount(1);
+        }
+
+        public void incrementFailedCount(int amount) {
+            this.failedCount = this.failedCount + amount;
+        }
+
+        public void incrementImportedCount() {
+          incrementImportedCount(1);
+        }
+
+        public void incrementImportedCount(int amount) {
+            this.importedCount = this.importedCount + amount;
+        }
+
         public int getFailedCount() {
             return failedCount;
+        }
+        public List<String> getFailedRecordsFeedback() {
+            return failedRecordsFeedback;
+        }
+
+        public void addFailedRecordFeedback(String feedback) {
+            this.failedRecordsFeedback.add(feedback);
         }
     }
 
@@ -88,10 +113,9 @@ public class CSVImportHelper {
             Charset charset,
             boolean mustUseBOM,
             String quotingStrategy,
-            FailedRecordHandler<T> failedRecordHandler) throws IOException {
-        int importedCount = 0;
-        int failedCount = 0;
+            FailedRecordHandler<T> failedRecordHandler) {
 
+        ImportResult<T> result = new ImportResult<>(0,0);
         try (Reader reader = new InputStreamReader(inputStream, charset)) {
             if (mustUseBOM) {
                 reader.read(); // Skip BOM character
@@ -114,76 +138,68 @@ public class CSVImportHelper {
             CellProcessor[] processors = new CellProcessor[fieldMapping.length];
             // TODO: Configure appropriate CellProcessors based on field types
 
-            List<T> buffer = new ArrayList<>(BATCH_SIZE);
+           result = importFlatProperty(repo, beanReader, processors, failedRecordHandler);
 
-            importFlatProperty(repo, beanReader, processors, buffer, failedRecordHandler);
 
-        } catch (Exception e) {
+        } catch (IOException e) {
             throw new WebApplicationException("Error importing CSV: " + e.getMessage(), e, 400);
         }
 
-        return new ImportResult<>(importedCount, failedCount);
+        return result;
     }
 
     private static <T extends BaseModel> ImportResult<T> importFlatProperty(BaseMorphiaRepo<T> repo,
                                                                      ICsvDozerBeanReader beanReader,
                                                                      CellProcessor[] processors,
-                                                                     List<T> buffer,
-                                                                     FailedRecordHandler<T> failedRecordHandler) throws Exception {
-        int importedCount = 0;
-        int failedCount = 0;
+                                                                     FailedRecordHandler<T> failedRecordHandler) throws IOException {
+
+        ImportResult<T> result = new ImportResult<>(0, 0);
+        List<T> batch = new ArrayList<>(BATCH_SIZE);
 
         while (true) {
             T bean = beanReader.read(repo.getPersistentClass(), processors);
             if (bean == null) break;
 
-            buffer.add(bean);
-            if (buffer.size() >= BATCH_SIZE) {
-                ImportResult<T> batchResult = processBatch(repo, buffer, failedRecordHandler);
-                importedCount += batchResult.getImportedCount();
-                failedCount += batchResult.getFailedCount();
-                buffer.clear();
+            batch.add(bean);
+            if (batch.size() >= BATCH_SIZE) {
+                processBatch(repo, batch, failedRecordHandler, result);
+                batch.clear();
             }
         }
 
         // Process any remaining entities in the buffer
-        if (!buffer.isEmpty()) {
-            ImportResult<T> batchResult = processBatch(repo, buffer, failedRecordHandler);
-            importedCount += batchResult.getImportedCount();
-            failedCount += batchResult.getFailedCount();
+        if (!batch.isEmpty()) {
+             result = processBatch(repo, batch, failedRecordHandler, result);
         }
 
-        return new ImportResult<>(importedCount, failedCount);
+        return result;
     }
 
     private static <T extends BaseModel> ImportResult<T> processBatch(BaseMorphiaRepo<T> repo, 
                                                                List<T> batch, 
-                                                               FailedRecordHandler<T> failedRecordHandler) {
-        if (batch.isEmpty()) return new ImportResult<>(0, 0);
-
-        int importedCount = 0;
-        int failedCount = 0;
+                                                               FailedRecordHandler<T> failedRecordHandler,
+                                                               ImportResult<T> result) {
+        if (batch.isEmpty()) return result;
 
         try {
             repo.save(batch);
-            importedCount = batch.size();
+            result.incrementImportedCount(batch.size());
         } catch (Exception e) {
             if (batch.size() == 1) {
-                failedRecordHandler.handleFailedRecord(batch.get(0));
-                failedCount = 1;
+                T failedRecord = batch.get(0);
+                failedRecordHandler.handleFailedRecord(failedRecord);
+                result.incrementFailedCount();
+                result.addFailedRecordFeedback("Failed to process record: " + failedRecord.toString() + " due to " + e.getMessage());
             } else {
                 int midPoint = batch.size() / 2;
                 List<T> firstHalf = new ArrayList<>(batch.subList(0, midPoint));
                 List<T> secondHalf = new ArrayList<>(batch.subList(midPoint, batch.size()));
 
-                ImportResult<T> firstHalfResult = processBatch(repo, firstHalf, failedRecordHandler);
-                ImportResult<T> secondHalfResult = processBatch(repo, secondHalf, failedRecordHandler);
-
-                importedCount = firstHalfResult.getImportedCount() + secondHalfResult.getImportedCount();
-                failedCount = firstHalfResult.getFailedCount() + secondHalfResult.getFailedCount();
+                processBatch(repo, firstHalf, failedRecordHandler, result);
+                processBatch(repo, secondHalf, failedRecordHandler, result);
             }
         }
 
-        return new ImportResult<>(importedCount, failedCount);
+        return result;
     }
 }
