@@ -32,8 +32,10 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
             QuarkusSecurityIdentity.Builder builder = QuarkusSecurityIdentity.builder(identity);
 
             Log.debug("  Adding user role");
-            // add user role by default
-            builder.addRole("user");
+            // add user role by default we already know at least we are not anonymous give the above else condition
+            if (identity.getRoles().contains("user") == false)
+                builder.addRole("user");
+
             return builder::build;
         }
     }

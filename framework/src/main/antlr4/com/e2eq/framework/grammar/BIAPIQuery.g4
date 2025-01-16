@@ -13,8 +13,9 @@ valueListExpr: lp=LBRKT value=(STRING |QUOTED_STRING| ',' | VARIABLE | OID)+ rp=
 basicExpr: field=STRING op=(EQ|NEQ|LT|GT|LTE|GTE|EXISTS|IN) value=(STRING|VARIABLE|OID) #stringExpr
 | field=STRING op=(EQ | NEQ ) value=QUOTED_STRING #quotedExpr
 | field=STRING op=(EQ | LT | GT | NEQ | LTE | GTE) value=NUMBER #numberExpr
-
-| field=STRING op=(EQ | LT | GT | NEQ | LTE | GTE) value=WHOLENUMBER #wholenumberExpr;
+| field=STRING op=(EQ | LT | GT | NEQ | LTE | GTE) value=WHOLENUMBER #wholenumberExpr
+| field=STRING op=(EQ | LT | GT | NOT_EQ | LTE | GTE) value=DATE #dateExpr
+| field=STRING op=(EQ | LT | GT | NOT_EQ | LTE | GTE) value=DATETIME #dateTimeExpr;
 
 notExpr: NOT allowedExpr;
 

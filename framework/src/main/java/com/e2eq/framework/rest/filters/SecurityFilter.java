@@ -68,6 +68,8 @@ public class SecurityFilter implements ContainerRequestFilter {
       // left around, determine how to clear the context after the action is complete, vs, upfront here.
 
       //SecurityContext.clear();
+
+
       this.requestContext = requestContext;
       ResourceContext resourceContext = determineResourceContext(requestContext);
       PrincipalContext principalContext = determinePrincipalContext(requestContext);
@@ -77,6 +79,8 @@ public class SecurityFilter implements ContainerRequestFilter {
 
       SecurityContext.setPrincipalContext(principalContext);
       SecurityContext.setResourceContext(resourceContext);
+      /*
+      Should not be needed as it should be done upstream
       requestContext.setSecurityContext(new jakarta.ws.rs.core.SecurityContext() {
          @Override
          public Principal getUserPrincipal() {
@@ -112,7 +116,7 @@ public class SecurityFilter implements ContainerRequestFilter {
          public String getAuthenticationScheme() {
             return "basic";
          }
-      });
+      }); */
    }
 
    /*
