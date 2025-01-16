@@ -18,6 +18,9 @@ import jakarta.inject.Inject;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
 import java.io.*;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -142,8 +145,14 @@ public class TestGrammar {
       Filter f = MorphiaUtils.convertToFilter(queryString);
       Log.infof("Value:%s", f.getValue());
 
-      String dateTimeString = "field1:>2022-01-01T00:00:00";
+      String dateTimeString = "field1:>2011-12-03T10:15:30Z";
+      DateTimeFormatter formatter = DateTimeFormatter.ISO_DATE_TIME;
+
       f = MorphiaUtils.convertToFilter(dateTimeString);
+      Log.infof("Value:%s", f.getValue());
+
+      String dateTimeTsString = "field1:>2022-01-01T12:00:00-06:00";
+      f = MorphiaUtils.convertToFilter(dateTimeTsString);
       Log.infof("Value:%s", f.getValue());
    }
 }
