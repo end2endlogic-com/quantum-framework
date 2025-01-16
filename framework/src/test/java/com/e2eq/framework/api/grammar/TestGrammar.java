@@ -134,4 +134,16 @@ public class TestGrammar {
       assertEquals("[testval1, action]", f.getValue().toString());
 
    }
+
+
+   @Test
+   public void testDateFilter() {
+      String queryString = "field1:>=2022-01-01";
+      Filter f = MorphiaUtils.convertToFilter(queryString);
+      Log.infof("Value:%s", f.getValue());
+
+      String dateTimeString = "field1:>2022-01-01T00:00:00";
+      f = MorphiaUtils.convertToFilter(dateTimeString);
+      Log.infof("Value:%s", f.getValue());
+   }
 }

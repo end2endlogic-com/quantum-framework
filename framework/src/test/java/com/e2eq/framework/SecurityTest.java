@@ -211,6 +211,16 @@ public class SecurityTest {
             .when().post("/security/login")
             .then()
                 .statusCode(200);
+
+        request.setPassword("incorrect");
+        value = mapper.writeValueAsString(request);
+        given()
+                .header("Content-type", "application/json")
+                .and()
+                .body(value)
+                .when().post("/security/login")
+                .then()
+                .statusCode(jakarta.ws.rs.core.Response.Status.UNAUTHORIZED.getStatusCode());
     }
 
     @Test

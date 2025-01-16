@@ -69,7 +69,7 @@ public class UserProfileResource extends BaseResource<UserProfile, UserProfileRe
 
    /**
     * This is an example taking a dynamic object which is just represented as Json from the front end and then
-    * mapping this to class;  Of course the other way is to just take the actual class as the arguement but I wanted to
+    * mapping this to class;  Of course the other way is to just take the actual class as the argument but I wanted to
     * show how dynamic objects can be handled as an example here.
     * @param uiUserProfile - pure json object not type checked.
     * @return Response which should be saved object with the id included
@@ -107,7 +107,7 @@ public class UserProfileResource extends BaseResource<UserProfile, UserProfileRe
       if (password!= null &&!password.isEmpty()) {
 
          // This should really either be part of the credentials object
-         // or passed in seperately.  Its here as a place holder for now.
+         // or passed in separately.  Its here as a place holder for now.
          Set<Role> roles = new HashSet<>();
          roles.add(Role.user);
          int i = 0;
