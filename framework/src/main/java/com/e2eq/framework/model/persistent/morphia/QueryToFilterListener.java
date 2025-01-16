@@ -318,14 +318,13 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
                 break;
                 case BIAPIQueryParser.DATETIME: {
                     String dateTimeString = tok.getText();
-                    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
-                    LocalDateTime localDateTime;
+                    DateTimeFormatter formatter = DateTimeFormatter.ISO_DATE_TIME;
+                    ZonedDateTime zonedDateTime;
                     try {
-                        localDateTime = LocalDateTime.parse(dateTimeString, formatter);
+                        zonedDateTime = ZonedDateTime.parse(dateTimeString, formatter);
                     } catch (DateTimeParseException e) {
                         throw new IllegalArgumentException("Unable to parse datetime: " + dateTimeString, e);
                     }
-                    ZonedDateTime zonedDateTime = localDateTime.atZone(ZoneId.systemDefault());
                     Date date = Date.from(zonedDateTime.toInstant());
                     value = date;
                 }
