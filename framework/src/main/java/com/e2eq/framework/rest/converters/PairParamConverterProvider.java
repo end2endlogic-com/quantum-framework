@@ -30,29 +30,27 @@ public class PairParamConverterProvider implements ParamConverterProvider {
             if (value.startsWith("[") && value.endsWith("]")) {
                 value = value.substring(1, value.length() - 1);
             }
-
-            // Regular expression to match key-value pairs, considering quoted values
-            String regex = "(\\w+):'([^']*)'|([^,]+)";
+        
+            // Regular expression to match key-value pairs, considering quoted values and values with colons
+            String regex = "(\\w+):(?:'([^']*)'|([^,]+))";
             Pattern pattern = Pattern.compile(regex);
             Matcher matcher = pattern.matcher(value);
-
+        
             List<Pair> pairList = new ArrayList<>();
             while (matcher.find()) {
                 String key = matcher.group(1);
                 String quotedValue = matcher.group(2);
-
-                if (key != null && quotedValue != null) {
+                String unquotedValue = matcher.group(3);
+        
+                if (quotedValue != null) {
                     // Handle quoted value
                     pairList.add(Pair.of(key, quotedValue));
-                } else {
-                    // Handle unquoted key-value pair
-                    String[] keyValue = matcher.group(3).split(":");
-                    if (keyValue.length == 2) {
-                        pairList.add(Pair.of(keyValue[0], keyValue[1]));
-                    }
+                } else if (unquotedValue != null) {
+                    // Handle unquoted value, which may contain colons
+                    pairList.add(Pair.of(key, unquotedValue));
                 }
             }
-
+        
             return (T) pairList.toArray(new Pair[0]);
         }
 
