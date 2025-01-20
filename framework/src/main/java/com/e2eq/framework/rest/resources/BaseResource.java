@@ -57,7 +57,7 @@ import static java.lang.String.format;
         bearerFormat = "JWT"
 )
 @RolesAllowed({ "user", "admin" })
-public class BaseResource<T extends BaseModel, R extends BaseMorphiaRepo<T>> {
+public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaRepo<T>> {
    protected R repo;
 
    @Inject

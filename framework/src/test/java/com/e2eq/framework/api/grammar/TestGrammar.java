@@ -154,5 +154,13 @@ public class TestGrammar {
       String dateTimeTsString = "field1:>2022-01-01T12:00:00-06:00";
       f = MorphiaUtils.convertToFilter(dateTimeTsString);
       Log.infof("Value:%s", f.getValue());
+
+      dateTimeTsString = "field1:>2022-01-01T12:00:00+06:00";
+      f = MorphiaUtils.convertToFilter(dateTimeTsString);
+      Log.infof("Value:%s", f.getValue());
+
+      dateTimeTsString = "field1:>2022-01-01T12:00:00Z";
+      f = MorphiaUtils.convertToFilter(dateTimeTsString);
+      Log.infof("Value:%s", f.getValue());
    }
 }

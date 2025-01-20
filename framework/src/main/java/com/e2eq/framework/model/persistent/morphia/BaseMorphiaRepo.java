@@ -2,10 +2,7 @@ package com.e2eq.framework.model.persistent.morphia;
 
 
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
-import com.e2eq.framework.model.persistent.base.BaseModel;
-import com.e2eq.framework.model.persistent.base.CloseableIterator;
-import com.e2eq.framework.model.persistent.base.ProjectionField;
-import com.e2eq.framework.model.persistent.base.SortField;
+import com.e2eq.framework.model.persistent.base.*;
 import com.e2eq.framework.rest.models.Collection;
 import com.fasterxml.jackson.module.jsonSchema.JsonSchema;
 import dev.morphia.Datastore;
@@ -20,7 +17,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.List;
 import java.util.Optional;
 
-public interface BaseMorphiaRepo<T extends BaseModel> {
+public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
    public Class<T> getPersistentClass();
    // UI Actions
    public T fillUIActions(@NotNull T model);
