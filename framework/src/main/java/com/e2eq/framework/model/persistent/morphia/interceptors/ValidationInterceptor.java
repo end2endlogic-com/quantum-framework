@@ -3,6 +3,7 @@ package com.e2eq.framework.model.persistent.morphia.interceptors;
 import com.e2eq.framework.exceptions.E2eqValidationException;
 import com.e2eq.framework.model.persistent.base.BaseModel;
 import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.interfaces.InvalidSavable;
 import com.e2eq.framework.model.general.ValidationViolation;
 import com.e2eq.framework.model.securityrules.SecurityContext;
@@ -44,7 +45,7 @@ public class ValidationInterceptor implements EntityListener<Object> {
       BaseModel bm = null;
       boolean skipValidation = false;
 
-      if (ent instanceof BaseModel) {
+      if (ent instanceof UnversionedBaseModel) {
          bm = (BaseModel) ent;
          if (!bm.isSkipValidation()) {
             if (SecurityContext.getPrincipalContext().isPresent()) {

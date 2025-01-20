@@ -24,6 +24,7 @@ import dev.morphia.query.updates.UpdateOperator;
 import dev.morphia.query.updates.UpdateOperators;
 import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.logging.Log;
+import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
 import jakarta.ws.rs.NotSupportedException;
@@ -45,12 +46,15 @@ import static dev.morphia.query.Sort.descending;
  *
  * @param <T> The model class this repo will use.
  */
-public  abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRepo<T> {
+public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements BaseMorphiaRepo<T> {
     @Inject
     protected MorphiaDataStore dataStore;
 
     @Inject
     RuleContext ruleContext;
+
+    @Inject
+    SecurityIdentity securityIdentity;
 
     TypeToken<T> paramClazz = new TypeToken<>(getClass()) {
     };
@@ -490,7 +494,7 @@ public  abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRe
     }
 
     // Update / Write based api/s
-    // TODO consider breaking this apart into to seperate classes and injecting them seperately so you can
+    // TODO consider breaking this apart into to seperate classes and injecting them separately so you can
     // have different implementations for read vs. write.
 
     public MorphiaSession startSession(String realm) {
@@ -766,9 +770,15 @@ public  abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRe
     @Override
     public long update(Datastore datastore, @NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) {
         List<UpdateOperator> updateOperators = new ArrayList<>();
+        List<String> reservedFields = List.of("refName", "id", "version", "references");
         for (Pair<String, Object> pair : pairs) {
             // check that the pair key corresponds to a field in the persistent class that is an enum
             Field field = null;
+
+            if (reservedFields.contains(pair.getKey())) {
+                throw new IllegalArgumentException("Field:" + pair.getKey() + " is a reserved field and can't be updated");
+            }
+
             try {
                 field = getFieldFromHierarchy(getPersistentClass(),pair.getKey());
                 Reference ref = field.getAnnotation(Reference.class);
@@ -777,22 +787,40 @@ public  abstract class MorphiaRepo<T extends BaseModel> implements BaseMorphiaRe
                 }
 
                 if (field.getType().isEnum()) {
-                    // check that the pair value is a valid enum value of te field
+                    // check that the pair value is a valid enum value of the field
                     if (!Arrays.stream(field.getType().getEnumConstants()).anyMatch(e -> e.toString().equals(pair.getValue().toString()))) {
                         throw new IllegalArgumentException("Invalid value for enum field " + pair.getKey() + " can't set value:" + pair.getValue());
                     }
-
                 }
+
+                // check that the pair value is not null if the field is not nullable
+                if (field.getAnnotation(NotNull.class) != null && pair.getValue() == null) {
+                    throw new IllegalArgumentException("Field " + pair.getKey() + " is not nullable, but null value provided");
+                }
+
+                // check that the pair value is of the correct type
+                if (!field.getType().isAssignableFrom(pair.getValue().getClass())) {
+                    throw new IllegalArgumentException("Invalid value for field " + pair.getKey() + " can't set value:" + pair.getValue() + " expected type: " + field.getType().toString() + " but got: " + pair.getValue().getClass().getSimpleName() );
+                }
+
             } catch (NoSuchFieldException e) {
                 throw new RuntimeException(e);
             }
             updateOperators.add(UpdateOperators.set(pair.getKey(), pair.getValue()));
         }
         if (updateOperators.isEmpty()) {
-            return 0;
+            throw new IllegalArgumentException("No update pairs provided, or a parsing of the update pairs failed");
         }
 
+        if (BaseModel.class.isAssignableFrom(getPersistentClass())) {
+            updateOperators.add(UpdateOperators.inc("version", 1));
+        }
+
+        updateOperators.add(UpdateOperators.set("auditInfo.lastUpdateTs", new Date()));
+        updateOperators.add(UpdateOperators.set("auditInfo.lastUpdateIdentity", securityIdentity.getPrincipal().getName()));
+
         UpdateResult update;
+
         if (updateOperators.size() == 1) {
             update = datastore.find(getPersistentClass()).filter(Filters.eq("_id", id))
                     .update(updateOperators.get(0));

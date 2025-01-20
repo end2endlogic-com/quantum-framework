@@ -1,7 +1,7 @@
 package com.e2eq.framework.persistent;
 
 import com.e2eq.framework.annotations.ObjectReference;
-import com.e2eq.framework.model.persistent.base.BaseModel;
+import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.MorphiaRepo;
 import com.e2eq.framework.test.TestObjectRefModel;
 import dev.morphia.Datastore;
@@ -9,7 +9,6 @@ import dev.morphia.EntityListener;
 import dev.morphia.MorphiaDatastore;
 import dev.morphia.annotations.PostLoad;
 import dev.morphia.annotations.PostPersist;
-import dev.morphia.annotations.PreLoad;
 import dev.morphia.annotations.PrePersist;
 import dev.morphia.mapping.Mapper;
 import dev.morphia.mapping.codec.pojo.EntityModel;
@@ -29,7 +28,7 @@ public class ObjectReferenceListener implements EntityListener<TestObjectRefMode
     public void postLoad(TestObjectRefModel entity, Document document, Datastore datastore) {
         // check the if the datastore is an instance of MorphiaDatastore using is assignable from
         if (datastore.getClass().isAssignableFrom(MorphiaDatastore.class) &&
-          entity instanceof BaseModel ) {
+          entity instanceof UnversionedBaseModel) {
             Mapper mapper = ((MorphiaDatastore)datastore).getMapper();
 
             EntityModel entityModel = mapper.getEntityModel(entity.getClass());
@@ -42,14 +41,14 @@ public class ObjectReferenceListener implements EntityListener<TestObjectRefMode
                         // get the DAO for the associated class
                         try {
                             // Use the fully qualified name of the class
-                            Class<? extends MorphiaRepo<? extends BaseModel>> daoClass =
-                                    (Class<? extends MorphiaRepo<? extends BaseModel>>) Class.forName("com.e2eq.framework.persistent.TestParentRepo");
-                            Instance<? extends MorphiaRepo<? extends BaseModel>> instance = CDI.current().select(daoClass);
+                            Class<? extends MorphiaRepo<? extends UnversionedBaseModel>> daoClass =
+                                    (Class<? extends MorphiaRepo<? extends UnversionedBaseModel>>) Class.forName("com.e2eq.framework.persistent.TestParentRepo");
+                            Instance<? extends MorphiaRepo<? extends UnversionedBaseModel>> instance = CDI.current().select(daoClass);
                             if (!instance.isUnsatisfied()) {
-                                MorphiaRepo<? extends BaseModel> repo = instance.get();
-                                Optional<? extends BaseModel> obaseModel = repo.findByRefName(refName);
+                                MorphiaRepo<? extends UnversionedBaseModel> repo = instance.get();
+                                Optional<? extends UnversionedBaseModel> obaseModel = repo.findByRefName(refName);
                                 if (obaseModel.isPresent()) {
-                                    BaseModel baseModel = obaseModel.get();
+                                    UnversionedBaseModel baseModel = obaseModel.get();
                                     property.getAccessor().set(entity, baseModel);
                                 }
                                 // Use the repo instance as needed
@@ -88,9 +87,9 @@ public class ObjectReferenceListener implements EntityListener<TestObjectRefMode
 
                     // retrieve the value fro the field
                     Object value = property.getAccessor().get(entity);
-                    if (value != null && value instanceof BaseModel) {
-                        BaseModel baseModel = (BaseModel) value;
-                        Document document1 = createRefNameDocument((BaseModel) value);
+                    if (value != null && value instanceof UnversionedBaseModel) {
+                        UnversionedBaseModel baseModel = (UnversionedBaseModel) value;
+                        Document document1 = createRefNameDocument((UnversionedBaseModel) value);
                         document.put(property.getMappedName(), document1);
                         property.getAccessor().set(entity, null);
                     }
@@ -116,7 +115,7 @@ public class ObjectReferenceListener implements EntityListener<TestObjectRefMode
     /**
      * Create Document with refName, dataDomain and displayName from BaseModel
      */
-    private Document createRefNameDocument(BaseModel model) {
+    private Document createRefNameDocument(UnversionedBaseModel model) {
         Document refNameDocument = new Document();
         refNameDocument.put("refName", model.getRefName());
         refNameDocument.put("displayName", model.getDisplayName());

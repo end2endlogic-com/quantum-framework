@@ -2,6 +2,7 @@ package com.e2eq.framework.model.persistent.morphia.interceptors;
 
 import com.e2eq.framework.model.persistent.base.AuditInfo;
 import com.e2eq.framework.model.persistent.base.BaseModel;
+import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import dev.morphia.Datastore;
 import dev.morphia.EntityListener;
@@ -18,7 +19,7 @@ public class AuditInterceptor implements EntityListener<Object> {
     @PrePersist
     public void prePersist(Object ent, Document document, Datastore datastore) {
         BaseModel bm = null;
-        if (ent instanceof BaseModel) {
+        if (ent instanceof UnversionedBaseModel) {
             bm = (BaseModel) ent;
 
             // Moved to the ValidationInterceptor to set the DataDomain.

@@ -1,11 +1,11 @@
 package com.e2eq.framework.util;
 
-import com.e2eq.framework.model.persistent.base.BaseModel;
+
+import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
 import jakarta.validation.ValidationException;
 import jakarta.ws.rs.WebApplicationException;
-import org.apache.commons.beanutils.PropertyUtils;
-import org.bson.types.ObjectId;
+
 import org.supercsv.cellprocessor.ift.CellProcessor;
 import org.supercsv.io.dozer.CsvDozerBeanReader;
 import org.supercsv.io.dozer.ICsvDozerBeanReader;
@@ -102,7 +102,7 @@ public class CSVImportHelper {
         }
     }
 
-    public static <T extends BaseModel> ImportResult<T> importCSV(
+    public static <T extends UnversionedBaseModel> ImportResult<T> importCSV(
             BaseMorphiaRepo<T> repo,
             InputStream inputStream,
             char fieldSeparator,
@@ -148,7 +148,7 @@ public class CSVImportHelper {
         return result;
     }
 
-    private static <T extends BaseModel> ImportResult<T> importFlatProperty(BaseMorphiaRepo<T> repo,
+    private static <T extends UnversionedBaseModel> ImportResult<T> importFlatProperty(BaseMorphiaRepo<T> repo,
                                                                      ICsvDozerBeanReader beanReader,
                                                                      CellProcessor[] processors,
                                                                      FailedRecordHandler<T> failedRecordHandler) throws IOException {
@@ -175,7 +175,7 @@ public class CSVImportHelper {
         return result;
     }
 
-    private static <T extends BaseModel> ImportResult<T> processBatch(BaseMorphiaRepo<T> repo, 
+    private static <T extends UnversionedBaseModel> ImportResult<T> processBatch(BaseMorphiaRepo<T> repo,
                                                                List<T> batch, 
                                                                FailedRecordHandler<T> failedRecordHandler,
                                                                ImportResult<T> result) {
