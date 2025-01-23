@@ -1,5 +1,6 @@
 package com.e2eq.framework.test;
 
+import com.e2eq.framework.annotations.TrackReferences;
 import com.e2eq.framework.model.persistent.base.BaseModel;
 import dev.morphia.annotations.Entity;
 import dev.morphia.annotations.Reference;
@@ -19,6 +20,7 @@ import java.util.List;
 public class TestChildListModel extends BaseModel {
 
     @Reference(idOnly = true)
+    @TrackReferences
     List<TestParentModel> parents;
 
 

@@ -1,6 +1,6 @@
 package com.e2eq.framework.model.persistent.morphia.interceptors;
 
-import com.e2eq.framework.annotations.DoNotTrack;
+import com.e2eq.framework.annotations.TrackReferences;
 import com.e2eq.framework.model.persistent.base.BaseModel;
 import com.e2eq.framework.model.persistent.base.ReferenceEntry;
 
@@ -50,8 +50,8 @@ public class ReferenceInterceptor implements EntityListener<Object> {
 
                 // check if the parent is to another BaseModel
                 if (BaseModel.class.isAssignableFrom(parentClass)) {
-                    DoNotTrack doNotTrack = childField.getAnnotation(DoNotTrack.class);
-                    if (doNotTrack != null) {
+                    TrackReferences trackReferences = childField.getAnnotation(TrackReferences.class);
+                    if (trackReferences == null) {
                         continue;
                     }
                     // So the reference is to another base model
