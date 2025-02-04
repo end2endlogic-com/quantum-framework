@@ -129,9 +129,6 @@ public class SecurityTest {
            .statusCode(200);
     }
 
-    public void testRegApprovalViaRepo() {
-
-    }
 
     @Test
     public void testLoginRepo() throws Exception {
