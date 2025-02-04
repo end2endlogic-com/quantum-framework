@@ -45,6 +45,9 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
    public List<T> getListByQuery(int skip, int limit, @Nullable String filter, List<SortField> sortFields, List<ProjectionField> projectedProperties);
    public List<T>  getList(int skip, int limit, @Nullable List<Filter> filters, @Nullable List<SortField> sortFields);
    public List<T> getListByQuery(@NotNull Datastore datastore, int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields, List<ProjectionField> projectionFields);
+   public List<T> getListFromIds(List<ObjectId> ids);
+   public List<T> getListFromRefNames(List<String> refNames);
+
 
    public CloseableIterator<T> getStreamByQuery(int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields);
 

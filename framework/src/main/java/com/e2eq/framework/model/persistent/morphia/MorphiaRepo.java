@@ -462,6 +462,87 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
     @Override
+    public List<T> getListFromIds(List<ObjectId> ids) {
+        // get a list using an in clause based upon the ids passed in
+        List<Filter> filters = new ArrayList<>();
+
+        if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
+            filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get());
+        } else {
+            Log.info("Context not set?");
+            throw new RuntimeException("Resource Context is not set in thread, check security configuration");
+        }
+
+        filters.add(Filters.in("_id", ids));
+
+        FindOptions findOptions = new FindOptions();
+
+        Filter[] filterArray = new Filter[filters.size()];
+        Query<T> query = dataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass())
+                .filter(filters.toArray(filterArray));
+
+        List<T> list = query.iterator(findOptions).toList();
+
+        List<String> actions = null;
+        boolean gotActions = false;
+        for (T model : list) {
+            if (!gotActions) {
+                actions = this.getDefaultUIActionsFromFD(model.bmFunctionalDomain());
+                gotActions = true;
+            }
+
+            if (!actions.isEmpty()) {
+                model.setDefaultUIActions(actions);
+            }
+
+            UIActionList uiActions = model.calculateStateBasedUIActions();
+            model.setActionList(uiActions);
+        }
+
+        return list;
+    }
+
+    @Override
+    public List<T> getListFromRefNames(List<String> refNames) {
+        List<Filter> filters = new ArrayList<>();
+
+        if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
+            filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get());
+        } else {
+            Log.info("Context not set?");
+            throw new RuntimeException("Resource Context is not set in thread, check security configuration");
+        }
+
+        filters.add(Filters.in("refName", refNames));
+
+        FindOptions findOptions = new FindOptions();
+
+        Filter[] filterArray = new Filter[filters.size()];
+        Query<T> query = dataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass())
+                .filter(filters.toArray(filterArray));
+
+        List<T> list = query.iterator(findOptions).toList();
+
+        List<String> actions = null;
+        boolean gotActions = false;
+        for (T model : list) {
+            if (!gotActions) {
+                actions = this.getDefaultUIActionsFromFD(model.bmFunctionalDomain());
+                gotActions = true;
+            }
+
+            if (!actions.isEmpty()) {
+                model.setDefaultUIActions(actions);
+            }
+
+            UIActionList uiActions = model.calculateStateBasedUIActions();
+            model.setActionList(uiActions);
+        }
+
+        return list;
+    }
+
+    @Override
     public long getCount(@Nullable String query) {
         return getCount(dataStore.getDataStore(getSecurityContextRealmId()), query);
     }
