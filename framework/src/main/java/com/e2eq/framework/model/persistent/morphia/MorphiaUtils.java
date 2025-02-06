@@ -16,10 +16,7 @@ import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.text.StringSubstitutor;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 public class MorphiaUtils {
 
@@ -70,8 +67,8 @@ public class MorphiaUtils {
    }
 
 
-   public static Filter convertToFilter(String queryString) {
-      return MorphiaUtils.convertToFilterWContext(queryString, null, null);
+   public static Filter convertToFilter(String queryString, Class<? extends UnversionedBaseModel> modelClass) {
+      return MorphiaUtils.convertToFilterWContext(queryString, null, null, modelClass );
    }
 
    public static Map<String, String> createStandardVariableMapFrom(PrincipalContext pcontext, ResourceContext rcontext) {
@@ -90,7 +87,8 @@ public class MorphiaUtils {
    }
 
 
-   public static Filter convertToFilter(String queryString, @NotNull Map<String, String> variableMap, StringSubstitutor sub) {
+   public static Filter convertToFilter(String queryString, @NotNull Map<String, String> variableMap, StringSubstitutor sub, Class<? extends UnversionedBaseModel> modelClass) {
+      Objects.requireNonNull(modelClass, "Model class cannot be null");
       if (queryString != null && !queryString.isEmpty()) {
          BIAPIQueryLexer lexer = new BIAPIQueryLexer(CharStreams.fromString(queryString));
          BIAPIQueryParser parser = new BIAPIQueryParser(new CommonTokenStream(lexer));
@@ -106,9 +104,9 @@ public class MorphiaUtils {
          ParseTreeWalker walker = new ParseTreeWalker();
          QueryToFilterListener listener;
          if (sub == null) {
-            listener = new QueryToFilterListener(variableMap);
+            listener = new QueryToFilterListener(variableMap, modelClass);
          } else {
-            listener = new QueryToFilterListener(variableMap, sub);
+            listener = new QueryToFilterListener(variableMap, sub, modelClass);
          }
          walker.walk(listener, tree);
          return listener.getFilter();
@@ -118,7 +116,8 @@ public class MorphiaUtils {
    }
 
 
-   public static Filter convertToFilterWContext(String queryString, PrincipalContext pcontext, ResourceContext rcontext) {
+   public static Filter convertToFilterWContext(String queryString, PrincipalContext pcontext, ResourceContext rcontext, Class<? extends UnversionedBaseModel> modelClass)  {
+      Objects.requireNonNull(modelClass, "Model class cannot be null");
 
       if (queryString != null && !queryString.isEmpty()) {
          BIAPIQueryLexer lexer = new BIAPIQueryLexer(CharStreams.fromString(queryString));
@@ -135,12 +134,13 @@ public class MorphiaUtils {
          ParseTreeWalker walker = new ParseTreeWalker();
 
          QueryToFilterListener listener;
-         if (rcontext != null && pcontext != null) {
-            listener = new QueryToFilterListener(pcontext, rcontext);
+         if (pcontext == null || rcontext == null) {
+            listener = new QueryToFilterListener(modelClass);
          } else {
-            listener = new QueryToFilterListener();
+            listener = new QueryToFilterListener(pcontext, rcontext, modelClass);
          }
          walker.walk(listener, tree);
+
          return listener.getFilter();
       } else {
          throw new IllegalArgumentException("Null or empty query string is not valid");

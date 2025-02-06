@@ -19,6 +19,7 @@ import org.bson.types.ObjectId;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 import java.util.Arrays;
+import java.util.Date;
 import java.util.List;
 import java.util.Set;
 
@@ -116,6 +117,16 @@ public abstract @Data @NoArgsConstructor class UnversionedBaseModel {
 
     public void setDataDomain (@Valid DataDomain dataDomain) {
         this.dataDomain = dataDomain;
+    }
+
+    public EntityReference createEntityReference () {
+        return EntityReference.builder()
+                .entityId(this.getId())
+                .entityType(this.getClass().getSimpleName())
+                .entityRefName(this.getRefName())
+                .entityDisplayName(this.getDisplayName())
+                .dateTimeOfCopy(new Date())
+                .build();
     }
 
 

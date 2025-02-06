@@ -67,7 +67,7 @@ public class TestBasicRepo {
       ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "view");
       TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.systemUserId);
       try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
-         Filter x = MorphiaUtils.convertToFilter("refName:" + SecurityUtils.systemUserId);
+         Filter x = MorphiaUtils.convertToFilter("refName:" + SecurityUtils.systemUserId, UserProfile.class);
 
          Query<UserProfile> q = dataStore.getDefaultSystemDataStore().find(UserProfile.class);
          MongoCursor<UserProfile> cursor = q.filter(x).iterator(new FindOptions().skip(0).limit(10));
@@ -147,7 +147,7 @@ public class TestBasicRepo {
    // the functionality his covered however in the previous test
    public void testRegistrationFilteredQuery() {
 
-      Filter x = MorphiaUtils.convertToFilter("userId:tuser@test-system.com");
+      Filter x = MorphiaUtils.convertToFilter("userId:tuser@test-system.com", ApplicationRegistration.class);
       Query<ApplicationRegistration> q = dataStore.getDefaultSystemDataStore().find(ApplicationRegistration.class);
       MongoCursor<ApplicationRegistration> cursor = q.filter(x).iterator(new FindOptions().skip(0).limit(10));
 
