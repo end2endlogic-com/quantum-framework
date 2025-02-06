@@ -3,7 +3,7 @@ grammar BIAPIQuery;
 query: (exprGroup | compoundExpr) (exprOp (exprGroup | compoundExpr))*;
 exprGroup: lp=LPAREN (exprGroup | compoundExpr) (exprOp (exprGroup | compoundExpr))* rp=RPAREN;
 compoundExpr: allowedExpr (exprOp allowedExpr)*;
-allowedExpr: inExpr | basicExpr |  nullExpr | existsExpr | booleanExpr | notExpr | regexExpr;
+allowedExpr: inExpr |  basicExpr |  nullExpr | existsExpr | booleanExpr | notExpr | regexExpr ;
 exprOp: op=(AND | OR);
 existsExpr: field=STRING op=EXISTS;
 booleanExpr: field=STRING op=(EQ | NEQ) value=(TRUE | FALSE);
@@ -15,7 +15,8 @@ basicExpr: field=STRING op=(EQ|NEQ|LT|GT|LTE|GTE|EXISTS|IN) value=(STRING|VARIAB
 | field=STRING op=(EQ | LT | GT | NEQ | LTE | GTE) value=NUMBER #numberExpr
 | field=STRING op=(EQ | LT | GT | NEQ | LTE | GTE) value=WHOLENUMBER #wholenumberExpr
 | field=STRING op=(EQ | LT | GT | NOT_EQ | LTE | GTE) value=DATE #dateExpr
-| field=STRING op=(EQ | LT | GT | NOT_EQ | LTE | GTE) value=DATETIME #dateTimeExpr;
+| field=STRING op=(EQ | LT | GT | NOT_EQ | LTE | GTE) value=DATETIME #dateTimeExpr
+| field=STRING op=(EQ | NOT_EQ) value=REFERENCE #referenceExpr;
 
 notExpr: NOT allowedExpr;
 
@@ -42,6 +43,7 @@ EXISTS: ':~';
 IN: ':^';
 NULL: 'null';
 
+
 // Logical
 AND: '&&';
 OR: '||';
@@ -64,9 +66,12 @@ WILDCHAR:'?';
 VAR:'$';
 
 
+
 // Values
 DATE: [0-9][0-9][0-9][0-9]'-'('12'|'11'|'10'|'0'[1-9])'-'[0-3][0-9];
 DATETIME: [0-9][0-9][0-9][0-9]'-'('12'|'11'|'10'|'0'[1-9])'-'[0-3][0-9]'T'[0-2][0-9]':'[0-5][0-9]':'[0-5][0-9]('.'[0-9]+)?(('Z'|('+'|'-')[0-2][0-9]':'[0-5][0-9]))?;
+
+
 
 WHOLENUMBER:'#'('-'?[0-9]+)
    {
@@ -78,7 +83,7 @@ WHOLENUMBER:'#'('-'?[0-9]+)
 NUMBER:'##'('-'?[0-9]+'.'[0-9]+)
    {
      String s = getText();
-     s = s.substring(2, s.length());
+     s = s.substring(2, s.length()); // strip the ##
      setText(s);
    }
    ;
@@ -90,6 +95,15 @@ OID:[0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]
        [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]
        [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]
      ;
+
+REFERENCE:'@@'OID
+{
+   String s = getText();
+   s = s.substring(2, s.length()); // strip the @@ off
+   setText(s);
+ }
+ ;
+
 STRING: ([a-zA-Z0-9_.-]|' '|'\''|','|'/'|'@')+ ('&' STRING)*;
 
 QUOTED_STRING

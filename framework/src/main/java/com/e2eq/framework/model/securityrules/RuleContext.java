@@ -1,5 +1,6 @@
 package com.e2eq.framework.model.securityrules;
 
+import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
 import com.e2eq.framework.model.persistent.security.Rule;
 import com.e2eq.framework.util.IOCase;
@@ -544,7 +545,7 @@ public class RuleContext {
      * @param rcontext
      * @return
      */
-    public List<Filter> getFilters(List<Filter> ifilters, @Valid @NotNull(message = "Principal Context can not be null") PrincipalContext pcontext, @Valid @NotNull(message = "Resource Context can not be null") ResourceContext rcontext) {
+    public List<Filter> getFilters(List<Filter> ifilters, @Valid @NotNull(message = "Principal Context can not be null") PrincipalContext pcontext, @Valid @NotNull(message = "Resource Context can not be null") ResourceContext rcontext, Class<? extends UnversionedBaseModel> modelClass) {
         List<Filter> filters = new ArrayList<>();
         filters.addAll(ifilters);
 
@@ -563,11 +564,11 @@ public class RuleContext {
 
             Rule rule = result.getRule();
             if (rule.getAndFilterString() != null && !rule.getAndFilterString().isEmpty()) {
-                andFilters.add(MorphiaUtils.convertToFilter(rule.getAndFilterString(), variables, sub));
+                andFilters.add(MorphiaUtils.convertToFilter(rule.getAndFilterString(), variables, sub, modelClass));
             }
 
             if (rule.getOrFilterString() != null && !rule.getOrFilterString().isEmpty()) {
-                orFilters.add(MorphiaUtils.convertToFilter(rule.getOrFilterString(), variables, sub));
+                orFilters.add(MorphiaUtils.convertToFilter(rule.getOrFilterString(), variables, sub, modelClass));
             }
 
             if (!andFilters.isEmpty() && !orFilters.isEmpty()) {

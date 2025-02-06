@@ -2,7 +2,10 @@ package com.e2eq.framework.model.persistent.morphia;
 
 import com.e2eq.framework.grammar.BIAPIQueryBaseListener;
 import com.e2eq.framework.grammar.BIAPIQueryParser;
-import com.ibm.icu.impl.UCaseProps;
+
+import com.e2eq.framework.model.persistent.base.BaseModel;
+import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
+import dev.morphia.annotations.Reference;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
 import io.quarkus.logging.Log;
@@ -13,11 +16,12 @@ import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import org.bson.types.ObjectId;
 
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
+
+import java.lang.annotation.Annotation;
+import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
+
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -35,28 +39,31 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
     Map<String, String> variableMap = null;
     StringSubstitutor sub = null;
 
+    Class<? extends UnversionedBaseModel> modelClass=null;
 
-    public QueryToFilterListener(Map<String, String> variableMap, StringSubstitutor sub) {
+
+    public QueryToFilterListener(Map<String, String> variableMap, StringSubstitutor sub, Class<? extends UnversionedBaseModel> modelClass) {
         this.variableMap = variableMap;
         this.sub = sub;
+        this.modelClass = modelClass;
     }
 
-    public QueryToFilterListener(Map<String, String> variableMap) {
+    public QueryToFilterListener(Map<String, String> variableMap, Class<? extends UnversionedBaseModel> modelClass) {
         this.variableMap = variableMap;
-        sub = new StringSubstitutor(variableMap);
+        this.sub = new StringSubstitutor(variableMap);
+        this.modelClass = modelClass;
     }
 
-    public QueryToFilterListener(PrincipalContext pcontext, ResourceContext rcontext) {
+    public QueryToFilterListener(PrincipalContext pcontext, ResourceContext rcontext, Class<? extends UnversionedBaseModel> modelClass) {
         this.variableMap = MorphiaUtils.createStandardVariableMapFrom(pcontext, rcontext);
-        sub = new StringSubstitutor(variableMap);
+        this.sub = new StringSubstitutor(variableMap);
+        this.modelClass = modelClass;
     }
 
-    public QueryToFilterListener() {
+    public QueryToFilterListener(Class<? extends UnversionedBaseModel> modelClass) {
+        this.modelClass = modelClass;
     }
 
-    public StringSubstitutor getSubstitutor() {
-        return sub;
-    }
 
     public Filter getFilter() {
         if (complete) {
@@ -95,6 +102,29 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         String oid = ctx.value.getText();
         filterStack.push(Filters.eq(field, new ObjectId(oid)));
     }*/
+
+    @Override
+    public void enterReferenceExpr(BIAPIQueryParser.ReferenceExprContext ctx) {
+        String oid = ctx.value.getText();
+        String fieldName = ctx.field.getText();
+        try {
+            Field field = modelClass.getDeclaredField(fieldName);
+            field.setAccessible(true);
+            Annotation annotation = field.getAnnotation(Reference.class);
+            if (annotation != null) {
+                Object object = field.getType().getDeclaredConstructor().newInstance();
+                if (object instanceof BaseModel) {
+                    ((BaseModel) object).setId(new ObjectId());
+                }
+                filterStack.push(Filters.eq(fieldName, object));
+            } else {
+                throw new IllegalArgumentException("Field:" + fieldName + " is not annotated as a reference field");
+            }
+        } catch (NoSuchFieldException | NoSuchMethodException | InstantiationException | IllegalAccessException |
+                 InvocationTargetException e) {
+            throw new IllegalStateException(e);
+        }
+    }
 
     @Override
     public void enterRegexExpr(BIAPIQueryParser.RegexExprContext ctx) {
@@ -195,7 +225,10 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
             andFilters.add(filterStack.pop());
             orFilters.add(Filters.and(andFilters.toArray(filterArray)));
         } else {
-            orFilters.add(filterStack.pop());
+            if (!filterStack.empty())
+                orFilters.add(filterStack.pop());
+            else
+                Log.warn("!! Filter stack is empty, expected at least one filter, possible problem with grammar");
         }
         if (orFilters.size() == 1) {
             filterStack.push(orFilters.get(0));

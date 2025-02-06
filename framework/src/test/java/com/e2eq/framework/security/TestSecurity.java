@@ -1,6 +1,7 @@
 package com.e2eq.framework.security;
 
 import com.e2eq.framework.model.persistent.security.Rule;
+import com.e2eq.framework.model.persistent.security.UserProfile;
 import com.e2eq.framework.model.securityrules.*;
 import com.e2eq.framework.util.IOCase;
 import com.e2eq.framework.util.SecurityUtils;
@@ -212,7 +213,7 @@ public class TestSecurity {
 
         // So lets first check that an admin can view their own userProfile
         SecurityCheckResponse checkRulesResponse = ruleContext.checkRules(systemUserIdPC, sysAdminUserProfileRC);
-        List<Filter> filters1 = ruleContext.getFilters(filters, systemUserIdPC, sysAdminUserProfileRC);
+        List<Filter> filters1 = ruleContext.getFilters(filters, systemUserIdPC, sysAdminUserProfileRC, UserProfile.class);
         logRuleResults("Testing system admin can view the system admin user profile with a default deny context",
                 systemUserIdPC,
                 sysAdminUserProfileRC,
@@ -226,7 +227,7 @@ public class TestSecurity {
         Log.info("Test if mingardia is denied trying to view the system's profile with a default deny context'");
         checkRulesResponse = ruleContext.checkRules(mingardiaUserIdPC, sysAdminUserProfileRC);
         filters.clear();
-        filters1 = ruleContext.getFilters(filters, mingardiaUserIdPC, sysAdminUserProfileRC);
+        filters1 = ruleContext.getFilters(filters, mingardiaUserIdPC, sysAdminUserProfileRC, UserProfile.class);
         logRuleResults("Test if mingardia is denied trying to view the system's profile with a default deny context'",
                 mingardiaUserIdPC,
                 sysAdminUserProfileRC,
@@ -238,7 +239,7 @@ public class TestSecurity {
         // show that its really about the default not an explicit rule
         checkRulesResponse = ruleContext.checkRules(mingardiaUserIdPC, sysAdminUserProfileRC, RuleEffect.ALLOW);
         filters.clear();
-        filters1 = ruleContext.getFilters(filters, systemUserIdPC, sysAdminUserProfileRC);
+        filters1 = ruleContext.getFilters(filters, systemUserIdPC, sysAdminUserProfileRC, UserProfile.class);
         logRuleResults("show that its really about the default not an explicit rule",
                 mingardiaUserIdPC,
                 sysAdminUserProfileRC,
@@ -251,7 +252,7 @@ public class TestSecurity {
         // should it be allowed.  The only rule that will has a post condition that has to evaluate to true
         checkRulesResponse = ruleContext.checkRules(mingardiaUserIdPC, mingardiaUserProfileRC); // default deny
         filters.clear();
-        filters1 = ruleContext.getFilters(filters, mingardiaUserIdPC, mingardiaUserProfileRC);
+        filters1 = ruleContext.getFilters(filters, mingardiaUserIdPC, mingardiaUserProfileRC, UserProfile.class);
         logRuleResults("show that its really about the default not an explicit rule",
                 mingardiaUserIdPC,
                 sysAdminUserProfileRC,
@@ -310,7 +311,7 @@ public class TestSecurity {
         // test that an admin can view system admins profile.
         SecurityCheckResponse checkRulesResponse = ruleContext.checkRules(systemUserIdPC, sysAdminUserProfileRC);
         assertTrue(checkRulesResponse.getFinalEffect().equals(RuleEffect.ALLOW));
-        filters = ruleContext.getFilters(filters, systemUserIdPC, sysAdminUserProfileRC);
+        filters = ruleContext.getFilters(filters, systemUserIdPC, sysAdminUserProfileRC, UserProfile.class);
         logRuleResults("Testing system admin can view the system admin user profile with a default deny context",
                 systemUserIdPC,
                 sysAdminUserProfileRC,
@@ -322,7 +323,7 @@ public class TestSecurity {
         filters.clear();
         checkRulesResponse = ruleContext.checkRules(systemUserIdPC, mingardiaUserProfileRC);
         assertTrue(checkRulesResponse.getFinalEffect().equals(RuleEffect.ALLOW));
-        filters = ruleContext.getFilters(filters, systemUserIdPC, sysAdminUserProfileRC);
+        filters = ruleContext.getFilters(filters, systemUserIdPC, sysAdminUserProfileRC, UserProfile.class);
         logRuleResults("Testing system admin can view the system admin user profile with a default deny context",
                 systemUserIdPC,
                 sysAdminUserProfileRC,
@@ -334,7 +335,7 @@ public class TestSecurity {
         filters.clear();
         checkRulesResponse = ruleContext.checkRules(mingardiaUserIdPC, mingardiaUserProfileRC);
         assertTrue(checkRulesResponse.getFinalEffect().equals(RuleEffect.ALLOW));
-        filters = ruleContext.getFilters(filters, mingardiaUserIdPC, mingardiaUserProfileRC);
+        filters = ruleContext.getFilters(filters, mingardiaUserIdPC, mingardiaUserProfileRC, UserProfile.class);
         logRuleResults("Testing system admin can view the system admin user profile with a default deny context",
                 mingardiaUserIdPC,
                 mingardiaUserProfileRC,

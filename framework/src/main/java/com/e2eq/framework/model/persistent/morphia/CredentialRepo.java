@@ -48,7 +48,7 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
       // Add filters based upon rule and resourceContext;
       Filter[] qfilters = new Filter[1];
       if (!ignoreRules) {
-         qfilters = getFilterArray(filters);
+         qfilters = getFilterArray(filters, getPersistentClass());
       } else {
          qfilters = filters.toArray(qfilters);
       }

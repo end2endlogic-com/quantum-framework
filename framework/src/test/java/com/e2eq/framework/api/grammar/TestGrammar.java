@@ -4,6 +4,7 @@ import com.e2eq.framework.grammar.BIAPIQueryLexer;
 import com.e2eq.framework.grammar.BIAPIQueryParser;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
+import com.e2eq.framework.model.persistent.security.UserProfile;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.util.TestUtils;
@@ -85,7 +86,7 @@ public class TestGrammar {
 
                Log.info("Processing query: " + line);
 
-               Filter f = MorphiaUtils.convertToFilter(line);
+               Filter f = MorphiaUtils.convertToFilter(line, UserProfile.class);
                Log.info("Filter:" + f.toString());
                lcount++;
             }
@@ -97,13 +98,13 @@ public class TestGrammar {
       //String testString = "field:\"test:123\"*";
       String testString = "field:^[67340babd762702b5c6fd57f]";
       Log.info("Testing String:" + testString);
-      Filter f = MorphiaUtils.convertToFilter(testString);
+      Filter f = MorphiaUtils.convertToFilter(testString, UserProfile.class);
       Log.info("Filter:" + f.toString());
    }
 
 
    @Test
-   public void testFilterWVariableGeneration() throws IOException {
+   public void testFilterWVariableGeneration()  {
       String[] roles = {"user"};
 
       DataDomain dataDomain= TestUtils.dataDomain;
@@ -127,12 +128,12 @@ public class TestGrammar {
 
 
       String queryString = "field1:${action}";
-      Filter f = MorphiaUtils.convertToFilterWContext(queryString, pcontext, rcontext);
+      Filter f = MorphiaUtils.convertToFilterWContext(queryString, pcontext, rcontext, UserProfile.class);
       Log.debugf("Value:%s" , f.getValue());
       assertEquals("action", f.getValue());
 
       queryString = "field1:^[testval1,${action}]";
-      f = MorphiaUtils.convertToFilterWContext(queryString, pcontext, rcontext);
+      f = MorphiaUtils.convertToFilterWContext(queryString, pcontext, rcontext, UserProfile.class);
       Log.debugf("Value:%s" + f.getValue());
       assertEquals("[testval1, action]", f.getValue().toString());
 
@@ -142,25 +143,25 @@ public class TestGrammar {
    @Test
    public void testDateFilter() {
       String queryString = "field1:>=2022-01-01";
-      Filter f = MorphiaUtils.convertToFilter(queryString);
+      Filter f = MorphiaUtils.convertToFilter(queryString, UserProfile.class);
       Log.infof("Value:%s", f.getValue());
 
       String dateTimeString = "field1:>2011-12-03T10:15:30Z";
       DateTimeFormatter formatter = DateTimeFormatter.ISO_DATE_TIME;
 
-      f = MorphiaUtils.convertToFilter(dateTimeString);
+      f = MorphiaUtils.convertToFilter(dateTimeString, UserProfile.class);
       Log.infof("Value:%s", f.getValue());
 
       String dateTimeTsString = "field1:>2022-01-01T12:00:00-06:00";
-      f = MorphiaUtils.convertToFilter(dateTimeTsString);
+      f = MorphiaUtils.convertToFilter(dateTimeTsString, UserProfile.class);
       Log.infof("Value:%s", f.getValue());
 
       dateTimeTsString = "field1:>2022-01-01T12:00:00+06:00";
-      f = MorphiaUtils.convertToFilter(dateTimeTsString);
+      f = MorphiaUtils.convertToFilter(dateTimeTsString, UserProfile.class);
       Log.infof("Value:%s", f.getValue());
 
       dateTimeTsString = "field1:>2022-01-01T12:00:00Z";
-      f = MorphiaUtils.convertToFilter(dateTimeTsString);
+      f = MorphiaUtils.convertToFilter(dateTimeTsString, UserProfile.class);
       Log.infof("Value:%s", f.getValue());
    }
 }

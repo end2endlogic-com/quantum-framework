@@ -74,16 +74,15 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         return realmId;
     }
 
-    public Filter[] getFilterArray(@NotNull List<Filter> filters) {
+    public Filter[] getFilterArray(@NotNull List<Filter> filters, Class<? extends UnversionedBaseModel> modelClass) {
         if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
-            filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get());
+            filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get(), modelClass);
         } else {
             throw new RuntimeException("Logic error SecurityContext should be present; this implies that an attempt to call a method was made where the user was not logged in");
         }
 
         Filter[] qfilters = new Filter[filters.size()];
-        Filter[] f = filters.toArray(qfilters);
-        return f;
+        return filters.toArray(qfilters);
     }
 
     @Override
@@ -94,7 +93,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     protected List<String> getDefaultUIActionsFromFD(@NotNull String fdRefName) {
 
-        Filter f = MorphiaUtils.convertToFilter("refName:" + fdRefName);
+        Filter f = MorphiaUtils.convertToFilter("refName:" + fdRefName, getPersistentClass());
 
         Query<FunctionalDomain> q = dataStore.getDataStore(getSecurityContextRealmId()).find(FunctionalDomain.class).filter(f);
         FunctionalDomain fd = q.first();
@@ -115,17 +114,11 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public Optional<T> findById(@NotNull String id) {
-        if (id == null) {
-            throw new IllegalArgumentException("parameter id can not be null");
-        }
         ObjectId oid = new ObjectId(id);
         return findById(oid);
     }
     @Override
     public Optional<T> findById(@NotNull ObjectId id) {
-        if (id == null) {
-            throw new IllegalArgumentException("parameter id can not be null");
-        }
         return findById(dataStore.getDataStore(getSecurityContextRealmId()), id);
     }
 
@@ -134,7 +127,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         List<Filter> filters = new ArrayList<>();
         filters.add(Filters.eq("_id", id));
         // Add filters based upon rule and resourceContext;
-        Filter[] qfilters = getFilterArray(filters);
+        Filter[] qfilters = getFilterArray(filters, getPersistentClass());
 
         Query<T> query = datastore.find(getPersistentClass()).filter(qfilters);
         T obj = query.first();
@@ -156,7 +149,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         List<Filter> filters = new ArrayList<>();
         filters.add(Filters.eq("refName", refName));
         // Add filters based upon rule and resourceContext;
-        Filter[] qfilters = getFilterArray(filters);
+        Filter[] qfilters = getFilterArray(filters, getPersistentClass());
 
         Query<T> query = dataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass()).filter(qfilters);
         T obj = query.first();
@@ -191,7 +184,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     protected List<Sort> convertToSort(@NotNull List<SortField> sortFields) {
         List<Sort> sorts = new ArrayList<>();
-        if (sortFields != null && !sortFields.isEmpty()) {
+        if (!sortFields.isEmpty()) {
             for (SortField sortField : sortFields) {
                 if (sortField.getSortDirection().equals(SortField.SortDirection.DESC)) {
                     sorts.add(descending(sortField.getFieldName()));
@@ -255,7 +248,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         List<Filter> filters = new ArrayList<>();
     
         if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
-            filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get());
+            filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get(), getPersistentClass());
         } else {
             Log.info("Context not set?");
             throw new RuntimeException("Resource Context is not set in thread, check security configuration");
@@ -266,7 +259,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         if (query != null && !query.isEmpty()) {
             String cleanQuery = query.trim();
             if (!cleanQuery.isEmpty()) {
-                Filter filter = MorphiaUtils.convertToFilter(query);
+                Filter filter = MorphiaUtils.convertToFilter(query, getPersistentClass());
                 filters.add(Filters.and(filter));
             }
         }
@@ -330,7 +323,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
     @Override
-    public List<T> getListByQuery(Datastore datastore, int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields) {
+    public List<T> getListByQuery(@NotNull Datastore datastore, int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields) {
 
         if (skip < 0 ) {
             throw new IllegalArgumentException("skip and or limit can not be negative");
@@ -339,7 +332,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         List<Filter> filters = new ArrayList<>();
 
         if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
-            filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get());
+            filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get(), getPersistentClass());
         } else {
             Log.info("Context not set?");
             throw new RuntimeException("Resource Context is not set in thread, check security configuration");
@@ -352,19 +345,15 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         if (query != null && !query.isEmpty()) {
             String cleanQuery = query.trim();
             if (!cleanQuery.isEmpty()) {
-                Filter filter = MorphiaUtils.convertToFilter(query);
+                Filter filter = MorphiaUtils.convertToFilter(query, getPersistentClass());
                 filters.add(Filters.and(filter));
             }
             Filter[] filterArray = new Filter[filters.size()];
-            Query<T> q;
-
             cursor = datastore.find(getPersistentClass())
                     .filter(filters.toArray(filterArray))
                     .iterator(findOptions);
         } else {
             Filter[] filterArray = new Filter[filters.size()];
-            Query<T> q;
-
             cursor = datastore.find(getPersistentClass())
                     .filter(filters.toArray(filterArray))
                     .iterator(findOptions);
@@ -423,7 +412,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         }
 
         // Add filters based upon rule and resourceContext;
-        Filter[] filterArray = getFilterArray(filters);
+        Filter[] filterArray = getFilterArray(filters, getPersistentClass());
 
         MorphiaCursor<T> cursor;
         if (limit > 0) {
@@ -467,7 +456,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         List<Filter> filters = new ArrayList<>();
 
         if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
-            filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get());
+            filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get(), getPersistentClass());
         } else {
             Log.info("Context not set?");
             throw new RuntimeException("Resource Context is not set in thread, check security configuration");
@@ -507,7 +496,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         List<Filter> filters = new ArrayList<>();
 
         if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
-            filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get());
+            filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get(), getPersistentClass());
         } else {
             Log.info("Context not set?");
             throw new RuntimeException("Resource Context is not set in thread, check security configuration");
@@ -555,7 +544,8 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
             filters = ruleContext.getFilters(filters,
                     SecurityContext.getPrincipalContext().get(),
-                    SecurityContext.getResourceContext().get());
+                    SecurityContext.getResourceContext().get(),
+                    getPersistentClass());
         } else {
             throw new RuntimeException("Resource Context is not set in thread, check security configuration");
         }
@@ -563,7 +553,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         if (query != null && !query.isEmpty()) {
             String cleanQuery = query.trim();
             if (!cleanQuery.isEmpty()) {
-                Filter filter = MorphiaUtils.convertToFilter(query);
+                Filter filter = MorphiaUtils.convertToFilter(query, getPersistentClass());
                 filters.add(Filters.and(filter));
             }
         }
@@ -728,7 +718,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
     @Override
-    public long delete(MorphiaSession s, T obj) throws ReferentialIntegrityViolationException{
+    public long delete(@NotNull MorphiaSession s, T obj) throws ReferentialIntegrityViolationException{
         Objects.requireNonNull(obj, "Null argument passed to delete, api requires a non-null object");
         DeleteResult result;
         if (obj.getReferences() == null || obj.getReferences().isEmpty()) {
@@ -798,8 +788,9 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         throw new NoSuchFieldException("Field '" + fieldName + "' not found in class hierarchy of " + clazz.getName());
     }
 
+    @SafeVarargs
     @Override
-    public long update(MorphiaSession session, @NotNull String id, @NotNull Pair<String, Object>... pairs) {
+    public final long update(MorphiaSession session, @NotNull String id, @NotNull Pair<String, Object>... pairs) {
         List<UpdateOperator> updateOperators = new ArrayList<>();
         for (Pair<String, Object> pair : pairs) {
             // check that the pair key corresponds to a field in the persistent class that is an enum
