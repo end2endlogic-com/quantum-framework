@@ -2,6 +2,7 @@ package com.e2eq.framework.model.persistent.base;
 
 import com.e2eq.framework.rest.models.ObjectIdJsonSerializer;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import dev.morphia.annotations.Entity;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -19,6 +20,7 @@ import java.util.Map;
 @ToString
 @NoArgsConstructor
 @SuperBuilder
+@Entity
 public class EntityReference {
     @JsonSerialize(using = ObjectIdJsonSerializer.class)
     @Schema(implementation = String.class, description = "object id of the entity being referenced")
