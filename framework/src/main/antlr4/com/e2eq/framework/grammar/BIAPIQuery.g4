@@ -14,9 +14,9 @@ basicExpr: field=STRING op=(EQ|NEQ|LT|GT|LTE|GTE|EXISTS|IN) value=(STRING|VARIAB
 | field=STRING op=(EQ | NEQ ) value=QUOTED_STRING #quotedExpr
 | field=STRING op=(EQ | LT | GT | NEQ | LTE | GTE) value=NUMBER #numberExpr
 | field=STRING op=(EQ | LT | GT | NEQ | LTE | GTE) value=WHOLENUMBER #wholenumberExpr
-| field=STRING op=(EQ | LT | GT | NOT_EQ | LTE | GTE) value=DATE #dateExpr
-| field=STRING op=(EQ | LT | GT | NOT_EQ | LTE | GTE) value=DATETIME #dateTimeExpr
-| field=STRING op=(EQ | NOT_EQ) value=REFERENCE #referenceExpr;
+| field=STRING op=(EQ | LT | GT | NEQ | LTE | GTE) value=DATE #dateExpr
+| field=STRING op=(EQ | LT | GT | NEQ | LTE | GTE) value=DATETIME #dateTimeExpr
+| field=STRING op=(EQ | NEQ) value=REFERENCE #referenceExpr;
 
 notExpr: NOT allowedExpr;
 
