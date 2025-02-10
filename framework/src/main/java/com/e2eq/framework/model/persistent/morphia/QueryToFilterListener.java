@@ -103,10 +103,7 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         filterStack.push(Filters.eq(field, new ObjectId(oid)));
     }*/
 
-    @Override
-    public void enterReferenceExpr(BIAPIQueryParser.ReferenceExprContext ctx) {
-        String oid = ctx.value.getText();
-        String fieldName = ctx.field.getText();
+    Object buildReference(String fieldName, String oid) {
         try {
             Field field = modelClass.getDeclaredField(fieldName);
             field.setAccessible(true);
@@ -114,15 +111,30 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
             if (annotation != null) {
                 Object object = field.getType().getDeclaredConstructor().newInstance();
                 if (object instanceof BaseModel) {
-                    ((BaseModel) object).setId(new ObjectId());
+                    ((BaseModel) object).setId(new ObjectId(oid));
                 }
-                filterStack.push(Filters.eq(fieldName, object));
+                return object;
             } else {
                 throw new IllegalArgumentException("Field:" + fieldName + " is not annotated as a reference field");
             }
         } catch (NoSuchFieldException | NoSuchMethodException | InstantiationException | IllegalAccessException |
                  InvocationTargetException e) {
             throw new IllegalStateException(e);
+        }
+
+    }
+
+    @Override
+    public void enterReferenceExpr(BIAPIQueryParser.ReferenceExprContext ctx) {
+        String oid = ctx.value.getText();
+        String fieldName = ctx.field.getText();
+        Object reference = buildReference(fieldName, oid);
+        if (ctx.op.getType() == BIAPIQueryParser.EQ) {
+            filterStack.push(Filters.eq(fieldName, reference));
+        } else if (ctx.op.getType() == BIAPIQueryParser.NEQ) {
+            filterStack.push(Filters.ne(fieldName, reference));
+        } else {
+            throw new IllegalArgumentException("Operator not recognized: " + ctx.op.getText());
         }
     }
 
@@ -284,7 +296,9 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
             String value = (variableMap != null) ? sub.replace(tokenizer.nextToken()) : tokenizer.nextToken();
             if (((CommonToken) ctx.value.value).getType() == BIAPIQueryParser.OID) {
                 values.add(new ObjectId(value));
-            } else {
+            } else if (((CommonToken) ctx.value.value).getType() == BIAPIQueryParser.REFERENCE) {
+                    values.add(buildReference(ctx.field.getText(), value));
+            } else if (((CommonToken) ctx.value.value).getType() != BIAPIQueryParser.COMMA){
                 values.add(value);
             }
         }
