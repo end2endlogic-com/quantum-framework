@@ -8,7 +8,10 @@ exprOp: op=(AND | OR);
 existsExpr: field=STRING op=EXISTS;
 booleanExpr: field=STRING op=(EQ | NEQ) value=(TRUE | FALSE);
 inExpr : field=STRING op=IN value=valueListExpr;
-valueListExpr: lp=LBRKT value=(STRING |QUOTED_STRING| ',' | VARIABLE | OID)+ rp=RBRKT;
+valueListExpr:
+    lp=LBRKT
+    value=(STRING | QUOTED_STRING | VARIABLE | OID | REFERENCE) (COMMA value=(STRING | QUOTED_STRING | VARIABLE | OID | REFERENCE))*
+    rp=RBRKT;
 
 basicExpr: field=STRING op=(EQ|NEQ|LT|GT|LTE|GTE|EXISTS|IN) value=(STRING|VARIABLE|OID) #stringExpr
 | field=STRING op=(EQ | NEQ ) value=QUOTED_STRING #quotedExpr
@@ -58,6 +61,8 @@ RPAREN	: ')' ;
 LPAREN	: '(' ;
 RBRKT :']';
 LBRKT :'[';
+COMMA: ',';
+
 
 // Special Values
 WILDCARD: '*';
@@ -104,7 +109,7 @@ REFERENCE:'@@'OID
  }
  ;
 
-STRING: ([a-zA-Z0-9_.-]|' '|'\''|','|'/'|'@')+ ('&' STRING)*;
+STRING: ([a-zA-Z0-9_.-]|' '|'\''|'/'|'@')+ ('&' STRING)*;
 
 QUOTED_STRING
  : '"' (~[\r\n"] | '""')* '"'
