@@ -29,10 +29,10 @@ public class CognitoAuthProvider implements AuthProvider, UserManagement {
     @Inject
     SecurityIdentityAssociation securityIdentityAssociation;
 
-    @ConfigProperty(name = "aws.cognito.user-pool-id")
+    @ConfigProperty(name = "aws.cognito.user-pool-id", defaultValue="us-west-2_1234567890")
     String userPoolId;
 
-    @ConfigProperty(name = "aws.cognito.client-id")
+    @ConfigProperty(name = "aws.cognito.client-id", defaultValue = "1234567890abcdefg")
     String clientId;
 
     private final CognitoIdentityProviderClient cognitoClient;
