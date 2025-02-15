@@ -1,12 +1,9 @@
 package com.e2eq.framework.model.persistent.base;
 
-import com.e2eq.framework.model.persistent.base.BaseModel;
 import dev.morphia.annotations.Entity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
-import lombok.Data;
-import lombok.EqualsAndHashCode;
-import lombok.NoArgsConstructor;
-import lombok.ToString;
+import jakarta.validation.constraints.NotNull;
+import lombok.*;
 
 import java.util.List;
 
@@ -17,13 +14,24 @@ import java.util.List;
 @Entity
 @NoArgsConstructor
 public class CodeList extends BaseModel {
+    @NonNull
+    @NotNull
+    String category="default";
+
+    @NonNull
+    @NotNull
+    String key;
+
     String description;
-    String valueType;
+
+    @NonNull
+    @NotNull
+    String valueType="STRING";
     List<Object> values;
 
     @Override
     public String bmFunctionalArea() {
-        return "PSA";
+        return "INTEGRATION";
     }
 
     @Override
