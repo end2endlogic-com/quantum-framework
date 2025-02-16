@@ -12,8 +12,12 @@ import io.quarkus.runtime.annotations.RegisterForReflection;
 import com.e2eq.framework.model.persistent.base.BaseModel;
 
 import jakarta.validation.constraints.NotNull;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
 
 @Entity("credentialUserIdPassword")
+@Data
+@EqualsAndHashCode(callSuper = true )
 @RegisterForReflection
 public class CredentialUserIdPassword extends BaseModel {
 
@@ -83,37 +87,5 @@ public class CredentialUserIdPassword extends BaseModel {
         return "CREDENTIAL_USERID_PASSWORD";
     }
 
-    @Override
-    public boolean equals (Object o) {
-        if (this == o) return true;
-        if (!(o instanceof CredentialUserIdPassword)) return false;
-        if (!super.equals(o)) return false;
 
-        CredentialUserIdPassword that = (CredentialUserIdPassword) o;
-
-        if (userId != null ? !userId.equals(that.userId) : that.userId != null) return false;
-        if (passwordHash != null ? !passwordHash.equals(that.passwordHash) : that.passwordHash != null) return false;
-        if (hashingAlgorithm != null ? !hashingAlgorithm.equals(that.hashingAlgorithm) : that.hashingAlgorithm != null)
-            return false;
-        if (lastUpdate != null ? !lastUpdate.equals(that.lastUpdate) : that.lastUpdate != null) return false;
-        if (defaultRealm != null ? !defaultRealm.equals(that.defaultRealm) : that.defaultRealm != null) return false;
-        if (area2RealmOverrides != null ? !area2RealmOverrides.equals(that.area2RealmOverrides) :
-               that.area2RealmOverrides != null)
-            return false;
-        // Probably incorrect - comparing Object[] arrays with Arrays.equals
-        return Arrays.equals(roles, that.roles);
-    }
-
-    @Override
-    public int hashCode () {
-        int result = super.hashCode();
-        result = 31 * result + (userId != null ? userId.hashCode() : 0);
-        result = 31 * result + (passwordHash != null ? passwordHash.hashCode() : 0);
-        result = 31 * result + (hashingAlgorithm != null ? hashingAlgorithm.hashCode() : 0);
-        result = 31 * result + (lastUpdate != null ? lastUpdate.hashCode() : 0);
-        result = 31 * result + (defaultRealm != null ? defaultRealm.hashCode() : 0);
-        result = 31 * result + (area2RealmOverrides != null ? area2RealmOverrides.hashCode() : 0);
-        result = 31 * result + Arrays.hashCode(roles);
-        return result;
-    }
 }
