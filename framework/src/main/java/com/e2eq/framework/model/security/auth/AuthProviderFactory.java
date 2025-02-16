@@ -14,6 +14,12 @@ public class AuthProviderFactory {
     @ConfigProperty(name = "auth.provider")
     String authProvider;
 
+    @ConfigProperty(name = "quarkus.oidc.enabled")
+    boolean oidcEnabled;
+
+    @ConfigProperty(name = "quarkus.smallrye-jwt.enabled")
+    boolean jwtEnabled;
+
     @Inject
     CognitoAuthProvider cognitoAuthProvider;
 
@@ -23,8 +29,14 @@ public class AuthProviderFactory {
     public AuthProvider getAuthProvider() {
         switch (authProvider.toLowerCase()) {
             case "cognito":
+                if (!oidcEnabled) {
+                    throw new IllegalArgumentException("Cognito auth provider is set but quarkus.oidc.enabled=false");
+                }
                 return cognitoAuthProvider;
             case "custom":
+                if (!jwtEnabled) {
+                    throw new IllegalArgumentException("Custom token auth provider is set but quarkus.smallrye-jwt.enabled=false");
+                }
                 return customTokenAuthProvider;
             default:
                 throw new IllegalArgumentException("Unknown auth provider: " + authProvider);

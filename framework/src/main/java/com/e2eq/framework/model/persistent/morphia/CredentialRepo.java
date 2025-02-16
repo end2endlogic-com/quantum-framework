@@ -16,10 +16,6 @@ import java.util.Optional;
 @ApplicationScoped
 public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
 
-   //@Override
-   //public String getRealmId () {
-   //   return DefaultRealm;
-   //}
 
    public Optional<CredentialUserIdPassword> findByUserId(@NotNull String userId)
    {

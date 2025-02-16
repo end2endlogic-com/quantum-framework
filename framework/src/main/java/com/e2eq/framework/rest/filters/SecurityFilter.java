@@ -24,6 +24,7 @@ import jakarta.ws.rs.container.ContainerRequestFilter;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.Provider;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.jboss.logging.Logger;
 
@@ -40,6 +41,10 @@ import java.util.StringTokenizer;
 public class SecurityFilter implements ContainerRequestFilter {
 
    private static final String AUTHENTICATION_SCHEME = "Bearer";
+
+   @ConfigProperty(name = "auth.provider")
+   String authProvider;
+
    @Inject
    JWTParser parser;
 
@@ -53,7 +58,7 @@ public class SecurityFilter implements ContainerRequestFilter {
    CredentialRepo credentialRepo;
 
    @Inject
-   SecurityIdentity securityIdentity;
+   JsonWebToken jwt;
 
    @Inject
    UserProfileRepo userProfileRepo;

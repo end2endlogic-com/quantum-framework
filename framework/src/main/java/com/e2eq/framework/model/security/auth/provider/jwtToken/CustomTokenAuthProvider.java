@@ -1,8 +1,12 @@
 package com.e2eq.framework.model.security.auth.provider.jwtToken;
 
 
+import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
+import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
+import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.auth.AuthProvider;
 import com.e2eq.framework.model.security.auth.UserManagement;
+import com.e2eq.framework.util.EncryptionUtils;
 import io.quarkus.logging.Log;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.security.runtime.QuarkusSecurityIdentity;
@@ -15,6 +19,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.util.*;
+import java.util.Arrays;
 import java.util.concurrent.ConcurrentHashMap;
 
 @ApplicationScoped
@@ -29,58 +34,82 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
     @Inject
     JWTParser jwtParser;
 
+    @Inject
+    CredentialRepo credentialRepo;
+
+    @Inject
+    UserProfileRepo userProfileRepo;
+
+
     private final Map<String, String> refreshTokenStore = new ConcurrentHashMap<>();
 
-    // Add new fields for user management
-    private final Map<String, UserData> userStore = new ConcurrentHashMap<>();
-
-    private static class UserData {
-        private final Set<String> roles;
-
-        UserData(String password, Set<String> roles) {
-            // Password is not used, so it's removed
-            this.roles = new HashSet<>(roles);
-        }
-    }
 
     @Override
     public void createUser(String username, String password, Set<String> roles) throws SecurityException {
-        if (userStore.containsKey(username)) {
-            throw new SecurityException("User already exists: " + username);
+
+        if (username.length() > 17) { // Limit username to 17 characters due to Bcrypt limitations
+            throw new SecurityException("Username too long must be smaller than 17 characters");
         }
-        userStore.put(username, new UserData(password, roles));
+
+        CredentialUserIdPassword credential = new CredentialUserIdPassword();
+        credential.setUserId(username);
+        if (credential.getHashingAlgorithm().equalsIgnoreCase("BCrypt.default")) {
+            credential.setPasswordHash(EncryptionUtils.hashPassword(password));
+        } else {
+            throw new SecurityException("Unsupported hashing algorithm: " + credential.getHashingAlgorithm());
+        }
+        credential.setRoles(roles.toArray(new String[roles.size()]));
+        credential.setLastUpdate(new Date());
+        credential.setDefaultRealm("system-com");
+        credentialRepo.save(credential);
+
     }
 
     @Override
     public void assignRoles(String username, Set<String> roles) throws SecurityException {
-        UserData userData = userStore.get(username);
-        if (userData == null) {
+        credentialRepo.findByUserId(username).ifPresentOrElse(credential -> {
+            Set<String> existingRoles = new HashSet<>(Arrays.asList(credential.getRoles()));
+            existingRoles.addAll(roles);
+            credential.setRoles(existingRoles.toArray(new String[existingRoles.size()]));
+            credentialRepo.save(credential);
+        }, () -> {
             throw new SecurityException("User not found: " + username);
-        }
-        userData.roles.addAll(roles);
+        });
     }
 
     @Override
     public void removeRoles(String username, Set<String> roles) throws SecurityException {
-        UserData userData = userStore.get(username);
-        if (userData == null) {
-            throw new SecurityException("User not found: " + username);
-        }
-        userData.roles.removeAll(roles);
+       credentialRepo.findByUserId(username).ifPresentOrElse(
+               credential -> {
+                   Set<String> existingRoles = new HashSet<>(Arrays.asList(credential.getRoles()));
+                   existingRoles.removeAll(roles);
+                   credential.setRoles(existingRoles.toArray(new String[existingRoles.size()]));
+                   credentialRepo.save(credential);
+               }, () -> {
+                   throw new SecurityException("User not found: " + username);
+               });
+
     }
 
     @Override
     public Set<String> getUserRoles(String username) throws SecurityException {
-        UserData userData = userStore.get(username);
-        if (userData == null) {
-            throw new SecurityException("User not found: " + username);
-        }
-        return new HashSet<>(userData.roles);
+        final Set<String>[] rolesHolder = new Set[1];
+        
+        credentialRepo.findByUserId(username).ifPresentOrElse(
+            credential -> {
+                rolesHolder[0] = new HashSet<>(Arrays.asList(credential.getRoles()));
+            }, 
+            () -> {
+                throw new SecurityException("User not found: " + username);
+            }
+        );
+    
+        return rolesHolder[0];
     }
 
     @Override
     public boolean userExists(String username) throws SecurityException {
-        return userStore.containsKey(username);
+       return credentialRepo.findByUserId(username).isPresent();
     }
 
     @Override
@@ -160,8 +189,20 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
     }
 
     private boolean isValidCredentials(String userId, String password) {
-        // Implement your credential validation logic here
-        return true; // Replace with actual validation
+         return credentialRepo.findByUserId(userId)
+                .map(credential -> {
+                    try {
+                        if (credential.getHashingAlgorithm().equalsIgnoreCase("BCrypt.default")) {
+                            return EncryptionUtils.checkPassword(password, credential.getPasswordHash());
+                        }else {
+                            throw new RuntimeException("Unsupported hashing algorithm: " + credential.getHashingAlgorithm());
+                        }
+                    } catch (Exception e) {
+                        Log.error("Failed to check password", e);
+                        return false;
+                    }
+                })
+                .orElse(false);
     }
 
     private SecurityIdentity buildIdentity(String userId, Set<String> roles) {

@@ -1,6 +1,7 @@
 package com.e2eq.framework.rest.resources;
 
 
+import com.e2eq.framework.model.security.auth.AuthProviderFactory;
 import com.e2eq.framework.rest.models.Role;
 import com.e2eq.framework.model.securityrules.SecurityCheckException;
 import com.e2eq.framework.rest.models.AuthRequest;
@@ -59,6 +60,10 @@ import java.util.*;
 public class SecurityResource {
     @Inject
     SecurityIdentity securityIdentity;
+
+    @Inject
+    AuthProviderFactory authProviderFactory;
+
     @Inject
     ApplicationRegistrationRequestRepo registrationRepo;
 
@@ -241,7 +246,27 @@ public class SecurityResource {
             Log.debug("Logging in userid:" + user + " with tenantId:" + tenantId);
         }
 
-        Optional<CredentialUserIdPassword> creds = credentialRepo.findByUserId(tenantId,
+        var authProvider = authProviderFactory.getAuthProvider();
+
+
+        try {
+            var loginResponse = authProvider.login(authRequest.getUserId(), authRequest.getPassword());
+            return Response.ok(new AuthResponse(loginResponse.accessToken(), loginResponse.refreshToken())).build();
+        } catch (SecurityException e) {
+            RestError error = RestError.builder()
+                    .statusMessage(e.getMessage())
+                    .status(Response.Status.UNAUTHORIZED.getStatusCode())
+                    .build();
+            return Response.status(Response.Status.UNAUTHORIZED).entity(error).build();
+        }
+
+
+        //return Response.ok(Map.of(
+        //        "accessToken", loginResponse.accessToken(),
+        //        "refreshToken", loginResponse.refreshToken()
+        //)).build();
+
+        /* Optional<CredentialUserIdPassword> creds = credentialRepo.findByUserId(tenantId,
                 authRequest.getUserId(), true);
 
         if (creds.isPresent() && EncryptionUtils.checkPassword(authRequest.getPassword(), creds.get().getPasswordHash())) {
@@ -261,6 +286,8 @@ public class SecurityResource {
                     response
             ).build();
         } else {
+            if (Log.isInfoEnabled())
+                Log.info("Login failed for userId:" + authRequest.getUserId());
             RestError error =RestError.builder().build();
             error.setStatusMessage("Either the user id was not found or the password did not match, check credentials and try again. Are you registered? ");
             error.setStatus(Response.Status.UNAUTHORIZED.getStatusCode());
@@ -269,6 +296,7 @@ public class SecurityResource {
         }
 
         return rc;
+         */
     }
 
     public AuthResponse generateAuthResponse(@NotNull String userId, @NotNull String tenantId,

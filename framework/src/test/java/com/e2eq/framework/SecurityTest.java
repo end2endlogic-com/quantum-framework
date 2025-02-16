@@ -23,6 +23,7 @@ import com.e2eq.framework.util.EncryptionUtils;
 
 import com.e2eq.framework.model.securityrules.SecuritySession;
 import com.e2eq.framework.util.TestUtils;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.junit.jupiter.api.Test;
 
 import io.quarkus.test.junit.QuarkusTest;
@@ -40,6 +41,9 @@ import java.util.StringTokenizer;
 
 @QuarkusTest
 public class SecurityTest {
+
+    @ConfigProperty(name = "auth.provider")
+    String authProvider;
 
     @Inject
     CredentialRepo credRepo;
@@ -195,9 +199,15 @@ public class SecurityTest {
     @Test
     public void testLoginAPI() throws JsonProcessingException {
         AuthRequest request = new AuthRequest();
-        request.setUserId(SecurityUtils.systemUserId);
-        request.setPassword("test123456");
-        request.setTenantId(SecurityUtils.systemTenantId);
+        if (authProvider.equals("custom")) {
+            request.setUserId(SecurityUtils.systemUserId);
+            request.setPassword("test123456");
+            request.setTenantId(SecurityUtils.systemTenantId);
+        } else {
+            request.setUserId("testuser@end2endlogic.com");
+            request.setPassword("P@55w@rd");
+            request.setTenantId(SecurityUtils.systemTenantId);
+        }
 
         ObjectMapper mapper = new ObjectMapper();
         String value = mapper.writeValueAsString(request);
@@ -207,7 +217,7 @@ public class SecurityTest {
             .body(value)
             .when().post("/security/login")
             .then()
-                .statusCode(200);
+            .statusCode(200);
 
         request.setPassword("incorrect");
         value = mapper.writeValueAsString(request);
@@ -223,9 +233,15 @@ public class SecurityTest {
     @Test
     public void testGetUserProfileRESTAPI() throws JsonProcessingException {
         AuthRequest request = new AuthRequest();
-        request.setUserId(SecurityUtils.systemUserId);
-        request.setPassword("test123456");
-        request.setTenantId(SecurityUtils.systemTenantId);
+        if (authProvider.equals("custom")) {
+            request.setUserId(SecurityUtils.systemUserId);
+            request.setPassword("test123456");
+            request.setTenantId(SecurityUtils.systemTenantId);
+        } else {
+            request.setUserId("testuser@end2endlogic.com");
+            request.setPassword("P@55w@rd");
+            request.setTenantId(SecurityUtils.systemTenantId);
+        }
 
         ObjectMapper mapper = new ObjectMapper();
         String value = mapper.writeValueAsString(request);
