@@ -50,8 +50,9 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
     @Inject
     CredentialRepo credentialRepo;
 
-    @Inject
-    CredentialRefreshTokenRepo credentialRefreshTokenRepo;
+    // problems with permissions if you need to save
+    //@Inject
+    //CredentialRefreshTokenRepo credentialRefreshTokenRepo;
 
 
     @Override
@@ -296,7 +297,7 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
                 .expirationDate(new Date(System.currentTimeMillis() + (durationInSeconds * 1000) + TokenUtils.REFRESH_ADDITIONAL_DURATION_SECONDS))
                 .build();
 
-        credentialRefreshTokenRepo.save(refreshToken1);
+        //credentialRefreshTokenRepo.save(refreshToken1);
 
 
         return refreshToken;

@@ -252,7 +252,17 @@ public class SecurityResource {
 
         try {
             AuthProvider.LoginResponse loginResponse = authProvider.login(authRequest.getUserId(), authRequest.getPassword());
-            return Response.ok(new AuthResponse(loginResponse.positiveResponse().accessToken(), loginResponse.positiveResponse().refreshToken())).build();
+            if (loginResponse.authenticated()) {
+                return Response.ok(new AuthResponse(loginResponse.positiveResponse().accessToken(), loginResponse.positiveResponse().refreshToken())).build();
+            }
+            else {
+                RestError error = RestError.builder()
+                        .statusMessage(loginResponse.negativeResponse().errorMessage())
+                        .status(Response.Status.UNAUTHORIZED.getStatusCode())
+                        .build();
+                return Response.status(Response.Status.UNAUTHORIZED).entity(error).build();
+            }
+
         } catch (SecurityException e) {
             RestError error = RestError.builder()
                     .statusMessage(e.getMessage())
