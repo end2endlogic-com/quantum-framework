@@ -8,7 +8,7 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 
 @Provider
-public class ExceptionMapper implements jakarta.ws.rs.ext.ExceptionMapper<RuntimeException> {
+public class RunTimeExceptionMapper implements jakarta.ws.rs.ext.ExceptionMapper<RuntimeException> {
     @Override
     public Response toResponse(RuntimeException exception) {
         RestError error =RestError.builder().build();
