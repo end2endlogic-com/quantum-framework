@@ -10,6 +10,7 @@ import dev.morphia.annotations.*;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
+import lombok.Builder;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
@@ -38,7 +39,9 @@ import static dev.morphia.mapping.IndexType.DESC;
 @RegisterForReflection
 @EqualsAndHashCode
 @SuperBuilder
-public abstract @Data @NoArgsConstructor class UnversionedBaseModel {
+@Data
+@NoArgsConstructor
+public abstract  class UnversionedBaseModel {
 
     @Id
     @JsonSerialize(using = ObjectIdJsonSerializer.class)
@@ -86,11 +89,12 @@ public abstract @Data @NoArgsConstructor class UnversionedBaseModel {
 
     // purposefully not included in equals or hash as well
     @Transient
+    @Builder.Default
     protected boolean skipValidation=false;
 
     // purposefully not included in equals or hash as well
-
     @Transient
+    @Builder.Default
     List<String> defaultUIActions = Arrays.asList("CREATE", "UPDATE", "VIEW", "DELETE", "ARCHIVE");
 
 

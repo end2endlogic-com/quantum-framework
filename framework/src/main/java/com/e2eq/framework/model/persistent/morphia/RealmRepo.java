@@ -14,9 +14,19 @@ import java.util.Optional;
 public class RealmRepo extends MorphiaRepo<Realm> {
 
    public Optional<Realm> findByEmailDomain(String emailDomain) {
+      return findByEmailDomain(emailDomain, false);
+   }
+
+
+   public Optional<Realm> findByEmailDomain(String emailDomain, boolean ignoreRules) {
       List<Filter> filters = new ArrayList<>();
       filters.add(Filters.eq("emailDomain", emailDomain));
-      Filter[] qfilters = getFilterArray(filters, getPersistentClass());
+      Filter[] qfilters = new Filter[1];;
+      if (!ignoreRules) {
+         qfilters = getFilterArray(filters, getPersistentClass());
+      } else {
+         qfilters = filters.toArray(qfilters);
+      }
 
       Query<Realm> query = dataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass()).filter(qfilters);
       Realm obj = query.first();

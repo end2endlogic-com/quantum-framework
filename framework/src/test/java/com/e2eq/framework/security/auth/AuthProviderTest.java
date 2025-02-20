@@ -23,7 +23,7 @@ public class AuthProviderTest {
     public void testAdminLogin() {
         if (authProvider.equals("cognito")) {
 
-         AuthProvider.LoginResponse response = given()
+         AuthProvider.LoginPositiveResponse response = given()
                  .contentType(ContentType.JSON)
                  .queryParam("userId", "testadmin@end2endlogic.com")
                  .queryParam("password", "P@55w@rd")
@@ -35,7 +35,7 @@ public class AuthProviderTest {
                  .body("accessToken", notNullValue())
                  .body("refreshToken", notNullValue())
                  .extract()
-                 .as(AuthProvider.LoginResponse.class);
+                 .as(AuthProvider.LoginPositiveResponse.class);
 
          // Test admin access
          given()
@@ -51,7 +51,7 @@ public class AuthProviderTest {
     @Test
     public void testUserLogin() {
         if (authProvider.equals("cognito")) {
-            AuthProvider.LoginResponse response = given()
+            AuthProvider.LoginPositiveResponse response = given()
                     .contentType(ContentType.JSON)
                     .queryParam("userId", "testuser@end2endlogic.com")
                     .queryParam("password", "P@55w@rd")
@@ -62,7 +62,7 @@ public class AuthProviderTest {
                     .body("accessToken", notNullValue())
                     .body("refreshToken", notNullValue())
                     .extract()
-                    .as(AuthProvider.LoginResponse.class);
+                    .as(AuthProvider.LoginPositiveResponse.class);
 
             // Test user access to view
             given()

@@ -45,7 +45,7 @@ public class TestAuthResource {
 
     @POST
     @Path("/create")
-    @RolesAllowed("admin")
+    @RolesAllowed({"admin"})
     public Response createSecureResource() {
         return Response.ok(new SecureResponse("Secure content created")).build();
     }

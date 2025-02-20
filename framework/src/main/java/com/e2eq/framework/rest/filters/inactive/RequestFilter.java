@@ -258,12 +258,7 @@ public class RequestFilter implements ContainerRequestFilter {
 
             if (orealm.isPresent()) {
                Realm realm = orealm.get();
-               DataDomain dataDomain = new DataDomain();
-               dataDomain.setOrgRefName(realm.getOrgRefName());
-               dataDomain.setAccountNum(realm.getAccountNumber());
-               dataDomain.setTenantId(realm.getTenantId());
-               dataDomain.setOwnerId(realm.getDefaultAdminUserId());
-
+               DataDomain dataDomain = realm.getDomainContext().toDataDomain(realm.getDefaultAdminUserId());
                Optional<CredentialUserIdPassword> ocreds = credentialRepo.findByUserId(tenantId, realm.getDefaultAdminUserId());
                String roles[] = null;
                if (ocreds.isPresent()) {

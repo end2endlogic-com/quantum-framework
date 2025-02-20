@@ -23,8 +23,8 @@ public class AuthController {
         var loginResponse = authProvider.login(userId, password);
 
         return Response.ok(Map.of(
-            "accessToken", loginResponse.accessToken(),
-            "refreshToken", loginResponse.refreshToken()
+            "accessToken", loginResponse.positiveResponse().accessToken(),
+            "refreshToken", loginResponse.positiveResponse().refreshToken()
         )).build();
     }
 

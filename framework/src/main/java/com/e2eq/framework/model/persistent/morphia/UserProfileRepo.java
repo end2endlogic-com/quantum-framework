@@ -1,6 +1,7 @@
 package com.e2eq.framework.model.persistent.morphia;
 
 import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
+import com.e2eq.framework.model.persistent.security.DomainContext;
 import com.e2eq.framework.model.persistent.security.UserProfile;
 import com.e2eq.framework.util.EncryptionUtils;
 import com.e2eq.framework.util.ValidateUtils;
@@ -17,7 +18,9 @@ import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.NonNull;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+import javax.xml.namespace.QName;
 import java.util.Date;
 import java.util.Optional;
 
@@ -26,6 +29,9 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
 
    @Inject
    CredentialRepo credRepo;
+
+   @ConfigProperty(name="auth.provider")
+   private String authProvider;
 
 
    public Optional<UserProfile> updateStatus(@NotNull String userId, @NotNull UserProfile.Status status) {
@@ -60,7 +66,7 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
       up = save(up);
 
       CredentialUserIdPassword cred = new CredentialUserIdPassword();
-      cred.setDefaultRealm(realm);
+      DomainContext ctx = new DomainContext(up.getDataDomain(), authProvider);
       cred.setUserId(up.getUserId());
       cred.setRefName(up.getUserId());
       cred.setRoles(roles);

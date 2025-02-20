@@ -73,7 +73,7 @@ public @Data class UserProfile extends BaseModel {
 
    /**
     * Seperated out here vs. using the data domain to define how the
-    * user that is associated with this profile gets mapped from a PrincipalConext
+    * user that is associated with this profile gets mapped from a PrincipalContext
     * which is different perhaps than the data domain settings that the user profile exists in.
     * Also, this is separate from a credential because we may not be the source of truth for
     * authentication

@@ -12,90 +12,68 @@ import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.*;
 
+import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
 import io.smallrye.jwt.build.Jwt;
 import io.smallrye.jwt.build.JwtClaimsBuilder;
 
+import jakarta.validation.Valid;
 import jakarta.validation.ValidationException;
+import jakarta.validation.constraints.NotNull;
 import jakarta.ws.rs.NotFoundException;
 
 
 /**
  *
- * @author ard333
+ * @author mingardia
  */
 public class TokenUtils {
 
 	public static final String REFRESH_SCOPE = "refreshToken";
 	public static final String AUTH_SCOPE = "authToken";
 	public static final String AUDIENCE = "b2bi-api-client";
+	public static final int REFRESH_ADDITIONAL_DURATION_SECONDS= 10;
 
-	public static String generateUserToken (String username,
-														 String tenantId,
-														 String defaultRealm,
-														 Map<String, String> realmOverrides,
-														 String orgRefName,
-														 String accountId,
-														 String[] roles,
-														 long durationInSeconds,
-														 String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+	// add builder class for the generateUserToken method.
 
-		if ( username == null ) {
-			throw new ValidationException("UserName can not be null");
-		}
-		if (tenantId == null ) {
-			throw new ValidationException("tenantId can not be null");
-		}
-		if (defaultRealm == null) {
-			throw new ValidationException("defaultRealm can not be null");
-		}
-		if (realmOverrides == null) {
-			throw new ValidationException("realmOverrides can not be null, but can be empty");
+
+	public static String generateUserToken ( String userId,
+											 Set<String> groups,
+											 long durationInSeconds,
+											 String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+
+		Objects.requireNonNull(userId, "UserId cannot be null");
+		Objects.requireNonNull(issuer, "Issuer cannot be null");
+
+		if (durationInSeconds <= REFRESH_ADDITIONAL_DURATION_SECONDS) {
+			throw new ValidationException("Duration must be greater than" + REFRESH_ADDITIONAL_DURATION_SECONDS + " seconds");
 		}
 
-		if (accountId == null) {
-			throw new ValidationException("accountId can not be null");
-		}
-
-		if (roles == null ) {
-			throw new ValidationException("roles can not be null");
-		}
-
-		if (issuer == null) {
-			throw new ValidationException("Issuer can not be null");
-		}
 		String privateKeyLocation = "privateKey.pem";
 		PrivateKey privateKey = readPrivateKey(privateKeyLocation);
 		
 		JwtClaimsBuilder claimsBuilder = Jwt.claims();
 		long currentTimeInSecs = currentTimeInSecs();
-		
-		Set<String> groups = new HashSet<>();
-		Collections.addAll(groups, roles);
+
 
 		claimsBuilder.issuer(issuer);
-		claimsBuilder.subject(username);
+		claimsBuilder.subject(userId);
 		claimsBuilder.issuedAt(currentTimeInSecs);
 		claimsBuilder.audience(AUDIENCE);
 		claimsBuilder.expiresAt(currentTimeInSecs + durationInSeconds);
 		claimsBuilder.groups(groups);
-		claimsBuilder.claim("orgRefName", orgRefName);
-		claimsBuilder.claim("tenantId", tenantId);
-		claimsBuilder.claim("defaultRealm",defaultRealm );
-		claimsBuilder.claim("accountId", accountId);
+		claimsBuilder.claim("userName", userId);
 		claimsBuilder.claim("scope", AUTH_SCOPE);
 
-		Map<String, String> area2Realm = new HashMap<>();
+		/*Map<String, String> area2Realm = new HashMap<>();
 		area2Realm.put("security", "system-com");
-		area2Realm.put("signup", "system-com");
-		claimsBuilder.claim("realmOverrides", area2Realm);
+		area2Realm.put("signup", "system-com"); */
 
 
 		return claimsBuilder.jws().keyId(privateKeyLocation).sign(privateKey);
 	}
 
-	public static String generateRefreshToken(String username, String tenantId, String defaultRealm, Map<String, String> realmOverrides, String orgRefName,
-															String accountId, String[] roles,  long durationInSeconds, String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
-		Set<String> groups = new HashSet<>(Arrays.asList(roles));
+	public static String generateRefreshToken(String username,  long durationInSeconds, String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+
 
 
 		String privateKeyLocation = "privateKey.pem";
@@ -105,18 +83,23 @@ public class TokenUtils {
 		claimsBuilder.issuer(issuer);
 		claimsBuilder.subject(username);
 		claimsBuilder.issuedAt(currentTimeInSecs);
-		claimsBuilder.groups(groups);
 		claimsBuilder.audience("b2bi-api-client-refresh");
-		claimsBuilder.expiresAt(currentTimeInSecs + durationInSeconds);
-		claimsBuilder.claim("tenantId", tenantId);
-		claimsBuilder.claim("defaultRealm",defaultRealm );
-		claimsBuilder.claim("realmOverrides", realmOverrides);
-		claimsBuilder.claim("orgRefName", orgRefName);
-		claimsBuilder.claim("accountId", accountId);
+		claimsBuilder.expiresAt(currentTimeInSecs + durationInSeconds + REFRESH_ADDITIONAL_DURATION_SECONDS);
+		claimsBuilder.claim("username", username );
+		/* claimsBuilder.claim("tenantId", credentialUserIdPassword.getTenantId());
+		claimsBuilder.claim("defaultRealm", credentialUserIdPassword.getDefaultRealm() );
 
-		
+		claimsBuilder.claim("orgRefName", credentialUserIdPassword.getOrgRefName());
+		claimsBuilder.claim("accountId", credentialUserIdPassword.getAccountId());
 
-
+		Map<String, String> area2Realm = new HashMap<>();
+		area2Realm.put("security", "system-com");
+		area2Realm.put("signup", "system-com");
+		if (credentialUserIdPassword.getArea2RealmOverrides() != null &&
+				!credentialUserIdPassword.getArea2RealmOverrides().isEmpty()  ) {
+			area2Realm.putAll(credentialUserIdPassword.getArea2RealmOverrides());
+		}
+		claimsBuilder.claim("realmOverrides", area2Realm); */
 		claimsBuilder.claim("scope", REFRESH_SCOPE);
 		return claimsBuilder.jws().keyId(privateKeyLocation).sign(privateKey);
 	}

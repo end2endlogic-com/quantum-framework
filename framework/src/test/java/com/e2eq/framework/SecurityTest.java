@@ -1,6 +1,7 @@
 package com.e2eq.framework;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.persistent.security.DomainContext;
 import com.e2eq.framework.rest.models.RegistrationRequest;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
@@ -151,15 +152,17 @@ public class SecurityTest {
                 cred.setUserId(TestUtils.systemUserId);
                 cred.setPasswordHash("$2a$12$76wQJLgSAdm6ZTHFHtzksuSkWG9eW0qe5YXMXaZIBo52ncXHO0EDy"); //Test123456å
 
-                cred.setRoles(roles);
-                cred.setRefName(cred.getUserId());
-                cred.setDefaultRealm(TestUtils.defaultRealm);
-                cred.setLastUpdate(new Date());
                 DataDomain dataDomain = new DataDomain();
                 dataDomain.setOrgRefName(TestUtils.orgRefName);
                 dataDomain.setAccountNum(TestUtils.accountNumber);
                 dataDomain.setTenantId(TestUtils.tenantId);
                 dataDomain.setOwnerId(TestUtils.systemUserId);
+
+                cred.setRoles(roles);
+                cred.setRefName(cred.getUserId());
+                cred.setDomainContext(new DomainContext(dataDomain, TestUtils.defaultRealm));
+                cred.setLastUpdate(new Date());
+
                 cred.setDataDomain(dataDomain);
 
                 credRepo.save(cred);

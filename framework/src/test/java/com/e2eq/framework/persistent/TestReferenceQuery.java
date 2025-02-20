@@ -39,7 +39,7 @@ public class TestReferenceQuery {
         TestUtils.initRules(ruleContext, "security", "userProfile", TestUtils.systemUserId);
         try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
 
-            Class clazz = TestBookModel.class;
+            Class<?> clazz = TestBookModel.class;
             Field field = clazz.getDeclaredField("author");
             field.setAccessible(true);
             Annotation annotation = field.getAnnotation(Reference.class);

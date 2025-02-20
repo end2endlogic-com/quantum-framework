@@ -1,5 +1,6 @@
 package com.e2eq.framework.model.persistent.morphia;
 
+import com.e2eq.framework.annotations.TrackReferences;
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.base.*;
 import com.e2eq.framework.rest.models.UIAction;
@@ -86,6 +87,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     public Class<T> getPersistentClass() {
         return (Class<T>) paramClazz.getRawType();
     }
@@ -627,12 +629,17 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
 
+    /**
+     * Remove references in classes from this object by looking for any referenced BaseModel instances
+     * @param obj - the object that may reference other classes
+     * @param session - the session we are participating in i.e the transaction
+     */
     public void removeReferenceConstraint(T obj, MorphiaSession session) {
         Mapper mapper = dataStore.getDataStore(getSecurityContextRealmId()).getMapper();
         EntityModel mappedClass = mapper.getEntityModel(obj.getClass());
 
         for (PropertyModel mappedField : mappedClass.getProperties()) {
-            if (mappedField.isReference()) {
+            if (mappedField.isReference() && mappedField.hasAnnotation(TrackReferences.class)) {
                 if (mappedField.getAccessor().get(obj)!= null && BaseModel.class.isAssignableFrom(mappedField.getAccessor().get(obj).getClass())) {
                     BaseModel baseModel = (mappedField.getAccessor().get(obj) != null) ? (BaseModel) mappedField.getAccessor().get(obj) : null;
                     if (baseModel != null) {
@@ -642,8 +649,12 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                         }
                     }
                 } else
-                if (mappedField.getAccessor().get(obj)!=null && java.util.Collection.class.isAssignableFrom(mappedField.getAccessor().get(obj).getClass())) {
+                    // if this is a collection of the class that is the same as us ( obj ) then see if its non null and if its annotated to track references
+                if (mappedField.getAccessor().get(obj)!=null &&
+                        java.util.Collection.class.isAssignableFrom(mappedField.getAccessor().get(obj).getClass()) &&
+                  mappedField.hasAnnotation(TrackReferences.class)) {
                     {
+                        // if so we need for each item in the collection we  remove the reference to this class
                         java.util.Collection<BaseModel> baseModels = (java.util.Collection<BaseModel>) mappedField.getAccessor().get(obj);
                         if (baseModels != null) {
                             for (BaseModel baseModel : baseModels) {
@@ -666,60 +677,96 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     @Override
     public long delete(T obj) throws ReferentialIntegrityViolationException{
         Objects.requireNonNull(obj, "Null argument passed to delete, api requires a non-null object");
-        DeleteResult result;
-        if (obj.getReferences() == null || obj.getReferences().isEmpty()) {
-            try (MorphiaSession s = dataStore.getDataStore(getSecurityContextRealmId()).startSession()) {
-                s.startTransaction();
-                removeReferenceConstraint(obj, s);
-                result = s.delete(obj);
-                s.commitTransaction();
-            }
-            return result.getDeletedCount();
-        } else {
-            Set<ReferenceEntry> entriesToRemove = new HashSet<>();
-            // Iterate through references in this class and ensure that there are
-            // actually references and that the list of references is not stale
-            for (ReferenceEntry reference : obj.getReferences()) {
-                try (MorphiaSession s = dataStore.getDataStore(getSecurityContextRealmId()).startSession()) {
-                    s.startTransaction();
-                    try {
-                        ClassLoader classLoader = this.getClass().getClassLoader();
-                        Class<?> clazz = classLoader.loadClass(reference.getType());
-                        Query<?> q = s.find(clazz).filter(Filters.eq("_id", reference.getReferencedId()));
-                        if (q.count() == 0) {
-                            entriesToRemove.add(reference);
-                        }
-                    } catch (ClassNotFoundException e) {
-                        Log.warn("Failed to load class: " + reference.getType() + "removing reference");
-                        entriesToRemove.add(reference);
-                    }
-                }
-            }
-            obj.getReferences().removeAll(entriesToRemove);
+        Objects.requireNonNull(obj.getId(), "Null argument passed to delete, api requires a non-null object id");
+      return delete(obj.getId());
+    }
 
-            // There may still be valid reference left if so complain
-            if (obj.getReferences().isEmpty()) {
+    @Override
+    public long delete(@NotNull ObjectId id) throws ReferentialIntegrityViolationException {
+        Objects.requireNonNull(id, "Null argument passed to delete, api requires a non-null object");
+
+        // find the object to delete
+        Optional<T> oobj = this.findById(id);
+
+        if (oobj.isPresent()) {
+            // assuming the record exists
+            T obj = oobj.get();
+            DeleteResult result = null;
+            // if there are no references to this object, then we can just delete it
+            if (obj.getReferences() == null || obj.getReferences().isEmpty()) {
+                // delete the object and remove any references that it may have had to parents
                 try (MorphiaSession s = dataStore.getDataStore(getSecurityContextRealmId()).startSession()) {
                     s.startTransaction();
                     removeReferenceConstraint(obj, s);
                     result = s.delete(obj);
                     s.commitTransaction();
                 }
-                return result.getDeletedCount();
+                // we are done so now we can return the number of deleted records which should be just one
+
             } else {
-                HashSet<String> referencingClasses = new HashSet<>();
+                // there are references to this object, we need to find out which ones and if they are all stale or not
+                Set<ReferenceEntry> entriesToRemove = new HashSet<>();
+
+                // Iterate through references in this class and ensure that there are
+                // actually references and that the list of references is not stale
+
+                // for each reference, check if the referenced object still exists
                 for (ReferenceEntry reference : obj.getReferences()) {
-                    referencingClasses.add(reference.getType());
+                    try (MorphiaSession s = dataStore.getDataStore(getSecurityContextRealmId()).startSession()) {
+                        s.startTransaction();
+                        // find the referenced object
+                        try {
+                            ClassLoader classLoader = this.getClass().getClassLoader();
+                            Class<?> clazz = classLoader.loadClass(reference.getType());
+                            Query<?> q = s.find(clazz).filter(Filters.eq("_id", reference.getReferencedId()));
+                            if (q.count() != 0) {
+                                entriesToRemove.add(reference);
+                            }
+                        } catch (ClassNotFoundException e) {
+                            Log.warn("Failed to load class: " + reference.getType() + "removing reference");
+                            entriesToRemove.add(reference);
+                        }
+                        // ok we now know all the reference which we found which will be in the entriesToRemove set.
+                        if (entriesToRemove.isEmpty()) {
+                            // entities are empty so there are no valid references to this object.
+                            // no remove all the reference there may from this class to other classes.
+                            removeReferenceConstraint(obj, s);
+                            // now actually delete the object
+                            result = s.delete(obj);
+
+                            // just for completeness we can remove all the entries now
+                            obj.getReferences().removeAll(entriesToRemove);
+
+                            // commit the transaction and we are done.
+                            s.commitTransaction();
+                        } else {
+                            // there are references to this object so we can not delete this object until those are removed.
+                            // build a useful error message and throw an exception
+                            HashSet<String> referencingClasses = new HashSet<>();
+                            for (ReferenceEntry rreference : obj.getReferences()) {
+                                referencingClasses.add(rreference.getType());
+                            }
+                            String buffereferencingClassesString = referencingClasses.stream().collect(Collectors.joining(", "));
+                            throw new ReferentialIntegrityViolationException("Can not delete object because it has references from other objects to this one that would corrupt the relationship. Referencing classes: " + buffereferencingClassesString);
+                        }
+                    }
                 }
-                String buffereferencingClassesString = referencingClasses.stream().collect(Collectors.joining(", "));
-                throw new ReferentialIntegrityViolationException("Can not delete object because it has references from other objects to this one that would corrupt the relationship. Referencing classes: " + buffereferencingClassesString);
             }
+            return result.getDeletedCount();
         }
+        Log.warn("Object not found for deletion: " + id);
+        return 0;
     }
 
     @Override
-    public long delete(@NotNull MorphiaSession s, T obj) throws ReferentialIntegrityViolationException{
-        Objects.requireNonNull(obj, "Null argument passed to delete, api requires a non-null object");
+    public long delete(@NotNull MorphiaSession s, T aobj) throws ReferentialIntegrityViolationException{
+        Objects.requireNonNull(aobj, "Null argument passed to delete, api requires a non-null object");
+        Objects.requireNonNull(aobj.getId(), "Null argument passed to delete, api requires a non-null id");
+        Optional<T> oobj = this.findById(aobj.getId());
+        if (!oobj.isPresent()) {
+            return 0;
+        }
+        T obj = oobj.get();
         DeleteResult result;
         if (obj.getReferences() == null || obj.getReferences().isEmpty()) {
                 removeReferenceConstraint(obj, s);

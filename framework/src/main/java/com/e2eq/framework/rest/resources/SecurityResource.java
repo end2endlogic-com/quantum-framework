@@ -1,6 +1,7 @@
 package com.e2eq.framework.rest.resources;
 
 
+import com.e2eq.framework.model.security.auth.AuthProvider;
 import com.e2eq.framework.model.security.auth.AuthProviderFactory;
 import com.e2eq.framework.rest.models.Role;
 import com.e2eq.framework.model.securityrules.SecurityCheckException;
@@ -250,8 +251,8 @@ public class SecurityResource {
 
 
         try {
-            var loginResponse = authProvider.login(authRequest.getUserId(), authRequest.getPassword());
-            return Response.ok(new AuthResponse(loginResponse.accessToken(), loginResponse.refreshToken())).build();
+            AuthProvider.LoginResponse loginResponse = authProvider.login(authRequest.getUserId(), authRequest.getPassword());
+            return Response.ok(new AuthResponse(loginResponse.positiveResponse().accessToken(), loginResponse.positiveResponse().refreshToken())).build();
         } catch (SecurityException e) {
             RestError error = RestError.builder()
                     .statusMessage(e.getMessage())
@@ -310,23 +311,12 @@ public class SecurityResource {
                                              @NotNull String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
         String userToken = TokenUtils.generateUserToken(
                 userId,
-                tenantId,
-                defaultRealm,
-                realmOverrides,
-                orgRefName,
-                accountId,
-                roles,
+                new HashSet<>(Arrays.asList(roles)),
                 durationInSeconds,
                 issuer);
 
         String refreshToken = TokenUtils.generateRefreshToken(
                 userId,
-                tenantId,
-                defaultRealm,
-                realmOverrides,
-                orgRefName,
-                accountId,
-                roles,
                 durationInSeconds + incrementRefreshDuration,
                 issuer);
 

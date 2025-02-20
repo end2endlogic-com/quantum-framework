@@ -77,7 +77,7 @@ public class MigrationRunner {
          Set<Bean<?>> changeSets = beanManager.getBeans(ChangeSetBean.class);
          if (!changeSets.isEmpty()) {
             Log.info(" >> Number of ChangeSet Beans:" + changeSets.size());
-            for (Bean bean : changeSets) {
+            for (Bean<?> bean : changeSets) {
                Log.info("     ChangeSet Bean:" + bean.getBeanClass().getName());
             }
          } else {
