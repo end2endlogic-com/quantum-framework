@@ -14,6 +14,7 @@ import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
 import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.logging.Log;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 import jakarta.enterprise.context.ApplicationScoped;
@@ -41,6 +42,9 @@ public class ApplicationRegistrationRequestRepo extends MorphiaRepo<ApplicationR
 
    @Inject
    RealmRepo realmRepo;
+
+   @ConfigProperty(name="auth.provider")
+   private String authProvider;
 
 
    @Override
@@ -185,7 +189,7 @@ public class ApplicationRegistrationRequestRepo extends MorphiaRepo<ApplicationR
                CredentialUserIdPassword cred = new CredentialUserIdPassword();
                cred.setUserId(applicationRegistration.getUserId());
                cred.setRefName(applicationRegistration.getUserId());
-               cred.setDefaultRealm(tenantId);
+               cred.setDomainContext(new DomainContext(dataDomain, authProvider ));
                cred.setDataDomain(dataDomain);
                cred.setHashingAlgorithm("BCrypt.default");
                cred.setPasswordHash(EncryptionUtils.hashPassword(applicationRegistration.getPassword()));
@@ -204,8 +208,13 @@ public class ApplicationRegistrationRequestRepo extends MorphiaRepo<ApplicationR
             realm.setEmailDomain(emailDomain);
             realm.setDatabaseName(tenantId);
             realm.setRefName(tenantId);
-            realm.setTenantId(tenantId);
-            realm.setOrgRefName(newOrg.getRefName());
+            DomainContext domainContext = DomainContext.builder()
+                            .tenantId(tenantId)
+                            .orgRefName(newOrg.getRefName())
+                            .defaultRealm(tenantId)
+                            .accountId(account.getAccountNumber())
+                            .build();
+            realm.setDomainContext(domainContext);
             realm.setDefaultAdminUserId(up.getUserId());
 
             realmRepo.save(session, realm);

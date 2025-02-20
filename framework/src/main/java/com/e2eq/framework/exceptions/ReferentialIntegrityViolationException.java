@@ -1,6 +1,7 @@
 package com.e2eq.framework.exceptions;
 
 public class ReferentialIntegrityViolationException extends Exception {
+    private static final long serialVersionUID = 1L;
     protected String referringClass;
     protected String referringId;
     protected String referringIdType;

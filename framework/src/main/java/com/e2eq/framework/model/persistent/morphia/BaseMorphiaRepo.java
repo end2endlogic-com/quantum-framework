@@ -63,8 +63,9 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
    public List<T> save(@NotNull Datastore datastore, List<T> entities);
    public List<T> save(@NotNull MorphiaSession datastore, List<T> entities);
 
-   public long delete(@Valid T obj) throws ReferentialIntegrityViolationException;
-   public long delete(@NotNull MorphiaSession s, @Valid T obj) throws ReferentialIntegrityViolationException;
+   public long delete(T obj) throws ReferentialIntegrityViolationException;
+   public long delete(@NotNull ObjectId id) throws ReferentialIntegrityViolationException;
+   public long delete(@NotNull MorphiaSession s, T obj) throws ReferentialIntegrityViolationException;
 
 
    public long update (@NotNull String id, @NotNull Pair<String, Object>... pairs);

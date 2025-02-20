@@ -25,7 +25,7 @@ public class TestMapperFoundation {
    } */
 
 
-   /**
+   /*
     Shows how to use jsurfer to use xpath like statements to parse
    @Test
    public void testJsurferBinding() {

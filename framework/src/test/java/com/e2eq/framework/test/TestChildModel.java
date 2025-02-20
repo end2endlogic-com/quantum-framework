@@ -28,11 +28,11 @@ public class TestChildModel extends BaseModel {
 
     @Override
     public String bmFunctionalArea() {
-        return "QUANTUM";
+        return "test";
     }
 
     @Override
     public String bmFunctionalDomain() {
-        return "TEST";
+        return "references";
     }
 }

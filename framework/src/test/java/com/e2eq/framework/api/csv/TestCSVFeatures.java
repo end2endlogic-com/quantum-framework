@@ -109,7 +109,7 @@ public class TestCSVFeatures {
             }
         }
 
-        Class clazz = TestCSVModel.class;
+        Class<?> clazz = TestCSVModel.class;
         Collection<TestCSVModel> records = getRecords();
         final char quoteChar = '"';
         final char fieldSeparator = ',';

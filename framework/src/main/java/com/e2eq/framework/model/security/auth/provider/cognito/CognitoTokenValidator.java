@@ -14,6 +14,7 @@ import org.jose4j.jwk.PublicJsonWebKey;
 
 import java.io.StringReader;
 import java.net.HttpURLConnection;
+import java.net.URI;
 import java.net.URL;
 import java.security.PublicKey;
 import java.util.Base64;
@@ -86,8 +87,9 @@ public class CognitoTokenValidator {
     }
 
     private String fetchJwks() throws Exception {
-        URL url = new URL(String.format("https://cognito-idp.%s.amazonaws.com/%s/.well-known/jwks.json",
+        URI uri = new URI(String.format("https://cognito-idp.%s.amazonaws.com/%s/.well-known/jwks.json",
                 awsRegion, userPoolId));
+        URL url = uri.toURL();
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("GET");
 

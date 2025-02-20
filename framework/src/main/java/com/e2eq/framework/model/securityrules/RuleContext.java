@@ -416,7 +416,7 @@ public class RuleContext {
                 }
 
                 // compare the uri to the rule uri to see if it matches ie. the rule is applicable
-                if (WildCardMatcher.getInstance().wildcardMatch(uri.getURIString(), r.getSecurityURI().getURIString(),
+                if (WildCardMatcher.wildcardMatch(uri.getURIString(), r.getSecurityURI().getURIString(),
                         IOCase.INSENSITIVE)) {
                     // the rule is applicable.  Check the precondition and post conditions scripts
                     RuleResult result = new RuleResult(r);

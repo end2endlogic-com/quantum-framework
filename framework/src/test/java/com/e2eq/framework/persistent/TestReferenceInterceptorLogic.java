@@ -113,7 +113,8 @@ public class TestReferenceInterceptorLogic {
 
             TestParentModel parent = getOrCreateParent();
             TestChildModel child = getOrCreateChild(parent);
-
+            parent = getOrCreateParent();
+            Assertions.assertNotNull(parent.getReferences());
             Assertions.assertTrue(parent.getReferences().contains(new ReferenceEntry(child.getId(), TestChildModel.class.getTypeName(),
                     child.getRefName())));
 
@@ -145,20 +146,37 @@ public class TestReferenceInterceptorLogic {
         ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "save");
 
         try (final SecuritySession ss = new SecuritySession(pContext, rContext)) {
+            // create two parents and a child with a list of parents
+
+            // create two parents
             List<TestParentModel> parents = getOrCreateParentList();
+
             // create a child with a list of parents
             TestChildListModel child = getOrCreateChild("Test2", parents);
 
+            // check that the parents are referenced in the child list
             for (TestParentModel p : parents) {
                 Assertions.assertTrue(p.getReferences().contains(new ReferenceEntry(child.getId(),
                         TestChildListModel.class.getTypeName(), child.getRefName())));
             }
+
+            // delete the child, the parents references should be deleted as well and the child list should be updated
             childListRepo.delete(child);
+
+            // re-get the parents and check that the result has occurred.
+            parents = getOrCreateParentList();
+
+            // check that the parents are no longer have references from the child list
             for (TestParentModel p : parents) {
-                Assertions.assertFalse(p.getReferences().contains(new ReferenceEntry(child.getId(), TestChildListModel.class.getTypeName(),
-                        child.getRefName())));
+                if (p.getReferences() != null && !p.getReferences().isEmpty())
+                    Assertions.assertFalse(p.getReferences().contains(new ReferenceEntry(child.getId(), TestChildListModel.class.getTypeName(),
+                            child.getRefName())));
                 parentRepo.delete(p);
             }
+
+            // check that the child has also been deleted
+            Optional<TestChildListModel> ochild = childListRepo.findByRefName("Test2");
+            Assertions.assertTrue(ochild.isEmpty());
         }
     }
 }

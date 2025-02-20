@@ -11,71 +11,54 @@ import dev.morphia.annotations.Indexed;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import com.e2eq.framework.model.persistent.base.BaseModel;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
-import lombok.Data;
-import lombok.EqualsAndHashCode;
+import lombok.*;
+import lombok.experimental.SuperBuilder;
 
 @Entity("credentialUserIdPassword")
 @Data
 @EqualsAndHashCode(callSuper = true )
 @RegisterForReflection
+@SuperBuilder
+@NoArgsConstructor
 public class CredentialUserIdPassword extends BaseModel {
 
+
+
+
     @Indexed(options= @IndexOptions(unique=true))
-    @NotNull protected String userId;
-    @NotNull protected String passwordHash;
-    @NotNull protected String hashingAlgorithm="BCrypt.default";
-    @NotNull protected Date lastUpdate;
-    @NotNull protected String defaultRealm;
-    @NotNull protected Map<String, String> area2RealmOverrides = new HashMap<>();
-    @NotNull protected String[] roles= new String[0];
+    @NotNull ( message = "userId must be provided for userIdPassword credential")
+    @NonNull
+    protected String userId;
 
-    public CredentialUserIdPassword() {
-        super();
-    }
+    @NonNull
+    @NotNull ( message = "domain context is required")
+    @Valid
+    protected DomainContext domainContext;
 
-    public String getUserId() {
-        return userId;
-    }
-    public void setUserId(@NotNull String userId) {
-        this.userId = userId;
-    }
-
-    public String getPasswordHash() {
-        return passwordHash;
-    }
-    public void setPasswordHash(@NotNull String passwordHash) {
-        this.passwordHash = passwordHash;
-    }
-
-    public String getHashingAlgorithm() {
-        return hashingAlgorithm;
-    }
-    public void setHashingAlgorithm(String hashingAlgorithm) {
-        this.hashingAlgorithm = hashingAlgorithm;
-    }
-
-    public Date getLastUpdate() {return lastUpdate;}
-    public void setLastUpdate(@NotNull Date lastUpdate) {this.lastUpdate = lastUpdate;}
+    @NotNull( message = "passwordHash must be non null")
+    @NonNull
+    protected String passwordHash;
 
 
-    public String getDefaultRealm () {return defaultRealm;}
-    public void setDefaultRealm (@NotNull String defaultRealm) {this.defaultRealm = defaultRealm;}
+    @NotNull(message = "roles must be non null and not empty")
+    @NonNull
+    @NotEmpty protected String[] roles;
 
-    public Map<String, String> getArea2RealmOverrides () {
-        return area2RealmOverrides;
-    }
+    protected String issuer;
 
-    public void setArea2RealmOverrides (@NotNull Map<String, String> area2RealmOverrides) {
-        this.area2RealmOverrides = area2RealmOverrides;
-    }
+    @Builder.Default
+    @NotNull
+    @NonNull
+    protected String hashingAlgorithm="BCrypt.default";
+    @NotNull @NonNull protected Date lastUpdate;
 
-    public String[] getRoles () {
-        return roles;
-    }
-    public void setRoles (@NotNull String[] roles) {
-        this.roles = roles;
-    }
+    @Builder.Default
+    @NotNull @NonNull protected Map<String, String> area2RealmOverrides = new HashMap<>();
+
+
 
     @Override
     public String bmFunctionalArea() {

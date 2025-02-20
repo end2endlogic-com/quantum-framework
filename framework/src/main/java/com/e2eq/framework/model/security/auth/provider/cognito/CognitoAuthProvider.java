@@ -1,8 +1,11 @@
 package com.e2eq.framework.model.security.auth.provider.cognito;
 
 
+import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
+import com.e2eq.framework.model.persistent.security.DomainContext;
 import com.e2eq.framework.model.security.auth.AuthProvider;
 import com.e2eq.framework.model.security.auth.UserManagement;
+import com.e2eq.framework.util.TokenUtils;
 import io.quarkus.logging.Log;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.security.runtime.QuarkusSecurityIdentity;
@@ -16,6 +19,7 @@ import org.eclipse.microprofile.jwt.JsonWebToken;
 import software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityProviderClient;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.*;
 
+import java.lang.UnsupportedOperationException;
 import java.security.Principal;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -34,6 +38,9 @@ public class CognitoAuthProvider implements AuthProvider, UserManagement {
 
     @ConfigProperty(name = "aws.cognito.client-id")
     String clientId;
+
+    @ConfigProperty(name = "com.b2bi.jwt.duration")
+    Long durationInSeconds;
 
     private final CognitoIdentityProviderClient cognitoClient;
 
@@ -64,7 +71,13 @@ public class CognitoAuthProvider implements AuthProvider, UserManagement {
             Set<String> groups = getUserGroups(userId);
             SecurityIdentity identity = buildIdentity(userId, groups);
 
-            return new LoginResponse(accessToken, refreshToken, identity, groups);
+            return new LoginResponse(true,
+                    new LoginPositiveResponse(userId,
+                            identity,
+                            groups,
+                            accessToken,
+                            refreshToken,
+                            new Date(TokenUtils.currentTimeInSecs() + durationInSeconds).getTime()));
         } catch (NotAuthorizedException e) {
             Log.error("Authentication failed for user: " + userId, e);
             throw new SecurityException("Invalid credentials");
@@ -86,7 +99,6 @@ public class CognitoAuthProvider implements AuthProvider, UserManagement {
                 .authParameters(authParameters)
                 .build();
 
-        try {
             AdminInitiateAuthResponse refreshResponse = cognitoClient.adminInitiateAuth(refreshRequest);
             AuthenticationResultType authResult = refreshResponse.authenticationResult();
 
@@ -96,19 +108,23 @@ public class CognitoAuthProvider implements AuthProvider, UserManagement {
                     .build();
 
             GetUserResponse userResponse = cognitoClient.getUser(userRequest);
-            String username = userResponse.username();
+            String username= userResponse.username();
 
             String newIdToken = authResult.idToken();
             String newRefreshToken = refreshToken;
 
             Set<String> groups = getUserGroups(username);// Refresh token remains the same
 
-            SecurityIdentity identity = validateToken(newIdToken);
+            SecurityIdentity identity = validateAccessToken(newIdToken);
 
-            return new LoginResponse(newIdToken, newRefreshToken, identity, groups);
-        } catch (Exception e) {
-            throw new RuntimeException("Token refresh failed: " + e.getMessage(), e);
-        }
+            return new LoginResponse(true,
+                    new LoginPositiveResponse(username,
+                            identity,
+                            groups,
+                            newIdToken,
+                            newRefreshToken,
+                            new Date(TokenUtils.currentTimeInSecs() + durationInSeconds).getTime()));
+
     }
 
     @Override
@@ -146,7 +162,7 @@ public class CognitoAuthProvider implements AuthProvider, UserManagement {
         return builder.build();
     }
     @Override
-    public SecurityIdentity validateToken(String token) {
+    public SecurityIdentity validateAccessToken(String token) {
         try {
             // Validate the token using CognitoTokenValidator
             JsonWebToken webToken = tokenValidator.validateToken(token);
@@ -191,7 +207,7 @@ public class CognitoAuthProvider implements AuthProvider, UserManagement {
     }
 
     @Override
-    public void createUser(String username, String password, Set<String> roles) throws SecurityException {
+    public void createUser(String username, String password, Set<String> roles, DomainContext domainContext) throws SecurityException {
         try {
             // Create user in Cognito
             AdminCreateUserRequest createRequest = AdminCreateUserRequest.builder()
@@ -233,6 +249,22 @@ public class CognitoAuthProvider implements AuthProvider, UserManagement {
         } catch (Exception e) {
             Log.error("Failed to create user", e);
             throw new SecurityException("Failed to create user: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public boolean removeUser(String username) throws ReferentialIntegrityViolationException {
+        // delete the user in Cognito
+        try {
+            AdminDeleteUserRequest deleteRequest = AdminDeleteUserRequest.builder()
+                    .userPoolId(userPoolId)
+                    .username(username)
+                    .build();
+
+            cognitoClient.adminDeleteUser(deleteRequest);
+            return true;
+        } catch (UserNotFoundException e) {
+            return false;
         }
     }
 

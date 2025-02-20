@@ -5,10 +5,7 @@ import dev.morphia.annotations.Entity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
-import lombok.Builder;
-import lombok.EqualsAndHashCode;
-import lombok.NoArgsConstructor;
-import lombok.ToString;
+import lombok.*;
 import lombok.experimental.SuperBuilder;
 
 import java.util.Objects;
@@ -25,12 +22,14 @@ public class DataDomain {
     */
     @JsonProperty(required = true)
     @NotNull
+    @NonNull
     protected String orgRefName;
 
     /**
     The account that this object belongs to
     */
     @NotNull
+    @NonNull
     @JsonProperty(required = true)
     protected String accountNum;
 
@@ -39,6 +38,7 @@ public class DataDomain {
     indirection, allowing for permission on this object with in an account.
     */
     @NotNull
+    @NonNull
     @NotEmpty
     @JsonProperty(required = true)
     protected String tenantId;
@@ -47,12 +47,14 @@ public class DataDomain {
     The datasegment is again another level of indirection with in account, tenant to provide even more granularity at a permission level.
     */
     @JsonProperty(required = true)
-    protected int dataSegment;
+    @Builder.Default
+    protected int dataSegment=0;
 
     /**
     The userId of the owner of this object, that user typically will be considered to have additional privileges vs. non owners
     */
     @NotNull
+    @NonNull
     @NotEmpty
     @JsonProperty(required = true)
     protected String ownerId;

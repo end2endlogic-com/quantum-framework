@@ -24,6 +24,7 @@ public class DynamicSearchRequest {
     @Builder.Default
     protected int pageSize = 10;
     @Builder.Default
+    @SuppressWarnings("unchecked")
     protected List<SortParameter> sortFields = Collections.EMPTY_LIST;
     @Builder.Default
     protected SearchCondition searchCondition = SearchCondition.AND;

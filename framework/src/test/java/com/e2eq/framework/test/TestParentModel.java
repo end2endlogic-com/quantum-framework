@@ -18,7 +18,7 @@ public class TestParentModel extends BaseModel {
 
     protected String testField;
 
-    protected List<DynamicAttributeSet> dynamicAttributeSets = new ArrayList();
+    protected List<DynamicAttributeSet> dynamicAttributeSets = new ArrayList<>();
 
     @Override
     public String bmFunctionalArea() {
