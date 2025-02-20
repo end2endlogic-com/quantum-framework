@@ -51,8 +51,8 @@ NULL: 'null';
 AND: '&&';
 OR: '||';
 NOT: '!!';
-TRUE: 'TRUE';
-FALSE:'FALSE';
+TRUE: 'TRUE' | 'true';
+FALSE:'FALSE' | 'false';
 
 // Grouping
 RBRCE : '}';

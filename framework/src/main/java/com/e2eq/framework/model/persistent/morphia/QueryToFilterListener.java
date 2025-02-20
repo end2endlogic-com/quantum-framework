@@ -277,10 +277,19 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
 
     @Override
     public void enterBooleanExpr(BIAPIQueryParser.BooleanExprContext ctx) {
+        boolean value;
+        if (ctx.value.getText().equalsIgnoreCase("TRUE")) {
+            value = true;
+        } else if (ctx.value.getText().equalsIgnoreCase("FALSE")) {
+            value = false;
+        } else {
+            throw new IllegalArgumentException("Boolean value not recognized:" + ctx.value.getText());
+        }
+
         if (ctx.op.getType() == BIAPIQueryParser.EQ) {
-            filterStack.push(Filters.eq(ctx.field.getText(), ctx.value.getText()));
+            filterStack.push(Filters.eq(ctx.field.getText(), value));
         } else if (ctx.op.getType() == BIAPIQueryParser.NEQ) {
-            filterStack.push(Filters.ne(ctx.field.getText(), ctx.value.getText()));
+            filterStack.push(Filters.ne(ctx.field.getText(), value));
         } else {
             throw new IllegalArgumentException("Operator not recognized:" + ctx.op.getText());
         }
@@ -443,4 +452,6 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
     public void enterCompoundExpr(BIAPIQueryParser.CompoundExprContext ctx) {
         super.enterCompoundExpr(ctx);
     }
+
+
 }
