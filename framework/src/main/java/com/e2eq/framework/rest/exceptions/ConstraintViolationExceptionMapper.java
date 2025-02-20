@@ -8,7 +8,6 @@ import jakarta.ws.rs.ext.Provider;
 import jakarta.validation.ConstraintViolationException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.util.List;
 import java.util.Set;
 
 @Provider
