@@ -5,4 +5,5 @@ import jakarta.enterprise.context.ApplicationScoped;
 
 @ApplicationScoped
 public class CredentialRefreshTokenRepo extends MorphiaRepo<CredentialRefreshToken> {
+
 }
