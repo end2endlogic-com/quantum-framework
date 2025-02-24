@@ -47,7 +47,8 @@ public @Data class MailingAddress {
     protected String country;
     @Builder.Default
     protected boolean validated=false;
-    protected Set<AddressRole> addressRoles;
+    @Builder.Default
+    protected Set<AddressRole> addressRoles = new HashSet<>();
     protected Date lastValidationAttempt;
     protected String validationMessage;
     protected Coordinate coordinates;

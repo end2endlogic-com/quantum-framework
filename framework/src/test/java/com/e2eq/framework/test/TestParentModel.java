@@ -6,17 +6,24 @@ import dev.morphia.annotations.Entity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+import lombok.ToString;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 @Entity
 @RegisterForReflection
 @Data
 @EqualsAndHashCode(callSuper = true)
+@ToString
 public class TestParentModel extends BaseModel {
 
     protected String testField;
+    protected String testField2;
+    protected String testField3;
+
+    protected Map<String, String> testMap;
 
     protected List<DynamicAttributeSet> dynamicAttributeSets = new ArrayList<>();
 

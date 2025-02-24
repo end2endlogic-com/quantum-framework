@@ -65,6 +65,8 @@ public class AddAnonymousSecurityRules implements ChangeSetBean {
     @Override
     public void execute(String realm) throws Exception {
 
+        // check if the policies already exist
+        if (!policyRepo.findByRefName("defaultAnonymousPolicy").isPresent()) {
             // So this will match any user that has the role "user"
             // for "any area, any domain, and any action i.e. all areas, domains, and actions
             SecurityURIHeader header = new SecurityURIHeader.Builder()
@@ -105,6 +107,7 @@ public class AddAnonymousSecurityRules implements ChangeSetBean {
             defaultAnonymousPolicy.setDataDomain(SecurityUtils.systemDataDomain);
 
             policyRepo.save(defaultAnonymousPolicy);
+        }
 
     }
 }

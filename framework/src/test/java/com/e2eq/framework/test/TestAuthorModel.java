@@ -9,7 +9,7 @@ import lombok.ToString;
 
 @Entity
 @Data
-@EqualsAndHashCode(callSuper = true)
+@EqualsAndHashCode (callSuper = true)
 @RegisterForReflection
 @ToString
 public class TestAuthorModel extends BaseModel {
