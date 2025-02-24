@@ -147,33 +147,38 @@ public class MigrationRunner {
 
 
             for (ChangeSetBean h : changeSetList) {
-               Log.warn("--- Executing Change Set:" + h.getName() + " on realm:" + SecurityUtils.defaultRealm);
-               h.execute(SecurityUtils.defaultRealm);
-               ChangeSetRecord record = new ChangeSetRecord();
-               record.setRealm(SecurityUtils.defaultRealm);
-               record.setRefName(h.getName());
-               record.setDataDomain(SecurityUtils.systemDataDomain);
-               record.setAuthor(h.getAuthor());
-               record.setChangeSetName(h.getId());
-               record.setDescription(h.getDescription());
-               record.setPriority(h.getPriority());
-               record.setDbFromVersion(h.getDbFromVersion());
-               record.setDbToVersion(h.getDbToVersion());
-               record.setLastExecutedDate(new Date());
-               record.setScope(h.getScope());
-               record.setSuccessful(true);
-               changesetRecordRepo.save(record);
-               version = h.getDbToVersion();
+               if (!changesetRecordRepo.findByRefName(h.getName()).isPresent()) {
+                  Log.warn("--- Executing Change Set:" + h.getName() + " on realm:" + SecurityUtils.defaultRealm);
+                  h.execute(SecurityUtils.defaultRealm);
+                  ChangeSetRecord record = new ChangeSetRecord();
+                  record.setRealm(SecurityUtils.defaultRealm);
+                  record.setRefName(h.getName());
+                  record.setDataDomain(SecurityUtils.systemDataDomain);
+                  record.setAuthor(h.getAuthor());
+                  record.setChangeSetName(h.getId());
+                  record.setDescription(h.getDescription());
+                  record.setPriority(h.getPriority());
+                  record.setDbFromVersion(h.getDbFromVersion());
+                  record.setDbToVersion(h.getDbToVersion());
+                  record.setLastExecutedDate(new Date());
+                  record.setScope(h.getScope());
+                  record.setSuccessful(true);
+                  changesetRecordRepo.save(record);
+                  version = h.getDbToVersion();
+               }
             }
 
+            if (!databaseVersionRepo.findByRefName(Double.toString(version)).isPresent()) {
+               DatabaseVersion dbVersion = new DatabaseVersion();
+               dbVersion.setCurrentVersion((Double.toString(version)));
+               dbVersion.setRefName(Double.toString(version));
+               dbVersion.setDataDomain(SecurityUtils.systemDataDomain);
+               dbVersion.setSince(new Date());
+               databaseVersionRepo.save(dbVersion);
 
-            DatabaseVersion dbVersion = new DatabaseVersion();
-            dbVersion.setCurrentVersion((Double.toString(version)));
-            dbVersion.setRefName(Double.toString(version));
-            dbVersion.setDataDomain(SecurityUtils.systemDataDomain);
-            dbVersion.setSince(new Date());
-            databaseVersionRepo.save(dbVersion);
-            Log.warn(">> Migration completed successfully to version:" + dbVersion.getCurrentVersion() + " <<");
+               Log.warn(">> Migration completed successfully to version:" + dbVersion.getCurrentVersion() + " <<");
+            } else
+               Log.warn(">> ?? Migration appears to have already been completed");
          }
       }
    }

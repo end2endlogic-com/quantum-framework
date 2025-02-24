@@ -4,10 +4,7 @@ import com.e2eq.framework.rest.models.ObjectIdJsonSerializer;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import dev.morphia.annotations.Entity;
 import jakarta.validation.constraints.NotNull;
-import lombok.Data;
-import lombok.EqualsAndHashCode;
-import lombok.NoArgsConstructor;
-import lombok.ToString;
+import lombok.*;
 import lombok.experimental.SuperBuilder;
 import org.bson.types.ObjectId;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
@@ -25,12 +22,16 @@ public class EntityReference {
     @JsonSerialize(using = ObjectIdJsonSerializer.class)
     @Schema(implementation = String.class, description = "object id of the entity being referenced")
     @NotNull
+    @NonNull
     protected ObjectId entityId;
     @NotNull
+    @NonNull
     protected String entityRefName;
     @NotNull
+    @NonNull
     protected String entityDisplayName;
     @NotNull
+    @NonNull
     protected Date dateTimeOfCopy; // the date and time the reference was created
 
     protected String entityType;
