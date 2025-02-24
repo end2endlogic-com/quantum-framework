@@ -1,5 +1,6 @@
 package com.e2eq.framework.persistent;
 
+import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.base.CodeList;
 import com.e2eq.framework.model.persistent.morphia.CodeListRepo;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
@@ -33,15 +34,18 @@ public class TestCodes {
         if (codeList.isPresent()) {
             return codeList.get();
         } else {
-            CodeList newCodeList = new CodeList();
-            newCodeList.setRefName(codeListName);
+            CodeList newCodeList = CodeList.builder()
+                    .category("TEST")
+                    .refName(codeListName)
+                    .key(codeListName)
+                    .build();
             codeListRepo.save(newCodeList);
             return newCodeList;
         }
     }
 
     @Test
-    public void testAddCodes() {
+    public void testAddCodes() throws ReferentialIntegrityViolationException {
         Datastore ds = dataStore.getDefaultSystemDataStore();
         String[] roles = {"user"};
         PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.systemUserId, roles);
@@ -56,6 +60,7 @@ public class TestCodes {
                 codeList = codeListRepo.save(codeList);
                 System.out.println(codeList);
             }
+            codeListRepo.delete(codeList);
         }
     }
 }

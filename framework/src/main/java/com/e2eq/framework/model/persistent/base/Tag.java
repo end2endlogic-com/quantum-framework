@@ -6,6 +6,7 @@ import io.quarkus.runtime.annotations.RegisterForReflection;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -16,6 +17,6 @@ public @Data class Tag {
    protected String category;
    protected String tagDisplayName;
    protected Set<String> additionalData;
-   protected Map<String, String> attributes;
+   protected List<StringNameValue> attributes;
    protected Boolean visible;
 }

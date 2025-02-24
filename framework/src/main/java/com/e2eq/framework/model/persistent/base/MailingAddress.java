@@ -5,10 +5,7 @@ import com.e2eq.framework.model.general.AddressRole;
 import dev.morphia.annotations.Entity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.validation.constraints.Size;
-import lombok.Data;
-import lombok.EqualsAndHashCode;
-import lombok.NoArgsConstructor;
-import lombok.ToString;
+import lombok.*;
 import lombok.experimental.SuperBuilder;
 
 import java.util.Date;
@@ -48,7 +45,9 @@ public @Data class MailingAddress {
     //@Size(min=2, max=2)
     protected String countryTwoLetterCode;
     protected String country;
+    @Builder.Default
     protected boolean validated=false;
+    @Builder.Default
     protected Set<AddressRole> addressRoles = new HashSet<>();
     protected Date lastValidationAttempt;
     protected String validationMessage;
