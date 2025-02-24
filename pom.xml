@@ -23,6 +23,7 @@
         <skipITs>true</skipITs>
         <surefire-plugin.version>3.2.5</surefire-plugin.version>
         <lombrok.version>1.18.34</lombrok.version>
+
     </properties>
 
     <modules>

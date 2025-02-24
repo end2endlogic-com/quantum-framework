@@ -11,7 +11,7 @@ import lombok.ToString;
 @Entity
 @RegisterForReflection
 @Data
-@EqualsAndHashCode
+@EqualsAndHashCode(callSuper = true)
 @ToString
 public class TestBookModel extends BaseModel {
 

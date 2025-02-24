@@ -5,7 +5,7 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 
-@EqualsAndHashCode
+@EqualsAndHashCode( callSuper = true)
 @AllArgsConstructor
 @NoArgsConstructor
 public @Data class CounterResponse extends ResponseBase {

@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.type.CollectionType;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import dev.morphia.Datastore;
 import dev.morphia.MorphiaDatastore;
+import jakarta.annotation.security.PermitAll;
 import jakarta.enterprise.inject.Default;
 
 import jakarta.inject.Inject;
@@ -48,6 +49,25 @@ public class SystemResource {
                     .map(EntityModel::getName).sorted()
                     .collect(Collectors.joining(", "));
             return Response.ok(list).build();
+    }
+
+    @GET
+    @Path("/quantumVersion")
+    @Produces("application/text")
+    @PermitAll
+    public Response version() throws IOException {
+        try (InputStream input = getClass().getClassLoader().getResourceAsStream("version.properties")) {
+            if (input == null) {
+                return Response.status(Response.Status.NOT_FOUND)
+                        .entity("Version information not found").build();
+            }
+
+            java.util.Properties prop = new java.util.Properties();
+            prop.load(input);
+            String version = prop.getProperty("quantum-version");
+            String buildDate = prop.getProperty("build.date");
+            return Response.ok(version + ":" + buildDate).build();
+        }
     }
 
     @PUT

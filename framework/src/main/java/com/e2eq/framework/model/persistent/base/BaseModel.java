@@ -26,7 +26,7 @@ import static dev.morphia.mapping.IndexType.DESC;
 
 @Entity
 @RegisterForReflection
-@EqualsAndHashCode
+@EqualsAndHashCode ( callSuper = true)
 @SuperBuilder
 @Data
 @NoArgsConstructor

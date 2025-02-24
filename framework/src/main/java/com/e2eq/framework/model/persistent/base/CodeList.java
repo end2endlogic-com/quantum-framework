@@ -1,9 +1,11 @@
 package com.e2eq.framework.model.persistent.base;
 
 import dev.morphia.annotations.Entity;
+import io.quarkus.arc.All;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
+import lombok.experimental.SuperBuilder;
 
 import java.util.List;
 
@@ -13,20 +15,25 @@ import java.util.List;
 @RegisterForReflection
 @Entity
 @NoArgsConstructor
+@SuperBuilder
+@AllArgsConstructor
 public class CodeList extends BaseModel {
     @NonNull
-    @NotNull
+    @NotNull(message = "category is required")
+    @Builder.Default
     String category="default";
 
     @NonNull
-    @NotNull
+    @NotNull(message="key is required")
     String key;
 
     String description;
 
     @NonNull
     @NotNull
+    @Builder.Default
     String valueType="STRING";
+
     List<Object> values;
 
     @Override

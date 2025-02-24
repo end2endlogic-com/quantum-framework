@@ -1,8 +1,16 @@
 package com.e2eq.framework.api.csv;
 
+import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.ResourceContext;
+import com.e2eq.framework.model.securityrules.RuleContext;
+import com.e2eq.framework.model.securityrules.SecuritySession;
+import com.e2eq.framework.persistent.TestCSVModelRepo;
 import com.e2eq.framework.persistent.TestParentRepo;
 import com.e2eq.framework.test.TestCSVModel;
+import com.e2eq.framework.test.TestParentModel;
 import com.e2eq.framework.util.CSVExportHelper;
+import com.e2eq.framework.util.CSVImportHelper;
+import com.e2eq.framework.util.TestUtils;
 import io.quarkus.logging.Log;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
@@ -10,8 +18,12 @@ import jakarta.ws.rs.core.StreamingOutput;
 import org.apache.commons.beanutils.PropertyUtils;
 import org.junit.jupiter.api.Test;
 import org.supercsv.cellprocessor.CellProcessorAdaptor;
+import org.supercsv.cellprocessor.Optional;
+import org.supercsv.cellprocessor.constraint.NotNull;
 import org.supercsv.cellprocessor.ift.CellProcessor;
+import org.supercsv.io.dozer.CsvDozerBeanReader;
 import org.supercsv.io.dozer.CsvDozerBeanWriter;
+import org.supercsv.io.dozer.ICsvDozerBeanReader;
 import org.supercsv.io.dozer.ICsvDozerBeanWriter;
 import org.supercsv.prefs.CsvPreference;
 import org.supercsv.quote.AlwaysQuoteMode;
@@ -21,15 +33,15 @@ import org.supercsv.util.CsvContext;
 
 import java.io.*;
 import java.nio.charset.Charset;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @QuarkusTest
 public class TestCSVFeatures {
     @Inject
-    TestParentRepo repo;
+    TestCSVModelRepo repo;
+
+    @Inject
+    RuleContext ruleContext;
 
     private List<TestCSVModel> getRecords() {
         // Generate a list of TestCSVModels
@@ -73,7 +85,7 @@ public class TestCSVFeatures {
 
 
     @Test
-    public void testSuperCSV()  {
+    public void testSuperExportCSV()  {
         /**
          * Inner class to process CSV cell
          */
@@ -171,5 +183,77 @@ public class TestCSVFeatures {
                 null);
 
         streamingOutput.write(System.out);
+    }
+
+    @Test
+    public void testSuperCSVImport() throws IOException {
+        final String[] FIELD_MAPPING = {"refName", "displayName", "testField", "testField2", "testField3", "testList[0]"};
+
+        final CellProcessor[] processors = new CellProcessor[]{
+          new NotNull(),
+          new NotNull(),
+          new NotNull(),
+          new Optional(),
+          new Optional(),
+          new Optional()
+        };
+
+        ICsvDozerBeanReader beanReader=null;
+        try {
+            beanReader = new CsvDozerBeanReader(
+                    new InputStreamReader(getClass().getClassLoader().getResourceAsStream("testData/TestImportCSV.csv")),
+                    CsvPreference.STANDARD_PREFERENCE);
+            beanReader.getHeader(true);
+            beanReader.configureBeanMapping(TestCSVModel.class, FIELD_MAPPING);
+
+            TestCSVModel model;
+            while ((model = beanReader.read(TestCSVModel.class, processors)) != null) {
+                System.out.println(String.format("lineNo=%s, rowNo=%s, model=%s", beanReader.getLineNumber(),
+                        beanReader.getRowNumber(), model));
+            }
+        }
+        finally {
+           if ( beanReader != null ) {
+               beanReader.close();
+           }
+        }
+
+    }
+
+    @Test
+    public void testCSVImportHelper() throws IOException {
+
+
+        String[] roles = {"user"};
+        PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.systemUserId, roles);
+        ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "save");
+        TestUtils.initRules(ruleContext, "security", "userProfile", TestUtils.systemUserId);
+
+        try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
+            CSVImportHelper helper = new CSVImportHelper();
+            InputStream inputStream = getClass().getClassLoader().getResourceAsStream("testData/TestImportCSV.csv");
+            Charset chosenCharset = Charset.forName("UTF-8");
+            List failedRecords = new ArrayList<>();
+            CSVImportHelper.FailedRecordHandler failedRecordHandler = failedRecords::add;
+
+            CSVImportHelper.ImportResult result = helper.importCSV(
+                    repo,
+                    inputStream,
+                    ',',
+                    '"',
+                    false,
+                    List.of("refName", "displayName", "testField", "testField2", "testField3", "testList[0]"),
+                    List.of("refName", "displayName", "testField", "testField2", "testField3", "testList[0]"),
+                    chosenCharset,
+                    false,
+                    "QUOTE_WHERE_ESSENTIAL",
+                    failedRecordHandler);
+
+            System.out.println("Import Result: Imported Count:" + result.getImportedCount());
+            System.out.println("Import Result: Imported Failed Count:" + result.getFailedCount());
+            for (Object r : result.getFailedRecordsFeedback()) {
+                System.out.println(r);
+            }
+        }
     }
 }
