@@ -409,23 +409,16 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
             filters = new ArrayList<>();
         }
 
-        if (sortFields != null) {
-            throw new UnsupportedOperationException("Sorting not supported");
-        }
+        FindOptions findOptions = buildFindOptions(skip, limit, sortFields, null);
 
         // Add filters based upon rule and resourceContext;
         Filter[] filterArray = getFilterArray(filters, getPersistentClass());
 
         MorphiaCursor<T> cursor;
-        if (limit > 0) {
-            cursor = dataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass())
-                    .filter(filterArray)
-                    .iterator(new FindOptions().skip(skip).limit(limit));
-        } else {
-            cursor = dataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass())
-                    .filter(filterArray)
-                    .iterator();
-        }
+
+        cursor = dataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass())
+                .filter(filterArray)
+                .iterator(findOptions);
 
         List<T> list = new ArrayList<>();
         List<String> actions = null;
@@ -532,6 +525,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
         return list;
     }
+
 
     @Override
     public long getCount(@Nullable String query) {

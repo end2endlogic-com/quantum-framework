@@ -1,6 +1,7 @@
 -
   displayName: UserProfile
   refName: USER_PROFILE
+  area: SECURITY
   functionalActions:
     -
       displayName: Change Password
@@ -29,6 +30,7 @@
 -
  displayName: Registration
  refName: REGISTRATION
+ area: SECURITY
  functionalActions:
         - displayName: Approve
           refName: APPROVE
@@ -62,6 +64,7 @@
 -
   displayName: Mailbox
   refName: MAILBOX
+  area: INTEGRATION
   functionalActions:
     - displayName: View
       refName: VIEW
@@ -86,6 +89,31 @@
 -
   displayName: Contact Us
   refName: CONTACT_US
+  area: WEB_SITE
+  functionalActions:
+    - displayName: View
+      refName: VIEW
+      tags:
+        - default
+    - displayName: Create
+      refName: CREATE
+      tags:
+        - default
+    - displayName: Update
+      refName: UPDATE
+      tags:
+        - default
+    - displayName: Archive
+      refName: ARCHIVE
+      tags:
+        - default
+    - displayName: Delete
+      refName: DELETE
+      tags:
+        - admin
+- displayName: Change Bean Migration
+  area: MIGRATION
+  refName: CHANGE_BEAN_MIGRATION
   functionalActions:
     - displayName: View
       refName: VIEW

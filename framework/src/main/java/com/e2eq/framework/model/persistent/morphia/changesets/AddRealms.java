@@ -25,7 +25,7 @@ public class AddRealms implements ChangeSetBean  {
 
     @Override
     public String getId() {
-        return "0004";
+        return "00004";
     }
 
     @Override

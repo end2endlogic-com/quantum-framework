@@ -239,11 +239,11 @@ public class SecurityTest {
         if (authProvider.equals("custom")) {
             request.setUserId(SecurityUtils.systemUserId);
             request.setPassword("test123456");
-            request.setTenantId(SecurityUtils.systemTenantId);
+            //request.setTenantId(SecurityUtils.systemTenantId);
         } else {
             request.setUserId("testuser@end2endlogic.com");
             request.setPassword("P@55w@rd");
-            request.setTenantId(SecurityUtils.systemTenantId);
+           // request.setTenantId(SecurityUtils.systemTenantId);
         }
 
         ObjectMapper mapper = new ObjectMapper();

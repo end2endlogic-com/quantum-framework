@@ -5,9 +5,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
-import dev.morphia.annotations.Entity;
-import dev.morphia.annotations.IndexOptions;
-import dev.morphia.annotations.Indexed;
+import dev.morphia.annotations.*;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import com.e2eq.framework.model.persistent.base.BaseModel;
 
@@ -17,16 +15,15 @@ import jakarta.validation.constraints.NotNull;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
 
-@Entity("credentialUserIdPassword")
+import static dev.morphia.mapping.IndexType.DESC;
+
+@Entity()
 @Data
 @EqualsAndHashCode(callSuper = true )
 @RegisterForReflection
 @SuperBuilder
 @NoArgsConstructor
 public class CredentialUserIdPassword extends BaseModel {
-
-
-
 
     @Indexed(options= @IndexOptions(unique=true))
     @NotNull ( message = "userId must be provided for userIdPassword credential")
