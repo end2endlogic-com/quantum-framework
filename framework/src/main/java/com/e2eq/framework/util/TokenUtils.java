@@ -61,7 +61,7 @@ public class TokenUtils {
 		claimsBuilder.audience(AUDIENCE);
 		claimsBuilder.expiresAt(currentTimeInSecs + durationInSeconds);
 		claimsBuilder.groups(groups);
-		claimsBuilder.claim("userName", userId);
+		claimsBuilder.claim("username", userId);
 		claimsBuilder.claim("scope", AUTH_SCOPE);
 
 		/*Map<String, String> area2Realm = new HashMap<>();
