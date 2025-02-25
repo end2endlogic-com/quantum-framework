@@ -310,15 +310,11 @@ public class SecurityResource {
          */
     }
 
-    public AuthResponse generateAuthResponse(@NotNull String userId, @NotNull String tenantId,
-                                             @NotNull String defaultRealm,
-                                             @NotNull Map<String, String> realmOverrides,
-                                             @NotNull String orgRefName,
-                                             @NotNull String accountId,
-                                             @NotNull String[] roles,
+    protected AuthResponse generateAuthResponse(@NotNull (message = "userId for generating auth response can not be null") String userId,
+                                             @NotNull (message = "the roles array can not be null for generating an auth response") String[] roles,
                                              long durationInSeconds,
                                              long incrementRefreshDuration,
-                                             @NotNull String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+                                             @NotNull(message = "the issuer can not be null for for generating an auth response") String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
         String userToken = TokenUtils.generateUserToken(
                 userId,
                 new HashSet<>(Arrays.asList(roles)),
@@ -357,12 +353,8 @@ public class SecurityResource {
         String[] roles = new String[jwt.getGroups().size()];
         roles = jwt.getGroups().toArray(roles);
 
+        /** Something strange here **/
         AuthResponse response = generateAuthResponse(jwt.getSubject(),
-                jwt.getClaim("tenantId"),
-                jwt.getClaim("defaultRealm"),
-                jwt.getClaim("realmOverrides"),
-                jwt.getClaim("accountId"),
-                jwt.getClaim("orgRefName"),
                 roles,
                 tokenDuration,
                 tokenDuration + 3200l,

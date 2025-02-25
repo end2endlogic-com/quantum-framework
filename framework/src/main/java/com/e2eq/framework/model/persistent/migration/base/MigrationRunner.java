@@ -1,10 +1,13 @@
 package com.e2eq.framework.model.persistent.migration.base;
 
+import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecuritySession;
 import com.e2eq.framework.model.securityrules.RuleContext;
 import com.e2eq.framework.model.persistent.morphia.ChangeSetRecordRepo;
 import com.e2eq.framework.model.persistent.morphia.DatabaseVersionRepo;
 import com.e2eq.framework.util.SecurityUtils;
+import com.e2eq.framework.util.TestUtils;
 import com.google.common.collect.Ordering;
 import io.quarkus.logging.Log;
 import io.quarkus.runtime.Startup;
@@ -76,7 +79,7 @@ public class MigrationRunner {
          Log.info("Searching for change set beans");
          Set<Bean<?>> changeSets = beanManager.getBeans(ChangeSetBean.class);
          if (!changeSets.isEmpty()) {
-            Log.info(" >> Number of ChangeSet Beans:" + changeSets.size());
+            Log.info(" >> Found" + changeSets.size() + " ChangeSet Beans from beanManager");
             for (Bean<?> bean : changeSets) {
                Log.info("     ChangeSet Bean:" + bean.getBeanClass().getName());
             }
@@ -98,8 +101,8 @@ public class MigrationRunner {
 
          List<ChangeSetBean> changeSetList = new LinkedList<>();
          changeSetList.addAll(changeSetBeans);
-         Log.info(">> Number of ChangeSet Beans:" + changeSetBeans.size());
-         Log.info(">> Number in ChangeSet List:" + changeSetList.size());
+         Log.info(">> Number of ChangeSet Found Beans:" + changeSetBeans.size());
+         Log.info(">> Number in ChangeSet Beans added to List fo consider:" + changeSetList.size());
 
          Ordering<ChangeSetBean> byPriority = new Ordering<ChangeSetBean>() {
             @Override
@@ -127,8 +130,14 @@ public class MigrationRunner {
          // and act accordingly
 
          //TODO get the security context sorted for migrations
+         Log.info("--- Running ChangeSet Beans");
+         String[] roles = {"admin"};
+         PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.systemUserId, roles);
+         ResourceContext rContext = TestUtils.getResourceContext("migration", "changebean", "save");
+         TestUtils.initRules(ruleContext, "security", "userProfile", TestUtils.systemUserId);
 
-         try (SecuritySession s = new SecuritySession(SecurityUtils.systemPrincipalContext, SecurityUtils.systemSecurityResourceContext)) {
+
+         try (SecuritySession s = new SecuritySession(pContext, rContext)) {
 
             // Now Remove the ones that have already been run:
             Map<String, ChangeSetRecord> allReadyExecutedChangeSetRecords = changesetRecordRepo.getAllReadyExecutedChangeSetRecordMap(Float.parseFloat(targetDatabaseVersion));
@@ -165,27 +174,19 @@ public class MigrationRunner {
                   record.setSuccessful(true);
                   changesetRecordRepo.save(record);
                   version = h.getDbToVersion();
+               } else {
+                  Log.warn(">> Ignoring Change Set:" + h.getName() + " because it has already been executed.");
                }
             }
 
-            if (!databaseVersionRepo.findByRefName(Double.toString(version)).isPresent()) {
-               DatabaseVersion dbVersion = new DatabaseVersion();
-               dbVersion.setCurrentVersion((Double.toString(version)));
-               dbVersion.setRefName(Double.toString(version));
-               dbVersion.setDataDomain(SecurityUtils.systemDataDomain);
-               dbVersion.setSince(new Date());
-               databaseVersionRepo.save(dbVersion);
-
-               Log.warn(">> Migration completed successfully to version:" + dbVersion.getCurrentVersion() + " <<");
-            } else
-               Log.warn(">> ?? Migration appears to have already been completed");
+            DatabaseVersion dbVersion = new DatabaseVersion();
+            dbVersion.setCurrentVersion((Double.toString(version)));
+            dbVersion.setRefName(Double.toString(version));
+            dbVersion.setDataDomain(SecurityUtils.systemDataDomain);
+            dbVersion.setSince(new Date());
+            databaseVersionRepo.save(dbVersion);
+            Log.info("--- Database Version Updated to:" + version);
          }
       }
    }
-
-
-
-
-
-
 }

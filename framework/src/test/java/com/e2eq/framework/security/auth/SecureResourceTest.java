@@ -22,6 +22,7 @@ public class SecureResourceTest {
 
     @Test
     public void testSecuredEndpoints() {
+        AuthProvider.LoginResponse loginResponse = null;
         if (authProvider.equals("cognito")) {
             // Create test user with roles
             if (!authFactory.getUserManager().userExists("testuser@end2endlogic.com")) {
@@ -29,36 +30,37 @@ public class SecureResourceTest {
             } else {
                 Log.info("User already exists, skipping creation");
             }
-            AuthProvider.LoginResponse loginResponse = authFactory.getAuthProvider().login("testuser@end2endlogic.com", "P@55w@rd");
+            loginResponse = authFactory.getAuthProvider().login("testuser@end2endlogic.com", "P@55w@rd");
+        } else {
+            loginResponse = authFactory.getAuthProvider().login("system@system.com", "test123456");
+        }
 
 
-            if (loginResponse.authenticated() && (loginResponse.positiveResponse().roles().contains("user")||loginResponse.positiveResponse().roles().contains("admin") ))
-            {
-                given()
-                        .header("Authorization", "Bearer " + loginResponse.positiveResponse().accessToken())
-                        .when()
-                        .get("/secure/authenticated")
-                        .then()
-                        .statusCode(200);
+        if (loginResponse.authenticated() && (loginResponse.positiveResponse().roles().contains("user") || loginResponse.positiveResponse().roles().contains("admin"))) {
+            given()
+                    .header("Authorization", "Bearer " + loginResponse.positiveResponse().accessToken())
+                    .when()
+                    .get("/secure/authenticated")
+                    .then()
+                    .statusCode(200);
 
-                // Test user endpoint
-                given()
-                        .header("Authorization", "Bearer " + loginResponse.positiveResponse().accessToken())
-                        .when()
-                        .get("/secure/view")
-                        .then()
-                        .statusCode(200);
-            }
+            // Test user endpoint
+            given()
+                    .header("Authorization", "Bearer " + loginResponse.positiveResponse().accessToken())
+                    .when()
+                    .get("/secure/view")
+                    .then()
+                    .statusCode(200);
+        }
 
-            if (loginResponse.authenticated() && (!loginResponse.positiveResponse().roles().contains("admin"))){
-                // Test admin endpoint (should fail)
-                given()
-                        .header("Authorization", "Bearer " + loginResponse.positiveResponse().accessToken())
-                        .when()
-                        .post("/secure/create")
-                        .then()
-                        .statusCode(403);
-            }
+        if (loginResponse.authenticated() && (!loginResponse.positiveResponse().roles().contains("admin"))) {
+            // Test admin endpoint (should fail)
+            given()
+                    .header("Authorization", "Bearer " + loginResponse.positiveResponse().accessToken())
+                    .when()
+                    .post("/secure/create")
+                    .then()
+                    .statusCode(403);
         }
     }
 

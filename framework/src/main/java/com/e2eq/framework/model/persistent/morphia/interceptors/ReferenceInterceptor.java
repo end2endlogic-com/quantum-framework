@@ -80,6 +80,10 @@ public class ReferenceInterceptor implements EntityListener<Object> {
                 } else
                 // check if the reference is to a list of BaseModels
                 if (Collection.class.isAssignableFrom(childField.getAccessor().get(childEntity).getClass())) {
+                    TrackReferences trackReferences = childField.getAnnotation(TrackReferences.class);
+                    if (trackReferences == null) {
+                        continue;
+                    }
                     Collection<BaseModel> parentBaseModels = (Collection<BaseModel>) childField.getAccessor().get(childEntity);
                     if (parentBaseModels != null) {
                         for (BaseModel parentBaseModel : parentBaseModels) {

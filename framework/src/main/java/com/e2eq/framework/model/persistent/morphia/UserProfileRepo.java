@@ -67,6 +67,7 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
 
       CredentialUserIdPassword cred = new CredentialUserIdPassword();
       DomainContext ctx = new DomainContext(up.getDataDomain(), authProvider);
+      cred.setDomainContext(ctx);
       cred.setUserId(up.getUserId());
       cred.setRefName(up.getUserId());
       cred.setRoles(roles);
