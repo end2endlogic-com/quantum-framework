@@ -232,10 +232,8 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
             @QueryParam("skipHeaderRow") @DefaultValue("true") boolean skipHeaderRow,
             @Parameter(description = "The charset encoding to use for the file")
             @QueryParam("charsetEncoding") @DefaultValue("UTF-8-without-BOM") String charsetEncoding,
-            @Parameter(description = "A non-empty list of the names of the columns expected in the CSV file")
-            @QueryParam("requestedColumns") List<String> requestedColumns,
-            @Parameter(description = "A list of preferred column names to use in place of the requested columns")
-            @QueryParam("preferredColumnNames") List<String> preferredColumnNames) {
+            @Parameter(description = "A non-empty list of the names of the columns expected in the CSV file that map to the model fields")
+            @QueryParam("requestedColumns") List<String> requestedColumns) {
         try {
             if (fileUpload.file == null) {
                 throw new WebApplicationException("No file uploaded", Response.Status.BAD_REQUEST);
@@ -266,7 +264,6 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
                     quoteChar.charAt(0),
                     skipHeaderRow,
                     requestedColumns,
-                    preferredColumnNames,
                     chosenCharset,
                     mustUseBOM,
                     quotingStrategy,

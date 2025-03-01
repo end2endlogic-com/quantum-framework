@@ -17,6 +17,7 @@ import org.supercsv.quote.QuoteMode;
 import java.io.*;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import static java.lang.String.format;
@@ -109,7 +110,6 @@ public class CSVImportHelper {
             char quoteChar,
             boolean skipHeaderRow,
             List<String> requestedColumns,
-            List<String> preferredColumnNames,
             Charset charset,
             boolean mustUseBOM,
             String quotingStrategy,
@@ -131,7 +131,10 @@ public class CSVImportHelper {
                 throw new IllegalArgumentException("CSV file does not contain a header row");
             }
 
-            String[] fieldMapping = createFieldMapping(header, requestedColumns, preferredColumnNames);
+            //String[] fieldMapping = createFieldMapping(header, requestedColumns, preferredColumnNames);
+
+            // convert requestedColumns to an array of strings
+            String[] fieldMapping = requestedColumns.toArray(new String[requestedColumns.size()]);
 
             beanReader.configureBeanMapping(repo.getPersistentClass(), fieldMapping);
 

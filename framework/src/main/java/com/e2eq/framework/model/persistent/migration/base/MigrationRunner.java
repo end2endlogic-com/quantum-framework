@@ -187,6 +187,8 @@ public class MigrationRunner {
             databaseVersionRepo.save(dbVersion);
             Log.info("--- Database Version Updated to:" + version);
          }
+      } else {
+         Log.info("---- Database Migration is disabled");
       }
    }
 }

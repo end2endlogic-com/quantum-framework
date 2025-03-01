@@ -188,6 +188,7 @@ public class TestCSVFeatures {
     @Test
     public void testSuperCSVImport() throws IOException {
         final String[] FIELD_MAPPING = {"refName", "displayName", "testField", "testField2", "testField3", "testList[0]"};
+        final String[] PREFERRED_FIELD_MAPPING = {"ID", "NAME", "testField", "testField2", "testField3", "testListField1"};
 
         final CellProcessor[] processors = new CellProcessor[]{
           new NotNull(),
@@ -242,7 +243,6 @@ public class TestCSVFeatures {
                     ',',
                     '"',
                     false,
-                    List.of("refName", "displayName", "testField", "testField2", "testField3", "testList[0]"),
                     List.of("refName", "displayName", "testField", "testField2", "testField3", "testList[0]"),
                     chosenCharset,
                     false,
