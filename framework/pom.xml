@@ -207,6 +207,19 @@
     </dependency>  -->
 
 
+    <!-- Distributed locks and Migration framework -->
+    <dependency>
+      <groupId>com.coditory.sherlock</groupId>
+      <artifactId>sherlock-mongo</artifactId>
+      <version>1.0.3</version>
+    </dependency>
+
+    <!-- Internationalization of messages -->
+    <dependency>
+      <groupId>com.coditory.quark</groupId>
+      <artifactId>quark-i18n</artifactId>
+      <version>0.0.14</version>
+    </dependency>
 
     <dependency>
       <groupId>com.google.guava</groupId>
