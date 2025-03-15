@@ -23,7 +23,8 @@ import java.util.Set;
 @ToString
 @NoArgsConstructor
 @SuperBuilder
-public @Data class MailingAddress {
+@Data
+public  class MailingAddress {
     protected String addressName;
     protected String addressLine1;
     protected String addressLine2;

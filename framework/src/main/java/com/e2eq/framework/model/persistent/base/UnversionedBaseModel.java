@@ -119,6 +119,7 @@ public abstract  class UnversionedBaseModel {
     @JsonIgnore
     abstract public String bmFunctionalDomain();
 
+
     public void setDataDomain (@Valid DataDomain dataDomain) {
         this.dataDomain = dataDomain;
     }
@@ -155,6 +156,5 @@ public abstract  class UnversionedBaseModel {
 
         return actionsMap;
     }
-
 
 }
