@@ -68,6 +68,9 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
 
    private static final int MAXIMUM_REJECTS_SHOWN = 5;
 
+   @Inject
+   CSVImportHelper csvImportHelper;
+
    protected BaseResource(R repo) {
       this.repo = repo;
    }
@@ -241,11 +244,11 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
             rejectUnrecognizedQueryParams(info, "fieldSeparator", "quotingStrategy",
                     "quoteChar", "skipHeaderRow", "charsetEncoding",
                     "requestedColumns", "preferredColumnNames");
-    
+
             String charsetName = charsetEncoding.replaceAll("-with.*", "");
             final Charset chosenCharset;
             final boolean mustUseBOM;
-    
+
             try {
                 chosenCharset = Charset.forName(charsetName);
                 mustUseBOM = charsetEncoding.contains("-with-BOM");
@@ -253,11 +256,11 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
                 throw new ValidationException(format("The value %s is not one of the supported charsetEncodings",
                         charsetEncoding));
             }
-    
+
             List<T> failedRecords = new ArrayList<>();
             CSVImportHelper.FailedRecordHandler<T> failedRecordHandler = failedRecords::add;
-    
-            CSVImportHelper.ImportResult<T> result = CSVImportHelper.importCSV(
+
+            CSVImportHelper.ImportResult<T> result = csvImportHelper.importCSV(
                     repo,
                     new FileInputStream(fileUpload.file),
                     fieldSeparator.charAt(0),
@@ -269,17 +272,17 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
                     quotingStrategy,
                     failedRecordHandler
             );
-    
+
             String message = String.format("Successfully imported %d entities. Failed to import %d entities.",
                     result.getImportedCount(), result.getFailedCount());
-    
+
             return Response.ok()
                     .entity(result)
                     .header("X-Import-Success-Count", result.getImportedCount())
                     .header("X-Import-Failed-Count", result.getFailedCount())
                     .header("X-Import-Message", message)
                     .build();
-    
+
         } catch (Exception e) {
             RestError error = RestError.builder()
                     .status(Response.Status.BAD_REQUEST.getStatusCode())

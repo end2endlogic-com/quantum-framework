@@ -3,7 +3,11 @@ package com.e2eq.framework.util;
 
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ValidationException;
+import jakarta.validation.Validator;
 import jakarta.ws.rs.WebApplicationException;
 
 import org.supercsv.cellprocessor.ift.CellProcessor;
@@ -17,15 +21,29 @@ import org.supercsv.quote.QuoteMode;
 import java.io.*;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 
 import static java.lang.String.format;
 
+@ApplicationScoped
 public class CSVImportHelper {
     private static final int BATCH_SIZE = 1000;
 
-    private static QuoteMode getQuoteMode(String quotingStrategy) {
+    @Inject
+    Validator validator;
+
+    public <T> void validateBean(T bean) {
+        Set<ConstraintViolation<T>> violations = validator.validate(bean);
+        if (!violations.isEmpty()) {
+            for (ConstraintViolation<T> violation : violations) {
+                System.out.println("Validation error: " + violation.getMessage());
+            }
+            throw new ValidationException("Validation failed");
+        }
+    }
+
+    private QuoteMode getQuoteMode(String quotingStrategy) {
         if ("QUOTE_ALL_COLUMNS".equalsIgnoreCase(quotingStrategy)) {
             return new AlwaysQuoteMode();
         } else if ("QUOTE_WHERE_ESSENTIAL".equalsIgnoreCase(quotingStrategy)) {
@@ -36,7 +54,7 @@ public class CSVImportHelper {
         }
     }
 
-    private static String[] createFieldMapping(String[] header, List<String> requestedColumns, List<String> preferredColumnNames) {
+    private  String[] createFieldMapping(String[] header, List<String> requestedColumns, List<String> preferredColumnNames) {
         if (requestedColumns == null || requestedColumns.isEmpty()) {
             return header;
         }
@@ -103,7 +121,7 @@ public class CSVImportHelper {
         }
     }
 
-    public static <T extends UnversionedBaseModel> ImportResult<T> importCSV(
+    public <T extends UnversionedBaseModel> ImportResult<T> importCSV(
             BaseMorphiaRepo<T> repo,
             InputStream inputStream,
             char fieldSeparator,
@@ -151,7 +169,7 @@ public class CSVImportHelper {
         return result;
     }
 
-    private static <T extends UnversionedBaseModel> ImportResult<T> importFlatProperty(BaseMorphiaRepo<T> repo,
+    private  <T extends UnversionedBaseModel> ImportResult<T> importFlatProperty(BaseMorphiaRepo<T> repo,
                                                                      ICsvDozerBeanReader beanReader,
                                                                      CellProcessor[] processors,
                                                                      FailedRecordHandler<T> failedRecordHandler) throws IOException {
@@ -162,6 +180,14 @@ public class CSVImportHelper {
         while (true) {
             T bean = beanReader.read(repo.getPersistentClass(), processors);
             if (bean == null) break;
+            try {
+                validateBean(bean);
+            } catch (ValidationException e) {
+                failedRecordHandler.handleFailedRecord(bean);
+                result.incrementFailedCount();
+                result.addFailedRecordFeedback("Validation failed for record: " + bean.toString() + " due to " + e.getMessage());
+                continue;
+            }
 
             batch.add(bean);
             if (batch.size() >= BATCH_SIZE) {
@@ -178,8 +204,8 @@ public class CSVImportHelper {
         return result;
     }
 
-    private static <T extends UnversionedBaseModel> ImportResult<T> processBatch(BaseMorphiaRepo<T> repo,
-                                                               List<T> batch, 
+    private <T extends UnversionedBaseModel> ImportResult<T> processBatch(BaseMorphiaRepo<T> repo,
+                                                               List<T> batch,
                                                                FailedRecordHandler<T> failedRecordHandler,
                                                                ImportResult<T> result) {
         if (batch.isEmpty()) return result;

@@ -5,9 +5,7 @@ import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.RuleContext;
 import com.e2eq.framework.model.securityrules.SecuritySession;
 import com.e2eq.framework.persistent.TestCSVModelRepo;
-import com.e2eq.framework.persistent.TestParentRepo;
 import com.e2eq.framework.test.TestCSVModel;
-import com.e2eq.framework.test.TestParentModel;
 import com.e2eq.framework.util.CSVExportHelper;
 import com.e2eq.framework.util.CSVImportHelper;
 import com.e2eq.framework.util.TestUtils;
@@ -42,6 +40,9 @@ public class TestCSVFeatures {
 
     @Inject
     RuleContext ruleContext;
+
+    @Inject
+    CSVImportHelper csvImportHelper;
 
     private List<TestCSVModel> getRecords() {
         // Generate a list of TestCSVModels
@@ -231,7 +232,7 @@ public class TestCSVFeatures {
         TestUtils.initRules(ruleContext, "security", "userProfile", TestUtils.systemUserId);
 
         try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
-            CSVImportHelper helper = new CSVImportHelper();
+            CSVImportHelper helper = csvImportHelper;
             InputStream inputStream = getClass().getClassLoader().getResourceAsStream("testData/TestImportCSV.csv");
             Charset chosenCharset = Charset.forName("UTF-8");
             List failedRecords = new ArrayList<>();
