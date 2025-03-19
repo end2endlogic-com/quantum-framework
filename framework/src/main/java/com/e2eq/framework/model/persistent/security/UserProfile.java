@@ -8,6 +8,7 @@ import dev.morphia.annotations.IndexOptions;
 import dev.morphia.annotations.Indexed;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
@@ -48,6 +49,7 @@ public @Data class UserProfile extends BaseModel {
     @JsonProperty(required = true)
     @NotNull( message = "userId must not be null")
     @NonNull
+    @Size(min = 5, max = 50, message = "userId must be between 5 and 50 characters long")
     protected String userId;
 
     @NotNull( message = "userName must not be null")

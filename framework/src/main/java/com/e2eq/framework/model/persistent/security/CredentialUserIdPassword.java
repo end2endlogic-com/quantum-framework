@@ -1,21 +1,23 @@
 package com.e2eq.framework.model.persistent.security;
 
-import java.util.Arrays;
+
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import dev.morphia.annotations.*;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import com.e2eq.framework.model.persistent.base.BaseModel;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
 
-import static dev.morphia.mapping.IndexType.DESC;
 
 @Entity()
 @Data
@@ -28,6 +30,7 @@ public class CredentialUserIdPassword extends BaseModel {
     @Indexed(options= @IndexOptions(unique=true))
     @NotNull ( message = "userId must be provided for userIdPassword credential")
     @NonNull
+    @Size(min =3, max=50, message="userId length must be less than or equal to 50 and greater than or equal to 3 characters")
     protected String userId;
 
     @NonNull
@@ -35,8 +38,10 @@ public class CredentialUserIdPassword extends BaseModel {
     @Valid
     protected DomainContext domainContext;
 
+    // ignored for rest api's for security reasons we don't expose this field to the rest api.
     @NotNull( message = "passwordHash must be non null")
     @NonNull
+    @JsonIgnore
     protected String passwordHash;
 
 
@@ -49,6 +54,7 @@ public class CredentialUserIdPassword extends BaseModel {
     @Builder.Default
     @NotNull
     @NonNull
+    @JsonIgnore
     protected String hashingAlgorithm="BCrypt.default";
     @NotNull @NonNull protected Date lastUpdate;
 

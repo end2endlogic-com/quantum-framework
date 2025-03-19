@@ -35,11 +35,16 @@ public class CodeList extends BaseModel {
     String description;
 
     @NonNull
-    @NotNull
+    @NotNull (message = "valueType is required")
     @Builder.Default
     String valueType="STRING";
 
     List<Object> values;
+
+    @Override
+    public String getRefName() {
+        return category + ":" + key;
+    }
 
     @Override
     public String bmFunctionalArea() {

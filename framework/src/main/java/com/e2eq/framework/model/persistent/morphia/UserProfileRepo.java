@@ -57,7 +57,7 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
    public UserProfile createUser(@NonNull String realm,
                                  @Valid UserProfile up,
                                  @NotNull @NotEmpty String[] roles,
-                                 @NotNull @NonNull @NotEmpty @Size(min=4, max=50) String password) {
+                                 @NotNull @NonNull @NotEmpty @Size(min=8, max=50, message = "password must be between 8 and 50 characters") String password) {
 
       if (!ValidateUtils.isValidEmailAddress(up.getUserId())) {
          throw new ValidationException("userId:" + up.getUserId() + " must be an email address");

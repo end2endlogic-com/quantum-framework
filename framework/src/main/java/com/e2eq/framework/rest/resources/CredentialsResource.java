@@ -1,19 +1,18 @@
 package com.e2eq.framework.rest.resources;
 
 import com.e2eq.framework.rest.models.ChangePasswordRequest;
+import com.e2eq.framework.rest.models.FileUpload;
 import com.e2eq.framework.rest.models.RestError;
 import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.util.EncryptionUtils;
 import jakarta.annotation.security.RolesAllowed;
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.core.SecurityContext;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.*;
+import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
+
+import java.util.List;
 
 @Path("/user/credentials")
 @RolesAllowed({ "user", "admin" })
@@ -23,6 +22,29 @@ public class CredentialsResource extends BaseResource<CredentialUserIdPassword, 
     CredentialsResource (CredentialRepo repo ) {
         super(repo);
     }
+
+
+
+    @Override
+    @RolesAllowed({ "admin" })
+    public Response importCSVList(
+            @Context UriInfo info,
+            @BeanParam FileUpload fileUpload,
+            @Parameter(description = "The character that must be used to separate fields of the same record")
+            @QueryParam("fieldSeparator") @DefaultValue(",") String fieldSeparator,
+            @Parameter(description = "The choice of strategy for quoting columns. One of \"QUOTE_WHERE_ESSENTIAL\" or \"QUOTE_ALL_COLUMNS\"")
+            @QueryParam("quotingStrategy") @DefaultValue("QUOTE_WHERE_ESSENTIAL") String quotingStrategy,
+            @Parameter(description = "The character that is used to surround the values of specific (or all) fields")
+            @QueryParam("quoteChar") @DefaultValue("\"") String quoteChar,
+            @Parameter(description = "Whether to skip the header row in the CSV file")
+            @QueryParam("skipHeaderRow") @DefaultValue("true") boolean skipHeaderRow,
+            @Parameter(description = "The charset encoding to use for the file")
+            @QueryParam("charsetEncoding") @DefaultValue("UTF-8-without-BOM") String charsetEncoding,
+            @Parameter(description = "A non-empty list of the names of the columns expected in the CSV file that map to the model fields")
+            @QueryParam("requestedColumns") List<String> requestedColumns) {
+        return super.importCSVList(info, fileUpload, fieldSeparator,quotingStrategy, quoteChar, skipHeaderRow, charsetEncoding, requestedColumns);
+    }
+
 
     @Path("changePassword")
     @POST

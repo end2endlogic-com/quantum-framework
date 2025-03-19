@@ -36,7 +36,7 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
 
       Datastore ds = dataStore.getDataStore(realmId);
       if (Log.isDebugEnabled()) {
-         Log.debug("DataStore: dataBaseName:" + ds.getDatabase().getName() + " retreived via realmId:" + realmId);
+         Log.debug("DataStore: dataBaseName:" + ds.getDatabase().getName() + " retrieved via realmId:" + realmId);
       }
 
       List<Filter> filters = new ArrayList<>();
