@@ -11,6 +11,11 @@
     <artifactId>quantum-parent</artifactId>
     <version>1.2.0-SNAPSHOT</version>
   </parent>
+
+  <name>${project.groupId}:${project.artifactId}</name>
+  <description>a REST / Mongodb framework for quickly building multi-tenant SAAS platforms</description>
+  <url>https://github.com/end2endlogic-com/quantum-framework</url>
+
   <licenses>
     <license>
       <name>The Apache License, Version 2.0</name>
@@ -18,38 +23,27 @@
       <distribution>repo</distribution>
     </license>
   </licenses>
-  <developers>
-    <developer>
-      <id>mingardia</id>
-      <name>Michael Ingardia</name>
-      <email>mingardia@end2endlogic.com</email>
-    </developer>
-  </developers>
+
   <scm>
-    <url>https://github.com/end2endlogic-com/quantum-framework</url>
+    <url>https://github.com/end2endlogic-com/quarkus-moneta</url>
     <connection>scm:git:https://github.com/end2endlogic-com/quantum-framework.git</connection>
     <developerConnection>scm:git:https://github.com/end2endlogic-com/quantum-framework.git</developerConnection>
   </scm>
+
+  <developers>
+    <developer>
+      <name>Michael Ingardia</name>
+      <email>mingardia@end2endlogic.com</email>
+      <organization>End2Endlogic.com</organization>
+      <organizationUrl>http://www.end2endlogic.com</organizationUrl>
+    </developer>
+  </developers>
   <properties>
     <maven.compiler.release>21</maven.compiler.release>
     <graalvm.version>24.1.0</graalvm.version>
     <quarkus-amazon-services.version>2.18.1</quarkus-amazon-services.version>
     <maven.build.timestamp.format>yyyy-MM-dd'T'HH:mm:ss'Z'</maven.build.timestamp.format>
   </properties>
-  <!--
-    Distribution Management for OSSRH:
-    This is required so that 'mvn deploy' knows where to push snapshots/releases.
--->
-  <distributionManagement>
-    <snapshotRepository>
-      <id>ossrh</id>
-      <url>https://s01.oss.sonatype.org/content/repositories/snapshots</url>
-    </snapshotRepository>
-    <repository>
-      <id>ossrh</id>
-      <url>https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/</url>
-    </repository>
-  </distributionManagement>
 
   <dependencyManagement>
          <dependencies>
@@ -481,49 +475,12 @@
         </executions>
       </plugin>
       <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-source-plugin</artifactId>
-        <version>3.2.1</version>
-        <executions>
-          <execution>
-            <id>attach-sources</id>
-            <goals>
-              <goal>jar-no-fork</goal>
-            </goals>
-          </execution>
-        </executions>
-      </plugin>
-      <!-- Nexus Staging Maven Plugin (Recommended for Sonatype Release Management) -->
-      <plugin>
-        <groupId>org.sonatype.plugins</groupId>
-        <artifactId>nexus-staging-maven-plugin</artifactId>
-        <version>1.6.7</version>
+        <groupId>org.sonatype.central</groupId>
+        <artifactId>central-publishing-maven-plugin</artifactId>
+        <version>0.7.0</version>
         <extensions>true</extensions>
         <configuration>
-          <serverId>ossrh</serverId>
-          <nexusUrl>https://s01.oss.sonatype.org/</nexusUrl>
-          <autoReleaseAfterClose>true</autoReleaseAfterClose>
-        </configuration>
-      </plugin>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-gpg-plugin</artifactId>
-        <version>3.0.1</version>
-        <executions>
-          <execution>
-            <id>sign-artifacts</id>
-            <phase>verify</phase>
-            <goals>
-              <goal>sign</goal>
-            </goals>
-          </execution>
-        </executions>
-        <configuration>
-          <gpgArguments>
-            <arg>--pinentry-mode</arg>
-            <arg>loopback</arg>
-          </gpgArguments>
-          <passphraseServerId>gpg.passphrase</passphraseServerId>
+          <publishingServerId>central</publishingServerId>
         </configuration>
       </plugin>
     </plugins>
@@ -602,7 +559,7 @@
           <plugin>
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-javadoc-plugin</artifactId>
-            <version>2.9.1</version>
+            <version>3.11.2</version>
             <executions>
               <execution>
                 <id>attach-javadocs</id>
@@ -620,16 +577,4 @@
       </properties>
     </profile>
   </profiles>
-  <repositories>
-    <repository>
-      <!--
-      The username and password are retrieved by looking for the Repository
-      Id in the $HOME/.m2/settings.xml file.
-      -->
-      <!-- id Must Match the Unique Identifier in settings.xml -->
-      <id>io.cloudrepo</id>
-      <url>https://end2endlogic.mycloudrepo.io/repositories/end2endlogic-opensource-release</url>
-      <releases/>
-    </repository>
-  </repositories>
 </project>
