@@ -10,7 +10,7 @@ import org.bson.types.ObjectId;
 
 import java.util.Set;
 
-@Entity("organization")
+@Entity()
 @RegisterForReflection
 @Data
 @EqualsAndHashCode(callSuper = true)

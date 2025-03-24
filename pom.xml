@@ -1,46 +1,29 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.end2endlogic</groupId>
     <artifactId>quantum-parent</artifactId>
     <version>1.2.0-SNAPSHOT</version>
     <packaging>pom</packaging>
-    <name>${project.groupId}:${project.artifactId}</name>
-    <description>Parent POM for Quantum Framework</description>
-    <url>https://github.com/end2endlogic-com/quantum-framework</url>
-
-    <licenses>
-        <license>
-            <name>The Apache License, Version 2.0</name>
-            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
-            <distribution>repo</distribution>
-        </license>
-    </licenses>
-
-    <scm>
-        <url>https://github.com/end2endlogic-com/quantum-framework</url>
-        <connection>scm:git:https://github.com/end2endlogic-com/quantum-framework.git</connection>
-        <developerConnection>scm:git:https://github.com/end2endlogic-com/quantum-framework.git</developerConnection>
-    </scm>
-
+    <name>quantum - parent</name>
 
     <properties>
+        <antlr.version>4.13.2</antlr.version>
         <antlr.version>4.13.2</antlr.version>
         <assembly-plugin.version>3.1.0</assembly-plugin.version>
         <compiler-plugin.version>3.13.0</compiler-plugin.version>
         <jackson.version>2.18.2</jackson.version>
         <maven.compiler.release>21</maven.compiler.release>
-        <morphia.version>3.0.0-beta.40</morphia.version>
+        <morphia.version>3.0.0</morphia.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
         <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
         <quarkus.platform.version>3.17.7</quarkus.platform.version>
+        <skipITs>true</skipITs>
         <surefire-plugin.version>3.2.5</surefire-plugin.version>
         <lombrok.version>1.18.34</lombrok.version>
+
     </properties>
 
     <modules>
@@ -65,72 +48,98 @@
             </dependency>
         </dependencies>
     </dependencyManagement>
-
     <build>
         <pluginManagement>
             <plugins>
                 <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-source-plugin</artifactId>
-                    <version>3.2.1</version>
+                    <groupId>${quarkus.platform.group-id}</groupId>
+                    <artifactId>quarkus-maven-plugin</artifactId>
+                    <version>${quarkus.platform.version}</version>
+                    <!-- <version>3.14.4</version> -->
+                    <extensions>true</extensions>
                     <executions>
                         <execution>
-                            <id>attach-sources</id>
                             <goals>
-                                <goal>jar-no-fork</goal>
+                                <goal>build</goal>
+                                <goal>generate-code</goal>
+                                <goal>generate-code-tests</goal>
                             </goals>
                         </execution>
                     </executions>
                 </plugin>
-
                 <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-javadoc-plugin</artifactId>
-                    <version>3.4.1</version>
-                    <executions>
-                        <execution>
-                            <id>attach-javadocs</id>
-                            <goals>
-                                <goal>jar</goal>
-                            </goals>
-                        </execution>
-                    </executions>
-                </plugin>
-
-                <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-gpg-plugin</artifactId>
-                    <version>3.0.1</version>
-                    <executions>
-                        <execution>
-                            <id>sign-artifacts</id>
-                            <phase>verify</phase>
-                            <goals>
-                                <goal>sign</goal>
-                            </goals>
-                        </execution>
-                    </executions>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>${surefire-plugin.version}</version>
                     <configuration>
-                        <gpgArguments>
-                            <arg>--pinentry-mode</arg>
-                            <arg>loopback</arg>
-                        </gpgArguments>
-                        <passphraseServerId>gpg.passphrase</passphraseServerId>
+                        <systemPropertyVariables>
+                            <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
+                            <maven.home>${maven.home}</maven.home>
+                            <maven.repo>${settings.localRepository}</maven.repo>
+                        </systemPropertyVariables>
                     </configuration>
                 </plugin>
                 <plugin>
-                    <groupId>org.sonatype.central</groupId>
-                    <artifactId>central-publishing-maven-plugin</artifactId>
-                    <version>0.7.0</version>
-                    <extensions>true</extensions>
+                    <artifactId>maven-failsafe-plugin</artifactId>
+                    <version>${failsafe-plugin.version}</version>
                     <configuration>
-                        <publishingServerId>central</publishingServerId>
+                        <systemPropertyVariables>
+                            <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
+                            <maven.home>${maven.home}</maven.home>
+                            <maven.repo>${settings.localRepository}</maven.repo>
+                        </systemPropertyVariables>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <configuration>
+                        <compilerArgs>
+                            <arg>-Xlint:all,-try,-options,-path</arg>
+                        </compilerArgs>
+                        <annotationProcessorPaths>
+                            <path>
+                                <groupId>io.quarkus</groupId>
+                                <artifactId>quarkus-extension-processor</artifactId>
+                                <version>${quarkus.platform.version}</version>
+                            </path>
+                            <path>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok</artifactId>
+                                <version>${lombrok.version}</version>
+                            </path>
+                            <path>
+                                <groupId>io.quarkus</groupId>
+                                <artifactId>quarkus-resteasy</artifactId>
+                            </path>
+                            <path>
+                                <groupId>io.quarkus</groupId>
+                                <artifactId>quarkus-hibernate-validator</artifactId>
+                            </path>
+                            <path>
+                                <groupId>io.quarkus</groupId>
+                                <artifactId>quarkus-scheduler</artifactId>
+                            </path>
+                            <path>
+                                <groupId>com.end2endlogic</groupId>
+                                <artifactId>morphia-core</artifactId>
+                                <version>${morphia.version}</version>
+                            </path>
+                            <path>
+                                <groupId>com.fasterxml.jackson.core</groupId>
+                                <artifactId>jackson-annotations</artifactId>
+                                <version>${jackson.version}</version>
+                            </path>
+                            <path>
+                                <groupId>org.jetbrains</groupId>
+                                <artifactId>annotations</artifactId>
+                                <version>24.0.1</version>
+                            </path>
+                        </annotationProcessorPaths>
+                        <release>${maven.compiler.release}</release>
                     </configuration>
                 </plugin>
             </plugins>
         </pluginManagement>
     </build>
-
     <dependencies>
         <dependency>
             <groupId>io.quarkus</groupId>
@@ -147,11 +156,22 @@
             <artifactId>annotations</artifactId>
             <version>24.0.1</version>
         </dependency>
+        <!-- <dependency>
+             <groupId>io.quarkiverse.amazonservices</groupId>
+             <artifactId>quarkus-amazon-cognito-user-pools</artifactId>
+         </dependency> -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>cognitoidentityprovider</artifactId>
             <version>2.24.0</version>
         </dependency>
-    </dependencies>
 
+    </dependencies>
+    <distributionManagement>
+        <repository>
+            <id>io.cloudrepo</id> <!-- Must Match the Unique Identifier in settings.xml -->
+            <name>My First Cloud Repo Repository</name>
+            <url>https://end2endlogic.mycloudrepo.io/repositories/end2endlogic-opensource-release</url>
+        </repository>
+    </distributionManagement>
 </project>
