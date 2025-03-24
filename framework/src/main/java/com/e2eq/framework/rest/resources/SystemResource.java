@@ -4,6 +4,8 @@ import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
 import com.e2eq.framework.model.persistent.morphia.FunctionalDomainRepo;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
 import com.e2eq.framework.model.persistent.security.FunctionalDomain;
+import com.e2eq.framework.rest.models.ComponentVersion;
+import com.e2eq.framework.rest.models.DeployedVersion;
 import com.e2eq.framework.util.SecurityUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.type.CollectionType;
@@ -14,6 +16,8 @@ import jakarta.annotation.security.PermitAll;
 import jakarta.enterprise.inject.Default;
 
 import jakarta.inject.Inject;
+import jakarta.json.Json;
+import jakarta.json.JsonObject;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
@@ -22,11 +26,15 @@ import jakarta.ws.rs.Produces;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import dev.morphia.mapping.codec.pojo.EntityModel;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
+import org.semver4j.Semver;
 
 @Path("/system")
 @Tag(name = "System", description = "System operations")
@@ -53,7 +61,7 @@ public class SystemResource {
 
     @GET
     @Path("/quantumVersion")
-    @Produces("application/text")
+    @Produces("application/json")
     @PermitAll
     public Response version() throws IOException {
         try (InputStream input = getClass().getClassLoader().getResourceAsStream("version.properties")) {
@@ -64,9 +72,27 @@ public class SystemResource {
 
             java.util.Properties prop = new java.util.Properties();
             prop.load(input);
-            String version = prop.getProperty("quantum-version");
-            String buildDate = prop.getProperty("build.date");
-            return Response.ok(version + ":" + buildDate).build();
+
+            Semver semver = new Semver(prop.getProperty("quantum-version"));
+            String buildDateString = prop.getProperty("build.date");
+            Instant instant = Instant.parse(buildDateString);
+            Date buildDate = Date.from(instant);
+            String buildNumber = prop.getProperty("build.number");
+            // build a json object with the version and build details
+            ComponentVersion version = ComponentVersion.builder()
+                    .componentName("Quantum")
+                    .major(semver.getMajor())
+                    .minor(semver.getMinor())
+                    .patch(semver.getPatch())
+                    .suffix(semver.getPreRelease())
+                    .buildNumber(buildNumber)
+                    .timestamp(buildDate)
+                    .strictVersionString(semver.getVersion())
+                    .build();
+            DeployedVersion deployed = new DeployedVersion();
+            Map<String, ComponentVersion> versions = Map.of("Quantum", version);
+
+            return Response.ok(version).build();
         }
     }
 
