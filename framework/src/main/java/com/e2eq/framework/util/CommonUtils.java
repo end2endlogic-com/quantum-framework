@@ -19,24 +19,23 @@ public class CommonUtils {
      * Take a list of items and create all the possible permutations of it
      *
      * Example
-     * java.util.List<java.util.Collection<String>> lists = new LinkedList<java.util.Collection<String>>();
+     * java.util.List&lt;java.util.Collection&lt;String&gt;&gt; lists = new LinkedList&lt;java.util.Collection&lt;String&gt;&gt;();
      * lists.add(m1.getMatrixValues()); // color
      * lists.add(m2.getMatrixValues()); // size
      * lists.add(m3.getMatrixValues()); // style
-
-     * List<String> uomsetStringList = new ArrayList<>();
-     * for UnitOfMeasure u : uoms.getUnitOfMeasurements())
-     * {
+     *
+     * List&lt;String&gt; uomsetStringList = new ArrayList&lt;&gt;();
+     * for (UnitOfMeasure u : uoms.getUnitOfMeasurements()) {
      *    uomsetStringList.add(u.getAbbreviation());
      * }
      *
      * lists.add(uomsetStringList);
      *
-     * java.util.Collection<List<String>> permutations =  this.permutations(lists);
+     * java.util.Collection&lt;List&lt;String&gt;&gt; permutations = this.permutations(lists);
      *
-     * @param collections the collections you want to calculate the permuations on
-     * @param <T> the type of the element in the collection
-     * @return the resulting permuations
+     * @param collections the collections you want to calculate the permutations on
+     *        &lt;T&gt; the type of the element in the collection
+     * @return the resulting permutations
      */
     public static <T> java.util.Collection<List<T>> permutations(List<java.util.Collection<T>> collections) {
         if (collections == null || collections.isEmpty()) {
