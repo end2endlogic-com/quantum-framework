@@ -25,16 +25,16 @@ import java.util.*;
 @ApplicationScoped
 public class MigrationRunner {
 
-   @ConfigProperty(name = "com.b2bi.database.version")
+   @ConfigProperty(name = "quantum.database.version")
    protected String targetDatabaseVersion;
 
-   @ConfigProperty(name = "com.b2bi.database.scope")
+   @ConfigProperty(name = "quantum.database.scope")
    protected String databaseScope;
 
-   @ConfigProperty(name= "com.b2bi.database.migration.changeset.package")
+   @ConfigProperty(name= "quantum.database.migration.changeset.package")
    protected String changeSetPackage;
 
-   @ConfigProperty(name= "com.b2bi.database.migration.enabled")
+   @ConfigProperty(name= "quantum.database.migration.enabled")
    protected boolean enabled;
 
    @Inject
