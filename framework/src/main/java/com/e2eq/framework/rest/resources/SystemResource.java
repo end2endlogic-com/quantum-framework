@@ -74,10 +74,10 @@ public class SystemResource {
             prop.load(input);
 
             Semver semver = new Semver(prop.getProperty("quantum-version"));
-            String buildDateString = prop.getProperty("build.date");
+            String buildDateString = prop.getProperty("quantum-build.date");
             Instant instant = Instant.parse(buildDateString);
             Date buildDate = Date.from(instant);
-            String buildNumber = prop.getProperty("build.number");
+            String buildNumber = prop.getProperty("quantum-build.number");
             // build a json object with the version and build details
             ComponentVersion version = ComponentVersion.builder()
                     .componentName("Quantum")
