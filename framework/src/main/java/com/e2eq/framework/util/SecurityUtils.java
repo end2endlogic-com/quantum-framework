@@ -11,7 +11,7 @@ public class SecurityUtils {
    public static final String anonymousUserId = "anonymous@system.com";
    public static final String systemOrgRefName = "system.com";
    public static final String systemAccountNumber = "0000000000";
-   public  static final String systemTenantId = "system-com";
+   public  static final String systemTenantId = "system.com";
    public  static final String systemRealm = "system-com";
    public  static final String systemUserId = "system@system.com";
    public  static final String any = "*";
@@ -20,7 +20,6 @@ public class SecurityUtils {
    public  static final String[] systemRole = {"system"};
    public static final int defaultDataSegment = 0;
    public static final String defaultRealm = "system-com";
-
    public static final DataDomain systemDataDomain = new DataDomain(systemOrgRefName, systemAccountNumber, systemTenantId, defaultDataSegment, systemUserId);
 
    public static final SecurityURIHeader systemSecurityHeader = new SecurityURIHeader.Builder()

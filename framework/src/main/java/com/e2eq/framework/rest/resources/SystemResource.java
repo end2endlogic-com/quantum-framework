@@ -64,7 +64,7 @@ public class SystemResource {
     @Produces("application/json")
     @PermitAll
     public Response version() throws IOException {
-        try (InputStream input = getClass().getClassLoader().getResourceAsStream("version.properties")) {
+        try (InputStream input = getClass().getClassLoader().getResourceAsStream("quantum-version.properties")) {
             if (input == null) {
                 return Response.status(Response.Status.NOT_FOUND)
                         .entity("Version information not found").build();
