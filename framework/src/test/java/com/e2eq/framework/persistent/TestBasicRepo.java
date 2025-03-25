@@ -68,7 +68,6 @@ public class TestBasicRepo {
       TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.systemUserId);
       try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
          Filter x = MorphiaUtils.convertToFilter("refName:" + SecurityUtils.systemUserId, UserProfile.class);
-
          Query<UserProfile> q = dataStore.getDefaultSystemDataStore().find(UserProfile.class);
          MongoCursor<UserProfile> cursor = q.filter(x).iterator(new FindOptions().skip(0).limit(10));
 
@@ -98,7 +97,6 @@ public class TestBasicRepo {
 
    @Test
    public void testMerge() throws ReferentialIntegrityViolationException {
-      Datastore ds = dataStore.getDefaultSystemDataStore();
       String[] roles = {"user"};
       PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.systemUserId, roles);
       ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "save");

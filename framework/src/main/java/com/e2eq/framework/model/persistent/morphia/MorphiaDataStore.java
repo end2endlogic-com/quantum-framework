@@ -106,7 +106,7 @@ public class MorphiaDataStore {
               datastore.getMapper().map(c);
           }
          datastore.ensureIndexes();
-  datastoreMap.put(datastore.getDatabase().getName(), datastore);
+         datastoreMap.put(datastore.getDatabase().getName(), datastore);
 
       }
       else {

@@ -5,6 +5,7 @@ import dev.morphia.annotations.Entity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
 
@@ -21,14 +22,16 @@ public class DataDomain {
     The org id this belongs to
     */
     @JsonProperty(required = true)
-    @NotNull
+    @NotNull( message = "orgRefName must be non null")
     @NonNull
+    @Pattern(regexp = "^[a-zA-Z0-9]+\\.[a-zA-Z0-9]{1,3}$", message = "tenantId must follow the pattern 'string.min1.period.string.min1.max3'")
     protected String orgRefName;
 
     /**
     The account that this object belongs to
     */
-    @NotNull
+    @NotNull( message = "accountNum must be non null")
+    @Pattern(regexp = "^\\d{10}$", message = "accountId must be exactly 10 digits")
     @NonNull
     @JsonProperty(required = true)
     protected String accountNum;
@@ -40,6 +43,7 @@ public class DataDomain {
     @NotNull
     @NonNull
     @NotEmpty
+    @Pattern(regexp = "^[a-zA-Z0-9]+\\.[a-zA-Z0-9]{1,3}$", message = "tenantId must follow the pattern 'string.min1.period.string.min1.max3'")
     @JsonProperty(required = true)
     protected String tenantId;
 

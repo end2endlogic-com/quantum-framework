@@ -8,10 +8,13 @@ import com.e2eq.framework.model.persistent.base.FullBaseModel;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 
 @Entity("account")
 @RegisterForReflection
 public class Account extends FullBaseModel {
+
+   @Pattern(regexp = "^\\d{10}$", message = "accountNumber must be exactly 10 digits")
    String accountNumber;
 
    @Reference

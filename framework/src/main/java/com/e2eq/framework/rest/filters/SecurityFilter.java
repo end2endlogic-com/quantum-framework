@@ -170,7 +170,8 @@ public class SecurityFilter implements ContainerRequestFilter {
         // Get the Authorization header from the request
         String authorizationHeader = requestContext.getHeaderString(HttpHeaders.AUTHORIZATION);
 
-        if (authorizationHeader != null) {
+        // TODO: check the JWT Token and ensure its none null vs. just looking at the authorization header.
+        if (authorizationHeader != null && jwt != null) {
             String token = authorizationHeader.substring(AUTHENTICATION_SCHEME.length()).trim();
             String userId = jwt.getClaim("username");
 

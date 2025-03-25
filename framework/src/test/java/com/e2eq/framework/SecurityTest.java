@@ -78,63 +78,6 @@ public class SecurityTest {
 
 
 
-    //@Test
-    public void testRegister() throws JsonProcessingException {
-        RegistrationRequest registrationRequest = new  RegistrationRequest();
-
-        registrationRequest.setEmail("tuser@test-b2bintegrator.com");
-        registrationRequest.setCompanyName("test-b2bintegrator.com");
-        registrationRequest.setFname("Michael");
-        registrationRequest.setLname("Ingardia");
-        registrationRequest.setPassword("testPassword");
-        registrationRequest.setTelephone("123-456-7890");
-        //registrationRequest.setTenantId("test-b2bintegrator.com");
-
-        ObjectMapper mapper = new ObjectMapper()
-           .registerModule(new ParameterNamesModule())
-           .registerModule(new Jdk8Module())
-           .registerModule(new JavaTimeModule());
-
-        String value = mapper.writeValueAsString(registrationRequest);
-
-        Response cr = given()
-            .header("Content-type", "application/json")
-            .and()
-            .body(value)
-            .when().post("/security/register")
-            .then()
-            .extract().response();
-            //.statusCode(201).extract().response();
-
-        if (cr.statusCode() != 20 ) {
-            if (cr.statusCode() != 400)
-                fail("Unexpected status code:" + cr.statusCode());
-        }
-
-    }
-
-    //@Test
-    public void testRegistrationApproval() {
-        // will need to login for this
-
-        Response gr = given()
-           .header("Content-type", "application/json")
-           .and()
-           .param("refName","tuserId@test-b2bintegrator.com")
-           .when().get( "/security/register")
-           .then()
-           .statusCode(200).extract().response();
-
-        given()
-           .header("Content-type", "application/json")
-           .and()
-           .body(gr.as(ApplicationRegistration.class))
-           .when().post( "/onboarding/registrationRequest/approve")
-           .then()
-           .statusCode(200);
-    }
-
-
     @Test
     public void testLoginRepo() throws Exception {
         TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.systemUserId);
