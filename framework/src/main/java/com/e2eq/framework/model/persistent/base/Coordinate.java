@@ -5,6 +5,7 @@ import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
+import org.mozilla.javascript.EvaluatorException;
 
 @EqualsAndHashCode
 @NoArgsConstructor
@@ -14,8 +15,11 @@ import lombok.experimental.SuperBuilder;
 @Data
 @SuperBuilder
 public  class Coordinate {
-    private double[] position = new double[2];
-    protected boolean exact= true;
+
+    private double[] position;
+
+    @Builder.Default
+    protected boolean exact=true;
 
     @NonNull
     @NotNull(message = "longitude is mandatory")

@@ -31,6 +31,7 @@ import jakarta.validation.Valid;
 import jakarta.ws.rs.NotSupportedException;
 import org.apache.commons.lang3.tuple.Pair;
 import org.bson.types.ObjectId;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -48,8 +49,9 @@ import static dev.morphia.query.Sort.descending;
  * @param <T> The model class this repo will use.
  */
 public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements BaseMorphiaRepo<T> {
+
     @Inject
-    protected MorphiaDataStore dataStore;
+    MorphiaDataStore morphiaDataStore;
 
     @Inject
     RuleContext ruleContext;
@@ -57,11 +59,14 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     @Inject
     SecurityIdentity securityIdentity;
 
+   @ConfigProperty(name = "quantum.realmConfig.defaultRealm"  )
+   String defaultRealm;
+
     TypeToken<T> paramClazz = new TypeToken<>(getClass()) {
     };
 
     public String getSecurityContextRealmId() {
-        String realmId = RuleContext.DefaultRealm;
+        String realmId = defaultRealm;
 
         if (SecurityContext.getPrincipalContext().isPresent() && SecurityContext.getResourceContext().isPresent()) {
             realmId = ruleContext.getRealmId(SecurityContext.getPrincipalContext().get(),
@@ -78,6 +83,9 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     public Filter[] getFilterArray(@NotNull List<Filter> filters, Class<? extends UnversionedBaseModel> modelClass) {
         if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
             filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get(), modelClass);
+            if (Log.isDebugEnabled()) {
+                Log.debugf("getFilterArray for %s security context: %s", SecurityContext.getPrincipalContext().get().getUserId(), filters);
+            }
         } else {
             throw new RuntimeException("Logic error SecurityContext should be present; this implies that an attempt to call a method was made where the user was not logged in");
         }
@@ -92,14 +100,14 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         return (Class<T>) paramClazz.getRawType();
     }
 
-
     protected List<String> getDefaultUIActionsFromFD(@NotNull String fdRefName) {
+        return getDefaultUIActionsFromFD(morphiaDataStore.getDataStore(getSecurityContextRealmId()), fdRefName);
+    }
 
+    protected List<String> getDefaultUIActionsFromFD(Datastore datastore, @NotNull String fdRefName) {
         Filter f = MorphiaUtils.convertToFilter("refName:" + fdRefName, getPersistentClass());
-
-        Query<FunctionalDomain> q = dataStore.getDataStore(getSecurityContextRealmId()).find(FunctionalDomain.class).filter(f);
+        Query<FunctionalDomain> q = datastore.find(FunctionalDomain.class).filter(f);
         FunctionalDomain fd = q.first();
-
         List<String> actions;
 
         if (fd != null) {
@@ -121,7 +129,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
     @Override
     public Optional<T> findById(@NotNull ObjectId id) {
-        return findById(dataStore.getDataStore(getSecurityContextRealmId()), id);
+        return findById(morphiaDataStore.getDataStore(getSecurityContextRealmId()), id);
     }
 
     @Override
@@ -143,9 +151,14 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         return Optional.ofNullable(obj);
     }
 
-
     @Override
     public Optional<T> findByRefName(@NotNull String refName) {
+        return findByRefName(morphiaDataStore.getDataStore(getSecurityContextRealmId()), refName);
+    }
+
+
+    @Override
+    public Optional<T> findByRefName(Datastore datastore, @NotNull String refName) {
         Objects.requireNonNull(refName, "the refName can not be null");
 
         List<Filter> filters = new ArrayList<>();
@@ -153,7 +166,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         // Add filters based upon rule and resourceContext;
         Filter[] qfilters = getFilterArray(filters, getPersistentClass());
 
-        Query<T> query = dataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass()).filter(qfilters);
+        Query<T> query = datastore.find(getPersistentClass()).filter(qfilters);
         T obj = query.first();
 
         if (obj != null) {
@@ -173,9 +186,12 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         return null;
     }
 
+    public List<T> getAllList() {
+        return this.getAllList(morphiaDataStore.getDataStore(getSecurityContextRealmId()));
+    }
 
     @Override
-    public List<T> getAllList() {
+    public List<T> getAllList(Datastore datastore) {
         return this.getList(0, 0,  null, null);
     }
 
@@ -242,22 +258,23 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         return findOptions;
     }
 
+    @Override
     public CloseableIterator<T> getStreamByQuery(Datastore datastore, int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields) {
         if (skip < 0) {
             throw new IllegalArgumentException("skip cannot be negative");
         }
-    
+
         List<Filter> filters = new ArrayList<>();
-    
+
         if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
             filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get(), getPersistentClass());
         } else {
             Log.info("Context not set?");
             throw new RuntimeException("Resource Context is not set in thread, check security configuration");
         }
-    
+
         FindOptions findOptions = buildFindOptions(skip, limit, sortFields, projectionFields);
-    
+
         if (query != null && !query.isEmpty()) {
             String cleanQuery = query.trim();
             if (!cleanQuery.isEmpty()) {
@@ -265,7 +282,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                 filters.add(Filters.and(filter));
             }
         }
-    
+
         Filter[] filterArray = new Filter[filters.size()];
         MorphiaCursor<T> cursor = datastore.find(getPersistentClass())
                 .filter(filters.toArray(filterArray))
@@ -389,17 +406,22 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     // Convenience method that uses the default datastore
     @Override
     public CloseableIterator<T> getStreamByQuery(int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields) {
-        return getStreamByQuery(dataStore.getDataStore(getSecurityContextRealmId()), skip, limit, query, sortFields, projectionFields);
+        return getStreamByQuery(morphiaDataStore.getDataStore(getSecurityContextRealmId()), skip, limit, query, sortFields, projectionFields);
     }
 
 
     @Override
     public List<T> getListByQuery(int skip, int limit, @Nullable String query, List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields) {
-        return getListByQuery(dataStore.getDataStore(getSecurityContextRealmId()), skip, limit, query, sortFields, projectionFields);
+        return getListByQuery(morphiaDataStore.getDataStore(getSecurityContextRealmId()), skip, limit, query, sortFields, projectionFields);
     }
 
     @Override
     public List<T> getList(int skip, int limit, @Nullable List<Filter> filters, @Nullable List<SortField> sortFields) {
+        return getList(morphiaDataStore.getDataStore(getSecurityContextRealmId()), skip, limit, filters, sortFields);
+    }
+
+    @Override
+    public List<T> getList(Datastore datastore, int skip, int limit, @Nullable List<Filter> filters, @Nullable List<SortField> sortFields) {
 
         if (skip < 0 ) {
             throw new IllegalArgumentException("skip can not be negative");
@@ -416,7 +438,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
         MorphiaCursor<T> cursor;
 
-        cursor = dataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass())
+        cursor = datastore.find(getPersistentClass())
                 .filter(filterArray)
                 .iterator(findOptions);
 
@@ -447,6 +469,11 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public List<T> getListFromIds(List<ObjectId> ids) {
+        return getListFromIds(morphiaDataStore.getDataStore(getSecurityContextRealmId()), ids);
+    }
+
+    @Override
+    public List<T> getListFromIds(Datastore datastore, List<ObjectId> ids) {
         // get a list using an in clause based upon the ids passed in
         List<Filter> filters = new ArrayList<>();
 
@@ -462,7 +489,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         FindOptions findOptions = new FindOptions();
 
         Filter[] filterArray = new Filter[filters.size()];
-        Query<T> query = dataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass())
+        Query<T> query = morphiaDataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass())
                 .filter(filters.toArray(filterArray));
 
         List<T> list = query.iterator(findOptions).toList();
@@ -488,6 +515,11 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public List<T> getListFromRefNames(List<String> refNames) {
+        return getListFromRefNames(morphiaDataStore.getDataStore(getSecurityContextRealmId()), refNames);
+    }
+
+    @Override
+    public List<T> getListFromRefNames(Datastore datastore, List<String> refNames) {
         List<Filter> filters = new ArrayList<>();
 
         if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
@@ -502,7 +534,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         FindOptions findOptions = new FindOptions();
 
         Filter[] filterArray = new Filter[filters.size()];
-        Query<T> query = dataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass())
+        Query<T> query = morphiaDataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass())
                 .filter(filters.toArray(filterArray));
 
         List<T> list = query.iterator(findOptions).toList();
@@ -529,7 +561,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public long getCount(@Nullable String query) {
-        return getCount(dataStore.getDataStore(getSecurityContextRealmId()), query);
+        return getCount(morphiaDataStore.getDataStore(getSecurityContextRealmId()), query);
     }
 
 
@@ -565,7 +597,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     // have different implementations for read vs. write.
 
     public MorphiaSession startSession(String realm) {
-        return dataStore.getDataStore(realm).startSession();
+        return morphiaDataStore.getDataStore(realm).startSession();
     }
 
     protected void setDefaultValues(T model) {
@@ -595,7 +627,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public List<T> save(List<T> entities) {
-        return save(dataStore.getDataStore(getSecurityContextRealmId()),entities);
+        return save(morphiaDataStore.getDataStore(getSecurityContextRealmId()),entities);
     }
 
     @Override
@@ -613,7 +645,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public T save(@NotNull String realmId, @Valid T value) {
-        return save(dataStore.getDataStore(realmId), value);
+        return save(morphiaDataStore.getDataStore(realmId), value);
     }
 
     @Override
@@ -629,7 +661,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
      * @param session - the session we are participating in i.e the transaction
      */
     public void removeReferenceConstraint(T obj, MorphiaSession session) {
-        Mapper mapper = dataStore.getDataStore(getSecurityContextRealmId()).getMapper();
+        Mapper mapper = morphiaDataStore.getDataStore(getSecurityContextRealmId()).getMapper();
         EntityModel mappedClass = mapper.getEntityModel(obj.getClass());
 
         for (PropertyModel mappedField : mappedClass.getProperties()) {
@@ -689,7 +721,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
             // if there are no references to this object, then we can just delete it
             if (obj.getReferences() == null || obj.getReferences().isEmpty()) {
                 // delete the object and remove any references that it may have had to parents
-                try (MorphiaSession s = dataStore.getDataStore(getSecurityContextRealmId()).startSession()) {
+                try (MorphiaSession s = morphiaDataStore.getDataStore(getSecurityContextRealmId()).startSession()) {
                     s.startTransaction();
                     removeReferenceConstraint(obj, s);
                     result = s.delete(obj);
@@ -706,7 +738,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
                 // for each reference, check if the referenced object still exists
                 for (ReferenceEntry reference : obj.getReferences()) {
-                    try (MorphiaSession s = dataStore.getDataStore(getSecurityContextRealmId()).startSession()) {
+                    try (MorphiaSession s = morphiaDataStore.getDataStore(getSecurityContextRealmId()).startSession()) {
                         s.startTransaction();
                         // find the referenced object
                         try {
@@ -812,7 +844,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public long update (@NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) {
-        return update(dataStore.getDataStore(getSecurityContextRealmId()), id, pairs);
+        return update(morphiaDataStore.getDataStore(getSecurityContextRealmId()), id, pairs);
     }
 
     private Field getFieldFromHierarchy(Class<?> clazz, String fieldName)  throws NoSuchFieldException {
@@ -990,7 +1022,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public T merge(@NotNull T entity){
-        return merge(dataStore.getDataStore(getSecurityContextRealmId()), entity);
+        return merge(morphiaDataStore.getDataStore(getSecurityContextRealmId()), entity);
     }
 
     @Override
@@ -1005,7 +1037,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public List<T> merge(List<T> entities) {
-        return merge(dataStore.getDataStore(getSecurityContextRealmId()), entities);
+        return merge(morphiaDataStore.getDataStore(getSecurityContextRealmId()), entities);
     }
 
     @Override
@@ -1040,7 +1072,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                         .withArea(model.bmFunctionalArea())
                         .withAction(actionString)
                         .withResourceId(model.getRefName())
-                        //.withRealm(SecurityUtils.systemRealm)
+                        //.withRealm(securityUtils.getSystemRealm())
                         .build();
                 PrincipalContext pcontext;
                 if (SecurityContext.getPrincipalContext().isPresent()) {

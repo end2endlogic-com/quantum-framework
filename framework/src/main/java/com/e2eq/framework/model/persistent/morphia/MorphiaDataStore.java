@@ -18,6 +18,10 @@ import java.util.Map;
 
 @ApplicationScoped
 public class MorphiaDataStore {
+
+   @Inject
+   MongoClient mongoClient;
+
    @Inject
    MorphiaDatastore dataStore;
    /*@Inject
@@ -30,6 +34,8 @@ public class MorphiaDataStore {
    AuditInterceptor auditInterceptor;
    @Inject
    ReferenceInterceptor referenceInterceptor;
+   @Inject
+   SecurityUtils securityUtils;
 
 
 
@@ -43,7 +49,7 @@ public class MorphiaDataStore {
    }
 
    public Datastore getDefaultSystemDataStore() {
-      return getDataStore(SecurityUtils.systemRealm);
+      return getDataStore(securityUtils.getSystemRealm());
    }
 
    public synchronized MorphiaDatastore getDataStore(@NotNull String realm) {
@@ -52,14 +58,52 @@ public class MorphiaDataStore {
          throw new IllegalArgumentException("parameter realm needs to be non null and non-empty");
       }
 
-      if (!ENABLE_ONE_DB_PER_TENANT) {
+     /* if (!ENABLE_ONE_DB_PER_TENANT) {
          // one realm per tenant implies we just use a single realm for all tenants
-         realm = SecurityUtils.systemRealm;
-      }
+         realm = securityUtils.getSystemRealm();
+      } */
 
 
       MorphiaDatastore mdatastore = datastoreMap.get(realm);
+
       if (mdatastore == null) {
+         Log.info("Creating MorphiaDatastore for realm/database: " + realm);
+
+         // Clone the MorphiaConfig and override the database
+         MorphiaConfig baseConfig = dataStore.getMapper().getConfig();
+         MorphiaConfig configForRealm = baseConfig.database(realm);
+
+         mdatastore = new MorphiaDatastore(mongoClient, configForRealm);
+
+         // Add interceptors
+         mdatastore.getMapper().addInterceptor(validationInterceptor);
+         mdatastore.getMapper().addInterceptor(permissionRuleInterceptor);
+         mdatastore.getMapper().addInterceptor(auditInterceptor);
+         mdatastore.getMapper().addInterceptor(referenceInterceptor);
+
+         // Optionally map the same packages as the base dataStore
+         for (String pkg : baseConfig.packages()) {
+            mdatastore.getMapper().map(pkg);
+         }
+
+         // Apply indexes and document validations
+         if (baseConfig.applyIndexes()) {
+            mdatastore.applyIndexes();
+         }
+         if (baseConfig.applyDocumentValidations()) {
+            mdatastore.applyDocumentValidations();
+         }
+
+         datastoreMap.put(realm, mdatastore);
+      } else {
+         Log.debug("Reusing existing MorphiaDatastore for realm/database: " + realm);
+      }
+
+      return mdatastore;
+
+
+    /* Original as of March 26th 2025
+    if (mdatastore == null) {
          dataStore.getMapper().addInterceptor(validationInterceptor);
          dataStore.getMapper().addInterceptor(permissionRuleInterceptor);
          dataStore.getMapper().addInterceptor(auditInterceptor);
@@ -68,6 +112,8 @@ public class MorphiaDataStore {
          datastoreMap.put(realm, dataStore);
          mdatastore = dataStore;
       }
+        return mdatastore;
+      */
        /*if (mdatastore == null) {
          Log.warn("DataStore Null:  --- > Connecting to realm:" + realm);
          MorphiaConfig c = MorphiaConfig.load();
@@ -114,7 +160,7 @@ public class MorphiaDataStore {
             Log.debug("Data Store already connected for realm:" + realm + " database name:" + datastore.getDatabase().getName());
          }
       } */
-      return mdatastore;
+
    }
 
 }

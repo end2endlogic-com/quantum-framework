@@ -46,6 +46,9 @@ public class SystemResource {
     @Inject
     FunctionalDomainRepo fdRepo;
 
+    @Inject
+    SecurityUtils securityUtils;
+
 
     @GET
     @Path("/mapping")
@@ -107,7 +110,7 @@ public class SystemResource {
         List<FunctionalDomain> domains = mapper.readValue(inputStream, listType);
 
         domains.forEach((f) -> {
-            f.setDataDomain(SecurityUtils.systemDataDomain);
+            f.setDataDomain(securityUtils.getSystemDataDomain());
             if (!fdRepo.findByRefName(f.getRefName()).isPresent())
                 fdRepo.save(f);
         } );

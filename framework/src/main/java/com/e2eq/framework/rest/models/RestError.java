@@ -7,6 +7,7 @@ import jakarta.validation.ConstraintViolation;
 import lombok.Builder;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+import lombok.ToString;
 import lombok.experimental.SuperBuilder;
 
 import java.util.Set;
@@ -15,6 +16,7 @@ import java.util.Set;
 @EqualsAndHashCode
 @SuperBuilder
 @RegisterForReflection
+@ToString
 public class RestError {
    protected int status;
    protected int reasonCode;

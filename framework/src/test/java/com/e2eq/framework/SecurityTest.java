@@ -1,47 +1,35 @@
 package com.e2eq.framework;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
-import com.e2eq.framework.model.persistent.security.DomainContext;
-import com.e2eq.framework.rest.models.RegistrationRequest;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
-import com.e2eq.framework.model.securityrules.PrincipalContext;
-import com.e2eq.framework.model.securityrules.ResourceContext;
-import com.e2eq.framework.model.securityrules.RuleContext;
+import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
+import com.e2eq.framework.model.persistent.security.DomainContext;
+import com.e2eq.framework.model.persistent.security.UserProfile;
+import com.e2eq.framework.model.securityrules.SecuritySession;
+import com.e2eq.framework.persistent.BaseRepoTest;
+import com.e2eq.framework.rest.models.AuthRequest;
+import com.e2eq.framework.util.EncryptionUtils;
 import com.e2eq.framework.util.SecurityUtils;
-import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import com.fasterxml.jackson.module.paramnames.ParameterNamesModule;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.logging.Log;
+import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.response.Response;
 import io.smallrye.common.constraint.Assert;
-import com.e2eq.framework.rest.models.AuthRequest;
-import com.e2eq.framework.model.persistent.security.ApplicationRegistration;
-
-import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
-import com.e2eq.framework.model.persistent.security.UserProfile;
-import com.e2eq.framework.util.EncryptionUtils;
-
-import com.e2eq.framework.model.securityrules.SecuritySession;
-import com.e2eq.framework.util.TestUtils;
+import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.junit.jupiter.api.Test;
 
-import io.quarkus.test.junit.QuarkusTest;
-import static io.restassured.RestAssured.given;
-import static org.junit.jupiter.api.Assertions.fail;
-
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
-import jakarta.inject.Inject;
 import java.util.Date;
 import java.util.Optional;
 import java.util.StringTokenizer;
 
+import static io.restassured.RestAssured.given;
+
 
 @QuarkusTest
-public class SecurityTest {
+public class SecurityTest extends BaseRepoTest {
 
     @ConfigProperty(name = "auth.provider")
     String authProvider;
@@ -53,7 +41,9 @@ public class SecurityTest {
     UserProfileRepo userProfileRepo;
 
     @Inject
-    RuleContext ruleContext;
+    SecurityUtils securityUtils;
+
+
 
     @Test
     public void testPasswordEncryption() {
@@ -80,30 +70,27 @@ public class SecurityTest {
 
     @Test
     public void testLoginRepo() throws Exception {
-        TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.systemUserId);
-        String[] roles = {"user"};
-        PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.systemUserId, roles);
-        ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "save");
+
         try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
 
-            Optional<CredentialUserIdPassword> credop = credRepo.findByUserId(TestUtils.systemUserId);
+            Optional<CredentialUserIdPassword> credop = credRepo.findByUserId(testUtils.getSystemUserId());
 
             if (credop.isPresent()) {
                 Log.info("cred:" + credop.get().getUserId());
             } else {
                 CredentialUserIdPassword cred = new CredentialUserIdPassword();
-                cred.setUserId(TestUtils.systemUserId);
+                cred.setUserId(testUtils.getSystemUserId());
                 cred.setPasswordHash("$2a$12$76wQJLgSAdm6ZTHFHtzksuSkWG9eW0qe5YXMXaZIBo52ncXHO0EDy"); //Test123456å
 
                 DataDomain dataDomain = new DataDomain();
-                dataDomain.setOrgRefName(TestUtils.orgRefName);
-                dataDomain.setAccountNum(TestUtils.accountNumber);
-                dataDomain.setTenantId(TestUtils.tenantId);
-                dataDomain.setOwnerId(TestUtils.systemUserId);
+                dataDomain.setOrgRefName(testUtils.getOrgRefName());
+                dataDomain.setAccountNum(testUtils.getAccountNumber());
+                dataDomain.setTenantId(testUtils.getTenantId());
+                dataDomain.setOwnerId(testUtils.getSystemUserId());
 
                 cred.setRoles(roles);
                 cred.setRefName(cred.getUserId());
-                cred.setDomainContext(new DomainContext(dataDomain, TestUtils.defaultRealm));
+                cred.setDomainContext(new DomainContext(dataDomain, testUtils.getDefaultRealm()));
                 cred.setLastUpdate(new Date());
 
                 cred.setDataDomain(dataDomain);
@@ -111,7 +98,7 @@ public class SecurityTest {
                 credRepo.save(cred);
             }
 
-            Optional<UserProfile> userProfileOp = userProfileRepo.getByUserId(TestUtils.systemUserId);
+            Optional<UserProfile> userProfileOp = userProfileRepo.getByUserId(testUtils.getSystemUserId());
 
             if (userProfileOp.isPresent()) {
                 Log.info("User Name:" + userProfileOp.get().getUserName());
@@ -124,16 +111,16 @@ public class SecurityTest {
                 profile.setEmail("mingardia@end2endlogic.com");
 
                 DataDomain dataDomain = new DataDomain();
-                dataDomain.setOrgRefName(TestUtils.orgRefName);
-                dataDomain.setAccountNum(TestUtils.accountNumber);
-                dataDomain.setTenantId(TestUtils.tenantId);
+                dataDomain.setOrgRefName(testUtils.getOrgRefName());
+                dataDomain.setAccountNum(testUtils.getAccountNumber());
+                dataDomain.setTenantId(testUtils.getTenantId());
                 dataDomain.setOwnerId(profile.getUserId());
                 profile.setDataDomain(dataDomain);
 
                 profile = userProfileRepo.save(profile);
                 Assert.assertNotNull(profile.getId());
                 userProfileRepo.delete(profile);
-                userProfileOp = userProfileRepo.getByUserId(TestUtils.systemUserId);
+                userProfileOp = userProfileRepo.getByUserId(testUtils.getSystemUserId());
                 Assert.assertTrue(!userProfileOp.isPresent());
             }
         } finally {
@@ -146,13 +133,13 @@ public class SecurityTest {
     public void testLoginAPI() throws JsonProcessingException {
         AuthRequest request = new AuthRequest();
         if (authProvider.equals("custom")) {
-            request.setUserId(SecurityUtils.systemUserId);
+            request.setUserId(securityUtils.getSystemUserId());
             request.setPassword("test123456");
-            request.setTenantId(SecurityUtils.systemTenantId);
+            request.setTenantId(securityUtils.getSystemTenantId());
         } else {
             request.setUserId("testuser@end2endlogic.com");
             request.setPassword("P@55w@rd");
-            request.setTenantId(SecurityUtils.systemTenantId);
+            request.setTenantId(securityUtils.getSystemTenantId());
         }
 
         ObjectMapper mapper = new ObjectMapper();
@@ -180,13 +167,13 @@ public class SecurityTest {
     public void testGetUserProfileRESTAPI() throws JsonProcessingException {
         AuthRequest request = new AuthRequest();
         if (authProvider.equals("custom")) {
-            request.setUserId(SecurityUtils.systemUserId);
+            request.setUserId(securityUtils.getSystemUserId());
             request.setPassword("test123456");
-            //request.setTenantId(SecurityUtils.systemTenantId);
+            //request.setTenantId(securityUtils.getSystemTenantId());
         } else {
             request.setUserId("testuser@end2endlogic.com");
             request.setPassword("P@55w@rd");
-           // request.setTenantId(SecurityUtils.systemTenantId);
+           // request.setTenantId(securityUtils.getSystemTenantId());
         }
 
         ObjectMapper mapper = new ObjectMapper();

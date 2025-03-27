@@ -15,6 +15,8 @@ import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import com.e2eq.framework.util.SecurityUtils;
 import com.e2eq.framework.util.ValidateUtils;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectWriter;
 import io.quarkus.logging.Log;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.smallrye.jwt.auth.principal.JWTParser;
@@ -31,11 +33,13 @@ import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.jboss.logging.Logger;
 
 import javax.mail.search.SearchTerm;
-import java.io.IOException;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.security.Principal;
 import java.util.Optional;
 import java.util.Set;
 import java.util.StringTokenizer;
+import java.util.stream.Collectors;
 
 
 @Provider
@@ -69,6 +73,12 @@ public class SecurityFilter implements ContainerRequestFilter {
     @Inject
     UserProfileRepo userProfileRepo;
 
+    @Inject
+    ObjectMapper mapper;
+
+    @Inject
+    SecurityUtils securityUtils;
+
 
     @Override
     public void filter(ContainerRequestContext requestContext) throws IOException {
@@ -79,6 +89,33 @@ public class SecurityFilter implements ContainerRequestFilter {
         // left around, determine how to clear the context after the action is complete, vs, upfront here.
         //SecurityContext.clear();
 
+        if (Log.isDebugEnabled()) {
+            String path = requestContext.getUriInfo().getPath();
+            String queryParams = requestContext.getUriInfo().getQueryParameters().toString();
+            String method = requestContext.getMethod();
+            String body = "";
+            if ("POST".equalsIgnoreCase(method)) {
+                // Buffer the entity stream
+                BufferedInputStream bufferedInputStream = new BufferedInputStream(requestContext.getEntityStream());
+                String rawBody = new BufferedReader(new InputStreamReader(bufferedInputStream))
+                        .lines().collect(Collectors.joining("\n"));
+
+                // Reset the entity stream so it can be read again by downstream filters
+                requestContext.setEntityStream(new ByteArrayInputStream(rawBody.getBytes(StandardCharsets.UTF_8)));
+
+                // Pretty print JSON
+                try {
+                    Object json = mapper.readValue(rawBody, Object.class);
+                    ObjectWriter writer = mapper.writerWithDefaultPrettyPrinter();
+                    body = writer.writeValueAsString(json);
+                } catch (Exception e) {
+                    body = rawBody; // Fallback to raw body if not JSON
+                }
+            }
+
+
+            Log.debugf("SecurityFilter: %s %s?%s body[%s]", method, path, queryParams, body);
+        }
 
         ResourceContext resourceContext = determineResourceContext(requestContext);
         PrincipalContext principalContext = determinePrincipalContext(requestContext);
@@ -160,9 +197,9 @@ public class SecurityFilter implements ContainerRequestFilter {
     protected PrincipalContext determinePrincipalContext(ContainerRequestContext requestContext) {
         // Default to an anonymous PrincipalContext
         PrincipalContext pcontext = new PrincipalContext.Builder()
-                .withDefaultRealm(SecurityUtils.systemRealm)
-                .withDataDomain(SecurityUtils.systemDataDomain)
-                .withUserId(SecurityUtils.anonymousUserId)
+                .withDefaultRealm(securityUtils.getSystemRealm())
+                .withDataDomain(securityUtils.getSystemDataDomain())
+                .withUserId(securityUtils.getAnonymousUserId())
                 .withRoles(new String[]{"ANONYMOUS"})
                 .withScope("systemGenerated")
                 .build();
@@ -348,8 +385,8 @@ public class SecurityFilter implements ContainerRequestFilter {
                     // could not find the user so assume anonymous
                     roles[0] = "ANONYMOUS";
                     pcontext = new PrincipalContext.Builder()
-                            .withDefaultRealm(SecurityUtils.systemRealm)
-                            .withDataDomain(SecurityUtils.systemDataDomain)
+                            .withDefaultRealm(securityUtils.getSystemRealm())
+                            .withDataDomain(securityUtils.getSystemDataDomain())
                             .withUserId(SecurityUtils.anonymousUserId)
                             .withRoles(roles)
                             .withScope("systemGenerated")
@@ -404,8 +441,8 @@ public class SecurityFilter implements ContainerRequestFilter {
                     // anonymous user context
                     roles[0] = "ANONYMOUS";
                     pcontext = new PrincipalContext.Builder()
-                            .withDefaultRealm(SecurityUtils.systemRealm)
-                            .withDataDomain(SecurityUtils.systemDataDomain)
+                            .withDefaultRealm(securityUtils.getSystemRealm())
+                            .withDataDomain(securityUtils.getSystemDataDomain())
                             .withUserId(SecurityUtils.anonymousUserId)
                             .withRoles(roles)
                             .withScope("systemGenerated")

@@ -21,7 +21,10 @@ public class ContentLengthFilter implements ContainerRequestFilter, ContainerRes
 
     @Override
     public void filter(ContainerRequestContext requestContext) {
-        Log.warn("** Filter call in ContentLengthFilter.filter() being ignored **");
+        if (Log.isDebugEnabled()) {
+            // intentionally logging warning but only when debug is enabled
+            Log.warn("** Filter call in ContentLengthFilter.filter() being ignored **");
+        }
     }
 
     @Override

@@ -13,14 +13,12 @@ public class ChangeSetRecordRepo extends MorphiaRepo<ChangeSetRecord> {
 
    /**
     * Return the already executed set of changes
-    * @param targetVersion
     * @return
     */
-   public Map<String, ChangeSetRecord> getAllReadyExecutedChangeSetRecordMap(float targetVersion) {
+   public Map<String, ChangeSetRecord> getAllReadyExecutedChangeSetRecordMap() {
       Map<String, ChangeSetRecord>  allReadyExecuted = new HashMap<>();
 
-      String query = "dbToVersion:<=##" + Float.toString(targetVersion);
-      List<ChangeSetRecord> records = this.getListByQuery(0,0, query);
+      List<ChangeSetRecord> records = this.getAllList();
       records.forEach(record -> {
          allReadyExecuted.put(record.getChangeSetName(), record);
       });

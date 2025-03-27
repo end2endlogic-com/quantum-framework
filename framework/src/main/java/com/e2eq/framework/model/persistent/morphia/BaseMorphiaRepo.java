@@ -18,21 +18,23 @@ import java.util.List;
 import java.util.Optional;
 
 public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
-   public Class<T> getPersistentClass();
+   Class<T> getPersistentClass();
    // UI Actions
-   public T fillUIActions(@NotNull T model);
+   T fillUIActions(@NotNull T model);
    Collection<T> fillUIActions(@NotNull Collection<T> collection);
 
    // Read based API's
-   public Optional<T> findById(@NotNull String id);
-   public Optional<T> findById(@NotNull Datastore s, @NotNull ObjectId id);
-   public Optional<T> findById(@NotNull ObjectId id);
-   public Optional<T> findByRefName (@NotNull String refId);
+   Optional<T> findById(@NotNull String id);
+   Optional<T> findById(@NotNull Datastore s, @NotNull ObjectId id);
+   Optional<T> findById(@NotNull ObjectId id);
 
-   public JsonSchema getSchema();
+   Optional<T> findByRefName(Datastore datastore, @NotNull String refName);
+   Optional<T> findByRefName (@NotNull String refId);
 
-   public List<T> getAllList();
+   JsonSchema getSchema();
 
+   List<T> getAllList();
+   List<T> getAllList(Datastore datastore);
    /**
     *
     * @param skip must be 0 or greater
@@ -41,27 +43,36 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
     * @param filter can be null but if given must follow Filter syntax
     * @return
     */
-   public List<T> getListByQuery(int skip, int limit, @Nullable String filter);
-   public List<T> getListByQuery(int skip, int limit, @Nullable String filter, List<SortField> sortFields, List<ProjectionField> projectedProperties);
-   public List<T>  getList(int skip, int limit, @Nullable List<Filter> filters, @Nullable List<SortField> sortFields);
-   public List<T> getListByQuery(@NotNull Datastore datastore, int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields, List<ProjectionField> projectionFields);
-   public List<T> getListFromIds(List<ObjectId> ids);
-   public List<T> getListFromRefNames(List<String> refNames);
+
+   List<T> getListByQuery(int skip, int limit, @Nullable String filter);
+   List<T> getListByQuery(int skip, int limit, @Nullable String filter, List<SortField> sortFields, List<ProjectionField> projectedProperties);
+   List<T> getListByQuery(@NotNull Datastore datastore, int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields, List<ProjectionField> projectionFields);
+
+   List<T> getList(int skip, int limit, @Nullable List<Filter> filters, @Nullable List<SortField> sortFields);
+   List<T> getList(Datastore datastore, int skip, int limit, @Nullable List<Filter> filters, @Nullable List<SortField> sortFields);
+
+   List<T> getListFromIds(List<ObjectId> ids);
+   List<T> getListFromIds(Datastore datastore, List<ObjectId> ids);
+
+   List<T> getListFromRefNames(List<String> refNames);
+   public List<T> getListFromRefNames(Datastore datastore, List<String> refNames);
 
 
-   public CloseableIterator<T> getStreamByQuery(int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields);
+   CloseableIterator<T> getStreamByQuery(int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields);
+   CloseableIterator<T> getStreamByQuery(Datastore datastore, int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields);
 
-   public long getCount(@Nullable String filter);
-   public long getCount(@NotNull Datastore datastore,@Nullable String filter);
+   long getCount(@Nullable String filter);
+   long getCount(@NotNull Datastore datastore,@Nullable String filter);
 
    // Write based API's
-   public T save(@Valid T value);
-   public T save(@NotNull String realm, @Valid T value);
-   public T save(@NotNull Datastore datastore, @Valid T value);
-   public T save(@NotNull MorphiaSession session, @Valid T value);
-   public List<T> save(List<T> entities);
-   public List<T> save(@NotNull Datastore datastore, List<T> entities);
-   public List<T> save(@NotNull MorphiaSession datastore, List<T> entities);
+   T save(@Valid T value);
+   T save(@NotNull String realm, @Valid T value);
+   T save(@NotNull Datastore datastore, @Valid T value);
+   T save(@NotNull MorphiaSession session, @Valid T value);
+
+   List<T> save(List<T> entities);
+   List<T> save(@NotNull Datastore datastore, List<T> entities);
+   List<T> save(@NotNull MorphiaSession datastore, List<T> entities);
 
    public long delete(T obj) throws ReferentialIntegrityViolationException;
    public long delete(@NotNull ObjectId id) throws ReferentialIntegrityViolationException;

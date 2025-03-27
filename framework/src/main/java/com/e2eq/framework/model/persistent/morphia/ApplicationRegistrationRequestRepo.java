@@ -46,6 +46,9 @@ public class ApplicationRegistrationRequestRepo extends MorphiaRepo<ApplicationR
    @ConfigProperty(name="auth.provider")
    private String authProvider;
 
+   @Inject
+   SecurityUtils securityUtils;
+
 
    @Override
    public ApplicationRegistration save(ApplicationRegistration value) {
@@ -60,7 +63,7 @@ public class ApplicationRegistrationRequestRepo extends MorphiaRepo<ApplicationR
    public Optional<ApplicationRegistration> findByCompanyIdentifier(String identifier) {
       List<Filter> filters = new ArrayList<>();
       filters.add(Filters.eq("companyIdentifier", identifier));
-      Query<ApplicationRegistration> query = dataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass()).filter(getFilterArray(filters, getPersistentClass()));
+      Query<ApplicationRegistration> query = morphiaDataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass()).filter(getFilterArray(filters, getPersistentClass()));
       ApplicationRegistration obj = query.first();
       return Optional.ofNullable(obj);
    }
@@ -121,7 +124,7 @@ public class ApplicationRegistrationRequestRepo extends MorphiaRepo<ApplicationR
                dataDomain.setTenantId(tenantId);
                dataDomain.setOwnerId(applicationRegistration.getUserEmail());
 
-               accountNumber = countRepo.getAndIncrement("accountNumber", SecurityUtils.systemDataDomain, 200);
+               accountNumber = countRepo.getAndIncrement("accountNumber", securityUtils.getSystemDataDomain(), 200);
 
                String newAccountId = String.format("%05d", accountNumber);
 
@@ -131,8 +134,8 @@ public class ApplicationRegistrationRequestRepo extends MorphiaRepo<ApplicationR
 
                dataDomain.setAccountNum(newAccountId);
                dataDomain.setOrgRefName(tenantId);
-               dataDomain.setDataSegment(SecurityUtils.defaultDataSegment);
-               dataDomain.setOwnerId(SecurityUtils.systemUserId);
+               dataDomain.setDataSegment(securityUtils.getDefaultDataSegment());
+               dataDomain.setOwnerId(securityUtils.getSystemUserId());
 
                newOrg.setDataDomain(dataDomain);
                newOrg = session.save(newOrg);
@@ -183,8 +186,8 @@ public class ApplicationRegistrationRequestRepo extends MorphiaRepo<ApplicationR
                userProfileRepo.save(session, up);
 
                Map<String, String> overrides = new HashMap<>();
-               overrides.put("accountManagement", SecurityUtils.systemRealm);
-               overrides.put("security", SecurityUtils.systemRealm);
+               overrides.put("accountManagement", securityUtils.getSystemRealm());
+               overrides.put("security", securityUtils.getSystemRealm());
 
                CredentialUserIdPassword cred = new CredentialUserIdPassword();
                cred.setUserId(applicationRegistration.getUserId());
@@ -204,7 +207,7 @@ public class ApplicationRegistrationRequestRepo extends MorphiaRepo<ApplicationR
 
             // Register the realm
             Realm realm = new Realm();
-            realm.setDataDomain(SecurityUtils.systemDataDomain);
+            realm.setDataDomain(securityUtils.getSystemDataDomain());
             realm.setEmailDomain(emailDomain);
             realm.setDatabaseName(tenantId);
             realm.setRefName(tenantId);

@@ -9,7 +9,6 @@ import com.e2eq.framework.model.securityrules.RuleContext;
 import com.e2eq.framework.model.securityrules.SecuritySession;
 import com.e2eq.framework.test.TestBookModel;
 import com.e2eq.framework.util.TestUtils;
-import com.oracle.graal.python.builtins.modules.pickle.PUnpicklerFactory;
 import dev.morphia.annotations.Reference;
 import dev.morphia.query.filters.Filter;
 import io.quarkus.logging.Log;
@@ -23,7 +22,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 
 @QuarkusTest
-public class TestReferenceQuery {
+public class TestReferenceQuery extends BaseRepoTest{
     @Inject
     RuleContext ruleContext;
 
@@ -33,10 +32,7 @@ public class TestReferenceQuery {
 
     @Test
     public void testQuery() throws NoSuchFieldException, NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException {
-        String[] roles = {"user"};
-        PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.systemUserId, roles);
-        ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "view");
-        TestUtils.initRules(ruleContext, "security", "userProfile", TestUtils.systemUserId);
+
         try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
 
             Class<?> clazz = TestBookModel.class;

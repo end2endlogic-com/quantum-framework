@@ -17,7 +17,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @QuarkusTest
-public class TestObjectReference {
+public class TestObjectReference extends BaseRepoTest {
 
     @Inject
     RuleContext ruleContext;
@@ -30,11 +30,6 @@ public class TestObjectReference {
 
     @Test
     public void testObjectReference() throws ReferentialIntegrityViolationException {
-
-        TestUtils.initRules(ruleContext, "security", "userProfile", TestUtils.systemUserId);
-        String[] roles = {"user"};
-        PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.systemUserId, roles);
-        ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "save");
 
         try (final SecuritySession ss = new SecuritySession(pContext, rContext)) {
             // Create a parent object

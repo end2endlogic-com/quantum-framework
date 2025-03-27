@@ -103,6 +103,9 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
    public Response byRefName (
            @Parameter(description = "Reference name of the entity", required = true)
                    @QueryParam("refName") String refName) {
+       if (refName == null || refName.isEmpty()) {
+           throw new WebApplicationException( "refName is required to be non null and not empty", Response.Status.BAD_REQUEST);
+       }
       Response response;
       Optional<T> opModel = repo.findByRefName(refName);
 
@@ -133,6 +136,9 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
    public Response byPathId(
            @Parameter(description = "Id of the entity", required = true)
            @PathParam("id") String id) {
+       if (id == null || id.isEmpty()) {
+           throw new WebApplicationException( "id is required to be non null and not empty", Response.Status.BAD_REQUEST);
+       }
       return byId(id);
    }
 
@@ -147,6 +153,9 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
    public Response byId(
            @Parameter(description = "Id of the entity", required = true)
            @QueryParam("id") String id) {
+       if (id == null || id.isEmpty()) {
+           throw new WebApplicationException( "id is required to be non null and not empty", Response.Status.BAD_REQUEST);
+       }
       Response response;
       Optional<T> opModel = repo.findById(id);
 
@@ -492,6 +501,9 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
    @Consumes(MediaType.APPLICATION_JSON)
    @SecurityRequirement(name = "bearerAuth")
    public T save(T model) {
+       if (model == null) {
+           throw new WebApplicationException( "Attempt to save null, check body of request, or the serialization of the body failed", Response.Status.BAD_REQUEST);
+       }
       model = repo.save(model);
       return model;
    }

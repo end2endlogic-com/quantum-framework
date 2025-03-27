@@ -10,6 +10,7 @@ import com.e2eq.framework.model.persistent.security.Policy;
 import com.e2eq.framework.model.persistent.security.Rule;
 import com.e2eq.framework.model.persistent.morphia.PolicyRepo;
 import com.e2eq.framework.util.SecurityUtils;
+import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.logging.Log;
 import io.quarkus.runtime.Startup;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -22,20 +23,33 @@ public class AddAnonymousSecurityRules implements ChangeSetBean {
     @Inject
     PolicyRepo policyRepo;
 
+    @Inject
+    SecurityUtils securityUtils;
+
     @Override
     public String getId() {
         return "00002";
     }
 
     @Override
-    public Double getDbFromVersion() {
-        return Double.valueOf(0.10d);
+    public String getDbFromVersion() {
+        return "1.0.1";
+    }
+    @Override
+    public int getDbFromVersionInt() {
+        return 101;
     }
 
     @Override
-    public Double getDbToVersion() {
-        return Double.valueOf(0.20d);
+    public String getDbToVersion() {
+        return "1.0.2";
     }
+
+    @Override
+    public int getDbToVersionInt() {
+        return 102;
+    }
+
 
     @Override
     public int getPriority() {
@@ -63,14 +77,14 @@ public class AddAnonymousSecurityRules implements ChangeSetBean {
     }
 
     @Override
-    public void execute(String realm) throws Exception {
+    public void execute(MorphiaSession session, String realm) throws Exception {
 
         // check if the policies already exist
-        if (!policyRepo.findByRefName("defaultAnonymousPolicy").isPresent()) {
+        if (!policyRepo.findByRefName(session, "defaultAnonymousPolicy").isPresent()) {
             // So this will match any user that has the role "user"
             // for "any area, any domain, and any action i.e. all areas, domains, and actions
             SecurityURIHeader header = new SecurityURIHeader.Builder()
-                    .withIdentity(SecurityUtils.anonymousUserId)      // with the role "user"
+                    .withIdentity(securityUtils.getAnonymousUserId())      // with the role "user"
                     .withArea("website")             // any area
                     .withFunctionalDomain("contactUs") // any domain
                     .withAction("create")           // any action
@@ -79,11 +93,11 @@ public class AddAnonymousSecurityRules implements ChangeSetBean {
             // This will match the resources
             // from "any" account, in the "e2e" realm, any tenant, any owner, any datasegment
             SecurityURIBody body = new SecurityURIBody.Builder()
-                    .withAccountNumber(SecurityUtils.systemAccountNumber) // any account
-                    .withRealm(SecurityUtils.systemRealm) // within just the b2bi realm
-                    .withTenantId("*") // any tenant
-                    .withOwnerId("*") // any owner
-                    .withDataSegment("*") // any datasegement
+                    .withAccountNumber(securityUtils.getSystemAccountNumber()) // any account
+                    .withRealm(securityUtils.getSystemRealm()) // within just the realm
+                    .withTenantId(SecurityUtils.any) // any tenant
+                    .withOwnerId(SecurityUtils.any) // any owner
+                    .withDataSegment(SecurityUtils.any) // any datasegement
                     .build();
 
             // Create the URI that represents this "rule" where by
@@ -99,14 +113,14 @@ public class AddAnonymousSecurityRules implements ChangeSetBean {
             Rule r = b.build();
 
             Policy defaultAnonymousPolicy = new Policy();
-            defaultAnonymousPolicy.setPrincipalId(SecurityUtils.anonymousUserId);
+            defaultAnonymousPolicy.setPrincipalId(securityUtils.getAnonymousUserId());
             defaultAnonymousPolicy.setDisplayName("anonymous policy");
             defaultAnonymousPolicy.setDescription("anonymous users can register and fill out a contact us form");
             defaultAnonymousPolicy.getRules().add(r);
             defaultAnonymousPolicy.setRefName("defaultAnonymousPolicy");
-            defaultAnonymousPolicy.setDataDomain(SecurityUtils.systemDataDomain);
+            defaultAnonymousPolicy.setDataDomain(securityUtils.getSystemDataDomain());
 
-            policyRepo.save(defaultAnonymousPolicy);
+            policyRepo.save(session, defaultAnonymousPolicy);
         }
 
     }

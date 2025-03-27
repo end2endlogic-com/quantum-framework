@@ -10,13 +10,15 @@ import com.google.common.collect.Ordering;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
 import io.quarkus.logging.Log;
-import io.quarkus.runtime.BuilderConfig;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
+
+import jakarta.inject.Inject;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.text.StringSubstitutor;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.graalvm.polyglot.Context;
 
 import java.util.*;
@@ -24,13 +26,17 @@ import java.util.*;
 
 @ApplicationScoped
 public class RuleContext {
+     @Inject
+     SecurityUtils securityUtils;
+
     /**
      * This holds a map of rules, indexed by an "identity" where an identity may be either
      * a specific userId, or a role name.
      */
     Map<String, List<Rule>> rules = new HashMap<>();
 
-    public static String DefaultRealm = "system-com";
+    @ConfigProperty(name = "quantum.realmConfig.defaultRealm", defaultValue = "system-com")
+    protected String defaultRealm;
 
     public RuleContext() {
         // load rules
@@ -38,9 +44,10 @@ public class RuleContext {
         Log.debug("Creating ruleContext");
     }
 
-    @jakarta.inject.Inject
-    public RuleContext(BuilderConfig builderConfig) {
+    public String getDefaultRealm() {
+        return defaultRealm;
     }
+
 
     /**
      * this is called only by Quarkus upon startup if you create a rule context outside of injection
@@ -52,7 +59,7 @@ public class RuleContext {
             addSystemRules();
         } else {
             // Look for system Rules
-            if (rulesForIdentity(SecurityUtils.systemSecurityHeader.getIdentity()).isEmpty()) {
+            if (rulesForIdentity(securityUtils.getSystemSecurityHeader().getIdentity()).isEmpty()) {
                 addSystemRules();
             }
         }
@@ -65,7 +72,7 @@ public class RuleContext {
         // add default rules for the system
         // first explicitly add the "system"
         // to operate with in the security area
-        SecurityURI suri = new SecurityURI(SecurityUtils.systemSecurityHeader, SecurityUtils.systemSecurityBody);
+        SecurityURI suri = new SecurityURI(securityUtils.getSystemSecurityHeader(), securityUtils.getSystemSecurityBody());
 
         Rule systemRule = new Rule.Builder()
                 .withName("SysAnyActionSecurity")
@@ -75,11 +82,11 @@ public class RuleContext {
                 .withPriority(0)
                 .withFinalRule(true).build();
 
-        this.addRule(SecurityUtils.systemSecurityHeader, systemRule);
+        this.addRule(securityUtils.getSystemSecurityHeader(), systemRule);
 
-        SecurityURIHeader header = SecurityUtils.systemSecurityHeader.clone();
+        SecurityURIHeader header = securityUtils.getSystemSecurityHeader().clone();
         header.setIdentity("system");
-        suri = new SecurityURI(header, SecurityUtils.systemSecurityBody);
+        suri = new SecurityURI(header, securityUtils.getSystemSecurityBody());
 
         Rule systemRoleRule = new Rule.Builder()
                 .withName("SysRoleAnyActionSecurity")
@@ -179,9 +186,9 @@ public class RuleContext {
                 .withAction("create")
                 .build();
         body = new SecurityURIBody.Builder()
-                .withRealm(SecurityUtils.systemRealm)
-                .withTenantId(SecurityUtils.systemTenantId)
-                .withAccountNumber(SecurityUtils.systemAccountNumber)
+                .withRealm(securityUtils.getSystemRealm())
+                .withTenantId(securityUtils.getSystemTenantId())
+                .withAccountNumber(securityUtils.getSystemAccountNumber())
                 .withDataSegment("*")
                 .withOwnerId("*")
                 .withOrgRefName("*")
@@ -204,9 +211,9 @@ public class RuleContext {
                 .withAction("create")
                 .build();
         body = new SecurityURIBody.Builder()
-                .withRealm(SecurityUtils.systemRealm)
-                .withTenantId(SecurityUtils.systemTenantId)
-                .withAccountNumber(SecurityUtils.systemAccountNumber)
+                .withRealm(securityUtils.getSystemRealm())
+                .withTenantId(securityUtils.getSystemTenantId())
+                .withAccountNumber(securityUtils.getSystemAccountNumber())
                 .withDataSegment("*")
                 .withOwnerId("*")
                 .withOrgRefName("*")
@@ -624,6 +631,6 @@ public class RuleContext {
         if (principalContext != null)
             return principalContext.getDefaultRealm();
         else
-            return DefaultRealm;
+            return defaultRealm;
     }
 }

@@ -27,6 +27,9 @@ public class TestCodes {
     @Inject
     RuleContext ruleContext;
 
+    @Inject
+    TestUtils testUtils;
+
 
     public CodeList getOrCreateCodeList(String codeListName) {
 
@@ -48,9 +51,9 @@ public class TestCodes {
     public void testAddCodes() throws ReferentialIntegrityViolationException {
         Datastore ds = dataStore.getDefaultSystemDataStore();
         String[] roles = {"user"};
-        PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.systemUserId, roles);
-        ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "save");
-        TestUtils.initRules(ruleContext, "security", "userProfile", TestUtils.systemUserId);
+        PrincipalContext pContext = testUtils.getPrincipalContext(testUtils.getSystemUserId(), roles);
+        ResourceContext rContext = testUtils.getResourceContext(testUtils.getArea(), "userProfile", "save");
+        testUtils.initDefaultRules(ruleContext, "security", "userProfile", testUtils.getSystemUserId());
         // Create a test user
         try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
             CodeList codeList = getOrCreateCodeList("STATE_TWOLETTER_CODES");

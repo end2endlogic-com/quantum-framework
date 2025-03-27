@@ -12,12 +12,12 @@ import static dev.morphia.query.Sort.descending;
 
 @ApplicationScoped
 public class DatabaseVersionRepo extends MorphiaRepo<DatabaseVersion> {
-   public Optional<DatabaseVersion> findVersion() {
-      Log.info("Finding database version from realm:" + getSecurityContextRealmId());
-      Datastore ds = dataStore.getDataStore(getSecurityContextRealmId());
+   public Optional<DatabaseVersion> findVersion(String realm) {
+      Log.info("Finding database version from realm:" + realm);
+      Datastore ds = morphiaDataStore.getDataStore(realm);
       DatabaseVersion version =  ds.find(DatabaseVersion.class)
               .iterator(new FindOptions()
-                      .sort(descending("currentVersion"))
+                      .sort(descending("currentVersionInt"))
                       .limit(1))
               .tryNext();
 
