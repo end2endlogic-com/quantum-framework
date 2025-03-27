@@ -8,7 +8,7 @@ import java.util.List;
 
 @EqualsAndHashCode( callSuper = true)
 @Data
-public class  TestPrincipal extends TestBase{
+public class TestModelPrincipal extends TestModelBase {
    String id;
    String name;
    List<String> roles = new ArrayList<>();

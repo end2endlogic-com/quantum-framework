@@ -33,8 +33,9 @@ public class PermissionRuleInterceptor implements EntityListener {
       // should do the permission check here.
 
       if (SecurityContext.getResourceContext().isPresent()) {
-         if (!(SecurityContext.getResourceContext().get().getAction().equals("save") ||
-                 SecurityContext.getResourceContext().get().getAction().equals("update") ||
+         if (!(SecurityContext.getResourceContext().get().getAction().equalsIgnoreCase("save") ||
+                 SecurityContext.getResourceContext().get().getAction().equalsIgnoreCase("update") ||
+                 SecurityContext.getResourceContext().get().getAction().equalsIgnoreCase("delete") ||
                  SecurityContext.getResourceContext().get().getAction().equals("*"))) {
             if (Log.isEnabled(Logger.Level.WARN))
                //  throw new RuntimeException("Configuration error, post persist called but action expected to be save or update and is:" + SecurityContext.getResourceContext().get().getAction());

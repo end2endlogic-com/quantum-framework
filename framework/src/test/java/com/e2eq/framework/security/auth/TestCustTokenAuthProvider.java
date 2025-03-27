@@ -32,22 +32,23 @@ public class TestCustTokenAuthProvider {
     @ConfigProperty(name = "auth.provider")
     String authProvider;
 
-
+    @Inject
+    TestUtils testUtils;
 
     @Test
     public void testCreateCustomUser() throws ReferentialIntegrityViolationException {
 
         if (authProvider.equals("custom")) {
             String[] rroles = {"admin"};
-            PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.systemUserId, rroles);
-            ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "create");
-            TestUtils.initRules(ruleContext, "security", "userProfile", TestUtils.systemUserId);
+            PrincipalContext pContext = testUtils.getPrincipalContext(testUtils.getSystemUserId(), rroles);
+            ResourceContext rContext = testUtils.getResourceContext(testUtils.getArea(), "userProfile", "create");
+            testUtils.initDefaultRules(ruleContext, "security", "userProfile", testUtils.getSystemUserId());
             try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
                 DomainContext domainContext = DomainContext.builder()
-                        .orgRefName(TestUtils.orgRefName)
-                        .defaultRealm(TestUtils.defaultRealm)
-                        .accountId(TestUtils.accountNumber)
-                        .tenantId(TestUtils.tenantId)
+                        .orgRefName(testUtils.getOrgRefName())
+                        .defaultRealm(testUtils.getDefaultRealm())
+                        .accountId(testUtils.getAccountNumber())
+                        .tenantId(testUtils.getTenantId())
                         .build();
 
                 customTokenAuthProvider.createUser("testuser", "test123456", Set.of("user"), domainContext);
@@ -70,15 +71,15 @@ public class TestCustTokenAuthProvider {
     public void testCreateCognitoUser() throws ReferentialIntegrityViolationException {
         if (authProvider.equals("cognito")) {
             String[] rroles = {"admin"};
-            PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.systemUserId, rroles);
-            ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "create");
-            TestUtils.initRules(ruleContext, "security", "userProfile", TestUtils.systemUserId);
+            PrincipalContext pContext = testUtils.getPrincipalContext(testUtils.getSystemUserId(), rroles);
+            ResourceContext rContext = testUtils.getResourceContext(testUtils.getArea(), "userProfile", "create");
+            testUtils.initDefaultRules(ruleContext, "security", "userProfile", testUtils.getSystemUserId());
             try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
                 DomainContext domainContext = DomainContext.builder()
-                        .orgRefName(TestUtils.orgRefName)
-                        .defaultRealm(TestUtils.defaultRealm)
-                        .accountId(TestUtils.accountNumber)
-                        .tenantId(TestUtils.tenantId)
+                        .orgRefName(testUtils.getOrgRefName())
+                        .defaultRealm(testUtils.getDefaultRealm())
+                        .accountId(testUtils.getAccountNumber())
+                        .tenantId(testUtils.getTenantId())
                         .build();
 
 

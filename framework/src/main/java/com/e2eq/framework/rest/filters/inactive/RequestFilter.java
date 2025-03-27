@@ -47,6 +47,9 @@ public class RequestFilter implements ContainerRequestFilter {
    @Inject
    CredentialRepo credentialRepo;
 
+   @Inject
+   SecurityUtils securityUtils;
+
    @Override
    public void filter (ContainerRequestContext requestContext) throws IOException {
 
@@ -288,9 +291,9 @@ public class RequestFilter implements ContainerRequestFilter {
             // anonymous user context
             String[] roles = {"ANONYMOUS"};
             pcontext = new PrincipalContext.Builder()
-                          .withDefaultRealm(SecurityUtils.systemRealm)
-                          .withDataDomain(SecurityUtils.systemDataDomain)
-                          .withUserId(SecurityUtils.anonymousUserId)
+                          .withDefaultRealm(securityUtils.getSystemRealm())
+                          .withDataDomain(securityUtils.getSystemDataDomain())
+                          .withUserId(securityUtils.getAnonymousUserId())
                           .withRoles(roles)
                           .withScope("systemGenerated")
                           .build();

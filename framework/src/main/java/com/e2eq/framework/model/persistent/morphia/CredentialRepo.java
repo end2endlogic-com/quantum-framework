@@ -34,7 +34,7 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
          throw new IllegalArgumentException("parameter realmId can not be null");
       }
 
-      Datastore ds = dataStore.getDataStore(realmId);
+      Datastore ds = morphiaDataStore.getDataStore(realmId);
       if (Log.isDebugEnabled()) {
          Log.debug("DataStore: dataBaseName:" + ds.getDatabase().getName() + " retrieved via realmId:" + realmId);
       }

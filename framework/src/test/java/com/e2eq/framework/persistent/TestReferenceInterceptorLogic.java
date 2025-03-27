@@ -21,7 +21,7 @@ import java.util.List;
 import java.util.Optional;
 
 @QuarkusTest
-public class TestReferenceInterceptorLogic {
+public class TestReferenceInterceptorLogic extends BaseRepoTest{
 
 
     @Inject
@@ -42,8 +42,8 @@ public class TestReferenceInterceptorLogic {
     TestParentModel createParent(String refName) {
         TestParentModel parent = new TestParentModel();
         parent.setRefName(refName);
-        parent.setDataDomain(TestUtils.dataDomain);
-        parent.setAuditInfo(TestUtils.createAuditInfo());
+        parent.setDataDomain(testUtils.getDataDomain());
+        parent.setAuditInfo(testUtils.createAuditInfo());
         parent = parentRepo.save(parent);
 
         return parent;
@@ -74,8 +74,8 @@ public class TestReferenceInterceptorLogic {
 
         TestChildModel child = new TestChildModel();
         child.setRefName("Test1");
-        child.setDataDomain(TestUtils.dataDomain);
-        child.setAuditInfo(TestUtils.createAuditInfo());
+        child.setDataDomain(testUtils.getDataDomain());
+        child.setAuditInfo(testUtils.createAuditInfo());
         child.setParent(parent);
         child = childRepo.save(child);
 
@@ -93,8 +93,8 @@ public class TestReferenceInterceptorLogic {
 
         TestChildListModel child = new TestChildListModel();
         child.setRefName(refName);
-        child.setDataDomain(TestUtils.dataDomain);
-        child.setAuditInfo(TestUtils.createAuditInfo());
+        child.setDataDomain(testUtils.getDataDomain());
+        child.setAuditInfo(testUtils.createAuditInfo());
         child.setParents(parents);
         child = childListRepo.save(child);
 
@@ -104,10 +104,6 @@ public class TestReferenceInterceptorLogic {
 
     @Test
     public void testInterceptor() {
-        TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.systemUserId);
-        String[] roles = {"user"};
-        PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.systemUserId, roles);
-        ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "save");
 
         try (final SecuritySession ss = new SecuritySession(pContext, rContext)) {
 
@@ -140,10 +136,6 @@ public class TestReferenceInterceptorLogic {
 
     @Test
     public void testInterceptorWithCollection() throws ReferentialIntegrityViolationException {
-        TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.systemUserId);
-        String[] roles = {"user"};
-        PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.systemUserId, roles);
-        ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "save");
 
         try (final SecuritySession ss = new SecuritySession(pContext, rContext)) {
             // create two parents and a child with a list of parents

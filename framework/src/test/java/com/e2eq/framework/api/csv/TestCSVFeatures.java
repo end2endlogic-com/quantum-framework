@@ -4,6 +4,7 @@ import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.RuleContext;
 import com.e2eq.framework.model.securityrules.SecuritySession;
+import com.e2eq.framework.persistent.BaseRepoTest;
 import com.e2eq.framework.persistent.TestCSVModelRepo;
 import com.e2eq.framework.test.TestCSVModel;
 import com.e2eq.framework.util.CSVExportHelper;
@@ -24,7 +25,6 @@ import org.supercsv.io.dozer.CsvDozerBeanWriter;
 import org.supercsv.io.dozer.ICsvDozerBeanReader;
 import org.supercsv.io.dozer.ICsvDozerBeanWriter;
 import org.supercsv.prefs.CsvPreference;
-import org.supercsv.quote.AlwaysQuoteMode;
 import org.supercsv.quote.NormalQuoteMode;
 import org.supercsv.quote.QuoteMode;
 import org.supercsv.util.CsvContext;
@@ -34,12 +34,9 @@ import java.nio.charset.Charset;
 import java.util.*;
 
 @QuarkusTest
-public class TestCSVFeatures {
+public class TestCSVFeatures extends BaseRepoTest {
     @Inject
     TestCSVModelRepo repo;
-
-    @Inject
-    RuleContext ruleContext;
 
     @Inject
     CSVImportHelper csvImportHelper;
@@ -224,12 +221,6 @@ public class TestCSVFeatures {
 
     @Test
     public void testCSVImportHelper() throws IOException {
-
-
-        String[] roles = {"user"};
-        PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.systemUserId, roles);
-        ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "save");
-        TestUtils.initRules(ruleContext, "security", "userProfile", TestUtils.systemUserId);
 
         try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
             CSVImportHelper helper = csvImportHelper;

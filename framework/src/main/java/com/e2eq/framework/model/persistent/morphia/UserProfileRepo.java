@@ -6,6 +6,7 @@ import com.e2eq.framework.model.persistent.security.UserProfile;
 import com.e2eq.framework.util.EncryptionUtils;
 import com.e2eq.framework.util.ValidateUtils;
 import com.mongodb.client.model.ReturnDocument;
+import dev.morphia.Datastore;
 import dev.morphia.ModifyOptions;
 import dev.morphia.query.Query;
 import dev.morphia.query.filters.Filters;
@@ -20,7 +21,6 @@ import jakarta.validation.constraints.Size;
 import lombok.NonNull;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
-import javax.xml.namespace.QName;
 import java.util.Date;
 import java.util.Optional;
 
@@ -35,7 +35,7 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
 
 
    public Optional<UserProfile> updateStatus(@NotNull String userId, @NotNull UserProfile.Status status) {
-     UserProfile p = this.dataStore.getDataStore(getSecurityContextRealmId())
+     UserProfile p = this.morphiaDataStore.getDataStore(getSecurityContextRealmId())
              .find(UserProfile.class)
              .filter(Filters.eq("userId", userId)).modify(new ModifyOptions().returnDocument(ReturnDocument.AFTER), UpdateOperators.set("status", status.value()));
 
@@ -43,7 +43,11 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
    }
 
    public Optional<UserProfile> getByUserId(@NotNull String userId) {
-      Query<UserProfile> q = this.dataStore.getDataStore(getSecurityContextRealmId()).find(this.getPersistentClass()).filter(
+      return getByUserId(  morphiaDataStore.getDataStore(getSecurityContextRealmId()), userId );
+   }
+
+   public Optional<UserProfile> getByUserId(Datastore datastore,@NotNull String userId) {
+      Query<UserProfile> q = datastore.find(this.getPersistentClass()).filter(
          Filters.and(
             Filters.eq("userId", userId)
             )
@@ -54,7 +58,15 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
       return Optional.ofNullable(p);
    }
 
-   public UserProfile createUser(@NonNull String realm,
+   public UserProfile createUser( @NonNull String realm,
+                                 @Valid UserProfile up,
+                                 @NotNull @NotEmpty String[] roles,
+                                 @NotNull @NonNull @NotEmpty @Size(min=8, max=50, message = "password must be between 8 and 50 characters") String password) {
+      return createUser(morphiaDataStore.getDataStore(realm), realm, up, roles, password);
+   }
+
+   public UserProfile createUser(Datastore  datastore,
+                                 @NonNull String realm,
                                  @Valid UserProfile up,
                                  @NotNull @NotEmpty String[] roles,
                                  @NotNull @NonNull @NotEmpty @Size(min=8, max=50, message = "password must be between 8 and 50 characters") String password) {

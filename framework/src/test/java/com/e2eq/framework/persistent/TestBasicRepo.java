@@ -31,7 +31,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @QuarkusTest
-public class TestBasicRepo {
+public class TestBasicRepo extends BaseRepoTest{
    @Inject
    MorphiaDataStore dataStore;
 
@@ -39,21 +39,14 @@ public class TestBasicRepo {
    UserProfileRepo userProfileRepo;
 
    @Inject
-   RuleContext ruleContext;
+   SecurityUtils securityUtils;
 
-   @BeforeAll
-   static public void setUpData() {
-
-   }
 
    @Test
    public void testUserProfileRepo() {
-      String[] roles = {"user"};
-      PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.systemUserId, roles);
-      ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "view");
-      TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.systemUserId);
+
       try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
-         Optional<UserProfile> oup = userProfileRepo.findByRefName(SecurityUtils.systemUserId);
+         Optional<UserProfile> oup = userProfileRepo.findByRefName(securityUtils.getSystemUserId());
          assertTrue(oup.isPresent());
       }
    }
@@ -62,12 +55,8 @@ public class TestBasicRepo {
    @Test
    public void testUserProfileFilteredQuery() {
 
-      String[] roles = {"user"};
-      PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.systemUserId, roles);
-      ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "view");
-      TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.systemUserId);
       try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
-         Filter x = MorphiaUtils.convertToFilter("refName:" + SecurityUtils.systemUserId, UserProfile.class);
+         Filter x = MorphiaUtils.convertToFilter("refName:" + securityUtils.getSystemUserId(), UserProfile.class);
          Query<UserProfile> q = dataStore.getDefaultSystemDataStore().find(UserProfile.class);
          MongoCursor<UserProfile> cursor = q.filter(x).iterator(new FindOptions().skip(0).limit(10));
 
@@ -80,14 +69,11 @@ public class TestBasicRepo {
    @Test
    public void testTransactions() {
       Datastore ds = dataStore.getDefaultSystemDataStore();
-      String[] roles = {"user"};
-      PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.systemUserId, roles);
-      ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "view");
-      TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.systemUserId);
+
       try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
          try (MorphiaSession session = ds.startSession()) {
             session.startTransaction();
-            Optional<UserProfile> u = userProfileRepo.findByRefName(SecurityUtils.systemUserId);
+            Optional<UserProfile> u = userProfileRepo.findByRefName(securityUtils.getSystemUserId());
             Assertions.assertTrue(u.isPresent());
             userProfileRepo.findById(session, u.get().getId());
             session.commitTransaction();
@@ -97,10 +83,7 @@ public class TestBasicRepo {
 
    @Test
    public void testMerge() throws ReferentialIntegrityViolationException {
-      String[] roles = {"user"};
-      PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.systemUserId, roles);
-      ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "save");
-      TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.systemUserId);
+
       // Create a test user
       try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
          // see if the test user is already there  ( dirty database )
@@ -115,7 +98,7 @@ public class TestBasicRepo {
          userProfile.setDisplayName("Test");
          userProfile.setUserName("tuser@test-system.com");
          userProfile.setUserId("tuser@test-system.com");
-         userProfile.setDataDomain(TestUtils.dataDomain);
+         userProfile.setDataDomain(testUtils.getDataDomain());
          userProfile = userProfileRepo.save(userProfile);
          assertTrue(userProfile.getId()!= null);
 

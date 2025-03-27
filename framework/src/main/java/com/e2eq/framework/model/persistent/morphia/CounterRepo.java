@@ -3,7 +3,6 @@ package com.e2eq.framework.model.persistent.morphia;
 import com.e2eq.framework.model.persistent.base.Counter;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import dev.morphia.Datastore;
-import dev.morphia.ModifyOptions;
 
 import dev.morphia.query.filters.Filters;
 import dev.morphia.query.updates.UpdateOperators;
@@ -44,7 +43,7 @@ public class CounterRepo extends MorphiaRepo<Counter> {
 
    public long getAndIncrement(@NotNull @NotEmpty  String name, @Valid DataDomain dataDomain,
                                long incrementAmount){
-      Datastore ds = dataStore.getDataStore(getSecurityContextRealmId());
+      Datastore ds = morphiaDataStore.getDataStore(getSecurityContextRealmId());
 
       Counter v = ds.find(Counter.class).filter(Filters.eq("refName", name),
          Filters.eq("dataDomain.accountNum",dataDomain.getAccountNum()),

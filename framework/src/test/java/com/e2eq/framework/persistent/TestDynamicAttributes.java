@@ -17,7 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 @QuarkusTest
-public class TestDynamicAttributes {
+public class TestDynamicAttributes extends BaseRepoTest {
 
     @Inject
     TestParentRepo testParentRepo;
@@ -38,11 +38,6 @@ public class TestDynamicAttributes {
         attributes.add(dynamicAttribute);
         dynamicAttributeSet.setAttributes(attributes);
         model.getDynamicAttributeSets().add(dynamicAttributeSet);
-
-        TestUtils.initRules(ruleContext, "security","userProfile", TestUtils.systemUserId);
-        String[] roles = {"user"};
-        PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.systemUserId, roles);
-        ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "userProfile", "save");
 
         try (final SecuritySession ss = new SecuritySession(pContext, rContext)) {
             model  = testParentRepo.save(model);

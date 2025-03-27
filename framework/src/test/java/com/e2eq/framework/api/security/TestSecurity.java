@@ -12,6 +12,7 @@ import com.e2eq.framework.util.WildCardMatcher;
 import com.e2eq.framework.model.securityrules.*;
 import io.quarkus.logging.Log;
 import io.quarkus.test.junit.QuarkusTest;
+import jakarta.inject.Inject;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Source;
 import org.graalvm.polyglot.Value;
@@ -39,6 +40,11 @@ import java.util.Map;
 public class TestSecurity {
 
 
+   @Inject
+   SecurityUtils securityUtils;
+
+   @Inject
+   TestUtils testUtils;
    @Test
    public void testWildCardMatcher () {
       // FunctionalDomain:Action:b2bi- urn ({realm}.{accountNumber}.{tenantId}.{functionalDomain}.{datasegment}.{id})
@@ -67,9 +73,9 @@ public class TestSecurity {
       String[] roles = new String[]{"user"};
 
       PrincipalContext pcontext = new PrincipalContext.Builder()
-         .withDataDomain(TestUtils.dataDomain)
-         .withDefaultRealm(SecurityUtils.systemRealm)
-         .withUserId(TestUtils.systemUserId)
+         .withDataDomain(testUtils.getDataDomain())
+         .withDefaultRealm(securityUtils.getSystemRealm())
+         .withUserId(testUtils.getSystemUserId())
          .withRoles(roles)
          .build();
 
@@ -117,10 +123,10 @@ public class TestSecurity {
       String[] roles = new String[]{"user", "admin"};
 
       PrincipalContext pcontext = new PrincipalContext.Builder()
-         .withDefaultRealm(SecurityUtils.defaultRealm)
-         .withUserId(TestUtils.systemUserId)
+         .withDefaultRealm(securityUtils.getTestRealm())
+         .withUserId(testUtils.getSystemUserId())
          .withRoles(roles)
-         .withDataDomain(TestUtils.dataDomain)
+         .withDataDomain(testUtils.getDataDomain())
          .build();
       ResourceContext rcontext = new ResourceContext.Builder()
          .withArea("security")
@@ -137,10 +143,10 @@ public class TestSecurity {
          .withAction("view")
          .build();
       SecurityURIBody body = new SecurityURIBody.Builder()
-         .withOrgRefName(SecurityUtils.systemOrgRefName)
-         .withAccountNumber(SecurityUtils.systemAccountNumber)
-         .withRealm(SecurityUtils.systemRealm)
-         .withTenantId(SecurityUtils.systemTenantId)
+         .withOrgRefName(securityUtils.getSystemOrgRefName())
+         .withAccountNumber(securityUtils.getSystemAccountNumber())
+         .withRealm(securityUtils.getSystemRealm())
+         .withTenantId(securityUtils.getSystemTenantId())
          .withOwnerId("*")
          .withDataSegment("*")
          .build();

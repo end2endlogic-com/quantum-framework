@@ -2,6 +2,7 @@ package com.e2eq.framework.test;
 
 import com.e2eq.framework.model.persistent.base.Coordinate;
 import com.e2eq.framework.model.persistent.base.MailingAddress;
+import com.e2eq.framework.model.persistent.migration.base.DatabaseVersion;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.test.junit.QuarkusTest;
@@ -11,6 +12,7 @@ import jakarta.inject.Inject;
 
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.semver4j.Semver;
 
 @QuarkusTest
 public class TestSerialization {
@@ -36,6 +38,23 @@ public class TestSerialization {
        System.out.println(value);
        MailingAddress address = mapper.readerFor(MailingAddress.class).readValue(value);
        Assertions.assertTrue(mailingAddress.equals(address));
+    }
+
+    @Test
+    public void testSemverSerialization() throws JsonProcessingException {
+        Semver semver = new Semver("1.0.0");
+        String value = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(semver);
+        System.out.println(value);
+    }
+
+    @Test
+    public void testDatabaseVersionSerialization() throws JsonProcessingException {
+       DatabaseVersion databaseVersion = new DatabaseVersion();
+       databaseVersion.setCurrentVersionString("1.0.0");
+       databaseVersion.setLastUpdated(new java.util.Date());
+
+        String value = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(databaseVersion);
+        System.out.println(value);
     }
 
 

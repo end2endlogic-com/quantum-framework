@@ -28,7 +28,7 @@ public class RealmRepo extends MorphiaRepo<Realm> {
          qfilters = filters.toArray(qfilters);
       }
 
-      Query<Realm> query = dataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass()).filter(qfilters);
+      Query<Realm> query = morphiaDataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass()).filter(qfilters);
       Realm obj = query.first();
       return Optional.ofNullable(obj);
    }
@@ -38,7 +38,7 @@ public class RealmRepo extends MorphiaRepo<Realm> {
       filters.add(Filters.eq("tenantId", tenantId));
       Filter[] qfilters = getFilterArray(filters, getPersistentClass());
 
-      Query<Realm> query = dataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass()).filter(qfilters);
+      Query<Realm> query = morphiaDataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass()).filter(qfilters);
       Realm obj = query.first();
       return Optional.ofNullable(obj);
    }

@@ -8,11 +8,14 @@ import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.RuleContext;
 import com.e2eq.framework.model.securityrules.SecuritySession;
+import com.e2eq.framework.util.SecurityUtils;
 import com.e2eq.framework.util.TestUtils;
+import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.logging.Log;
 import io.quarkus.runtime.Startup;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 @Startup
 @ApplicationScoped
@@ -23,20 +26,49 @@ public class AddRealms implements ChangeSetBean  {
     @Inject
     RuleContext ruleContext;
 
+    @Inject
+    SecurityUtils securityUtils;
+
+    @ConfigProperty(name = "quantum.realmConfig.systemTenantId", defaultValue = "system.com")
+    String systemTenantId;
+
+    @ConfigProperty(name = "quantum.realmConfig.systemOrgRefName", defaultValue = "system.com")
+    String systemOrgRefName;
+
+    @ConfigProperty(name = "quantum.realmConfig.defaultRealm", defaultValue = "system-com")
+    String defaultRealm;
+
+    @ConfigProperty(name = "quantum.realmConfig.systemAccountNumber", defaultValue = "0000000000")
+    String accountNumber;
+
+    @ConfigProperty(name = "quantum.realmConfig.systemRealm", defaultValue = "system@system.com")
+    String systemRealm;
+
     @Override
     public String getId() {
         return "00004";
     }
 
     @Override
-    public Double getDbFromVersion() {
-        return Double.valueOf(0.20d);
+    public String getDbFromVersion() {
+        return "1.0.2";
     }
 
     @Override
-    public Double getDbToVersion() {
-        return Double.valueOf(0.30d);
+    public int getDbFromVersionInt() {
+        return 102;
     }
+
+    @Override
+    public String getDbToVersion() {
+        return "1.0.3";
+    }
+
+    @Override
+    public int getDbToVersionInt() {
+        return 103;
+    }
+
 
     @Override
     public int getPriority() {
@@ -64,30 +96,26 @@ public class AddRealms implements ChangeSetBean  {
     }
 
     @Override
-    public void execute(String r) throws Exception {
+    public void execute(MorphiaSession session,  String r) throws Exception {
         Log.infof("Adding Default Realm to the database: realm passed to execution: %s", r);
-        String[] roles = {"admin"};
-        PrincipalContext pContext = TestUtils.getPrincipalContext(TestUtils.systemUserId, roles);
-        ResourceContext rContext = TestUtils.getResourceContext(TestUtils.area, "realm", "create");
-        TestUtils.initRules(ruleContext, "security","realm", TestUtils.systemUserId);
-        try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
-            DomainContext domainContext = DomainContext.builder()
-                    .tenantId("system_com")
-                    .orgRefName("system_com")
-                    .defaultRealm("system_com")
-                    .accountId("000001")
-                    .build();
 
-            Realm realm = Realm.builder()
-                    .refName("system_com")
-                    .displayName("system@system.com")
-                    .emailDomain("system.com")
-                    .databaseName("system_com")
-                    .domainContext(domainContext)
-                    .build();
+        DomainContext domainContext = DomainContext.builder()
+                .tenantId(systemTenantId)
+                .orgRefName(systemOrgRefName)
+                .defaultRealm(defaultRealm)
+                .accountId(accountNumber)
+                .build();
 
-            realmRepo.save(realm);
-        }
-        Log.info("Added Successfully");
+        Realm realm = Realm.builder()
+                .refName(systemRealm)
+                .displayName(systemRealm)
+                .emailDomain(systemTenantId)
+                .databaseName(systemRealm)
+                .domainContext(domainContext)
+                .build();
+
+        realmRepo.save(session, realm);
+
+        Log.info(".  Added Successfully");
     }
 }

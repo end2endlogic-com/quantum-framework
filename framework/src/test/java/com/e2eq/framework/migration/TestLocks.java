@@ -95,7 +95,7 @@ public class TestLocks {
      * Test the sherlock migrator facility
      */
     @Test
-    public void testMigration() {
+    public void testShirlockMigration() {
         MongoCollection<Document> collection = mongoClient
                 .getDatabase("sherlock")
                 .getCollection("locks");

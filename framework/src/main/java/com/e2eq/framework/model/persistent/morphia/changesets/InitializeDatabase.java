@@ -2,21 +2,19 @@ package com.e2eq.framework.model.persistent.morphia.changesets;
 
 import com.e2eq.framework.model.persistent.morphia.*;
 import com.e2eq.framework.model.persistent.security.*;
+import com.e2eq.framework.model.securityrules.*;
 import com.e2eq.framework.rest.models.Role;
 
 import com.e2eq.framework.model.persistent.base.Counter;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.migration.annotations.Execution;
 import com.e2eq.framework.model.persistent.migration.base.ChangeSetBean;
-import com.e2eq.framework.model.securityrules.RuleEffect;
-import com.e2eq.framework.model.securityrules.SecurityURI;
-import com.e2eq.framework.model.securityrules.SecurityURIBody;
-import com.e2eq.framework.model.securityrules.SecurityURIHeader;
 
 import com.e2eq.framework.util.SecurityUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.type.CollectionType;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import dev.morphia.Datastore;
 import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.logging.Log;
 import io.quarkus.runtime.Startup;
@@ -58,39 +56,26 @@ public class InitializeDatabase implements ChangeSetBean {
    @Inject
    CounterRepo counterRepo;
 
-
+   @Inject
+   SecurityUtils securityUtils;
 
    @Execution
-   public void execute(String realm) throws Exception{
+   public void execute(MorphiaSession session,  String realm) throws Exception{
       // get flag from app config
 
-
-         try (MorphiaSession session = dataStore.getDefaultSystemDataStore().startSession()) {
-            try {
-               session.startTransaction();
-               ensureCounter("accountNumber", 2000);
-               Organization org = ensureOrganization(SecurityUtils.systemOrgRefName,
-                       SecurityUtils.systemOrgRefName,
-                       SecurityUtils.systemDataDomain);
-               ensureAccountForOrg(org);
-               createInitialRules();
-               createInitialUserProfiles();
-               createSecurityModel();
-               session.commitTransaction();
-            } catch (Throwable ex) {
-               session.abortTransaction();
-               throw ex;
-            }
-         }
-         // start transaction
-         // do action
-         // end transaction
-
+               ensureCounter(session, "accountNumber", 2000);
+               Organization org = ensureOrganization(session, securityUtils.getSystemOrgRefName(),
+                       securityUtils.getSystemOrgRefName(),
+                       securityUtils.getSystemDataDomain());
+               ensureAccountForOrg(session, org);
+               createInitialRules(session);
+               createInitialUserProfiles(session);
+               createSecurityModel(session);
    }
 
-   public Counter ensureCounter (String counterName, long initialValue) {
+   public Counter ensureCounter (Datastore session,  String counterName, long initialValue) {
       // check if counter exists; if not create it
-      Optional<Counter> oCounter =  counterRepo.findByRefName(counterName);
+      Optional<Counter> oCounter =  counterRepo.findByRefName(session, counterName);
       Counter counter;
 
       if (!oCounter.isPresent()) {
@@ -98,8 +83,8 @@ public class InitializeDatabase implements ChangeSetBean {
          counter.setDisplayName(counterName);
          counter.setCurrentValue(initialValue);
          counter.setRefName(counterName);
-         counter.setDataDomain(SecurityUtils.systemDataDomain);
-         counter =  counterRepo.save(counter);
+         counter.setDataDomain(securityUtils.getSystemDataDomain());
+         counter =  counterRepo.save(session, counter);
       } else {
          counter = oCounter.get();
       }
@@ -107,11 +92,11 @@ public class InitializeDatabase implements ChangeSetBean {
       return counter;
    }
 
-   public Organization ensureOrganization (String displayName, String refName, @NotNull @Valid DataDomain dataDomain ) {
-      Optional<Organization> oOrg = orgRepo.findByRefName(SecurityUtils.systemOrgRefName);
+   public Organization ensureOrganization (Datastore session,  String displayName, String refName, @NotNull @Valid DataDomain dataDomain ) {
+      Optional<Organization> oOrg = orgRepo.findByRefName(session, securityUtils.getSystemOrgRefName());
       Organization org;
       if (!oOrg.isPresent()) {
-       org =  orgRepo.createOrganization(SecurityUtils.systemOrgRefName, SecurityUtils.systemOrgRefName, SecurityUtils.systemDataDomain);
+       org =  orgRepo.createOrganization(session, securityUtils.getSystemOrgRefName(), securityUtils.getSystemOrgRefName(), securityUtils.getSystemDataDomain());
       }
       else {
          org = oOrg.get();
@@ -119,12 +104,13 @@ public class InitializeDatabase implements ChangeSetBean {
       return org;
    }
 
-   public Account ensureAccountForOrg (Organization org) {
 
-      Optional<Account> oAccount = accountRepo.findByRefName(SecurityUtils.systemPrincipalContext.getDataDomain().getAccountNum());
+   public Account ensureAccountForOrg (Datastore ds, Organization org) {
+
+      Optional<Account> oAccount = accountRepo.findByRefName(ds,securityUtils.getSystemPrincipalContext().getDataDomain().getAccountNum());
       Account account;
       if (!oAccount.isPresent()) {
-          account =   accountRepo.createAccount(SecurityUtils.systemPrincipalContext.getDataDomain().getAccountNum(), org);
+          account =   accountRepo.createAccount(ds,securityUtils.getSystemPrincipalContext().getDataDomain().getAccountNum(), org);
       } else {
          account = oAccount.get();
       }
@@ -132,7 +118,7 @@ public class InitializeDatabase implements ChangeSetBean {
       return account;
    }
 
-   public void createInitialRules() {
+   public void createInitialRules(Datastore datastore) {
       // Will Match on the header values using wildcard matching.
 
       // So this will match any user that has the role "user"
@@ -145,18 +131,18 @@ public class InitializeDatabase implements ChangeSetBean {
          .build();
 
       // This will match the resources
-      // from "any" account, in the "b2bi" realm, any tenant, any owner, any datasegment
+      // from "any" account, in the  realm, any tenant, any owner, any datasegment
       SecurityURIBody body = new SecurityURIBody.Builder()
          .withAccountNumber("*") // any account
-         .withRealm(SecurityUtils.systemRealm) // within just the b2bi realm
+         .withRealm(securityUtils.getSystemRealm()) // within just the  realm
          .withTenantId("*") // any tenant
          .withOwnerId("*") // any owner
          .withDataSegment("*") // any datasegement
          .build();
 
-      // Create the URI that represents this "rule" where by
+      // Create the URI that represents this "rule" whereby
       // for any one with the role "user", we want to consider this rule base for
-      // all resources in the b2bi realm
+      // all resources in the  realm
       SecurityURI uri = new SecurityURI(header, body);
 
       // Create the first rule which will be a rule that
@@ -186,7 +172,7 @@ public class InitializeDatabase implements ChangeSetBean {
       // in this case we are creating something that is again for the role "user",
       // however this time it will only match any area, and FD, but only the "view" action
       //
-      // The body says only for resources from the b2bi realm that are owned by "system@b2bintegrator.com"
+      // The body says only for resources from the system realm that are owned by eg "system@system.com"
       // ie. are system objects
       header = new SecurityURIHeader.Builder()
          .withIdentity("user")
@@ -196,9 +182,9 @@ public class InitializeDatabase implements ChangeSetBean {
          .build();
       body = new SecurityURIBody.Builder()
          .withAccountNumber("*")             // any account
-         .withRealm(SecurityUtils.systemRealm)     // within just the b2bintegrator-com realm
+         .withRealm(securityUtils.getSystemRealm())     // within just the realm
          .withTenantId("*")                  // any tenant
-         .withOwnerId(SecurityUtils.systemUserId)  // system owner
+         .withOwnerId(securityUtils.getSystemUserId())  // system owner
          .withDataSegment("*")               // any data segment
          .build();
 
@@ -213,16 +199,16 @@ public class InitializeDatabase implements ChangeSetBean {
          .withSecurityURI(uri)
          .withEffect(RuleEffect.ALLOW)
          .withFinalRule(true)
-         .withOrFilterString("dataDomain.ownerId:" + SecurityUtils.systemUserId);
+         .withOrFilterString("dataDomain.ownerId:" + securityUtils.getSystemUserId());
 
       r = b.build();
       defaultUserPolicy.getRules().add(r);
       defaultUserPolicy.setRefName("defaultUserPolicy");
-      defaultUserPolicy.setDataDomain(SecurityUtils.systemDataDomain);
+      defaultUserPolicy.setDataDomain(securityUtils.getSystemDataDomain());
 
       // Name the policy
-      if (!(policyRepo.findByRefName("defaultUserPolicy").isPresent()))
-         policyRepo.save(defaultUserPolicy);
+      if (!(policyRepo.findByRefName(datastore,"defaultUserPolicy").isPresent()))
+         policyRepo.save(datastore, defaultUserPolicy);
 
       // So if the resource is "owned" by the principal then they see it
       // if the resource is owned by the system then they see it.
@@ -230,17 +216,17 @@ public class InitializeDatabase implements ChangeSetBean {
    }
 
 
-   public void createInitialUserProfiles() throws CloneNotSupportedException {
+   public void createInitialUserProfiles(Datastore datastore) throws CloneNotSupportedException {
 
-      if (!userProfileRepo.getByUserId(SecurityUtils.systemUserId).isPresent()) {
-         DataDomain upDataDomain = SecurityUtils.systemDataDomain.clone();
-         upDataDomain.setOwnerId(SecurityUtils.systemUserId);
+      if (!userProfileRepo.getByUserId(datastore,securityUtils.getSystemUserId()).isPresent()) {
+         DataDomain upDataDomain = securityUtils.getSystemDataDomain().clone();
+         upDataDomain.setOwnerId(securityUtils.getSystemUserId());
          Set<Role> roles = new HashSet<>();
          roles.add(Role.admin);
          UserProfile up = new UserProfile();
 
          up.setDataDomain(upDataDomain);
-         up.setEmail(SecurityUtils.systemUserId);
+         up.setEmail(securityUtils.getSystemUserId());
          up.setRefName(up.getEmail());
          up.setUserId(up.getEmail());
          up.setUserName("Generic Admin");
@@ -255,12 +241,12 @@ public class InitializeDatabase implements ChangeSetBean {
          for (Role r : roles) {
             rolesArray[i++] = r.name();
          }
-         userProfileRepo.createUser(SecurityUtils.systemRealm, up, rolesArray, "test123456");
+         userProfileRepo.createUser(datastore, securityUtils.getSystemRealm(), up, rolesArray, "test123456");
       }
 
    }
 
-   public void createSecurityModel() throws IOException {
+   public void createSecurityModel(Datastore datastore) throws IOException {
       ObjectMapper mapper = new ObjectMapper( new YAMLFactory());
       CollectionType listType = mapper.getTypeFactory().constructCollectionType(ArrayList.class, FunctionalDomain.class);
       ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
@@ -268,9 +254,9 @@ public class InitializeDatabase implements ChangeSetBean {
       List<FunctionalDomain> domains = mapper.readValue(inputStream, listType);
 
       domains.forEach((f) -> {
-         f.setDataDomain(SecurityUtils.systemDataDomain);
-         if (!fdRepo.findByRefName(f.getRefName()).isPresent())
-            fdRepo.save(f);
+         f.setDataDomain(securityUtils.getSystemDataDomain());
+         if (!fdRepo.findByRefName(datastore, f.getRefName()).isPresent())
+            fdRepo.save(datastore,f);
       } );
    }
 
@@ -280,13 +266,23 @@ public class InitializeDatabase implements ChangeSetBean {
    }
 
    @Override
-   public Double getDbFromVersion () {
-      return Double.valueOf(0.00d);
+   public String getDbFromVersion () {
+      return "1.0.0";
    }
 
    @Override
-   public Double getDbToVersion () {
-      return Double.valueOf(0.10d);
+   public int getDbFromVersionInt() {
+      return 100;
+   }
+
+   @Override
+   public String getDbToVersion () {
+      return "1.0.1";
+   }
+
+   @Override
+   public int getDbToVersionInt() {
+      return 101;
    }
 
    @Override

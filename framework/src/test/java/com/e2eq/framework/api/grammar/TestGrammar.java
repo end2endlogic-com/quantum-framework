@@ -13,6 +13,7 @@ import io.quarkus.logging.Log;
 import io.quarkus.test.junit.QuarkusTest;
 import org.antlr.v4.runtime.*;
 import org.antlr.v4.runtime.tree.ParseTree;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.junit.jupiter.api.Test;
 
 import jakarta.inject.Inject;
@@ -30,6 +31,12 @@ import static org.junit.jupiter.api.Assertions.*;
 public class TestGrammar {
       @Inject
       Validator validator;
+
+      @ConfigProperty(name = "quantum.realm.testRealm", defaultValue = "test-quantum-com")
+      String testRealm;
+
+      @Inject
+      TestUtils testUtils;
 
    @Test
    public void testGrammarSyntax() throws IOException {
@@ -107,7 +114,7 @@ public class TestGrammar {
    public void testFilterWVariableGeneration()  {
       String[] roles = {"user"};
 
-      DataDomain dataDomain= TestUtils.dataDomain;
+      DataDomain dataDomain= testUtils.getDataDomain();
 
 
       PrincipalContext pcontext = new PrincipalContext.Builder()

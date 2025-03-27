@@ -3,6 +3,7 @@ package com.e2eq.framework.security;
 import com.e2eq.framework.model.persistent.security.Rule;
 import com.e2eq.framework.model.persistent.security.UserProfile;
 import com.e2eq.framework.model.securityrules.*;
+import com.e2eq.framework.persistent.BaseRepoTest;
 import com.e2eq.framework.util.IOCase;
 import com.e2eq.framework.util.SecurityUtils;
 import com.e2eq.framework.util.TestUtils;
@@ -11,6 +12,7 @@ import com.e2eq.framework.util.WildCardMatcher;
 import dev.morphia.query.filters.Filter;
 import io.quarkus.logging.Log;
 import io.quarkus.test.junit.QuarkusTest;
+import jakarta.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Source;
@@ -24,8 +26,10 @@ import static org.junit.jupiter.api.Assertions.*;
 
 @Slf4j
 @QuarkusTest
-public class TestSecurity {
+public class TestSecurity extends BaseRepoTest {
 
+    @Inject
+    SecurityUtils securityUtils;
 
     @Test
     public void testWildCardMatcher() {
@@ -55,9 +59,9 @@ public class TestSecurity {
         String[] roles = new String[]{"user"};
 
         PrincipalContext systemUserIdPC = new PrincipalContext.Builder()
-                .withDataDomain(TestUtils.dataDomain)
-                .withDefaultRealm(SecurityUtils.systemRealm)
-                .withUserId(TestUtils.systemUserId)
+                .withDataDomain(testUtils.getDataDomain())
+                .withDefaultRealm(securityUtils.getSystemRealm())
+                .withUserId(testUtils.getSystemUserId())
                 .withRoles(roles)
                 .build();
 
@@ -182,14 +186,14 @@ public class TestSecurity {
                 .withDefaultRealm("system-com")
                 .withUserId("sysAdmin@system-com")
                 .withRoles(adminRole)
-                .withDataDomain(TestUtils.dataDomain)
+                .withDataDomain(testUtils.getDataDomain())
                 .build();
 
         PrincipalContext mingardiaUserIdPC = new PrincipalContext.Builder()
                 .withDefaultRealm("system-com")
                 .withUserId("mingardia@end2endlogic.com")
                 .withRoles(userRole)
-                .withDataDomain(TestUtils.dataDomain)
+                .withDataDomain(testUtils.getDataDomain())
                 .build();
 
         // Create a resource context in the area of security and fd of userProfile and an action of view of the systemUserId
@@ -275,14 +279,14 @@ public class TestSecurity {
                 .withDefaultRealm("system-com")
                 .withUserId("sysAdmin@system-com")
                 .withRoles(adminRole)
-                .withDataDomain(TestUtils.dataDomain)
+                .withDataDomain(testUtils.getDataDomain())
                 .build();
 
         PrincipalContext mingardiaUserIdPC = new PrincipalContext.Builder()
                 .withDefaultRealm("system-com")
                 .withUserId("mingardia@end2endlogic.com")
                 .withRoles(userRole)
-                .withDataDomain(TestUtils.dataDomain)
+                .withDataDomain(testUtils.getDataDomain())
                 .build();
 
         // Create a resource context in the area of security and fd of userProfile and an action of view of the systemUserId

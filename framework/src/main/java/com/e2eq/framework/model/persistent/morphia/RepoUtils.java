@@ -37,7 +37,7 @@ public class RepoUtils {
     }
 
     public String getSecurityContextRealmId() {
-        String realmId = RuleContext.DefaultRealm;
+        String realmId = ruleContext.getDefaultRealm();
 
         if (SecurityContext.getPrincipalContext().isPresent() && SecurityContext.getResourceContext().isPresent()) {
             realmId = ruleContext.getRealmId(SecurityContext.getPrincipalContext().get(),

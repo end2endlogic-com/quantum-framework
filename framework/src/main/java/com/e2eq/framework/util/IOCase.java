@@ -30,7 +30,7 @@ public enum IOCase implements Serializable {
      */
     INSENSITIVE ("Insensitive", false);
 
-    /**
+    /*
      * The constant for case sensitivity determined by the current operating system.
      * Windows is case-insensitive when comparing filenames, Unix is case-sensitive.
      * <p>
@@ -44,8 +44,6 @@ public enum IOCase implements Serializable {
      */
     //SYSTEM ("System", !FilenameUtils.isSystemWindows());
 
-    /** Serialization version. */
-    private static final long serialVersionUID = -6343169151696340687L;
 
     /** The enumeration name. */
     private final String name;

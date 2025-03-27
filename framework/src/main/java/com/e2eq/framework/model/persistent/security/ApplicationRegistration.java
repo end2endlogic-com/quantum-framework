@@ -52,7 +52,6 @@ public class ApplicationRegistration extends FullBaseModel {
    public ApplicationRegistration () {
       super();
       registerDate = new Date();
-      this.dataDomain = SecurityUtils.systemDataDomain;
       status = Status.PENDING;
    }
 
