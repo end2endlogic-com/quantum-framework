@@ -13,6 +13,7 @@ import dev.morphia.query.FindOptions;
 import dev.morphia.query.Query;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.transactions.MorphiaSession;
+import io.quarkus.logging.Log;
 import io.quarkus.test.junit.QuarkusTest;
 import com.e2eq.framework.model.persistent.security.ApplicationRegistration;
 import com.e2eq.framework.model.persistent.security.UserProfile;
@@ -68,12 +69,13 @@ public class TestBasicRepo extends BaseRepoTest{
 
    @Test
    public void testTransactions() {
-      Datastore ds = dataStore.getDefaultSystemDataStore();
+      Log.infof("TestTransactions: Realm: %s",testUtils.getTestRealm());
+      Datastore ds = dataStore.getDataStore(testUtils.getTestRealm());
 
       try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
          try (MorphiaSession session = ds.startSession()) {
             session.startTransaction();
-            Optional<UserProfile> u = userProfileRepo.findByRefName(securityUtils.getSystemUserId());
+            Optional<UserProfile> u = userProfileRepo.findByRefName(ds,securityUtils.getSystemUserId());
             Assertions.assertTrue(u.isPresent());
             userProfileRepo.findById(session, u.get().getId());
             session.commitTransaction();
@@ -98,7 +100,7 @@ public class TestBasicRepo extends BaseRepoTest{
          userProfile.setDisplayName("Test");
          userProfile.setUserName("tuser@test-system.com");
          userProfile.setUserId("tuser@test-system.com");
-         userProfile.setDataDomain(testUtils.getDataDomain());
+         userProfile.setDataDomain(testUtils.getTestDataDomain());
          userProfile = userProfileRepo.save(userProfile);
          assertTrue(userProfile.getId()!= null);
 

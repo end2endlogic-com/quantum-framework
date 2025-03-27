@@ -42,7 +42,7 @@ public class TestReferenceInterceptorLogic extends BaseRepoTest{
     TestParentModel createParent(String refName) {
         TestParentModel parent = new TestParentModel();
         parent.setRefName(refName);
-        parent.setDataDomain(testUtils.getDataDomain());
+        parent.setDataDomain(testUtils.getTestDataDomain());
         parent.setAuditInfo(testUtils.createAuditInfo());
         parent = parentRepo.save(parent);
 
@@ -74,7 +74,7 @@ public class TestReferenceInterceptorLogic extends BaseRepoTest{
 
         TestChildModel child = new TestChildModel();
         child.setRefName("Test1");
-        child.setDataDomain(testUtils.getDataDomain());
+        child.setDataDomain(testUtils.getTestDataDomain());
         child.setAuditInfo(testUtils.createAuditInfo());
         child.setParent(parent);
         child = childRepo.save(child);
@@ -93,7 +93,7 @@ public class TestReferenceInterceptorLogic extends BaseRepoTest{
 
         TestChildListModel child = new TestChildListModel();
         child.setRefName(refName);
-        child.setDataDomain(testUtils.getDataDomain());
+        child.setDataDomain(testUtils.getTestDataDomain());
         child.setAuditInfo(testUtils.createAuditInfo());
         child.setParents(parents);
         child = childListRepo.save(child);

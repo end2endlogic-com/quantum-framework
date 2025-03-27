@@ -83,10 +83,10 @@ public class SecurityTest extends BaseRepoTest {
                 cred.setPasswordHash("$2a$12$76wQJLgSAdm6ZTHFHtzksuSkWG9eW0qe5YXMXaZIBo52ncXHO0EDy"); //Test123456å
 
                 DataDomain dataDomain = new DataDomain();
-                dataDomain.setOrgRefName(testUtils.getOrgRefName());
-                dataDomain.setAccountNum(testUtils.getAccountNumber());
-                dataDomain.setTenantId(testUtils.getTenantId());
-                dataDomain.setOwnerId(testUtils.getSystemUserId());
+                dataDomain.setOrgRefName(testUtils.getTestOrgRefName());
+                dataDomain.setAccountNum(testUtils.getTestAccountNumber());
+                dataDomain.setTenantId(testUtils.getTestTenantId());
+                dataDomain.setOwnerId(testUtils.getTestUserId());
 
                 cred.setRoles(roles);
                 cred.setRefName(cred.getUserId());
@@ -105,15 +105,15 @@ public class SecurityTest extends BaseRepoTest {
             } else {
                 UserProfile profile = new UserProfile();
 
-                profile.setRefName("mingardia@end2endlogic.com");
+                profile.setRefName(testUtils.getTestUserId());
                 profile.setUserId(profile.getRefName());
                 profile.setUserName("Michael Ingardia");
-                profile.setEmail("mingardia@end2endlogic.com");
+                profile.setEmail(testUtils.getTestEmail());
 
                 DataDomain dataDomain = new DataDomain();
-                dataDomain.setOrgRefName(testUtils.getOrgRefName());
-                dataDomain.setAccountNum(testUtils.getAccountNumber());
-                dataDomain.setTenantId(testUtils.getTenantId());
+                dataDomain.setOrgRefName(testUtils.getTestOrgRefName());
+                dataDomain.setAccountNum(testUtils.getTestAccountNumber());
+                dataDomain.setTenantId(testUtils.getTestTenantId());
                 dataDomain.setOwnerId(profile.getUserId());
                 profile.setDataDomain(dataDomain);
 

@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Optional;
 
 @QuarkusTest
-public class TestCodes {
+public class TestCodes extends BaseRepoTest {
     @Inject
     CodeListRepo codeListRepo;
 
@@ -49,11 +49,8 @@ public class TestCodes {
 
     @Test
     public void testAddCodes() throws ReferentialIntegrityViolationException {
-        Datastore ds = dataStore.getDefaultSystemDataStore();
-        String[] roles = {"user"};
-        PrincipalContext pContext = testUtils.getPrincipalContext(testUtils.getSystemUserId(), roles);
-        ResourceContext rContext = testUtils.getResourceContext(testUtils.getArea(), "userProfile", "save");
-        testUtils.initDefaultRules(ruleContext, "security", "userProfile", testUtils.getSystemUserId());
+
+
         // Create a test user
         try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
             CodeList codeList = getOrCreateCodeList("STATE_TWOLETTER_CODES");

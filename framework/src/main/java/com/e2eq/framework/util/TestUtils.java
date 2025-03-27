@@ -9,6 +9,7 @@ import com.e2eq.framework.model.securityrules.*;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jnr.posix.WString;
 import lombok.Data;
 import lombok.Getter;
 
@@ -23,53 +24,95 @@ public class TestUtils {
    SecurityUtils securityUtils;
 
    @Getter
-   protected String accountNumber;
+   protected String testAccountNumber;
    @Getter
-   protected String orgRefName;
+   protected String testOrgRefName;
    @Getter
-   protected String tenantId;
+   protected String testTenantId;
    @Getter
    protected String defaultRealm;
    @Getter
    protected String testRealm;
    @Getter
+   protected String systemRealm;
+   @Getter
    protected String systemUserId;
    @Getter
-   protected String email;
+   protected String testUserId;
+   @Getter
+   protected String defaultUserId;
+
+
+   @Getter
+   protected String testEmail;
    @Getter
    protected String area;
    @Getter
-   protected String name;
+   protected String securityFD;
    @Getter
-   protected DataDomain dataDomain;
+   protected DataDomain testDataDomain;
+   @Getter
+   protected DataDomain systemDataDomain;
+   @Getter
+   protected DataDomain defaultDataDomain;
 
 
 
 
    @PostConstruct
    public void init() {
-      accountNumber = securityUtils.getTestAccountNumber();
-      orgRefName = securityUtils.getTestOrgRefName();
-      tenantId = securityUtils.getTestTenantId();
+      testAccountNumber = securityUtils.getTestAccountNumber();
+      testOrgRefName = securityUtils.getTestOrgRefName();
+      testTenantId = securityUtils.getTestTenantId();
       defaultRealm = securityUtils.getTestRealm();
       testRealm = securityUtils.getTestRealm();
-      systemUserId = securityUtils.getTestUserId();
-      email = securityUtils.getTestUserId();
+      systemRealm = securityUtils.getSystemRealm();
+      systemUserId = securityUtils.getSystemUserId();
+      testEmail = securityUtils.getTestUserId();
+      testUserId = securityUtils.getTestUserId();
+      defaultUserId = securityUtils.getDefaultUserId();
       area = "SECURITY";
-      name = "ADMIN";
-      dataDomain = new DataDomain(orgRefName, accountNumber, tenantId, 0, systemUserId);
+      securityFD = "ADMIN";
+      testDataDomain = new DataDomain(testOrgRefName, testAccountNumber, testTenantId, 0, testUserId);
+      systemDataDomain = securityUtils.getTestDataDomain();
+      defaultDataDomain = new DataDomain(securityUtils.getTestOrgRefName(),
+              securityUtils.getDefaultAccountNumber(),
+              securityUtils.getDefaultTenantId(), 0,
+              securityUtils.getDefaultUserId());
    }
 
 
 
 
-   public PrincipalContext getPrincipalContext (String userId, String[] roles) {
+   public PrincipalContext getTestPrincipalContext (String userId, String[] roles) {
       PrincipalContext c =  new PrincipalContext.Builder()
-                .withDataDomain(dataDomain)
-                .withDefaultRealm(defaultRealm)
+                .withDataDomain(testDataDomain)
+                .withDefaultRealm(testRealm)
                 .withUserId(userId)
                 .withScope("Authentication")
                 .withRoles(roles).build();
+
+      return c;
+   }
+
+   public PrincipalContext getSystemPrincipalContext (String userId, String[] roles) {
+      PrincipalContext c =  new PrincipalContext.Builder()
+              .withDataDomain(systemDataDomain)
+              .withDefaultRealm(systemRealm)
+              .withUserId(userId)
+              .withScope("Authentication")
+              .withRoles(roles).build();
+
+      return c;
+   }
+
+   public PrincipalContext getDefaultPrincipalContext (String userId, String[] roles) {
+      PrincipalContext c =  new PrincipalContext.Builder()
+              .withDataDomain(defaultDataDomain)
+              .withDefaultRealm(defaultRealm)
+              .withUserId(userId)
+              .withScope("Authentication")
+              .withRoles(roles).build();
 
       return c;
    }
@@ -101,11 +144,11 @@ public class TestUtils {
          .withFunctionalDomain(functionalDomain).build();
 
       SecurityURIBody body = new SecurityURIBody.Builder()
-         .withOrgRefName(orgRefName)
-         .withAccountNumber(accountNumber)
-         .withRealm(defaultRealm)
+         .withOrgRefName(testOrgRefName)
+         .withAccountNumber(testAccountNumber)
+         .withRealm(testRealm)
          .withOwnerId(userId)
-         .withTenantId(tenantId).build();
+         .withTenantId(testTenantId).build();
 
 
       ruleContext.addRule(header,

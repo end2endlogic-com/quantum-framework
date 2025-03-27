@@ -1,10 +1,8 @@
 package com.e2eq.framework.api.security;
 
-import com.e2eq.framework.model.securityrules.PrincipalContext;
-import com.e2eq.framework.model.securityrules.ResourceContext;
+import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
 import com.e2eq.framework.model.securityrules.SecurityCheckException;
 import com.e2eq.framework.model.securityrules.SecuritySession;
-import com.e2eq.framework.model.securityrules.RuleContext;
 import com.e2eq.framework.model.persistent.security.ApplicationRegistration;
 import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.persistent.security.UserProfile;
@@ -14,6 +12,7 @@ import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import com.e2eq.framework.persistent.BaseRepoTest;
 import com.e2eq.framework.util.SecurityUtils;
 import com.e2eq.framework.util.TestUtils;
+import dev.morphia.Datastore;
 import io.quarkus.logging.Log;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
@@ -41,10 +40,12 @@ public class TestUserProfile extends BaseRepoTest {
 
     @Inject
     TestUtils testUtils;
+    @Inject
+    MorphiaDataStore morphiaDataStore;
 
 
     @Test
-    public void testCredentials() throws Exception {
+    public void testSystemCredentials() throws Exception {
 
         try(final SecuritySession ignored = new SecuritySession(pContext, rContext)) {
             Optional<CredentialUserIdPassword> opCreds = credentialRepo.findByUserId(securityUtils.getSystemUserId());
@@ -60,7 +61,8 @@ public class TestUserProfile extends BaseRepoTest {
     }
 
     @Test void testCredentialsNoSecuritySession() {
-        Optional<CredentialUserIdPassword> opCreds = credentialRepo.findByUserId(securityUtils.getSystemUserId());
+        Datastore datastore = morphiaDataStore.getDataStore(testUtils.getTestRealm());
+        Optional<CredentialUserIdPassword> opCreds = credentialRepo.findByUserId(securityUtils.getTestRealm(),securityUtils.getSystemUserId());
         if (opCreds.isPresent()) {
             Log.debug("Found it");
         } else {
@@ -87,11 +89,11 @@ public class TestUserProfile extends BaseRepoTest {
                 if (!oProfile.isPresent()) {
                     Log.info("About to execute");
                     UserProfile profile = new UserProfile();
-                    profile.setUserName(testUtils.getName());
-                    profile.setEmail(testUtils.getEmail());
+                    profile.setUserName("testUser");
+                    profile.setEmail(testUtils.getTestEmail());
                     profile.setUserId(testUtils.getSystemUserId());
                     profile.setRefName(profile.getUserId());
-                    profile.setDataDomain(testUtils.getDataDomain());
+                    profile.setDataDomain(testUtils.getTestDataDomain());
 
                     //profile.setDataSegment(0);
 

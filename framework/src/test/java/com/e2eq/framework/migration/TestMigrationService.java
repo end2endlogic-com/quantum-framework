@@ -87,7 +87,7 @@ public class TestMigrationService extends BaseRepoTest {
     @Test
     public void testRunAllUnRunMigrations() {
         try (final SecuritySession ss = new SecuritySession(pContext, rContext)) {
-            Log.infof("Running all unrun migrations for tenant: %s", testUtils.getTenantId());
+            Log.infof("Running all unrun migrations for tenant: %s", testUtils.getTestTenantId());
 
              migrationService.runAllUnRunMigrations(testUtils.getTestRealm());
 

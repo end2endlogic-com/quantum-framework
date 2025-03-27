@@ -22,7 +22,9 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
       return findByUserId(getSecurityContextRealmId(), userId);
    }
 
-   public Optional<CredentialUserIdPassword> findByUserId(@NotNull String realmId, @NotNull String userId) {
+
+
+   public Optional<CredentialUserIdPassword> findByUserId( @NotNull String realmId, @NotNull String userId) {
       return findByUserId(realmId, userId, true);
    }
 
