@@ -141,7 +141,12 @@ public class MigrationService {
             Semver toVersion =new Semver(chb.getDbToVersion());
             Semver currentVersion = new Semver(currentSemDatabaseVersion.getVersion());
             if (toVersion.isGreaterThanOrEqualTo(currentVersion)) {
-                changeSetBeans.add(chb);
+                Optional<ChangeSetRecord> record = changesetRecordRepo.findByRefName(chb.getName());
+                if (!record.isPresent()) {
+                    changeSetBeans.add(chb);
+                } else {
+                    Log.infof(">> Change Set: %s has already been executed", chb.getName());
+                }
             } else {
                 Log.warn(">> Ignoring Change Set:" + chb.getName() + " because it is not for the current database version:" + currentSemDatabaseVersion);
             }
