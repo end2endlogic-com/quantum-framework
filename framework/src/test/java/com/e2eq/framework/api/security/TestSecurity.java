@@ -73,7 +73,7 @@ public class TestSecurity {
       String[] roles = new String[]{"user"};
 
       PrincipalContext pcontext = new PrincipalContext.Builder()
-         .withDataDomain(testUtils.getDataDomain())
+         .withDataDomain(testUtils.getTestDataDomain())
          .withDefaultRealm(securityUtils.getSystemRealm())
          .withUserId(testUtils.getSystemUserId())
          .withRoles(roles)
@@ -124,9 +124,9 @@ public class TestSecurity {
 
       PrincipalContext pcontext = new PrincipalContext.Builder()
          .withDefaultRealm(securityUtils.getTestRealm())
-         .withUserId(testUtils.getSystemUserId())
+         .withUserId(testUtils.getTestUserId())
          .withRoles(roles)
-         .withDataDomain(testUtils.getDataDomain())
+         .withDataDomain(testUtils.getTestDataDomain())
          .build();
       ResourceContext rcontext = new ResourceContext.Builder()
          .withArea("security")
@@ -143,10 +143,10 @@ public class TestSecurity {
          .withAction("view")
          .build();
       SecurityURIBody body = new SecurityURIBody.Builder()
-         .withOrgRefName(securityUtils.getSystemOrgRefName())
-         .withAccountNumber(securityUtils.getSystemAccountNumber())
-         .withRealm(securityUtils.getSystemRealm())
-         .withTenantId(securityUtils.getSystemTenantId())
+         .withOrgRefName(securityUtils.getTestOrgRefName())
+         .withAccountNumber(securityUtils.getTestAccountNumber())
+         .withRealm(securityUtils.getTestRealm())
+         .withTenantId(securityUtils.getTestTenantId())
          .withOwnerId("*")
          .withDataSegment("*")
          .build();
@@ -171,7 +171,7 @@ public class TestSecurity {
 
       uri = uri.clone();
       uri.getHeader().setFunctionalDomain("credential");
-      uri.getBody().setOwnerId("mingardia@end2endlogic.com");
+      uri.getBody().setOwnerId(testUtils.getSecurityUtils().getTestUserId());
       uri.getHeader().setAction("update");
       b.withName("change your own credential")
          .withSecurityURI(uri)

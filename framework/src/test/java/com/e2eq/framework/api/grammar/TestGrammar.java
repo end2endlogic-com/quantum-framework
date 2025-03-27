@@ -114,7 +114,7 @@ public class TestGrammar {
    public void testFilterWVariableGeneration()  {
       String[] roles = {"user"};
 
-      DataDomain dataDomain= testUtils.getDataDomain();
+      DataDomain dataDomain= testUtils.getTestDataDomain();
 
 
       PrincipalContext pcontext = new PrincipalContext.Builder()

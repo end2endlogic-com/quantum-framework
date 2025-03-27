@@ -26,9 +26,9 @@ public class BaseRepoTest {
     @PostConstruct
     void init() {
         ruleContext.ensureDefaultRules();
-        pContext = testUtils.getPrincipalContext(testUtils.getSystemUserId(), roles);
+        pContext = testUtils.getTestPrincipalContext(testUtils.getSystemUserId(), roles);
         rContext = testUtils.getResourceContext(testUtils.getArea(), "userProfile", "update");
-        testUtils.initDefaultRules(ruleContext, "security","userProfile", testUtils.getSystemUserId());
+        testUtils.initDefaultRules(ruleContext, "security","userProfile", testUtils.getTestUserId());
     }
 
     /* @BeforeEach

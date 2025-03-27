@@ -9,6 +9,7 @@ import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.RuleContext;
 import com.e2eq.framework.model.securityrules.SecuritySession;
+import com.e2eq.framework.persistent.BaseRepoTest;
 import com.e2eq.framework.util.TestUtils;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
@@ -19,7 +20,7 @@ import org.wildfly.common.Assert;
 import java.util.Set;
 
 @QuarkusTest
-public class TestCustTokenAuthProvider {
+public class TestCustTokenAuthProvider extends BaseRepoTest {
     @Inject
     RuleContext ruleContext;
 
@@ -39,16 +40,12 @@ public class TestCustTokenAuthProvider {
     public void testCreateCustomUser() throws ReferentialIntegrityViolationException {
 
         if (authProvider.equals("custom")) {
-            String[] rroles = {"admin"};
-            PrincipalContext pContext = testUtils.getPrincipalContext(testUtils.getSystemUserId(), rroles);
-            ResourceContext rContext = testUtils.getResourceContext(testUtils.getArea(), "userProfile", "create");
-            testUtils.initDefaultRules(ruleContext, "security", "userProfile", testUtils.getSystemUserId());
             try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
                 DomainContext domainContext = DomainContext.builder()
-                        .orgRefName(testUtils.getOrgRefName())
-                        .defaultRealm(testUtils.getDefaultRealm())
-                        .accountId(testUtils.getAccountNumber())
-                        .tenantId(testUtils.getTenantId())
+                        .orgRefName(testUtils.getTestOrgRefName())
+                        .defaultRealm(testUtils.getTestRealm())
+                        .accountId(testUtils.getTestAccountNumber())
+                        .tenantId(testUtils.getTestTenantId())
                         .build();
 
                 customTokenAuthProvider.createUser("testuser", "test123456", Set.of("user"), domainContext);
@@ -70,16 +67,12 @@ public class TestCustTokenAuthProvider {
     @Test
     public void testCreateCognitoUser() throws ReferentialIntegrityViolationException {
         if (authProvider.equals("cognito")) {
-            String[] rroles = {"admin"};
-            PrincipalContext pContext = testUtils.getPrincipalContext(testUtils.getSystemUserId(), rroles);
-            ResourceContext rContext = testUtils.getResourceContext(testUtils.getArea(), "userProfile", "create");
-            testUtils.initDefaultRules(ruleContext, "security", "userProfile", testUtils.getSystemUserId());
             try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
                 DomainContext domainContext = DomainContext.builder()
-                        .orgRefName(testUtils.getOrgRefName())
-                        .defaultRealm(testUtils.getDefaultRealm())
-                        .accountId(testUtils.getAccountNumber())
-                        .tenantId(testUtils.getTenantId())
+                        .orgRefName(testUtils.getTestOrgRefName())
+                        .defaultRealm(testUtils.getTestRealm())
+                        .accountId(testUtils.getTestAccountNumber())
+                        .tenantId(testUtils.getTestTenantId())
                         .build();
 
 

@@ -59,9 +59,9 @@ public class TestSecurity extends BaseRepoTest {
         String[] roles = new String[]{"user"};
 
         PrincipalContext systemUserIdPC = new PrincipalContext.Builder()
-                .withDataDomain(testUtils.getDataDomain())
-                .withDefaultRealm(securityUtils.getSystemRealm())
-                .withUserId(testUtils.getSystemUserId())
+                .withDataDomain(testUtils.getTestDataDomain())
+                .withDefaultRealm(testUtils.getTestRealm())
+                .withUserId(testUtils.getTestUserId())
                 .withRoles(roles)
                 .build();
 
@@ -183,17 +183,17 @@ public class TestSecurity extends BaseRepoTest {
 
         // Create a principal context with admin and user roles
         PrincipalContext systemUserIdPC = new PrincipalContext.Builder()
-                .withDefaultRealm("system-com")
-                .withUserId("sysAdmin@system-com")
+                .withDefaultRealm(testUtils.getTestRealm())
+                .withUserId(testUtils.getSystemUserId())
                 .withRoles(adminRole)
-                .withDataDomain(testUtils.getDataDomain())
+                .withDataDomain(testUtils.getSystemDataDomain())
                 .build();
 
         PrincipalContext mingardiaUserIdPC = new PrincipalContext.Builder()
-                .withDefaultRealm("system-com")
-                .withUserId("mingardia@end2endlogic.com")
+                .withDefaultRealm(testUtils.getTestRealm())
+                .withUserId(testUtils.getTestUserId())
                 .withRoles(userRole)
-                .withDataDomain(testUtils.getDataDomain())
+                .withDataDomain(testUtils.getSystemDataDomain())
                 .build();
 
         // Create a resource context in the area of security and fd of userProfile and an action of view of the systemUserId
@@ -210,7 +210,7 @@ public class TestSecurity extends BaseRepoTest {
                 .withFunctionalDomain("userProfile")
                 .withAction("view")
                 .withResourceId("234233")
-                .withOwnerId("mingardia@end2endlogic.com")
+                .withOwnerId(testUtils.getTestUserId())
                 .build();
 
         List<Filter> filters = new ArrayList<>();
@@ -276,17 +276,17 @@ public class TestSecurity extends BaseRepoTest {
 
         // Create a principal context with admin and user roles
         PrincipalContext systemUserIdPC = new PrincipalContext.Builder()
-                .withDefaultRealm("system-com")
-                .withUserId("sysAdmin@system-com")
+                .withDefaultRealm(testUtils.getTestRealm())
+                .withUserId(testUtils.getSystemUserId())
                 .withRoles(adminRole)
-                .withDataDomain(testUtils.getDataDomain())
+                .withDataDomain(testUtils.getSystemDataDomain())
                 .build();
 
         PrincipalContext mingardiaUserIdPC = new PrincipalContext.Builder()
-                .withDefaultRealm("system-com")
-                .withUserId("mingardia@end2endlogic.com")
+                .withDefaultRealm(testUtils.getTestRealm())
+                .withUserId(testUtils.getTestUserId())
                 .withRoles(userRole)
-                .withDataDomain(testUtils.getDataDomain())
+                .withDataDomain(testUtils.getTestDataDomain())
                 .build();
 
         // Create a resource context in the area of security and fd of userProfile and an action of view of the systemUserId
@@ -295,7 +295,7 @@ public class TestSecurity extends BaseRepoTest {
                 .withFunctionalDomain("userProfile")
                 .withAction("view")
                 .withResourceId("234232")
-                .withOwnerId("sysAdmin@system-com")
+                .withOwnerId(testUtils.getSystemUserId())
                 .build();
 
         ResourceContext mingardiaUserProfileRC = new ResourceContext.Builder()
@@ -303,7 +303,7 @@ public class TestSecurity extends BaseRepoTest {
                 .withFunctionalDomain("userProfile")
                 .withAction("view")
                 .withResourceId("234233")
-                .withOwnerId("mingardia@end2endlogic.com")
+                .withOwnerId(testUtils.getTestTenantId())
                 .build();
 
         List<Filter> filters = new ArrayList<>();

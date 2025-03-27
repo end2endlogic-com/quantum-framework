@@ -54,9 +54,13 @@ public class SecurityUtils {
    @Getter
    protected  String systemUserId;
 
-   @ConfigProperty(name = "quantum.realmConfig.testUserId", defaultValue = "test@system.com"  )
+   @ConfigProperty(name = "quantum.realmConfig.testUserId", defaultValue = "test@test-system.com"  )
    @Getter
    protected String testUserId;
+
+   @ConfigProperty(name = "quantum.realmConfig.defaultUserId", defaultValue = "test@mycompanyxyz.com"  )
+   @Getter
+   protected String defaultUserId;
 
    @ConfigProperty(name = "quantum.realmConfig.testOrgRefName", defaultValue = "test-system.com"  )
    @Getter
@@ -82,6 +86,10 @@ public class SecurityUtils {
    @Getter
    protected DataDomain systemDataDomain;
    @Getter
+   protected DataDomain testDataDomain;
+   @Getter
+   protected DataDomain defaultDataDomain;
+   @Getter
    protected SecurityURIHeader systemSecurityHeader;
    @Getter
    protected SecurityURIBody systemSecurityBody;
@@ -93,6 +101,8 @@ public class SecurityUtils {
    @PostConstruct
    public void init() {
       systemDataDomain = new DataDomain(systemOrgRefName, systemAccountNumber, systemTenantId, defaultDataSegment, systemUserId);
+      testDataDomain = new DataDomain(testOrgRefName, testAccountNumber, testTenantId, defaultDataSegment, testUserId);
+      defaultDataDomain = new DataDomain(defaultOrgRefName, defaultAccountNumber, defaultTenantId, defaultDataSegment, defaultUserId);
       systemSecurityResourceContext  = new ResourceContext.Builder()
               .withArea(securityArea)
               .withFunctionalDomain(any)
