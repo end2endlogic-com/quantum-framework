@@ -52,21 +52,21 @@ import static dev.morphia.query.Sort.descending;
 public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements BaseMorphiaRepo<T> {
 
     @Inject
-    MorphiaDataStore morphiaDataStore;
+    protected MorphiaDataStore morphiaDataStore;
 
     @Inject
-    RuleContext ruleContext;
+    protected RuleContext ruleContext;
 
     @Inject
-    SecurityIdentity securityIdentity;
+    protected SecurityIdentity securityIdentity;
 
    @ConfigProperty(name = "quantum.realmConfig.defaultRealm"  )
-   String defaultRealm;
+   protected String defaultRealm;
 
-    TypeToken<T> paramClazz = new TypeToken<>(getClass()) {
-    };
+   private TypeToken<T> paramClazz = new TypeToken<>(getClass()) {};
+
     @Inject
-    MessageTemplateLocator messageTemplateLocator;
+    protected MessageTemplateLocator messageTemplateLocator;
 
     public String getSecurityContextRealmId() {
         String realmId = defaultRealm;
