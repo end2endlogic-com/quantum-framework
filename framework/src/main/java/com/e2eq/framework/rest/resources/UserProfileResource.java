@@ -118,7 +118,6 @@ public class UserProfileResource extends BaseResource<UserProfile, UserProfileRe
          }
 
          UserProfile model = repo.createUser(
-                 SecurityContext.getPrincipalContext().get().getDefaultRealm(),
                  up,
                  rolesArray,
                  password);

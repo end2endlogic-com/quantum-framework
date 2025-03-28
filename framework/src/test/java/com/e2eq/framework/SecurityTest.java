@@ -31,7 +31,7 @@ import static io.restassured.RestAssured.given;
 @QuarkusTest
 public class SecurityTest extends BaseRepoTest {
 
-    @ConfigProperty(name = "auth.provider")
+    @ConfigProperty(name = "auth.provider", defaultValue = "custom")
     String authProvider;
 
     @Inject

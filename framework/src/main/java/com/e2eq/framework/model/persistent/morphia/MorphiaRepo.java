@@ -25,6 +25,7 @@ import dev.morphia.query.updates.UpdateOperator;
 import dev.morphia.query.updates.UpdateOperators;
 import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.logging.Log;
+import io.quarkus.qute.i18n.MessageTemplateLocator;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
@@ -64,6 +65,8 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     TypeToken<T> paramClazz = new TypeToken<>(getClass()) {
     };
+    @Inject
+    MessageTemplateLocator messageTemplateLocator;
 
     public String getSecurityContextRealmId() {
         String realmId = defaultRealm;
@@ -785,18 +788,33 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
     @Override
-    public long delete(@NotNull MorphiaSession s, T aobj) throws ReferentialIntegrityViolationException{
+    public long delete(@NotNull(value ="the datastore must not be null" ) Datastore datastore, T aobj) throws ReferentialIntegrityViolationException{
+        long rc=0;
+          try (MorphiaSession s = datastore.startSession()) {
+              s.startTransaction();
+              try {
+                  rc=delete(s, aobj);
+              } catch ( ReferentialIntegrityViolationException e) {
+                  s.abortTransaction();
+                  throw e;
+              }
+            return rc;
+        }
+    }
+
+    @Override
+    public long delete(@NotNull MorphiaSession session, T aobj) throws ReferentialIntegrityViolationException{
         Objects.requireNonNull(aobj, "Null argument passed to delete, api requires a non-null object");
         Objects.requireNonNull(aobj.getId(), "Null argument passed to delete, api requires a non-null id");
-        Optional<T> oobj = this.findById(aobj.getId());
+        Optional<T> oobj = this.findById(session,aobj.getId());
         if (!oobj.isPresent()) {
             return 0;
         }
         T obj = oobj.get();
         DeleteResult result;
         if (obj.getReferences() == null || obj.getReferences().isEmpty()) {
-                removeReferenceConstraint(obj, s);
-                result = s.delete(obj);
+                removeReferenceConstraint(obj, session);
+                result = session.delete(obj);
                 return result.getDeletedCount();
         } else {
             Set<ReferenceEntry> entriesToRemove = new HashSet<>();
@@ -806,7 +824,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                 try {
                     ClassLoader classLoader = this.getClass().getClassLoader();
                     Class<?> clazz = classLoader.loadClass(reference.getType());
-                    Query<?> q = s.find(clazz).filter(Filters.eq("_id", reference.getReferencedId()));
+                    Query<?> q = session.find(clazz).filter(Filters.eq("_id", reference.getReferencedId()));
                     if (q.count() == 0) {
                         entriesToRemove.add(reference);
                     }
@@ -819,8 +837,8 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
             // There may still be valid reference left if so complain
             if (obj.getReferences().isEmpty()) {
-                removeReferenceConstraint(obj, s);
-                result = s.delete(obj);
+                removeReferenceConstraint(obj, session);
+                result = session.delete(obj);
                 return result.getDeletedCount();
             } else {
                 HashSet<String> referencingClasses = new HashSet<>();

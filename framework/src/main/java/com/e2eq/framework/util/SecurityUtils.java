@@ -20,7 +20,7 @@ public class SecurityUtils {
    @ConfigProperty(name = "quantum.anonymousUserId", defaultValue = "anonymous@system.com"  )
    protected String anonymousUserId;
 
-   @ConfigProperty(name = "quantum.defaultRealm", defaultValue = "mycompanyxyz.com"  )
+   @ConfigProperty(name = "quantum.defaultRealm", defaultValue = "mycompanyxyz-com"  )
    protected String defaultRealm;
 
    @ConfigProperty(name = "quantum.defaultTenantId", defaultValue = "mycompanyxyz.com"  )
@@ -42,7 +42,7 @@ public class SecurityUtils {
    @Getter
    protected  String systemAccountNumber;
 
-   @ConfigProperty(name = "quantum.realmConfig.systemRealm", defaultValue = "system-com"  )
+   @ConfigProperty(name = "quantum.realmConfig.systemTenantId", defaultValue = "system.com"  )
    @Getter
    protected  String systemTenantId;
 

@@ -73,7 +73,7 @@ public class TestUserProfile extends BaseRepoTest {
 
     @Test
     public void testCreate() throws Exception {
-
+        Datastore datastore = morphiaDataStore.getDataStore(testUtils.getTestRealm());
 
         try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
 
@@ -82,10 +82,10 @@ public class TestUserProfile extends BaseRepoTest {
                 Assertions.fail("userProfileService was not injected properly");
             } else {
                 // find something missing.
-                Optional<UserProfile> oProfile = userProfileRepo.findByRefName("xxxxx");
+                Optional<UserProfile> oProfile = userProfileRepo.findByRefName(datastore.startSession(), "xxxxx");
                 assert(!oProfile.isPresent());
 
-                oProfile = userProfileRepo.findByRefName(testUtils.getSystemUserId());
+                oProfile = userProfileRepo.findByRefName(datastore, testUtils.getSystemUserId());
                 if (!oProfile.isPresent()) {
                     Log.info("About to execute");
                     UserProfile profile = new UserProfile();
@@ -97,22 +97,22 @@ public class TestUserProfile extends BaseRepoTest {
 
                     //profile.setDataSegment(0);
 
-                    profile = userProfileRepo.save(profile);
+                    profile = userProfileRepo.save(datastore,profile);
                     assert (profile.getId() != null);
 
 
                     // check if getRefId works
-                    oProfile = userProfileRepo.findByRefName(profile.getRefName());
+                    oProfile = userProfileRepo.findByRefName(datastore,profile.getRefName());
                     if (!oProfile.isPresent()) {
                         assert (false);
                     }
 
-                    oProfile = userProfileRepo.findById(oProfile.get().getId().toString());
+                    oProfile = userProfileRepo.findById(datastore,oProfile.get().getId());
                     if (!oProfile.isPresent()) {
                         assert (false);
                     }
 
-                    long count = userProfileRepo.delete(profile);
+                    long count = userProfileRepo.delete(datastore,profile);
                     assert (count == 1);
                 }
 
