@@ -74,7 +74,7 @@ public class TestUtils {
       area = "SECURITY";
       securityFD = "ADMIN";
       testDataDomain = new DataDomain(testOrgRefName, testAccountNumber, testTenantId, 0, testUserId);
-      systemDataDomain = securityUtils.getTestDataDomain();
+      systemDataDomain = securityUtils.getSystemDataDomain();
       defaultDataDomain = new DataDomain(securityUtils.getTestOrgRefName(),
               securityUtils.getDefaultAccountNumber(),
               securityUtils.getDefaultTenantId(), 0,

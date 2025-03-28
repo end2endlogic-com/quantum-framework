@@ -45,7 +45,7 @@ public class TestBasicRepo extends BaseRepoTest{
 
    @Test
    public void testUserProfileRepo() {
-
+      PrincipalContext pContext = securityUtils.getSystemPrincipalContext();
       try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
          Optional<UserProfile> oup = userProfileRepo.findByRefName(securityUtils.getSystemUserId());
          assertTrue(oup.isPresent());
@@ -55,7 +55,7 @@ public class TestBasicRepo extends BaseRepoTest{
 
    @Test
    public void testUserProfileFilteredQuery() {
-
+      PrincipalContext pContext = securityUtils.getSystemPrincipalContext();
       try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
          Filter x = MorphiaUtils.convertToFilter("refName:" + securityUtils.getSystemUserId(), UserProfile.class);
          Query<UserProfile> q = dataStore.getDefaultSystemDataStore().find(UserProfile.class);
@@ -67,15 +67,46 @@ public class TestBasicRepo extends BaseRepoTest{
       }
    }
 
+   protected UserProfile ensureUserProfile(Datastore ds, String userId, String[] roles, String password) {
+
+      UserProfile userProfile = null;
+
+      try ( MorphiaSession session = ds.startSession();) {
+         session.startTransaction();
+
+         Optional<UserProfile> ouserProfile = userProfileRepo.getByUserId(ds,userId);
+
+         if (!ouserProfile.isPresent()) {
+           userProfile = UserProfile.builder()
+                    .refName(userId)
+                    .email(userId)
+                    .displayName("Test User")
+                    .userName(userId)
+                    .userId(userId)
+                   .dataDomain(testUtils.getTestDataDomain())
+                    .build();
+            userProfile = userProfileRepo.createUser(ds,
+                    userProfile,roles,password );
+         } else {
+            userProfile = ouserProfile.get();
+         }
+         session.commitTransaction();
+      }
+
+      return userProfile;
+
+   }
+
    @Test
    public void testTransactions() {
       Log.infof("TestTransactions: Realm: %s",testUtils.getTestRealm());
       Datastore ds = dataStore.getDataStore(testUtils.getTestRealm());
+      ensureUserProfile(ds, securityUtils.getTestUserId(), roles, "test123xxxxxxx");
 
       try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
          try (MorphiaSession session = ds.startSession()) {
             session.startTransaction();
-            Optional<UserProfile> u = userProfileRepo.findByRefName(ds,securityUtils.getSystemUserId());
+            Optional<UserProfile> u = userProfileRepo.findByRefName(ds,securityUtils.getTestUserId());
             Assertions.assertTrue(u.isPresent());
             userProfileRepo.findById(session, u.get().getId());
             session.commitTransaction();

@@ -17,6 +17,7 @@ import jakarta.inject.Inject;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -40,6 +41,7 @@ public class TestReferenceInterceptorLogic extends BaseRepoTest{
     RuleContext ruleContext;
 
     TestParentModel createParent(String refName) {
+        dataStore.getDataStore(parentRepo.getSecurityContextRealmId()).ensureIndexes(TestParentModel.class);
         TestParentModel parent = new TestParentModel();
         parent.setRefName(refName);
         parent.setDataDomain(testUtils.getTestDataDomain());
@@ -48,6 +50,8 @@ public class TestReferenceInterceptorLogic extends BaseRepoTest{
 
         return parent;
     }
+
+
 
     TestParentModel getOrCreateParent() {
         Optional<TestParentModel> oparent = parentRepo.findByRefName("Test1");
@@ -58,11 +62,21 @@ public class TestReferenceInterceptorLogic extends BaseRepoTest{
     }
 
     List<TestParentModel> getOrCreateParentList() {
-        List<TestParentModel> parents = parentRepo.getAllList();
-        if (parents.size() < 2) {
+        List<TestParentModel> parents = new ArrayList<>();
+        TestParentModel p1 = parentRepo.findByRefName("Test1").orElse(null);
+        if (p1 == null) {
             parents.add(createParent("Test1"));
-            parents.add(createParent("Test2"));
+        } else {
+            parents.add(p1);
         }
+
+        TestParentModel p2 = parentRepo.findByRefName("Test2").orElse(null);
+        if (p2 == null) {
+            parents.add(createParent("Test2"));
+        } else {
+            parents.add(p2);
+        }
+
         return parents;
     }
 
@@ -71,7 +85,7 @@ public class TestReferenceInterceptorLogic extends BaseRepoTest{
         if (ochild.isPresent()) {
             return ochild.get();
         }
-
+        dataStore.getDataStore(childRepo.getSecurityContextRealmId()).ensureIndexes(TestChildModel.class);
         TestChildModel child = new TestChildModel();
         child.setRefName("Test1");
         child.setDataDomain(testUtils.getTestDataDomain());
@@ -90,7 +104,7 @@ public class TestReferenceInterceptorLogic extends BaseRepoTest{
         if (ochild.isPresent()) {
             return ochild.get();
         }
-
+        dataStore.getDataStore(childListRepo.getSecurityContextRealmId()).ensureIndexes(TestChildListModel.class);
         TestChildListModel child = new TestChildListModel();
         child.setRefName(refName);
         child.setDataDomain(testUtils.getTestDataDomain());
@@ -134,10 +148,36 @@ public class TestReferenceInterceptorLogic extends BaseRepoTest{
         }
     }
 
+    void clearCollections()   {
+        childRepo.getAllList().forEach(c -> {
+            try {
+                childRepo.delete(c);
+            } catch (ReferentialIntegrityViolationException e) {
+                throw new RuntimeException(e);
+            }
+        });
+        childListRepo.getAllList().forEach(c -> {
+            try {
+                childListRepo.delete(c);
+            } catch (ReferentialIntegrityViolationException e) {
+                throw new RuntimeException(e);
+            }
+        });
+        parentRepo.getAllList().forEach(p -> {
+            try {
+                parentRepo.delete(p);
+            } catch (ReferentialIntegrityViolationException e) {
+                throw new RuntimeException(e);
+            }
+        });
+
+    }
+
     @Test
     public void testInterceptorWithCollection() throws ReferentialIntegrityViolationException {
 
         try (final SecuritySession ss = new SecuritySession(pContext, rContext)) {
+            clearCollections();
             // create two parents and a child with a list of parents
 
             // create two parents

@@ -2,6 +2,7 @@ package com.e2eq.framework.api.security;
 
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
 import com.e2eq.framework.model.securityrules.SecurityCheckException;
+import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.model.securityrules.SecuritySession;
 import com.e2eq.framework.model.persistent.security.ApplicationRegistration;
 import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
@@ -73,7 +74,6 @@ public class TestUserProfile extends BaseRepoTest {
 
     @Test
     public void testCreate() throws Exception {
-        Datastore datastore = morphiaDataStore.getDataStore(testUtils.getTestRealm());
 
         try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
 
@@ -82,37 +82,37 @@ public class TestUserProfile extends BaseRepoTest {
                 Assertions.fail("userProfileService was not injected properly");
             } else {
                 // find something missing.
-                Optional<UserProfile> oProfile = userProfileRepo.findByRefName(datastore.startSession(), "xxxxx");
+                Optional<UserProfile> oProfile = userProfileRepo.findByRefName( "xxxxx");
                 assert(!oProfile.isPresent());
 
-                oProfile = userProfileRepo.findByRefName(datastore, testUtils.getSystemUserId());
+                oProfile = userProfileRepo.findByRefName(testUtils.getTestUserId());
                 if (!oProfile.isPresent()) {
                     Log.info("About to execute");
                     UserProfile profile = new UserProfile();
-                    profile.setUserName("testUser");
+                    profile.setUserName(testUtils.getTestUserId());
                     profile.setEmail(testUtils.getTestEmail());
-                    profile.setUserId(testUtils.getSystemUserId());
-                    profile.setRefName(profile.getUserId());
+                    profile.setUserId(testUtils.getTestUserId());
+                    profile.setRefName(testUtils.getTestUserId());
                     profile.setDataDomain(testUtils.getTestDataDomain());
 
                     //profile.setDataSegment(0);
 
-                    profile = userProfileRepo.save(datastore,profile);
+                    profile = userProfileRepo.save(profile);
                     assert (profile.getId() != null);
 
 
                     // check if getRefId works
-                    oProfile = userProfileRepo.findByRefName(datastore,profile.getRefName());
+                    oProfile = userProfileRepo.findByRefName(profile.getRefName());
                     if (!oProfile.isPresent()) {
                         assert (false);
                     }
 
-                    oProfile = userProfileRepo.findById(datastore,oProfile.get().getId());
+                    oProfile = userProfileRepo.findById(oProfile.get().getId());
                     if (!oProfile.isPresent()) {
                         assert (false);
                     }
 
-                    long count = userProfileRepo.delete(datastore,profile);
+                    long count = userProfileRepo.delete(profile);
                     assert (count == 1);
                 }
 
@@ -125,8 +125,11 @@ public class TestUserProfile extends BaseRepoTest {
 
     @Test
     public void testGetUserProfileList() throws Exception {
-
+        pContext = testUtils.getSystemPrincipalContext(testUtils.getSystemUserId(), roles);
         try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
+
+            Log.infof("Default Realm:%s", SecurityContext.getPrincipalContext().get().getDefaultRealm());
+
             List<UserProfile> userProfiles = userProfileRepo.getList(0, 10, null, null);
             Assertions.assertTrue(!userProfiles.isEmpty());
             userProfiles.forEach((up) -> {
@@ -155,7 +158,6 @@ public class TestUserProfile extends BaseRepoTest {
 
     @Test
     public void testGetFiltersWithNoLimit() {
-
         try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
             //List<Filter> filters = new ArrayList<>();
             //Filter[] filterArray = userProfileRepo.getFilterArray(filters);

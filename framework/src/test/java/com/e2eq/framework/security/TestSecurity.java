@@ -308,7 +308,8 @@ public class TestSecurity extends BaseRepoTest {
 
         List<Filter> filters = new ArrayList<>();
 
-        RuleContext ruleContext = new RuleContext();
+        RuleContext ruleContext = new RuleContext(securityUtils);
+
         // initialize with the default rules in place
         ruleContext.ensureDefaultRules();
 
