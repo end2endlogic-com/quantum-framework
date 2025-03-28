@@ -241,7 +241,7 @@ public class InitializeDatabase implements ChangeSetBean {
          for (Role r : roles) {
             rolesArray[i++] = r.name();
          }
-         userProfileRepo.createUser(datastore, securityUtils.getSystemRealm(), up, rolesArray, "test123456");
+         userProfileRepo.createUser(datastore, up, rolesArray, "test123456");
       }
 
    }

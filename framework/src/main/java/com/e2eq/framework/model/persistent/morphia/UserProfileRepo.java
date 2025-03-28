@@ -58,15 +58,13 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
       return Optional.ofNullable(p);
    }
 
-   public UserProfile createUser( @NonNull String realm,
-                                 @Valid UserProfile up,
+   public UserProfile createUser( @Valid UserProfile up,
                                  @NotNull @NotEmpty String[] roles,
                                  @NotNull @NonNull @NotEmpty @Size(min=8, max=50, message = "password must be between 8 and 50 characters") String password) {
-      return createUser(morphiaDataStore.getDataStore(realm), realm, up, roles, password);
+      return createUser(morphiaDataStore.getDataStore(getSecurityContextRealmId()), up, roles, password);
    }
 
    public UserProfile createUser(Datastore  datastore,
-                                 @NonNull String realm,
                                  @Valid UserProfile up,
                                  @NotNull @NotEmpty String[] roles,
                                  @NotNull @NonNull @NotEmpty @Size(min=8, max=50, message = "password must be between 8 and 50 characters") String password) {
@@ -75,7 +73,7 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
          throw new ValidationException("userId:" + up.getUserId() + " must be an email address");
       }
 
-      up = save(up);
+      up = save(datastore,up);
 
       CredentialUserIdPassword cred = new CredentialUserIdPassword();
       DomainContext ctx = new DomainContext(up.getDataDomain(), authProvider);
@@ -87,7 +85,7 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
       cred.setDataDomain(up.getDataDomain());
       cred.setLastUpdate(new Date());
       cred.setPasswordHash(EncryptionUtils.hashPassword(password));
-      credRepo.save(cred);
+      credRepo.save(datastore, cred);
 
       return up;
    }

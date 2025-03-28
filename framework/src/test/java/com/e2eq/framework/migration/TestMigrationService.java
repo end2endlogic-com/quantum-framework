@@ -9,6 +9,7 @@ import com.e2eq.framework.model.securityrules.SecuritySession;
 import com.e2eq.framework.persistent.BaseRepoTest;
 import com.e2eq.framework.util.TestUtils;
 import com.oracle.graal.python.builtins.objects.range.RangeNodesFactory;
+import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.logging.Log;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
@@ -68,19 +69,36 @@ public class TestMigrationService extends BaseRepoTest {
         try (final SecuritySession ss = new SecuritySession(pContext, rContext)) {
 
             DatabaseVersionRepo dbVersionRepo = migrationService.getDatabaseVersionRepo();
-            Optional<DatabaseVersion> odbv1 = dbVersionRepo.findByRefName("test");
+            MorphiaSession session = dbVersionRepo.startSession(testUtils.getTestRealm());
+            session.startTransaction();
+
+            Optional<DatabaseVersion> odbv1 = dbVersionRepo.findByRefName(session, "test");
             Log.infof("odbv1: %s", odbv1.isPresent() ? odbv1.get().toString() : "not found");
 
-            DatabaseVersion dbVersion = migrationService.saveDatabaseVersion("test", "1.0.0");
+            DatabaseVersion dbVersion = migrationService.saveDatabaseVersion(session,"test", "1.0.0");
 
-            Assertions.assertFalse(migrationService.migrationRequired("test", "1.0.0"));
-            Assertions.assertTrue(migrationService.migrationRequired("test", "1.0.1"));
-            migrationService.saveDatabaseVersion("test", "1.0.1");
+            Assertions.assertFalse(migrationService.migrationRequired(session,"test", "1.0.0"));
+            Assertions.assertTrue(migrationService.migrationRequired(session, "test", "1.0.1"));
+            migrationService.saveDatabaseVersion(session, "test", "1.0.1");
 
-            Assertions.assertFalse(migrationService.migrationRequired("test", "1.0.1"));
-            Assertions.assertTrue(migrationService.migrationRequired("test", "1.0.2"));
+            Assertions.assertFalse(migrationService.migrationRequired(session,"test", "1.0.1"));
+            Assertions.assertTrue(migrationService.migrationRequired(session,"test", "1.0.2"));
 
-            migrationService.getDatabaseVersionRepo().delete(dbVersion);
+            migrationService.getDatabaseVersionRepo().delete(session, dbVersion);
+            session.commitTransaction();
+        }
+    }
+
+    @Test
+    public void testChangeBeans() {
+        try (final SecuritySession ss = new SecuritySession(pContext, rContext)) {
+            Log.info("---- All ChangeSetBeans ----");
+            migrationService.getAllChangeSetBeans().forEach(csb -> Log.infof("ChangeSetBean: %s", csb.toString()));
+
+            Log.info("---- All Pending ChangeSetBeans ----");
+            migrationService.getAllPendingChangeSetBeans(testUtils.getTestRealm()).forEach(csb -> Log.infof("Pending %s ChangeSetBean: %s",testUtils.getTestRealm(),  csb.toString()));
+            migrationService.getAllPendingChangeSetBeans(testUtils.getDefaultRealm()).forEach(csb -> Log.infof("Pending %s ChangeSetBean: %s", testUtils.getDefaultRealm(),csb.toString()));
+            migrationService.getAllPendingChangeSetBeans(testUtils.getSystemRealm()).forEach(csb -> Log.infof("Pending %s ChangeSetBean: %s", testUtils.getSystemRealm(),csb.toString()));
         }
     }
 

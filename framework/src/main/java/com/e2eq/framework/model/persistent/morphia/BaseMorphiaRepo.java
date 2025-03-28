@@ -76,6 +76,7 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
 
    public long delete(T obj) throws ReferentialIntegrityViolationException;
    public long delete(@NotNull ObjectId id) throws ReferentialIntegrityViolationException;
+   public long delete(@NotNull Datastore datastore, T aobj) throws ReferentialIntegrityViolationException;
    public long delete(@NotNull MorphiaSession s, T obj) throws ReferentialIntegrityViolationException;
 
 
