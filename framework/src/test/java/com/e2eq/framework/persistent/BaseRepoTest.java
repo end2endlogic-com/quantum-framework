@@ -31,6 +31,7 @@ public class BaseRepoTest {
         testUtils.initDefaultRules(ruleContext, "security","userProfile", testUtils.getTestUserId());
     }
 
+
     /* @BeforeEach
     protected void setUp() {
 

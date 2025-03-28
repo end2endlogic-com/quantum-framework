@@ -16,7 +16,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 @Singleton
 @Startup
 public class MigrationStartupRunner {
-    @ConfigProperty(name = "quantum.migration.enabled", defaultValue = "true")
+    @ConfigProperty(name = "quantum.database.migration.enabled", defaultValue = "true")
     boolean enabled;
 
     @Inject

@@ -44,6 +44,10 @@ public class RuleContext {
         Log.debug("Creating ruleContext");
     }
 
+    public RuleContext(SecurityUtils utils) {
+        this.securityUtils = utils;
+    }
+
     public String getDefaultRealm() {
         return defaultRealm;
     }
