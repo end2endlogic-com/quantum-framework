@@ -4,6 +4,7 @@ import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.persistent.security.DomainContext;
 import com.e2eq.framework.model.persistent.security.UserProfile;
 import com.e2eq.framework.util.EncryptionUtils;
+import com.e2eq.framework.util.SecurityUtils;
 import com.e2eq.framework.util.ValidateUtils;
 import com.mongodb.client.model.ReturnDocument;
 import dev.morphia.Datastore;
@@ -32,6 +33,9 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
 
    @ConfigProperty(name="auth.provider")
    private String authProvider;
+
+   @Inject
+   SecurityUtils securityUtils;
 
 
    public Optional<UserProfile> updateStatus(@NotNull String userId, @NotNull UserProfile.Status status) {
@@ -76,7 +80,7 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
       up = save(datastore,up);
 
       CredentialUserIdPassword cred = new CredentialUserIdPassword();
-      DomainContext ctx = new DomainContext(up.getDataDomain(), authProvider);
+      DomainContext ctx = new DomainContext(up.getDataDomain(), securityUtils.getSystemRealm());
       cred.setDomainContext(ctx);
       cred.setUserId(up.getUserId());
       cred.setRefName(up.getUserId());

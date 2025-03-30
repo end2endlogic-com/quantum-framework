@@ -90,7 +90,7 @@ public class SecurityTest extends BaseRepoTest {
 
                 cred.setRoles(roles);
                 cred.setRefName(cred.getUserId());
-                cred.setDomainContext(new DomainContext(dataDomain, testUtils.getDefaultRealm()));
+                cred.setDomainContext(new DomainContext(dataDomain, testUtils.getTestRealm()));
                 cred.setLastUpdate(new Date());
 
                 cred.setDataDomain(dataDomain);

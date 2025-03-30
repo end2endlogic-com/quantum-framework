@@ -192,7 +192,7 @@ public class ApplicationRegistrationRequestRepo extends MorphiaRepo<ApplicationR
                CredentialUserIdPassword cred = new CredentialUserIdPassword();
                cred.setUserId(applicationRegistration.getUserId());
                cred.setRefName(applicationRegistration.getUserId());
-               cred.setDomainContext(new DomainContext(dataDomain, authProvider ));
+               cred.setDomainContext(new DomainContext(dataDomain, securityUtils.getSystemRealm() ));
                cred.setDataDomain(dataDomain);
                cred.setHashingAlgorithm("BCrypt.default");
                cred.setPasswordHash(EncryptionUtils.hashPassword(applicationRegistration.getPassword()));
