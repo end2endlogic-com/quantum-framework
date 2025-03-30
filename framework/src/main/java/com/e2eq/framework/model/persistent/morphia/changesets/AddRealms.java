@@ -35,13 +35,13 @@ public class AddRealms implements ChangeSetBean  {
     @ConfigProperty(name = "quantum.realmConfig.systemOrgRefName", defaultValue = "system.com")
     String systemOrgRefName;
 
-    @ConfigProperty(name = "quantum.realmConfig.defaultRealm", defaultValue = "system-com")
+    @ConfigProperty(name = "quantum.realmConfig.defaultRealm", defaultValue = "mycompanyxyz-com")
     String defaultRealm;
 
     @ConfigProperty(name = "quantum.realmConfig.systemAccountNumber", defaultValue = "0000000000")
     String accountNumber;
 
-    @ConfigProperty(name = "quantum.realmConfig.systemRealm", defaultValue = "system@system.com")
+    @ConfigProperty(name = "quantum.realmConfig.systemRealm", defaultValue = "system-com")
     String systemRealm;
 
     @Override
