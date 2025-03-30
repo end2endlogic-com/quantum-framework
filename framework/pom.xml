@@ -25,7 +25,7 @@
   </licenses>
 
   <scm>
-    <url>https://github.com/end2endlogic-com/quarkus-moneta</url>
+    <url>https://github.com/end2endlogic-com/quantum-framework</url>
     <connection>scm:git:https://github.com/end2endlogic-com/quantum-framework.git</connection>
     <developerConnection>scm:git:https://github.com/end2endlogic-com/quantum-framework.git</developerConnection>
   </scm>
