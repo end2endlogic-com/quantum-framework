@@ -1,8 +1,11 @@
 package com.e2eq.framework.util;
 
 
+import com.e2eq.framework.exceptions.E2eqValidationException;
+import com.e2eq.framework.model.general.ValidationViolation;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.validation.ConstraintViolation;
@@ -33,14 +36,17 @@ public class CSVImportHelper {
     @Inject
     Validator validator;
 
+    @Inject
+    ObjectMapper objectMapper;
+
     public <T> void validateBean(T bean) {
         Set<ConstraintViolation<T>> violations = validator.validate(bean);
-        if (!violations.isEmpty()) {
-            for (ConstraintViolation<T> violation : violations) {
-                System.out.println("Validation error: " + violation.getMessage());
-            }
-            throw new ValidationException("Validation failed");
+        // create a message from the violations:
+        StringBuilder messageBuffer = new StringBuilder();
+        for (ConstraintViolation<T> violation : violations) {
+            messageBuffer.append(violation.getMessage()).append("\n");
         }
+        throw new ValidationException(messageBuffer.toString().trim());
     }
 
     private QuoteMode getQuoteMode(String quotingStrategy) {

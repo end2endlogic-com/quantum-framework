@@ -31,6 +31,9 @@ public  class Coordinate {
     public Coordinate(Double longitude, Double latitude) {
         this.longitude = longitude;
         this.latitude = latitude;
+        if (position == null ) {
+            position = new double[2];
+        }
         this.position[0] = longitude;
         this.position[1] = latitude;
     }
@@ -38,18 +41,26 @@ public  class Coordinate {
 
     public void setLongitude(Double longitude) {
         this.longitude = longitude;
+        if (position == null ) {
+            position = new double[2];
+        }
         this.position[0] = longitude;
     }
 
     public void setLatitude(Double latitude) {
         this.latitude = latitude;
+        if (position == null ) {
+            position = new double[2];
+        }
         this.position[1] = latitude;
     }
 
     public void setPosition(double[] position) {
         this.position = position;
-        this.longitude = position[0];
-        this.latitude = position[1];
+        if (position!= null && position.length == 2) {
+            this.longitude = position[0];
+            this.latitude = position[1];
+        }
     }
 
 }
