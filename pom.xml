@@ -40,7 +40,7 @@
         <assembly-plugin.version>3.1.0</assembly-plugin.version>
         <compiler-plugin.version>3.13.0</compiler-plugin.version>
         <jackson.version>2.18.2</jackson.version>
-        <maven.compiler.release>21</maven.compiler.release>
+        <maven.compiler.release>17</maven.compiler.release>
         <morphia.version>3.0.0</morphia.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
@@ -177,6 +177,9 @@
                 <plugin>
                     <artifactId>maven-compiler-plugin</artifactId>
                     <configuration>
+                        <release>${maven.compiler.release}</release>
+                        <source>${maven.compiler.release}</source>
+                        <target>${maven.compiler.release}</target>
                         <compilerArgs>
                             <arg>-Xlint:all,-try,-options,-path</arg>
                         </compilerArgs>
