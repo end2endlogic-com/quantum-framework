@@ -39,7 +39,7 @@
     </developer>
   </developers>
   <properties>
-    <maven.compiler.release>21</maven.compiler.release>
+    <maven.compiler.release>17</maven.compiler.release>
     <graalvm.version>24.1.0</graalvm.version>
     <quarkus-amazon-services.version>2.18.1</quarkus-amazon-services.version>
     <maven.build.timestamp.format>yyyy-MM-dd'T'HH:mm:ss'Z'</maven.build.timestamp.format>
@@ -464,7 +464,7 @@
             <configuration>
               <rules>
                 <requireJavaVersion>
-                  <version>21</version>
+                  <version>17</version>
                 </requireJavaVersion>
                 <requireMavenVersion>
                   <version>[3.9.8,)</version>
