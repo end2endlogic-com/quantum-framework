@@ -1,6 +1,9 @@
-<?xml version="1.0"?>
-<project xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd" xmlns="http://maven.apache.org/POM/4.0.0"
-    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<?xml version="1.0" ?>
+<project
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd"
+    xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+>
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.end2endlogic</groupId>
   <artifactId>quantum-framework</artifactId>
@@ -13,7 +16,8 @@
   </parent>
 
   <name>${project.groupId}:${project.artifactId}</name>
-  <description>a REST / Mongodb framework for quickly building multi-tenant SAAS platforms</description>
+  <description
+    >a REST / Mongodb framework for quickly building multi-tenant SAAS platforms</description>
   <url>https://github.com/end2endlogic-com/quantum-framework</url>
 
   <licenses>
@@ -26,8 +30,10 @@
 
   <scm>
     <url>https://github.com/end2endlogic-com/quantum-framework</url>
-    <connection>scm:git:https://github.com/end2endlogic-com/quantum-framework.git</connection>
-    <developerConnection>scm:git:https://github.com/end2endlogic-com/quantum-framework.git</developerConnection>
+    <connection
+        >scm:git:https://github.com/end2endlogic-com/quantum-framework.git</connection>
+    <developerConnection
+        >scm:git:https://github.com/end2endlogic-com/quantum-framework.git</developerConnection>
   </scm>
 
   <developers>
@@ -42,7 +48,8 @@
     <maven.compiler.release>17</maven.compiler.release>
     <graalvm.version>24.1.0</graalvm.version>
     <quarkus-amazon-services.version>2.18.1</quarkus-amazon-services.version>
-    <maven.build.timestamp.format>yyyy-MM-dd'T'HH:mm:ss'Z'</maven.build.timestamp.format>
+    <maven.build.timestamp.format
+        >yyyy-MM-dd'T'HH:mm:ss'Z'</maven.build.timestamp.format>
   </properties>
 
   <dependencyManagement>
@@ -427,14 +434,15 @@
         <configuration>
           <indexName>jandex.idx</indexName>
           <verbose>true</verbose>
-          <jar/>
+          <jar />
         </configuration>
       </plugin>
       <plugin>
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
           <systemPropertyVariables>
-            <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
+            <java.util.logging.manager
+                        >org.jboss.logmanager.LogManager</java.util.logging.manager>
            <!-- <maven.home>${maven.home}</maven.home> -->
           </systemPropertyVariables>
         </configuration>
@@ -552,8 +560,10 @@
                   <goal>antlr4</goal>
                 </goals>
                 <configuration>
-                  <sourceDirectory>${project.basedir}/src/main/antlr4</sourceDirectory>
-                  <outputDirectory>${project.build.directory}/generated-sources/antlr4</outputDirectory>
+                  <sourceDirectory
+                                    >${project.basedir}/src/main/antlr4</sourceDirectory>
+                  <outputDirectory
+                                    >${project.build.directory}/generated-sources/antlr4</outputDirectory>
                 </configuration>
               </execution>
             </executions>
@@ -583,8 +593,10 @@
                 </goals>
                 <configuration>
                   <systemPropertyVariables>
-                    <native.image.path>${project.build.directory}/${project.build.finalName}-runner</native.image.path>
-                    <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
+                    <native.image.path
+                                        >${project.build.directory}/${project.build.finalName}-runner</native.image.path>
+                    <java.util.logging.manager
+                                        >org.jboss.logmanager.LogManager</java.util.logging.manager>
                     <maven.home>${maven.home}</maven.home>
                   </systemPropertyVariables>
                 </configuration>

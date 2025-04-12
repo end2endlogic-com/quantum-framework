@@ -4,11 +4,11 @@ import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.migration.base.DatabaseVersion;
 import com.e2eq.framework.model.persistent.migration.base.MigrationService;
 import com.e2eq.framework.model.persistent.morphia.DatabaseVersionRepo;
-import com.e2eq.framework.model.securityrules.SecurityContext;
+
 import com.e2eq.framework.model.securityrules.SecuritySession;
 import com.e2eq.framework.persistent.BaseRepoTest;
 import com.e2eq.framework.util.TestUtils;
-import com.oracle.graal.python.builtins.objects.range.RangeNodesFactory;
+
 import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.logging.Log;
 import io.quarkus.test.junit.QuarkusTest;
@@ -16,7 +16,7 @@ import jakarta.inject.Inject;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.semver4j.Semver;
-import software.amazon.awssdk.services.cognitoidentityprovider.model.CreateUserPoolRequest;
+
 
 import java.util.Optional;
 

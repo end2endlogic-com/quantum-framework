@@ -9,6 +9,8 @@ import java.util.Set;
 public interface AuthProvider {
     SecurityIdentity validateAccessToken(String token);
 
+    String getName();
+
     @RegisterForReflection
     record LoginNegativeResponse(
             @JsonProperty("userId") String userId,
