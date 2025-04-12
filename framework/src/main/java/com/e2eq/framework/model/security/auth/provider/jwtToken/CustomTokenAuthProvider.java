@@ -54,6 +54,9 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
     //@Inject
     //CredentialRefreshTokenRepo credentialRefreshTokenRepo;
 
+    public String getName() {
+        return "custom";
+    }
 
     @Override
     public void createUser(String username, String password, Set<String> roles, DomainContext domainContext) throws SecurityException {
@@ -135,16 +138,16 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
 
         /* old code can be removed
         final Set<String>[] rolesHolder = new Set[1];
-        
+
         credentialRepo.findByUserId(username).ifPresentOrElse(
             credential -> {
                 rolesHolder[0] = new HashSet<>(Arrays.asList(credential.getRoles()));
-            }, 
+            },
             () -> {
                 throw new SecurityException("User not found: " + username);
             }
         );
-    
+
         return rolesHolder[0]; */
     }
 

@@ -1,5 +1,9 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+<?xml version="1.0" encoding="UTF-8" ?>
+<project
+    xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd"
+>
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.end2endlogic</groupId>
     <artifactId>quantum-parent</artifactId>
@@ -7,7 +11,8 @@
     <packaging>pom</packaging>
 
     <name>${project.groupId}:${project.artifactId}</name>
-    <description>a REST / Mongodb framework for quickly building multi-tenant SAAS platforms</description>
+    <description
+    >a REST / Mongodb framework for quickly building multi-tenant SAAS platforms</description>
     <url>https://github.com/end2endlogic-com/quantum-framework</url>
 
     <licenses>
@@ -20,8 +25,10 @@
 
     <scm>
         <url>https://github.com/end2endlogic-com/quantum-framework</url>
-        <connection>scm:git:https://github.com/end2endlogic-com/quantum-framework.git</connection>
-        <developerConnection>scm:git:https://github.com/end2endlogic-com/quantum-framework.git</developerConnection>
+        <connection
+        >scm:git:https://github.com/end2endlogic-com/quantum-framework.git</connection>
+        <developerConnection
+        >scm:git:https://github.com/end2endlogic-com/quantum-framework.git</developerConnection>
     </scm>
 
     <developers>
@@ -43,9 +50,11 @@
         <maven.compiler.release>17</maven.compiler.release>
         <morphia.version>3.0.0</morphia.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <project.reporting.outputEncoding
+        >UTF-8</project.reporting.outputEncoding>
         <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
-        <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
+        <quarkus.platform.group-id
+        >io.quarkus.platform</quarkus.platform.group-id>
         <quarkus.platform.version>3.17.7</quarkus.platform.version>
         <skipITs>true</skipITs>
         <surefire-plugin.version>3.2.5</surefire-plugin.version>
@@ -120,18 +129,57 @@
                     </execution>
                 </executions>
             </plugin>
+
             <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-javadoc-plugin</artifactId>
-                <version>3.11.2</version>
-                <executions>
-                    <execution>
-                        <id>attach-javadocs</id>
-                        <goals>
-                            <goal>jar</goal>
-                        </goals>
-                    </execution>
-                </executions>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <release>${maven.compiler.release}</release>
+                    <source>${maven.compiler.release}</source>
+                    <target>${maven.compiler.release}</target>
+                    <compilerArgs>
+                        <arg>-Xlint:all,-try,-options,-path</arg>
+                    </compilerArgs>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>io.quarkus</groupId>
+                            <artifactId>quarkus-extension-processor</artifactId>
+                            <version>${quarkus.platform.version}</version>
+                        </path>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombrok.version}</version>
+                        </path>
+                        <path>
+                            <groupId>io.quarkus</groupId>
+                            <artifactId>quarkus-resteasy</artifactId>
+                        </path>
+                        <path>
+                            <groupId>io.quarkus</groupId>
+                            <artifactId>quarkus-hibernate-validator</artifactId>
+                        </path>
+                        <path>
+                            <groupId>io.quarkus</groupId>
+                            <artifactId>quarkus-scheduler</artifactId>
+                        </path>
+                        <path>
+                            <groupId>com.end2endlogic</groupId>
+                            <artifactId>morphia-core</artifactId>
+                            <version>${morphia.version}</version>
+                        </path>
+                        <path>
+                            <groupId>com.fasterxml.jackson.core</groupId>
+                            <artifactId>jackson-annotations</artifactId>
+                            <version>${jackson.version}</version>
+                        </path>
+                        <path>
+                            <groupId>org.jetbrains</groupId>
+                            <artifactId>annotations</artifactId>
+                            <version>24.0.1</version>
+                        </path>
+                    </annotationProcessorPaths>
+                    <release>${maven.compiler.release}</release>
+                </configuration>
             </plugin>
         </plugins>
         <pluginManagement>
@@ -157,7 +205,8 @@
                     <version>${surefire-plugin.version}</version>
                     <configuration>
                         <systemPropertyVariables>
-                            <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
+                            <java.util.logging.manager
+                            >org.jboss.logmanager.LogManager</java.util.logging.manager>
                             <maven.home>${maven.home}</maven.home>
                             <maven.repo>${settings.localRepository}</maven.repo>
                         </systemPropertyVariables>
@@ -168,61 +217,11 @@
                     <version>${failsafe-plugin.version}</version>
                     <configuration>
                         <systemPropertyVariables>
-                            <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
+                            <java.util.logging.manager
+                            >org.jboss.logmanager.LogManager</java.util.logging.manager>
                             <maven.home>${maven.home}</maven.home>
                             <maven.repo>${settings.localRepository}</maven.repo>
                         </systemPropertyVariables>
-                    </configuration>
-                </plugin>
-                <plugin>
-                    <artifactId>maven-compiler-plugin</artifactId>
-                    <configuration>
-                        <release>${maven.compiler.release}</release>
-                        <source>${maven.compiler.release}</source>
-                        <target>${maven.compiler.release}</target>
-                        <compilerArgs>
-                            <arg>-Xlint:all,-try,-options,-path</arg>
-                        </compilerArgs>
-                        <annotationProcessorPaths>
-                            <path>
-                                <groupId>io.quarkus</groupId>
-                                <artifactId>quarkus-extension-processor</artifactId>
-                                <version>${quarkus.platform.version}</version>
-                            </path>
-                            <path>
-                                <groupId>org.projectlombok</groupId>
-                                <artifactId>lombok</artifactId>
-                                <version>${lombrok.version}</version>
-                            </path>
-                            <path>
-                                <groupId>io.quarkus</groupId>
-                                <artifactId>quarkus-resteasy</artifactId>
-                            </path>
-                            <path>
-                                <groupId>io.quarkus</groupId>
-                                <artifactId>quarkus-hibernate-validator</artifactId>
-                            </path>
-                            <path>
-                                <groupId>io.quarkus</groupId>
-                                <artifactId>quarkus-scheduler</artifactId>
-                            </path>
-                            <path>
-                                <groupId>com.end2endlogic</groupId>
-                                <artifactId>morphia-core</artifactId>
-                                <version>${morphia.version}</version>
-                            </path>
-                            <path>
-                                <groupId>com.fasterxml.jackson.core</groupId>
-                                <artifactId>jackson-annotations</artifactId>
-                                <version>${jackson.version}</version>
-                            </path>
-                            <path>
-                                <groupId>org.jetbrains</groupId>
-                                <artifactId>annotations</artifactId>
-                                <version>24.0.1</version>
-                            </path>
-                        </annotationProcessorPaths>
-                        <release>${maven.compiler.release}</release>
                     </configuration>
                 </plugin>
             </plugins>
@@ -244,15 +243,7 @@
             <artifactId>annotations</artifactId>
             <version>24.0.1</version>
         </dependency>
-        <!-- <dependency>
-             <groupId>io.quarkiverse.amazonservices</groupId>
-             <artifactId>quarkus-amazon-cognito-user-pools</artifactId>
-         </dependency> -->
-        <dependency>
-            <groupId>software.amazon.awssdk</groupId>
-            <artifactId>cognitoidentityprovider</artifactId>
-            <version>2.24.0</version>
-        </dependency>
+
 
     </dependencies>
 
