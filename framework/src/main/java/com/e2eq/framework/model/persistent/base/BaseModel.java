@@ -37,6 +37,8 @@ public abstract  class BaseModel extends UnversionedBaseModel{
     @Version
     protected Long version;
 
+    ActiveStatus activeStatus;
+
     @Override
     public EntityReference createEntityReference() {
         EntityReference er = super.createEntityReference();
