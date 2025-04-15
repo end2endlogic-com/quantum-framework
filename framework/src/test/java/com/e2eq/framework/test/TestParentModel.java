@@ -1,5 +1,6 @@
 package com.e2eq.framework.test;
 
+import com.e2eq.framework.annotations.AuditPersistence;
 import com.e2eq.framework.model.persistent.base.BaseModel;
 import com.e2eq.framework.model.persistent.base.DynamicAttributeSet;
 import dev.morphia.annotations.Entity;
@@ -17,6 +18,7 @@ import java.util.Map;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @ToString
+@AuditPersistence
 public class TestParentModel extends BaseModel {
 
     protected String testField;
