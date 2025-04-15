@@ -1,6 +1,7 @@
 package com.e2eq.framework.model.persistent.base;
 
 
+import com.e2eq.framework.model.persistent.morphia.interceptors.PersistenceAuditEventInterceptor;
 import com.e2eq.framework.rest.models.ObjectIdJsonSerializer;
 import com.e2eq.framework.rest.models.UIAction;
 import com.e2eq.framework.rest.models.UIActionList;
@@ -41,6 +42,7 @@ import static dev.morphia.mapping.IndexType.DESC;
 @SuperBuilder
 @Data
 @NoArgsConstructor
+@EntityListeners(PersistenceAuditEventInterceptor.class)
 public abstract  class UnversionedBaseModel {
 
     @Id
@@ -74,6 +76,8 @@ public abstract  class UnversionedBaseModel {
     @Valid
     protected DataDomain dataDomain;
 
+    protected ActiveStatus activeStatus;
+
     /**
      The set of tags associated with this record.  A tag can be used for billing purposes, searching purposes or other purposes.
      */
@@ -83,6 +87,8 @@ public abstract  class UnversionedBaseModel {
     protected AuditInfo auditInfo;
 
     protected Set<ReferenceEntry> references;
+
+    protected List<PersistentEvent> persistentEvents;
 
     @Transient
     protected UIActionList actionList;
