@@ -79,17 +79,20 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
 
       up = save(datastore,up);
 
-      CredentialUserIdPassword cred = new CredentialUserIdPassword();
-      DomainContext ctx = new DomainContext(up.getDataDomain(), securityUtils.getSystemRealm());
-      cred.setDomainContext(ctx);
-      cred.setUserId(up.getUserId());
-      cred.setRefName(up.getUserId());
-      cred.setRoles(roles);
+      Optional<CredentialUserIdPassword> optionalCredentialUserIdPassword = credRepo.findByUserId(up.getUserId());
+      if (!optionalCredentialUserIdPassword.isPresent()) {
+         CredentialUserIdPassword cred = new CredentialUserIdPassword();
+         DomainContext ctx = new DomainContext(up.getDataDomain(), securityUtils.getSystemRealm());
+         cred.setDomainContext(ctx);
+         cred.setUserId(up.getUserId());
+         cred.setRefName(up.getUserId());
+         cred.setRoles(roles);
 
-      cred.setDataDomain(up.getDataDomain());
-      cred.setLastUpdate(new Date());
-      cred.setPasswordHash(EncryptionUtils.hashPassword(password));
-      credRepo.save(datastore, cred);
+         cred.setDataDomain(up.getDataDomain());
+         cred.setLastUpdate(new Date());
+         cred.setPasswordHash(EncryptionUtils.hashPassword(password));
+         credRepo.save(datastore, cred);
+      }
 
       return up;
    }
