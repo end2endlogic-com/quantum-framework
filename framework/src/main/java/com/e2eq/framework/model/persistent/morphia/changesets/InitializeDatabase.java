@@ -14,6 +14,7 @@ import com.e2eq.framework.util.SecurityUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.type.CollectionType;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import com.mongodb.client.MongoClient;
 import dev.morphia.Datastore;
 import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.logging.Log;
@@ -60,7 +61,7 @@ public class InitializeDatabase implements ChangeSetBean {
    SecurityUtils securityUtils;
 
    @Execution
-   public void execute(MorphiaSession session,  String realm) throws Exception{
+   public void execute(MorphiaSession session, MongoClient mongoClient, String realm) throws Exception{
       // get flag from app config
 
                ensureCounter(session, "accountNumber", 2000);

@@ -1,5 +1,6 @@
 package com.e2eq.framework.model.persistent.migration.base;
 
+import com.mongodb.client.MongoClient;
 import dev.morphia.transactions.MorphiaSession;
 
 public interface ChangeSetBean {
@@ -13,5 +14,5 @@ public interface ChangeSetBean {
    public String getName();
    public String getDescription();
    public String getScope();
-   public void execute(MorphiaSession session, String realm) throws Exception;
+   public void execute(MorphiaSession session, MongoClient mongoClient, String realm) throws Exception;
 }

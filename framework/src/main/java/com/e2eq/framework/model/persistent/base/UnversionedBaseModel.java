@@ -46,7 +46,6 @@ import static dev.morphia.mapping.IndexType.DESC;
 public abstract  class UnversionedBaseModel {
 
     @Id
-    @JsonSerialize(using = ObjectIdJsonSerializer.class)
     @Schema(implementation = String.class, description = "MongoDB ObjectId as String")
     protected ObjectId id;
 

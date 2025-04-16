@@ -17,7 +17,6 @@ import jakarta.enterprise.context.spi.CreationalContext;
 import jakarta.enterprise.inject.spi.Bean;
 import jakarta.enterprise.inject.spi.BeanManager;
 import jakarta.inject.Inject;
-import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jetbrains.annotations.NotNull;
@@ -27,7 +26,7 @@ import org.semver4j.Semver;
 import java.util.*;
 import java.util.ArrayList;
 
-@Slf4j
+
 @ApplicationScoped
 public class MigrationService {
 
@@ -185,16 +184,34 @@ public class MigrationService {
             changeSetList.forEach(changeSetBean -> {
                 Log.infof("Executing Change Set:%s", changeSetBean.getName());
                 MorphiaSession ds = morphiaDataStore.getDataStore(realm).startSession();
+
                 try {
                     Log.infof("        Starting Transaction for Change Set:%s", changeSetBean.getName());
                     ds.startTransaction();
 
-                    changeSetBean.execute(ds,realm);
+                    changeSetBean.execute(ds,mongoClient, realm);
                     ChangeSetRecord record = newChangeSetRecord(realm, changeSetBean);
                     changesetRecordRepo.save(ds, record);
+                    DatabaseVersion version;
+                    Optional<DatabaseVersion> oversion = databaseVersionRepo.findCurrentVersion(realm);
+                    if (!oversion.isPresent()) {
+                        Log.infof("        No database version found in the database for realm: %s, assuming 1.0.0", realm);
+                        version = new DatabaseVersion();
+                        version.setCurrentVersionString(record.dbToVersion);
+                        version.setCurrentSemVersion(new Semver(record.dbToVersion));
+                        version.setCurrentVersionInt(record.dbToVersionInt);
+                        version = databaseVersionRepo.save(ds, version);
+                    } else {
+                        version = oversion.get();
+                        version.setCurrentVersionString(record.dbToVersion);
+                        version.setCurrentSemVersion(new Semver(record.dbToVersion));
+                        version.setCurrentVersionInt(record.dbToVersionInt);
+                        databaseVersionRepo.save(ds, version);
+                    }
 
                     ds.commitTransaction();
                     Log.infof("        Commited Transaction for Change Set:%s", changeSetBean.getName());
+
                 } catch (Throwable e) {
                     e.printStackTrace();
                     ds.abortTransaction();

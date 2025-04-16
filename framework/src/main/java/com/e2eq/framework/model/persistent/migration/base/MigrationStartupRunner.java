@@ -36,13 +36,13 @@ public class MigrationStartupRunner {
             Log.warn("-----!!!  Migrations ENABLED !!!!-----");
             String[] roles = {"admin", "user"};
             ruleContext.ensureDefaultRules();
-            PrincipalContext pContext = testUtils.getTestPrincipalContext(testUtils.getSystemUserId(), roles);
-            ResourceContext rContext = testUtils.getResourceContext(testUtils.getArea(), "userProfile", "update");
-            testUtils.initDefaultRules(ruleContext, "SYSTEM", "MIGRATION", testUtils.getTestUserId());
-            try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
+            securityUtils.setSecurityContext();
+            try {
                 migrationService.runAllUnRunMigrations(securityUtils.getTestRealm());
                 migrationService.runAllUnRunMigrations(securityUtils.getSystemRealm());
                 migrationService.runAllUnRunMigrations(securityUtils.getDefaultRealm());
+            } finally {
+                securityUtils.clearSecurityContext();
             }
         }
     }
