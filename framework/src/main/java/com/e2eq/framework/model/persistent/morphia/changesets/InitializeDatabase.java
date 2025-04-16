@@ -227,8 +227,8 @@ public class InitializeDatabase implements ChangeSetBean {
 
          up.setDataDomain(upDataDomain);
          up.setEmail(securityUtils.getSystemUserId());
-         up.setRefName(up.getEmail());
-         up.setUserId(up.getEmail());
+         up.setRefName(securityUtils.getSystemUserId());
+         up.setUserId(securityUtils.getSystemUserId());
          up.setUserName("Generic Admin");
          up.setDisplayName("Generic Admin");
          up.setFname("Generic");

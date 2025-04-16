@@ -20,5 +20,6 @@ public class PersistentEvent {
     protected String eventMessage;
     protected Date eventDate;
     protected String userId;
+    protected Long version;
     protected Map<String, Object> eventData;
 }
