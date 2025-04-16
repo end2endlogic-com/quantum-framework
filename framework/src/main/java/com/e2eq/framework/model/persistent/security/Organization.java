@@ -9,6 +9,7 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 import org.bson.types.ObjectId;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 import java.util.Set;
 
@@ -23,7 +24,9 @@ public class Organization extends FullBaseModel {
    @Email( message = "ownerEmail must be a valid email address"  )
    protected String ownerEmail;
 
+   @Schema(implementation = String.class, description = "collection of child orgs object ids")
    protected Set<ObjectId> children;
+   @Schema(implementation = String.class, description = "collection of parent orgs object ids")
    protected Set<ObjectId> parents;
 
    @Override

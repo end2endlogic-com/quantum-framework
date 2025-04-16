@@ -22,7 +22,6 @@ public class ReferenceEntry {
 
     @NotNull
     @Schema(implementation = String.class, description = "MongoDB ObjectId as String")
-    @JsonSerialize(using = ObjectIdJsonSerializer.class)
     private ObjectId referencedId;
 
     /** the type that this reference is ie. the collection it is associated with */

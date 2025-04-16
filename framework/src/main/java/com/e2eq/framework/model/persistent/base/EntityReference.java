@@ -19,7 +19,6 @@ import java.util.Map;
 @SuperBuilder
 @Entity
 public class EntityReference {
-    @JsonSerialize(using = ObjectIdJsonSerializer.class)
     @Schema(implementation = String.class, description = "object id of the entity being referenced")
     @NotNull
     @NonNull

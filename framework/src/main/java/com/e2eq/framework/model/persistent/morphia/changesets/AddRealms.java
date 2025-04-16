@@ -10,6 +10,7 @@ import com.e2eq.framework.model.securityrules.RuleContext;
 import com.e2eq.framework.model.securityrules.SecuritySession;
 import com.e2eq.framework.util.SecurityUtils;
 import com.e2eq.framework.util.TestUtils;
+import com.mongodb.client.MongoClient;
 import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.logging.Log;
 import io.quarkus.runtime.Startup;
@@ -96,7 +97,7 @@ public class AddRealms implements ChangeSetBean  {
     }
 
     @Override
-    public void execute(MorphiaSession session,  String r) throws Exception {
+    public void execute(MorphiaSession session, MongoClient mongoClient, String r) throws Exception {
         Log.infof("Adding Default Realm to the database: realm passed to execution: %s", r);
 
         DomainContext domainContext = DomainContext.builder()

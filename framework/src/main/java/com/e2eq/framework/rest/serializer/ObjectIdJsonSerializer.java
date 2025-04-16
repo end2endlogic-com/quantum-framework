@@ -1,4 +1,4 @@
-package com.e2eq.framework.model.persistent.mongodb;
+package com.e2eq.framework.rest.serializer;
 
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -14,7 +14,7 @@ public class ObjectIdJsonSerializer extends JsonSerializer<ObjectId> {
         if(o == null) {
             j.writeNull();
         } else {
-            j.writeString(o.toString());
+            j.writeString(o.toHexString());
         }
     }
 }

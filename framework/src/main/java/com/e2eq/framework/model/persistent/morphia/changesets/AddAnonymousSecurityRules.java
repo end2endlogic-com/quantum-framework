@@ -10,6 +10,7 @@ import com.e2eq.framework.model.persistent.security.Policy;
 import com.e2eq.framework.model.persistent.security.Rule;
 import com.e2eq.framework.model.persistent.morphia.PolicyRepo;
 import com.e2eq.framework.util.SecurityUtils;
+import com.mongodb.client.MongoClient;
 import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.logging.Log;
 import io.quarkus.runtime.Startup;
@@ -77,7 +78,7 @@ public class AddAnonymousSecurityRules implements ChangeSetBean {
     }
 
     @Override
-    public void execute(MorphiaSession session, String realm) throws Exception {
+    public void execute(MorphiaSession session, MongoClient mongoClient, String realm) throws Exception {
 
         // check if the policies already exist
         if (!policyRepo.findByRefName(session, "defaultAnonymousPolicy").isPresent()) {
