@@ -84,6 +84,7 @@
             </dependency>
         </dependencies>
     </dependencyManagement>
+
     <build>
         <plugins>
             <plugin>
@@ -152,7 +153,7 @@
                         </path>
                         <path>
                             <groupId>io.quarkus</groupId>
-                            <artifactId>quarkus-resteasy</artifactId>
+                            <artifactId>quarkus-rest</artifactId>
                         </path>
                         <path>
                             <groupId>io.quarkus</groupId>
@@ -242,6 +243,10 @@
             <groupId>org.jetbrains</groupId>
             <artifactId>annotations</artifactId>
             <version>24.0.1</version>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-rest</artifactId>
         </dependency>
 
 

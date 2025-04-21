@@ -19,7 +19,9 @@ public@Data class DatabaseVersion extends BaseModel {
    @Getter
    protected Semver currentSemVersion;
    protected String currentVersionString;
+   @Getter
    protected int currentVersionInt;
+
    protected Date lastUpdated;
 
 

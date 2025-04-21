@@ -10,7 +10,7 @@ import jakarta.ws.rs.core.Response;
 import java.util.Map;
 
 @Path("/auth")
-public class AuthController {
+public class AuthResource {
 
     @Inject
     AuthProviderFactory authProviderFactory;

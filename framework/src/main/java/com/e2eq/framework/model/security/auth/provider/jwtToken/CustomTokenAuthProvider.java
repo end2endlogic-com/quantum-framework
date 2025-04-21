@@ -43,6 +43,9 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
     @ConfigProperty(name= "com.b2bi.jwt.duration")
     Long durationInSeconds;
 
+    @ConfigProperty(name = "quantum.realmConfig.systemRealm", defaultValue = "system-com")
+    String systemRealm;
+
     @Inject
     JWTParser jwtParser;
 

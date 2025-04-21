@@ -74,6 +74,7 @@
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-rest-jackson</artifactId>
     </dependency>
+
     <!-- comment out for local development, uncomment for sam deploy
     <dependency>
       <groupId>io.quarkus</groupId>
