@@ -12,6 +12,7 @@ import com.e2eq.framework.util.TestUtils;
 import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.logging.Log;
 import io.quarkus.test.junit.QuarkusTest;
+import io.smallrye.mutiny.Multi;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -96,9 +97,11 @@ public class TestMigrationService extends BaseRepoTest {
             migrationService.getAllChangeSetBeans().forEach(csb -> Log.infof("ChangeSetBean: %s", csb.toString()));
 
             Log.info("---- All Pending ChangeSetBeans ----");
-            migrationService.getAllPendingChangeSetBeans(testUtils.getTestRealm()).forEach(csb -> Log.infof("Pending %s ChangeSetBean: %s",testUtils.getTestRealm(),  csb.toString()));
-            migrationService.getAllPendingChangeSetBeans(testUtils.getDefaultRealm()).forEach(csb -> Log.infof("Pending %s ChangeSetBean: %s", testUtils.getDefaultRealm(),csb.toString()));
-            migrationService.getAllPendingChangeSetBeans(testUtils.getSystemRealm()).forEach(csb -> Log.infof("Pending %s ChangeSetBean: %s", testUtils.getSystemRealm(),csb.toString()));
+            Multi.createFrom().emitter(emitter -> {
+            migrationService.getAllPendingChangeSetBeans(testUtils.getTestRealm(), emitter).forEach(csb -> Log.infof("Pending %s ChangeSetBean: %s",testUtils.getTestRealm(),  csb.toString()));
+            migrationService.getAllPendingChangeSetBeans(testUtils.getDefaultRealm(), emitter).forEach(csb -> Log.infof("Pending %s ChangeSetBean: %s", testUtils.getDefaultRealm(),csb.toString()));
+            migrationService.getAllPendingChangeSetBeans(testUtils.getSystemRealm(), emitter).forEach(csb -> Log.infof("Pending %s ChangeSetBean: %s", testUtils.getSystemRealm(),csb.toString()));
+            });
         }
     }
 
@@ -106,8 +109,9 @@ public class TestMigrationService extends BaseRepoTest {
     public void testRunAllUnRunMigrations() {
         try (final SecuritySession ss = new SecuritySession(pContext, rContext)) {
             Log.infof("Running all unrun migrations for tenant: %s", testUtils.getTestTenantId());
-
-             migrationService.runAllUnRunMigrations(testUtils.getTestRealm());
+            Multi.createFrom().emitter(emitter -> {
+                migrationService.runAllUnRunMigrations(testUtils.getTestRealm(), emitter);
+            });
 
         }
     }

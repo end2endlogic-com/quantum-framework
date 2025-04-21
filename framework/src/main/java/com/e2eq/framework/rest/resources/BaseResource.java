@@ -418,6 +418,37 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
    }
 
 
+    @Path("entityref")
+    @GET
+    @Produces(MediaType.APPLICATION_JSON)
+    @SecurityRequirement(name = "bearerAuth")
+    @APIResponses(value = {
+            @APIResponse(responseCode = "200", description = "Success", content = @Content(mediaType = "application/json", schema = @Schema(implementation = EntityReference.class))),
+            @APIResponse(responseCode = "400", description = "Bad Request / bad argument", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
+    })
+    public List<EntityReference> getEntityRefList(@QueryParam("skip") int skip,
+                                                  @DefaultValue("50") @QueryParam("limit") int limit,
+                                                  @QueryParam("filter") String filter,
+                                                  @QueryParam("sort") String sort,
+                                                  @QueryParam("projection") String projection) {
+
+        List<ProjectionField> projectionFields = null;
+        List<SortField> sortFields = null;
+        if (sort != null || projection != null) {
+            if (sort != null) {
+                sortFields = convertToSortField(sort);
+            } else {
+                sortFields = null;
+            }
+            projectionFields = FilterUtils.convertProjectionFields(projection);
+        }
+        List<T> ups = repo.getListByQuery(skip, limit, filter, sortFields, projectionFields);
+        List<EntityReference> rc = new ArrayList<>();
+        for (T t : ups) {
+            rc.add(t.createEntityReference());
+        }
+        return rc;
+    }
 
 
 

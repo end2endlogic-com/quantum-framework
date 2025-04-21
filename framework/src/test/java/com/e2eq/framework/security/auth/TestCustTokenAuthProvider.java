@@ -2,12 +2,14 @@ package com.e2eq.framework.security.auth;
 
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.security.DomainContext;
+import com.e2eq.framework.model.persistent.security.UserProfile;
 import com.e2eq.framework.model.security.auth.AuthProvider;
 import com.e2eq.framework.model.security.auth.AuthProviderFactory;
 import com.e2eq.framework.model.security.auth.UserManagement;
 import com.e2eq.framework.model.securityrules.RuleContext;
 import com.e2eq.framework.model.securityrules.SecuritySession;
 import com.e2eq.framework.persistent.BaseRepoTest;
+import com.e2eq.framework.util.SecurityUtils;
 import com.e2eq.framework.util.TestUtils;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
@@ -31,6 +33,8 @@ public class TestCustTokenAuthProvider extends BaseRepoTest {
     @Inject
     TestUtils testUtils;
 
+
+
     @Test
     public void testCreateCustomUser() throws ReferentialIntegrityViolationException {
 
@@ -45,6 +49,7 @@ public class TestCustTokenAuthProvider extends BaseRepoTest {
                 AuthProvider authProvider = authProviderFactory.getAuthProvider();
                 UserManagement userManager = authProviderFactory.getUserManager();
 
+                userManager.removeUser("testuser"); // remove if exists
                 userManager.createUser("testuser", "test123456", Set.of("user"), domainContext);
                 Set<String> roles = userManager.getUserRoles("testuser");
                 Assert.assertTrue(roles.contains("user"));

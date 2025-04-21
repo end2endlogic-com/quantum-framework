@@ -16,12 +16,6 @@ public class AuthProviderFactory {
     @ConfigProperty(name = "auth.provider")
     String configuredAuthProvider;
 
-    @ConfigProperty(name = "quarkus.oidc.enabled")
-    boolean oidcEnabled;
-
-    @ConfigProperty(name = "quarkus.smallrye-jwt.enabled")
-    boolean jwtEnabled;
-
     @Inject
     Instance<AuthProvider> authProviders;
 
