@@ -29,8 +29,7 @@ public class EntityReference {
     @NotNull
     @NonNull
     protected String entityDisplayName;
-    @NotNull
-    @NonNull
+
     protected Date dateTimeOfCopy; // the date and time the reference was created
 
     protected String entityType;

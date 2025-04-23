@@ -26,6 +26,7 @@ import org.eclipse.microprofile.openapi.annotations.enums.SecuritySchemeType;
 import org.eclipse.microprofile.openapi.annotations.media.Content;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
+import org.eclipse.microprofile.openapi.annotations.parameters.RequestBody;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement;
@@ -306,7 +307,7 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
    @GET
    @Path("csv")
    @SecurityRequirement(name = "bearerAuth")
-   @Operation(summary = "Retrieve a list of Account in CSV format")
+   @Operation(summary = "Retrieve a list of Entities in CSV format")
    @APIResponses({@APIResponse(responseCode = "401", description = "Not Authorized, caller does not have the privilege assigned to" +
            " their id"),
            @APIResponse(responseCode = "403", description = "Not authenticated caller did not authenticate before making the call"),
@@ -418,6 +419,22 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
    }
 
 
+
+
+   @Path("entityref")
+   @POST
+   @Produces(MediaType.APPLICATION_JSON)
+   @Consumes(MediaType.APPLICATION_JSON)
+   @SecurityRequirement(name = "bearerAuth")
+   @APIResponses(value = {
+           @APIResponse(responseCode = "200", description = "Success", content = @Content(mediaType = "application/json", schema = @Schema(implementation = EntityReference.class))),
+           @APIResponse(responseCode = "400", description = "Bad Request / bad argument", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
+   })
+   public List<T> convertEntityRefList(@RequestBody List<EntityReference> entityRefList) {
+       return repo.getListFromReferences(entityRefList);
+   }
+
+
     @Path("entityref")
     @GET
     @Produces(MediaType.APPLICATION_JSON)
@@ -429,25 +446,15 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
     public List<EntityReference> getEntityRefList(@QueryParam("skip") int skip,
                                                   @DefaultValue("50") @QueryParam("limit") int limit,
                                                   @QueryParam("filter") String filter,
-                                                  @QueryParam("sort") String sort,
-                                                  @QueryParam("projection") String projection) {
+                                                  @QueryParam("sort") String sort) {
 
-        List<ProjectionField> projectionFields = null;
         List<SortField> sortFields = null;
-        if (sort != null || projection != null) {
-            if (sort != null) {
-                sortFields = convertToSortField(sort);
-            } else {
-                sortFields = null;
-            }
-            projectionFields = FilterUtils.convertProjectionFields(projection);
+        if (sort != null) {
+            sortFields = convertToSortField(sort);
+        } else {
+            sortFields = null;
         }
-        List<T> ups = repo.getListByQuery(skip, limit, filter, sortFields, projectionFields);
-        List<EntityReference> rc = new ArrayList<>();
-        for (T t : ups) {
-            rc.add(t.createEntityReference());
-        }
-        return rc;
+       return repo.getEntityReferenceListByQuery(skip, limit, filter, sortFields);
     }
 
 

@@ -203,6 +203,92 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         return this.getListByQuery(skip, limit, query, null, null);
     }
 
+
+    @Override
+    public List<EntityReference> getEntityReferenceListByQuery(int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields) {
+        return this.getEntityReferenceListByQuery(morphiaDataStore.getDataStore(getSecurityContextRealmId()),skip, limit, query, sortFields);
+    }
+
+    @Override
+    public List<EntityReference> getEntityReferenceListByQuery(Datastore datastore, int skip, int limit, @Nullable String query, List<SortField> sortFields) {
+        if (skip < 0 ) {
+            throw new IllegalArgumentException("skip and or limit can not be negative");
+        }
+
+        List<Filter> filters = new ArrayList<>();
+
+        if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
+            filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get(), getPersistentClass());
+        } else {
+            Log.info("Context not set?");
+            throw new RuntimeException("Resource Context is not set in thread, check security configuration");
+        }
+
+        MorphiaCursor<T> cursor;
+        List<ProjectionField> projectionFields = new ArrayList<>();
+        projectionFields.add(new ProjectionField( "refName", ProjectionField.ProjectionType.INCLUDE));
+        projectionFields.add(new ProjectionField( "id", ProjectionField.ProjectionType.INCLUDE));
+        projectionFields.add(new ProjectionField( "displayName", ProjectionField.ProjectionType.INCLUDE));
+
+        FindOptions findOptions = buildFindOptions(skip, limit, sortFields, projectionFields);
+
+        if (query != null && !query.isEmpty()) {
+            String cleanQuery = query.trim();
+            if (!cleanQuery.isEmpty()) {
+                Filter filter = MorphiaUtils.convertToFilter(query, getPersistentClass());
+                filters.add(Filters.and(filter));
+            }
+            Filter[] filterArray = new Filter[filters.size()];
+            cursor = datastore.find(getPersistentClass())
+                    .filter(filters.toArray(filterArray))
+                    .iterator(findOptions);
+        } else {
+            Filter[] filterArray = new Filter[filters.size()];
+            cursor = datastore.find(getPersistentClass())
+                    .filter(filters.toArray(filterArray))
+                    .iterator(findOptions);
+        }
+
+        List<EntityReference> list = new ArrayList<>();
+        List<String> actions = null;
+        boolean gotActions = false;
+        try (cursor) {
+            for (T model : cursor.toList()) {
+
+                if (!gotActions) {
+                    actions = this.getDefaultUIActionsFromFD(model.bmFunctionalDomain());
+                    gotActions = true;
+                }
+
+                if (!actions.isEmpty()) {
+                    model.setDefaultUIActions(actions);
+                }
+
+                UIActionList uiActions = model.calculateStateBasedUIActions();
+                model.setActionList(uiActions);
+                EntityReference entityReference = EntityReference.builder()
+                        .entityId(model.getId())
+                        .entityRefName(model.getRefName())
+                        .entityDisplayName(model.getDisplayName()).build();
+
+                list.add(entityReference);
+            }
+        }
+
+        return list;
+    }
+
+    @Override
+    public List<T> getListFromReferences(List<EntityReference> references) {
+        return getListFromReferences(morphiaDataStore.getDataStore(getSecurityContextRealmId()), references);
+    }
+    @Override
+    public List<T> getListFromReferences(Datastore datastore, List<EntityReference> references) {
+        // Create a list of refNames
+        List<String> refNames = references.stream().map(EntityReference::getEntityRefName).collect(Collectors.toList());
+        return getListFromRefNames(datastore, refNames);
+    }
+
     protected List<Sort> convertToSort(@NotNull List<SortField> sortFields) {
         List<Sort> sorts = new ArrayList<>();
         if (!sortFields.isEmpty()) {
