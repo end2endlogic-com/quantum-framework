@@ -17,6 +17,11 @@ import jakarta.validation.constraints.NotNull;
 @ApplicationScoped
 public class CounterRepo extends MorphiaRepo<Counter> {
 
+    public long getAndIncrement(String name) {
+        Datastore ds = morphiaDataStore.getDataStore(getSecurityContextRealmId());
+        return getAndIncrement(ds, name, SecurityContext.getPrincipalDataDomain().get(), 1);
+    }
+
 
     public long getAndIncrement(@NotNull Datastore ds, @NotNull @NotEmpty  String name, @Valid DataDomain dataDomain,
                                 long incrementAmount){
