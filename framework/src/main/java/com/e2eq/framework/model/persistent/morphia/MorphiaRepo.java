@@ -253,6 +253,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         List<String> actions = null;
         boolean gotActions = false;
         try (cursor) {
+            EntityReference entityReference;
             for (T model : cursor.toList()) {
 
                 if (!gotActions) {
@@ -266,11 +267,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
                 UIActionList uiActions = model.calculateStateBasedUIActions();
                 model.setActionList(uiActions);
-                EntityReference entityReference = EntityReference.builder()
-                        .entityId(model.getId())
-                        .entityRefName(model.getRefName())
-                        .entityDisplayName(model.getDisplayName()).build();
-
+                entityReference = model.createEntityReference();
                 list.add(entityReference);
             }
         }

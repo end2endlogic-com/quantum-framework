@@ -135,7 +135,6 @@ public abstract  class UnversionedBaseModel {
                 .entityType(this.getClass().getSimpleName())
                 .entityRefName(this.getRefName())
                 .entityDisplayName(this.getDisplayName())
-                .dateTimeOfCopy(new Date())
                 .build();
     }
 

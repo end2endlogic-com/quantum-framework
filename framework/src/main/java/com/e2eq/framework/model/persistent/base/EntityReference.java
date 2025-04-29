@@ -30,10 +30,12 @@ public class EntityReference {
     @NonNull
     protected String entityDisplayName;
 
+    @Deprecated
     protected Date dateTimeOfCopy; // the date and time the reference was created
 
     protected String entityType;
 
+    @Deprecated
     protected Long version; // the version if its optimistically locked
 
     protected Map<String, Object> additionalFields;
