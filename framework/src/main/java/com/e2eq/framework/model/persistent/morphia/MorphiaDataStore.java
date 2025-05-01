@@ -35,6 +35,9 @@ public class MorphiaDataStore {
    @Inject
    ReferenceInterceptor referenceInterceptor;
    @Inject
+   PersistenceAuditEventInterceptor persistenceAuditEventInterceptor;
+
+   @Inject
    SecurityUtils securityUtils;
 
 
@@ -80,6 +83,7 @@ public class MorphiaDataStore {
          mdatastore.getMapper().addInterceptor(permissionRuleInterceptor);
          mdatastore.getMapper().addInterceptor(auditInterceptor);
          mdatastore.getMapper().addInterceptor(referenceInterceptor);
+         mdatastore.getMapper().addInterceptor(persistenceAuditEventInterceptor);
 
          // Optionally map the same packages as the base dataStore
          for (String pkg : baseConfig.packages()) {

@@ -7,7 +7,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.end2endlogic</groupId>
     <artifactId>quantum-parent</artifactId>
-    <version>1.2.0-SNAPSHOT</version>
+    <version>1.2.1-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>${project.groupId}:${project.artifactId}</name>
@@ -43,7 +43,6 @@
 
     <properties>
         <antlr.version>4.13.2</antlr.version>
-        <antlr.version>4.13.2</antlr.version>
         <assembly-plugin.version>3.1.0</assembly-plugin.version>
         <compiler-plugin.version>3.13.0</compiler-plugin.version>
         <jackson.version>2.18.2</jackson.version>
@@ -63,8 +62,10 @@
     </properties>
 
     <modules>
+        <module>models</module>
         <module>framework</module>
     </modules>
+
 
     <dependencyManagement>
         <dependencies>
@@ -178,6 +179,11 @@
                             <artifactId>annotations</artifactId>
                             <version>24.0.1</version>
                         </path>
+                        <path>
+                            <groupId>com.end2endlogic</groupId>
+                            <artifactId>quantum-models</artifactId>
+                            <version>1.2.1-SNAPSHOT</version>
+                        </path>
                     </annotationProcessorPaths>
                     <release>${maven.compiler.release}</release>
                 </configuration>
@@ -230,8 +236,9 @@
     </build>
     <dependencies>
         <dependency>
-            <groupId>io.quarkus</groupId>
-            <artifactId>quarkus-container-image-docker</artifactId>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-text</artifactId>
+            <version>1.10.0</version>
         </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>
@@ -248,8 +255,6 @@
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-rest</artifactId>
         </dependency>
-
-
     </dependencies>
 
     <repositories>

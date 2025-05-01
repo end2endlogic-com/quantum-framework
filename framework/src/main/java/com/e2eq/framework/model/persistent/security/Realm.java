@@ -4,7 +4,6 @@ import com.e2eq.framework.model.persistent.base.BaseModel;
 import dev.morphia.annotations.Entity;
 import dev.morphia.annotations.IndexOptions;
 import dev.morphia.annotations.Indexed;
-import io.quarkus.arc.All;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import lombok.AllArgsConstructor;
 import lombok.Data;

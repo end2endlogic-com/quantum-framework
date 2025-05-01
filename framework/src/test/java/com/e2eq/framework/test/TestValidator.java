@@ -33,6 +33,7 @@ public class TestValidator {
                 .countryTwoLetterCode("US")
                 .build();
 
+
         Set<ConstraintViolation<MailingAddress>> x =  validator.validate(ma);
         // printout the violations
         x.forEach(v -> System.out.println(v.getMessage()));

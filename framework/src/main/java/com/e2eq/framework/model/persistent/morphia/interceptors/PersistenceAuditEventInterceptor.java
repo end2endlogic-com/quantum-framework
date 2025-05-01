@@ -11,14 +11,17 @@ import dev.morphia.EntityListener;
 import dev.morphia.annotations.PrePersist;
 import io.quarkus.logging.Log;
 
+import jakarta.enterprise.context.ApplicationScoped;
 import org.bson.Document;
 
 import java.lang.annotation.Annotation;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 
+@ApplicationScoped
 public class PersistenceAuditEventInterceptor implements EntityListener<Object> {
+
+
     @Override
     public boolean hasAnnotation(Class<? extends Annotation> type) {
       if (type.equals(AuditPersistence.class)){

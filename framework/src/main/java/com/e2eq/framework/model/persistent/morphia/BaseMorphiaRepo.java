@@ -4,7 +4,7 @@ package com.e2eq.framework.model.persistent.morphia;
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.base.*;
 import com.e2eq.framework.rest.models.Collection;
-import com.fasterxml.jackson.module.jsonSchema.JsonSchema;
+import com.fasterxml.jackson.module.jsonSchema.jakarta.JsonSchema;
 import dev.morphia.Datastore;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.transactions.MorphiaSession;

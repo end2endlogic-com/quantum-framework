@@ -1,8 +1,8 @@
 package com.e2eq.framework.rest.resources;
 
-import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
+
 import com.e2eq.framework.model.persistent.morphia.FunctionalDomainRepo;
-import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
+
 import com.e2eq.framework.model.persistent.security.FunctionalDomain;
 import com.e2eq.framework.rest.models.ComponentVersion;
 import com.e2eq.framework.rest.models.DeployedVersion;
@@ -10,14 +10,12 @@ import com.e2eq.framework.util.SecurityUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.type.CollectionType;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
-import dev.morphia.Datastore;
+
 import dev.morphia.MorphiaDatastore;
 import jakarta.annotation.security.PermitAll;
 import jakarta.enterprise.inject.Default;
 
 import jakarta.inject.Inject;
-import jakarta.json.Json;
-import jakarta.json.JsonObject;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;

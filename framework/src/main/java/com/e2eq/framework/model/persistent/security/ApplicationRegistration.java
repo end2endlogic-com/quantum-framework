@@ -3,7 +3,6 @@ package com.e2eq.framework.model.persistent.security;
 import com.e2eq.framework.model.persistent.base.FullBaseModel;
 import com.e2eq.framework.rest.models.UIAction;
 import com.e2eq.framework.rest.models.UIActionList;
-import com.e2eq.framework.util.SecurityUtils;
 import dev.morphia.annotations.*;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.validation.constraints.Email;

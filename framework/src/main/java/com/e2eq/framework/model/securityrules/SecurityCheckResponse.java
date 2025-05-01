@@ -1,7 +1,7 @@
 package com.e2eq.framework.model.securityrules;
 
 import com.e2eq.framework.model.persistent.security.Rule;
-import dev.morphia.query.filters.Filter;
+
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -9,9 +9,8 @@ import lombok.NoArgsConstructor;
 import lombok.ToString;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
+
 
 
 @RegisterForReflection
