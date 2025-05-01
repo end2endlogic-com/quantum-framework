@@ -2,7 +2,6 @@ package com.e2eq.framework.model.persistent;
 
 import com.e2eq.framework.model.persistent.base.BaseCollection;
 import com.e2eq.framework.model.persistent.base.BaseModel;
-import com.google.common.collect.SetMultimap;
 import dev.morphia.annotations.Entity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.validation.constraints.NotEmpty;

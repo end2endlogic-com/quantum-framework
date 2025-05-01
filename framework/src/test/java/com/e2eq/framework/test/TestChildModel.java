@@ -10,8 +10,6 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 
-import java.util.List;
-
 @RegisterForReflection
 @EqualsAndHashCode(callSuper = true)
 @Data

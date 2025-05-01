@@ -9,7 +9,7 @@ import com.e2eq.framework.model.securityrules.RuleContext;
 import com.e2eq.framework.rest.models.Collection;
 import com.e2eq.framework.model.persistent.security.FunctionalDomain;
 import com.e2eq.framework.model.securityrules.*;
-import com.fasterxml.jackson.module.jsonSchema.JsonSchema;
+import com.fasterxml.jackson.module.jsonSchema.jakarta.JsonSchema;
 import com.google.common.reflect.TypeToken;
 import com.mongodb.client.result.DeleteResult;
 import com.mongodb.client.result.UpdateResult;

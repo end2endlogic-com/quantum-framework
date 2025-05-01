@@ -9,10 +9,7 @@ import dev.morphia.annotations.Indexed;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
-import lombok.Data;
-import lombok.EqualsAndHashCode;
-import lombok.NoArgsConstructor;
-import lombok.NonNull;
+import lombok.*;
 import lombok.experimental.SuperBuilder;
 
 
@@ -65,11 +62,15 @@ public @Data class UserProfile extends BaseModel {
     @NonNull
     protected String email;
     protected String phoneNumber;
+    @Builder.Default
     protected String defaultLanguage="English";
+    @Builder.Default
     protected String defaultUnits = "Imperial";
     //protected CurrencyUnit defaultCurrency;
+    @Builder.Default
     protected String defaultCurrency = "USD";
     //protected TimeZone defaultTimezone;
+    @Builder.Default
     protected String defaultTimezone = "EST";
     protected DataDomainPolicy dataDomainPolicy;
     protected Status status = Status.ACTIVE;

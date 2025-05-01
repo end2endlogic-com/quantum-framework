@@ -7,12 +7,12 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.end2endlogic</groupId>
   <artifactId>quantum-framework</artifactId>
-  <version>1.2.0-SNAPSHOT</version>
+  <version>1.2.1-SNAPSHOT</version>
 
   <parent>
     <groupId>com.end2endlogic</groupId>
     <artifactId>quantum-parent</artifactId>
-    <version>1.2.0-SNAPSHOT</version>
+    <version>1.2.1-SNAPSHOT</version>
   </parent>
 
   <name>${project.groupId}:${project.artifactId}</name>
@@ -48,8 +48,7 @@
     <maven.compiler.release>17</maven.compiler.release>
     <graalvm.version>24.1.0</graalvm.version>
     <quarkus-amazon-services.version>2.18.1</quarkus-amazon-services.version>
-    <maven.build.timestamp.format
-        >yyyy-MM-dd'T'HH:mm:ss'Z'</maven.build.timestamp.format>
+    <maven.build.timestamp.format>yyyy-MM-dd'T'HH:mm:ss'Z'</maven.build.timestamp.format>
   </properties>
 
   <dependencyManagement>
@@ -129,6 +128,12 @@
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-qute</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.end2endlogic</groupId>
+      <artifactId>quantum-models</artifactId>
+      <version>1.2.1-SNAPSHOT</version>
     </dependency>
 
     <dependency>
@@ -240,10 +245,10 @@
       <version>32.1.2-jre</version>
     </dependency>
     <dependency>
-      <groupId>org.apache.commons</groupId>
-      <artifactId>commons-text</artifactId>
-      <version>1.10.0</version>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-container-image-docker</artifactId>
     </dependency>
+
     <dependency>
       <groupId>joda-time</groupId>
       <artifactId>joda-time</artifactId>
@@ -251,7 +256,12 @@
     </dependency>
     <dependency>
       <groupId>com.fasterxml.jackson.module</groupId>
-      <artifactId>jackson-module-jsonSchema</artifactId>
+      <artifactId>jackson-module-jsonSchema-jakarta</artifactId>
+      <version>${jackson.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.dataformat</groupId>
+      <artifactId>jackson-dataformat-yaml</artifactId>
       <version>${jackson.version}</version>
     </dependency>
 
@@ -287,16 +297,7 @@
       <artifactId>json-schema-validator</artifactId>
       <version>2.2.14</version>
     </dependency>
-    <dependency>
-      <groupId>org.antlr</groupId>
-      <artifactId>antlr4</artifactId>
-      <version>${antlr.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>org.antlr</groupId>
-      <artifactId>antlr4-runtime</artifactId>
-      <version>${antlr.version}</version>
-    </dependency>
+
     <!--Replaced by Fork com.end2endlogic.jsurfer <dependency>
       <groupId>com.github.jsurfer</groupId>
       <artifactId>jsurfer-jackson</artifactId>
@@ -439,13 +440,12 @@
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
           <systemPropertyVariables>
-            <java.util.logging.manager
-                        >org.jboss.logmanager.LogManager</java.util.logging.manager>
+            <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
            <!-- <maven.home>${maven.home}</maven.home> -->
           </systemPropertyVariables>
         </configuration>
       </plugin>
-      <plugin>
+     <!-- <plugin>
         <groupId>org.antlr</groupId>
         <artifactId>antlr4-maven-plugin</artifactId>
         <version>${antlr.version}</version>
@@ -456,7 +456,7 @@
             </goals>
           </execution>
         </executions>
-      </plugin>
+      </plugin> -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-enforcer-plugin</artifactId>
@@ -536,6 +536,39 @@
           </execution>
         </executions>
       </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <basedir>${project.basedir}</basedir>
+          <outputDirectory>${project.build.outputDirectory}</outputDirectory>
+          <projectArtifact>${project.artifact}</projectArtifact>
+          <source>${java.version}</source>
+          <target>${java.version}</target>
+          <release>${java.version}</release>
+          <annotationProcessorPaths>
+            <path>
+              <groupId>io.quarkus</groupId>
+              <artifactId>quarkus-extension-processor</artifactId>
+              <version>${quarkus.platform.version}</version>
+            </path>
+            <path>
+              <groupId>org.projectlombok</groupId>
+              <artifactId>lombok</artifactId>
+              <version>${lombrok.version}</version>
+            </path>
+            <path>
+              <groupId>io.quarkus</groupId>
+              <artifactId>quarkus-rest</artifactId>
+            </path>
+            <path>
+              <groupId>com.end2endlogic</groupId>
+              <artifactId>quantum-models</artifactId>
+              <version>1.2.1-SNAPSHOT</version>
+            </path>
+          </annotationProcessorPaths>
+        </configuration>
+      </plugin>
     </plugins>
   </build>
   <profiles>
@@ -593,8 +626,7 @@
                   <systemPropertyVariables>
                     <native.image.path
                                         >${project.build.directory}/${project.build.finalName}-runner</native.image.path>
-                    <java.util.logging.manager
-                                        >org.jboss.logmanager.LogManager</java.util.logging.manager>
+                    <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
                     <maven.home>${maven.home}</maven.home>
                   </systemPropertyVariables>
                 </configuration>

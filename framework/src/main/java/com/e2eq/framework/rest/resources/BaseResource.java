@@ -3,7 +3,6 @@ package com.e2eq.framework.rest.resources;
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.base.*;
 import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
-import com.e2eq.framework.model.securityrules.SecurityCheckException;
 import com.e2eq.framework.model.securityrules.RuleContext;
 import com.e2eq.framework.rest.models.*;
 import com.e2eq.framework.rest.models.Collection;
@@ -12,7 +11,7 @@ import com.e2eq.framework.util.CSVImportHelper;
 import com.e2eq.framework.util.FilterUtils;
 import com.e2eq.framework.util.JSONUtils;
 import com.fasterxml.jackson.databind.JsonMappingException;
-import com.fasterxml.jackson.module.jsonSchema.JsonSchema;
+import com.fasterxml.jackson.module.jsonSchema.jakarta.JsonSchema;
 
 import dev.morphia.query.ValidationException;
 import jakarta.annotation.security.RolesAllowed;
@@ -31,20 +30,12 @@ import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement;
 import org.eclipse.microprofile.openapi.annotations.security.SecurityScheme;
-import org.jboss.resteasy.reactive.MultipartForm;
-
-import org.supercsv.cellprocessor.ift.CellProcessor;
-import org.supercsv.io.CsvBeanReader;
-import org.supercsv.io.ICsvBeanReader;
-
-import org.supercsv.prefs.CsvPreference;
 
 import java.io.*;
 import java.nio.charset.Charset;
 import java.nio.charset.IllegalCharsetNameException;
 import java.nio.charset.UnsupportedCharsetException;
 import java.util.*;
-import java.lang.reflect.Field;
 
 import static java.lang.String.format;
 
@@ -469,10 +460,10 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
    })
    public Collection<T> getList(@DefaultValue("0")
                            @QueryParam("skip") int skip,
-                           @DefaultValue("50")@QueryParam("limit") int limit,
-                           @QueryParam("filter") String filter,
-                           @QueryParam("sort") String sort,
-                           @QueryParam("projection") String projection) {
+                                @DefaultValue("50")@QueryParam("limit") int limit,
+                                @QueryParam("filter") String filter,
+                                @QueryParam("sort") String sort,
+                                @QueryParam("projection") String projection) {
 
       try {
          List<ProjectionField> projectionFields = null;

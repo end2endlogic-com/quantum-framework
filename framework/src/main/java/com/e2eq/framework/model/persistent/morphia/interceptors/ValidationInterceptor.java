@@ -4,14 +4,14 @@ import com.e2eq.framework.exceptions.E2eqValidationException;
 import com.e2eq.framework.model.persistent.base.BaseModel;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
-import com.e2eq.framework.model.persistent.interfaces.InvalidSavable;
-import com.e2eq.framework.model.general.ValidationViolation;
+import com.e2eq.framework.model.general.interfaces.InvalidSavable;
+
+import com.e2eq.framework.model.persistent.base.ValidationViolation;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.morphia.Datastore;
 import dev.morphia.EntityListener;
-import dev.morphia.annotations.PrePersist;
 import io.quarkus.logging.Log;
 import org.bson.Document;
 

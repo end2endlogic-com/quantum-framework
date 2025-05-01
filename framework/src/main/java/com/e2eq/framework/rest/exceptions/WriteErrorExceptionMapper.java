@@ -1,6 +1,5 @@
 package com.e2eq.framework.rest.exceptions;
 import com.e2eq.framework.rest.models.RestError;
-import com.mongodb.DuplicateKeyException;
 import com.mongodb.MongoWriteException;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.ExceptionMapper;

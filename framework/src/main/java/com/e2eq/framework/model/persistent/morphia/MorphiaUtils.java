@@ -1,6 +1,6 @@
 package com.e2eq.framework.model.persistent.morphia;
 
-import com.e2eq.framework.grammar .BIAPIQueryLexer;
+import com.e2eq.framework.grammar.BIAPIQueryLexer;
 import com.e2eq.framework.grammar.BIAPIQueryParser;
 import com.e2eq.framework.model.persistent.base.*;
 import com.e2eq.framework.model.securityrules.PrincipalContext;

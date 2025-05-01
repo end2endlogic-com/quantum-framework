@@ -2,7 +2,6 @@ package com.e2eq.framework.model.securityrules;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import io.quarkus.runtime.annotations.RegisterForReflection;
-import jakarta.validation.constraints.Pattern;
 import org.graalvm.polyglot.HostAccess;
 
 import jakarta.validation.Valid;

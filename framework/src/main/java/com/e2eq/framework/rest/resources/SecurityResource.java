@@ -10,12 +10,13 @@ import com.e2eq.framework.rest.models.AuthResponse;
 import com.e2eq.framework.rest.models.RegistrationRequest;
 import com.e2eq.framework.rest.models.RestError;
 import com.e2eq.framework.model.persistent.security.ApplicationRegistration;
-import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
+
 import com.e2eq.framework.model.persistent.security.UserProfile;
 import com.e2eq.framework.model.persistent.morphia.ApplicationRegistrationRequestRepo;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
-import com.e2eq.framework.util.EncryptionUtils;
+import com.e2eq.framework.rest.responses.RestSecurityError;
+
 import com.e2eq.framework.util.TokenUtils;
 import com.e2eq.framework.util.ValidateUtils;
 import io.quarkus.logging.Log;
@@ -210,7 +211,7 @@ public class SecurityResource {
                 return Response.status(Response.Status.NOT_FOUND).entity(error).build();
             }
         } catch (SecurityCheckException e) {
-            RestError error = RestError.builder()
+            RestSecurityError error = RestSecurityError.builder()
                     .statusMessage("The user id is not authorized to read the user profile required for login, due to a permission configuration error")
                     .status(Response.Status.UNAUTHORIZED.getStatusCode())
                     .securityResponse(e.getResponse())

@@ -1,8 +1,6 @@
 package com.e2eq.framework.util;
 
 
-import com.e2eq.framework.exceptions.E2eqValidationException;
-import com.e2eq.framework.model.general.ValidationViolation;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
 import com.fasterxml.jackson.databind.ObjectMapper;

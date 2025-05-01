@@ -5,7 +5,6 @@ import jakarta.validation.ValidationException;
 import java.util.Set;
 
 public class E2eqValidationException extends ValidationException {
-   private static final long serialVersionUID = 1L;
    protected Set<ConstraintViolation<Object>> violationSet;
    protected String jsonData;
 
