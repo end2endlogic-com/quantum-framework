@@ -175,7 +175,7 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
                         String authToken = TokenUtils.generateUserToken(
                                 credential.getUserId(),
                                 groups,
-                                durationInSeconds,
+                                TokenUtils.expiresAt(durationInSeconds),
                                 issuer);
 
                         String refreshToken = generateRefreshToken(credential.getUserId(), authToken,TokenUtils.currentTimeInSecs() + durationInSeconds + TokenUtils.REFRESH_ADDITIONAL_DURATION_SECONDS );
