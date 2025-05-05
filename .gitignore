@@ -31,3 +31,5 @@ bak/
 hs_err_pid*
 replay_pid*
 
+.settings
+/framework/.settings/**
