@@ -38,19 +38,19 @@ public class TokenUtils {
 
 	public static String generateUserToken ( String userId,
 											 Set<String> groups,
-											 long durationInSeconds,
+											 long expiresAt,
 											 String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
 
 		Objects.requireNonNull(userId, "UserId cannot be null");
 		Objects.requireNonNull(issuer, "Issuer cannot be null");
 
-		if (durationInSeconds <= REFRESH_ADDITIONAL_DURATION_SECONDS) {
+		if (expiresAt <= REFRESH_ADDITIONAL_DURATION_SECONDS) {
 			throw new ValidationException("Duration must be greater than" + REFRESH_ADDITIONAL_DURATION_SECONDS + " seconds");
 		}
 
 		String privateKeyLocation = "privateKey.pem";
 		PrivateKey privateKey = readPrivateKey(privateKeyLocation);
-		
+
 		JwtClaimsBuilder claimsBuilder = Jwt.claims();
 		long currentTimeInSecs = currentTimeInSecs();
 
@@ -59,7 +59,7 @@ public class TokenUtils {
 		claimsBuilder.subject(userId);
 		claimsBuilder.issuedAt(currentTimeInSecs);
 		claimsBuilder.audience(AUDIENCE);
-		claimsBuilder.expiresAt(currentTimeInSecs + durationInSeconds);
+		claimsBuilder.expiresAt(expiresAt);
 		claimsBuilder.groups(groups);
 		claimsBuilder.claim("username", userId);
 		claimsBuilder.claim("scope", AUTH_SCOPE);
@@ -160,6 +160,10 @@ public class TokenUtils {
 		pem = pem.replaceAll("\r\n", "");
 		pem = pem.replaceAll("\n", "");
 		return pem.trim();
+	}
+
+	public static long expiresAt(long durationInSeconds) {
+		return currentTimeInSecs() + durationInSeconds  + REFRESH_ADDITIONAL_DURATION_SECONDS;
 	}
 
 	public static int currentTimeInSecs() {

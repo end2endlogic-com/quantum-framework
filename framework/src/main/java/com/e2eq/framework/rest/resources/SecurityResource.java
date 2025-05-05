@@ -254,7 +254,7 @@ public class SecurityResource {
         try {
             AuthProvider.LoginResponse loginResponse = authProvider.login(authRequest.getUserId(), authRequest.getPassword());
             if (loginResponse.authenticated()) {
-                return Response.ok(new AuthResponse(loginResponse.positiveResponse().accessToken(), loginResponse.positiveResponse().refreshToken())).build();
+                return Response.ok(new AuthResponse(loginResponse.positiveResponse().accessToken(), loginResponse.positiveResponse().refreshToken(), loginResponse.positiveResponse().expirationTime())).build();
             }
             else {
                 RestError error = RestError.builder()
@@ -316,10 +316,11 @@ public class SecurityResource {
                                              long durationInSeconds,
                                              long incrementRefreshDuration,
                                              @NotNull(message = "the issuer can not be null for for generating an auth response") String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+        long expiresAt =  TokenUtils.expiresAt(durationInSeconds);
         String userToken = TokenUtils.generateUserToken(
                 userId,
                 new HashSet<>(Arrays.asList(roles)),
-                durationInSeconds,
+               expiresAt,
                 issuer);
 
         String refreshToken = TokenUtils.generateRefreshToken(
@@ -327,7 +328,7 @@ public class SecurityResource {
                 durationInSeconds + incrementRefreshDuration,
                 issuer);
 
-        return new AuthResponse(userToken, refreshToken);
+        return new AuthResponse(userToken, refreshToken,expiresAt);
     }
 
     @POST

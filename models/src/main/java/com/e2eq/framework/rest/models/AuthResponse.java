@@ -5,6 +5,8 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 
+import java.util.Date;
+
 @Data
 @EqualsAndHashCode
 @NoArgsConstructor
@@ -13,5 +15,8 @@ public class AuthResponse {
 
     protected String access_token;
     protected String refresh_token;
+    protected long expires_at;
+
+
 
 }

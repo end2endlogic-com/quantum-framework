@@ -4,13 +4,18 @@ import com.e2eq.framework.model.persistent.base.SortField;
 import dev.morphia.annotations.Transient;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.NoArgsConstructor;
 
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 
 @RegisterForReflection
-public @Data class Collection<T> {
+@Data
+@EqualsAndHashCode
+@NoArgsConstructor
+public  class Collection<T> {
    protected int offset;
    protected int limit;
    protected Date asOf;
