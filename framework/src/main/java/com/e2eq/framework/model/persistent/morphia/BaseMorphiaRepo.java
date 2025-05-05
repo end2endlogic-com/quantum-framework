@@ -9,6 +9,7 @@ import dev.morphia.Datastore;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.transactions.MorphiaSession;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
 import org.apache.commons.lang3.tuple.Pair;
 import org.bson.types.ObjectId;
 import org.jetbrains.annotations.NotNull;
@@ -33,7 +34,18 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
 
    JsonSchema getSchema();
 
+   /**
+    *  This method is used to get a list of all entities of the given type.
+    * It includses the datastore so you can specify which datastore to use, as well use it for transactional operations.
+    * @return List of all entities of the given type
+    */
    List<T> getAllList();
+
+   /**
+    *    * This method is used to get a list of entities based on the given query, skip, limit, and filter.
+    * @param datastore
+    * @return
+    */
    List<T> getAllList(Datastore datastore);
    /**
     *
@@ -43,16 +55,67 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
     * @param filter can be null but if given must follow Filter syntax
     * @return
     */
-
    List<T> getListByQuery(int skip, int limit, @Nullable String filter);
+
+   /**
+    * This method is used to get a list of entities based on the given query, skip, limit, sort fields, and projected properties.
+    * It allows for flexible querying and projection of data.
+    * @param skip must be 0 or greater
+    * @param limit can be 0 or a negative number in which case  all records are returned,
+    *              a positive number and only the amount specified will be returned
+    * @param filter can be null but if given must follow Filter syntax
+    * @param sortFields    can be null but if given must follow SortField syntax
+    * @param projectedProperties can be null but if given must follow ProjectionField syntax
+    * @return
+    */
    List<T> getListByQuery(int skip, int limit, @Nullable String filter, List<SortField> sortFields, List<ProjectionField> projectedProperties);
+
+   /**
+    * This method is used to get a list of entities based on the given query, skip, limit, sort fields, and projected properties.
+    * It allows for flexible querying and projection of data.  It includses the datastore so you can
+    * specify which datastore to use, as well use it for transactional operations.
+    * @param datastore The datastore to use for the query
+    * @param skip must be 0 or greater
+    * @param limit can be 0 or a negative number in which case  all records are returned,
+    *              a positive number and only the amount specified will be returned
+    * @param query can be null but if given must follow Filter syntax
+    * @param sortFields    can be null but if given must follow SortField syntax
+    * @param projectionFields can be null but if given must follow ProjectionField syntax
+    * @return List of entities matching the given criteria
+    */
    List<T> getListByQuery(@NotNull Datastore datastore, int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields, List<ProjectionField> projectionFields);
 
+   /**
+    * This method is used to get a list of entities based on the given filters and sort fields
+    * @param skip    must be 0 or greater
+    * @param limit   can be 0 or a negative number in which case  all records are returned,
+    *                a positive number and only the amount specified will be returned
+    * @param filters can be null but if given must follow Filter syntax
+    * @param sortFields can be null but if given must follow SortField syntax
+    * @return List of entities matching the given criteria
+    */
    List<T> getList(int skip, int limit, @Nullable List<Filter> filters, @Nullable List<SortField> sortFields);
+
+   /**
+    * This method is used to get a list of entities based on the given filters and sort fields
+    * It includes the datastore so you can specify which datastore to use, as well use it for transactional operations.
+    * @param datastore  The datastore to use for the query
+    * @param skip must be 0 or greater
+    * @param limit can be 0 or a negative number in which case  all records are returned,
+    *              a positive number and only the amount specified will be returned
+    * @param filters    can be null but if given must follow Filter syntax
+    * @param sortFields    can be null but if given must follow SortField syntax
+    * @return List of entities matching the given criteria
+    */
    List<T> getList(Datastore datastore, int skip, int limit, @Nullable List<Filter> filters, @Nullable List<SortField> sortFields);
 
-   List<T> getListFromIds(List<ObjectId> ids);
-   List<T> getListFromIds(Datastore datastore, List<ObjectId> ids);
+   /**
+    * This method is used to get a list of entities based on the given query, filter,
+    * @param ids  can be null but if given must follow Filter syntax
+    * @return  List of entities matching the given criteria
+    */
+   List<T> getListFromIds(@NotNull(value="List of objectids can not be null") @NotEmpty (message = "list of ids can not be empty") List<ObjectId> ids);
+   List<T> getListFromIds(Datastore datastore,@NotNull(value="List of objectids can not be null") @NotEmpty (message = "list of ids can not be empty") List<ObjectId> ids);
 
    List<T> getListFromRefNames(List<String> refNames);
 

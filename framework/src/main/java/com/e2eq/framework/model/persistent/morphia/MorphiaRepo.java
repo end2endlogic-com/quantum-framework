@@ -29,6 +29,7 @@ import io.quarkus.qute.i18n.MessageTemplateLocator;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.ws.rs.NotSupportedException;
 import org.apache.commons.lang3.tuple.Pair;
 import org.bson.types.ObjectId;
@@ -554,12 +555,12 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
     @Override
-    public List<T> getListFromIds(List<ObjectId> ids) {
+    public List<T> getListFromIds(@NotNull(value="List of objectids can not be null") @NotEmpty (message = "list of ids can not be empty") List<ObjectId> ids) {
         return getListFromIds(morphiaDataStore.getDataStore(getSecurityContextRealmId()), ids);
     }
 
     @Override
-    public List<T> getListFromIds(Datastore datastore, List<ObjectId> ids) {
+    public List<T> getListFromIds(Datastore datastore, @NotNull(value="List of objectids can not be null") @NotEmpty(message = "list of ids can not be empty") List<ObjectId> ids) {
         // get a list using an in clause based upon the ids passed in
         List<Filter> filters = new ArrayList<>();
 
