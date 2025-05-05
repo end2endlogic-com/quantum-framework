@@ -12,7 +12,6 @@ import lombok.experimental.SuperBuilder;
 @Data
 @EqualsAndHashCode
 @NoArgsConstructor
-@SuperBuilder
 public class AuthRequest  {
    @JsonProperty(required = true)
    protected @NotNull String userId;
