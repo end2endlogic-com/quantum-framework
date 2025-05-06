@@ -1,6 +1,7 @@
-package com.e2eq.framework.model.persistent.base;
+package com.e2eq.framework.model.validators;
 
 import com.e2eq.framework.annotations.ValidMailingAddress;
+import com.e2eq.framework.model.persistent.base.MailingAddress;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
@@ -13,8 +14,6 @@ import java.util.regex.Pattern;
 
 @ApplicationScoped
 public class MailingAddressValidator implements ConstraintValidator<ValidMailingAddress, MailingAddress> {
-
-
 
     private static final Pattern US_STATE_PATTERN = Pattern.compile("[A-Z]{2}");
 
