@@ -1,6 +1,7 @@
 package com.e2eq.framework.model.persistent.base;
 
 import dev.morphia.annotations.Entity;
+import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
@@ -16,6 +17,7 @@ import java.util.Map;
 @NoArgsConstructor
 @SuperBuilder
 @Entity
+@RegisterForReflection
 public class EntityReference {
     @Schema(implementation = String.class, description = "object id of the entity being referenced")
     @NotNull

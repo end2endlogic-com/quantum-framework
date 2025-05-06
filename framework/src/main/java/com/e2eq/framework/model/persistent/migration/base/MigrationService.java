@@ -7,22 +7,30 @@ import com.e2eq.framework.model.persistent.morphia.ChangeSetRecordRepo;
 import com.e2eq.framework.model.persistent.morphia.DatabaseVersionRepo;
 
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
+import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.ResourceContext;
+import com.e2eq.framework.model.securityrules.RuleContext;
+import com.e2eq.framework.model.securityrules.SecuritySession;
+import com.e2eq.framework.util.SecurityUtils;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import dev.morphia.Datastore;
 import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.logging.Log;
+import io.quarkus.runtime.Startup;
 import io.smallrye.mutiny.subscription.MultiEmitter;
+import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.context.spi.CreationalContext;
 import jakarta.enterprise.inject.spi.Bean;
 import jakarta.enterprise.inject.spi.BeanManager;
 import jakarta.inject.Inject;
+import lombok.Data;
 import org.bson.Document;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jetbrains.annotations.NotNull;
 import org.semver4j.Semver;
-import org.yaml.snakeyaml.emitter.Emitter;
+
 
 
 import java.util.*;
@@ -30,6 +38,8 @@ import java.util.ArrayList;
 
 
 @ApplicationScoped
+@Startup
+@Data
 public class MigrationService {
 
     @ConfigProperty(name = "quantum.database.version")
@@ -37,12 +47,20 @@ public class MigrationService {
 
     @ConfigProperty(name = "quantum.database.scope")
     protected String databaseScope;
+    @ConfigProperty(name = "quantum.realmConfig.defaultRealm")
+    protected String defaultRealm;
+    @ConfigProperty(name = "quantum.realmConfig.testRealm")
+    protected String testRealm;
+    @ConfigProperty(name = "quantum.realmConfig.systemRealm")
+    protected String systemRealm;
 
     @ConfigProperty(name= "quantum.database.migration.changeset.package")
     protected String changeSetPackage;
 
     @ConfigProperty(name= "quantum.database.migration.enabled")
     protected boolean enabled;
+
+
 
     @Inject
     DatabaseVersionRepo databaseVersionRepo;
@@ -59,6 +77,67 @@ public class MigrationService {
     @Inject
     MorphiaDataStore morphiaDataStore;
 
+    @Inject
+    protected RuleContext ruleContext;
+
+    @Inject
+    SecurityUtils securityUtils;
+
+
+    private boolean defaultRealmMigrationRequired;
+    private boolean testRealmMigrationRequired;
+    private boolean systemRealmMigrationRequired;
+
+    public boolean isMigrationRequired() {
+
+        if (defaultRealmMigrationRequired) {
+            Log.info("Default Realm migration required");
+        }
+        if (testRealmMigrationRequired) {
+            Log.info("Test Realm migration required");
+        }
+        if (systemRealmMigrationRequired) {
+            Log.info("System Realm migration required");
+        }
+
+        return defaultRealmMigrationRequired || systemRealmMigrationRequired || testRealmMigrationRequired;
+    }
+
+    @PostConstruct
+    protected void onStartup() {
+        if (enabled) {
+            reCheck();
+        }
+    }
+
+    public boolean reCheck() {
+        String[] roles = {"admin", "user"};
+
+        ruleContext.ensureDefaultRules();
+
+        Log.info("MigrationService check is enabled");
+        Log.infof("MigrationService targetDatabaseVersion: %s", targetDatabaseVersion);
+        Log.infof("MigrationService databaseScope: %s", databaseScope);
+        DistributedLock lock = getMigrationLock(systemRealm);
+        lock.acquire();
+        try(final SecuritySession ss = new SecuritySession(securityUtils.getSystemPrincipalContext(), securityUtils.getSystemSecurityResourceContext())) {
+            defaultRealmMigrationRequired = migrationRequired(morphiaDataStore.getDefaultSystemDataStore(), defaultRealm, targetDatabaseVersion);
+            if (defaultRealmMigrationRequired)
+                Log.error(String.format("MigrationService Realm:%s migrationRequired:%b ", defaultRealm,defaultRealmMigrationRequired));
+
+            systemRealmMigrationRequired = migrationRequired(morphiaDataStore.getDefaultSystemDataStore(), systemRealm, targetDatabaseVersion);
+            if (systemRealmMigrationRequired)
+                Log.error(String.format("MigrationService Realm:%s migrationRequired:%b ", systemRealm, systemRealmMigrationRequired) );
+            testRealmMigrationRequired = migrationRequired(morphiaDataStore.getDefaultSystemDataStore(), testRealm, targetDatabaseVersion);
+            if (testRealmMigrationRequired)
+                Log.error(String.format("MigrationService Realm:%s migrationRequired:%b ", testRealm, testRealm));
+        } finally {
+            lock.release();
+        }
+
+        return isMigrationRequired();
+    }
+
     protected DistributedLock getMigrationLock(String realm) {
         MongoCollection<Document> collection = mongoClient
                 .getDatabase("sherlock")
@@ -68,6 +147,10 @@ public class MigrationService {
 
         DistributedLock lock = sherlock.createLock(String.format("migration-lock-%s", realm));
         return lock;
+    }
+
+    public Optional<DatabaseVersion> getCurrentDatabaseVersion( String realm) {
+        return getCurrentDatabaseVersion(morphiaDataStore.getDataStore(realm), realm);
     }
 
     public Optional<DatabaseVersion> getCurrentDatabaseVersion(Datastore datastore, String realm) {
@@ -82,12 +165,12 @@ public class MigrationService {
             throw new IllegalArgumentException(String.format(" the current version string: %s is not parsable, check semver4j for more details about string format", requiredVersion));
         }
 
-        Optional<DatabaseVersion> odbVersion = databaseVersionRepo.findByRefName(datastore, realm);
+        Optional<DatabaseVersion> odbVersion = databaseVersionRepo.findCurrentVersion(datastore, realm);
         if (odbVersion.isPresent()) {
             boolean rc = odbVersion.get().getCurrentSemVersion().isLowerThan(requiredVersion);
             return rc;
         } else
-            return true;
+            throw new IllegalStateException(String.format("No database version found for realm:%s  dataStore:%s", realm, datastore.getDatabase().getName()));
     }
 
     public DatabaseVersion saveDatabaseVersion(Datastore datastore, String realm, String versionString) {

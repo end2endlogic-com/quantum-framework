@@ -1,8 +1,8 @@
 [INFO] Scanning for projects...
 [WARNING] 
 [WARNING] Some problems were encountered while building the effective model for com.end2endlogic:quantum-framework:jar:1.2.1-SNAPSHOT
-[WARNING] 'dependencies.dependency.(groupId:artifactId:type:classifier)' must be unique: io.quarkus:quarkus-container-image-docker:jar -> duplicate declaration of version (?) @ line 329, column 17
-[WARNING] 'build.plugins.plugin.version' for org.apache.maven.plugins:maven-compiler-plugin is missing. @ line 544, column 15
+[WARNING] 'dependencies.dependency.(groupId:artifactId:type:classifier)' must be unique: io.quarkus:quarkus-container-image-docker:jar -> duplicate declaration of version (?) @ line 324, column 17
+[WARNING] 'build.plugins.plugin.version' for org.apache.maven.plugins:maven-compiler-plugin is missing. @ com.end2endlogic:quantum-parent:1.2.1-SNAPSHOT, /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/pom.xml, line 135, column 21
 [WARNING] 
 [WARNING] It is highly recommended to fix these problems because they threaten the stability of your build.
 [WARNING] 
@@ -15,8 +15,6 @@
 [INFO] Building com.end2endlogic:quantum-framework 1.2.1-SNAPSHOT
 [INFO]   from pom.xml
 [INFO] --------------------------------[ jar ]---------------------------------
-Downloading from central-portal-snapshots: https://central.sonatype.com/repository/maven-snapshots/com/end2endlogic/quantum-models/1.2.1-SNAPSHOT/quantum-models-1.2.1-SNAPSHOT.pom
-[WARNING] The POM for com.end2endlogic:quantum-models:jar:1.2.1-SNAPSHOT is missing, no dependency information available
 [INFO] 
 [INFO] --- dependency:3.7.0:tree (default-cli) @ quantum-framework ---
 [INFO] com.end2endlogic:quantum-framework:jar:1.2.1-SNAPSHOT
@@ -101,8 +99,6 @@ Downloading from central-portal-snapshots: https://central.sonatype.com/reposito
 [INFO] |  +- io.smallrye:smallrye-open-api-core:jar:4.0.6:compile
 [INFO] |  |  +- org.eclipse.microprofile.openapi:microprofile-openapi-api:jar:4.0.2:compile
 [INFO] |  |  +- io.smallrye:smallrye-open-api-model:jar:4.0.6:compile
-[INFO] |  |  +- com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:jar:2.18.2:compile
-[INFO] |  |  |  \- org.yaml:snakeyaml:jar:2.3:compile
 [INFO] |  |  +- io.smallrye:jandex:jar:3.2.3:compile
 [INFO] |  |  \- io.smallrye.common:smallrye-common-classloader:jar:2.9.0:compile
 [INFO] |  \- io.quarkus:quarkus-swagger-ui:jar:3.17.7:compile
@@ -128,6 +124,11 @@ Downloading from central-portal-snapshots: https://central.sonatype.com/reposito
 [INFO] +- io.quarkus:quarkus-qute:jar:3.17.7:compile
 [INFO] |  \- io.quarkus.qute:qute-core:jar:3.17.7:compile
 [INFO] +- com.end2endlogic:quantum-models:jar:1.2.1-SNAPSHOT:compile
+[INFO] |  +- org.antlr:antlr4:jar:4.13.0:compile
+[INFO] |  |  +- org.antlr:antlr-runtime:jar:3.5.3:compile
+[INFO] |  |  +- org.antlr:ST4:jar:4.3.4:compile
+[INFO] |  |  \- org.abego.treelayout:org.abego.treelayout.core:jar:1.0.3:compile
+[INFO] |  \- org.antlr:antlr4-runtime:jar:4.13.0:compile
 [INFO] +- com.github.jnr:jnr-unixsocket:jar:0.38.22:compile
 [INFO] |  +- com.github.jnr:jnr-ffi:jar:2.2.16:compile
 [INFO] |  |  +- com.github.jnr:jffi:jar:1.3.13:compile
@@ -144,7 +145,6 @@ Downloading from central-portal-snapshots: https://central.sonatype.com/reposito
 [INFO] |  \- com.github.jnr:jnr-posix:jar:3.1.19:compile
 [INFO] +- io.quarkus:quarkus-hibernate-validator:jar:3.17.7:compile
 [INFO] |  +- org.hibernate.validator:hibernate-validator:jar:8.0.2.Final:compile
-[INFO] |  |  +- jakarta.validation:jakarta.validation-api:jar:3.0.2:compile
 [INFO] |  |  \- com.fasterxml:classmate:jar:1.7.0:compile
 [INFO] |  +- org.glassfish.expressly:expressly:jar:5.0.0:compile
 [INFO] |  +- io.smallrye.config:smallrye-config-validator:jar:3.10.2:compile
@@ -256,11 +256,13 @@ Downloading from central-portal-snapshots: https://central.sonatype.com/reposito
 [INFO] |  \- io.quarkus:quarkus-container-image-docker-common:jar:3.17.7:compile
 [INFO] |     \- io.quarkus:quarkus-container-image:jar:3.17.7:compile
 [INFO] +- joda-time:joda-time:jar:2.12.5:compile
-[INFO] +- com.fasterxml.jackson.module:jackson-module-jsonSchema:jar:2.18.2:compile
-[INFO] |  +- javax.validation:validation-api:jar:1.1.0.Final:compile
+[INFO] +- com.fasterxml.jackson.module:jackson-module-jsonSchema-jakarta:jar:2.18.2:compile
+[INFO] |  +- jakarta.validation:jakarta.validation-api:jar:3.0.2:compile
 [INFO] |  +- com.fasterxml.jackson.core:jackson-annotations:jar:2.18.2:compile
 [INFO] |  +- com.fasterxml.jackson.core:jackson-core:jar:2.18.2:compile
 [INFO] |  \- com.fasterxml.jackson.core:jackson-databind:jar:2.18.2:compile
+[INFO] +- com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:jar:2.18.2:compile
+[INFO] |  \- org.yaml:snakeyaml:jar:2.3:compile
 [INFO] +- com.github.wnameless.json:json-flattener:jar:0.16.6:compile
 [INFO] |  \- com.github.wnameless.json:json-base:jar:2.4.3:compile
 [INFO] +- net.sf.supercsv:super-csv:jar:2.4.0:compile
@@ -282,11 +284,6 @@ Downloading from central-portal-snapshots: https://central.sonatype.com/reposito
 [INFO] |  +- com.googlecode.libphonenumber:libphonenumber:jar:8.11.1:compile
 [INFO] |  +- com.google.code.findbugs:jsr305:jar:3.0.2:compile
 [INFO] |  \- net.sf.jopt-simple:jopt-simple:jar:5.0.4:compile
-[INFO] +- org.antlr:antlr4:jar:4.13.2:compile
-[INFO] |  +- org.antlr:antlr-runtime:jar:3.5.3:compile
-[INFO] |  +- org.antlr:ST4:jar:4.3.4:compile
-[INFO] |  \- org.abego.treelayout:org.abego.treelayout.core:jar:1.0.3:compile
-[INFO] +- org.antlr:antlr4-runtime:jar:4.13.2:compile
 [INFO] +- org.zalando:jackson-datatype-money:jar:1.3.0:compile
 [INFO] |  +- org.apiguardian:apiguardian-api:jar:1.1.2:compile
 [INFO] |  +- javax.money:money-api:jar:1.1:compile
@@ -399,6 +396,6 @@ Downloading from central-portal-snapshots: https://central.sonatype.com/reposito
 [INFO] ------------------------------------------------------------------------
 [INFO] BUILD SUCCESS
 [INFO] ------------------------------------------------------------------------
-[INFO] Total time:  2.057 s
-[INFO] Finished at: 2025-04-30T15:30:24-04:00
+[INFO] Total time:  1.343 s
+[INFO] Finished at: 2025-05-06T10:36:06-04:00
 [INFO] ------------------------------------------------------------------------
