@@ -107,7 +107,12 @@ public class SecurityFilter implements ContainerRequestFilter {
             }
 
 
-            Log.debugf("SecurityFilter: %s %s?%s body[%s]", method, path, queryParams, body);
+            if (Log.isDebugEnabled() && !requestContext.getUriInfo().getPath().contains("login"))
+                Log.debugf("SecurityFilter: %s %s?%s body[%s]", method, path, queryParams, body);
+            else
+                if  (Log.isDebugEnabled())
+                    Log.debugf("SecurityFilter: %s %s?%s", method, path, queryParams);
+
         }
 
         ResourceContext resourceContext = determineResourceContext(requestContext);
