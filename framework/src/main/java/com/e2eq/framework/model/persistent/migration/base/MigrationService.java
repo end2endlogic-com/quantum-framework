@@ -7,8 +7,6 @@ import com.e2eq.framework.model.persistent.morphia.ChangeSetRecordRepo;
 import com.e2eq.framework.model.persistent.morphia.DatabaseVersionRepo;
 
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
-import com.e2eq.framework.model.securityrules.PrincipalContext;
-import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.RuleContext;
 import com.e2eq.framework.model.securityrules.SecuritySession;
 import com.e2eq.framework.util.SecurityUtils;
@@ -17,9 +15,7 @@ import com.mongodb.client.MongoCollection;
 import dev.morphia.Datastore;
 import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.logging.Log;
-import io.quarkus.runtime.Startup;
 import io.smallrye.mutiny.subscription.MultiEmitter;
-import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.context.spi.CreationalContext;
 import jakarta.enterprise.inject.spi.Bean;
@@ -38,7 +34,6 @@ import java.util.ArrayList;
 
 
 @ApplicationScoped
-@Startup
 @Data
 public class MigrationService {
 
@@ -59,8 +54,6 @@ public class MigrationService {
 
     @ConfigProperty(name= "quantum.database.migration.enabled")
     protected boolean enabled;
-
-
 
     @Inject
     DatabaseVersionRepo databaseVersionRepo;
@@ -87,9 +80,14 @@ public class MigrationService {
     private boolean defaultRealmMigrationRequired;
     private boolean testRealmMigrationRequired;
     private boolean systemRealmMigrationRequired;
+    protected boolean initialized = false;
 
     public boolean isMigrationRequired() {
 
+        if (initialized == false) {
+            checkDataBaseVersion();
+            initialized = true;
+        }
         if (defaultRealmMigrationRequired) {
             Log.info("Default Realm migration required");
         }
@@ -100,17 +98,11 @@ public class MigrationService {
             Log.info("System Realm migration required");
         }
 
-        return defaultRealmMigrationRequired || systemRealmMigrationRequired || testRealmMigrationRequired;
+        return defaultRealmMigrationRequired && systemRealmMigrationRequired && testRealmMigrationRequired;
     }
 
-    @PostConstruct
-    protected void onStartup() {
-        if (enabled) {
-            reCheck();
-        }
-    }
 
-    public boolean reCheck() {
+    public void checkDataBaseVersion() {
         String[] roles = {"admin", "user"};
 
         ruleContext.ensureDefaultRules();
@@ -134,8 +126,6 @@ public class MigrationService {
         } finally {
             lock.release();
         }
-
-        return isMigrationRequired();
     }
 
     protected DistributedLock getMigrationLock(String realm) {
