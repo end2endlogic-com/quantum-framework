@@ -70,8 +70,6 @@ public class MigrationService {
     @Inject
     MorphiaDataStore morphiaDataStore;
 
-    @Inject
-    protected RuleContext ruleContext;
 
     @Inject
     SecurityUtils securityUtils;
@@ -103,16 +101,12 @@ public class MigrationService {
 
 
     public void checkDataBaseVersion() {
-        String[] roles = {"admin", "user"};
-
-        ruleContext.ensureDefaultRules();
-
         Log.info("MigrationService check is enabled");
         Log.infof("MigrationService targetDatabaseVersion: %s", targetDatabaseVersion);
         Log.infof("MigrationService databaseScope: %s", databaseScope);
         DistributedLock lock = getMigrationLock(systemRealm);
         lock.acquire();
-        try(final SecuritySession ss = new SecuritySession(securityUtils.getSystemPrincipalContext(), securityUtils.getSystemSecurityResourceContext())) {
+        try {
             defaultRealmMigrationRequired = migrationRequired(morphiaDataStore.getDefaultSystemDataStore(), defaultRealm, targetDatabaseVersion);
             if (defaultRealmMigrationRequired)
                 Log.error(String.format("MigrationService Realm:%s migrationRequired:%b ", defaultRealm,defaultRealmMigrationRequired));
