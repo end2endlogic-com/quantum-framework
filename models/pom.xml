@@ -103,9 +103,9 @@
                     <basedir>${project.basedir}</basedir>
                     <outputDirectory>${project.build.outputDirectory}</outputDirectory>
                     <projectArtifact>${project.artifact}</projectArtifact>
-                    <source>${java.version}</source>
-                    <target>${java.version}</target>
-                    <release>${java.version}</release>
+                    <source>17</source>
+                    <target>17</target>
+                    <release>17</release>
                     <annotationProcessorPaths>
                         <path>
                             <groupId>io.quarkus</groupId>
