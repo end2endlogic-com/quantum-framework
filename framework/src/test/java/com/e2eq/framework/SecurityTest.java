@@ -80,7 +80,7 @@ public class SecurityTest extends BaseRepoTest {
             } else {
                 CredentialUserIdPassword cred = new CredentialUserIdPassword();
                 cred.setUserId(testUtils.getSystemUserId());
-                cred.setPasswordHash("$2a$12$76wQJLgSAdm6ZTHFHtzksuSkWG9eW0qe5YXMXaZIBo52ncXHO0EDy"); //Test123456å
+                cred.setPasswordHash("$2a$12$76wQJLgSAdm6ZTHFHtzksuSkWG9eW0qe5YXMXaZIBo52ncXHO0EDy"); //Test123456
 
                 DataDomain dataDomain = new DataDomain();
                 dataDomain.setOrgRefName(testUtils.getTestOrgRefName());

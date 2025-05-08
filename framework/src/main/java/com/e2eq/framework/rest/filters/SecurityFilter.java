@@ -22,6 +22,7 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ContainerRequestFilter;
 import jakarta.ws.rs.core.HttpHeaders;
+import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.ext.Provider;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.jwt.JsonWebToken;
@@ -87,7 +88,8 @@ public class SecurityFilter implements ContainerRequestFilter {
             String queryParams = requestContext.getUriInfo().getQueryParameters().toString();
             String method = requestContext.getMethod();
             String body = "";
-            if ("POST".equalsIgnoreCase(method)) {
+            // here for debug purposes if you enable this you will break media upload types like multipart/form-data
+            if ("POST".equalsIgnoreCase(method) && false) {
                 // Buffer the entity stream
                 BufferedInputStream bufferedInputStream = new BufferedInputStream(requestContext.getEntityStream());
                 String rawBody = new BufferedReader(new InputStreamReader(bufferedInputStream))
@@ -104,14 +106,15 @@ public class SecurityFilter implements ContainerRequestFilter {
                 } catch (Exception e) {
                     body = rawBody; // Fallback to raw body if not JSON
                 }
+                if (Log.isDebugEnabled() && !requestContext.getUriInfo().getPath().contains("login"))
+                    Log.debugf("SecurityFilter: %s %s?%s body[%s]", method, path, queryParams, body);
+                else
+                if  (Log.isDebugEnabled())
+                    Log.debugf("SecurityFilter: %s %s?%s", method, path, queryParams);
             }
 
 
-            if (Log.isDebugEnabled() && !requestContext.getUriInfo().getPath().contains("login"))
-                Log.debugf("SecurityFilter: %s %s?%s body[%s]", method, path, queryParams, body);
-            else
-                if  (Log.isDebugEnabled())
-                    Log.debugf("SecurityFilter: %s %s?%s", method, path, queryParams);
+
 
         }
 
