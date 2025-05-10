@@ -18,17 +18,17 @@ public class SecurityUtils {
    @ConfigProperty(name = "quantum.anonymousUserId", defaultValue = "anonymous@system.com"  )
    protected String anonymousUserId;
 
-   @ConfigProperty(name = "quantum.defaultRealm", defaultValue = "mycompanyxyz-com"  )
+   @ConfigProperty(name = "quantum.realmConfig.defaultRealm", defaultValue = "mycompanyxyz-com"  )
    protected String defaultRealm;
 
-   @ConfigProperty(name = "quantum.defaultTenantId", defaultValue = "mycompanyxyz.com"  )
+   @ConfigProperty(name = "quantum.realmConfig.defaultTenantId", defaultValue = "mycompanyxyz.com"  )
    protected String defaultTenantId;
 
-   @ConfigProperty(name = "quantum.defaultOrg", defaultValue = "mycompanyxyz.com"  )
+   @ConfigProperty(name = "quantum.realmConfig.defaultOrgRefName", defaultValue = "mycompanyxyz.com"  )
    @Getter
    protected String defaultOrgRefName;
 
-   @ConfigProperty(name = "quantum.defaultAccountNumber", defaultValue = "9999999999"  )
+   @ConfigProperty(name = "quantum.realmConfig.defaultAccountNumber", defaultValue = "9999999999"  )
    @Getter
    protected String defaultAccountNumber;
 
