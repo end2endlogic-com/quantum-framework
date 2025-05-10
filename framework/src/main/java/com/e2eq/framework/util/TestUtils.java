@@ -63,7 +63,7 @@ public class TestUtils {
       testAccountNumber = securityUtils.getTestAccountNumber();
       testOrgRefName = securityUtils.getTestOrgRefName();
       testTenantId = securityUtils.getTestTenantId();
-      defaultRealm = securityUtils.getTestRealm();
+      defaultRealm = securityUtils.getDefaultRealm();
       testRealm = securityUtils.getTestRealm();
       systemRealm = securityUtils.getSystemRealm();
       systemUserId = securityUtils.getSystemUserId();
@@ -74,7 +74,7 @@ public class TestUtils {
       securityFD = "ADMIN";
       testDataDomain = new DataDomain(testOrgRefName, testAccountNumber, testTenantId, 0, testUserId);
       systemDataDomain = securityUtils.getSystemDataDomain();
-      defaultDataDomain = new DataDomain(securityUtils.getTestOrgRefName(),
+      defaultDataDomain = new DataDomain(securityUtils.getDefaultOrgRefName(),
               securityUtils.getDefaultAccountNumber(),
               securityUtils.getDefaultTenantId(), 0,
               securityUtils.getDefaultUserId());
