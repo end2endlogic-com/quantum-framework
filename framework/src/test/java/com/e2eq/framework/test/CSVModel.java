@@ -1,35 +1,38 @@
 package com.e2eq.framework.test;
 
-import com.e2eq.framework.annotations.TrackReferences;
 import com.e2eq.framework.model.persistent.base.BaseModel;
 import dev.morphia.annotations.Entity;
-import dev.morphia.annotations.Reference;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
+import lombok.experimental.SuperBuilder;
 
 import java.util.List;
+import java.util.Map;
 
-@RegisterForReflection
-@EqualsAndHashCode(callSuper = true)
 @Data
+@EqualsAndHashCode(callSuper = true)
+@RegisterForReflection
+@SuperBuilder
 @NoArgsConstructor
 @Entity
-public class TestChildListModel extends BaseModel {
-
-    @Reference(idOnly = true)
-    @TrackReferences
-    List<TestParentModel> parents;
+public class CSVModel extends BaseModel {
+    protected String testField;
+    protected String testField2;
+    protected String testField1;
+    protected String testField3;
+    protected List<String> testList;
+    protected Map<String, String> testMap;
 
 
     @Override
     public String bmFunctionalArea() {
-        return "QUANTUM";
+        return "TEST";
     }
 
     @Override
     public String bmFunctionalDomain() {
-        return "TEST";
+        return "CSV";
     }
 }

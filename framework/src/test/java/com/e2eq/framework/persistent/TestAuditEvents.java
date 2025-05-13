@@ -2,7 +2,7 @@ package com.e2eq.framework.persistent;
 
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.securityrules.SecuritySession;
-import com.e2eq.framework.test.TestParentModel;
+import com.e2eq.framework.test.ParentModel;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Assertions;
@@ -20,13 +20,13 @@ public class TestAuditEvents extends BaseRepoTest {
 
     @Test
     public void testAuditEvents() throws ReferentialIntegrityViolationException {
-        TestParentModel testParentEntity = new TestParentModel();
+        ParentModel testParentEntity = new ParentModel();
 
         try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
-            Optional<TestParentModel> parentModel = testService.findByRefName("test-audit");
+            Optional<ParentModel> parentModel = testService.findByRefName("test-audit");
             if (parentModel.isPresent()) {
                 testService.delete(parentModel.get());
-                testParentEntity = new TestParentModel();
+                testParentEntity = new ParentModel();
             }
             testParentEntity.setRefName("test-audit");
             testParentEntity.setDisplayName("Test Audit Entity");
@@ -35,7 +35,7 @@ public class TestAuditEvents extends BaseRepoTest {
             Assertions.assertNotNull(testParentEntity.getPersistentEvents());
             Assertions.assertTrue(testParentEntity.getPersistentEvents().size() == 1);
 
-            Optional<TestParentModel> optionalTestParentModel =  testService.findByRefName("test-audit");
+            Optional<ParentModel> optionalTestParentModel =  testService.findByRefName("test-audit");
             Assertions.assertTrue(optionalTestParentModel.isPresent());
             Assertions.assertTrue(optionalTestParentModel.get().getPersistentEvents() != null &&
                     optionalTestParentModel.get().getPersistentEvents().size() == 1);

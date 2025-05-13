@@ -4,7 +4,7 @@ package com.e2eq.framework.api.csv;
 import com.e2eq.framework.model.securityrules.SecuritySession;
 import com.e2eq.framework.persistent.BaseRepoTest;
 import com.e2eq.framework.persistent.TestCSVModelRepo;
-import com.e2eq.framework.test.TestCSVModel;
+import com.e2eq.framework.test.CSVModel;
 import com.e2eq.framework.util.CSVExportHelper;
 import com.e2eq.framework.util.CSVImportHelper;
 
@@ -39,16 +39,16 @@ public class TestCSVFeatures extends BaseRepoTest {
     @Inject
     CSVImportHelper csvImportHelper;
 
-    private List<TestCSVModel> getRecords() {
+    private List<CSVModel> getRecords() {
         // Generate a list of TestCSVModels
 
         return List.of(
-                TestCSVModel.builder()
+                CSVModel.builder()
                         .testField1("value1")
                         .testList(List.of("value2", "value3"))
                         .displayName("testDisplayName")
                         .build(),
-                TestCSVModel.builder()
+                CSVModel.builder()
                         .testField1("value4")
                         .testList(List.of("value5", "value6"))
                         .displayName("testDisplayName2")
@@ -117,8 +117,8 @@ public class TestCSVFeatures extends BaseRepoTest {
             }
         }
 
-        Class<?> clazz = TestCSVModel.class;
-        Collection<TestCSVModel> records = getRecords();
+        Class<?> clazz = CSVModel.class;
+        Collection<CSVModel> records = getRecords();
         final char quoteChar = '"';
         final char fieldSeparator = ',';
         OutputStream output = System.out;
@@ -149,7 +149,7 @@ public class TestCSVFeatures extends BaseRepoTest {
                 CellProcessor[] processors = new CellProcessor[fields.length];
                 ListCellProcessor listProcessor = new ListCellProcessor();
                 Arrays.fill(processors, new org.supercsv.cellprocessor.Optional(listProcessor));
-                for (TestCSVModel record : records) {
+                for (CSVModel record : records) {
                     writeRecord(beanWriter, record, processors, nestedProperty);
                 }
             } catch (Throwable e) {
@@ -165,7 +165,7 @@ public class TestCSVFeatures extends BaseRepoTest {
         CSVExportHelper helper = new CSVExportHelper();
 
         StreamingOutput streamingOutput = helper.streamCSVOut(
-                TestCSVModel.class,
+                CSVModel.class,
                 getRecords(),
                 null,
                 ',',
@@ -201,10 +201,10 @@ public class TestCSVFeatures extends BaseRepoTest {
                     new InputStreamReader(getClass().getClassLoader().getResourceAsStream("testData/TestImportCSV.csv")),
                     CsvPreference.STANDARD_PREFERENCE);
             beanReader.getHeader(true);
-            beanReader.configureBeanMapping(TestCSVModel.class, FIELD_MAPPING);
+            beanReader.configureBeanMapping(CSVModel.class, FIELD_MAPPING);
 
-            TestCSVModel model;
-            while ((model = beanReader.read(TestCSVModel.class, processors)) != null) {
+            CSVModel model;
+            while ((model = beanReader.read(CSVModel.class, processors)) != null) {
                 System.out.println(String.format("lineNo=%s, rowNo=%s, model=%s", beanReader.getLineNumber(),
                         beanReader.getRowNumber(), model));
             }

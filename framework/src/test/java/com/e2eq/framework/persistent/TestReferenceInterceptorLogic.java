@@ -5,9 +5,9 @@ import com.e2eq.framework.model.persistent.base.ReferenceEntry;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
 import com.e2eq.framework.model.securityrules.RuleContext;
 import com.e2eq.framework.model.securityrules.SecuritySession;
-import com.e2eq.framework.test.TestChildListModel;
-import com.e2eq.framework.test.TestChildModel;
-import com.e2eq.framework.test.TestParentModel;
+import com.e2eq.framework.test.ChildListModel;
+import com.e2eq.framework.test.ChildModel;
+import com.e2eq.framework.test.ParentModel;
 import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
@@ -37,9 +37,9 @@ public class TestReferenceInterceptorLogic extends BaseRepoTest{
     @Inject
     RuleContext ruleContext;
 
-    TestParentModel createParent(String refName) {
-        dataStore.getDataStore(parentRepo.getSecurityContextRealmId()).ensureIndexes(TestParentModel.class);
-        TestParentModel parent = new TestParentModel();
+    ParentModel createParent(String refName) {
+        dataStore.getDataStore(parentRepo.getSecurityContextRealmId()).ensureIndexes(ParentModel.class);
+        ParentModel parent = new ParentModel();
         parent.setRefName(refName);
         parent.setDataDomain(testUtils.getTestDataDomain());
         parent.setAuditInfo(testUtils.createAuditInfo());
@@ -50,24 +50,24 @@ public class TestReferenceInterceptorLogic extends BaseRepoTest{
 
 
 
-    TestParentModel getOrCreateParent() {
-        Optional<TestParentModel> oparent = parentRepo.findByRefName("Test1");
+    ParentModel getOrCreateParent() {
+        Optional<ParentModel> oparent = parentRepo.findByRefName("Test1");
         if (oparent.isPresent()) {
             return oparent.get();
         } else
             return createParent("Test1");
     }
 
-    List<TestParentModel> getOrCreateParentList() {
-        List<TestParentModel> parents = new ArrayList<>();
-        TestParentModel p1 = parentRepo.findByRefName("Test1").orElse(null);
+    List<ParentModel> getOrCreateParentList() {
+        List<ParentModel> parents = new ArrayList<>();
+        ParentModel p1 = parentRepo.findByRefName("Test1").orElse(null);
         if (p1 == null) {
             parents.add(createParent("Test1"));
         } else {
             parents.add(p1);
         }
 
-        TestParentModel p2 = parentRepo.findByRefName("Test2").orElse(null);
+        ParentModel p2 = parentRepo.findByRefName("Test2").orElse(null);
         if (p2 == null) {
             parents.add(createParent("Test2"));
         } else {
@@ -77,13 +77,13 @@ public class TestReferenceInterceptorLogic extends BaseRepoTest{
         return parents;
     }
 
-    TestChildModel getOrCreateChild(TestParentModel parent) {
-        Optional<TestChildModel> ochild = childRepo.findByRefName("Test1");
+    ChildModel getOrCreateChild(ParentModel parent) {
+        Optional<ChildModel> ochild = childRepo.findByRefName("Test1");
         if (ochild.isPresent()) {
             return ochild.get();
         }
-        dataStore.getDataStore(childRepo.getSecurityContextRealmId()).ensureIndexes(TestChildModel.class);
-        TestChildModel child = new TestChildModel();
+        dataStore.getDataStore(childRepo.getSecurityContextRealmId()).ensureIndexes(ChildModel.class);
+        ChildModel child = new ChildModel();
         child.setRefName("Test1");
         child.setDataDomain(testUtils.getTestDataDomain());
         child.setAuditInfo(testUtils.createAuditInfo());
@@ -93,16 +93,16 @@ public class TestReferenceInterceptorLogic extends BaseRepoTest{
         return child;
     }
 
-    TestChildListModel getOrCreateChild(String refName, List<TestParentModel> parents) {
+    ChildListModel getOrCreateChild(String refName, List<ParentModel> parents) {
         if (parents.isEmpty() || parents.size() < 2) {
             throw new IllegalStateException("At least two parents are required for creating a child");
         }
-        Optional<TestChildListModel> ochild = childListRepo.findByRefName(refName);
+        Optional<ChildListModel> ochild = childListRepo.findByRefName(refName);
         if (ochild.isPresent()) {
             return ochild.get();
         }
-        dataStore.getDataStore(childListRepo.getSecurityContextRealmId()).ensureIndexes(TestChildListModel.class);
-        TestChildListModel child = new TestChildListModel();
+        dataStore.getDataStore(childListRepo.getSecurityContextRealmId()).ensureIndexes(ChildListModel.class);
+        ChildListModel child = new ChildListModel();
         child.setRefName(refName);
         child.setDataDomain(testUtils.getTestDataDomain());
         child.setAuditInfo(testUtils.createAuditInfo());
@@ -118,11 +118,11 @@ public class TestReferenceInterceptorLogic extends BaseRepoTest{
 
         try (final SecuritySession ss = new SecuritySession(pContext, rContext)) {
 
-            TestParentModel parent = getOrCreateParent();
-            TestChildModel child = getOrCreateChild(parent);
+            ParentModel parent = getOrCreateParent();
+            ChildModel child = getOrCreateChild(parent);
             parent = getOrCreateParent();
             Assertions.assertNotNull(parent.getReferences());
-            Assertions.assertTrue(parent.getReferences().contains(new ReferenceEntry(child.getId(), TestChildModel.class.getTypeName(),
+            Assertions.assertTrue(parent.getReferences().contains(new ReferenceEntry(child.getId(), ChildModel.class.getTypeName(),
                     child.getRefName())));
 
             // delete the parent, the child should be deleted as well)));
@@ -178,15 +178,15 @@ public class TestReferenceInterceptorLogic extends BaseRepoTest{
             // create two parents and a child with a list of parents
 
             // create two parents
-            List<TestParentModel> parents = getOrCreateParentList();
+            List<ParentModel> parents = getOrCreateParentList();
 
             // create a child with a list of parents
-            TestChildListModel child = getOrCreateChild("Test2", parents);
+            ChildListModel child = getOrCreateChild("Test2", parents);
 
             // check that the parents are referenced in the child list
-            for (TestParentModel p : parents) {
+            for (ParentModel p : parents) {
                 Assertions.assertTrue(p.getReferences().contains(new ReferenceEntry(child.getId(),
-                        TestChildListModel.class.getTypeName(), child.getRefName())));
+                        ChildListModel.class.getTypeName(), child.getRefName())));
             }
 
             // delete the child, the parents references should be deleted as well and the child list should be updated
@@ -196,15 +196,15 @@ public class TestReferenceInterceptorLogic extends BaseRepoTest{
             parents = getOrCreateParentList();
 
             // check that the parents are no longer have references from the child list
-            for (TestParentModel p : parents) {
+            for (ParentModel p : parents) {
                 if (p.getReferences() != null && !p.getReferences().isEmpty())
-                    Assertions.assertFalse(p.getReferences().contains(new ReferenceEntry(child.getId(), TestChildListModel.class.getTypeName(),
+                    Assertions.assertFalse(p.getReferences().contains(new ReferenceEntry(child.getId(), ChildListModel.class.getTypeName(),
                             child.getRefName())));
                 parentRepo.delete(p);
             }
 
             // check that the child has also been deleted
-            Optional<TestChildListModel> ochild = childListRepo.findByRefName("Test2");
+            Optional<ChildListModel> ochild = childListRepo.findByRefName("Test2");
             Assertions.assertTrue(ochild.isEmpty());
         }
     }

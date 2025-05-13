@@ -1,38 +1,41 @@
 package com.e2eq.framework.test;
 
+import com.e2eq.framework.annotations.AuditPersistence;
 import com.e2eq.framework.model.persistent.base.BaseModel;
+import com.e2eq.framework.model.persistent.base.DynamicAttributeSet;
 import dev.morphia.annotations.Entity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
-import lombok.NoArgsConstructor;
-import lombok.experimental.SuperBuilder;
+import lombok.ToString;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+@Entity
+@RegisterForReflection
 @Data
 @EqualsAndHashCode(callSuper = true)
-@RegisterForReflection
-@SuperBuilder
-@NoArgsConstructor
-@Entity
-public class TestCSVModel extends BaseModel {
+@ToString
+@AuditPersistence
+public class ParentModel extends BaseModel {
+
     protected String testField;
     protected String testField2;
-    protected String testField1;
     protected String testField3;
-    protected List<String> testList;
+
     protected Map<String, String> testMap;
 
+    protected List<DynamicAttributeSet> dynamicAttributeSets = new ArrayList<>();
 
     @Override
     public String bmFunctionalArea() {
-        return "TEST";
+        return "QUANTUM";
     }
 
     @Override
     public String bmFunctionalDomain() {
-        return "CSV";
+        return "TEST";
     }
 }
