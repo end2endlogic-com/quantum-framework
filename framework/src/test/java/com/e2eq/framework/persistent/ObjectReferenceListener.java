@@ -3,7 +3,7 @@ package com.e2eq.framework.persistent;
 import com.e2eq.framework.annotations.ObjectReference;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.MorphiaRepo;
-import com.e2eq.framework.test.TestObjectRefModel;
+import com.e2eq.framework.test.ObjectRefModel;
 import dev.morphia.Datastore;
 import dev.morphia.EntityListener;
 import dev.morphia.MorphiaDatastore;
@@ -21,11 +21,11 @@ import jakarta.enterprise.inject.spi.CDI;
 import java.lang.annotation.Annotation;
 import java.util.Optional;
 
-public class ObjectReferenceListener implements EntityListener<TestObjectRefModel> {
+public class ObjectReferenceListener implements EntityListener<ObjectRefModel> {
 
     @Override
     @PostLoad
-    public void postLoad(TestObjectRefModel entity, Document document, Datastore datastore) {
+    public void postLoad(ObjectRefModel entity, Document document, Datastore datastore) {
         // check the if the datastore is an instance of MorphiaDatastore using is assignable from
         if (datastore.getClass().isAssignableFrom(MorphiaDatastore.class) &&
           entity instanceof UnversionedBaseModel) {
@@ -68,13 +68,13 @@ public class ObjectReferenceListener implements EntityListener<TestObjectRefMode
 
     @Override
     @PostPersist
-    public void postPersist(TestObjectRefModel entity, Document document, Datastore datastore) {
+    public void postPersist(ObjectRefModel entity, Document document, Datastore datastore) {
 
     }
 
     @Override
     @PrePersist
-    public void prePersist(TestObjectRefModel entity, Document document, Datastore datastore) {
+    public void prePersist(ObjectRefModel entity, Document document, Datastore datastore) {
         if (datastore.getClass().isAssignableFrom(MorphiaDatastore.class)) {
             Mapper mapper = ((MorphiaDatastore)datastore).getMapper();
             EntityModel entityModel = mapper.getEntityModel(entity.getClass());

@@ -1,29 +1,28 @@
 package com.e2eq.framework.test;
 
-import com.e2eq.framework.annotations.ObjectReference;
 import com.e2eq.framework.model.persistent.base.BaseModel;
-import com.e2eq.framework.persistent.ObjectReferenceListener;
 import dev.morphia.annotations.Entity;
-import dev.morphia.annotations.EntityListeners;
+import dev.morphia.annotations.Reference;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+import lombok.ToString;
 
-@Entity (useDiscriminator = false)
+@Entity
 @RegisterForReflection
 @Data
 @EqualsAndHashCode(callSuper = true)
-@EntityListeners(ObjectReferenceListener.class)
-public class TestObjectRefModel extends BaseModel {
+@ToString
+public class BookModel extends BaseModel {
 
-    protected String testField;
+    protected String title;
 
-    @ObjectReference
-    protected TestParentModel parent;
+    @Reference
+    protected AuthorModel author;
 
     @Override
     public String bmFunctionalArea() {
-        return "QUANTUM";
+        return "TEST";
     }
 
     @Override

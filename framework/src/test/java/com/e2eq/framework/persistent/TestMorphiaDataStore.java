@@ -1,12 +1,8 @@
 package com.e2eq.framework.persistent;
 
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
-import com.e2eq.framework.model.securityrules.PrincipalContext;
-import com.e2eq.framework.model.securityrules.ResourceContext;
-import com.e2eq.framework.model.securityrules.RuleContext;
 import com.e2eq.framework.model.securityrules.SecuritySession;
-import com.e2eq.framework.test.TestParentModel;
-import com.e2eq.framework.util.TestUtils;
+import com.e2eq.framework.test.ParentModel;
 import com.mongodb.assertions.Assertions;
 import dev.morphia.MorphiaDatastore;
 import io.quarkus.test.junit.QuarkusTest;
@@ -26,12 +22,12 @@ public class TestMorphiaDataStore extends BaseRepoTest{
         MorphiaDatastore realm2DataStore = dataStore.getDataStore("test-realm2");
 
         try(final SecuritySession ignored = new SecuritySession(pContext, rContext)) {
-            TestParentModel parent1 = new TestParentModel();
+            ParentModel parent1 = new ParentModel();
             parent1.setRefName("parent1");
             parent1.setTestField("parent1");
             realm1DataStore.save(parent1);
 
-            TestParentModel parent2 = new TestParentModel();
+            ParentModel parent2 = new ParentModel();
             parent2.setRefName("parent2");
             parent1.setTestField("parent2");
             realm2DataStore.save(parent2);

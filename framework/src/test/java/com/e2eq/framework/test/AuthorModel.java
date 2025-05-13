@@ -12,7 +12,7 @@ import lombok.ToString;
 @EqualsAndHashCode (callSuper = true)
 @RegisterForReflection
 @ToString
-public class TestAuthorModel extends BaseModel {
+public class AuthorModel extends BaseModel {
 
     protected String authorName;
 

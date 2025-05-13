@@ -1,33 +1,25 @@
 package com.e2eq.framework.test;
 
-import com.e2eq.framework.annotations.AuditPersistence;
+import com.e2eq.framework.annotations.ObjectReference;
 import com.e2eq.framework.model.persistent.base.BaseModel;
-import com.e2eq.framework.model.persistent.base.DynamicAttributeSet;
+import com.e2eq.framework.persistent.ObjectReferenceListener;
 import dev.morphia.annotations.Entity;
+import dev.morphia.annotations.EntityListeners;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
-import lombok.ToString;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-
-@Entity
+@Entity (useDiscriminator = false)
 @RegisterForReflection
 @Data
 @EqualsAndHashCode(callSuper = true)
-@ToString
-@AuditPersistence
-public class TestParentModel extends BaseModel {
+@EntityListeners(ObjectReferenceListener.class)
+public class ObjectRefModel extends BaseModel {
 
     protected String testField;
-    protected String testField2;
-    protected String testField3;
 
-    protected Map<String, String> testMap;
-
-    protected List<DynamicAttributeSet> dynamicAttributeSets = new ArrayList<>();
+    @ObjectReference
+    protected ParentModel parent;
 
     @Override
     public String bmFunctionalArea() {

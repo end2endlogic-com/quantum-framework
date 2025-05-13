@@ -5,7 +5,7 @@ import com.e2eq.framework.model.persistent.base.DynamicAttribute;
 import com.e2eq.framework.model.persistent.base.DynamicAttributeSet;
 import com.e2eq.framework.model.securityrules.RuleContext;
 import com.e2eq.framework.model.securityrules.SecuritySession;
-import com.e2eq.framework.test.TestParentModel;
+import com.e2eq.framework.test.ParentModel;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
@@ -24,7 +24,7 @@ public class TestDynamicAttributes extends BaseRepoTest {
 
     @Test
     void testDynamicAttributes() throws ReferentialIntegrityViolationException {
-        TestParentModel model = new TestParentModel();
+        ParentModel model = new ParentModel();
         model.setTestField("testValue");
         DynamicAttributeSet dynamicAttributeSet = new DynamicAttributeSet();
         dynamicAttributeSet.setName("extendedAttributes");

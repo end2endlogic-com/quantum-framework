@@ -5,7 +5,7 @@ import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
 import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
 import com.e2eq.framework.model.securityrules.RuleContext;
 import com.e2eq.framework.model.securityrules.SecuritySession;
-import com.e2eq.framework.test.TestBookModel;
+import com.e2eq.framework.test.BookModel;
 import dev.morphia.annotations.Reference;
 import dev.morphia.query.filters.Filter;
 import io.quarkus.logging.Log;
@@ -32,7 +32,7 @@ public class TestReferenceQuery extends BaseRepoTest{
 
         try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
 
-            Class<?> clazz = TestBookModel.class;
+            Class<?> clazz = BookModel.class;
             Field field = clazz.getDeclaredField("author");
             field.setAccessible(true);
             Annotation annotation = field.getAnnotation(Reference.class);
@@ -44,7 +44,7 @@ public class TestReferenceQuery extends BaseRepoTest{
 
             }
 
-            Filter x = MorphiaUtils.convertToFilter("author:@@" + new ObjectId().toString(), TestBookModel.class);
+            Filter x = MorphiaUtils.convertToFilter("author:@@" + new ObjectId().toString(), BookModel.class);
             Log.info("Filter: " + x.toString());
         }
     }
