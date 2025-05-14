@@ -3,7 +3,7 @@ package com.e2eq.framework.model.persistent.morphia;
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.base.StaticDynamicList;
 import com.e2eq.framework.model.persistent.base.BaseModel;
-import com.e2eq.framework.model.persistent.base.HiearchicalModel;
+import com.e2eq.framework.model.persistent.base.HierarchicalModel;
 import com.mongodb.client.MongoCursor;
 import dev.morphia.Datastore;
 import dev.morphia.aggregation.Aggregation;
@@ -24,8 +24,8 @@ import static dev.morphia.query.filters.Filters.eq;
 // O - The object that a static or dynamic list represents at each level in hiearchy
 // L - The staticDynamicList of object O's
 // R - The repository for static or dynamic list of object O's'
-public abstract class HiearchicalRepo<
-        T extends HiearchicalModel,
+public abstract class HierarchicalRepo<
+        T extends HierarchicalModel,
         O extends BaseModel,
         L extends StaticDynamicList<O>,
         OR extends MorphiaRepo<O>,
@@ -97,7 +97,7 @@ public abstract class HiearchicalRepo<
                 }
                 T parent = oparent.get();
                 if (parent.getDescendants() == null) {
-                    parent.setDescendants(new HashSet<>());
+                    parent.setDescendants(new ArrayList<>());
                     parent.getDescendants().add(value.getId());
                     super.save(session, parent);
                 } else if (!parent.getDescendants().contains(value.getId())) {
