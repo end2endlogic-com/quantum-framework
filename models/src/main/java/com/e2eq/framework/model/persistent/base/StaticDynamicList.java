@@ -9,6 +9,7 @@ import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import org.bson.types.ObjectId;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 import java.util.List;
 import java.util.Optional;
@@ -17,7 +18,7 @@ import java.util.Optional;
 @Entity
 @EqualsAndHashCode(callSuper = true)
 @RegisterForReflection
-public abstract class StaticDynamicList<T> extends BaseModel {
+public abstract class StaticDynamicList<T extends UnversionedBaseModel> extends BaseModel {
 
     @ConfigProperty(name="quantum.staticDynamicList.check-ids", defaultValue= "false")
     boolean checkIds;
@@ -27,10 +28,12 @@ public abstract class StaticDynamicList<T> extends BaseModel {
         DYNAMIC
     }
 
+    @Schema(implementation = String.class, description = "a filter string like the one used in the list api")
     private String filterString;
 
     private Mode mode;
 
+    @Schema(implementation = String.class, description = "collection of arbitrary ids")
     private List<ObjectId> staticIds;
 
     public void setStaticIds(List<ObjectId> staticIds) {

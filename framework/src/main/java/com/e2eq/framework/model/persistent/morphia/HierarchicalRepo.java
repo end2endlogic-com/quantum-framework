@@ -4,6 +4,7 @@ import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.base.StaticDynamicList;
 import com.e2eq.framework.model.persistent.base.BaseModel;
 import com.e2eq.framework.model.persistent.base.HierarchicalModel;
+import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.mongodb.client.MongoCursor;
 import dev.morphia.Datastore;
 import dev.morphia.aggregation.Aggregation;
@@ -24,9 +25,18 @@ import static dev.morphia.query.filters.Filters.eq;
 // O - The object that a static or dynamic list represents at each level in hiearchy
 // L - The staticDynamicList of object O's
 // R - The repository for static or dynamic list of object O's'
+
+/**
+ *  Creates a hierarchical repository for hierarchical models.
+ * @param <T> - the HierarchicalModel type
+ * @param <O> - The object that a static or dynamic list represents
+ * @param <L> - The static dynamic list of object O's
+ * @param <OR> - The repository of O's
+ * @param <LR> - The repository for the static or dynamic list of Object O's
+ */
 public abstract class HierarchicalRepo<
         T extends HierarchicalModel,
-        O extends BaseModel,
+        O extends UnversionedBaseModel,
         L extends StaticDynamicList<O>,
         OR extends MorphiaRepo<O>,
         LR extends ObjectListRepo< O, L, OR>> extends MorphiaRepo<T>{

@@ -1,7 +1,7 @@
 package com.e2eq.framework.model.persistent.morphia;
 
-import com.e2eq.framework.model.persistent.base.BaseModel;
 import com.e2eq.framework.model.persistent.base.StaticDynamicList;
+import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import dev.morphia.Datastore;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
@@ -15,8 +15,14 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.Function;
 
+/**
+ *
+ * @param <O> - The object type for the list
+ * @param <T> - the static dynamic list type
+ * @param <OR> - the object repo type
+ */
 public class ObjectListRepo<
-        O extends BaseModel,
+        O extends UnversionedBaseModel,
         T extends StaticDynamicList<O>,
         OR extends MorphiaRepo<O>> extends MorphiaRepo<T> {
 
