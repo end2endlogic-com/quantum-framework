@@ -3,6 +3,7 @@ package com.e2eq.framework.rest.resources;
 import com.e2eq.framework.model.persistent.base.BaseModel;
 import com.e2eq.framework.model.persistent.base.HierarchicalModel;
 import com.e2eq.framework.model.persistent.base.StaticDynamicList;
+import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.HierarchicalRepo;
 import com.e2eq.framework.model.persistent.morphia.MorphiaRepo;
 import com.e2eq.framework.model.persistent.morphia.ObjectListRepo;
@@ -31,8 +32,19 @@ import static dev.morphia.query.filters.Filters.eq;
 // LR the repository for static dynamic list of O's at each level of the hierarchy
 // T - The HierarchicalModel type
 // TR - The repository for HierarchicalModel type
+
+/**
+ *
+ * @param <O> - The base model at each level of the hierarchy
+ * @param <L> - the static dynamic list of O's at each level of the hierarchy
+ * @param <OR> - the repository for O's at each level of the hierarchy
+ * @param <LR> - the repository for static dynamic list of O's at each level of the hierarchy
+ * @param <T> - The HierarchicalModel type
+ * @param <TR> - The repository for HierarchicalModel type
+ */
+
 public class HierarchyResource<
-        O extends BaseModel,
+        O extends UnversionedBaseModel,
         L extends StaticDynamicList<O>,
         OR extends MorphiaRepo<O>,
         LR extends ObjectListRepo<O,L,OR>,
