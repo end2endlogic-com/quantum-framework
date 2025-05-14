@@ -13,19 +13,23 @@ import org.bson.types.ObjectId;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 import java.util.List;
-import java.util.Set;
 
+// T - This HierarchicalModel type
+// O - The baseModel that is used in at each level
+// L - the static dynamic list of type O
 @Entity
 @Data
 @EqualsAndHashCode(callSuper = true)
 @RegisterForReflection
 @ToString
-public abstract class HiearchicalModel<T extends UnversionedBaseModel, O extends UnversionedBaseModel, L extends StaticDynamicList<O>> extends BaseModel {
+public abstract class HierarchicalModel<T extends HierarchicalModel,
+        O extends UnversionedBaseModel,
+        L extends StaticDynamicList<O>> extends BaseModel {
 
     L staticDynamicList;
 
     @Schema(implementation = String.class, description = "collection of child HierarchicalModel ids")
-    protected Set<ObjectId> descendants;
+    protected List<ObjectId> descendants;
 
     @Schema(description = "this is calculated and not saved to the database and there for  should be read only")
     @JsonManagedReference
