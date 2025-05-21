@@ -74,11 +74,11 @@ public class HierarchyResource<
     @Consumes(MediaType.APPLICATION_JSON)
     public List<TreeNode> getTerritoryTrees() {
         List<TreeNode> nodes = new ArrayList<>();
-        Document query = new Document("parentTerritory", new Document("$exists", false));
+        Document query = new Document("parent", new Document("$exists", false));
         try (MongoCursor<T> cursor = datastore.getCollection(repo.getPersistentClass()).find(query).iterator()) {
             while (cursor.hasNext()) {
-                T rootTerritory = cursor.next();
-                nodes.add(resolveToHierarchy(rootTerritory));
+                T root = cursor.next();
+                nodes.add(resolveToHierarchy(root));
             }
         }
 
