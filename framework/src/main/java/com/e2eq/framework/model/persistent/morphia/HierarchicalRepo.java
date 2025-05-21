@@ -53,7 +53,7 @@ public abstract class HierarchicalRepo<
         if (optionalExisting.isPresent()) {
             T existing = optionalExisting.get();
             if (existing.getParent() != null) {
-                Optional<T> oParent = findById(existing.getParent().getId());
+                Optional<T> oParent = findById(existing.getParent().getEntityId());
                 if (oParent.isPresent()) {
                     oParent.get().getDescendants().remove(existing.getId());
                     super.save(oParent.get());
@@ -69,7 +69,7 @@ public abstract class HierarchicalRepo<
     @Override
     public long delete(@NotNull("the datastore must not be null") Datastore datastore, T aobj) throws ReferentialIntegrityViolationException {
         if (aobj.getParent() != null) {
-            Optional<T> oParentTerritory = findById(aobj.getParent().getId());
+            Optional<T> oParentTerritory = findById(aobj.getParent().getEntityId());
             if (oParentTerritory.isPresent()) {
                 oParentTerritory.get().getDescendants().remove(aobj.getId());
                 super.save(datastore,oParentTerritory.get());
@@ -88,9 +88,9 @@ public abstract class HierarchicalRepo<
             if (value.getId() != null) {
                 // get the existing territory from the database
                 T existing = this.findById(value.getId()).orElse(null);
-                if (existing != null && existing.getParent() != null && !existing.getParent().getId().equals(value.getParent().getId())) {
+                if (existing != null && existing.getParent() != null && !existing.getParent().getEntityId().equals(value.getParent().getEntityId())) {
                     // remove the territory from the old parent
-                    Optional<T> ooldParent = this.findById(existing.getParent().getId());
+                    Optional<T> ooldParent = this.findById(existing.getParent().getEntityId());
                     if (ooldParent.isPresent()) {
                         ooldParent.get().getDescendants().remove(existing.getId());
                         super.save(session, ooldParent.get());
@@ -101,9 +101,9 @@ public abstract class HierarchicalRepo<
             // check if there is a parent territory
             if (saved.getParent() != null) {
                 // get the parent territory
-                Optional<T> oparent = findById(saved.getParent().getId());
+                Optional<T> oparent = findById(saved.getParent().getEntityId());
                 if (!oparent.isPresent()) {
-                    throw new NotFoundException("Parent territory not found for id: " + saved.getParent().getId());
+                    throw new NotFoundException("Parent territory not found for id: " + saved.getParent().getEntityId());
                 }
                 T parent = oparent.get();
                 if (parent.getDescendants() == null) {
@@ -205,7 +205,7 @@ public abstract class HierarchicalRepo<
     public List<O> getAllObjectsForHierarchy(ObjectId objectId) {
         Optional<T> ohiearchyNode = findById(objectId);
         if (!ohiearchyNode.isPresent()) {
-            throw new NotFoundException("Hiearchy Node not found for id: " + objectId);
+            throw new NotFoundException("Hierarchy Node not found for id: " + objectId);
         }
         return getAllObjectsForHierarchy(ohiearchyNode.get());
     }
