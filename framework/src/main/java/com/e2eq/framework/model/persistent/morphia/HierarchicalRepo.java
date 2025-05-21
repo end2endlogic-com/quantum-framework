@@ -21,7 +21,7 @@ import java.util.*;
 import static dev.morphia.aggregation.stages.GraphLookup.graphLookup;
 import static dev.morphia.query.filters.Filters.eq;
 
-// T - The hiearchical Model
+// T - The hierarchical Model
 // O - The object that a static or dynamic list represents at each level in hiearchy
 // L - The staticDynamicList of object O's
 // R - The repository for static or dynamic list of object O's'
