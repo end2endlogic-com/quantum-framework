@@ -61,10 +61,17 @@ public class TestSerialization {
         System.out.println(value);
     }
 
+    public MenuItemModel createMenuItemModel(String refName, String displayName) {
+        MenuItemModel menuItem = new MenuItemModel();
+        menuItem.setRefName(refName);
+        menuItem.setDisplayName(displayName);
+        return menuItem;
+    }
+
     @Test
     public void testMenuHierarchySerialization() throws JsonProcessingException {
         MenuItemStaticDynamicList menuItemStaticDynamicList = new MenuItemStaticDynamicList();
-        menuItemStaticDynamicList.setStaticIds(List.of(new ObjectId("5f8981957851774558000001"), new ObjectId()));
+        menuItemStaticDynamicList.setItems(List.of(createMenuItemModel("TEST1", "Test 1"), createMenuItemModel("TEST2", "Test 2")));
 
         String value = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(menuItemStaticDynamicList);
         System.out.println(value);
@@ -84,7 +91,7 @@ public class TestSerialization {
         children.add(menuChildHierarchyModel);
         menuRootHierarchyModel.setChildren( children);
         MenuItemStaticDynamicList childSlist = new MenuItemStaticDynamicList();
-        childSlist.setStaticIds(List.of(new ObjectId(), new ObjectId()));
+        childSlist.setItems(List.of(createMenuItemModel("TEST3", "Test 3"), createMenuItemModel("TEST4", "Test 4")));
         menuChildHierarchyModel.setStaticDynamicList(childSlist);
 
         value = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(menuRootHierarchyModel);

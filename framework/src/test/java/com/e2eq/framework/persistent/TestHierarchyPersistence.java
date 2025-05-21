@@ -39,10 +39,10 @@ public class TestHierarchyPersistence extends BaseRepoTest {
         return root;
     }
 
-    public MenuItemStaticDynamicList getOrCreateStaticDynamicList(String name, List<ObjectId> staticIds) {
+    public MenuItemStaticDynamicList getOrCreateStaticDynamicList(String name, List<MenuItemModel> items) {
         MenuItemStaticDynamicList slist = new MenuItemStaticDynamicList();
         slist.setRefName(name);
-        slist.setStaticIds(staticIds);
+        slist.setItems(items);
         return slist;
     }
 
@@ -57,9 +57,9 @@ public class TestHierarchyPersistence extends BaseRepoTest {
             return menuItemModel;
         }
     }
-    public List<MenuItemModel> getOrCreateMenuItems() {
+    public List<MenuItemModel> getOrCreateMenuItems(int start, int end) {
         List<MenuItemModel> menuItems = new ArrayList<>();
-        for (int i = 0; i < 10; i++) {
+        for (int i = start; i < end; i++) {
            MenuItemModel model = getOrCreateMenuItem("item" + i);
            menuItems.add(model);
         }
@@ -70,11 +70,11 @@ public class TestHierarchyPersistence extends BaseRepoTest {
 
         try (final SecuritySession ss = new SecuritySession(pContext, rContext)) {
             // create a few Menu Items
-            List<MenuItemModel>  menuItems =  getOrCreateMenuItems();
-            List<ObjectId> objectIds = menuItems.stream().map(MenuItemModel::getId).toList();
+            List<MenuItemModel>  menuItems =  getOrCreateMenuItems(0,10);
+
 
             // Create a MenuItemStaticDynamicList
-            MenuItemStaticDynamicList menuItemStaticDynamicList = getOrCreateStaticDynamicList("rootSList", objectIds);
+            MenuItemStaticDynamicList menuItemStaticDynamicList = getOrCreateStaticDynamicList("rootSList", menuItems);
 
             // create the root
             MenuHierarchyModel menuRootHierarchyModel = getOrCreateHierarchy("root");
@@ -83,7 +83,7 @@ public class TestHierarchyPersistence extends BaseRepoTest {
             // create descendants
             MenuHierarchyModel menuChildHierarchyModel = getOrCreateHierarchy("child");
             menuChildHierarchyModel.setParent(menuRootHierarchyModel.createEntityReference());
-            MenuItemStaticDynamicList childSlist = getOrCreateStaticDynamicList("childSlist", List.of(new ObjectId(), new ObjectId()));
+            MenuItemStaticDynamicList childSlist = getOrCreateStaticDynamicList("childSlist", getOrCreateMenuItems(10,15));
             menuChildHierarchyModel.setStaticDynamicList(childSlist);
             hierarchyRepo.save(menuChildHierarchyModel);
 

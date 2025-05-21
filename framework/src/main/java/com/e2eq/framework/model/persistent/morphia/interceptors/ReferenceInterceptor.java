@@ -13,6 +13,7 @@ import dev.morphia.annotations.Reference;
 import dev.morphia.mapping.Mapper;
 import dev.morphia.mapping.codec.pojo.EntityModel;
 import dev.morphia.mapping.codec.pojo.PropertyModel;
+import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.bson.Document;
@@ -67,6 +68,15 @@ public class ReferenceInterceptor implements EntityListener<Object> {
                                 if (parentBaseModel.getReferences() == null){
                                     parentBaseModel.setReferences(new HashSet<>());
                                 }
+                                // check if there is already a reference for this object and its refName if so remove it as this is replacing it
+                                for (ReferenceEntry referenceEntry : parentBaseModel.getReferences()) {
+                                    if (referenceEntry.getRefName().equals(((BaseModel)childEntity).getRefName()) && referenceEntry.getType().equals(childField.getEntityModel().getType()) &&
+                                            !referenceEntry.getReferencedId().equals(((BaseModel)childEntity).getId())) {
+                                        Log.warnf("Duplicate reference entry found: %s ",  entry.toString());
+                                        parentBaseModel.getReferences().remove(referenceEntry);
+                                    }
+                                }
+
                                 parentBaseModel.getReferences().add(entry);
                                 datastore.save(childField.getAccessor().get(childEntity));
                             }

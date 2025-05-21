@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import dev.morphia.annotations.Entity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.validation.ValidationException;
+import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -31,34 +32,18 @@ public abstract class StaticDynamicList<T extends UnversionedBaseModel> extends 
     @Schema(implementation = String.class, description = "a filter string like the one used in the list api")
     private String filterString;
 
+    @NotNull
     private Mode mode;
 
-    @Schema(implementation = String.class, description = "collection of arbitrary ids")
-    private List<ObjectId> staticIds;
-
-    public void setStaticIds(List<ObjectId> staticIds) {
-        if (this.filterString != null ) {
-            throw new ValidationException("Cannot set staticIds and filterString together. Choose either static or dynamic mode. StaticIds: " + staticIds + ", filterString: " + filterString);
-        }
-        this.mode = Mode.STATIC;
-
-        if (checkIds) {
-            for (ObjectId id : staticIds) {
-                if (!ObjectId.isValid(id.toString())) {
-                    throw new ValidationException("Invalid ObjectId: " + id);
-                }
-            }
-        }
-
-        this.staticIds = staticIds;
-    }
-
+    public abstract List<T> getItems();
+    public abstract void setItems(List<T> items);
 
 
     public void setFilterString(String filterString) {
-        if (this.staticIds != null && !this.staticIds.isEmpty()) {
-            throw new ValidationException("Cannot set staticIds and filterString together. Choose either static or dynamic mode. StaticIds: " + staticIds + ", filterString: " + filterString);
+        if (filterString != null && (this.getItems() != null && !this.getItems().isEmpty())) {
+            throw new ValidationException("Cannot set filterString when the list of items is not empty, implying a static list clear the list first");
         }
+
         this.mode = Mode.DYNAMIC;
         this.filterString = filterString;
     }

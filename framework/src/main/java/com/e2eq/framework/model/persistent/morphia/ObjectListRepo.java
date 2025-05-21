@@ -34,11 +34,11 @@ public class ObjectListRepo<
 
     @Override
     public T save(@NotNull Datastore datastore, @Valid T value) {
-        if (value.isDynamic() && checkIds && value.getStaticIds() != null && !value.getStaticIds().isEmpty()) {
-            for (ObjectId iid : value.getStaticIds()) {
-                if (objectRepo.findById(iid).isEmpty()) {
+        if (value.isDynamic() && checkIds && value.getItems() != null && !value.getItems().isEmpty()) {
+            for (O item: value.getItems()) {
+                if (objectRepo.findById(item.getId()).isEmpty()) {
                     throw new NotFoundException(String.format("Object with id %s not found saving objectList with id:%s",
-                            iid.toHexString(), value.getId().toHexString()));
+                            item.getId().toHexString(), value.getId().toHexString()));
                 }
             }
         }
@@ -54,7 +54,7 @@ public class ObjectListRepo<
 
     public List<O> getObjectsForList(StaticDynamicList<O> staticDynamicList, List<O> objects) {
         if (staticDynamicList.isStatic()) {
-            objects = objectRepo.getListFromIds(staticDynamicList.getStaticIds());
+            objects = staticDynamicList.getItems();
         } else if (staticDynamicList.isDynamic()) {
             String filterString = staticDynamicList.getFilterString();
             objects = objectRepo.getListByQuery(0, -1, filterString, null, null);
@@ -73,14 +73,4 @@ public class ObjectListRepo<
             throw new NotImplementedException(String.format("Unsupported location list type: %s ", staticDynamicList.getMode()));
         }
     }
-
-
-    public List<O> resolveItems(T staticDynamicList, Function<String, List<O>> dynamicResolver, Function<List<ObjectId>, List<O>> staticResolver) {
-        if (staticDynamicList.isDynamic()) {
-            return dynamicResolver.apply(staticDynamicList.getFilterString());
-        } else {
-            return staticResolver.apply(staticDynamicList.getStaticIds());
-        }
-    }
-
 }

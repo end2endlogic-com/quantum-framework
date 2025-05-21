@@ -25,7 +25,7 @@ public abstract class StaticDynamicListRepo<O extends UnversionedBaseModel, OR e
             T staticDynamicList = ostaticDynamicList.get();
 
             if (staticDynamicList.getMode() == StaticDynamicList.Mode.STATIC) {
-               staticDynamicList.getStaticIds().add(getListFromIds(staticDynamicList.getStaticIds() ));
+               staticDynamicList.getItems().add( staticDynamicList.getItems() );
             } else if (staticDynamicList.getMode() == StaticDynamicList.Mode.DYNAMIC) {
                 objectRepo.getListByQuery(0,-1, staticDynamicList.getFilterString());
             } else {
@@ -38,15 +38,15 @@ public abstract class StaticDynamicListRepo<O extends UnversionedBaseModel, OR e
         return objects;
     }
 
-    public Set<O> getChildObjectsForList(ObjectId id) {
+    public List<O> getChildObjectsForList(ObjectId id) {
         Optional<T> ostaticDynamicList = findById(id);
         if (ostaticDynamicList.isPresent()) {
             T staticDynamicList = ostaticDynamicList.get();
             if (staticDynamicList.getMode() == StaticDynamicList.Mode.STATIC) {
 
-                return new HashSet<>(getListFromIds(staticDynamicList.getStaticIds() ));
+                return new ArrayList<>(staticDynamicList.getItems() );
             } else {
-                return Collections.emptySet();
+                return Collections.emptyList();
             }
         } else {
             throw new NotFoundException("Location List not found for id: " + id);
@@ -56,7 +56,7 @@ public abstract class StaticDynamicListRepo<O extends UnversionedBaseModel, OR e
     public List<O> getObjectsForList(@NotNull(message = "locationList can not be null for getLocationsForList method")  T staticDynamicList) {
         List<O> objects = null;
         if (staticDynamicList.getMode() == StaticDynamicList.Mode.STATIC) {
-            objects = getListFromIds(staticDynamicList.getStaticIds() );
+            objects = staticDynamicList.getItems();
         } else if (staticDynamicList.getMode() == StaticDynamicList.Mode.DYNAMIC) {
             objects = objectRepo.getListByQuery(0,-1, staticDynamicList.getFilterString());
         } else {
