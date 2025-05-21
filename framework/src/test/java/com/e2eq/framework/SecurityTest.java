@@ -98,7 +98,7 @@ public class SecurityTest extends BaseRepoTest {
                 credRepo.save(cred);
             }
 
-            Optional<UserProfile> userProfileOp = userProfileRepo.getByUserId(testUtils.getSystemUserId());
+            Optional<UserProfile> userProfileOp = userProfileRepo.getByUserId(testUtils.getTestUserId());
 
             if (userProfileOp.isPresent()) {
                 Log.info("User Name:" + userProfileOp.get().getUserName());

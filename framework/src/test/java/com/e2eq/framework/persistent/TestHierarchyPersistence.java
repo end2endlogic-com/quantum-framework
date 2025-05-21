@@ -82,7 +82,7 @@ public class TestHierarchyPersistence extends BaseRepoTest {
 
             // create descendants
             MenuHierarchyModel menuChildHierarchyModel = getOrCreateHierarchy("child");
-            menuChildHierarchyModel.setParent(menuRootHierarchyModel);
+            menuChildHierarchyModel.setParent(menuRootHierarchyModel.createEntityReference());
             MenuItemStaticDynamicList childSlist = getOrCreateStaticDynamicList("childSlist", List.of(new ObjectId(), new ObjectId()));
             menuChildHierarchyModel.setStaticDynamicList(childSlist);
             hierarchyRepo.save(menuChildHierarchyModel);

@@ -32,12 +32,11 @@ public abstract class HierarchicalModel<T extends HierarchicalModel,
     protected List<ObjectId> descendants;
 
     @Schema(implementation = HierarchicalModel.class, description = "this is calculated and not saved to the database and there for  should be read only")
-    @EqualsAndHashCode.Exclude
+
     protected List<T> children;
 
     @Schema(implementation = HierarchicalModel.class, description = "The parent of the HierarchicalModel, null if it is a root node")
-    @EqualsAndHashCode.Exclude
-    protected T parent;
+    protected EntityReference parent;
 
     @PrePersist
     void beforeSave() {

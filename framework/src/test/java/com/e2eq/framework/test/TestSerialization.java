@@ -72,13 +72,18 @@ public class TestSerialization {
         Assertions.assertTrue(menuItemStaticDynamicList.equals(slist));
 
         MenuHierarchyModel menuRootHierarchyModel = new MenuHierarchyModel();
+        menuRootHierarchyModel.setRefName("root");
+        menuRootHierarchyModel.setDisplayName("Root");
         menuRootHierarchyModel.setStaticDynamicList(menuItemStaticDynamicList);
 
         MenuHierarchyModel menuChildHierarchyModel = new MenuHierarchyModel();
-        menuChildHierarchyModel.setParent(menuRootHierarchyModel);
+        menuChildHierarchyModel.setRefName("child");
+        menuChildHierarchyModel.setDisplayName("Child");
+        menuChildHierarchyModel.setParent(menuRootHierarchyModel.createEntityReference());
         List<MenuHierarchyModel> children = new ArrayList<>();
         children.add(menuChildHierarchyModel);
-        menuRootHierarchyModel.setChildren( children);        MenuItemStaticDynamicList childSlist = new MenuItemStaticDynamicList();
+        menuRootHierarchyModel.setChildren( children);
+        MenuItemStaticDynamicList childSlist = new MenuItemStaticDynamicList();
         childSlist.setStaticIds(List.of(new ObjectId(), new ObjectId()));
         menuChildHierarchyModel.setStaticDynamicList(childSlist);
 
