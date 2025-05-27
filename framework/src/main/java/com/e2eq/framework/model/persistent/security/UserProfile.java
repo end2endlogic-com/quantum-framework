@@ -83,6 +83,7 @@ public @Data class UserProfile extends BaseModel {
     * authentication
     * */
 
+   //TODO replace with domainContext ? or remove
     protected String orgRefName;
     protected String accountNumber;
     protected String tenantId;

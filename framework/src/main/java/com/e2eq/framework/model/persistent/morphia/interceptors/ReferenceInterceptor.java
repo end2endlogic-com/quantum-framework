@@ -17,6 +17,8 @@ import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.bson.Document;
+import org.jetbrains.annotations.NotNull;
+
 import java.lang.annotation.Annotation;
 import java.util.Collection;
 import java.util.HashSet;
@@ -72,7 +74,7 @@ public class ReferenceInterceptor implements EntityListener<Object> {
                                 for (ReferenceEntry referenceEntry : parentBaseModel.getReferences()) {
                                     if (referenceEntry.getRefName().equals(((BaseModel)childEntity).getRefName()) && referenceEntry.getType().equals(childField.getEntityModel().getType()) &&
                                             !referenceEntry.getReferencedId().equals(((BaseModel)childEntity).getId())) {
-                                        Log.warnf("Duplicate reference entry found: %s ",  entry.toString());
+                                        Log.warnf(" >> Duplicate reference entry found  entry to be added: %s   existing reference:%s",  entry.toString(), referenceEntry.toString());
                                         parentBaseModel.getReferences().remove(referenceEntry);
                                     }
                                 }
@@ -83,7 +85,7 @@ public class ReferenceInterceptor implements EntityListener<Object> {
                         }
                     } else {
                         Reference ref = childField.getAnnotation(Reference.class);
-                        if (!ref.ignoreMissing()) {
+                        if (ref!= null && !ref.ignoreMissing()) {
                             throw new IllegalStateException("Reference field " + childField.getName() + " is null" + " but is marked ignoreMissing false remove reference or add correct parent prior to saving");
                         }
                     }
@@ -118,7 +120,7 @@ public class ReferenceInterceptor implements EntityListener<Object> {
     }
 
     @Override
-    public boolean hasAnnotation(Class<? extends Annotation> type) {
+    public boolean hasAnnotation(@NotNull Class<? extends Annotation> type) {
         return false;
     }
 }

@@ -1,6 +1,7 @@
 package com.e2eq.framework.model.persistent.base;
 
 
+import com.e2eq.framework.annotations.ImportRequiredField;
 import com.e2eq.framework.rest.models.UIAction;
 import com.e2eq.framework.rest.models.UIActionList;
 import com.fasterxml.jackson.annotation.JsonIgnore;
@@ -55,6 +56,7 @@ public abstract  class UnversionedBaseModel {
 
      The id will default to the objectId if it is not set
      */
+    @ImportRequiredField
     @Size(min=3, message = "ref name must have a min size of 3 characters" )
     protected String refName;
 
@@ -80,8 +82,14 @@ public abstract  class UnversionedBaseModel {
 
     protected AuditInfo auditInfo;
 
+    /**
+     * this is a calculated field and should not be changed during save
+     */
     protected Set<ReferenceEntry> references;
 
+    /**
+     * this is a calculated field and should not be changed during save
+     */
     protected List<PersistentEvent> persistentEvents;
 
     @Transient
@@ -103,6 +111,11 @@ public abstract  class UnversionedBaseModel {
     public List<String> defaultUIActions() {
         return defaultUIActions;
     }
+
+    /**
+      this should be sent back on save if the record was read in the past. if the type is annotated with SignatureRequired
+     */
+    protected Signatures signatures;
 
     @Transient
     @JsonIgnore

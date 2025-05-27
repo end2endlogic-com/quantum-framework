@@ -1,14 +1,7 @@
 [INFO] Scanning for projects...
 [WARNING] 
-[WARNING] Some problems were encountered while building the effective model for com.end2endlogic:quantum-models:jar:1.2.1-SNAPSHOT
-[WARNING] 'build.plugins.plugin.version' for org.apache.maven.plugins:maven-compiler-plugin is missing. @ line 99, column 21
-[WARNING] 
 [WARNING] Some problems were encountered while building the effective model for com.end2endlogic:quantum-framework:jar:1.2.1-SNAPSHOT
-[WARNING] 'dependencies.dependency.(groupId:artifactId:type:classifier)' must be unique: io.quarkus:quarkus-container-image-docker:jar -> duplicate declaration of version (?) @ line 329, column 17
-[WARNING] 'build.plugins.plugin.version' for org.apache.maven.plugins:maven-compiler-plugin is missing. @ com.end2endlogic:quantum-parent:1.2.1-SNAPSHOT, /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/pom.xml, line 135, column 21
-[WARNING] 
-[WARNING] Some problems were encountered while building the effective model for com.end2endlogic:quantum-parent:pom:1.2.1-SNAPSHOT
-[WARNING] 'build.plugins.plugin.version' for org.apache.maven.plugins:maven-compiler-plugin is missing. @ line 135, column 21
+[WARNING] 'dependencies.dependency.(groupId:artifactId:type:classifier)' must be unique: io.quarkus:quarkus-container-image-docker:jar -> duplicate declaration of version (?) @ line 325, column 17
 [WARNING] 
 [WARNING] It is highly recommended to fix these problems because they threaten the stability of your build.
 [WARNING] 
@@ -22,11 +15,6 @@
 [INFO] com.end2endlogic:quantum-parent                                    [pom]
 [INFO] com.end2endlogic:quantum-models                                    [jar]
 [INFO] com.end2endlogic:quantum-framework                                 [jar]
-[WARNING] Ignoring incompatible plugin version 4.0.0-beta-2: The plugin org.apache.maven.plugins:maven-compiler-plugin:4.0.0-beta-2 requires Maven version 4.0.0-rc-2
-[INFO] Latest version of plugin org.apache.maven.plugins:maven-compiler-plugin failed compatibility check
-[INFO] Looking for compatible RELEASE version of plugin org.apache.maven.plugins:maven-compiler-plugin
-[WARNING] Ignoring incompatible plugin version 4.0.0-beta-1: The plugin org.apache.maven.plugins:maven-compiler-plugin:4.0.0-beta-1 requires Maven version 4.0.0-beta-3
-[INFO] Selected plugin org.apache.maven.plugins:maven-compiler-plugin:3.14.0
 [INFO] 
 [INFO] ------------------< com.end2endlogic:quantum-parent >-------------------
 [INFO] Building com.end2endlogic:quantum-parent 1.2.1-SNAPSHOT            [1/3]
@@ -416,56 +404,13 @@
 [INFO] |  |  +- io.quarkus:quarkus-bootstrap-runner:jar:3.17.7:compile
 [INFO] |  |  \- io.quarkus:quarkus-fs-util:jar:0.0.10:compile
 [INFO] |  \- org.eclipse.microprofile.context-propagation:microprofile-context-propagation-api:jar:1.3:compile
-[INFO] +- io.quarkus:quarkus-resteasy:jar:3.17.7:compile
-[INFO] |  +- io.quarkus:quarkus-vertx-http:jar:3.17.7:compile
-[INFO] |  |  +- io.quarkus:quarkus-tls-registry:jar:3.17.7:compile
-[INFO] |  |  +- io.quarkus:quarkus-credentials:jar:3.17.7:compile
-[INFO] |  |  +- io.quarkus:quarkus-mutiny:jar:3.17.7:compile
-[INFO] |  |  |  +- io.quarkus:quarkus-smallrye-context-propagation:jar:3.17.7:compile
-[INFO] |  |  |  |  \- io.smallrye:smallrye-context-propagation:jar:2.1.2:compile
-[INFO] |  |  |  |     +- io.smallrye:smallrye-context-propagation-api:jar:2.1.2:compile
-[INFO] |  |  |  |     \- io.smallrye:smallrye-context-propagation-storage:jar:2.1.2:compile
-[INFO] |  |  |  \- io.smallrye.reactive:mutiny-smallrye-context-propagation:jar:2.6.2:compile
-[INFO] |  |  +- io.smallrye.common:smallrye-common-vertx-context:jar:2.9.0:compile
-[INFO] |  |  +- io.smallrye.reactive:smallrye-mutiny-vertx-web:jar:3.16.0:compile
-[INFO] |  |  |  +- io.smallrye.reactive:smallrye-mutiny-vertx-web-common:jar:3.16.0:compile
-[INFO] |  |  |  +- io.smallrye.reactive:smallrye-mutiny-vertx-auth-common:jar:3.16.0:compile
-[INFO] |  |  |  +- io.smallrye.reactive:smallrye-mutiny-vertx-bridge-common:jar:3.16.0:compile
-[INFO] |  |  |  \- io.smallrye.reactive:smallrye-mutiny-vertx-uri-template:jar:3.16.0:compile
-[INFO] |  |  |     \- io.vertx:vertx-uri-template:jar:4.5.11:compile
-[INFO] |  |  +- io.vertx:vertx-web:jar:4.5.11:compile
-[INFO] |  |  |  +- io.vertx:vertx-web-common:jar:4.5.11:compile
-[INFO] |  |  |  +- io.vertx:vertx-auth-common:jar:4.5.11:compile
-[INFO] |  |  |  \- io.vertx:vertx-bridge-common:jar:4.5.11:compile
-[INFO] |  |  +- io.github.crac:org-crac:jar:0.1.3:compile
-[INFO] |  |  \- com.aayushatharva.brotli4j:brotli4j:jar:1.16.0:compile
-[INFO] |  |     +- com.aayushatharva.brotli4j:service:jar:1.16.0:compile
-[INFO] |  |     \- com.aayushatharva.brotli4j:native-osx-aarch64:jar:1.16.0:compile
-[INFO] |  +- io.quarkus.vertx.utils:quarkus-vertx-utils:jar:3.17.7:compile
-[INFO] |  \- io.quarkus:quarkus-resteasy-server-common:jar:3.17.7:compile
-[INFO] |     +- io.quarkus:quarkus-resteasy-common:jar:3.17.7:compile
-[INFO] |     |  +- org.eclipse.angus:angus-activation:jar:2.0.2:compile
-[INFO] |     |  \- org.jboss.resteasy.microprofile:microprofile-config:jar:3.0.0.Final:compile
-[INFO] |     |     \- jakarta.servlet:jakarta.servlet-api:jar:6.0.0:compile
-[INFO] |     \- org.jboss.resteasy:resteasy-cdi:jar:6.2.11.Final:compile
-[INFO] +- io.quarkus:quarkus-resteasy-jackson:jar:3.17.7:compile
-[INFO] |  +- io.quarkus:quarkus-jackson:jar:3.17.7:compile
-[INFO] |  |  +- com.fasterxml.jackson.datatype:jackson-datatype-jsr310:jar:2.18.2:compile
-[INFO] |  |  +- com.fasterxml.jackson.datatype:jackson-datatype-jdk8:jar:2.18.2:compile
-[INFO] |  |  \- com.fasterxml.jackson.module:jackson-module-parameter-names:jar:2.18.2:compile
-[INFO] |  +- org.jboss.resteasy:resteasy-jackson2-provider:jar:6.2.11.Final:compile
-[INFO] |  |  +- org.jboss.resteasy:resteasy-core-spi:jar:6.2.11.Final:compile
-[INFO] |  |  |  \- org.reactivestreams:reactive-streams:jar:1.0.4:compile
-[INFO] |  |  +- org.jboss.resteasy:resteasy-core:jar:6.2.11.Final:compile
-[INFO] |  |  |  \- com.ibm.async:asyncutil:jar:0.1.0:compile
-[INFO] |  |  +- com.fasterxml.jackson.jakarta.rs:jackson-jakarta-rs-base:jar:2.18.2:compile
-[INFO] |  |  +- com.fasterxml.jackson.jakarta.rs:jackson-jakarta-rs-json-provider:jar:2.18.2:compile
-[INFO] |  |  +- com.fasterxml.jackson.module:jackson-module-jakarta-xmlbind-annotations:jar:2.18.2:compile
-[INFO] |  |  \- com.github.java-json-tools:json-patch:jar:1.13:compile
-[INFO] |  |     \- com.github.java-json-tools:msg-simple:jar:1.2:compile
-[INFO] |  |        \- com.github.java-json-tools:btf:jar:1.3:compile
-[INFO] |  \- jakarta.xml.bind:jakarta.xml.bind-api:jar:4.0.2:compile
-[INFO] |     \- jakarta.activation:jakarta.activation-api:jar:2.1.3:compile
+[INFO] +- io.quarkus:quarkus-rest-jackson:jar:3.17.7:compile
+[INFO] |  \- io.quarkus:quarkus-rest-jackson-common:jar:3.17.7:compile
+[INFO] |     +- io.quarkus.resteasy.reactive:resteasy-reactive-jackson:jar:3.17.7:compile
+[INFO] |     \- io.quarkus:quarkus-jackson:jar:3.17.7:compile
+[INFO] |        +- com.fasterxml.jackson.datatype:jackson-datatype-jsr310:jar:2.18.2:compile
+[INFO] |        +- com.fasterxml.jackson.datatype:jackson-datatype-jdk8:jar:2.18.2:compile
+[INFO] |        \- com.fasterxml.jackson.module:jackson-module-parameter-names:jar:2.18.2:compile
 [INFO] +- io.quarkus:quarkus-security:jar:3.17.7:compile
 [INFO] |  +- io.quarkus:quarkus-security-runtime-spi:jar:3.17.7:compile
 [INFO] |  +- jakarta.interceptor:jakarta.interceptor-api:jar:2.2.0:compile
@@ -483,7 +428,31 @@
 [INFO] |     \- org.eclipse.parsson:parsson:jar:1.1.7:compile
 [INFO] +- io.quarkus:quarkus-smallrye-jwt:jar:3.17.7:compile
 [INFO] |  +- io.smallrye:smallrye-jwt:jar:4.6.1:compile
-[INFO] |  \- jakarta.annotation:jakarta.annotation-api:jar:3.0.0:compile
+[INFO] |  +- jakarta.annotation:jakarta.annotation-api:jar:3.0.0:compile
+[INFO] |  \- io.quarkus:quarkus-vertx-http:jar:3.17.7:compile
+[INFO] |     +- io.quarkus:quarkus-tls-registry:jar:3.17.7:compile
+[INFO] |     +- io.quarkus:quarkus-credentials:jar:3.17.7:compile
+[INFO] |     +- io.quarkus:quarkus-mutiny:jar:3.17.7:compile
+[INFO] |     |  +- io.quarkus:quarkus-smallrye-context-propagation:jar:3.17.7:compile
+[INFO] |     |  |  \- io.smallrye:smallrye-context-propagation:jar:2.1.2:compile
+[INFO] |     |  |     +- io.smallrye:smallrye-context-propagation-api:jar:2.1.2:compile
+[INFO] |     |  |     \- io.smallrye:smallrye-context-propagation-storage:jar:2.1.2:compile
+[INFO] |     |  \- io.smallrye.reactive:mutiny-smallrye-context-propagation:jar:2.6.2:compile
+[INFO] |     +- io.smallrye.common:smallrye-common-vertx-context:jar:2.9.0:compile
+[INFO] |     +- io.smallrye.reactive:smallrye-mutiny-vertx-web:jar:3.16.0:compile
+[INFO] |     |  +- io.smallrye.reactive:smallrye-mutiny-vertx-web-common:jar:3.16.0:compile
+[INFO] |     |  +- io.smallrye.reactive:smallrye-mutiny-vertx-auth-common:jar:3.16.0:compile
+[INFO] |     |  +- io.smallrye.reactive:smallrye-mutiny-vertx-bridge-common:jar:3.16.0:compile
+[INFO] |     |  \- io.smallrye.reactive:smallrye-mutiny-vertx-uri-template:jar:3.16.0:compile
+[INFO] |     |     \- io.vertx:vertx-uri-template:jar:4.5.11:compile
+[INFO] |     +- io.vertx:vertx-web:jar:4.5.11:compile
+[INFO] |     |  +- io.vertx:vertx-web-common:jar:4.5.11:compile
+[INFO] |     |  +- io.vertx:vertx-auth-common:jar:4.5.11:compile
+[INFO] |     |  \- io.vertx:vertx-bridge-common:jar:4.5.11:compile
+[INFO] |     +- io.github.crac:org-crac:jar:0.1.3:compile
+[INFO] |     \- com.aayushatharva.brotli4j:brotli4j:jar:1.16.0:compile
+[INFO] |        +- com.aayushatharva.brotli4j:service:jar:1.16.0:compile
+[INFO] |        \- com.aayushatharva.brotli4j:native-osx-aarch64:jar:1.16.0:compile
 [INFO] +- io.quarkus:quarkus-smallrye-openapi:jar:3.17.7:compile
 [INFO] |  +- io.smallrye:smallrye-open-api-core:jar:4.0.6:compile
 [INFO] |  |  +- org.eclipse.microprofile.openapi:microprofile-openapi-api:jar:4.0.2:compile
@@ -494,6 +463,7 @@
 [INFO] +- com.end2endlogic:quantum-extension:jar:1.1.2:compile
 [INFO] |  +- io.quarkus:quarkus-mongodb-client:jar:3.17.7:compile
 [INFO] |  |  +- io.smallrye.reactive:mutiny-zero-flow-adapters:jar:1.1.0:compile
+[INFO] |  |  |  \- org.reactivestreams:reactive-streams:jar:1.0.4:compile
 [INFO] |  |  +- io.quarkus:quarkus-mutiny-reactive-streams-operators:jar:3.17.7:compile
 [INFO] |  |  |  +- org.eclipse.microprofile.reactive-streams-operators:microprofile-reactive-streams-operators-api:jar:3.0.1:compile
 [INFO] |  |  |  +- org.eclipse.microprofile.reactive-streams-operators:microprofile-reactive-streams-operators-core:jar:3.0.1:compile
@@ -663,6 +633,8 @@
 [INFO] +- com.github.java-json-tools:json-schema-validator:jar:2.2.14:compile
 [INFO] |  +- com.github.java-json-tools:jackson-coreutils-equivalence:jar:1.0:compile
 [INFO] |  |  \- com.github.java-json-tools:jackson-coreutils:jar:2.0:compile
+[INFO] |  |     \- com.github.java-json-tools:msg-simple:jar:1.2:compile
+[INFO] |  |        \- com.github.java-json-tools:btf:jar:1.3:compile
 [INFO] |  +- com.github.java-json-tools:json-schema-core:jar:1.2.14:compile
 [INFO] |  |  +- com.github.java-json-tools:uri-template:jar:0.10:compile
 [INFO] |  |  \- org.mozilla:rhino:jar:1.7.7.2:compile
@@ -775,16 +747,19 @@
 [INFO]    |  \- io.quarkus.resteasy.reactive:resteasy-reactive-common:jar:3.17.7:compile
 [INFO]    |     \- io.quarkus.resteasy.reactive:resteasy-reactive-common-types:jar:3.17.7:compile
 [INFO]    \- io.quarkus.resteasy.reactive:resteasy-reactive-vertx:jar:3.17.7:compile
-[INFO]       \- io.quarkus.resteasy.reactive:resteasy-reactive:jar:3.17.7:compile
+[INFO]       +- io.quarkus.resteasy.reactive:resteasy-reactive:jar:3.17.7:compile
+[INFO]       +- io.quarkus.vertx.utils:quarkus-vertx-utils:jar:3.17.7:compile
+[INFO]       \- jakarta.xml.bind:jakarta.xml.bind-api:jar:4.0.2:compile
+[INFO]          \- jakarta.activation:jakarta.activation-api:jar:2.1.3:compile
 [INFO] ------------------------------------------------------------------------
 [INFO] Reactor Summary for com.end2endlogic:quantum-parent 1.2.1-SNAPSHOT:
 [INFO] 
-[INFO] com.end2endlogic:quantum-parent .................... SUCCESS [  0.361 s]
-[INFO] com.end2endlogic:quantum-models .................... SUCCESS [  0.090 s]
-[INFO] com.end2endlogic:quantum-framework ................. SUCCESS [  0.305 s]
+[INFO] com.end2endlogic:quantum-parent .................... SUCCESS [  0.400 s]
+[INFO] com.end2endlogic:quantum-models .................... SUCCESS [  0.099 s]
+[INFO] com.end2endlogic:quantum-framework ................. SUCCESS [  0.340 s]
 [INFO] ------------------------------------------------------------------------
 [INFO] BUILD SUCCESS
 [INFO] ------------------------------------------------------------------------
-[INFO] Total time:  1.376 s
-[INFO] Finished at: 2025-05-07T21:55:10-04:00
+[INFO] Total time:  1.513 s
+[INFO] Finished at: 2025-05-27T15:51:57-05:00
 [INFO] ------------------------------------------------------------------------

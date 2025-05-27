@@ -5,10 +5,9 @@ import dev.morphia.annotations.Entity;
 import dev.morphia.annotations.IndexOptions;
 import dev.morphia.annotations.Indexed;
 import io.quarkus.runtime.annotations.RegisterForReflection;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.EqualsAndHashCode;
-import lombok.NoArgsConstructor;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import lombok.*;
 import lombok.experimental.SuperBuilder;
 
 @Entity
@@ -25,6 +24,8 @@ public class Realm extends BaseModel {
     mingardia@end2endlogic.com for example the email domain would be "end2endlogic.com".
     */
    @Indexed(options= @IndexOptions(unique=true))
+   @NotNull
+   @NonNull
    protected String emailDomain;
 
    /**
@@ -35,14 +36,28 @@ public class Realm extends BaseModel {
    /**
     The database to use with-in that database server.
     */
+   @Indexed(options= @IndexOptions(unique=true))
+   @NotNull
+   @NonNull
    protected String databaseName;
 
    /** the user id of the owner of this realm */
    protected String defaultAdminUserId;
 
+
+   public String getDefaultAdminUserId() {
+      if (defaultAdminUserId == null) {
+         return "admin@" + emailDomain;
+      } else {
+         return defaultAdminUserId;
+      }
+   }
    /**
     * The domain context to use by default for uses that authenticate with in this realm.
     */
+   @Valid
+   @NotNull
+   @NonNull
    protected DomainContext domainContext;
 
    @Override

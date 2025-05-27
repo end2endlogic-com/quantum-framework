@@ -84,6 +84,10 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         return realmId;
     }
 
+    public String getDatabaseName() {
+       return morphiaDataStore.getDataStore(getSecurityContextRealmId()).getDatabase().getName();
+    }
+
     public Filter[] getFilterArray(@NotNull List<Filter> filters, Class<? extends UnversionedBaseModel> modelClass) {
         if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
             filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get(), modelClass);

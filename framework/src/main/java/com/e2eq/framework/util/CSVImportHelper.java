@@ -24,6 +24,7 @@ import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import static java.lang.String.format;
 
@@ -39,12 +40,17 @@ public class CSVImportHelper {
 
     public <T> void validateBean(T bean) {
         Set<ConstraintViolation<T>> violations = validator.validate(bean);
-        // create a message from the violations:
-        StringBuilder messageBuffer = new StringBuilder();
-        for (ConstraintViolation<T> violation : violations) {
-            messageBuffer.append(violation.getMessage()).append("\n");
+
+        if (!violations.isEmpty()) {
+
+            // create a message from the violations:
+            StringBuilder messageBuffer = new StringBuilder();
+            for (ConstraintViolation<T> violation : violations) {
+                messageBuffer.append(violation.getMessage()).append("\n");
+            }
+
+            throw new ValidationException(messageBuffer.toString().trim());
         }
-        throw new ValidationException(messageBuffer.toString().trim());
     }
 
     private QuoteMode getQuoteMode(String quotingStrategy) {
@@ -83,6 +89,8 @@ public class CSVImportHelper {
     }
 
     public static class ImportResult<T> {
+        private int updateCount;
+        private int insertCount;
         private int importedCount;
         private int failedCount;
         private final List<String> failedRecordsFeedback;
@@ -123,6 +131,69 @@ public class CSVImportHelper {
         public void addFailedRecordFeedback(String feedback) {
             this.failedRecordsFeedback.add(feedback);
         }
+
+        public void setInsertCount(int insertCount) {
+            this.insertCount = insertCount;
+        }
+
+        public void setUpdateCount(int updateCount) {
+            this.updateCount = updateCount;
+        }
+
+        public int getInsertCount() {
+            return insertCount;
+        }
+
+        public int getUpdateCount () {
+            return updateCount;
+        }
+    }
+
+    public <T extends UnversionedBaseModel> ImportResult<T> preProcessCSV(
+       BaseMorphiaRepo<T> repo,
+       InputStream inputStream,
+       char fieldSeparator,
+       char quoteChar,
+       boolean skipHeaderRow,
+       List<String> requestedColumns,
+       Charset charset,
+       boolean mustUseBOM,
+       String quotingStrategy,
+       FailedRecordHandler<T> failedRecordHandler
+    ) throws IOException {
+        ImportResult<T> result= new ImportResult<>(0, 0);
+        try (Reader reader = new InputStreamReader(inputStream, charset)) {
+            if (mustUseBOM) {
+                reader.read(); // Skip BOM character
+            }
+
+            ICsvDozerBeanReader beanReader = new CsvDozerBeanReader(reader,
+               new CsvPreference.Builder(quoteChar, fieldSeparator, "\r\n")
+                  .useQuoteMode(getQuoteMode(quotingStrategy))
+                  .build());
+
+            String[] header = beanReader.getHeader(true);
+            if (skipHeaderRow && header == null) {
+                throw new IllegalArgumentException("CSV file does not contain a header row");
+            }
+
+            //String[] fieldMapping = createFieldMapping(header, requestedColumns, preferredColumnNames);
+
+            // convert requestedColumns to an array of strings
+            String[] fieldMapping = requestedColumns.toArray(new String[requestedColumns.size()]);
+
+            beanReader.configureBeanMapping(repo.getPersistentClass(), fieldMapping);
+
+            CellProcessor[] processors = new CellProcessor[fieldMapping.length];
+
+            result = preprocessFlatProperty(repo, beanReader, processors, failedRecordHandler);
+
+
+        } catch (IOException e) {
+            throw new WebApplicationException("Error importing CSV: " + e.getMessage(), e, 400);
+        }
+
+        return result;
     }
 
     public <T extends UnversionedBaseModel> ImportResult<T> importCSV(
@@ -173,6 +244,33 @@ public class CSVImportHelper {
         return result;
     }
 
+
+    private  <T extends UnversionedBaseModel> ImportResult<T> preprocessFlatProperty(BaseMorphiaRepo<T> repo,
+                                                                                 ICsvDozerBeanReader beanReader,
+                                                                                 CellProcessor[] processors,
+                                                                                 FailedRecordHandler<T> failedRecordHandler) throws IOException {
+        ImportResult<T> result = new ImportResult<>(0, 0);
+        List<T> batch = new ArrayList<>(BATCH_SIZE);
+
+        while (true) {
+            T bean = beanReader.read(repo.getPersistentClass(), processors);
+            if (bean == null) break;
+
+            batch.add(bean);
+            if (batch.size() >= BATCH_SIZE) {
+                preProcessBatch(repo, batch,  result);
+                batch.clear();
+            }
+        }
+
+        // Process any remaining entities in the buffer
+        if (!batch.isEmpty()) {
+            result = preProcessBatch(repo, batch,  result);
+        }
+
+        return result;
+    }
+
     private  <T extends UnversionedBaseModel> ImportResult<T> importFlatProperty(BaseMorphiaRepo<T> repo,
                                                                      ICsvDozerBeanReader beanReader,
                                                                      CellProcessor[] processors,
@@ -180,6 +278,9 @@ public class CSVImportHelper {
 
         ImportResult<T> result = new ImportResult<>(0, 0);
         List<T> batch = new ArrayList<>(BATCH_SIZE);
+
+
+
 
         while (true) {
             T bean = beanReader.read(repo.getPersistentClass(), processors);
@@ -204,6 +305,40 @@ public class CSVImportHelper {
         if (!batch.isEmpty()) {
              result = processBatch(repo, batch, failedRecordHandler, result);
         }
+
+        return result;
+    }
+
+    public <T extends UnversionedBaseModel> ImportResult<T> preProcessBatch(
+       BaseMorphiaRepo<T> repo,
+       List<T> batch,
+       ImportResult<T> result) {
+        if (batch.isEmpty()) return result;
+
+        // gather a list of refNames from the batch using streaming
+        List<String> refNames = batch.stream().map(T::getRefName).toList();
+
+
+        // determine which records are updates which ones are inserts
+        List<T> foundEntities = repo.getListFromRefNames(refNames);
+        List<String> foundRefNames = foundEntities.stream().map(T::getRefName).toList();
+
+        // determine the difference
+        List<T> newEntities = batch.stream().filter(entity -> !foundRefNames.contains(entity.getRefName())).toList();
+        List<T> existingEntities = batch.stream().filter(entity -> foundRefNames.contains(entity.getRefName())).toList();
+
+        for (T model : newEntities) {
+            try {
+                validateBean(model);
+            } catch (ValidationException e) {
+                result.incrementFailedCount();
+                result.addFailedRecordFeedback("Validation failed for record: " + model.toString() + " due to " + e.getMessage());
+                continue;
+            }
+        }
+
+        result.setInsertCount(newEntities.size() - result.getFailedCount());
+        result.setUpdateCount(existingEntities.size());
 
         return result;
     }

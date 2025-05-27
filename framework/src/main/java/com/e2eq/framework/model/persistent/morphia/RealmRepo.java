@@ -33,10 +33,15 @@ public class RealmRepo extends MorphiaRepo<Realm> {
       return Optional.ofNullable(obj);
    }
 
-   public Optional<Realm> findByTenantId(String tenantId) {
+   public Optional<Realm> findByTenantId(String tenantId, boolean ignoreRules) {
       List<Filter> filters = new ArrayList<>();
-      filters.add(Filters.eq("tenantId", tenantId));
-      Filter[] qfilters = getFilterArray(filters, getPersistentClass());
+      filters.add(Filters.eq("databaseName", tenantId));
+      Filter[] qfilters = new Filter[1];;
+      if (!ignoreRules) {
+         qfilters = getFilterArray(filters, getPersistentClass());
+      } else {
+         qfilters = filters.toArray(qfilters);
+      }
 
       Query<Realm> query = morphiaDataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass()).filter(qfilters);
       Realm obj = query.first();

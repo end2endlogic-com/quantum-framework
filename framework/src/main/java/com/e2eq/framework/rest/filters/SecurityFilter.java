@@ -177,8 +177,7 @@ public class SecurityFilter implements ContainerRequestFilter {
                         .build();
                 SecurityContext.setResourceContext(rcontext);
                 if (Log.isEnabled(Logger.Level.WARN)) {
-                    Log.warn(path + ":Odd request convention, not following /area/fd/fa .. so assuming the fd and area are equal: " +
-                            "Only two tokens for resource, assuming area as fd, fd=" + functionalDomain + " action=" + action);
+                    Log.warnf( "%s:Odd request convention, not following /area/fd/fa .. so assuming the fd and area are equal: %s only two tokens for resource, assuming area as fd, fd=%s action=%s" , path, functionalDomain, functionalDomain, action);
                 }
 
                 if (Log.isDebugEnabled()) {
@@ -208,7 +207,7 @@ public class SecurityFilter implements ContainerRequestFilter {
         // Get the Authorization header from the request
         String authorizationHeader = requestContext.getHeaderString(HttpHeaders.AUTHORIZATION);
 
-        // TODO: check the JWT Token and ensure its none null vs. just looking at the authorization header.
+        // if there is an authorization header then we can authenticate this call.
         if (authorizationHeader != null && jwt != null) {
             String token = authorizationHeader.substring(AUTHENTICATION_SCHEME.length()).trim();
             String userId = jwt.getClaim("username");
@@ -247,7 +246,9 @@ public class SecurityFilter implements ContainerRequestFilter {
                                 .withScope("AUTHENTICATED")
                                 .build();
                     }
-                }
+                } else {
+                        Log.warnf("Could not find the user:%s in the database:%s and could not parse the id into an email address to look up the realm.", userId, credentialRepo.getDatabaseName());
+                    }
                 // we could not find the userid and we could not parse the id into an email address to look up the realm.
                 // so all we can do is assume the system defaults and see if there are roles defined
                 pcontext.setUserId(userId);
@@ -255,32 +256,9 @@ public class SecurityFilter implements ContainerRequestFilter {
                 String[] roles = rolesSet.isEmpty() ? new String[]{"ANONYMOUS"} : rolesSet.toArray(new String[0]);
                 pcontext.setRoles(roles);
             }
-        } else {
-            String tenantId = requestContext.getUriInfo().getQueryParameters().getFirst("tenantId");
-            if (tenantId != null) {
-                Optional<Realm> orealm = realmRepo.findByTenantId(tenantId);
-                if (orealm.isPresent()) {
-                    Realm realm = orealm.get();
-                    DataDomain dataDomain = realm.getDomainContext().toDataDomain(realm.getDefaultAdminUserId());
-                    Optional<CredentialUserIdPassword> ocreds = credentialRepo.findByUserId(tenantId, realm.getDefaultAdminUserId());
-                    if (ocreds.isPresent()) {
-                        CredentialUserIdPassword cred = ocreds.get();
-                        String[] roles = cred.getRoles();
-                        if (roles == null || roles.length == 0) {
-                            Set<String> rolesSet = securityIdentity.getRoles();
-                            roles = rolesSet.isEmpty() ? new String[]{"ANONYMOUS"} : rolesSet.toArray(new String[0]);
-                        }
-                        pcontext = new PrincipalContext.Builder()
-                                .withDefaultRealm(realm.getRefName())
-                                .withDataDomain(dataDomain)
-                                .withUserId(realm.getDefaultAdminUserId())
-                                .withRoles(roles)
-                                .withScope("systemGenerated")
-                                .build();
-                    }
-                }
-            }
         }
+        // either the context was set or we defaulted to the anonmyous context
+
 
         return pcontext;
     }
@@ -458,4 +436,3 @@ public class SecurityFilter implements ContainerRequestFilter {
 
     }
     */
-

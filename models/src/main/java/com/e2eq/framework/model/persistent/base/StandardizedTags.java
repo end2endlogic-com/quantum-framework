@@ -1,7 +1,5 @@
-package com.e2eq.framework.model.persistent;
+package com.e2eq.framework.model.persistent.base;
 
-import com.e2eq.framework.model.persistent.base.BaseCollection;
-import com.e2eq.framework.model.persistent.base.BaseModel;
 import dev.morphia.annotations.Entity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.validation.constraints.NotEmpty;
