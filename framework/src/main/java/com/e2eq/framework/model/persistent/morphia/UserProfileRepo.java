@@ -31,8 +31,6 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
    @Inject
    CredentialRepo credRepo;
 
-   @ConfigProperty(name="auth.provider")
-   private String authProvider;
 
    @Inject
    SecurityUtils securityUtils;

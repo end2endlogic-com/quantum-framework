@@ -34,7 +34,7 @@ public class RealmResource extends BaseResource<Realm, BaseMorphiaRepo<Realm>> {
    @Consumes({"application/json"})
    public Response byTenantId(@QueryParam("tenantId") String tenantId) {
         RealmRepo rrepo = (RealmRepo) this.repo;
-        Optional<Realm> orealm = rrepo.findByTenantId(tenantId);
+        Optional<Realm> orealm = rrepo.findByTenantId(tenantId, false);
         if (orealm.isPresent()) {
            return Response.ok(orealm.get()).build();
         } else {

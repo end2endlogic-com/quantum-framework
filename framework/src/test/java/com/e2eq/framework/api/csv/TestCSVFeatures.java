@@ -218,6 +218,35 @@ public class TestCSVFeatures extends BaseRepoTest {
     }
 
     @Test
+    public void testCSVImportPreProcessor() throws IOException {
+        try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
+            CSVImportHelper helper = csvImportHelper;
+            InputStream inputStream = getClass().getClassLoader().getResourceAsStream("testData/TestImportCSV.csv");
+            Charset chosenCharset = Charset.forName("UTF-8");
+            List failedRecords = new ArrayList<>();
+            CSVImportHelper.FailedRecordHandler failedRecordHandler = failedRecords::add;
+            CSVImportHelper.ImportResult result = helper.preProcessCSV(
+               repo,
+               inputStream,
+               ',',
+               '"',
+               false,
+               List.of("refName", "displayName", "testField", "testField2", "testField3", "testList[0]"),
+               chosenCharset,
+               false,
+               "QUOTE_WHERE_ESSENTIAL",
+               failedRecordHandler            );
+
+            System.out.println("Preprocess Result: Update Count:" + result.getUpdateCount());
+            System.out.println("Preprocess Result: Insert Count:" + result.getInsertCount());
+            System.out.println("Preprocess Result: Imported Failed Count:" + result.getFailedCount());
+            for (Object r : result.getFailedRecordsFeedback()) {
+                System.out.println(r);
+            }
+        }
+    }
+
+    @Test
     public void testCSVImportHelper() throws IOException {
 
         try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
