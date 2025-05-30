@@ -244,9 +244,9 @@ public class SecurityResource {
         String user = tokenizer.nextToken();
         String tenantId = tokenizer.nextToken().replace(".", "-");
 
-        if (Log.isDebugEnabled()) {
-            Log.debug("Logging in userid:" + user + " with tenantId:" + tenantId);
-        }
+
+        Log.infof("Logging in userid: %s tenantId: %s",user, tenantId);
+
 
         var authProvider = authProviderFactory.getAuthProvider();
 

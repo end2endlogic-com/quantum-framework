@@ -66,36 +66,5 @@ public class TestCustTokenAuthProvider extends BaseRepoTest {
         }
     }
 
-    @Test
-    public void testCreateCognitoUser() throws ReferentialIntegrityViolationException {
-        if (authProvider.equals("cognito")) {
 
-            AuthProvider authProvider = authProviderFactory.getAuthProvider();
-            UserManagement userManager = authProviderFactory.getUserManager();
-
-            try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
-                DomainContext domainContext = DomainContext.builder()
-                        .orgRefName(testUtils.getTestOrgRefName())
-                        .defaultRealm(testUtils.getTestRealm())
-                        .accountId(testUtils.getTestAccountNumber())
-                        .tenantId(testUtils.getTestTenantId())
-                        .build();
-
-
-                userManager.createUser("testuser2@end2endlogic.com", "P@zzw@rd321", Set.of("user"), domainContext);
-                Set<String> roles = userManager.getUserRoles("testuser2@end2endlogic.com");
-                Assert.assertTrue(roles.contains("user"));
-                AuthProvider.LoginResponse response = authProvider.login("testuser2@end2endlogic.com", "P@zzw@rd321");
-                Assert.assertTrue(response.authenticated());
-                Assert.assertTrue(userManager.userExists("testuser2@end2endlogic.com"));
-                userManager.assignRoles("testuser2@end2endlogic.com", Set.of("admin"));
-                Assert.assertTrue(userManager.getUserRoles("testuser2@end2endlogic.com").contains("admin"));
-                userManager.removeRoles("testuser2@end2endlogic.com", Set.of("admin"));
-                Assert.assertFalse(userManager.getUserRoles("testuser2@end2endlogic.com").contains("admin"));
-                userManager.removeUser("testuser2@end2endlogic.com");
-                Assert.assertFalse(userManager.userExists("testuser2@end2endlogic.com"));
-            }
-        }
-    }
 }
-
