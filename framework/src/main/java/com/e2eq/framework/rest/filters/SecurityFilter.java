@@ -195,6 +195,11 @@ public class SecurityFilter implements ContainerRequestFilter {
     }
 
     protected PrincipalContext determinePrincipalContext(ContainerRequestContext requestContext) {
+        if (Log.isDebugEnabled()) {
+            Log.debug("---Determining principal context--");
+            Log.debug("Security Identity:" + securityIdentity.toString());
+        }
+
         // Default to an anonymous PrincipalContext
         PrincipalContext pcontext = new PrincipalContext.Builder()
                 .withDefaultRealm(securityUtils.getSystemRealm())
@@ -211,6 +216,11 @@ public class SecurityFilter implements ContainerRequestFilter {
         if (authorizationHeader != null && jwt != null) {
             String token = authorizationHeader.substring(AUTHENTICATION_SCHEME.length()).trim();
             String userId = jwt.getClaim("username");
+
+            if (userId == null) {
+                Log.warn("JWT did not contain a username claim, using sub claim instead");
+                userId = jwt.getClaim("sub");
+            }
 
             if (userId != null) {
                 Optional<CredentialUserIdPassword> ocreds = credentialRepo.findByUserId(userId);
@@ -229,32 +239,40 @@ public class SecurityFilter implements ContainerRequestFilter {
                             .withRoles(roles)
                             .withScope("AUTHENTICATED")
                             .build();
-                } else // we did not find the user in the database lets see if we can find a realm based on email address
-                    if (ValidateUtils.isValidEmailAddress(userId)) {
-                    String emailDomain = userId.substring(userId.indexOf("@") + 1);
-                    Optional<Realm> orealm = realmRepo.findByEmailDomain(emailDomain, true);
-                    if (orealm.isPresent()) {
-                        Realm realm = orealm.get();
-                        DataDomain dataDomain = realm.getDomainContext().toDataDomain(userId);
-                        Set<String> rolesSet = securityIdentity.getRoles();
-                        String[] roles = rolesSet.isEmpty() ? new String[]{"ANONYMOUS"} : rolesSet.toArray(new String[rolesSet.size()]);
-                        pcontext = new PrincipalContext.Builder()
-                                .withDefaultRealm(realm.getDomainContext().getDefaultRealm())
-                                .withDataDomain(dataDomain)
-                                .withUserId(userId)
-                                .withRoles(roles)
-                                .withScope("AUTHENTICATED")
-                                .build();
-                    }
                 } else {
+                    // we did not find the user in the database lets see if we can find a realm based on email address
+                    Log.warnf("Could not find user with username / subject:%s", userId);
+                    Log.warn("Attempting to see if the realm is defined via the user/subject being an email address");
+                    if (ValidateUtils.isValidEmailAddress(userId)) {
+
+                        String emailDomain = userId.substring(userId.indexOf("@") + 1);
+                        Log.infof("UserId appears to be an email address with domain %s searching realms for domain Context", emailDomain);
+                        Optional<Realm> orealm = realmRepo.findByEmailDomain(emailDomain, true);
+                        if (orealm.isPresent()) {
+                            Realm realm = orealm.get();
+                            DataDomain dataDomain = realm.getDomainContext().toDataDomain(userId);
+                            Set<String> rolesSet = securityIdentity.getRoles();
+                            String[] roles = rolesSet.isEmpty() ? new String[]{"ANONYMOUS"} : rolesSet.toArray(new String[rolesSet.size()]);
+                            pcontext = new PrincipalContext.Builder()
+                                          .withDefaultRealm(realm.getDomainContext().getDefaultRealm())
+                                          .withDataDomain(dataDomain)
+                                          .withUserId(userId)
+                                          .withRoles(roles)
+                                          .withScope("AUTHENTICATED")
+                                          .build();
+                        } else {
+                            Log.warnf("Could not find the user:%s in the database:%s and could not find a realm based on the email domain:%s", userId, credentialRepo.getDatabaseName(), emailDomain);
+                        }
+                    } else {
                         Log.warnf("Could not find the user:%s in the database:%s and could not parse the id into an email address to look up the realm.", userId, credentialRepo.getDatabaseName());
                     }
-                // we could not find the userid and we could not parse the id into an email address to look up the realm.
-                // so all we can do is assume the system defaults and see if there are roles defined
-                pcontext.setUserId(userId);
-                Set<String> rolesSet = securityIdentity.getRoles();
-                String[] roles = rolesSet.isEmpty() ? new String[]{"ANONYMOUS"} : rolesSet.toArray(new String[0]);
-                pcontext.setRoles(roles);
+                    // we could not find the userid and we could not parse the id into an email address to look up the realm.
+                    // so all we can do is assume the system defaults and see if there are roles defined
+                    pcontext.setUserId(userId);
+                    Set<String> rolesSet = securityIdentity.getRoles();
+                    String[] roles = rolesSet.isEmpty() ? new String[]{"ANONYMOUS"} : rolesSet.toArray(new String[0]);
+                    pcontext.setRoles(roles);
+                }
             }
         }
         // either the context was set or we defaulted to the anonmyous context

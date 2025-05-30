@@ -6,6 +6,7 @@ import io.quarkus.runtime.annotations.RegisterForReflection;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
+import lombok.ToString;
 import lombok.experimental.SuperBuilder;
 
 @Entity
@@ -14,6 +15,7 @@ import lombok.experimental.SuperBuilder;
 @SuperBuilder
 @Data
 @NoArgsConstructor
+@ToString(callSuper = true)
 public abstract  class BaseModel extends UnversionedBaseModel{
     /**
      The version of this object, many frameworks including Morphia have support for Optimistic locking and this field is used for this purpose

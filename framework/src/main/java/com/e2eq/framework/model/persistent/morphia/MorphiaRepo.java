@@ -31,6 +31,7 @@ import jakarta.inject.Inject;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.ws.rs.NotSupportedException;
+import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.tuple.Pair;
 import org.bson.types.ObjectId;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -191,7 +192,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public JsonSchema getSchema() {
-        return null;
+       throw new NotImplementedException("Not implemented");
     }
 
     public List<T> getAllList() {
@@ -200,7 +201,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public List<T> getAllList(Datastore datastore) {
-        return this.getList(0, 0,  null, null);
+        return this.getList(datastore,0, 0,  null, null);
     }
 
     @Override
