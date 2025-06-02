@@ -7,6 +7,7 @@ import com.e2eq.framework.model.persistent.morphia.DatabaseVersionRepo;
 
 import com.e2eq.framework.model.securityrules.SecuritySession;
 import com.e2eq.framework.persistent.BaseRepoTest;
+import com.e2eq.framework.rest.exceptions.DatabaseMigrationException;
 import com.e2eq.framework.util.TestUtils;
 
 import dev.morphia.transactions.MorphiaSession;
@@ -70,21 +71,41 @@ public class TestMigrationService extends BaseRepoTest {
         try (final SecuritySession ss = new SecuritySession(pContext, rContext)) {
 
             DatabaseVersionRepo dbVersionRepo = migrationService.getDatabaseVersionRepo();
-            MorphiaSession session = dbVersionRepo.startSession(testUtils.getTestRealm());
+            MorphiaSession session = dbVersionRepo.startSession("test");
             session.startTransaction();
 
             Optional<DatabaseVersion> odbv1 = dbVersionRepo.findByRefName(session, "test");
             Log.infof("odbv1: %s", odbv1.isPresent() ? odbv1.get().toString() : "not found");
 
-            DatabaseVersion dbVersion = migrationService.saveDatabaseVersion(session,"test", "1.0.0");
+            DatabaseVersion dbVersion = migrationService.saveDatabaseVersion(session, "1.0.0");
 
-            Assertions.assertFalse(migrationService.migrationRequired(session,"test", "1.0.0"));
-            Assertions.assertTrue(migrationService.migrationRequired(session, "test", "1.0.1"));
-            migrationService.saveDatabaseVersion(session, "test", "1.0.1");
+            try {
+                migrationService.migrationRequired(session, "1.0.0");
+            } catch (DatabaseMigrationException ex ) {
+                ex.printStackTrace();
+                Assertions.fail("Should have thrown an exception");
+            }
+           try {
+               migrationService.migrationRequired(session,  "1.0.1");
+               Assertions.fail("Should have thrown an exception");
+           } catch (DatabaseMigrationException ex ) {
+              // expected
+           }
+            migrationService.saveDatabaseVersion(session, "1.0.1");
 
-            Assertions.assertFalse(migrationService.migrationRequired(session,"test", "1.0.1"));
-            Assertions.assertTrue(migrationService.migrationRequired(session,"test", "1.0.2"));
-
+            try {
+                migrationService.migrationRequired(session, "1.0.1");
+            }
+            catch (DatabaseMigrationException ex ) {
+                ex.printStackTrace();
+                Assertions.fail("Should not have thrown an exception");
+            }
+             try {
+                 migrationService.migrationRequired(session,  "1.0.2");
+                 Assertions.fail("Should have thrown an exception");
+             } catch (DatabaseMigrationException ex ) {
+                 // expected
+             }
             migrationService.getDatabaseVersionRepo().delete(session, dbVersion);
             session.commitTransaction();
         }

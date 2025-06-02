@@ -32,6 +32,13 @@ public class CredentialUserIdPassword extends BaseModel {
     @Size(min =3, max=50, message="userId length must be less than or equal to 50 and greater than or equal to 3 characters")
     protected String userId;
 
+    @Indexed(options= @IndexOptions(unique=true))
+    @NonNull
+    @NotNull(message = "username must be non null")
+    @NotEmpty
+    protected String username;
+
+
     @NonNull
     @NotNull ( message = "domain context is required")
     @Valid
@@ -48,6 +55,7 @@ public class CredentialUserIdPassword extends BaseModel {
     @NonNull
     @NotEmpty protected String[] roles;
 
+
     protected String issuer;
 
     @Builder.Default
@@ -59,7 +67,6 @@ public class CredentialUserIdPassword extends BaseModel {
 
     @Builder.Default
     @NotNull @NonNull protected Map<String, String> area2RealmOverrides = new HashMap<>();
-
 
 
     @Override

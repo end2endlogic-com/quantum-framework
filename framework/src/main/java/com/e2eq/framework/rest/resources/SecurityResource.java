@@ -245,7 +245,7 @@ public class SecurityResource {
         String tenantId = tokenizer.nextToken().replace(".", "-");
 
 
-        Log.infof("Logging in userid: %s tenantId: %s",user, tenantId);
+        Log.infof("Logging in userid: %s tenantId: %s",authRequest.getUserId(), tenantId);
 
 
         var authProvider = authProviderFactory.getAuthProvider();
@@ -311,20 +311,20 @@ public class SecurityResource {
          */
     }
 
-    protected AuthResponse generateAuthResponse(@NotNull (message = "userId for generating auth response can not be null") String userId,
+    protected AuthResponse generateAuthResponse(@NotNull (message = "userId for generating auth response can not be null") String username,
                                              @NotNull (message = "the roles array can not be null for generating an auth response") String[] roles,
                                              long durationInSeconds,
                                              long incrementRefreshDuration,
                                              @NotNull(message = "the issuer can not be null for for generating an auth response") String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
         long expiresAt =  TokenUtils.expiresAt(durationInSeconds);
         String userToken = TokenUtils.generateUserToken(
-                userId,
+                username,
                 new HashSet<>(Arrays.asList(roles)),
                expiresAt,
                 issuer);
 
         String refreshToken = TokenUtils.generateRefreshToken(
-                userId,
+                username,
                 durationInSeconds + incrementRefreshDuration,
                 issuer);
 

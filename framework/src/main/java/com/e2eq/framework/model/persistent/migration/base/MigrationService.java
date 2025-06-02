@@ -9,6 +9,7 @@ import com.e2eq.framework.model.persistent.morphia.DatabaseVersionRepo;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
 import com.e2eq.framework.model.securityrules.RuleContext;
 import com.e2eq.framework.model.securityrules.SecuritySession;
+import com.e2eq.framework.rest.exceptions.DatabaseMigrationException;
 import com.e2eq.framework.util.SecurityUtils;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
@@ -70,33 +71,22 @@ public class MigrationService {
     @Inject
     MorphiaDataStore morphiaDataStore;
 
-
     @Inject
     SecurityUtils securityUtils;
 
 
-    private boolean defaultRealmMigrationRequired;
-    private boolean testRealmMigrationRequired;
-    private boolean systemRealmMigrationRequired;
-    protected boolean initialized = false;
 
-    public boolean isMigrationRequired() {
 
-        if (initialized == false) {
-            checkDataBaseVersion();
-            initialized = true;
-        }
-        if (defaultRealmMigrationRequired) {
-            Log.info("Default Realm migration required");
-        }
-        if (testRealmMigrationRequired) {
-            Log.info("Test Realm migration required");
-        }
-        if (systemRealmMigrationRequired) {
-            Log.info("System Realm migration required");
-        }
+    public  void checkInitialized(String realm) {
+       if (!databaseVersionRepo.findCurrentVersion(realm).isPresent() ) {
+           throw new DatabaseMigrationException(String.format("Database %s not initialized. Please initialize / run migrations on the database", realm));
+       }
+    }
 
-        return defaultRealmMigrationRequired && systemRealmMigrationRequired && testRealmMigrationRequired;
+    public void isMigrationRequired() {
+      checkInitialized(defaultRealm);
+      checkInitialized(systemRealm);
+      checkInitialized(testRealm);
     }
 
 
@@ -107,16 +97,9 @@ public class MigrationService {
         DistributedLock lock = getMigrationLock(systemRealm);
         lock.acquire();
         try {
-            defaultRealmMigrationRequired = migrationRequired(morphiaDataStore.getDefaultSystemDataStore(), defaultRealm, targetDatabaseVersion);
-            if (defaultRealmMigrationRequired)
-                Log.error(String.format("MigrationService Realm:%s migrationRequired:%b ", defaultRealm,defaultRealmMigrationRequired));
-
-            systemRealmMigrationRequired = migrationRequired(morphiaDataStore.getDefaultSystemDataStore(), systemRealm, targetDatabaseVersion);
-            if (systemRealmMigrationRequired)
-                Log.error(String.format("MigrationService Realm:%s migrationRequired:%b ", systemRealm, systemRealmMigrationRequired) );
-            testRealmMigrationRequired = migrationRequired(morphiaDataStore.getDefaultSystemDataStore(), testRealm, targetDatabaseVersion);
-            if (testRealmMigrationRequired)
-                Log.error(String.format("MigrationService Realm:%s migrationRequired:%b ", testRealm, testRealm));
+            migrationRequired(morphiaDataStore.getDataStore(defaultRealm),  targetDatabaseVersion);
+            migrationRequired(morphiaDataStore.getDataStore(systemRealm),  targetDatabaseVersion);
+            migrationRequired(morphiaDataStore.getDataStore(testRealm), targetDatabaseVersion);
         } finally {
             lock.release();
         }
@@ -134,38 +117,39 @@ public class MigrationService {
     }
 
     public Optional<DatabaseVersion> getCurrentDatabaseVersion( String realm) {
-        return getCurrentDatabaseVersion(morphiaDataStore.getDataStore(realm), realm);
+        return getCurrentDatabaseVersion(morphiaDataStore.getDataStore(realm));
     }
 
-    public Optional<DatabaseVersion> getCurrentDatabaseVersion(Datastore datastore, String realm) {
+    public Optional<DatabaseVersion> getCurrentDatabaseVersion(Datastore datastore) {
         // Find the current version of the database.
-        return databaseVersionRepo.findCurrentVersion(datastore,realm);
+        return databaseVersionRepo.findCurrentVersion(datastore);
     }
 
-    public boolean migrationRequired(Datastore datastore, String realm, String requiredVersion) {
+    public void migrationRequired(Datastore datastore,  String requiredVersion) {
 
         Semver requiredSemver = Semver.parse(requiredVersion);
         if (requiredSemver == null) {
-            throw new IllegalArgumentException(String.format(" the current version string: %s is not parsable, check semver4j for more details about string format", requiredVersion));
+            throw new IllegalArgumentException(String.format(" realm: %s ,The current version string: %s is not parsable, check semver4j for more details about string format", datastore.getDatabase().getName(), requiredVersion));
         }
 
-        Optional<DatabaseVersion> odbVersion = databaseVersionRepo.findCurrentVersion(datastore, realm);
+        Optional<DatabaseVersion> odbVersion = databaseVersionRepo.findCurrentVersion(datastore);
         if (odbVersion.isPresent()) {
-            boolean rc = odbVersion.get().getCurrentSemVersion().isLowerThan(requiredVersion);
-            return rc;
+            Log.infof("DBVersion: %s", odbVersion.get().toString());
+             if (odbVersion.get().getCurrentSemVersion().isLowerThan(requiredVersion)) {
+                 throw new DatabaseMigrationException( datastore.getDatabase().getName(), odbVersion.get().toString(), requiredVersion);
+             }
+
         } else
-            throw new IllegalStateException(String.format("No database version found for realm:%s  dataStore:%s", realm, datastore.getDatabase().getName()));
+            throw new IllegalStateException(String.format("Empty database version collection found for  dataStore:%s, dataStore needs to be initialized",  datastore.getDatabase().getName()));
     }
 
-    public DatabaseVersion saveDatabaseVersion(Datastore datastore, String realm, String versionString) {
+    public DatabaseVersion saveDatabaseVersion(Datastore datastore,  String versionString) {
         if (versionString == null || versionString.isEmpty()) {
             throw new IllegalArgumentException("versionString cannot be null or empty");
         }
-        if (realm == null || realm.isEmpty()) {
-            throw new IllegalArgumentException("realm cannot be null or empty");
-        }
 
-        Optional<DatabaseVersion> odbVersion = databaseVersionRepo.findByRefName(datastore, realm);
+
+        Optional<DatabaseVersion> odbVersion = databaseVersionRepo.findByRefName(datastore, datastore.getDatabase().getName());
         DatabaseVersion dbVersion;
 
         if (odbVersion.isPresent()) {
@@ -177,7 +161,7 @@ public class MigrationService {
             dbVersion = new DatabaseVersion();
             dbVersion.setCurrentVersionString(versionString);
             dbVersion.setLastUpdated(new java.util.Date());
-            dbVersion.setRefName(realm);
+            dbVersion.setRefName(datastore.getDatabase().getName());
         }
 
         return databaseVersionRepo.save(datastore, dbVersion);
@@ -201,7 +185,7 @@ public class MigrationService {
 
    public List<ChangeSetBean> getAllPendingChangeSetBeans(String realm, MultiEmitter<? super String> emitter ) {
        Datastore datastore = morphiaDataStore.getDataStore(realm);
-       Optional<DatabaseVersion> oCurrentDbVersion = this.getCurrentDatabaseVersion(datastore, realm);
+       Optional<DatabaseVersion> oCurrentDbVersion = this.getCurrentDatabaseVersion(datastore);
        DatabaseVersion currentDbVersion;
        if (!oCurrentDbVersion.isPresent()) {
            emitter.emit(String.format( "No database version found in the database for realm: %s, assuming 1.0.0",realm));
@@ -267,7 +251,7 @@ public class MigrationService {
                     ChangeSetRecord record = newChangeSetRecord(realm, changeSetBean);
                     changesetRecordRepo.save(ds, record);
                     DatabaseVersion databaseVersion;
-                    Optional<DatabaseVersion> oversion = databaseVersionRepo.findCurrentVersion(ds, realm);
+                    Optional<DatabaseVersion> oversion = databaseVersionRepo.findCurrentVersion(ds);
                     if (!oversion.isPresent()) {
                         emitter.emit(String.format("        No database databaseVersion found in the database for realm: %s, assuming 1.0.0", realm));
                         databaseVersion = new DatabaseVersion();

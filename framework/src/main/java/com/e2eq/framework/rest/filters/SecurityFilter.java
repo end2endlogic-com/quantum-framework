@@ -17,12 +17,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
 import io.quarkus.logging.Log;
 import io.quarkus.security.identity.SecurityIdentity;
-import io.smallrye.jwt.auth.principal.JWTParser;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ContainerRequestFilter;
 import jakarta.ws.rs.core.HttpHeaders;
-import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.Provider;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.jwt.JsonWebToken;
@@ -47,9 +47,6 @@ public class SecurityFilter implements ContainerRequestFilter {
     String authProvider;
 
     @Inject
-    JWTParser parser;
-
-    @Inject
     JsonWebToken jwt;
 
     @Inject
@@ -63,9 +60,6 @@ public class SecurityFilter implements ContainerRequestFilter {
 
     @Inject
     CredentialRepo credentialRepo;
-
-    @Inject
-    UserProfileRepo userProfileRepo;
 
     @Inject
     ObjectMapper mapper;
@@ -215,60 +209,65 @@ public class SecurityFilter implements ContainerRequestFilter {
         // if there is an authorization header then we can authenticate this call.
         if (authorizationHeader != null && jwt != null) {
             String token = authorizationHeader.substring(AUTHENTICATION_SCHEME.length()).trim();
-            String userId = jwt.getClaim("username");
+            String username = jwt.getClaim("username");
 
-            if (userId == null) {
+            if (username == null) {
                 Log.warn("JWT did not contain a username claim, using sub claim instead");
-                userId = jwt.getClaim("sub");
+                username = jwt.getClaim("sub");
             }
 
-            if (userId != null) {
-                Optional<CredentialUserIdPassword> ocreds = credentialRepo.findByUserId(userId);
+            if (username != null) {
+                Optional<CredentialUserIdPassword> ocreds = credentialRepo.findByUsername(username);
                 if (ocreds.isPresent()) {
                     CredentialUserIdPassword creds = ocreds.get();
+                    pcontext.setUserId(creds.getUserId());
                     String[] roles = creds.getRoles();
                     if (roles == null || roles.length == 0) {
                         Set<String> rolesSet = securityIdentity.getRoles();
                         roles = rolesSet.isEmpty() ? new String[]{"ANONYMOUS"} : rolesSet.toArray(new String[0]);
                     }
-                    DataDomain dataDomain = creds.getDomainContext().toDataDomain(userId);
+                    DataDomain dataDomain = creds.getDomainContext().toDataDomain(username);
                     pcontext = new PrincipalContext.Builder()
                             .withDefaultRealm(creds.getDomainContext().getDefaultRealm())
                             .withDataDomain(dataDomain)
-                            .withUserId(userId)
+                            .withUserId(username)
                             .withRoles(roles)
                             .withScope("AUTHENTICATED")
                             .build();
                 } else {
                     // we did not find the user in the database lets see if we can find a realm based on email address
-                    Log.warnf("Could not find user with username / subject:%s", userId);
+                    Log.warnf("Could not find user with username / subject:%s", username);
                     Log.warn("Attempting to see if the realm is defined via the user/subject being an email address");
-                    if (ValidateUtils.isValidEmailAddress(userId)) {
+                    if (ValidateUtils.isValidEmailAddress(username)) {
 
-                        String emailDomain = userId.substring(userId.indexOf("@") + 1);
+                        String emailDomain = username.substring(username.indexOf("@") + 1);
                         Log.infof("UserId appears to be an email address with domain %s searching realms for domain Context", emailDomain);
                         Optional<Realm> orealm = realmRepo.findByEmailDomain(emailDomain, true);
                         if (orealm.isPresent()) {
                             Realm realm = orealm.get();
-                            DataDomain dataDomain = realm.getDomainContext().toDataDomain(userId);
+                            DataDomain dataDomain = realm.getDomainContext().toDataDomain(username);
                             Set<String> rolesSet = securityIdentity.getRoles();
                             String[] roles = rolesSet.isEmpty() ? new String[]{"ANONYMOUS"} : rolesSet.toArray(new String[rolesSet.size()]);
                             pcontext = new PrincipalContext.Builder()
                                           .withDefaultRealm(realm.getDomainContext().getDefaultRealm())
                                           .withDataDomain(dataDomain)
-                                          .withUserId(userId)
+                                          .withUserId(username)
                                           .withRoles(roles)
                                           .withScope("AUTHENTICATED")
                                           .build();
                         } else {
-                            Log.warnf("Could not find the user:%s in the database:%s and could not find a realm based on the email domain:%s", userId, credentialRepo.getDatabaseName(), emailDomain);
+                            String errorText  = String.format("Could not find the username:%s in the database:%s and could not find a realm based on the email domain:%s", username, credentialRepo.getDatabaseName(), emailDomain);
+                            Log.warnf(errorText);
+                            throw new WebApplicationException(errorText, Response.Status.UNAUTHORIZED);
                         }
                     } else {
-                        Log.warnf("Could not find the user:%s in the database:%s and could not parse the id into an email address to look up the realm.", userId, credentialRepo.getDatabaseName());
+                        String errorText = String.format("Could not find the user:%s in the database:%s and could not parse the id into an email address to look up the realm.", username, credentialRepo.getDatabaseName());
+                        Log.warnf(errorText);
+                        throw new WebApplicationException(errorText, Response.Status.UNAUTHORIZED);
                     }
                     // we could not find the userid and we could not parse the id into an email address to look up the realm.
                     // so all we can do is assume the system defaults and see if there are roles defined
-                    pcontext.setUserId(userId);
+
                     Set<String> rolesSet = securityIdentity.getRoles();
                     String[] roles = rolesSet.isEmpty() ? new String[]{"ANONYMOUS"} : rolesSet.toArray(new String[0]);
                     pcontext.setRoles(roles);

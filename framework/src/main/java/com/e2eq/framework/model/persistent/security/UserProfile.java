@@ -31,11 +31,7 @@ public @Data class UserProfile extends BaseModel {
         }
 
         public static Status fromValue(String v) {
-            Status s =  valueOf(v);
-            if (s == null) {
-                throw new IllegalArgumentException("Could not resolve string:" + v + " to a status value");
-            }
-            return s;
+          return valueOf(v);
         }
 
         public String value() {
@@ -52,7 +48,7 @@ public @Data class UserProfile extends BaseModel {
 
     @NotNull( message = "userName must not be null")
     @NonNull
-    protected String userName;
+    protected String username;
 
     protected String fname;
     protected String lname;

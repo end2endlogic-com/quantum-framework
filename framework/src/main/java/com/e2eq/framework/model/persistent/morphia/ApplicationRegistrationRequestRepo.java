@@ -177,7 +177,7 @@ public class ApplicationRegistrationRequestRepo extends MorphiaRepo<ApplicationR
 
                // create new user profile
                up = new UserProfile();
-               up.setUserName(applicationRegistration.getUserName());
+               up.setUsername(applicationRegistration.getUserId());
                up.setEmail(applicationRegistration.getUserEmail());
 
                up.setUserId(applicationRegistration.getUserId());

@@ -62,14 +62,15 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
     }
 
     @Override
-    public void createUser(String username, String password, Set<String> roles, DomainContext domainContext) throws SecurityException {
+    public void createUser(String userId, String password, String username, Set<String> roles, DomainContext domainContext) throws SecurityException {
 
-        if (username.length() > 17) { // Limit username to 17 characters due to Bcrypt limitations
+        if (userId.length() > 17) { // Limit username to 17 characters due to Bcrypt limitations
             throw new SecurityException("Username too long must be smaller than 17 characters");
         }
 
         CredentialUserIdPassword credential = new CredentialUserIdPassword();
-        credential.setUserId(username);
+        credential.setUserId(userId);
+        credential.setUsername(username);
         if (credential.getHashingAlgorithm().equalsIgnoreCase("BCrypt.default")) {
             credential.setPasswordHash(EncryptionUtils.hashPassword(password));
         } else {
@@ -85,7 +86,7 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
 
     @Override
     public boolean removeUser(String username) throws ReferentialIntegrityViolationException {
-        Optional<CredentialUserIdPassword> ocredentialUserIdPassword = credentialRepo.findByUserId(username);
+        Optional<CredentialUserIdPassword> ocredentialUserIdPassword = credentialRepo.findByUsername(username);
         if (ocredentialUserIdPassword.isPresent()) {
             long val = credentialRepo.delete(ocredentialUserIdPassword.get());
             if (val != 0)
@@ -99,7 +100,7 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
 
     @Override
     public void assignRoles(String username, Set<String> roles) throws SecurityException {
-        credentialRepo.findByUserId(username).ifPresentOrElse(credential -> {
+        credentialRepo.findByUsername(username).ifPresentOrElse(credential -> {
             Set<String> existingRoles = new HashSet<>(Arrays.asList(credential.getRoles()));
             existingRoles.addAll(roles);
             credential.setRoles(existingRoles.toArray(new String[existingRoles.size()]));
@@ -111,7 +112,7 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
 
     @Override
     public void removeRoles(String username, Set<String> roles) throws SecurityException {
-       credentialRepo.findByUserId(username).ifPresentOrElse(
+       credentialRepo.findByUsername(username).ifPresentOrElse(
                credential -> {
                    Set<String> existingRoles = new HashSet<>(Arrays.asList(credential.getRoles()));
                    existingRoles.removeAll(roles);
@@ -127,7 +128,7 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
     public Set<String> getUserRoles(String username) throws SecurityException {
         Set<String> rolesHolder = new HashSet<>();
 
-        credentialRepo.findByUserId(username).ifPresentOrElse(
+        credentialRepo.findByUsername(username).ifPresentOrElse(
                 credential -> {
                     rolesHolder.addAll(Arrays.asList(credential.getRoles()));
                 },
@@ -155,8 +156,13 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
     }
 
     @Override
-    public boolean userExists(String username) throws SecurityException {
-       return credentialRepo.findByUserId(username).isPresent();
+    public boolean usernameExists (String username) throws SecurityException {
+       return credentialRepo.findByUsername(username).isPresent();
+    }
+
+    @Override
+    public boolean userIdExists (String userId) throws SecurityException {
+        return credentialRepo.findByUserId(userId).isPresent();
     }
 
     @Override
@@ -173,7 +179,7 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
                         // String authToken = generateAuthToken(userId);
                         Set<String> groups = new HashSet<>(Arrays.asList(credential.getRoles()));
                         String authToken = TokenUtils.generateUserToken(
-                                credential.getUserId(),
+                                credential.getUsername(),
                                 groups,
                                 TokenUtils.expiresAt(durationInSeconds),
                                 issuer);

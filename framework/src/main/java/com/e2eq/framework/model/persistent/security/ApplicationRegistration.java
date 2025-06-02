@@ -55,7 +55,7 @@ public class ApplicationRegistration extends FullBaseModel {
    }
 
    @BsonIgnore
-   public String getUserName () {
+   public String getUserDisplayName () {
       return fname + " " + lname;
    }
 

@@ -10,6 +10,7 @@ import dev.morphia.query.filters.Filter;
 import dev.morphia.transactions.MorphiaSession;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
+import jakarta.ws.rs.PathParam;
 import org.apache.commons.lang3.tuple.Pair;
 import org.bson.types.ObjectId;
 import org.jetbrains.annotations.NotNull;
@@ -29,7 +30,7 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
    Optional<T> findById(@NotNull Datastore s, @NotNull ObjectId id);
    Optional<T> findById(@NotNull ObjectId id);
 
-   Optional<T> findByRefName(Datastore datastore, @NotNull String refName);
+   Optional<T> findByRefName(@NotNull Datastore datastore, @NotNull String refName);
    Optional<T> findByRefName (@NotNull String refId);
 
    JsonSchema getSchema();
@@ -116,8 +117,8 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
     */
    List<T> getListFromIds(@NotNull(value="List of objectids can not be null") @NotEmpty (message = "list of ids can not be empty") List<ObjectId> ids);
    List<T> getListFromIds(Datastore datastore,@NotNull(value="List of objectids can not be null") @NotEmpty (message = "list of ids can not be empty") List<ObjectId> ids);
-
    List<T> getListFromRefNames(List<String> refNames);
+
 
    List<T> getListFromRefNames(Datastore datastore, List<String> refNames);
    List<EntityReference> getEntityReferenceListByQuery(int skip, int limit, @Nullable String query, List<SortField> sortFields);
@@ -141,11 +142,15 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
    List<T> save(@NotNull Datastore datastore, List<T> entities);
    List<T> save(@NotNull MorphiaSession datastore, List<T> entities);
 
-   public long delete(T obj) throws ReferentialIntegrityViolationException;
-   public long delete(@NotNull ObjectId id) throws ReferentialIntegrityViolationException;
-   public long delete(@NotNull Datastore datastore, T aobj) throws ReferentialIntegrityViolationException;
-   public long delete(@NotNull MorphiaSession s, T obj) throws ReferentialIntegrityViolationException;
+   long delete(T obj) throws ReferentialIntegrityViolationException;
+   long delete(@NotNull ObjectId id) throws ReferentialIntegrityViolationException;
+   long delete(@NotNull Datastore datastore, T aobj) throws ReferentialIntegrityViolationException;
+   long delete(@NotNull MorphiaSession s, T obj) throws ReferentialIntegrityViolationException;
 
+
+
+   long updateActiveStatus (@PathParam("id") ObjectId id, boolean active);
+   long updateActiveStatus (Datastore datastore, @PathParam("id") ObjectId id, boolean active);
 
    public long update (@NotNull String id, @NotNull Pair<String, Object>... pairs);
    public long update(Datastore datastore, @NotNull String id, @NotNull Pair<String, Object>... pairs);

@@ -22,10 +22,63 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
       return findByUserId(getSecurityContextRealmId(), userId);
    }
 
+   public Optional<CredentialUserIdPassword> findByUsername(@NotNull String username)
+   {
+      return findByUsername(getSecurityContextRealmId(), username);
+   }
+
+
+   public Optional<CredentialUserIdPassword> findByUsername( @NotNull String realmId, @NotNull String userId) {
+      return findByUsername(realmId, userId, true);
+   }
 
 
    public Optional<CredentialUserIdPassword> findByUserId( @NotNull String realmId, @NotNull String userId) {
       return findByUserId(realmId, userId, true);
+   }
+
+   public Optional<CredentialUserIdPassword> findByUsername(@NotNull String realmId, @NotNull String username, boolean ignoreRules) {
+      if (username == null) {
+         throw new IllegalArgumentException("parameter refId can not be null");
+      }
+      if (realmId == null) {
+         throw new IllegalArgumentException("parameter realmId can not be null");
+      }
+
+      Datastore ds = morphiaDataStore.getDataStore(realmId);
+      if (Log.isDebugEnabled()) {
+         Log.debug("DataStore: dataBaseName:" + ds.getDatabase().getName() + " retrieved via realmId:" + realmId);
+      }
+
+      List<Filter> filters = new ArrayList<>();
+      filters.add(Filters.eq("username", username));
+      // Add filters based upon rule and resourceContext;
+      Filter[] qfilters = new Filter[1];
+      if (!ignoreRules) {
+         qfilters = getFilterArray(filters, getPersistentClass());
+      } else {
+         qfilters = filters.toArray(qfilters);
+      }
+
+      Query<CredentialUserIdPassword> query = ds.find(CredentialUserIdPassword.class).filter(qfilters);
+      //Query<CredentialUserIdPassword> query = dataStore.getDataStore(getRealmId()).find(getPersistentClass()).filter(qfilters);
+      CredentialUserIdPassword obj = query.first();
+
+      /**
+       This is what the query should look like:
+
+       $and:[ {"userId": "mingardia@end2endlogic.com"},
+       {$or:[
+       {"dataDomain.ownerId": "system@b2bintegrator.com"},
+       {"dataDomain.ownerId": "mingardia@end2endlogic.com"}
+       ]
+       }
+       ],
+       "_t":{"$in": ["CredentialUserIdPassword"]}}
+       */
+
+
+      return Optional.ofNullable(obj);
    }
 
    public Optional<CredentialUserIdPassword> findByUserId(@NotNull String realmId, @NotNull String userId, boolean ignoreRules) {
