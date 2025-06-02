@@ -19,6 +19,7 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.*;
 import org.apache.commons.lang3.tuple.Pair;
+import org.bson.types.ObjectId;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.enums.SecuritySchemeType;
@@ -293,6 +294,16 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
         }
     }
 
+    @PUT
+    @Path("activeStatus/{id}")
+    public Response updateActiveStatus(@PathParam("id") ObjectId id, boolean active) {
+      long modifyCount = repo.updateActiveStatus(id, active);
+      if (modifyCount == 0) {
+         return Response.status(Response.Status.NOT_FOUND).build();
+      } else {
+         return Response.ok().build();
+      }
+    }
 
 
    @GET

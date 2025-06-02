@@ -24,6 +24,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.util.Date;
 import java.util.Optional;
+import java.util.UUID;
 
 @ApplicationScoped
 public class UserProfileRepo extends MorphiaRepo<UserProfile> {
@@ -43,6 +44,23 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
 
      return Optional.ofNullable(p);
    }
+
+   public Optional<UserProfile> getByUsername(@NotNull String username) {
+      return getByUsername(  morphiaDataStore.getDataStore(getSecurityContextRealmId()), username );
+   }
+
+   public Optional<UserProfile> getByUsername(Datastore datastore,@NotNull String username) {
+      Query<UserProfile> q = datastore.find(this.getPersistentClass()).filter(
+         Filters.and(
+            Filters.eq("username", username)
+         )
+      );
+
+      UserProfile p = q.first();
+
+      return Optional.ofNullable(p);
+   }
+
 
    public Optional<UserProfile> getByUserId(@NotNull String userId) {
       return getByUserId(  morphiaDataStore.getDataStore(getSecurityContextRealmId()), userId );
@@ -83,6 +101,7 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
          DomainContext ctx = new DomainContext(up.getDataDomain(), securityUtils.getSystemRealm());
          cred.setDomainContext(ctx);
          cred.setUserId(up.getUserId());
+         cred.setUsername(UUID.randomUUID().toString());
          cred.setRefName(up.getUserId());
          cred.setRoles(roles);
 

@@ -1,5 +1,6 @@
 package com.e2eq.framework.api.security;
 
+import com.e2eq.framework.model.persistent.migration.base.MigrationService;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
 import com.e2eq.framework.model.securityrules.SecurityCheckException;
 import com.e2eq.framework.model.securityrules.SecurityContext;
@@ -11,11 +12,13 @@ import com.e2eq.framework.model.persistent.morphia.ApplicationRegistrationReques
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import com.e2eq.framework.persistent.BaseRepoTest;
+import com.e2eq.framework.rest.exceptions.DatabaseMigrationException;
 import com.e2eq.framework.util.SecurityUtils;
 import com.e2eq.framework.util.TestUtils;
 import dev.morphia.Datastore;
 import io.quarkus.logging.Log;
 import io.quarkus.test.junit.QuarkusTest;
+import io.smallrye.mutiny.Multi;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -26,6 +29,9 @@ import java.util.Optional;
 
 @QuarkusTest
 public class TestUserProfile extends BaseRepoTest {
+
+    @Inject
+    MigrationService migrationService;
 
     @Inject
     UserProfileRepo userProfileRepo;
@@ -49,6 +55,25 @@ public class TestUserProfile extends BaseRepoTest {
     public void testSystemCredentials() throws Exception {
 
         try(final SecuritySession ignored = new SecuritySession(pContext, rContext)) {
+
+            try {
+                migrationService.isMigrationRequired();
+                Log.info("======   No migration required ======");
+            } catch (DatabaseMigrationException ex) {
+                ex.printStackTrace();
+
+                Log.info("==== Attempting to run migration scripts ======");
+                // attempt to mitigate by running migrations
+                Multi.createFrom().emitter(emitter -> {
+                    migrationService.runAllUnRunMigrations(testUtils.getTestRealm(), emitter);
+                    migrationService.runAllUnRunMigrations(testUtils.getDefaultRealm(), emitter);
+                    migrationService.runAllUnRunMigrations(testUtils.getSystemRealm(), emitter);
+                }).subscribe().with(
+                   item -> System.out.println("Emitting: " + item),
+                   failure -> System.err.println("Failed with: " + failure)
+                );
+            }
+
             Optional<CredentialUserIdPassword> opCreds = credentialRepo.findByUserId(securityUtils.getSystemUserId());
             if (opCreds.isPresent()) {
                 Log.debug("Found it");
@@ -63,7 +88,7 @@ public class TestUserProfile extends BaseRepoTest {
 
     @Test void testCredentialsNoSecuritySession() {
         Datastore datastore = morphiaDataStore.getDataStore(testUtils.getTestRealm());
-        Optional<CredentialUserIdPassword> opCreds = credentialRepo.findByUserId(securityUtils.getTestRealm(),securityUtils.getSystemUserId());
+        Optional<CredentialUserIdPassword> opCreds = credentialRepo.findByUserId(securityUtils.getTestRealm(),securityUtils.getTestUserId());
         if (opCreds.isPresent()) {
             Log.debug("Found it");
         } else {
@@ -89,7 +114,7 @@ public class TestUserProfile extends BaseRepoTest {
                 if (!oProfile.isPresent()) {
                     Log.info("About to execute");
                     UserProfile profile = new UserProfile();
-                    profile.setUserName(testUtils.getTestUserId());
+                    profile.setUsername(testUtils.getTestUserId());
                     profile.setEmail(testUtils.getTestEmail());
                     profile.setUserId(testUtils.getTestUserId());
                     profile.setRefName(testUtils.getTestUserId());
@@ -133,7 +158,7 @@ public class TestUserProfile extends BaseRepoTest {
             List<UserProfile> userProfiles = userProfileRepo.getList(0, 10, null, null);
             Assertions.assertTrue(!userProfiles.isEmpty());
             userProfiles.forEach((up) -> {
-                Log.info(up.getId().toString() + ":" + up.getUserId() + ":" + up.getUserName());
+                Log.info(up.getId().toString() + ":" + up.getUserId() + ":" + up.getUsername());
             });
         } finally {
             ruleContext.clear();
@@ -148,7 +173,7 @@ public class TestUserProfile extends BaseRepoTest {
             //Filter[] filterArray = userProfileRepo.getFilterArray(filters);
             List<UserProfile> userProfiles = userProfileRepo.getList(0,10,null, null);
             for (UserProfile up : userProfiles) {
-                Log.info(up.getId().toString() + ":" + up.getUserId() + ":" + up.getUserName());
+                Log.info(up.getId().toString() + ":" + up.getUserId() + ":" + up.getUsername());
             }
         }
         finally {
@@ -163,7 +188,7 @@ public class TestUserProfile extends BaseRepoTest {
             //Filter[] filterArray = userProfileRepo.getFilterArray(filters);
             List<UserProfile> userProfiles = userProfileRepo.getAllList();
             for (UserProfile up : userProfiles) {
-                Log.info(up.getId().toString() + ":" + up.getUserId() + ":" + up.getUserName());
+                Log.info(up.getId().toString() + ":" + up.getUserId() + ":" + up.getUsername());
             }
         }
         finally {
@@ -180,7 +205,7 @@ public class TestUserProfile extends BaseRepoTest {
             List<ApplicationRegistration> registrationRequests = regRepo.getListByQuery(0,10, "userId:tuser@test-b2bintegrator.com");
             Assertions.assertFalse(registrationRequests.isEmpty());
             registrationRequests.forEach((req) -> {
-                Log.info(req.getId().toString() + ":" + req.getUserId() + ":" + req.getUserName());
+                Log.info(req.getId().toString() + ":" + req.getUserId() + ":" + req.getUserDisplayName());
             });
         } finally {
             ruleContext.clear();
@@ -197,7 +222,7 @@ public class TestUserProfile extends BaseRepoTest {
             List<ApplicationRegistration> registrationRequests = regRepo.getListByQuery(0,10, "userId:tuser@test-b2bintegrator.com&&status:UNAPPROVED");
             if (!registrationRequests.isEmpty()) {
                 registrationRequests.forEach((req) -> {
-                    Log.info(req.getId().toString() + ":" + req.getUserId() + ":" + req.getUserName());
+                    Log.info(req.getId().toString() + ":" + req.getUserId() + ":" + req.getUserDisplayName());
                 });
 
                 regRepo.approveRequest(registrationRequests.get(0).getId().toString());

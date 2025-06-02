@@ -25,8 +25,8 @@ public class SecureResourceTest {
         AuthProvider.LoginResponse loginResponse = null;
         if (authProvider.equals("cognito")) {
             // Create test user with roles
-            if (!authFactory.getUserManager().userExists("testuser@end2endlogic.com")) {
-                authFactory.getUserManager().createUser("testuser@end2endlogic.com", "P@55w@rd", Set.of("user"), null);
+            if (!authFactory.getUserManager().usernameExists("testuser@end2endlogic.com")) {
+                authFactory.getUserManager().createUser("testuser@end2endlogic.com", "P@55w@rd", "testuser@end2endlogic.com", Set.of("user"), null);
             } else {
                 Log.info("User already exists, skipping creation");
             }

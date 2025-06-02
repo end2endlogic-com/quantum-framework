@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Date;
 import java.util.Optional;
 import java.util.StringTokenizer;
+import java.util.UUID;
 
 import static io.restassured.RestAssured.given;
 
@@ -73,14 +74,16 @@ public class SecurityTest extends BaseRepoTest {
 
         try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
 
-            Optional<CredentialUserIdPassword> credop = credRepo.findByUserId(testUtils.getSystemUserId());
-
+            Optional<CredentialUserIdPassword> credop = credRepo.findByUserId(testUtils.getTestUserId());
+            CredentialUserIdPassword cred;
             if (credop.isPresent()) {
                 Log.info("cred:" + credop.get().getUserId());
+                cred = credop.get();
             } else {
-                CredentialUserIdPassword cred = new CredentialUserIdPassword();
-                cred.setUserId(testUtils.getSystemUserId());
+                 cred = new CredentialUserIdPassword();
+                cred.setUserId(testUtils.getTestUserId());
                 cred.setPasswordHash("$2a$12$76wQJLgSAdm6ZTHFHtzksuSkWG9eW0qe5YXMXaZIBo52ncXHO0EDy"); //Test123456
+                cred.setUsername(UUID.randomUUID().toString());
 
                 DataDomain dataDomain = new DataDomain();
                 dataDomain.setOrgRefName(testUtils.getTestOrgRefName());
@@ -92,22 +95,20 @@ public class SecurityTest extends BaseRepoTest {
                 cred.setRefName(cred.getUserId());
                 cred.setDomainContext(new DomainContext(dataDomain, testUtils.getTestRealm()));
                 cred.setLastUpdate(new Date());
-
                 cred.setDataDomain(dataDomain);
-
-                credRepo.save(cred);
+                cred = credRepo.save(cred);
             }
 
             Optional<UserProfile> userProfileOp = userProfileRepo.getByUserId(testUtils.getTestUserId());
 
             if (userProfileOp.isPresent()) {
-                Log.info("User Name:" + userProfileOp.get().getUserName());
+                Log.info("User Id:" + userProfileOp.get().getUserId());
             } else {
                 UserProfile profile = new UserProfile();
 
                 profile.setRefName(testUtils.getTestUserId());
-                profile.setUserId(profile.getRefName());
-                profile.setUserName("Michael Ingardia");
+                profile.setUserId(testUtils.getDefaultUserId());
+                profile.setUsername(cred.getUsername());
                 profile.setEmail(testUtils.getTestEmail());
 
                 DataDomain dataDomain = new DataDomain();
@@ -120,7 +121,7 @@ public class SecurityTest extends BaseRepoTest {
                 profile = userProfileRepo.save(profile);
                 Assert.assertNotNull(profile.getId());
                 userProfileRepo.delete(profile);
-                userProfileOp = userProfileRepo.getByUserId(testUtils.getSystemUserId());
+                userProfileOp = userProfileRepo.getByUserId(testUtils.getTestUserId());
                 Assert.assertTrue(!userProfileOp.isPresent());
             }
         } finally {

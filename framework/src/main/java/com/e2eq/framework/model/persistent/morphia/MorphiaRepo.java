@@ -31,6 +31,7 @@ import jakarta.inject.Inject;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.ws.rs.NotSupportedException;
+import jakarta.ws.rs.PathParam;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.tuple.Pair;
 import org.bson.types.ObjectId;
@@ -90,7 +91,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
     public Filter[] getFilterArray(@NotNull List<Filter> filters, Class<? extends UnversionedBaseModel> modelClass) {
-        if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
+       if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
             filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get(), modelClass);
             if (Log.isDebugEnabled()) {
                 Log.debugf("getFilterArray for %s security context: %s", SecurityContext.getPrincipalContext().get().getUserId(), filters);
@@ -142,7 +143,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
     @Override
-    public Optional<T> findById(Datastore datastore, @NotNull ObjectId id) {
+    public Optional<T> findById(@NotNull Datastore datastore, @NotNull ObjectId id) {
         List<Filter> filters = new ArrayList<>();
         filters.add(Filters.eq("_id", id));
         // Add filters based upon rule and resourceContext;
@@ -167,7 +168,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
 
     @Override
-    public Optional<T> findByRefName(Datastore datastore, @NotNull String refName) {
+    public Optional<T> findByRefName(@NotNull Datastore datastore, @NotNull String refName) {
         Objects.requireNonNull(refName, "the refName can not be null");
 
         List<Filter> filters = new ArrayList<>();
@@ -940,6 +941,21 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         }
     }
 
+    @Override
+    public long updateActiveStatus (@PathParam("id") ObjectId id, boolean active) {
+       return updateActiveStatus(morphiaDataStore.getDataStore(getSecurityContextRealmId()),id, active);
+   }
+
+   @Override
+   public long updateActiveStatus (Datastore datastore, @PathParam("id") ObjectId id, boolean active) {
+      UpdateOperator updateOp = UpdateOperators.set("active", active );
+      UpdateResult update;
+      update = datastore.find(getPersistentClass()).filter(Filters.eq("_id", id))
+                     .update(updateOp);
+
+     return update.getModifiedCount();
+   }
+
 
     @Override
     @SafeVarargs
@@ -1022,7 +1038,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     @Override
     public long update(Datastore datastore, @NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) {
         List<UpdateOperator> updateOperators = new ArrayList<>();
-        List<String> reservedFields = List.of("refName", "id", "version", "references");
+        List<String> reservedFields = List.of("refName", "id", "version", "references", "auditInfo", "persistentEvents");
         for (Pair<String, Object> pair : pairs) {
             // check that the pair key corresponds to a field in the persistent class that is an enum
             Field field = null;

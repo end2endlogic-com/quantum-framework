@@ -81,7 +81,7 @@ public class TestBasicRepo extends BaseRepoTest{
                     .refName(userId)
                     .email(userId)
                     .displayName("Test User")
-                    .userName(userId)
+                    .username(userId)
                     .userId(userId)
                    .dataDomain(testUtils.getTestDataDomain())
                     .build();
@@ -129,7 +129,7 @@ public class TestBasicRepo extends BaseRepoTest{
          userProfile.setRefName("tuser@test-system.com");
          userProfile.setEmail("tuser@test-system.com");
          userProfile.setDisplayName("Test");
-         userProfile.setUserName("tuser@test-system.com");
+         userProfile.setUsername("tuser@test-system.com");
          userProfile.setUserId("tuser@test-system.com");
          userProfile.setDataDomain(testUtils.getTestDataDomain());
          userProfile = userProfileRepo.save(userProfile);
@@ -142,12 +142,12 @@ public class TestBasicRepo extends BaseRepoTest{
          userProfile2.setVersion(userProfile.getVersion()); // need to deal with this somehow.
 
          // if this is the only thing we want to change
-         userProfile2.setUserName("changed");
+         userProfile2.setUsername("changed");
          userProfile2.setSkipValidation(true);
          userProfileRepo.merge(userProfile2);
 
          UserProfile dbProfile = userProfileRepo.findById(userProfile.getId()).get();
-         assertTrue(dbProfile.getUserName().equals("changed"));
+         assertTrue(dbProfile.getUsername().equals("changed"));
          assertTrue(dbProfile.getUserId().equals("tuser@test-system.com"));
          assertTrue(dbProfile.getDisplayName().equals("Test"));
          userProfileRepo.delete(dbProfile);

@@ -36,12 +36,12 @@ public class TokenUtils {
 	// add builder class for the generateUserToken method.
 
 
-	public static String generateUserToken ( String userId,
+	public static String generateUserToken ( String username,
 											 Set<String> groups,
 											 long expiresAt,
 											 String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
 
-		Objects.requireNonNull(userId, "UserId cannot be null");
+		Objects.requireNonNull(username, "Username cannot be null");
 		Objects.requireNonNull(issuer, "Issuer cannot be null");
 
 		if (expiresAt <= REFRESH_ADDITIONAL_DURATION_SECONDS) {
@@ -56,12 +56,12 @@ public class TokenUtils {
 
 
 		claimsBuilder.issuer(issuer);
-		claimsBuilder.subject(userId);
+		claimsBuilder.subject(username);
 		claimsBuilder.issuedAt(currentTimeInSecs);
 		claimsBuilder.audience(AUDIENCE);
 		claimsBuilder.expiresAt(expiresAt);
 		claimsBuilder.groups(groups);
-		claimsBuilder.claim("username", userId);
+		claimsBuilder.claim("username", username);
 		claimsBuilder.claim("scope", AUTH_SCOPE);
 
 		/*Map<String, String> area2Realm = new HashMap<>();
