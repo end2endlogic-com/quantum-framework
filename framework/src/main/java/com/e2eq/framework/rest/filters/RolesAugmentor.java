@@ -15,23 +15,19 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
 
     @Override
     public Uni<SecurityIdentity> augment(SecurityIdentity identity, AuthenticationRequestContext context) {
-        Log.debugf("RolesAugmenter: augmenting identity %s \n", identity);
+       // Log.debugf("RolesAugmenter: augmenting identity %s \n", identity);
         return Uni.createFrom().item(build(identity));
         // Do 'return context.runBlocking(build(identity));'
         // if a blocking call is required to customize the identity
     }
 
     private Supplier<SecurityIdentity> build(SecurityIdentity identity) {
-        Log.debug("Building SecurityIdentity");
         if(identity.isAnonymous()) {
-            Log.debug("  Is Anonymous:" + identity.isAnonymous());
             return () -> identity;
         } else {
-            Log.debug("  Is Authenticated:" + identity.getRoles());
             // create a new builder and copy principal, attributes, credentials and roles from the original identity
             QuarkusSecurityIdentity.Builder builder = QuarkusSecurityIdentity.builder(identity);
 
-            Log.debug("  Adding user role");
             // add user role by default we already know at least we are not anonymous give the above else condition
             if (identity.getRoles().contains("user") == false)
                 builder.addRole("user");

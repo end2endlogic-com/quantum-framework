@@ -28,8 +28,7 @@ public class GreetingResource {
     @GET
     @Produces(MediaType.TEXT_PLAIN)
     public String hello(@Context UriInfo uriInfo) {
-        System.out.println("URL Received:" + uriInfo.getPath().toString());
-        return "Hello RESTEasy";
+        return "Hello From Server";
     }
 
     @Path("/list")
