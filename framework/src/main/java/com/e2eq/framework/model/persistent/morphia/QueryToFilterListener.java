@@ -173,16 +173,17 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
     protected void checkDone() {
         // the only remaining thing in the stack should be what we want to return
         if (filterStack.size() != 1) {
+            Log.debug("Filter stack is !=1");
             for (Filter f : filterStack) {
-                Log.debug(f.toString());
+                Log.debugf("   Filter: %s", f.toString());
             }
             throw new IllegalStateException("Criteria stack not 1 and end of build? size:" + filterStack.size());
         }
 
-        if (Log.isDebugEnabled()) {
-            Log.debug("-- Additional Filters based upon rules--");
+        if (Log.isDebugEnabled() && !filterStack.isEmpty()) {
+            Log.debugf("-- Additional Filters based upon rules:%d--",filterStack.size());
             for (Filter f : filterStack) {
-                Log.debug(f.toString());
+                Log.debugf("    Name:%s Field:%s Value:%s", f.getName(), f.getField(), f.getValue().toString());
             }
             Log.debug("--------");
         }
