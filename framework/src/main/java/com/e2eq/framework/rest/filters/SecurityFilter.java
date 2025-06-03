@@ -30,6 +30,7 @@ import org.jboss.logging.Logger;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Optional;
 import java.util.Set;
 import java.util.StringTokenizer;
@@ -219,6 +220,7 @@ public class SecurityFilter implements ContainerRequestFilter {
             if (username != null) {
                 Optional<CredentialUserIdPassword> ocreds = credentialRepo.findByUsername(username);
                 if (ocreds.isPresent()) {
+                    Log.debugf("Found user %s in the database, adding roles %s", username, Arrays.toString(ocreds.get().getRoles()));
                     CredentialUserIdPassword creds = ocreds.get();
                     pcontext.setUserId(creds.getUserId());
                     String[] roles = creds.getRoles();
@@ -236,7 +238,7 @@ public class SecurityFilter implements ContainerRequestFilter {
                             .build();
                 } else {
                     // we did not find the user in the database lets see if we can find a realm based on email address
-                    Log.warnf("Could not find user with username / subject:%s", username);
+                    Log.warnf("Could not find user with username: %s", username);
                     Log.warn("Attempting to see if the realm is defined via the user/subject being an email address");
                     if (ValidateUtils.isValidEmailAddress(username)) {
 
