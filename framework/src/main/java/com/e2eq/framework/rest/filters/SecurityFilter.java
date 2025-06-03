@@ -192,7 +192,8 @@ public class SecurityFilter implements ContainerRequestFilter {
     protected PrincipalContext determinePrincipalContext(ContainerRequestContext requestContext) {
         if (Log.isDebugEnabled()) {
             Log.debug("---Determining principal context--");
-            Log.debug("Security Identity:" + securityIdentity.toString());
+            Log.debugf("Security Identity:%s" , securityIdentity.toString());
+            Log.debugf("Security Identity Principal Name:%s " ,securityIdentity.getPrincipal().getName());
         }
 
         // Default to an anonymous PrincipalContext
@@ -220,7 +221,7 @@ public class SecurityFilter implements ContainerRequestFilter {
             if (username != null) {
                 Optional<CredentialUserIdPassword> ocreds = credentialRepo.findByUsername(username);
                 if (ocreds.isPresent()) {
-                    Log.debugf("Found user %s in the database, adding roles %s", username, Arrays.toString(ocreds.get().getRoles()));
+                    Log.debugf("Found user with username %s userId: in the database, adding roles %s", username, ocreds.get().getUserId(), Arrays.toString(ocreds.get().getRoles()));
                     CredentialUserIdPassword creds = ocreds.get();
                     pcontext.setUserId(creds.getUserId());
                     String[] roles = creds.getRoles();
@@ -228,14 +229,18 @@ public class SecurityFilter implements ContainerRequestFilter {
                         Set<String> rolesSet = securityIdentity.getRoles();
                         roles = rolesSet.isEmpty() ? new String[]{"ANONYMOUS"} : rolesSet.toArray(new String[0]);
                     }
-                    DataDomain dataDomain = creds.getDomainContext().toDataDomain(username);
+                    DataDomain dataDomain = creds.getDomainContext().toDataDomain(creds.getUserId());
                     pcontext = new PrincipalContext.Builder()
                             .withDefaultRealm(creds.getDomainContext().getDefaultRealm())
                             .withDataDomain(dataDomain)
-                            .withUserId(username)
+                            .withUserId(creds.getUserId())
                             .withRoles(roles)
                             .withScope("AUTHENTICATED")
                             .build();
+                    if (Log.isDebugEnabled()) {
+                        Log.debugf("Principal Context updated with roles: %s", Arrays.toString(roles));
+                        Log.debugf("Principal Context: %s", pcontext.toString());
+                    }
                 } else {
                     // we did not find the user in the database lets see if we can find a realm based on email address
                     Log.warnf("Could not find user with username: %s", username);
