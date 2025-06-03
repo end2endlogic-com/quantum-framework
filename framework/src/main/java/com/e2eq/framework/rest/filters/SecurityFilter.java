@@ -221,7 +221,7 @@ public class SecurityFilter implements ContainerRequestFilter {
             if (username != null) {
                 Optional<CredentialUserIdPassword> ocreds = credentialRepo.findByUsername(username);
                 if (ocreds.isPresent()) {
-                    Log.debugf("Found user with username %s userId: in the database, adding roles %s", username, ocreds.get().getUserId(), Arrays.toString(ocreds.get().getRoles()));
+                    Log.debugf("Found user with username %s userId:%s in the database, adding roles %s", username, ocreds.get().getUserId(), Arrays.toString(ocreds.get().getRoles()));
                     CredentialUserIdPassword creds = ocreds.get();
                     pcontext.setUserId(creds.getUserId());
                     String[] roles = creds.getRoles();
