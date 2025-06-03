@@ -84,7 +84,7 @@ public class UserProfileResource extends BaseResource<UserProfile, UserProfileRe
       up.setUserId(uiUserProfile.get("userId").asText());
       up.setFname(uiUserProfile.get("fname").asText());
       up.setLname(uiUserProfile.get("lname").asText());
-      up.setUsername(uiUserProfile.get("userId").asText());
+      up.setUsername(uiUserProfile.get("username").asText());
       up.setDisplayName(uiUserProfile.get("displayName").asText());
       up.setEmail(uiUserProfile.get("email").asText());
       up.setPhoneNumber(uiUserProfile.get("phoneNumber").asText());
