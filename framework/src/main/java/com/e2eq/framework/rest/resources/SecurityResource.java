@@ -228,7 +228,7 @@ public class SecurityResource {
     @Consumes(MediaType.APPLICATION_JSON)
     //  @APIResponse(responseCode="403", description="The credentials provided did not match"))
     //  @APIResponse(responseCode="200", description"successful"))
-    public Response login(@Context HttpHeaders headers, AuthRequest authRequest) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+    public Response login(@Context HttpHeaders headers, AuthRequest authRequest, @QueryParam("realm") String qrealm) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
         Response rc;
 
         String remoteAddress = headers.getRequestHeaders().getFirst("X-FORWARDED_FOR");
@@ -240,23 +240,35 @@ public class SecurityResource {
         if (Log.isInfoEnabled())
             Log.info("Authentication Attempt:" + authRequest.getUserId() + " Address:" + ((remoteAddress != null) ? remoteAddress : "unknown") + " UserAgent:" + ((userAgent != null) ? userAgent : "unknown"));
 
+
         StringTokenizer tokenizer = new StringTokenizer(authRequest.getUserId(), "@");
         String user = tokenizer.nextToken();
-        String tenantId = tokenizer.nextToken().replace(".", "-");
+        String realm = tokenizer.nextToken().replace(".", "-");
+        if (qrealm != null ) {
+            Log.infof("Overriding calculated realm:%s  to  query parameter :%s ", realm, qrealm);
+            realm = qrealm;
+        }
 
 
-        Log.infof("Logging in userid: %s tenantId: %s",authRequest.getUserId(), tenantId);
+        Log.infof("Logging in userid: %s realm: %s",authRequest.getUserId(), realm);
 
 
         var authProvider = authProviderFactory.getAuthProvider();
 
 
         try {
-            AuthProvider.LoginResponse loginResponse = authProvider.login(authRequest.getUserId(), authRequest.getPassword());
+            AuthProvider.LoginResponse loginResponse;
+            if (realm == null)
+                 loginResponse = authProvider.login(authRequest.getUserId(), authRequest.getPassword());
+            else
+                loginResponse = authProvider.login(realm, authRequest.getUserId(), authRequest.getPassword());
+
             if (loginResponse.authenticated()) {
+                Log.info("Login successful for userId:" + authRequest.getUserId());
                 return Response.ok(new AuthResponse(loginResponse.positiveResponse().accessToken(), loginResponse.positiveResponse().refreshToken(), loginResponse.positiveResponse().expirationTime())).build();
             }
             else {
+                Log.warn("Login failed for userId:" + authRequest.getUserId());
                 RestError error = RestError.builder()
                         .statusMessage(loginResponse.negativeResponse().errorMessage())
                         .status(Response.Status.UNAUTHORIZED.getStatusCode())

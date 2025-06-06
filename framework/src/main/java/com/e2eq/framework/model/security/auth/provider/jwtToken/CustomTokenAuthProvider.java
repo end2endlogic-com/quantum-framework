@@ -167,9 +167,14 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
 
     @Override
     public LoginResponse login(String userId, String password) {
+        return login(null, userId, password);
+    }
+
+    @Override
+    public LoginResponse login(String realm, String userId, String password) {
         try
         {
-            Optional<CredentialUserIdPassword> ocredential = getCredentials(userId, password);
+            Optional<CredentialUserIdPassword> ocredential = getCredentials(realm, userId);
 
             if (ocredential.isPresent()) {
                 CredentialUserIdPassword credential = ocredential.get();
@@ -315,8 +320,8 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
         return refreshToken;
     }
 
-    private Optional<CredentialUserIdPassword> getCredentials(String userId, String password) {
-         return credentialRepo.findByUserId(userId);
+    private Optional<CredentialUserIdPassword> getCredentials(String realm, String userId) {
+         return (realm==null) ? credentialRepo.findByUserId(userId) : credentialRepo.findByUserId(realm, userId);
     }
 
     private SecurityIdentity buildIdentity(String userId, Set<String> roles) {

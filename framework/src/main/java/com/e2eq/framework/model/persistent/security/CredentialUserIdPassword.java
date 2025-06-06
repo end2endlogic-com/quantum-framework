@@ -5,6 +5,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
+import com.e2eq.framework.util.EncryptionUtils;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import dev.morphia.annotations.*;
 import io.quarkus.runtime.annotations.RegisterForReflection;
@@ -62,7 +63,8 @@ public class CredentialUserIdPassword extends BaseModel {
     @NotNull
     @NonNull
     @JsonIgnore
-    protected String hashingAlgorithm="BCrypt.default";
+    protected String hashingAlgorithm= EncryptionUtils.hashAlgorithm();
+
     @NotNull @NonNull protected Date lastUpdate;
 
     @Builder.Default

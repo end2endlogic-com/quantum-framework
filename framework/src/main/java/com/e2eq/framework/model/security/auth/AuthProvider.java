@@ -3,6 +3,7 @@ package com.e2eq.framework.model.security.auth;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import io.quarkus.security.identity.SecurityIdentity;
+import jakarta.validation.constraints.NotNull;
 
 import java.util.Set;
 
@@ -54,5 +55,6 @@ public interface AuthProvider {
     }
 
     LoginResponse login(String userId, String password);
+    LoginResponse login(String realm, String userId, String password);
     LoginResponse refreshTokens(String refreshToken);
 }

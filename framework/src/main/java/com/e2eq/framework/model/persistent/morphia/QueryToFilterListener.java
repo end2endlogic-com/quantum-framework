@@ -183,7 +183,7 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         if (Log.isDebugEnabled() && !filterStack.isEmpty()) {
             Log.debugf("-- Additional Filters based upon rules:%d--",filterStack.size());
             for (Filter f : filterStack) {
-                Log.debugf("    Name:%s Field:%s Value:%s", f.getName(), f.getField(), f.getValue().toString());
+                Log.debugf("    Name:%s Field:%s Value:%s", f.getName(), f.getField(), (f.getValue() == null)? "NULL" : f.getValue().toString());
             }
             Log.debug("--------");
         }
