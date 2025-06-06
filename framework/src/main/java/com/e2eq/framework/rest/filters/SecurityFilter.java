@@ -22,6 +22,7 @@ import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ContainerRequestFilter;
 import jakarta.ws.rs.core.HttpHeaders;
+import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.Provider;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -80,7 +81,7 @@ public class SecurityFilter implements ContainerRequestFilter {
 
         if (Log.isDebugEnabled()) {
             String path = requestContext.getUriInfo().getPath();
-            String queryParams = requestContext.getUriInfo().getQueryParameters().toString();
+
             String method = requestContext.getMethod();
             String body = "";
             // here for debug purposes if you enable this you will break media upload types like multipart/form-data
@@ -102,10 +103,10 @@ public class SecurityFilter implements ContainerRequestFilter {
                     body = rawBody; // Fallback to raw body if not JSON
                 }
                 if (Log.isDebugEnabled() && !requestContext.getUriInfo().getPath().contains("login"))
-                    Log.debugf("SecurityFilter: %s %s?%s body[%s]", method, path, queryParams, body);
+                    Log.debugf("SecurityFilter: %s %s?%s body[%s]", method, path, body);
                 else
                 if  (Log.isDebugEnabled())
-                    Log.debugf("SecurityFilter: %s %s?%s", method, path, queryParams);
+                    Log.debugf("SecurityFilter: %s %s?%s", method, path);
             }
 
 
@@ -196,14 +197,31 @@ public class SecurityFilter implements ContainerRequestFilter {
             Log.debugf("Security Identity Principal Name:%s " ,securityIdentity.getPrincipal().getName());
         }
 
+        MultivaluedMap<String, String> queryParams = requestContext.getUriInfo().getQueryParameters();
+        String realm = (queryParams.get("realm")==null) ? null : queryParams.get("realm").get(0);
+        if (realm != null ) {
+            Log.debug("!!!! Determining realm from query parameters: " + realm);
+        }
+
         // Default to an anonymous PrincipalContext
-        PrincipalContext pcontext = new PrincipalContext.Builder()
+        PrincipalContext pcontext;
+
+        if (realm == null )
+            pcontext = new PrincipalContext.Builder()
                 .withDefaultRealm(securityUtils.getSystemRealm())
                 .withDataDomain(securityUtils.getSystemDataDomain())
                 .withUserId(securityUtils.getAnonymousUserId())
                 .withRoles(new String[]{"ANONYMOUS"})
                 .withScope("systemGenerated")
                 .build();
+        else
+            pcontext = new PrincipalContext.Builder()
+                          .withDefaultRealm(realm)
+                          .withDataDomain(securityUtils.getSystemDataDomain())
+                          .withUserId(securityUtils.getAnonymousUserId())
+                          .withRoles(new String[]{"ANONYMOUS"})
+                          .withScope("systemGenerated")
+                          .build();
 
         // Get the Authorization header from the request
         String authorizationHeader = requestContext.getHeaderString(HttpHeaders.AUTHORIZATION);
@@ -251,12 +269,12 @@ public class SecurityFilter implements ContainerRequestFilter {
                         Log.infof("UserId appears to be an email address with domain %s searching realms for domain Context", emailDomain);
                         Optional<Realm> orealm = realmRepo.findByEmailDomain(emailDomain, true);
                         if (orealm.isPresent()) {
-                            Realm realm = orealm.get();
-                            DataDomain dataDomain = realm.getDomainContext().toDataDomain(username);
+                            Realm rrealm = orealm.get();
+                            DataDomain dataDomain = rrealm.getDomainContext().toDataDomain(username);
                             Set<String> rolesSet = securityIdentity.getRoles();
                             String[] roles = rolesSet.isEmpty() ? new String[]{"ANONYMOUS"} : rolesSet.toArray(new String[rolesSet.size()]);
                             pcontext = new PrincipalContext.Builder()
-                                          .withDefaultRealm(realm.getDomainContext().getDefaultRealm())
+                                          .withDefaultRealm(rrealm.getDomainContext().getDefaultRealm())
                                           .withDataDomain(dataDomain)
                                           .withUserId(username)
                                           .withRoles(roles)
@@ -268,7 +286,7 @@ public class SecurityFilter implements ContainerRequestFilter {
                             throw new WebApplicationException(errorText, Response.Status.UNAUTHORIZED);
                         }
                     } else {
-                        String errorText = String.format("Could not find the user:%s in the database:%s and could not parse the id into an email address to look up the realm.", username, credentialRepo.getDatabaseName());
+                        String errorText = String.format("Could not find the user with username:%s in the database:%s and could not parse the id into an email address to look up the realm.", username, credentialRepo.getDatabaseName());
                         Log.warnf(errorText);
                         throw new WebApplicationException(errorText, Response.Status.UNAUTHORIZED);
                     }

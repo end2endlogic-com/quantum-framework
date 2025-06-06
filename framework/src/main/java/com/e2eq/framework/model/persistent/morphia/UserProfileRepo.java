@@ -3,6 +3,7 @@ package com.e2eq.framework.model.persistent.morphia;
 import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.persistent.security.DomainContext;
 import com.e2eq.framework.model.persistent.security.UserProfile;
+import com.e2eq.framework.model.security.auth.UserManagement;
 import com.e2eq.framework.util.EncryptionUtils;
 import com.e2eq.framework.util.SecurityUtils;
 import com.e2eq.framework.util.ValidateUtils;
@@ -32,7 +33,6 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
    @Inject
    CredentialRepo credRepo;
 
-
    @Inject
    SecurityUtils securityUtils;
 
@@ -60,6 +60,8 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
 
       return Optional.ofNullable(p);
    }
+
+
 
 
    public Optional<UserProfile> getByUserId(@NotNull String userId) {

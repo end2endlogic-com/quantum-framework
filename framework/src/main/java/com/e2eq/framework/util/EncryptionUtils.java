@@ -12,4 +12,8 @@ public class EncryptionUtils {
         BCrypt.Result result = BCrypt.verifyer().verify(plainTextPassword.toCharArray(), encryptedHash);
         return result.verified;
     }
+
+    public static String hashAlgorithm() {
+        return "BCrypt.default";
+    }
 }
