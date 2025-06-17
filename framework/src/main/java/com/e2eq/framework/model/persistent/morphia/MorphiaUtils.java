@@ -115,12 +115,31 @@ public class MorphiaUtils {
       }
    }
 
+   public static Optional<ParseTree> validateQueryString(String queryString) {
+
+      if (queryString == null || queryString.isEmpty()) {
+         return Optional.empty();
+      }
+
+      BIAPIQueryLexer lexer = new BIAPIQueryLexer(CharStreams.fromString(queryString));
+      BIAPIQueryParser parser = new BIAPIQueryParser(new CommonTokenStream(lexer));
+      parser.addErrorListener(new BaseErrorListener() {
+         @Override
+         public void syntaxError(Recognizer<?, ?> recognizer, Object offendingSymbol, int line,
+                                 int charPositionInLine, String msg, RecognitionException e) {
+            throw new IllegalArgumentException("syntax error in query string: Failed to parse " + queryString + " at position "
+                                                  + charPositionInLine + " due to " + msg, e);
+         }
+      });
+      return Optional.of(parser.query());
+   }
+
 
    public static Filter convertToFilterWContext(String queryString, PrincipalContext pcontext, ResourceContext rcontext, Class<? extends UnversionedBaseModel> modelClass)  {
       Objects.requireNonNull(modelClass, "Model class cannot be null");
 
       if (queryString != null && !queryString.isEmpty()) {
-         BIAPIQueryLexer lexer = new BIAPIQueryLexer(CharStreams.fromString(queryString));
+         /* BIAPIQueryLexer lexer = new BIAPIQueryLexer(CharStreams.fromString(queryString));
          BIAPIQueryParser parser = new BIAPIQueryParser(new CommonTokenStream(lexer));
          parser.addErrorListener(new BaseErrorListener() {
             @Override
@@ -130,7 +149,12 @@ public class MorphiaUtils {
                        + charPositionInLine + " due to " + msg, e);
             }
          });
-         ParseTree tree = parser.query();
+         ParseTree tree = parser.query(); */
+         Optional<ParseTree> otree = validateQueryString(queryString);
+         if (!otree.isPresent()) {
+            throw new IllegalArgumentException("syntax error in query string: is either null or empty but is required not to be");
+         }
+         ParseTree tree = otree.get();
          ParseTreeWalker walker = new ParseTreeWalker();
 
          QueryToFilterListener listener;

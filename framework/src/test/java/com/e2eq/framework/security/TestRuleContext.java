@@ -6,7 +6,6 @@ import com.e2eq.framework.model.securityrules.*;
 import com.e2eq.framework.persistent.BaseRepoTest;
 import com.e2eq.framework.util.IOCase;
 import com.e2eq.framework.util.SecurityUtils;
-import com.e2eq.framework.util.TestUtils;
 import com.e2eq.framework.util.WildCardMatcher;
 
 import dev.morphia.query.filters.Filter;
@@ -26,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 @Slf4j
 @QuarkusTest
-public class TestSecurity extends BaseRepoTest {
+public class TestRuleContext extends BaseRepoTest {
 
     @Inject
     SecurityUtils securityUtils;

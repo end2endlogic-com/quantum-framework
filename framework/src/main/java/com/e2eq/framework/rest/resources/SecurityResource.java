@@ -35,6 +35,9 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.eclipse.microprofile.openapi.annotations.OpenAPIDefinition;
 import org.eclipse.microprofile.openapi.annotations.info.Info;
+import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.logging.Logger;
 
@@ -226,8 +229,8 @@ public class SecurityResource {
     @Path("/login")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    //  @APIResponse(responseCode="403", description="The credentials provided did not match"))
-    //  @APIResponse(responseCode="200", description"successful"))
+    @APIResponse(responseCode = "200", description = "Successful login", content = @Content(mediaType = "application/json", schema = @Schema(implementation = AuthResponse.class)))
+    @APIResponse(responseCode = "401", description = "Unauthorized - Invalid credentials", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
     public Response login(@Context HttpHeaders headers, AuthRequest authRequest, @QueryParam("realm") String qrealm) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
         Response rc;
 
@@ -437,6 +440,12 @@ public class SecurityResource {
         }
         Log.info("  Is Authenticated:" + securityIdentity.getRoles());
         Log.info("  Principal:" + securityIdentity.getPrincipal().getName());
+
+        Log.info("=== Principal Context ---");
+        Log.info("Context is present:" + com.e2eq.framework.model.securityrules.SecurityContext.getPrincipalContext().isPresent());
+        if (com.e2eq.framework.model.securityrules.SecurityContext.getPrincipalContext().isPresent()) {
+            Log.info("Context:" + com.e2eq.framework.model.securityrules.SecurityContext.getPrincipalContext().get().toString());
+        }
 
         Date date = new Date();
         if (jwt != null) {

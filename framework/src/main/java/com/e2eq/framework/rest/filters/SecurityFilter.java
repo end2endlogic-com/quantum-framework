@@ -27,14 +27,12 @@ import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.Provider;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.jwt.JsonWebToken;
+import org.graalvm.polyglot.Context;
 import org.jboss.logging.Logger;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
-import java.util.Optional;
-import java.util.Set;
-import java.util.StringTokenizer;
+import java.util.*;
 import java.util.stream.Collectors;
 
 
@@ -190,31 +188,80 @@ public class SecurityFilter implements ContainerRequestFilter {
         }
     }
 
+    boolean runScript(String username, String userId, String realm, String script) {
+        Objects.requireNonNull(username, "Username cannot be null");
+        Objects.requireNonNull(userId, "UserId cannot be null");
+        Objects.requireNonNull(realm, "Realm cannot be null");
+        Objects.requireNonNull(script, "Script cannot be null");
+
+
+        // Context c = Context.newBuilder().allowAllAccess(true).build();
+        Context c = Context.newBuilder().allowAllAccess(true).build();
+        c.getBindings("js").putMember("username", username);
+        c.getBindings("js").putMember("userId", userId);
+        c.getBindings("js").putMember("realm", realm);
+
+        boolean allow = c.eval("js", script).asBoolean();
+        return allow;
+
+    }
+
     protected PrincipalContext determinePrincipalContext(ContainerRequestContext requestContext) {
+
+        String impersonateUsername = requestContext.getHeaderString("X-Impersonate-Username");
+        String impersonateUserId = requestContext.getHeaderString("X-Impersonate-UserId");
+        boolean impersonate = false;
+
+        if (impersonateUsername != null && impersonateUserId != null) {
+            throw new IllegalArgumentException(String.format("Impersonation Username: %s and impersonate UserId:%s can only pass one of them but not both",
+                    impersonateUsername, impersonateUserId));
+        } else if (impersonateUsername != null) {
+            impersonate = true;
+        } else if (impersonateUserId != null) {
+            impersonate = true;
+        }
+
         if (Log.isDebugEnabled()) {
             Log.debug("---Determining principal context--");
             Log.debugf("Security Identity:%s" , securityIdentity.toString());
             Log.debugf("Security Identity Principal Name:%s " ,securityIdentity.getPrincipal().getName());
+
+            if (impersonateUsername!= null) {
+                Log.debugf("Impersonating user, X-Impersonate-Username: %s present", impersonateUsername );
+            } else if (impersonateUserId != null) {
+                Log.debugf("Impersonating user, X-Impersonate-UserId header present %s", impersonateUserId);
+            } else {
+                Log.debug("No impersonation header present");
+            }
         }
 
-        MultivaluedMap<String, String> queryParams = requestContext.getUriInfo().getQueryParameters();
+       /* MultivaluedMap<String, String> queryParams = requestContext.getUriInfo().getQueryParameters();
         String realm = (queryParams.get("realm")==null) ? null : queryParams.get("realm").get(0);
         if (realm != null ) {
-            Log.debug("!!!! Determining realm from query parameters: " + realm);
+            Log.debugf("!!!! Determining realm from query parameters:%s ", realm);
+        } */
+        String realm = requestContext.getHeaderString("X-Realm");
+        if (realm != null) {
+            Log.debugf("!!! Determining realm from X-Realm header:%s ", realm);
+        } else {
+            Log.debug("No realm header override present");
         }
 
         // Default to an anonymous PrincipalContext
         PrincipalContext pcontext;
 
-        if (realm == null )
+        if (realm == null ) {
+            Log.debug("Defaulting to anonymous with system realm default");
             pcontext = new PrincipalContext.Builder()
-                .withDefaultRealm(securityUtils.getSystemRealm())
-                .withDataDomain(securityUtils.getSystemDataDomain())
-                .withUserId(securityUtils.getAnonymousUserId())
-                .withRoles(new String[]{"ANONYMOUS"})
-                .withScope("systemGenerated")
-                .build();
-        else
+                          .withDefaultRealm(securityUtils.getSystemRealm())
+                          .withDataDomain(securityUtils.getSystemDataDomain())
+                          .withUserId(securityUtils.getAnonymousUserId())
+                          .withRoles(new String[]{"ANONYMOUS"})
+                          .withScope("systemGenerated")
+                          .build();
+        }
+        else {
+            Log.debugf("Defaulting to anonymous with %s realm", realm);
             pcontext = new PrincipalContext.Builder()
                           .withDefaultRealm(realm)
                           .withDataDomain(securityUtils.getSystemDataDomain())
@@ -222,6 +269,7 @@ public class SecurityFilter implements ContainerRequestFilter {
                           .withRoles(new String[]{"ANONYMOUS"})
                           .withScope("systemGenerated")
                           .build();
+        }
 
         // Get the Authorization header from the request
         String authorizationHeader = requestContext.getHeaderString(HttpHeaders.AUTHORIZATION);
@@ -234,34 +282,99 @@ public class SecurityFilter implements ContainerRequestFilter {
             if (username == null) {
                 Log.warn("JWT did not contain a username claim, using sub claim instead");
                 username = jwt.getClaim("sub");
+            } else {
+                Log.debugf("Found user with username %s in the claims", username);
+            }
+            if (impersonate) {
+                //TODO check if the user that is impersonating another user is authorized to
+                Log.warnf("Impersonating user %s with userId %s from username %s, authorization check not implemented!!", impersonateUsername, impersonateUserId, username);
+
             }
 
             if (username != null) {
-                Optional<CredentialUserIdPassword> ocreds = credentialRepo.findByUsername(username);
+                Optional<CredentialUserIdPassword> ocreds = (realm == null ) ? credentialRepo.findByUsername(username) : credentialRepo.findByUsername(username, realm);
+
                 if (ocreds.isPresent()) {
                     Log.debugf("Found user with username %s userId:%s in the database, adding roles %s", username, ocreds.get().getUserId(), Arrays.toString(ocreds.get().getRoles()));
                     CredentialUserIdPassword creds = ocreds.get();
-                    pcontext.setUserId(creds.getUserId());
-                    String[] roles = creds.getRoles();
-                    if (roles == null || roles.length == 0) {
-                        Set<String> rolesSet = securityIdentity.getRoles();
-                        roles = rolesSet.isEmpty() ? new String[]{"ANONYMOUS"} : rolesSet.toArray(new String[0]);
+
+                    if (impersonate && creds.getImpersonateFilter() == null) {
+                        throw new IllegalArgumentException(String.format("username %s with userId %s is not configured with a impersonateFilter in realm:%s", creds.getUsername(), creds.getUserId(), credentialRepo.getDatabaseName()));
+                    } else if (impersonate) {
+                        if (!runScript(username, ocreds.get().getUserId(), (realm== null ) ? credentialRepo.getDatabaseName() : realm, creds.getImpersonateFilter())) {
+                            throw new WebApplicationException(String.format("User %s with userId %s is not authorized to impersonate user %s with userId %s in realm:%s", username, ocreds.get().getUserId(), impersonateUsername, impersonateUserId, (realm== null ) ? credentialRepo.getDatabaseName() : realm), Response.Status.FORBIDDEN);
+                        }
                     }
-                    DataDomain dataDomain = creds.getDomainContext().toDataDomain(creds.getUserId());
-                    pcontext = new PrincipalContext.Builder()
-                            .withDefaultRealm(creds.getDomainContext().getDefaultRealm())
-                            .withDataDomain(dataDomain)
-                            .withUserId(creds.getUserId())
-                            .withRoles(roles)
-                            .withScope("AUTHENTICATED")
-                            .build();
-                    if (Log.isDebugEnabled()) {
-                        Log.debugf("Principal Context updated with roles: %s", Arrays.toString(roles));
-                        Log.debugf("Principal Context: %s", pcontext.toString());
+
+                    if (impersonate) {
+                        Optional<CredentialUserIdPassword> oicreds;
+                        if (impersonateUsername != null) {
+                             oicreds =(realm == null) ? credentialRepo.findByUsername(impersonateUsername) : credentialRepo.findByUsername(impersonateUsername, realm);
+                        } else if (impersonateUserId!= null) {
+                             oicreds = (realm == null ) ? credentialRepo.findByUserId(impersonateUserId) : credentialRepo.findByUserId(impersonateUserId, realm)  ;
+                        } else
+                        {
+                            throw new IllegalStateException("Logic error on server side impersonating user, neither X-Impersonate-Username nor X-Impersonate-UserId header is present yet impersonate is true?");
+                        }
+
+                        if (!oicreds.isPresent()) {
+                            throw new WebApplicationException( String.format("Could not find impersonated userId or username, id:%s", (impersonateUsername == null) ? impersonateUserId : impersonateUsername), Response.Status.NOT_FOUND);
+                        }
+                        pcontext.setUserId(oicreds.get().getUserId());
+                        String[] roles = oicreds.get().getRoles();
+                        if (roles == null || roles.length == 0) {
+                            Set<String> rolesSet = securityIdentity.getRoles();
+                            roles = rolesSet.isEmpty() ? new String[]{"ANONYMOUS"} : rolesSet.toArray(new String[0]);
+                        } else {
+                            Set<String> roleSet = new HashSet<String> () ;
+                            roleSet.addAll(securityIdentity.getRoles());
+                            roleSet.addAll(Arrays.asList(roles));
+                            roles = roleSet.toArray(new String[0]);
+                        }
+                        DataDomain dataDomain = creds.getDomainContext().toDataDomain(oicreds.get().getUserId());
+                        pcontext = new PrincipalContext.Builder()
+                                      .withDefaultRealm(oicreds.get().getDomainContext().getDefaultRealm())
+                                      .withDataDomain(dataDomain)
+                                      .withUserId(oicreds.get().getUserId())
+                                      .withRoles(roles)
+                                      .withScope("AUTHENTICATED")
+                                      .withImpersonatedByUsername(oicreds.get().getUsername())
+                                      .withImpersonatedByUserId(oicreds.get().getUserId())
+                                      .build();
+
+                        if (Log.isDebugEnabled()) {
+                            Log.debugf("Principal Context updated with roles: %s", Arrays.toString(roles));
+                            Log.debugf("Principal Context: %s", pcontext.toString());
+                        }
+
+                    } else {
+                        pcontext.setUserId(creds.getUserId());
+                        String[] roles = creds.getRoles();
+                        if (roles == null || roles.length == 0) {
+                            Set<String> rolesSet = securityIdentity.getRoles();
+                            roles = rolesSet.isEmpty() ? new String[]{"ANONYMOUS"} : rolesSet.toArray(new String[0]);
+                        }else {
+                            Set<String> roleSet = new HashSet<String>();
+                            roleSet.addAll(securityIdentity.getRoles());
+                            roleSet.addAll(Arrays.asList(roles));
+                            roles = roleSet.toArray(new String[0]);
+                        }
+                        DataDomain dataDomain = creds.getDomainContext().toDataDomain(creds.getUserId());
+                        pcontext = new PrincipalContext.Builder()
+                                      .withDefaultRealm(creds.getDomainContext().getDefaultRealm())
+                                      .withDataDomain(dataDomain)
+                                      .withUserId(creds.getUserId())
+                                      .withRoles(roles)
+                                      .withScope("AUTHENTICATED")
+                                      .build();
+                        if (Log.isDebugEnabled()) {
+                            Log.debugf("Principal Context updated with roles: %s", Arrays.toString(roles));
+                            Log.debugf("Principal Context: %s", pcontext.toString());
+                        }
                     }
                 } else {
                     // we did not find the user in the database lets see if we can find a realm based on email address
-                    Log.warnf("Could not find user with username: %s", username);
+                    Log.warnf("Could not find user with username: %s in realm %s", username,( realm == null) ? credentialRepo.getDatabaseName() : realm );
                     Log.warn("Attempting to see if the realm is defined via the user/subject being an email address");
                     if (ValidateUtils.isValidEmailAddress(username)) {
 
@@ -286,7 +399,7 @@ public class SecurityFilter implements ContainerRequestFilter {
                             throw new WebApplicationException(errorText, Response.Status.UNAUTHORIZED);
                         }
                     } else {
-                        String errorText = String.format("Could not find the user with username:%s in the database:%s and could not parse the id into an email address to look up the realm.", username, credentialRepo.getDatabaseName());
+                        String errorText = String.format("Could not find the user with username:%s in the database:%s and could not parse the id into an email address to look up the realm.", username, (realm==null) ? credentialRepo.getDatabaseName() : realm);
                         Log.warnf(errorText);
                         throw new WebApplicationException(errorText, Response.Status.UNAUTHORIZED);
                     }

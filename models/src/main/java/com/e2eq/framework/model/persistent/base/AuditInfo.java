@@ -20,4 +20,13 @@ public class AuditInfo {
    protected String creationIdentity;
    protected Date lastUpdateTs;
    protected String lastUpdateIdentity;
+   protected String impersonatorUsername;
+   protected String impersonatorUserId;
+
+   public AuditInfo(Date createTs, String createIdentity, Date lastUpdateTs, String lastUpdateIdentity) {
+      this.creationTs = createTs;
+      this.creationIdentity = createIdentity;
+      this.lastUpdateTs = lastUpdateTs;
+      this.lastUpdateIdentity = lastUpdateIdentity;
+   }
 }

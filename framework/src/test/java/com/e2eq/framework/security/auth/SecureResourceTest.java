@@ -1,11 +1,16 @@
 package com.e2eq.framework.security.auth;
 
+import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.security.auth.AuthProvider;
 import com.e2eq.framework.model.security.auth.AuthProviderFactory;
+import com.e2eq.framework.model.securityrules.*;
+import com.e2eq.framework.util.TestUtils;
 import io.quarkus.logging.Log;
 import io.quarkus.test.junit.QuarkusTest;
+import io.restassured.response.Response;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.util.Set;
@@ -19,6 +24,12 @@ public class SecureResourceTest {
 
     @Inject
     AuthProviderFactory authFactory;
+
+    @Inject
+    TestUtils testUtils;
+
+    @Inject
+    RuleContext ruleContext;
 
     @Test
     public void testSecuredEndpoints() {
@@ -71,5 +82,46 @@ public class SecureResourceTest {
             .get("/secure/authenticated")
         .then()
             .statusCode(401);
+    }
+
+    @Test
+    public void testImpersonation() throws ReferentialIntegrityViolationException {
+    // first ensure that the there are two users in the system one that is a admin the other that is just a normal us
+        String[] roles = {"admin", "user"};
+        PrincipalContext pContext = testUtils.getTestPrincipalContext(testUtils.getSystemUserId(), roles);
+        ResourceContext rContext = testUtils.getResourceContext(testUtils.getArea(), "userProfile", "update");
+        testUtils.initDefaultRules(ruleContext, "security","userProfile", testUtils.getTestUserId());
+        AuthProvider.LoginResponse loginResponse;
+        try (final SecuritySession ss = new SecuritySession(pContext, rContext)) {
+            if (authFactory.getUserManager().usernameExists("testuser@end2endlogic.com")) {
+                authFactory.getUserManager().removeUser("testuser@end2endlogic.com");
+            }
+            authFactory.getUserManager().createUser("testuser@end2endlogic.com", "P@55w@rd", "testuser@end2endlogic.com", Set.of("user"), testUtils.getTestDomainContext());
+
+            if (authFactory.getUserManager().usernameExists("testadmin@end2endlogic.com")) {
+                authFactory.getUserManager().removeUser("testadmin@end2endlogic.com");
+            }
+
+            authFactory.getUserManager().createUser("testadmin@end2endlogic.com", "P@55w@rd", "testadmin@end2endlogic.com", Set.of("admin"), testUtils.getTestDomainContext());
+            authFactory.getUserManager().enableImpersonation("testadmin@end2endlogic.com", "true", "", testUtils.getTestDomainContext().getDefaultRealm());
+
+           loginResponse = authFactory.getAuthProvider().login("testadmin@end2endlogic.com", "P@55w@rd");
+            Assertions.assertTrue(loginResponse.authenticated());
+        }
+
+    Response response = given()
+            .header("Authorization", "Bearer " + loginResponse.positiveResponse().accessToken())
+            .header("X-Impersonate-UserId", "testuser@end2endlogic.com")
+            .header("X-Realm", testUtils.getTestDomainContext().getDefaultRealm())
+            .when()
+            .get("/security/authenticated/test")
+            .then()
+           .extract().response();
+
+        System.out.println("Response: " + response.asString());
+        Assertions.assertEquals(200, response.getStatusCode());
+
+
+
     }
 }

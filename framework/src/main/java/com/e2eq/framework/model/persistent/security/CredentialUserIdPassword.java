@@ -70,6 +70,10 @@ public class CredentialUserIdPassword extends BaseModel {
     @Builder.Default
     @NotNull @NonNull protected Map<String, String> area2RealmOverrides = new HashMap<>();
 
+    protected String impersonateFilter;
+
+    protected String realmFilter;
+
 
     @Override
     public String bmFunctionalArea() {
