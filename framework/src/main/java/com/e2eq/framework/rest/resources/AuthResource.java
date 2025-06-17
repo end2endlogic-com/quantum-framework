@@ -3,6 +3,8 @@ package com.e2eq.framework.rest.resources;
 
 import com.e2eq.framework.model.security.auth.AuthProvider;
 import com.e2eq.framework.model.security.auth.AuthProviderFactory;
+import com.e2eq.framework.model.security.auth.UserManagement;
+import com.e2eq.framework.rest.requests.CreateUserRequest;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.Response;
@@ -15,8 +17,26 @@ public class AuthResource {
     @Inject
     AuthProviderFactory authProviderFactory;
 
+
+    @GET
+    @Path("/provider/name")
+    public Response getProviderName() {
+        AuthProvider authProvider = authProviderFactory.getAuthProvider();
+        return Response.ok(authProvider.getName()).build();
+    }
+
+    @POST
+    @Path("/create-user")
+    public Response createUser(CreateUserRequest request) {
+        UserManagement usermanager = authProviderFactory.getUserManager();
+        usermanager.createUser(request.getUserId(), request.getPassword(),
+           request.getUsername(), request.getRoles(), request.getDomainContext());
+        return Response.ok().build();
+    }
+
     @POST
     @Path("/login")
+
     @Produces("application/json")
     public Response login(@QueryParam("userId") String userId, @QueryParam("password") String password) {
         var authProvider = authProviderFactory.getAuthProvider();

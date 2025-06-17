@@ -3,6 +3,7 @@ package com.e2eq.framework.util;
 
 import com.e2eq.framework.model.persistent.base.AuditInfo;
 import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.persistent.security.DomainContext;
 import com.e2eq.framework.model.persistent.security.Rule;
 import com.e2eq.framework.model.securityrules.RuleContext;
 import com.e2eq.framework.model.securityrules.*;
@@ -78,6 +79,35 @@ public class TestUtils {
               securityUtils.getDefaultAccountNumber(),
               securityUtils.getDefaultTenantId(), 0,
               securityUtils.getDefaultUserId());
+   }
+
+   public DomainContext getTestDomainContext() {
+      return DomainContext.builder()
+                            .orgRefName(securityUtils.getTestOrgRefName())
+                            .accountId(securityUtils.getTestAccountNumber())
+                            .tenantId(securityUtils.getTestTenantId())
+                            .defaultRealm(securityUtils.getTestRealm())
+                            .build();
+   }
+
+   public DomainContext getSystemDomainContext() {
+      return DomainContext.builder()
+                            .orgRefName(securityUtils.getSystemOrgRefName())
+                            .accountId(securityUtils.getSystemAccountNumber())
+                            .tenantId(securityUtils.getTestTenantId())
+                            .defaultRealm(securityUtils.getTestRealm())
+                            .build();
+
+   }
+
+   public DomainContext getDefaultDomainContext() {
+      return DomainContext.builder()
+                            .orgRefName(securityUtils.getDefaultOrgRefName())
+                            .accountId(securityUtils.getDefaultAccountNumber())
+                            .tenantId(securityUtils.getDefaultTenantId())
+                            .defaultRealm(securityUtils.getDefaultRealm())
+                            .build();
+
    }
 
 

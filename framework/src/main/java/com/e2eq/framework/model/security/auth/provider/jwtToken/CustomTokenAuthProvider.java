@@ -4,6 +4,7 @@ package com.e2eq.framework.model.security.auth.provider.jwtToken;
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.morphia.CredentialRefreshTokenRepo;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
+import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
 import com.e2eq.framework.model.persistent.security.CredentialRefreshToken;
 import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.persistent.security.DomainContext;
@@ -23,6 +24,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.security.NoSuchAlgorithmException;
 import java.security.spec.InvalidKeySpecException;
 import java.util.*;
@@ -64,9 +66,17 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
     @Override
     public void createUser(String userId, String password, String username, Set<String> roles, DomainContext domainContext) throws SecurityException {
 
-        if (userId.length() > 17) { // Limit username to 17 characters due to Bcrypt limitations
+    try {
+        byte[] utf8Bytes = password.getBytes("UTF-8");
+        int byteLength = utf8Bytes.length;
+
+        if (byteLength > 72) { // Limit username to 17 characters due to Bcrypt limitations
             throw new SecurityException("Username too long must be smaller than 17 characters");
         }
+    } catch ( UnsupportedEncodingException ex )
+    {
+        throw new SecurityException("Security exception: " + ex.getMessage());
+    }
 
         CredentialUserIdPassword credential = new CredentialUserIdPassword();
         credential.setUserId(userId);
@@ -321,7 +331,7 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
     }
 
     private Optional<CredentialUserIdPassword> getCredentials(String realm, String userId) {
-         return (realm==null) ? credentialRepo.findByUserId(userId) : credentialRepo.findByUserId(realm, userId);
+         return (realm==null) ? credentialRepo.findByUserId(userId) : credentialRepo.findByUserId(userId, realm);
     }
 
     private SecurityIdentity buildIdentity(String userId, Set<String> roles) {
@@ -333,5 +343,25 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
         builder.addAttribute("auth_time", System.currentTimeMillis());
 
         return builder.build();
+    }
+
+    @Override
+    public void enableImpersonation (String userId, String impersonationScript, String realmFilter, String realmToEnableIn) {
+        Objects.requireNonNull(userId, "userId must be provided");
+        Objects.requireNonNull(impersonationScript, "impersonationScript must be provided");
+        Objects.requireNonNull(realmFilter, "realmFilter must be provided");
+        Objects.requireNonNull(realmToEnableIn, "realmToEnableIn must be provided");
+
+        MorphiaUtils.validateQueryString(realmFilter);
+        Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(userId, realmToEnableIn);
+        ocred.ifPresentOrElse(
+                credential -> {
+                    credential.setImpersonateFilter(impersonationScript);
+                    credential.setRealmFilter(realmFilter);
+                    credentialRepo.save(credential);
+                },
+                () -> {
+                    throw new SecurityException(String.format("UserId:%s not found in realm:%s ",userId, realmToEnableIn));
+                });
     }
 }

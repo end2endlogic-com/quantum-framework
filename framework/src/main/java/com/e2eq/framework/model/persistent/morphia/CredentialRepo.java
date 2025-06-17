@@ -19,25 +19,25 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
 
    public Optional<CredentialUserIdPassword> findByUserId(@NotNull String userId)
    {
-      return findByUserId(getSecurityContextRealmId(), userId);
+      return findByUserId( userId, getSecurityContextRealmId());
    }
 
    public Optional<CredentialUserIdPassword> findByUsername(@NotNull String username)
    {
-      return findByUsername(getSecurityContextRealmId(), username);
+      return findByUsername( username, getSecurityContextRealmId());
    }
 
 
-   public Optional<CredentialUserIdPassword> findByUsername( @NotNull String realmId, @NotNull String userId) {
-      return findByUsername(realmId, userId, true);
+   public Optional<CredentialUserIdPassword> findByUsername(  @NotNull String username, @NotNull String realmId) {
+      return findByUsername( username,realmId, true);
    }
 
 
-   public Optional<CredentialUserIdPassword> findByUserId( @NotNull String realmId, @NotNull String userId) {
-      return findByUserId(realmId, userId, true);
+   public Optional<CredentialUserIdPassword> findByUserId( @NotNull String userId,  @NotNull String realmId) {
+      return findByUserId( userId, realmId,true);
    }
 
-   public Optional<CredentialUserIdPassword> findByUsername(@NotNull String realmId, @NotNull String username, boolean ignoreRules) {
+   public Optional<CredentialUserIdPassword> findByUsername( @NotNull String username, @NotNull String realmId, boolean ignoreRules) {
       if (username == null) {
          throw new IllegalArgumentException("parameter refId can not be null");
       }
@@ -81,7 +81,7 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
       return Optional.ofNullable(obj);
    }
 
-   public Optional<CredentialUserIdPassword> findByUserId(@NotNull String realmId, @NotNull String userId, boolean ignoreRules) {
+   public Optional<CredentialUserIdPassword> findByUserId( @NotNull String userId, @NotNull String realmId, boolean ignoreRules) {
       if (userId == null) {
          throw new IllegalArgumentException("parameter refId can not be null");
       }
