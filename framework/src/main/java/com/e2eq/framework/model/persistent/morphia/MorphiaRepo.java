@@ -86,7 +86,8 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         return realmId;
     }
 
-    public String getDatabaseName() {
+    @Override
+    public String getDatabaseName () {
        return morphiaDataStore.getDataStore(getSecurityContextRealmId()).getDatabase().getName();
     }
 

@@ -20,6 +20,8 @@ import java.util.List;
 import java.util.Optional;
 
 public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
+   String getDatabaseName ();
+
    Class<T> getPersistentClass();
    // UI Actions
    T fillUIActions(@NotNull T model);
