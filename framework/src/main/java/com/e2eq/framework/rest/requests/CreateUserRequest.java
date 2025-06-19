@@ -4,10 +4,7 @@ import com.e2eq.framework.model.persistent.security.DomainContext;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotNull;
-import lombok.Data;
-import lombok.EqualsAndHashCode;
-import lombok.NonNull;
-import lombok.ToString;
+import lombok.*;
 import lombok.experimental.SuperBuilder;
 
 import java.util.Set;
@@ -16,6 +13,7 @@ import java.util.Set;
 @EqualsAndHashCode
 @SuperBuilder
 @ToString
+@NoArgsConstructor
 public class CreateUserRequest {
    @NotNull
    @NonNull
