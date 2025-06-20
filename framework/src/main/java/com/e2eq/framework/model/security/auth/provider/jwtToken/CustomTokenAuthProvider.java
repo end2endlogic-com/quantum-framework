@@ -2,7 +2,6 @@ package com.e2eq.framework.model.security.auth.provider.jwtToken;
 
 
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
-import com.e2eq.framework.model.persistent.morphia.CredentialRefreshTokenRepo;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
 import com.e2eq.framework.model.persistent.security.CredentialRefreshToken;
