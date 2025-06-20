@@ -1,6 +1,7 @@
 package com.e2eq.framework.model.persistent.morphia;
 
 
+import com.e2eq.framework.model.persistent.InvalidStateTransitionException;
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.base.*;
 import com.e2eq.framework.rest.models.Collection;
@@ -154,11 +155,11 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
    long updateActiveStatus (@PathParam("id") ObjectId id, boolean active);
    long updateActiveStatus (Datastore datastore, @PathParam("id") ObjectId id, boolean active);
 
-   public long update (@NotNull String id, @NotNull Pair<String, Object>... pairs);
-   public long update(Datastore datastore, @NotNull String id, @NotNull Pair<String, Object>... pairs);
+   public long update (@NotNull String id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException;
+   public long update(Datastore datastore, @NotNull String id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException;
    public long update(MorphiaSession session, @NotNull String id, @NotNull Pair<String, Object>... pairs);
-   public long update (@NotNull ObjectId id, @NotNull Pair<String, Object>... pairs);
-   public long update(Datastore datastore, @NotNull ObjectId id, @NotNull Pair<String, Object>... pairs);
+   public long update (@NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException;
+   public long update(Datastore datastore, @NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException;
    public long update(MorphiaSession session, @NotNull ObjectId id, @NotNull Pair<String, Object>... pairs);
 
    public T merge(@NotNull T entity);

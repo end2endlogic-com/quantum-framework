@@ -2,11 +2,8 @@ package com.e2eq.framework.persistent;
 
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
-import com.e2eq.framework.model.securityrules.ResourceContext;
-import com.e2eq.framework.model.securityrules.RuleContext;
 import com.e2eq.framework.model.securityrules.SecuritySession;
 import com.e2eq.framework.util.SecurityUtils;
-import com.e2eq.framework.util.TestUtils;
 import com.mongodb.client.MongoCursor;
 import dev.morphia.Datastore;
 import dev.morphia.query.FindOptions;
@@ -21,7 +18,6 @@ import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
 import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
 import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import jakarta.inject.Inject;

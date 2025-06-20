@@ -72,7 +72,7 @@ public class MailingAddressValidator implements ConstraintValidator<ValidMailing
             }
 
             if (address.getCountryTwoLetterCode() == null && address.getCountry() == null) {
-                violationMessage = "Country is mandatory either countryTwoLettercode or country must be provided";
+                violationMessage = "Country is mandatory either countryTwoLetter Code or country must be provided";
                 constraintValidatorContext.buildConstraintViolationWithTemplate(violationMessage)
                         .addPropertyNode("country").addConstraintViolation();
                 violationMessages.add(violationMessage);

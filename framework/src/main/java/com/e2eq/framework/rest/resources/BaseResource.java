@@ -1,6 +1,7 @@
 package com.e2eq.framework.rest.resources;
 
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
+import com.e2eq.framework.model.persistent.InvalidStateTransitionException;
 import com.e2eq.framework.model.persistent.base.*;
 import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
 import com.e2eq.framework.model.securityrules.RuleContext;
@@ -557,7 +558,7 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
    @Produces(MediaType.APPLICATION_JSON)
    @Consumes(MediaType.APPLICATION_JSON)
    @SecurityRequirement(name = "bearerAuth")
-   public Response update(@QueryParam("id") String id, @QueryParam("pairs") Pair<String,Object>... pairs) {
+   public Response update(@QueryParam("id") String id, @QueryParam("pairs") Pair<String,Object>... pairs) throws InvalidStateTransitionException {
       long updated = repo.update(id, pairs);
       if (updated > 0) {
          SuccessResponse r =  new SuccessResponse();

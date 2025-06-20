@@ -1,7 +1,11 @@
 package com.e2eq.framework.model.persistent.morphia;
 
+import com.e2eq.framework.annotations.StateGraph;
+import com.e2eq.framework.annotations.Stateful;
 import com.e2eq.framework.annotations.TrackReferences;
+import com.e2eq.framework.model.persistent.InvalidStateTransitionException;
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
+import com.e2eq.framework.model.persistent.StateNode;
 import com.e2eq.framework.model.persistent.base.*;
 import com.e2eq.framework.rest.models.UIAction;
 import com.e2eq.framework.rest.models.UIActionList;
@@ -70,6 +74,9 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Inject
     protected MessageTemplateLocator messageTemplateLocator;
+
+    @Inject
+    StateGraphManager stateGraphManager;
 
     public String getSecurityContextRealmId() {
         String realmId = defaultRealm;
@@ -708,8 +715,90 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         }
     }
 
+   protected void validateStateTransitions(Datastore datastore, @Valid T value) throws InvalidStateTransitionException, IllegalAccessException {
+      // If the entity has an ID, it's an update; fetch the existing entity
+      if (!value.isSkipValidation() && value.getId() != null ){
+         Optional<T> existingEntityOpt = findById(datastore, value.getId());
+         if (existingEntityOpt.isPresent()) {
+            T existingEntity = existingEntityOpt.get();
+            validateStateFields(value, existingEntity);
+         } else {
+            throw new IllegalStateException("Entity with ID " + value.getId() + " not found for update");
+         }
+      } else if (!value.isSkipValidation()) {
+         // For new entities, validate that initial states are valid
+         validateInitialStates(value);
+      }
+   }
+
+   private void validateStateFields(T newEntity, T existingEntity) throws IllegalAccessException, InvalidStateTransitionException {
+      if (!existingEntity.isSkipValidation() &&
+             existingEntity.getClass().getAnnotation(Stateful.class) !=null)
+         for (Field field : getAllFields(newEntity.getClass())) {
+            StateGraph stateGraph = field.getAnnotation(StateGraph.class);
+            if (stateGraph != null) {
+               field.setAccessible(true);
+               String newState = (String) field.get(newEntity);
+               String currentState = (String) field.get(existingEntity);
+               if (newState != null) {
+                  stateGraphManager.validateTransition(
+                     stateGraph.graphName(),
+                     currentState != null ? currentState : "",
+                     newState
+                  );
+               }
+            }
+         }
+   }
+
+   private void validateInitialStates(T entity) throws IllegalAccessException, InvalidStateTransitionException {
+       // check if the entity type is annotated with Stateful annotation
+       if (entity.getClass().getAnnotation(Stateful.class) !=null)
+          for (Field field : getAllFields(entity.getClass())) {
+            StateGraph stateGraph = field.getAnnotation(StateGraph.class);
+            if (stateGraph != null) {
+               field.setAccessible(true);
+               String newState = (String) field.get(entity);
+               if (newState != null) {
+                  // Check if the state exists in the graph
+                  StringState graph = stateGraphManager.getStateGraphs().get(stateGraph.graphName());
+                  if (graph == null) {
+                     throw new InvalidStateTransitionException(
+                        String.format("State graph %s not configured", stateGraph.graphName()));
+                  }
+                  if (!graph.getStates().containsKey(newState)) {
+                     // create a string of all known initial states
+                     String knownInitialStates = graph.getStates().values().stream()
+                         .filter(StateNode::isInitialState)
+                         .map(StateNode::getState)
+                         .collect(Collectors.joining(", "));
+                     throw new InvalidStateTransitionException(
+                        String.format("Invalid initial state:%s for graph %s. Known initial states:%s",  newState, stateGraph.graphName(), knownInitialStates));
+                  }
+               }
+            }
+         }
+   }
+
+   private List<Field> getAllFields(Class<?> clazz) {
+      List<Field> fields = new ArrayList<>();
+      while (clazz != null && clazz != Object.class) {
+         fields.addAll(Arrays.asList(clazz.getDeclaredFields()));
+         clazz = clazz.getSuperclass();
+      }
+      return fields;
+   }
+
     public T save(@NotNull MorphiaSession session, @Valid T value) {
-        setDefaultValues(value);
+
+        if (value.getClass().getAnnotation(Stateful.class)!= null) {
+           try {
+              validateStateTransitions(session, value);
+           } catch (InvalidStateTransitionException | IllegalAccessException e) {
+              throw new RuntimeException("State transition validation failed", e);
+           }
+        }
+       setDefaultValues(value);
         return session.save(value);
     }
 
@@ -726,14 +815,33 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public List<T> save(@NotNull Datastore datastore, List<T> entities) {
-        entities.forEach(this::setDefaultValues);
-        return datastore.save(entities);
+       entities.forEach(entity -> {
+          if (entity.getClass().getAnnotation(Stateful.class)!= null) {
+             try {
+                validateStateTransitions(datastore, entity);
+             } catch (InvalidStateTransitionException | IllegalAccessException e) {
+                throw new RuntimeException("State transition validation failed for entity: " + entity.getRefName(), e);
+             }
+          }
+          setDefaultValues(entity);
+       });
+       return datastore.save(entities);
     }
 
     @Override
     public List<T> save(@NotNull MorphiaSession session, List<T> entities) {
-        entities.forEach(this::setDefaultValues);
-        return session.save(entities);
+
+       entities.forEach(entity -> {
+          if (entity.getClass().getAnnotation(Stateful.class)!= null) {
+             try {
+                validateStateTransitions(session, entity);
+             } catch (InvalidStateTransitionException | IllegalAccessException e) {
+                throw new RuntimeException("State transition validation failed for entity: " + entity.getRefName(), e);
+             }
+          }
+          setDefaultValues(entity);
+       });
+       return session.save(entities);
     }
 
 
@@ -744,8 +852,16 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public T save(@NotNull Datastore datastore, @Valid T value) {
-        setDefaultValues(value);
-        return datastore.save(value);
+       if (value.getClass().getAnnotation(Stateful.class)!= null) {
+          try {
+             validateStateTransitions(datastore, value);
+          } catch (InvalidStateTransitionException | IllegalAccessException e) {
+             throw new RuntimeException("State transition validation failed", e);
+          }
+       }
+       setDefaultValues(value);
+
+       return datastore.save(value);
     }
 
 
@@ -960,14 +1076,14 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     @SafeVarargs
-    public final long update(@NotNull String id, @NotNull Pair<String, Object>... pairs) {
+    public final long update(@NotNull String id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
         ObjectId oid = new ObjectId(id);
         return update(oid, pairs);
     }
 
 
     @Override
-    public long update (@NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) {
+    public long update (@NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
         return update(morphiaDataStore.getDataStore(getSecurityContextRealmId()), id, pairs);
     }
 
@@ -1031,75 +1147,99 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
     @Override
-    public long update(Datastore datastore, @NotNull String id, @NotNull Pair<String, Object>... pairs) {
+    public long update(Datastore datastore, @NotNull String id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
         ObjectId oid = new ObjectId(id);
         return update(datastore, oid, pairs);
     }
 
     @Override
-    public long update(Datastore datastore, @NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) {
-        List<UpdateOperator> updateOperators = new ArrayList<>();
-        List<String> reservedFields = List.of("refName", "id", "version", "references", "auditInfo", "persistentEvents");
-        for (Pair<String, Object> pair : pairs) {
-            // check that the pair key corresponds to a field in the persistent class that is an enum
-            Field field = null;
+    public long update(Datastore datastore, @NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+       List<UpdateOperator> updateOperators = new ArrayList<>();
+       List<String> reservedFields = List.of("refName", "id", "version", "references", "auditInfo", "persistentEvents");
 
-            if (reservedFields.contains(pair.getKey())) {
-                throw new IllegalArgumentException("Field:" + pair.getKey() + " is a reserved field and can't be updated");
-            }
+       // Fetch the current entity to validate state transitions
+       Optional<T> currentEntityOpt = findById(datastore, id);
+       if (!currentEntityOpt.isPresent()) {
+          return 0;
+       }
+       T currentEntity = currentEntityOpt.get();
 
-            try {
-                field = getFieldFromHierarchy(getPersistentClass(),pair.getKey());
-                Reference ref = field.getAnnotation(Reference.class);
-                if (ref!= null) {
-                    throw new NotSupportedException("Field:" + field + " is a managed reference, and not updatable via put.  Use Post");
+       for (Pair<String, Object> pair : pairs) {
+          if (reservedFields.contains(pair.getKey())) {
+             throw new IllegalArgumentException("Field:" + pair.getKey() + " is a reserved field and can't be updated");
+          }
+
+          Field field;
+          try {
+             field = getFieldFromHierarchy(getPersistentClass(), pair.getKey());
+
+             // Check for StateGraph annotation
+             StateGraph stateGraph = field.getAnnotation(StateGraph.class);
+             if (stateGraph != null && pair.getValue() instanceof String) {
+                field.setAccessible(true);
+                String currentState = (String) field.get(currentEntity);
+                stateGraphManager.validateTransition(
+                   stateGraph.graphName(),
+                   currentState != null ? currentState : "",
+                   (String) pair.getValue()
+                );
+             }
+
+             // Existing validation checks
+             Reference ref = field.getAnnotation(Reference.class);
+             if (ref != null) {
+                throw new NotSupportedException("Field:" + field + " is a managed reference, and not updatable via put. Use Post");
+             }
+
+             if (field.getType().isEnum()) {
+                if (!Arrays.stream(field.getType().getEnumConstants())
+                        .anyMatch(e -> e.toString().equals(pair.getValue().toString()))) {
+                   throw new IllegalArgumentException(
+                      "Invalid value for enum field " + pair.getKey() + " can't set value:" + pair.getValue());
                 }
+             }
 
-                if (field.getType().isEnum()) {
-                    // check that the pair value is a valid enum value of the field
-                    if (!Arrays.stream(field.getType().getEnumConstants()).anyMatch(e -> e.toString().equals(pair.getValue().toString()))) {
-                        throw new IllegalArgumentException("Invalid value for enum field " + pair.getKey() + " can't set value:" + pair.getValue());
-                    }
-                }
+             if (field.getAnnotation(NotNull.class) != null && pair.getValue() == null) {
+                throw new IllegalArgumentException(
+                   "Field " + pair.getKey() + " is not nullable, but null value provided");
+             }
 
-                // check that the pair value is not null if the field is not nullable
-                if (field.getAnnotation(NotNull.class) != null && pair.getValue() == null) {
-                    throw new IllegalArgumentException("Field " + pair.getKey() + " is not nullable, but null value provided");
-                }
+             if (!field.getType().isAssignableFrom(pair.getValue().getClass())) {
+                throw new IllegalArgumentException(
+                   "Invalid value for field " + pair.getKey() +
+                      " can't set value:" + pair.getValue() +
+                      " expected type: " + field.getType().toString() +
+                      " but got: " + pair.getValue().getClass().getSimpleName());
+             }
 
-                // check that the pair value is of the correct type
-                if (!field.getType().isAssignableFrom(pair.getValue().getClass())) {
-                    throw new IllegalArgumentException("Invalid value for field " + pair.getKey() + " can't set value:" + pair.getValue() + " expected type: " + field.getType().toString() + " but got: " + pair.getValue().getClass().getSimpleName() );
-                }
+             updateOperators.add(UpdateOperators.set(pair.getKey(), pair.getValue()));
+          } catch (NoSuchFieldException | IllegalAccessException e) {
+             throw new RuntimeException(e);
+          }
+       }
 
-            } catch (NoSuchFieldException e) {
-                throw new RuntimeException(e);
-            }
-            updateOperators.add(UpdateOperators.set(pair.getKey(), pair.getValue()));
-        }
-        if (updateOperators.isEmpty()) {
-            throw new IllegalArgumentException("No update pairs provided, or a parsing of the update pairs failed");
-        }
+       if (updateOperators.isEmpty()) {
+          throw new IllegalArgumentException("No update pairs provided, or a parsing of the update pairs failed");
+       }
 
-        if (BaseModel.class.isAssignableFrom(getPersistentClass())) {
-            updateOperators.add(UpdateOperators.inc("version", 1));
-        }
+       if (BaseModel.class.isAssignableFrom(getPersistentClass())) {
+          updateOperators.add(UpdateOperators.inc("version", 1));
+       }
 
-        updateOperators.add(UpdateOperators.set("auditInfo.lastUpdateTs", new Date()));
-        updateOperators.add(UpdateOperators.set("auditInfo.lastUpdateIdentity", securityIdentity.getPrincipal().getName()));
+       updateOperators.add(UpdateOperators.set("auditInfo.lastUpdateTs", new Date()));
+       updateOperators.add(UpdateOperators.set("auditInfo.lastUpdateIdentity", securityIdentity.getPrincipal().getName()));
 
-        UpdateResult update;
+       UpdateResult update;
+       if (updateOperators.size() == 1) {
+          update = datastore.find(getPersistentClass()).filter(Filters.eq("_id", id))
+                      .update(updateOperators.get(0));
+       } else {
+          UpdateOperator[] ops = updateOperators.toArray(new UpdateOperator[0]);
+          update = datastore.find(getPersistentClass()).filter(Filters.eq("_id", id))
+                      .update(ops[0], Arrays.copyOfRange(ops, 1, ops.length));
+       }
 
-        if (updateOperators.size() == 1) {
-            update = datastore.find(getPersistentClass()).filter(Filters.eq("_id", id))
-                    .update(updateOperators.get(0));
-        } else {
-            UpdateOperator[] ops = updateOperators.toArray(new UpdateOperator[0]);
-            update = datastore.find(getPersistentClass()).filter(Filters.eq("_id", id))
-                    .update(ops[0], Arrays.copyOfRange(ops, 1, ops.length));
-        }
-
-        return update.getModifiedCount();
+       return update.getModifiedCount();
     }
 
     @Override
@@ -1151,11 +1291,25 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public T merge(Datastore datastore, @NotNull T entity) {
+       if (entity.getClass().getAnnotation(Stateful.class) != null) {
+          try {
+             validateStateTransitions(datastore, entity);
+          } catch (InvalidStateTransitionException | IllegalAccessException e) {
+             throw new RuntimeException("State transition validation failed", e);
+          }
+       }
         return datastore.merge(entity);
     }
 
     @Override
     public T merge(MorphiaSession session, @NotNull T entity) {
+       if (entity.getClass().getAnnotation(Stateful.class) != null) {
+          try {
+             validateStateTransitions(session, entity);
+          } catch (InvalidStateTransitionException | IllegalAccessException e) {
+             throw new RuntimeException("State transition validation failed", e);
+          }
+       }
         return session.merge(entity);
     }
 
@@ -1171,6 +1325,15 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public List<T> merge(MorphiaSession session, List<T> entities) {
+       entities.forEach(entity -> {
+          if (entity.getClass().getAnnotation(Stateful.class) != null) {
+             try {
+                validateStateTransitions(session, entity);
+             } catch (InvalidStateTransitionException | IllegalAccessException e) {
+                throw new RuntimeException("State transition validation failed for entity: " + entity.getRefName(), e);
+             }
+          }
+       });
         return session.merge(entities);
     }
 

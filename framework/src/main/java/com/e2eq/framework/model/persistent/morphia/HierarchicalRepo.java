@@ -2,7 +2,6 @@ package com.e2eq.framework.model.persistent.morphia;
 
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.base.StaticDynamicList;
-import com.e2eq.framework.model.persistent.base.BaseModel;
 import com.e2eq.framework.model.persistent.base.HierarchicalModel;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.mongodb.client.MongoCursor;
