@@ -917,7 +917,6 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
           }
        }
        setDefaultValues(value);
-
        return datastore.save(value);
     }
 
@@ -985,7 +984,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
     @Override
-    public long delete( @NotNull ObjectId id) throws ReferentialIntegrityViolationException {
+    public long delete( @NotNull( value ="ObjectId is required to be non null") ObjectId id) throws ReferentialIntegrityViolationException {
        return delete(getSecurityContextRealmId(), id);
     }
 
@@ -1073,6 +1072,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
               s.startTransaction();
               try {
                   rc=delete(s, aobj);
+                  s.commitTransaction();
               } catch ( ReferentialIntegrityViolationException e) {
                   s.abortTransaction();
                   throw e;

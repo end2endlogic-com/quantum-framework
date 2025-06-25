@@ -78,7 +78,7 @@ public class AddAnonymousSecurityRules implements ChangeSetBean {
     }
 
     @Override
-    public void execute(MorphiaSession session, MongoClient mongoClient, String realm) throws Exception {
+    public void execute(MorphiaSession session, MongoClient mongoClient) throws Exception {
 
         // check if the policies already exist
         if (!policyRepo.findByRefName(session, "defaultAnonymousPolicy").isPresent()) {

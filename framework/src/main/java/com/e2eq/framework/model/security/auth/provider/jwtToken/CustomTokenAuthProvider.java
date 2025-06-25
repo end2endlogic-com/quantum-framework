@@ -100,7 +100,7 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
         credential.setRoles(roles.toArray(new String[roles.size()]));
         credential.setLastUpdate(new Date());
 
-        credentialRepo.save(credential);
+        credentialRepo.save(realm, credential);
 
     }
 

@@ -36,20 +36,21 @@ public class SecureResourceTest {
         AuthProvider.LoginResponse loginResponse = null;
         if (authProvider.equals("cognito")) {
             // Create test user with roles
-            if (!authFactory.getUserManager().usernameExists("testuser@end2endlogic.com")) {
-                authFactory.getUserManager().createUser("testuser@end2endlogic.com", "P@55w@rd", "testuser@end2endlogic.com", Set.of("user"), null);
+            if (!authFactory.getUserManager().usernameExists(testUtils.getTestRealm(),"testuser@end2endlogic.com")) {
+                authFactory.getUserManager().createUser(testUtils.getTestRealm(),"testuser@end2endlogic.com", "P@55w@rd", "testuser@end2endlogic.com", Set.of("user"), null);
             } else {
                 Log.info("User already exists, skipping creation");
             }
-            loginResponse = authFactory.getAuthProvider().login("testuser@end2endlogic.com", "P@55w@rd");
+            loginResponse = authFactory.getAuthProvider().login(testUtils.getTestRealm(),"testuser@end2endlogic.com", "P@55w@rd");
         } else {
-            loginResponse = authFactory.getAuthProvider().login("system@system.com", "test123456");
+            loginResponse = authFactory.getAuthProvider().login(testUtils.getTestRealm(),"system@system.com", "test123456");
         }
 
 
         if (loginResponse.authenticated() && (loginResponse.positiveResponse().roles().contains("user") || loginResponse.positiveResponse().roles().contains("admin"))) {
             given()
                     .header("Authorization", "Bearer " + loginResponse.positiveResponse().accessToken())
+                    .header("X-Realm", testUtils.getTestRealm())
                     .when()
                     .get("/secure/authenticated")
                     .then()
@@ -58,6 +59,7 @@ public class SecureResourceTest {
             // Test user endpoint
             given()
                     .header("Authorization", "Bearer " + loginResponse.positiveResponse().accessToken())
+               .header("X-Realm", testUtils.getTestRealm())
                     .when()
                     .get("/secure/view")
                     .then()
@@ -68,6 +70,7 @@ public class SecureResourceTest {
             // Test admin endpoint (should fail)
             given()
                     .header("Authorization", "Bearer " + loginResponse.positiveResponse().accessToken())
+                    .header("X-Realm", testUtils.getTestRealm())
                     .when()
                     .post("/secure/create")
                     .then()
@@ -120,8 +123,5 @@ public class SecureResourceTest {
 
         System.out.println("Response: " + response.asString());
         Assertions.assertEquals(200, response.getStatusCode());
-
-
-
     }
 }

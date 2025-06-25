@@ -14,5 +14,5 @@ public interface ChangeSetBean {
    public String getName();
    public String getDescription();
    public String getScope();
-   public void execute(MorphiaSession session, MongoClient mongoClient, String realm) throws Exception;
+   public void execute(MorphiaSession session, MongoClient mongoClient) throws Exception;
 }

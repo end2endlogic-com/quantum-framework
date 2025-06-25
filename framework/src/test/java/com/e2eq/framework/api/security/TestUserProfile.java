@@ -26,6 +26,8 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Optional;
 
+import static com.ibm.icu.impl.Assert.fail;
+
 
 @QuarkusTest
 public class TestUserProfile extends BaseRepoTest {
@@ -52,12 +54,12 @@ public class TestUserProfile extends BaseRepoTest {
 
 
     @Test
-    public void testSystemCredentials() throws Exception {
+    public void testMigration() throws Exception {
 
         try(final SecuritySession ignored = new SecuritySession(pContext, rContext)) {
 
             try {
-                migrationService.isMigrationRequired();
+                migrationService.checkMigrationRequired();
                 Log.info("======   No migration required ======");
             } catch (DatabaseMigrationException ex) {
                 ex.printStackTrace();
@@ -70,7 +72,7 @@ public class TestUserProfile extends BaseRepoTest {
                     migrationService.runAllUnRunMigrations(testUtils.getSystemRealm(), emitter);
                 }).subscribe().with(
                    item -> System.out.println("Emitting: " + item),
-                   failure -> System.err.println("Failed with: " + failure)
+                   failure ->fail("Failed with: " + failure)
                 );
             }
 

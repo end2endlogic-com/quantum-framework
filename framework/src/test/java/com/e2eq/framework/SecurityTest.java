@@ -1,11 +1,13 @@
 package com.e2eq.framework;
 
+import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.persistent.security.DomainContext;
 import com.e2eq.framework.model.persistent.security.UserProfile;
+import com.e2eq.framework.model.security.auth.AuthProviderFactory;
 import com.e2eq.framework.model.securityrules.SecuritySession;
 import com.e2eq.framework.persistent.BaseRepoTest;
 import com.e2eq.framework.rest.models.AuthRequest;
@@ -35,6 +37,8 @@ public class SecurityTest extends BaseRepoTest {
     @ConfigProperty(name = "auth.provider", defaultValue = "custom")
     String authProvider;
 
+
+
     @Inject
     CredentialRepo credRepo;
 
@@ -43,7 +47,8 @@ public class SecurityTest extends BaseRepoTest {
 
     @Inject
     SecurityUtils securityUtils;
-
+   @Inject
+   AuthProviderFactory authProviderFactory;
 
 
     @Test
@@ -68,62 +73,73 @@ public class SecurityTest extends BaseRepoTest {
     }
 
 
+    public UserProfile ensureTestUserExists() throws ReferentialIntegrityViolationException {
+        Optional<CredentialUserIdPassword> credop = credRepo.findByUserId(testUtils.getTestUserId(), testUtils.getTestRealm());
+        CredentialUserIdPassword cred;
+        if (credop.isPresent()) {
+            Log.info("cred:" + credop.get().getUserId());
+            cred = credop.get();
+        } else {
+            cred = new CredentialUserIdPassword();
+            cred.setUserId(testUtils.getTestUserId());
+          //  cred.setPasswordHash("$2a$12$76wQJLgSAdm6ZTHFHtzksuSkWG9eW0qe5YXMXaZIBo52ncXHO0EDy"); //Test123456
+           cred.setPasswordHash(EncryptionUtils.hashPassword(testUtils.getDefaultTestPassword()));
+            cred.setUsername(UUID.randomUUID().toString());
+
+            DataDomain dataDomain = new DataDomain();
+            dataDomain.setOrgRefName(testUtils.getTestOrgRefName());
+            dataDomain.setAccountNum(testUtils.getTestAccountNumber());
+            dataDomain.setTenantId(testUtils.getTestTenantId());
+            dataDomain.setOwnerId(testUtils.getTestUserId());
+
+            cred.setRoles(roles);
+            cred.setRefName(cred.getUserId());
+            cred.setDomainContext(new DomainContext(dataDomain, testUtils.getTestRealm()));
+            cred.setLastUpdate(new Date());
+            cred.setDataDomain(dataDomain);
+            cred = credRepo.save(testUtils.getTestRealm(),cred);
+        }
+
+        Optional<UserProfile> userProfileOp = userProfileRepo.getByUserId(testUtils.getTestRealm(),testUtils.getTestUserId());
+        UserProfile profile;
+
+        if (userProfileOp.isPresent()) {
+            Log.info("User Id:" + userProfileOp.get().getUserId());
+            profile = userProfileOp.get();
+
+        } else {
+            profile = new UserProfile();
+            profile.setRefName(testUtils.getTestUserId());
+            profile.setUserId(testUtils.getTestUserId());
+            profile.setUsername(testUtils.getTestUserId());
+            profile.setEmail(testUtils.getTestEmail());
+
+            DataDomain dataDomain = new DataDomain();
+            dataDomain.setOrgRefName(testUtils.getTestOrgRefName());
+            dataDomain.setAccountNum(testUtils.getTestAccountNumber());
+            dataDomain.setTenantId(testUtils.getTestTenantId());
+            dataDomain.setOwnerId(testUtils.getTestUserId());
+            profile.setDataDomain(dataDomain);
+
+            profile = userProfileRepo.save(testUtils.getTestRealm(),profile);
+        }
+        return profile;
+    }
+
 
     @Test
     public void testLoginRepo() throws Exception {
 
         try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
+           UserProfile profile = ensureTestUserExists();
+            Assert.assertNotNull(profile.getId());
+            Assert.assertTrue(credRepo.findByUserId(testUtils.getTestUserId(), testUtils.getTestRealm()).isPresent());
 
-            Optional<CredentialUserIdPassword> credop = credRepo.findByUserId(testUtils.getTestUserId(), testUtils.getTestRealm());
-            CredentialUserIdPassword cred;
-            if (credop.isPresent()) {
-                Log.info("cred:" + credop.get().getUserId());
-                cred = credop.get();
-            } else {
-                 cred = new CredentialUserIdPassword();
-                cred.setUserId(testUtils.getTestUserId());
-                cred.setPasswordHash("$2a$12$76wQJLgSAdm6ZTHFHtzksuSkWG9eW0qe5YXMXaZIBo52ncXHO0EDy"); //Test123456
-                cred.setUsername(UUID.randomUUID().toString());
-
-                DataDomain dataDomain = new DataDomain();
-                dataDomain.setOrgRefName(testUtils.getTestOrgRefName());
-                dataDomain.setAccountNum(testUtils.getTestAccountNumber());
-                dataDomain.setTenantId(testUtils.getTestTenantId());
-                dataDomain.setOwnerId(testUtils.getTestUserId());
-
-                cred.setRoles(roles);
-                cred.setRefName(cred.getUserId());
-                cred.setDomainContext(new DomainContext(dataDomain, testUtils.getTestRealm()));
-                cred.setLastUpdate(new Date());
-                cred.setDataDomain(dataDomain);
-                cred = credRepo.save(testUtils.getTestRealm(),cred);
-            }
-
+            authProviderFactory.getAuthProvider().login(testUtils.getTestRealm(), profile.getUserId(), testUtils.getDefaultTestPassword());
+            Assert.assertTrue(userProfileRepo.delete(testUtils.getTestRealm(), profile)==1);
             Optional<UserProfile> userProfileOp = userProfileRepo.getByUserId(testUtils.getTestRealm(),testUtils.getTestUserId());
-
-            if (userProfileOp.isPresent()) {
-                Log.info("User Id:" + userProfileOp.get().getUserId());
-            } else {
-                UserProfile profile = new UserProfile();
-
-                profile.setRefName(testUtils.getTestUserId());
-                profile.setUserId(testUtils.getDefaultUserId());
-                profile.setUsername(cred.getUsername());
-                profile.setEmail(testUtils.getTestEmail());
-
-                DataDomain dataDomain = new DataDomain();
-                dataDomain.setOrgRefName(testUtils.getTestOrgRefName());
-                dataDomain.setAccountNum(testUtils.getTestAccountNumber());
-                dataDomain.setTenantId(testUtils.getTestTenantId());
-                dataDomain.setOwnerId(profile.getUserId());
-                profile.setDataDomain(dataDomain);
-
-                profile = userProfileRepo.save(testUtils.getTestRealm(),profile);
-                Assert.assertNotNull(profile.getId());
-                userProfileRepo.delete(testUtils.getTestRealm(), profile);
-                userProfileOp = userProfileRepo.getByUserId(testUtils.getTestRealm(),testUtils.getTestUserId());
-                Assert.assertTrue(!userProfileOp.isPresent());
-            }
+            Assert.assertFalse(userProfileOp.isPresent());
+            Assert.assertFalse(credRepo.findByUserId(testUtils.getTestUserId(), testUtils.getTestRealm()).isPresent());
         } finally {
             ruleContext.clear();
         }
@@ -131,11 +147,12 @@ public class SecurityTest extends BaseRepoTest {
 
 
     @Test
-    public void testLoginAPI() throws JsonProcessingException {
+    public void testLoginAPI() throws JsonProcessingException, ReferentialIntegrityViolationException {
+        ensureTestUserExists();
         AuthRequest request = new AuthRequest();
         if (authProvider.equals("custom")) {
-            request.setUserId(securityUtils.getSystemUserId());
-            request.setPassword("test123456");
+            request.setUserId(securityUtils.getTestUserId());
+            request.setPassword(testUtils.getDefaultTestPassword());
            // request.setTenantId(securityUtils.getSystemTenantId());
         } else {
             request.setUserId("testuser@end2endlogic.com");
@@ -167,14 +184,16 @@ public class SecurityTest extends BaseRepoTest {
     }
 
     @Test
-    public void testGetUserProfileRESTAPI() throws JsonProcessingException {
+    public void testGetUserProfileRESTAPI() throws JsonProcessingException, ReferentialIntegrityViolationException {
 
         // ensure that the user exists;
+        ensureTestUserExists();
+
 
         AuthRequest request = new AuthRequest();
         if (authProvider.equals("custom")) {
-            request.setUserId(securityUtils.getSystemUserId());
-            request.setPassword("test123456");
+            request.setUserId(testUtils.getTestUserId());
+            request.setPassword(testUtils.getDefaultTestPassword());
             //request.setTenantId(securityUtils.getSystemTenantId());
         } else {
             request.setUserId("testuser@end2endlogic.com");

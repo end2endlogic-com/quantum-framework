@@ -1,5 +1,6 @@
 package com.e2eq.framework.model.persistent.morphia;
 
+import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.persistent.security.DomainContext;
 import com.e2eq.framework.model.persistent.security.UserProfile;
@@ -14,6 +15,7 @@ import dev.morphia.ModifyOptions;
 import dev.morphia.query.Query;
 import dev.morphia.query.filters.Filters;
 import dev.morphia.query.updates.UpdateOperators;
+import dev.morphia.transactions.MorphiaSession;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
@@ -37,6 +39,8 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
 
    @Inject
    AuthProviderFactory authProviderFactory;
+   @Inject
+   CredentialRepo credentialRepo;
 
    public Optional<UserProfile> updateStatus( @NotNull String userId, @NotNull UserProfile.Status status) {
       return updateStatus(getSecurityContextRealmId(), userId, status);
@@ -133,5 +137,20 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
       authProviderFactory.getUserManager().createUser(datastore.getDatabase().getName(), up.getUserId(), password, up.getUsername(), roleSet, domainContext);
 
       return up;
+   }
+
+   @Override
+   public long delete (String realmId, UserProfile obj) throws ReferentialIntegrityViolationException {
+      long ret = 0;
+      try (MorphiaSession s = morphiaDataStore.getDataStore(realmId).startSession()) {
+         s.startTransaction();
+         Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId( obj.getUserId(), realmId);
+         if (ocred.isPresent()) {
+            credentialRepo.delete(s, ocred.get());
+         }
+         ret= super.delete(s, obj);
+         s.commitTransaction();
+      }
+      return ret;
    }
 }
