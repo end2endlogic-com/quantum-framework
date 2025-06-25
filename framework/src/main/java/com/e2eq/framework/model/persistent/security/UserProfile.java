@@ -3,6 +3,8 @@ package com.e2eq.framework.model.persistent.security;
 
 import com.e2eq.framework.model.persistent.base.BaseModel;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.mongodb.client.model.CollationStrength;
+import dev.morphia.annotations.Collation;
 import dev.morphia.annotations.Entity;
 import dev.morphia.annotations.IndexOptions;
 import dev.morphia.annotations.Indexed;
@@ -39,14 +41,14 @@ public @Data class UserProfile extends BaseModel {
         }
     }
 
-    @Indexed(options= @IndexOptions(unique=true))
+    @Indexed(options= @IndexOptions(unique=true,collation = @Collation(locale = "en", strength = CollationStrength.SECONDARY)))
     @JsonProperty(required = true)
     @NotNull( message = "userId must not be null")
     @NonNull
     @Size(min = 5, max = 50, message = "userId must be between 5 and 50 characters long")
     protected String userId;
 
-   @Indexed(options= @IndexOptions(unique=true))
+   @Indexed(options= @IndexOptions(unique=true, collation = @Collation(locale = "en", strength = CollationStrength.SECONDARY)))
    @JsonProperty(required = true)
     @NotNull( message = "userName must not be null")
     @NonNull

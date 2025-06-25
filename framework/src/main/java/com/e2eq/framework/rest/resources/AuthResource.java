@@ -8,10 +8,15 @@ import com.e2eq.framework.rest.requests.CreateUserRequest;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.Response;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 import java.util.Map;
 
 @Path("/auth")
+@Tag(name = "Authentication", description = "Operations related to user authentication and management")
 public class AuthResource {
 
     @Inject
@@ -20,6 +25,8 @@ public class AuthResource {
 
     @GET
     @Path("/provider/name")
+    @Operation(summary = "Get Authentication Provider Name", description = "Returns the name of the current authentication provider.")
+    @APIResponse(responseCode = "200", description = "Successfully retrieved prov")
     public Response getProviderName() {
         AuthProvider authProvider = authProviderFactory.getAuthProvider();
         return Response.ok(authProvider.getName()).build();
@@ -27,6 +34,11 @@ public class AuthResource {
 
     @POST
     @Path("/create-user")
+    @Operation(summary = "Create User", description = "Creates a new user with the provided details with in the auth provider only")
+    @APIResponses({
+       @APIResponse(responseCode = "200", description = "User created successfully"),
+       @APIResponse(responseCode = "400", description = "Invalid request data")
+    })
     public Response createUser(CreateUserRequest request) {
         UserManagement usermanager = authProviderFactory.getUserManager();
         usermanager.createUser(request.getUserId(), request.getPassword(),
@@ -36,8 +48,12 @@ public class AuthResource {
 
     @POST
     @Path("/login")
-
     @Produces("application/json")
+    @Operation(summary = "User Login", description = "Authenticates a user and returns access and refresh tokens. this auth is only against the auth provider")
+    @APIResponses({
+       @APIResponse(responseCode = "200", description = "Login successful"),
+       @APIResponse(responseCode = "401", description = "Unauthorized")
+    })
     public Response login(@QueryParam("userId") String userId, @QueryParam("password") String password) {
         var authProvider = authProviderFactory.getAuthProvider();
         var loginResponse = authProvider.login(userId, password);
@@ -50,6 +66,11 @@ public class AuthResource {
 
     @POST
     @Path("/refresh")
+    @Operation(summary = "Logins with a refresh token", description = "Authenticates a user and returns access and refresh tokens. this auth is only against the auth provider")
+    @APIResponses({
+       @APIResponse(responseCode = "200", description = "Login successful"),
+       @APIResponse(responseCode = "401", description = "Unauthorized")
+    })
     public Response refresh(@HeaderParam("Authorization") String refreshToken) {
         var authProvider = authProviderFactory.getAuthProvider();
         if (refreshToken == null || refreshToken.isEmpty()) {

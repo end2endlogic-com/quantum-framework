@@ -46,19 +46,19 @@ public class TestCustTokenAuthProvider extends BaseRepoTest {
                 AuthProvider authProvider = authProviderFactory.getAuthProvider();
                 UserManagement userManager = authProviderFactory.getUserManager();
 
-                userManager.removeUser("testuser"); // remove if exists
-                userManager.createUser("testuser", "test123456", "testuser", Set.of("user"), domainContext);
-                Set<String> roles = userManager.getUserRoles("testuser");
+                userManager.removeUser(testUtils.getTestRealm(),"testuser"); // remove if exists
+                userManager.createUser(testUtils.getTestRealm(),"testuser", "test123456", "testuser", Set.of("user"), domainContext);
+                Set<String> roles = userManager.getUserRoles(testUtils.getTestRealm(),"testuser");
                 Assert.assertTrue(roles.contains("user"));
-                AuthProvider.LoginResponse response = authProvider.login("testuser", "test123456");
+                AuthProvider.LoginResponse response = authProvider.login(testUtils.getTestRealm(),"testuser", "test123456");
                 Assert.assertTrue(response.authenticated());
-                Assert.assertTrue(userManager.usernameExists("testuser"));
-                userManager.assignRoles("testuser", Set.of("admin"));
-                Assert.assertTrue(userManager.getUserRoles("testuser").contains("admin"));
-                userManager.removeRoles("testuser", Set.of("admin"));
-                Assert.assertFalse(userManager.getUserRoles("testuser").contains("admin"));
-                userManager.removeUser("testuser");
-                Assert.assertFalse(userManager.usernameExists("testuser"));
+                Assert.assertTrue(userManager.usernameExists(testUtils.getTestRealm(),"testuser"));
+                userManager.assignRoles(testUtils.getTestRealm(),"testuser", Set.of("admin"));
+                Assert.assertTrue(userManager.getUserRoles(testUtils.getTestRealm(),"testuser").contains("admin"));
+                userManager.removeRoles(testUtils.getTestRealm(),"testuser", Set.of("admin"));
+                Assert.assertFalse(userManager.getUserRoles(testUtils.getTestRealm(),"testuser").contains("admin"));
+                userManager.removeUser(testUtils.getTestRealm(),"testuser");
+                Assert.assertFalse(userManager.usernameExists(testUtils.getTestRealm(),"testuser"));
             }
         }
     }

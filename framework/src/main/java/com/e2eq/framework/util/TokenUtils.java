@@ -23,7 +23,7 @@ import jakarta.ws.rs.NotFoundException;
 
 
 /**
- *
+ * Utility class for token generation and validation
  * @author mingardia
  */
 public class TokenUtils {

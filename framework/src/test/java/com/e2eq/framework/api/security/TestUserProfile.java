@@ -74,7 +74,7 @@ public class TestUserProfile extends BaseRepoTest {
                 );
             }
 
-            Optional<CredentialUserIdPassword> opCreds = credentialRepo.findByUserId(securityUtils.getSystemUserId());
+            Optional<CredentialUserIdPassword> opCreds = credentialRepo.findByUserId(securityUtils.getSystemUserId(), testUtils.getTestRealm());
             if (opCreds.isPresent()) {
                 Log.debug("Found it");
             } else {
@@ -88,7 +88,7 @@ public class TestUserProfile extends BaseRepoTest {
 
     @Test void testCredentialsNoSecuritySession() {
         Datastore datastore = morphiaDataStore.getDataStore(testUtils.getTestRealm());
-        Optional<CredentialUserIdPassword> opCreds = credentialRepo.findByUserId(securityUtils.getTestUserId(), securityUtils.getTestRealm());
+        Optional<CredentialUserIdPassword> opCreds = credentialRepo.findByUserId( securityUtils.getTestUserId(), securityUtils.getTestRealm());
         if (opCreds.isPresent()) {
             Log.debug("Found it");
         } else {
@@ -107,7 +107,7 @@ public class TestUserProfile extends BaseRepoTest {
                 Assertions.fail("userProfileService was not injected properly");
             } else {
                 // find something missing.
-                Optional<UserProfile> oProfile = userProfileRepo.findByRefName( "xxxxx");
+                Optional<UserProfile> oProfile = userProfileRepo.findByRefName( "xxxxx", testUtils.getTestRealm());
                 assert(!oProfile.isPresent());
 
                 oProfile = userProfileRepo.findByRefName(testUtils.getTestUserId());
@@ -122,22 +122,22 @@ public class TestUserProfile extends BaseRepoTest {
 
                     //profile.setDataSegment(0);
 
-                    profile = userProfileRepo.save(profile);
+                    profile = userProfileRepo.save(testUtils.getTestRealm(),profile);
                     assert (profile.getId() != null);
 
 
                     // check if getRefId works
-                    oProfile = userProfileRepo.findByRefName(profile.getRefName());
+                    oProfile = userProfileRepo.findByRefName(profile.getRefName(), testUtils.getTestRealm());
                     if (!oProfile.isPresent()) {
                         assert (false);
                     }
 
-                    oProfile = userProfileRepo.findById(oProfile.get().getId());
+                    oProfile = userProfileRepo.findById(oProfile.get().getId(), testUtils.getTestRealm());
                     if (!oProfile.isPresent()) {
                         assert (false);
                     }
 
-                    long count = userProfileRepo.delete(profile);
+                    long count = userProfileRepo.delete(testUtils.getTestRealm(), profile);
                     assert (count == 1);
                 }
 
@@ -155,7 +155,7 @@ public class TestUserProfile extends BaseRepoTest {
 
             Log.infof("Default Realm:%s", SecurityContext.getPrincipalContext().get().getDefaultRealm());
 
-            List<UserProfile> userProfiles = userProfileRepo.getList(0, 10, null, null);
+            List<UserProfile> userProfiles = userProfileRepo.getList(testUtils.getTestRealm(), 0, 10, null, null);
             Assertions.assertTrue(!userProfiles.isEmpty());
             userProfiles.forEach((up) -> {
                 Log.info(up.getId().toString() + ":" + up.getUserId() + ":" + up.getUsername());
@@ -171,7 +171,7 @@ public class TestUserProfile extends BaseRepoTest {
         try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
             //List<Filter> filters = new ArrayList<>();
             //Filter[] filterArray = userProfileRepo.getFilterArray(filters);
-            List<UserProfile> userProfiles = userProfileRepo.getList(0,10,null, null);
+            List<UserProfile> userProfiles = userProfileRepo.getList(testUtils.getTestRealm(), 0,10,null, null);
             for (UserProfile up : userProfiles) {
                 Log.info(up.getId().toString() + ":" + up.getUserId() + ":" + up.getUsername());
             }
@@ -186,7 +186,7 @@ public class TestUserProfile extends BaseRepoTest {
         try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
             //List<Filter> filters = new ArrayList<>();
             //Filter[] filterArray = userProfileRepo.getFilterArray(filters);
-            List<UserProfile> userProfiles = userProfileRepo.getAllList();
+            List<UserProfile> userProfiles = userProfileRepo.getAllList(testUtils.getTestRealm());
             for (UserProfile up : userProfiles) {
                 Log.info(up.getId().toString() + ":" + up.getUserId() + ":" + up.getUsername());
             }

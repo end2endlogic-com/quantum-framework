@@ -30,11 +30,16 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
 
    // Read based API's
    Optional<T> findById(@NotNull String id);
-   Optional<T> findById(@NotNull Datastore s, @NotNull ObjectId id);
+   Optional<T> findById(@NotNull String id, String realmId);
    Optional<T> findById(@NotNull ObjectId id);
+   Optional<T> findById (@NotNull ObjectId id, String realmId);
+   Optional<T> findById(@NotNull Datastore s, @NotNull ObjectId id);
 
-   Optional<T> findByRefName(@NotNull Datastore datastore, @NotNull String refName);
+
    Optional<T> findByRefName (@NotNull String refId);
+   Optional<T> findByRefName (@NotNull String refName, String realmId);
+   Optional<T> findByRefName(@NotNull Datastore datastore, @NotNull String refName);
+
 
    JsonSchema getSchema();
 
@@ -44,22 +49,19 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
     * @return List of all entities of the given type
     */
    List<T> getAllList();
-
-   /**
-    *    * This method is used to get a list of entities based on the given query, skip, limit, and filter.
-    * @param datastore
-    * @return
-    */
+   List<T> getAllList (String realmId);
    List<T> getAllList(Datastore datastore);
    /**
-    *
     * @param skip must be 0 or greater
     * @param limit can be 0 or a negative number in which case  all records are returned,
     *              a positive number and only the amount specified will be returned
     * @param filter can be null but if given must follow Filter syntax
     * @return
     */
+
    List<T> getListByQuery(int skip, int limit, @Nullable String filter);
+
+
 
    /**
     * This method is used to get a list of entities based on the given query, skip, limit, sort fields, and projected properties.
@@ -73,6 +75,7 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
     * @return
     */
    List<T> getListByQuery(int skip, int limit, @Nullable String filter, List<SortField> sortFields, List<ProjectionField> projectedProperties);
+   List<T> getListByQuery (String realmId, int skip, int limit, @Nullable String query, List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields);
 
    /**
     * This method is used to get a list of entities based on the given query, skip, limit, sort fields, and projected properties.
@@ -99,6 +102,7 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
     * @return List of entities matching the given criteria
     */
    List<T> getList(int skip, int limit, @Nullable List<Filter> filters, @Nullable List<SortField> sortFields);
+   List<T> getList (String realmId, int skip, int limit, @Nullable List<Filter> filters, @Nullable List<SortField> sortFields);
 
    /**
     * This method is used to get a list of entities based on the given filters and sort fields
@@ -118,20 +122,26 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
     * @param ids  can be null but if given must follow Filter syntax
     * @return  List of entities matching the given criteria
     */
+   List<T> getListFromIds(@NotNull(value="RealmId can not be null") String realmId,@NotNull(value="List of objectids can not be null") @NotEmpty (message = "list of ids can not be empty") List<ObjectId> ids);
    List<T> getListFromIds(@NotNull(value="List of objectids can not be null") @NotEmpty (message = "list of ids can not be empty") List<ObjectId> ids);
    List<T> getListFromIds(Datastore datastore,@NotNull(value="List of objectids can not be null") @NotEmpty (message = "list of ids can not be empty") List<ObjectId> ids);
+   List<T> getListFromRefNames(String realmId,List<String> refNames);
    List<T> getListFromRefNames(List<String> refNames);
-
-
    List<T> getListFromRefNames(Datastore datastore, List<String> refNames);
+
+
+   List<EntityReference> getEntityReferenceListByQuery(String realmId, int skip, int limit, @Nullable String query, List<SortField> sortFields);
    List<EntityReference> getEntityReferenceListByQuery(int skip, int limit, @Nullable String query, List<SortField> sortFields);
    List<EntityReference> getEntityReferenceListByQuery(Datastore datastore, int skip, int limit, @Nullable String query, List<SortField> sortFields);
+
+   List<T> getListFromReferences(String realmId,List<EntityReference> references);
    List<T> getListFromReferences(List<EntityReference> references);
    List<T> getListFromReferences(Datastore datastore, List<EntityReference> references);
 
    CloseableIterator<T> getStreamByQuery(int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields);
    CloseableIterator<T> getStreamByQuery(Datastore datastore, int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields);
 
+   long getCount(String realmId, @Nullable String filter);
    long getCount(@Nullable String filter);
    long getCount(@NotNull Datastore datastore,@Nullable String filter);
 
@@ -145,8 +155,12 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
    List<T> save(@NotNull Datastore datastore, List<T> entities);
    List<T> save(@NotNull MorphiaSession datastore, List<T> entities);
 
+   long delete(@NotNull String realm, T obj) throws ReferentialIntegrityViolationException;
    long delete(T obj) throws ReferentialIntegrityViolationException;
    long delete(@NotNull ObjectId id) throws ReferentialIntegrityViolationException;
+
+   long delete (@NotNull String realmId, @NotNull ObjectId id) throws ReferentialIntegrityViolationException;
+
    long delete(@NotNull Datastore datastore, T aobj) throws ReferentialIntegrityViolationException;
    long delete(@NotNull MorphiaSession s, T obj) throws ReferentialIntegrityViolationException;
 
@@ -155,8 +169,14 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
    long updateActiveStatus (@PathParam("id") ObjectId id, boolean active);
    long updateActiveStatus (Datastore datastore, @PathParam("id") ObjectId id, boolean active);
 
+
+   public long update (String realmId,@NotNull String id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException;
    public long update (@NotNull String id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException;
    public long update(Datastore datastore, @NotNull String id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException;
+   public long update (String realmId, @NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException;
+
+
+
    public long update(MorphiaSession session, @NotNull String id, @NotNull Pair<String, Object>... pairs);
    public long update (@NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException;
    public long update(Datastore datastore, @NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException;

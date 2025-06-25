@@ -1,5 +1,6 @@
 package com.e2eq.framework.model.persistent.base;
 
+import com.mongodb.client.model.CollationStrength;
 import dev.morphia.annotations.*;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import lombok.Data;
@@ -12,7 +13,7 @@ import static dev.morphia.mapping.IndexType.DESC;
 
 @Indexes({
    @Index(fields=@Field( value="refName", type=DESC),
-      options=@IndexOptions(unique=true)
+      options=@IndexOptions(unique=true, collation = @Collation(locale = "en", strength = CollationStrength.SECONDARY))
    )
 })
 @Entity

@@ -1,6 +1,7 @@
 package com.e2eq.framework.util;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.persistent.security.DomainContext;
 import com.e2eq.framework.model.persistent.security.Rule;
 import com.e2eq.framework.model.securityrules.RuleContext;
 import com.e2eq.framework.model.securityrules.*;
@@ -157,6 +158,10 @@ public class SecurityUtils {
          .withEffect(RuleEffect.ALLOW).build());
 
        return ruleContext;
+   }
+
+   public DomainContext getDefaultDomainContext() {
+      return new DomainContext(this.defaultDataDomain, this.defaultRealm);
    }
 
 

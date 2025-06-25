@@ -15,6 +15,29 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * A base class for static and dynamic lists.
+ *
+ * @author mingardia
+ * @since 1.0.0
+ * @version 1.0.0
+ * @see UnversionedBaseModel
+ * @see BaseModel
+ * @see Mode
+ * @see List
+ * @see Optional
+ * @see ValidationException
+ * @see ConfigProperty
+ * @see RegisterForReflection
+ * @see Schema
+ * @see io.quarkus.runtime.annotations.RegisterForReflection
+ * @see com.fasterxml.jackson.annotation.JsonIgnore
+ * @see dev.morphia.annotations.Entity
+ * @see com.e2eq.framework.model.persistent.base.StaticDynamicList
+ * @see com.e2eq.framework.model.persistent.base.BaseModel
+ * @see com.e2eq.framework.model.persistent.base.UnversionedBaseModel
+ * @param <T>
+ */
 @Data
 @Entity
 @EqualsAndHashCode(callSuper = true)

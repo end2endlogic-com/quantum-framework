@@ -74,7 +74,7 @@ public class SecurityTest extends BaseRepoTest {
 
         try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
 
-            Optional<CredentialUserIdPassword> credop = credRepo.findByUserId(testUtils.getTestUserId());
+            Optional<CredentialUserIdPassword> credop = credRepo.findByUserId(testUtils.getTestUserId(), testUtils.getTestRealm());
             CredentialUserIdPassword cred;
             if (credop.isPresent()) {
                 Log.info("cred:" + credop.get().getUserId());
@@ -96,10 +96,10 @@ public class SecurityTest extends BaseRepoTest {
                 cred.setDomainContext(new DomainContext(dataDomain, testUtils.getTestRealm()));
                 cred.setLastUpdate(new Date());
                 cred.setDataDomain(dataDomain);
-                cred = credRepo.save(cred);
+                cred = credRepo.save(testUtils.getTestRealm(),cred);
             }
 
-            Optional<UserProfile> userProfileOp = userProfileRepo.getByUserId(testUtils.getTestUserId());
+            Optional<UserProfile> userProfileOp = userProfileRepo.getByUserId(testUtils.getTestRealm(),testUtils.getTestUserId());
 
             if (userProfileOp.isPresent()) {
                 Log.info("User Id:" + userProfileOp.get().getUserId());
@@ -118,10 +118,10 @@ public class SecurityTest extends BaseRepoTest {
                 dataDomain.setOwnerId(profile.getUserId());
                 profile.setDataDomain(dataDomain);
 
-                profile = userProfileRepo.save(profile);
+                profile = userProfileRepo.save(testUtils.getTestRealm(),profile);
                 Assert.assertNotNull(profile.getId());
-                userProfileRepo.delete(profile);
-                userProfileOp = userProfileRepo.getByUserId(testUtils.getTestUserId());
+                userProfileRepo.delete(testUtils.getTestRealm(), profile);
+                userProfileOp = userProfileRepo.getByUserId(testUtils.getTestRealm(),testUtils.getTestUserId());
                 Assert.assertTrue(!userProfileOp.isPresent());
             }
         } finally {
@@ -136,17 +136,18 @@ public class SecurityTest extends BaseRepoTest {
         if (authProvider.equals("custom")) {
             request.setUserId(securityUtils.getSystemUserId());
             request.setPassword("test123456");
-            request.setTenantId(securityUtils.getSystemTenantId());
+           // request.setTenantId(securityUtils.getSystemTenantId());
         } else {
             request.setUserId("testuser@end2endlogic.com");
             request.setPassword("P@55w@rd");
-            request.setTenantId(securityUtils.getSystemTenantId());
+           // request.setTenantId(securityUtils.getSystemTenantId());
         }
 
         ObjectMapper mapper = new ObjectMapper();
         String value = mapper.writeValueAsString(request);
         given()
             .header("Content-type", "application/json")
+           .header("X-Realm", testUtils.getTestRealm())
             .and()
             .body(value)
             .when().post("/security/login")
@@ -157,6 +158,7 @@ public class SecurityTest extends BaseRepoTest {
         value = mapper.writeValueAsString(request);
         given()
                 .header("Content-type", "application/json")
+                .header("X-Realm", testUtils.getTestRealm())
                 .and()
                 .body(value)
                 .when().post("/security/login")
@@ -166,6 +168,9 @@ public class SecurityTest extends BaseRepoTest {
 
     @Test
     public void testGetUserProfileRESTAPI() throws JsonProcessingException {
+
+        // ensure that the user exists;
+
         AuthRequest request = new AuthRequest();
         if (authProvider.equals("custom")) {
             request.setUserId(securityUtils.getSystemUserId());
@@ -182,6 +187,7 @@ public class SecurityTest extends BaseRepoTest {
         // ensure that the status code is 200 but also get the access token and refresh token from the response
         Response response = given()
                 .header("Content-type", "application/json")
+                .header("X-Realm", testUtils.getTestRealm())
                 .and()
                 .body(value)
                 .when().post("/security/login")

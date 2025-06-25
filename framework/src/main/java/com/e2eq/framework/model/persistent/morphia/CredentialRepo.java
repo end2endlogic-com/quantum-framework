@@ -5,6 +5,7 @@ import dev.morphia.Datastore;
 import dev.morphia.query.Query;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
+import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.logging.Log;
 
 import jakarta.enterprise.context.ApplicationScoped;

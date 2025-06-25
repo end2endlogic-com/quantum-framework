@@ -17,6 +17,7 @@ import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import com.e2eq.framework.rest.responses.RestSecurityError;
 
+import com.e2eq.framework.util.SecurityUtils;
 import com.e2eq.framework.util.TokenUtils;
 import com.e2eq.framework.util.ValidateUtils;
 import io.quarkus.logging.Log;
@@ -87,6 +88,9 @@ public class SecurityResource {
 
     @Inject
     JWTParser parser;
+
+    @Inject
+    SecurityUtils securityUtils;
 
     @ConfigProperty(name = "mp.jwt.verify.issuer")
     protected String issuer;
@@ -231,7 +235,7 @@ public class SecurityResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @APIResponse(responseCode = "200", description = "Successful login", content = @Content(mediaType = "application/json", schema = @Schema(implementation = AuthResponse.class)))
     @APIResponse(responseCode = "401", description = "Unauthorized - Invalid credentials", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
-    public Response login(@Context HttpHeaders headers, AuthRequest authRequest, @QueryParam("realm") String qrealm) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+    public Response login(@Context HttpHeaders headers, AuthRequest authRequest) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
         Response rc;
 
         String remoteAddress = headers.getRequestHeaders().getFirst("X-FORWARDED_FOR");
@@ -243,14 +247,12 @@ public class SecurityResource {
         if (Log.isInfoEnabled())
             Log.info("Authentication Attempt:" + authRequest.getUserId() + " Address:" + ((remoteAddress != null) ? remoteAddress : "unknown") + " UserAgent:" + ((userAgent != null) ? userAgent : "unknown"));
 
-
-        StringTokenizer tokenizer = new StringTokenizer(authRequest.getUserId(), "@");
-        String user = tokenizer.nextToken();
-        String realm = tokenizer.nextToken().replace(".", "-");
+        String qrealm = headers.getRequestHeaders().getFirst("X-Realm");
+        String realm= null;
         if (qrealm != null ) {
-            Log.infof("Overriding calculated realm:%s  to  query parameter :%s ", realm, qrealm);
+            Log.infof("Overriding to realm:%s ",  qrealm);
             realm = qrealm;
-        }
+        } 
 
 
         Log.infof("Logging in userid: %s realm: %s",authRequest.getUserId(), realm);
