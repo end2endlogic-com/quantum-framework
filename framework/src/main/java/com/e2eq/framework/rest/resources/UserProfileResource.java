@@ -1,14 +1,19 @@
 package com.e2eq.framework.rest.resources;
 
+import com.e2eq.framework.model.security.auth.AuthProviderFactory;
 import com.e2eq.framework.rest.models.Role;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.rest.filters.PermissionCheck;
 import com.e2eq.framework.rest.models.RestError;
 import com.e2eq.framework.model.persistent.security.UserProfile;
 import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
+import com.e2eq.framework.rest.requests.CreateUserRequest;
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.annotation.security.RolesAllowed;
+import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
@@ -21,6 +26,9 @@ import java.util.Set;
 @RolesAllowed({"user", "admin"})
 @Tag(name = "users", description = "Operations related to managing users")
 public class UserProfileResource extends BaseResource<UserProfile, UserProfileRepo> {
+
+   @Inject
+   AuthProviderFactory authProviderFactory;
 
    UserProfileResource (UserProfileRepo repo ) {
       super(repo);
@@ -37,8 +45,8 @@ public class UserProfileResource extends BaseResource<UserProfile, UserProfileRe
       functionalDomain="userProfile",
       action="view"
    )
-   public Response byRefName (@QueryParam("refName") String refName) {
-      return super.byRefName(refName);
+   public Response byRefName (@Context HttpHeaders headers, @QueryParam("refName") String refName) {
+      return super.byRefName(headers,refName);
    }
 
 
@@ -52,8 +60,12 @@ public class UserProfileResource extends BaseResource<UserProfile, UserProfileRe
       functionalDomain="userProfile",
         action="update"
    )
-   public Response updateStatus(@QueryParam("userId") String userId, @QueryParam("status") String status) {
-      Optional<UserProfile> up = repo.updateStatus(userId, UserProfile.Status.fromValue(status));
+   public Response updateStatus(@Context HttpHeaders headers, @QueryParam("userId") String userId, @QueryParam("status") String status) {
+
+      String realm = headers.getHeaderString("X-Realm");
+
+      Optional<UserProfile> up;
+      if (realm==null) up = repo.updateStatus(userId, UserProfile.Status.fromValue(status)); else up = repo.updateStatus(realm, userId, UserProfile.Status.fromValue(status));
       if (up.isPresent()) {
          return Response.ok(up.get()).build();
       } else {
@@ -71,68 +83,44 @@ public class UserProfileResource extends BaseResource<UserProfile, UserProfileRe
     * This is an example taking a dynamic object which is just represented as Json from the front end and then
     * mapping this to class;  Of course the other way is to just take the actual class as the argument but I wanted to
     * show how dynamic objects can be handled as an example here.
-    * @param uiUserProfile - pure json object not type checked.
+    * @param createUserRequest - the request to create a new user
     * @return Response which should be saved object with the id included
     */
    @Path("create")
    @POST
    @Produces(MediaType.APPLICATION_JSON)
    @Consumes(MediaType.APPLICATION_JSON)
-   public Response save(JsonNode uiUserProfile) {
-
-      UserProfile up = new UserProfile();
-      up.setUserId(uiUserProfile.get("userId").asText());
-      up.setFname(uiUserProfile.get("fname").asText());
-      up.setLname(uiUserProfile.get("lname").asText());
-      up.setUsername(uiUserProfile.get("username").asText());
-      up.setDisplayName(uiUserProfile.get("displayName").asText());
-      up.setEmail(uiUserProfile.get("email").asText());
-      up.setPhoneNumber(uiUserProfile.get("phoneNumber").asText());
-      up.setRefName(up.getUserId());
-      up.setDefaultCurrency(uiUserProfile.get("defaultCurrency").asText());
-      up.setDefaultLanguage(uiUserProfile.get("defaultLanguage").asText());
-      up.setDefaultUnits(uiUserProfile.get("defaultUnits").asText());
-      up.setDefaultTimezone(uiUserProfile.get("defaultTimezone").asText());
-
-      // Default the data domain to the logged in person's data domain:
-      SecurityContext.getPrincipalContext().ifPresent(principalContext -> up.setDataDomain(principalContext.getDataDomain()));
-
-      String password;
-      if (uiUserProfile.get("password") != null)
-           password = uiUserProfile.get("password").asText();
-      else
-         password = null;
-
-      Response response = null;
-      if (password!= null &&!password.isEmpty()) {
-
-         // This should really either be part of the credentials object
-         // or passed in separately.  Its here as a place holder for now.
-         Set<Role> roles = new HashSet<>();
-         roles.add(Role.user);
-         int i = 0;
-         String[] rolesArray = new String[roles.size()];
-
-         for (Role r : roles) {
-            rolesArray[i++] = r.name();
-         }
-
-         UserProfile model = repo.createUser(
-                 up,
-                 rolesArray,
-                 password);
-
-         response =  Response.ok().entity(model).status(Response.Status.CREATED).build();
+   public Response create(CreateUserRequest createUserRequest) {
+      // first see if a user already exists with this userId
+      Optional<UserProfile> oup = repo.getByUserId(createUserRequest.getUserId());
+      UserProfile up;
+      if (oup.isPresent()) {
+         return Response.status(Response.Status.CONFLICT).entity(RestError.builder()
+                                                                    .status(Response.Status.CONFLICT.getStatusCode())
+                                                                    .debugMessage("The user profile already exists, remove the user profile and try again")
+                                                                    .statusMessage("The create failed, user profile already exists")
+                                                                    .reasonCode(Response.Status.CONFLICT.getStatusCode())
+                                                                    .build()).build();
       } else {
-         response =  Response.status(Response.Status.BAD_REQUEST).entity(RestError.builder()
-                 .reasonMessage("Missing password")
-                 .debugMessage("you must provide the initial plain text password to create the user with")
-                 .status(Response.Status.BAD_REQUEST.getStatusCode())
-                 .statusMessage(Response.Status.BAD_REQUEST.getReasonPhrase())
-                 .build()).build();
+         up = UserProfile.builder()
+                 .userId(createUserRequest.getUserId())
+                 .username(createUserRequest.getUsername())
+                 .email(createUserRequest.getEmail())
+                 .phoneNumber(createUserRequest.getPhoneNumber())
+                 .fname(createUserRequest.getFirstName())
+                 .lname(createUserRequest.getLastName())
+                 .build();
+         up = repo.save(up);
       }
-      return response;
 
+      authProviderFactory.getUserManager().createUser(
+         up.getUserId(),
+         createUserRequest.getPassword(),
+         createUserRequest.getUsername(),
+         createUserRequest.getRoles(),
+         createUserRequest.getDomainContext());
+
+      return Response.ok(up).build();
 
    }
 }

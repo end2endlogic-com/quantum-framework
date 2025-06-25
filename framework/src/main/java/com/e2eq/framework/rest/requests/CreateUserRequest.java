@@ -4,6 +4,7 @@ import com.e2eq.framework.model.persistent.security.DomainContext;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
 
@@ -24,6 +25,13 @@ public class CreateUserRequest {
    @NotNull
    @NonNull
    String username;
+
+   String firstName;
+   String lastName;
+
+
+   @Pattern(regexp = "^\\+?[0-9. ()-]{7,25}$", message = "Invalid phone number")
+   String phoneNumber;
 
    /**
     * The user's email address where we will send the user information  / confirmation

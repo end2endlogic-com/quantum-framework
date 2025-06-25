@@ -93,26 +93,26 @@ public class SecureResourceTest {
         testUtils.initDefaultRules(ruleContext, "security","userProfile", testUtils.getTestUserId());
         AuthProvider.LoginResponse loginResponse;
         try (final SecuritySession ss = new SecuritySession(pContext, rContext)) {
-            if (authFactory.getUserManager().usernameExists("testuser@end2endlogic.com")) {
-                authFactory.getUserManager().removeUser("testuser@end2endlogic.com");
+            if (authFactory.getUserManager().usernameExists(testUtils.getTestRealm(), "testuser@end2endlogic.com")) {
+                authFactory.getUserManager().removeUser(testUtils.getTestRealm(),"testuser@end2endlogic.com");
             }
-            authFactory.getUserManager().createUser("testuser@end2endlogic.com", "P@55w@rd", "testuser@end2endlogic.com", Set.of("user"), testUtils.getTestDomainContext());
+            authFactory.getUserManager().createUser(testUtils.getTestRealm(), "testuser@end2endlogic.com", "P@55w@rd", "testuser@end2endlogic.com", Set.of("user"), testUtils.getTestDomainContext());
 
-            if (authFactory.getUserManager().usernameExists("testadmin@end2endlogic.com")) {
-                authFactory.getUserManager().removeUser("testadmin@end2endlogic.com");
+            if (authFactory.getUserManager().usernameExists(testUtils.getTestRealm(),"testadmin@end2endlogic.com")) {
+                authFactory.getUserManager().removeUser(testUtils.getTestRealm(),"testadmin@end2endlogic.com");
             }
 
-            authFactory.getUserManager().createUser("testadmin@end2endlogic.com", "P@55w@rd", "testadmin@end2endlogic.com", Set.of("admin"), testUtils.getTestDomainContext());
-            authFactory.getUserManager().enableImpersonation("testadmin@end2endlogic.com", "true", "", testUtils.getTestDomainContext().getDefaultRealm());
+            authFactory.getUserManager().createUser(testUtils.getTestRealm(), "testadmin@end2endlogic.com", "P@55w@rd", "testadmin@end2endlogic.com", Set.of("admin"), testUtils.getTestDomainContext());
+            authFactory.getUserManager().enableImpersonation("testadmin@end2endlogic.com", "true", "", testUtils.getTestRealm());
 
-           loginResponse = authFactory.getAuthProvider().login("testadmin@end2endlogic.com", "P@55w@rd");
+           loginResponse = authFactory.getAuthProvider().login(testUtils.getTestRealm(), "testadmin@end2endlogic.com", "P@55w@rd");
             Assertions.assertTrue(loginResponse.authenticated());
         }
 
     Response response = given()
             .header("Authorization", "Bearer " + loginResponse.positiveResponse().accessToken())
             .header("X-Impersonate-UserId", "testuser@end2endlogic.com")
-            .header("X-Realm", testUtils.getTestDomainContext().getDefaultRealm())
+            .header("X-Realm",testUtils.getTestRealm())
             .when()
             .get("/security/authenticated/test")
             .then()

@@ -16,7 +16,8 @@ import java.util.Objects;
 import java.util.function.Function;
 
 /**
- *
+ * This is a base class that implements base functionality using Morphia as
+ * the library to store classes in Mongodb
  * @param <O> - The object type for the list
  * @param <T> - the static dynamic list type
  * @param <OR> - the object repo type

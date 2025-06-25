@@ -10,7 +10,9 @@ import com.e2eq.framework.model.persistent.security.DomainContext;
 import com.e2eq.framework.model.security.auth.AuthProvider;
 import com.e2eq.framework.model.security.auth.UserManagement;
 import com.e2eq.framework.util.EncryptionUtils;
+import com.e2eq.framework.util.SecurityUtils;
 import com.e2eq.framework.util.TokenUtils;
+import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.logging.Log;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.security.runtime.QuarkusSecurityIdentity;
@@ -54,6 +56,9 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
     @Inject
     CredentialRepo credentialRepo;
 
+    @Inject
+    SecurityUtils securityUtils;
+
     // problems with permissions if you need to save
     //@Inject
     //CredentialRefreshTokenRepo credentialRefreshTokenRepo;
@@ -62,8 +67,14 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
         return "custom";
     }
 
+
     @Override
     public void createUser(String userId, String password, String username, Set<String> roles, DomainContext domainContext) throws SecurityException {
+        createUser(securityUtils.getSystemRealm(), userId, password, username, roles, domainContext);
+    }
+
+    @Override
+    public void createUser(String realm, String userId, String password, String username, Set<String> roles, DomainContext domainContext) throws SecurityException {
 
     try {
         byte[] utf8Bytes = password.getBytes("UTF-8");
@@ -95,6 +106,11 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
 
     @Override
     public boolean removeUser(String username) throws ReferentialIntegrityViolationException {
+        return removeUser(securityUtils.getSystemRealm(), username);
+    }
+
+    @Override
+    public boolean removeUser(String realm, String username) throws ReferentialIntegrityViolationException {
         Optional<CredentialUserIdPassword> ocredentialUserIdPassword = credentialRepo.findByUsername(username);
         if (ocredentialUserIdPassword.isPresent()) {
             long val = credentialRepo.delete(ocredentialUserIdPassword.get());
@@ -106,9 +122,13 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
         return false;
     }
 
+   @Override
+   public void assignRoles(String username, Set<String> roles) throws SecurityException {
+       assignRoles(securityUtils.getSystemRealm(), username, roles);
+   }
 
     @Override
-    public void assignRoles(String username, Set<String> roles) throws SecurityException {
+    public void assignRoles(String realm, String username, Set<String> roles) throws SecurityException {
         credentialRepo.findByUsername(username).ifPresentOrElse(credential -> {
             Set<String> existingRoles = new HashSet<>(Arrays.asList(credential.getRoles()));
             existingRoles.addAll(roles);
@@ -119,8 +139,14 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
         });
     }
 
+
     @Override
     public void removeRoles(String username, Set<String> roles) throws SecurityException {
+        removeRoles(securityUtils.getSystemRealm(), username, roles);
+    }
+
+    @Override
+    public void removeRoles(String realm, String username, Set<String> roles) throws SecurityException {
        credentialRepo.findByUsername(username).ifPresentOrElse(
                credential -> {
                    Set<String> existingRoles = new HashSet<>(Arrays.asList(credential.getRoles()));
@@ -133,8 +159,13 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
 
     }
 
+
     @Override
     public Set<String> getUserRoles(String username) throws SecurityException {
+        return getUserRoles(securityUtils.getSystemRealm(), username);
+    }
+    @Override
+    public Set<String> getUserRoles(String realm, String username) throws SecurityException {
         Set<String> rolesHolder = new HashSet<>();
 
         credentialRepo.findByUsername(username).ifPresentOrElse(
@@ -166,17 +197,28 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
 
     @Override
     public boolean usernameExists (String username) throws SecurityException {
+        return usernameExists(securityUtils.getSystemRealm(), username);
+    }
+
+    @Override
+    public boolean usernameExists (String realm, String username) throws SecurityException {
        return credentialRepo.findByUsername(username).isPresent();
     }
 
-    @Override
-    public boolean userIdExists (String userId) throws SecurityException {
-        return credentialRepo.findByUserId(userId).isPresent();
-    }
 
     @Override
-    public LoginResponse login(String userId, String password) {
-        return login(null, userId, password);
+    public boolean userIdExists (String userId) throws SecurityException {
+        return userIdExists(securityUtils.getSystemRealm(), userId);
+    }
+    @Override
+    public boolean userIdExists (String realm,String userId) throws SecurityException {
+        return credentialRepo.findByUserId(realm, userId).isPresent();
+    }
+
+
+    @Override
+    public LoginResponse login( String userId, String password) {
+        return login(securityUtils.getSystemRealm(), userId, password);
     }
 
     @Override
@@ -344,8 +386,9 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
         return builder.build();
     }
 
+
     @Override
-    public void enableImpersonation (String userId, String impersonationScript, String realmFilter, String realmToEnableIn) {
+    public void enableImpersonation ( String userId, String impersonationScript, String realmFilter, String realmToEnableIn) {
         Objects.requireNonNull(userId, "userId must be provided");
         Objects.requireNonNull(impersonationScript, "impersonationScript must be provided");
         Objects.requireNonNull(realmFilter, "realmFilter must be provided");

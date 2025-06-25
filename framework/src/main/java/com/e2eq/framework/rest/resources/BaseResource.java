@@ -43,6 +43,7 @@ import static java.lang.String.format;
 
 /**
  A base resource class
+ @param <T> The type of the entity
  */
 @SecurityScheme(
         securitySchemeName = "bearerAuth",
@@ -79,9 +80,9 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
            @APIResponse(responseCode = "200", description = "Entity found", content = @Content(mediaType = "application/json")),
            @APIResponse(responseCode = "404", description = "Entity not found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
    })
-   public Response byPathRefName (@Parameter(description = "refName of the entity", required = true)
+   public Response byPathRefName (@Context HttpHeaders headers, @Parameter(description = "refName of the entity", required = true)
                                      @PathParam("refName") String refName) {
-      return byRefName(refName);
+        return byRefName(headers,refName);
    }
 
    @Path("refName")
@@ -94,14 +95,21 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
            @APIResponse(responseCode = "200", description = "Entity found", content = @Content(mediaType = "application/json")),
            @APIResponse(responseCode = "404", description = "Entity not found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
    })
-   public Response byRefName (
-           @Parameter(description = "Reference name of the entity", required = true)
-                   @QueryParam("refName") String refName) {
+   public Response byRefName (@Context HttpHeaders headers,
+                              @Parameter(description = "Reference name of the entity", required = true)
+                              @QueryParam("refName")
+                              String refName) {
        if (refName == null || refName.isEmpty()) {
            throw new WebApplicationException( "refName is required to be non null and not empty", Response.Status.BAD_REQUEST);
        }
+
+      String realm = headers.getHeaderString("X-Realm");
       Response response;
-      Optional<T> opModel = repo.findByRefName(refName);
+      Optional<T> opModel;
+         if (realm == null )
+            opModel = repo.findByRefName(refName);
+         else
+            opModel = repo.findByRefName(refName, realm);
 
       if (opModel.isPresent()) {
          repo.fillUIActions(opModel.get());
@@ -128,12 +136,13 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
            @APIResponse(responseCode = "404", description = "Entity not found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
    })
    public Response byPathId(
+           @Context HttpHeaders headers,
            @Parameter(description = "Id of the entity", required = true)
            @PathParam("id") String id) {
        if (id == null || id.isEmpty()) {
            throw new WebApplicationException( "id is required to be non null and not empty", Response.Status.BAD_REQUEST);
        }
-      return byId(id);
+      return byId(headers,id);
    }
 
    @Path("id")
@@ -145,13 +154,23 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
            @APIResponse(responseCode = "404", description = "Entity not found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
    })
    public Response byId(
+      @Context HttpHeaders headers,
            @Parameter(description = "Id of the entity", required = true)
            @QueryParam("id") String id) {
+
+       String realmId = headers.getHeaderString("X-Realm");
        if (id == null || id.isEmpty()) {
            throw new WebApplicationException( "id is required to be non null and not empty", Response.Status.BAD_REQUEST);
        }
-      Response response;
-      Optional<T> opModel = repo.findById(id);
+       Response response;
+
+       Optional<T> opModel;
+
+      if (realmId == null ) {
+         opModel = repo.findById(id);
+      } else {
+         opModel = repo.findById(id, realmId);
+      }
 
       if (opModel.isPresent()) {
          repo.fillUIActions(opModel.get());
@@ -200,9 +219,11 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
            @APIResponse(responseCode = "200", description = "Success", content = @Content(mediaType = "application/json", schema = @Schema(implementation = CounterResponse.class))),
            @APIResponse(responseCode = "400", description = "Bad Request - bad arguments", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
    })
-   public CounterResponse getCount(@QueryParam("filter") String filter) {
+   public CounterResponse getCount(@Context HttpHeaders headers, @QueryParam("filter") String filter) {
+      String realmId = headers.getHeaderString("X-Realm");
       try {
-         long count = repo.getCount(filter);
+         long count;
+         if (realmId == null) count = repo.getCount(filter); else count = repo.getCount(realmId, filter);
          CounterResponse response = new CounterResponse(count);
          response.setStatusCode(Response.Status.OK.getStatusCode());
          response.setMessage(String.format("Count: %d", count));
@@ -433,8 +454,12 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
            @APIResponse(responseCode = "200", description = "Success", content = @Content(mediaType = "application/json", schema = @Schema(implementation = EntityReference.class))),
            @APIResponse(responseCode = "400", description = "Bad Request / bad argument", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
    })
-   public List<T> convertEntityRefList(@RequestBody List<EntityReference> entityRefList) {
-       return repo.getListFromReferences(entityRefList);
+   public List<T> convertEntityRefList(@Context HttpHeaders headers, @RequestBody List<EntityReference> entityRefList) {
+      String realmId = headers.getHeaderString("X-Realm");
+      if (realmId == null)
+        return repo.getListFromReferences(entityRefList);
+      else
+         return repo.getListFromReferences(realmId, entityRefList);
    }
 
 
@@ -446,7 +471,8 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
             @APIResponse(responseCode = "200", description = "Success", content = @Content(mediaType = "application/json", schema = @Schema(implementation = EntityReference.class))),
             @APIResponse(responseCode = "400", description = "Bad Request / bad argument", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
     })
-    public List<EntityReference> getEntityRefList(@QueryParam("skip") int skip,
+    public List<EntityReference> getEntityRefList(@Context HttpHeaders headers,
+                                                  @QueryParam("skip") int skip,
                                                   @DefaultValue("50") @QueryParam("limit") int limit,
                                                   @QueryParam("filter") String filter,
                                                   @QueryParam("sort") String sort) {
@@ -457,7 +483,11 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
         } else {
             sortFields = null;
         }
-       return repo.getEntityReferenceListByQuery(skip, limit, filter, sortFields);
+        String realm = headers.getHeaderString("X-Realm");
+        if (realm == null)
+          return repo.getEntityReferenceListByQuery(skip, limit, filter, sortFields);
+        else
+            return repo.getEntityReferenceListByQuery(realm, skip, limit, filter, sortFields);
     }
 
 
@@ -470,8 +500,9 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
            @APIResponse(responseCode = "200", description = "Success", content = @Content(mediaType = "application/json", schema = @Schema(implementation = Collection.class))),
            @APIResponse(responseCode = "400", description = "Bad Request / bad argument", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
    })
-   public Collection<T> getList(@DefaultValue("0")
-                           @QueryParam("skip") int skip,
+   public Collection<T> getList(@Context HttpHeaders headers,
+                                @DefaultValue("0")
+                                @QueryParam("skip") int skip,
                                 @DefaultValue("50")@QueryParam("limit") int limit,
                                 @QueryParam("filter") String filter,
                                 @QueryParam("sort") String sort,
@@ -499,9 +530,18 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
             projectionFields = FilterUtils.convertProjectionFields(projection);
          }
 
+         String realmId = headers.getHeaderString("X-Realm");
+         List<T> ups;
+         long count;
+         if (realmId == null) {
+            ups = repo.getListByQuery(skip, limit, filter, sortFields, projectionFields);
+            count =repo.getCount(filter);
+         }
+         else {
+            ups = repo.getListByQuery(realmId, skip, limit, filter, sortFields, projectionFields);
+            count = repo.getCount(realmId, filter);
+         }
 
-         List<T> ups = repo.getListByQuery(skip, limit, filter, sortFields, projectionFields);
-         long count = repo.getCount(filter);
 
          Collection<T> collection;
          if (sortFields == null )
@@ -541,11 +581,16 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
    @Produces(MediaType.APPLICATION_JSON)
    @Consumes(MediaType.APPLICATION_JSON)
    @SecurityRequirement(name = "bearerAuth")
-   public T save(T model) {
+   public T save(@Context HttpHeaders headers, T model) {
        if (model == null) {
            throw new WebApplicationException( "Attempt to save null, check body of request, or the serialization of the body failed", Response.Status.BAD_REQUEST);
        }
-      model = repo.save(model);
+       String realmId = headers.getHeaderString("X-Realm");
+       if (realmId == null) {
+          model = repo.save(model);
+       } else {
+          model = repo.save(realmId, model);
+       }
       return model;
    }
 
@@ -558,8 +603,16 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
    @Produces(MediaType.APPLICATION_JSON)
    @Consumes(MediaType.APPLICATION_JSON)
    @SecurityRequirement(name = "bearerAuth")
-   public Response update(@QueryParam("id") String id, @QueryParam("pairs") Pair<String,Object>... pairs) throws InvalidStateTransitionException {
-      long updated = repo.update(id, pairs);
+   public Response update(@Context HttpHeaders headers, @QueryParam("id") String id, @QueryParam("pairs") Pair<String,Object>... pairs) throws InvalidStateTransitionException {
+
+      String realmId = headers.getHeaderString("X-Realm");
+      long updated = 0;
+      if (realmId == null) {
+        updated =  repo.update(id, pairs);
+      } else {
+        updated = repo.update(realmId, id, pairs);
+      }
+
       if (updated > 0) {
          SuccessResponse r =  new SuccessResponse();
          r.setMessage("Update successful");
@@ -582,8 +635,8 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
            @APIResponse(responseCode = "200", description = "Entity found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = SuccessResponse.class))),
            @APIResponse(responseCode = "404", description = "Entity not found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
    })
-   public Response deleteByPathRefName(@PathParam("refName") String refName) throws ReferentialIntegrityViolationException {
-      return deleteByRefName(refName);
+   public Response deleteByPathRefName(@Context HttpHeaders headers, @PathParam("refName") String refName) throws ReferentialIntegrityViolationException {
+      return deleteByRefName(headers,refName);
    }
 
    @Path("refName")
@@ -595,10 +648,16 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
            @APIResponse(responseCode = "200", description = "Entity found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = SuccessResponse.class))),
            @APIResponse(responseCode = "404", description = "Entity not found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
    })
-   public Response deleteByRefName(@QueryParam("refName") String refName) throws ReferentialIntegrityViolationException {
+   public Response deleteByRefName(@Context HttpHeaders headers,  @QueryParam("refName") String refName) throws ReferentialIntegrityViolationException {
       Objects.requireNonNull(refName, "Null argument passed to delete, api requires a non-null refName");
-      Optional<T> model = repo.findByRefName(refName);
-      return deleteEntity(refName, model);
+      String realmId = headers.getHeaderString("X-Realm");
+      if (realmId == null) {
+         Optional<T> model = repo.findByRefName(refName);
+         return deleteEntity(ruleContext.getDefaultRealm(), model);
+      } else {
+         Optional<T> model = repo.findByRefName(realmId, refName);
+         return deleteEntity(realmId, model);
+      }
    }
 
 
@@ -611,8 +670,8 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
            @APIResponse(responseCode = "200", description = "Entity found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = SuccessResponse.class))),
            @APIResponse(responseCode = "404", description = "Entity not found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
    })
-   public Response deleteByPathId(@PathParam("id") String id) throws ReferentialIntegrityViolationException {
-      return delete(id);
+   public Response deleteByPathId(@Context HttpHeaders headers, @PathParam("id") String id) throws ReferentialIntegrityViolationException {
+      return delete(headers,id);
    }
 
    @Path("id")
@@ -624,15 +683,25 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
            @APIResponse(responseCode = "200", description = "Entity found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = SuccessResponse.class))),
            @APIResponse(responseCode = "404", description = "Entity not found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
    })
-   public Response delete(@QueryParam("id") String id) throws ReferentialIntegrityViolationException {
+   public Response delete(@Context HttpHeaders headers, @QueryParam("id") String id) throws ReferentialIntegrityViolationException {
      Objects.requireNonNull(id, "Null argument passed to delete, api requires a non-null id");
-     Optional<T> model = repo.findById(id);
-     return deleteEntity(id, model);
+     String realmId = headers.getHeaderString("X-Realm");
+     if (realmId == null) {
+        Optional<T> model = repo.findById(id);
+        return deleteEntity(id, model);
+     } else {
+        Optional<T> model = repo.findById(realmId, id);
+        return deleteEntity(realmId, id, model);
+     }
    }
 
    protected Response deleteEntity(String id, Optional<T> model) throws ReferentialIntegrityViolationException {
+      return deleteEntity(ruleContext.getDefaultRealm(), id, model);
+   }
+
+   protected Response deleteEntity(String realmId,String id, Optional<T> model) throws ReferentialIntegrityViolationException {
       if (model.isPresent()) {
-         long deletedCount = repo.delete(model.get());
+         long deletedCount = repo.delete(realmId,model.get());
          if (deletedCount != 0) {
             SuccessResponse r =  new SuccessResponse();
             r.setMessage("Delete successful");
@@ -640,7 +709,7 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
             return Response.ok().entity(r).build();
          } else {
             RestError error = RestError.builder()
-                    .statusMessage("Entity with identifier:" +  id + " was found but delete returned 0 indicating the entity may not have been deleted.  Retry your request")
+                    .statusMessage("Entity with identifier:" +  model.get().getId().toHexString() + " was found but delete returned 0 indicating the entity may not have been deleted.  Retry your request")
                     .reasonMessage("Delete Operation returned 0 when 1 was expected")
                     .debugMessage("MongoDB delete operation returned 0")
                     .build();

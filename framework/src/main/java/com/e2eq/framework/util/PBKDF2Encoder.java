@@ -16,12 +16,13 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
  */
 @RequestScoped
 public class PBKDF2Encoder {
-	
+
 	@ConfigProperty(name = "com.ard333.quarkusjwt.password.secret")  private String secret;
 	@ConfigProperty(name = "com.ard333.quarkusjwt.password.iteration")  private Integer iteration;
 	@ConfigProperty(name = "com.ard333.quarkusjwt.password.keylength")  private Integer keylength;
-	
+
 	/**
+	 * Encode a string with PBKDF2 with salt
 	 * More info (https://www.owasp.org/index.php/Hashing_Java) 404 :(
 	 * @param cs password
 	 * @return encoded password

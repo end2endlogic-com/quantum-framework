@@ -3,6 +3,7 @@ package com.e2eq.framework.model.persistent.morphia;
 import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.persistent.security.DomainContext;
 import com.e2eq.framework.model.persistent.security.UserProfile;
+import com.e2eq.framework.model.security.auth.AuthProviderFactory;
 import com.e2eq.framework.model.security.auth.UserManagement;
 import com.e2eq.framework.util.EncryptionUtils;
 import com.e2eq.framework.util.SecurityUtils;
@@ -23,9 +24,7 @@ import jakarta.validation.constraints.Size;
 import lombok.NonNull;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
-import java.util.Date;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 
 @ApplicationScoped
 public class UserProfileRepo extends MorphiaRepo<UserProfile> {
@@ -36,9 +35,15 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
    @Inject
    SecurityUtils securityUtils;
 
+   @Inject
+   AuthProviderFactory authProviderFactory;
 
-   public Optional<UserProfile> updateStatus(@NotNull String userId, @NotNull UserProfile.Status status) {
-     UserProfile p = this.morphiaDataStore.getDataStore(getSecurityContextRealmId())
+   public Optional<UserProfile> updateStatus( @NotNull String userId, @NotNull UserProfile.Status status) {
+      return updateStatus(getSecurityContextRealmId(), userId, status);
+   }
+
+   public Optional<UserProfile> updateStatus(String realm, @NotNull String userId, @NotNull UserProfile.Status status) {
+     UserProfile p = this.morphiaDataStore.getDataStore(realm)
              .find(UserProfile.class)
              .filter(Filters.eq("userId", userId)).modify(new ModifyOptions().returnDocument(ReturnDocument.AFTER), UpdateOperators.set("status", status.value()));
 
@@ -46,7 +51,11 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
    }
 
    public Optional<UserProfile> getByUsername(@NotNull String username) {
-      return getByUsername(  morphiaDataStore.getDataStore(getSecurityContextRealmId()), username );
+     return getByUsername(getSecurityContextRealmId(), username);
+   }
+
+   public Optional<UserProfile> getByUsername(String realm, @NotNull String username) {
+      return getByUsername(  morphiaDataStore.getDataStore(realm), username );
    }
 
    public Optional<UserProfile> getByUsername(Datastore datastore,@NotNull String username) {
@@ -62,10 +71,12 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
    }
 
 
-
-
    public Optional<UserProfile> getByUserId(@NotNull String userId) {
       return getByUserId(  morphiaDataStore.getDataStore(getSecurityContextRealmId()), userId );
+   }
+
+   public Optional<UserProfile> getByUserId(@NotNull String realm, @NotNull String userId) {
+      return getByUserId(  morphiaDataStore.getDataStore(realm), userId );
    }
 
    public Optional<UserProfile> getByUserId(Datastore datastore,@NotNull String userId) {
@@ -80,6 +91,13 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
       return Optional.ofNullable(p);
    }
 
+   public UserProfile createUser( @NotNull String realmId,
+                                  @Valid UserProfile up,
+                                  @NotNull @NotEmpty String[] roles,
+                                  @NotNull @NonNull @NotEmpty @Size(min=8, max=50, message = "password must be between 8 and 50 characters") String password) {
+      return createUser(morphiaDataStore.getDataStore(realmId), up, roles, password);
+   }
+
    public UserProfile createUser( @Valid UserProfile up,
                                  @NotNull @NotEmpty String[] roles,
                                  @NotNull @NonNull @NotEmpty @Size(min=8, max=50, message = "password must be between 8 and 50 characters") String password) {
@@ -90,6 +108,14 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
                                  @Valid UserProfile up,
                                  @NotNull @NotEmpty String[] roles,
                                  @NotNull @NonNull @NotEmpty @Size(min=8, max=50, message = "password must be between 8 and 50 characters") String password) {
+      return createUser(datastore, up, roles, password, securityUtils.getDefaultDomainContext());
+   }
+
+   public UserProfile createUser(Datastore  datastore,
+                                 @Valid UserProfile up,
+                                 @NotNull @NotEmpty String[] roles,
+                                 @NotNull @NonNull @NotEmpty @Size(min=8, max=50, message = "password must be between 8 and 50 characters") String password,
+                                 DomainContext domainContext) {
 
       if (!ValidateUtils.isValidEmailAddress(up.getUserId())) {
          throw new ValidationException("userId:" + up.getUserId() + " must be an email address");
@@ -97,21 +123,14 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
 
       up = save(datastore,up);
 
-      Optional<CredentialUserIdPassword> optionalCredentialUserIdPassword = credRepo.findByUserId(up.getUserId());
-      if (!optionalCredentialUserIdPassword.isPresent()) {
-         CredentialUserIdPassword cred = new CredentialUserIdPassword();
-         DomainContext ctx = new DomainContext(up.getDataDomain(), securityUtils.getSystemRealm());
-         cred.setDomainContext(ctx);
-         cred.setUserId(up.getUserId());
-         cred.setUsername(UUID.randomUUID().toString());
-         cred.setRefName(up.getUserId());
-         cred.setRoles(roles);
+      // convert roles array to a set of strings
+      Set<String> roleSet = new HashSet<>(Arrays.asList(roles));
 
-         cred.setDataDomain(up.getDataDomain());
-         cred.setLastUpdate(new Date());
-         cred.setPasswordHash(EncryptionUtils.hashPassword(password));
-         credRepo.save(datastore, cred);
-      }
+      // create the user in the system using the provided auth provider
+      // this will handle the password encryption and storage in the system
+      // and will also handle the creation of the user in the authentication system
+      // (like LDAP, Active Directory, etc.)
+      authProviderFactory.getUserManager().createUser(datastore.getDatabase().getName(), up.getUserId(), password, up.getUsername(), roleSet, domainContext);
 
       return up;
    }
