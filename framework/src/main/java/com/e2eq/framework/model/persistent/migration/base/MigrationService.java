@@ -7,8 +7,6 @@ import com.e2eq.framework.model.persistent.morphia.ChangeSetRecordRepo;
 import com.e2eq.framework.model.persistent.morphia.DatabaseVersionRepo;
 
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
-import com.e2eq.framework.model.securityrules.RuleContext;
-import com.e2eq.framework.model.securityrules.SecuritySession;
 import com.e2eq.framework.rest.exceptions.DatabaseMigrationException;
 import com.e2eq.framework.util.SecurityUtils;
 import com.mongodb.client.MongoClient;
@@ -78,12 +76,24 @@ public class MigrationService {
 
 
     public  void checkInitialized(String realm) {
-       if (!databaseVersionRepo.findCurrentVersion(realm).isPresent() ) {
-           throw new DatabaseMigrationException(String.format("Database %s not initialized. Please initialize / run migrations on the database", realm));
+       Optional<DatabaseVersion> oDatabaseVersion = databaseVersionRepo.findCurrentVersion(realm);
+       if (!oDatabaseVersion.isPresent() ) {
+           throw new DatabaseMigrationException(String.format("Database Version was not found, for realm: %s. Please initialize / run migrations on the database", realm));
        }
+        DatabaseVersion currentVersion = oDatabaseVersion.get();
+        Semver currentSemVersion = currentVersion.getCurrentSemVersion();
+        Semver requiredSemVersion = Semver.parse(targetDatabaseVersion);
+        if (currentSemVersion.compareTo(requiredSemVersion) < 0 ) {
+            throw new DatabaseMigrationException(realm, currentVersion.getCurrentVersionString(), targetDatabaseVersion);
+        }
+        else if (currentSemVersion.compareTo(requiredSemVersion) > 0 ) {
+            Log.warnf("Database %s version is higher than required. Current version: %s, required version: %s", realm, currentVersion.getCurrentVersionString(), targetDatabaseVersion);
+        }
+
+
     }
 
-    public void isMigrationRequired() {
+    public void checkMigrationRequired () {
       checkInitialized(defaultRealm);
       checkInitialized(systemRealm);
       checkInitialized(testRealm);
@@ -229,10 +239,11 @@ public class MigrationService {
     }
 
     public void runAllUnRunMigrations(String realm, MultiEmitter<? super String> emitter) {
-        emitter.emit(String.format( "-------------- Migration Starting for: %s--------------", realm));
+
 
         List<ChangeSetBean> changeSetList = getAllPendingChangeSetBeans(realm, emitter );
-
+        if (!changeSetList.isEmpty()) {
+            emitter.emit(String.format( "-------------- Migration Starting for: %s--------------", realm));
         // for each now execute the change set bean
         emitter.emit(String.format("-- Executing %d change sets --", changeSetList.size()));
         // get a lock first:
@@ -247,7 +258,7 @@ public class MigrationService {
                     emitter.emit(String.format("        Starting Transaction for Change Set:%s", changeSetBean.getName()));
                     ds.startTransaction();
 
-                    changeSetBean.execute(ds,mongoClient, realm);
+                    changeSetBean.execute(ds,mongoClient);
                     ChangeSetRecord record = newChangeSetRecord(realm, changeSetBean);
                     changesetRecordRepo.save(ds, record);
                     DatabaseVersion databaseVersion;
@@ -283,6 +294,7 @@ public class MigrationService {
         emitter.emit(String.format("-- Lock Released --"));
         emitter.emit(String.format("-- All Change Sets executed --"));
         emitter.emit(String.format("-------------- Migration Completed for %s--------------", realm));
+        }
 
     }
 

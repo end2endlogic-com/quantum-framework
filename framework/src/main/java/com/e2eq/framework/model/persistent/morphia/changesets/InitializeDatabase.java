@@ -22,6 +22,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -31,9 +32,6 @@ import java.util.*;
 @Startup
 @ApplicationScoped
 public class InitializeDatabase implements ChangeSetBean {
-
-   @Inject
-   MorphiaDataStore dataStore;
 
    @Inject
    OrganizationRepo orgRepo;
@@ -51,16 +49,16 @@ public class InitializeDatabase implements ChangeSetBean {
    UserProfileRepo userProfileRepo;
 
    @Inject
-   CredentialRepo credRepo;
-
-   @Inject
    CounterRepo counterRepo;
 
    @Inject
    SecurityUtils securityUtils;
 
+   @ConfigProperty( name="quantum.defaultSystemPassword")
+   String defaultSystemPassword;
+
    @Execution
-   public void execute(MorphiaSession session, MongoClient mongoClient, String realm) throws Exception{
+   public void execute(MorphiaSession session, MongoClient mongoClient) throws Exception{
       // get flag from app config
 
                ensureCounter(session, "accountNumber", 2000);
@@ -241,7 +239,7 @@ public class InitializeDatabase implements ChangeSetBean {
          for (Role r : roles) {
             rolesArray[i++] = r.name();
          }
-         userProfileRepo.createUser(datastore, up, rolesArray, "test123456");
+         userProfileRepo.createUser(datastore, up, rolesArray, defaultSystemPassword);
       }
 
    }

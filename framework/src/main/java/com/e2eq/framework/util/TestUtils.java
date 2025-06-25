@@ -12,6 +12,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import lombok.Data;
 import lombok.Getter;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 
 import java.util.Date;
@@ -55,6 +56,12 @@ public class TestUtils {
    protected DataDomain systemDataDomain;
    @Getter
    protected DataDomain defaultDataDomain;
+
+   @ConfigProperty(name="quantum.defaultTestPassword")
+   String defaultTestPassword;
+
+   @ConfigProperty(name="quantum.defaultSystemPassword")
+   String defaultSystemPassword;
 
 
 

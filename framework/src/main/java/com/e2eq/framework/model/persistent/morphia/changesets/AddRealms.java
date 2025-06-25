@@ -97,8 +97,8 @@ public class AddRealms implements ChangeSetBean  {
     }
 
     @Override
-    public void execute(MorphiaSession session, MongoClient mongoClient, String r) throws Exception {
-        Log.infof("Adding Default Realm to the database: realm passed to execution: %s", r);
+    public void execute(MorphiaSession session, MongoClient mongoClient) throws Exception {
+        Log.infof("Adding Default Realm to the database: realm passed to execution: %s", session.getDatabase().getName());
 
         DomainContext domainContext = DomainContext.builder()
                 .tenantId(systemTenantId)
