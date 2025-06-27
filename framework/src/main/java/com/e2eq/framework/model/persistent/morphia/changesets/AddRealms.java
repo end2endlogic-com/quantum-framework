@@ -100,6 +100,11 @@ public class AddRealms implements ChangeSetBean  {
     public void execute(MorphiaSession session, MongoClient mongoClient) throws Exception {
         Log.infof("Adding Default Realm to the database: realm passed to execution: %s", session.getDatabase().getName());
 
+        // check if realms already exist
+        if (realmRepo.findByEmailDomain(systemTenantId, true).isPresent()) {
+            Log.infof("Realm %s already exists. Skipping", systemTenantId);
+            return;
+        }
         DomainContext domainContext = DomainContext.builder()
                 .tenantId(systemTenantId)
                 .orgRefName(systemOrgRefName)

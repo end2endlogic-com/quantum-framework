@@ -198,20 +198,24 @@ public class MigrationService {
        Optional<DatabaseVersion> oCurrentDbVersion = this.getCurrentDatabaseVersion(datastore);
        DatabaseVersion currentDbVersion;
        if (!oCurrentDbVersion.isPresent()) {
+           Log.warnf(String.format("No database version found in the database for realm: %s, assuming 1.0.0",realm));
            emitter.emit(String.format( "No database version found in the database for realm: %s, assuming 1.0.0",realm));
            currentDbVersion = new DatabaseVersion();
            currentDbVersion.setCurrentVersionString("1.0.0");
            currentDbVersion = getDatabaseVersionRepo().save(realm, currentDbVersion);
        } else {
            currentDbVersion = oCurrentDbVersion.get();
+           Log.infof("Current database version: %s", currentDbVersion.getCurrentVersionString());
            emitter.emit(String.format("Current database version: %s", currentDbVersion.getCurrentVersionString()));
        }
 
 
         Semver currentSemDatabaseVersion = currentDbVersion.getCurrentSemVersion();
         List<ChangeSetBean> changeSets = getAllChangeSetBeans();
+        Log.infof("Found %d Change Sets:", changeSets.size());
         emitter.emit(String.format("Found %d Change Sets:", changeSets.size()));
         changeSets.forEach(changeSetBean -> {
+            Log.infof("    Change Set: %s", changeSetBean.getName());
             emitter.emit(String.format("    %s", changeSetBean.getName()));
         });
         List<ChangeSetBean> pendingChangeSetBeans = new ArrayList<>();
@@ -220,14 +224,19 @@ public class MigrationService {
             Semver toVersion =new Semver(chb.getDbToVersion());
             Semver currentVersion = new Semver(currentSemDatabaseVersion.getVersion());
             if (toVersion.isGreaterThanOrEqualTo(currentVersion)) {
+                Log.infof("ToVersion:%s, is greater than or equal to current version:%s", toVersion.getVersion(), currentVersion.getVersion());
+                emitter.emit(String.format("ToVersion:%s, is greater than or equal to current version:%s", toVersion.getVersion(), currentVersion.getVersion()));
                 Optional<ChangeSetRecord> record = changesetRecordRepo.findByRefName(datastore,chb.getName());
                 if (!record.isPresent()) {
+                    Log.infof(">> Executing Change Set: %s in realm %s", chb.getName(), datastore.getDatabase().getName());
                     emitter.emit(String.format(">> Executing Change Set: %s in realm %s", chb.getName(), datastore.getDatabase().getName()));
                     pendingChangeSetBeans.add(chb);
                 } else {
+                    Log.warnf(">> All ready executed change set: %s in realm %s on %tc ", chb.getName(), datastore.getDatabase().getName(), record.get().getLastExecutedDate());
                     emitter.emit(String.format( ">> All ready executed change set: %s in realm %s on %tc ", chb.getName(), datastore.getDatabase().getName(), record.get().getLastExecutedDate()));
                 }
             } else {
+                Log.infof(">> Ignoring Change Set:" + chb.getName() + " because it is not for the current database version:" + currentSemDatabaseVersion);
                 emitter.emit(">> Ignoring Change Set:" + chb.getName() + " because it is not for the current database version:" + currentSemDatabaseVersion);
             }
         }
@@ -240,21 +249,26 @@ public class MigrationService {
 
     public void runAllUnRunMigrations(String realm, MultiEmitter<? super String> emitter) {
 
-
+        Log.info("-- Running all migrations for realm: " + realm);
         List<ChangeSetBean> changeSetList = getAllPendingChangeSetBeans(realm, emitter );
         if (!changeSetList.isEmpty()) {
-            emitter.emit(String.format( "-------------- Migration Starting for: %s--------------", realm));
-        // for each now execute the change set bean
+        Log.infof("-------------- Migration Starting for: %s--------------", realm);
+        emitter.emit(String.format( "-------------- Migration Starting for: %s--------------", realm));
+    // for each now execute the change set bean
+        Log.infof("-- Executing %d change sets --", changeSetList.size());
         emitter.emit(String.format("-- Executing %d change sets --", changeSetList.size()));
+
         // get a lock first:
         DistributedLock lock = getMigrationLock(realm);
         emitter.emit(String.format("-- Got Lock --"));
         lock.runLocked(() -> {
             changeSetList.forEach(changeSetBean -> {
+                Log.infof("Executing Change Set:%s", changeSetBean.getName());
                 emitter.emit(String.format("Executing Change Set:%s", changeSetBean.getName()));
                 MorphiaSession ds = morphiaDataStore.getDataStore(realm).startSession();
 
                 try {
+                    Log.infof("        Starting Transaction for Change Set:%s", changeSetBean.getName());
                     emitter.emit(String.format("        Starting Transaction for Change Set:%s", changeSetBean.getName()));
                     ds.startTransaction();
 
@@ -264,6 +278,7 @@ public class MigrationService {
                     DatabaseVersion databaseVersion;
                     Optional<DatabaseVersion> oversion = databaseVersionRepo.findCurrentVersion(ds);
                     if (!oversion.isPresent()) {
+                        Log.warnf("        No database databaseVersion found in the database for realm: %s, assuming 1.0.0", realm);
                         emitter.emit(String.format("        No database databaseVersion found in the database for realm: %s, assuming 1.0.0", realm));
                         databaseVersion = new DatabaseVersion();
                         databaseVersion.setRefName(realm);
@@ -280,6 +295,7 @@ public class MigrationService {
                     }
 
                     ds.commitTransaction();
+                    Log.infof("        Committed Transaction for Change Set:%s", changeSetBean.getName());
                     emitter.emit(String.format("        Commited Transaction for Change Set:%s", changeSetBean.getName()));
 
                 } catch (Throwable e) {
@@ -292,7 +308,9 @@ public class MigrationService {
         });
 
         emitter.emit(String.format("-- Lock Released --"));
+        Log.infof("-- All Change Sets executed --");
         emitter.emit(String.format("-- All Change Sets executed --"));
+        Log.infof("-------------- Migration Completed for: %s--------------", realm);
         emitter.emit(String.format("-------------- Migration Completed for %s--------------", realm));
         }
 

@@ -17,6 +17,7 @@ import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.mongodb.client.MongoClient;
 import dev.morphia.Datastore;
 import dev.morphia.transactions.MorphiaSession;
+import io.quarkus.logging.Log;
 import io.quarkus.runtime.Startup;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -216,7 +217,9 @@ public class InitializeDatabase implements ChangeSetBean {
 
    public void createInitialUserProfiles(Datastore datastore) throws CloneNotSupportedException {
 
+      Log.infof("Checking to create initial user profiles in realm: %s", datastore.getDatabase().getName());
       if (!userProfileRepo.getByUserId(datastore,securityUtils.getSystemUserId()).isPresent()) {
+         Log.infof("UserProfile:%s not found creating ", securityUtils.getSystemUserId());
          DataDomain upDataDomain = securityUtils.getSystemDataDomain().clone();
          upDataDomain.setOwnerId(securityUtils.getSystemUserId());
          Set<Role> roles = new HashSet<>();

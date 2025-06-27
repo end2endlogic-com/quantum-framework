@@ -16,6 +16,7 @@ import dev.morphia.query.Query;
 import dev.morphia.query.filters.Filters;
 import dev.morphia.query.updates.UpdateOperators;
 import dev.morphia.transactions.MorphiaSession;
+import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
@@ -130,11 +131,19 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
       // convert roles array to a set of strings
       Set<String> roleSet = new HashSet<>(Arrays.asList(roles));
 
-      // create the user in the system using the provided auth provider
-      // this will handle the password encryption and storage in the system
-      // and will also handle the creation of the user in the authentication system
-      // (like LDAP, Active Directory, etc.)
-      authProviderFactory.getUserManager().createUser(datastore.getDatabase().getName(), up.getUserId(), password, up.getUsername(), roleSet, domainContext);
+      // check if the user exists in the authProvider:
+      // if not, create the user in the authProvider
+      // if the user exists, update the roles in the auth provider
+      UserManagement userManager = authProviderFactory.getUserManager();
+      if (!userManager.usernameExists(datastore.getDatabase().getName(), up.getUsername())) {
+         // create the user in the system using the provided auth provider
+         // this will handle the password encryption and storage in the system
+         // and will also handle the creation of the user in the authentication system
+         // (like LDAP, Active Directory, etc.)
+         authProviderFactory.getUserManager().createUser(datastore.getDatabase().getName(), up.getUserId(), password, up.getUsername(), roleSet, domainContext);
+      } else {
+        Log.warnf("User  with username %s already exists in the auth provider. skipping create", up.getUsername());
+      }
 
       return up;
    }
