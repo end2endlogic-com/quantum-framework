@@ -56,7 +56,7 @@ public class MigrationResource {
     @RolesAllowed("admin")
     @Produces(MediaType.SERVER_SENT_EVENTS)
     public void startTask(SseEventSink eventSink, Sse sse) {
-        Multi.createFrom().publisher(runLongTask())
+        Multi.createFrom().publisher(runMigrateAllTask())
                 .emitOn(managedExecutor)
                 .subscribe().with(
                         message -> {
@@ -79,7 +79,35 @@ public class MigrationResource {
                 );
     }
 
-    private Multi<String> runLongTask() {
+    @GET
+    @Path("/start/{realm}")
+    @RolesAllowed("admin")
+    @Produces(MediaType.SERVER_SENT_EVENTS)
+    public void startSpecificTask(@PathParam("realm") String realm, SseEventSink eventSink, Sse sse) {
+        Multi.createFrom().publisher(runMigrateSpecificTask(realm))
+           .emitOn(managedExecutor)
+           .subscribe().with(
+              message -> {
+                  if (!eventSink.isClosed()) {
+                      eventSink.send(sse.newEvent(message));
+                  }
+              },
+              failure -> {
+                  if (!eventSink.isClosed()) {
+                      eventSink.send(sse.newEvent("Error: " + failure.getMessage()));
+                      eventSink.close();
+                  }
+              },
+              () -> {
+                  if (!eventSink.isClosed()) {
+                      eventSink.send(sse.newEvent("Task completed"));
+                      eventSink.close();
+                  }
+              }
+           );
+    }
+
+    private Multi<String> runMigrateAllTask() {
         return Multi.createFrom().emitter(emitter -> {
             try {
 
@@ -88,9 +116,36 @@ public class MigrationResource {
                 ruleContext.ensureDefaultRules();
                 securityUtils.setSecurityContext();
                 try {
+                    Log.info("----Running migrations for test realm:---- " + securityUtils.getTestRealm());
                     migrationService.runAllUnRunMigrations(securityUtils.getTestRealm(), emitter);
+                    Log.info("----Running migrations for system realm:---- " + securityUtils.getSystemRealm());
                     migrationService.runAllUnRunMigrations(securityUtils.getSystemRealm(), emitter);
-                    migrationService.runAllUnRunMigrations(securityUtils.getDefaultRealm(), emitter);
+                    if (!securityUtils.getSystemRealm().equals(securityUtils.getDefaultRealm())) {
+                        Log.info("----Running migrations for Default realm:---- " + securityUtils.getDefaultRealm());
+                        migrationService.runAllUnRunMigrations(securityUtils.getDefaultRealm(), emitter);
+                    }
+                } finally {
+                    securityUtils.clearSecurityContext();
+                }
+
+                emitter.complete();
+            } catch (Throwable e) {
+                emitter.fail(e);
+            }
+        });
+    }
+
+    private Multi<String> runMigrateSpecificTask(String realm) {
+        return Multi.createFrom().emitter(emitter -> {
+            try {
+
+                Log.warn("-----!!!  Migrations ENABLED !!!!-----");
+                String[] roles = {"admin", "user"};
+                ruleContext.ensureDefaultRules();
+                securityUtils.setSecurityContext();
+                try {
+                    Log.info("----Running migrations for realm:---- " + realm);
+                    migrationService.runAllUnRunMigrations(realm, emitter);
                 } finally {
                     securityUtils.clearSecurityContext();
                 }

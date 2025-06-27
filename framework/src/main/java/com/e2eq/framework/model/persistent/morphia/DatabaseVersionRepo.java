@@ -30,6 +30,11 @@ public class DatabaseVersionRepo extends MorphiaRepo<DatabaseVersion> {
                       .limit(1))
               .tryNext();
 
+      if (version == null) {
+         Log.infof("No database version found for datastore: %s", datastore.getDatabase().getName());
+      } else {
+         Log.infof("Found database version %s for datastore: %s", version.getCurrentVersionString(), datastore.getDatabase().getName());
+      }
       return Optional.ofNullable(version);
    }
 }

@@ -54,6 +54,7 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
                 Log.warn("!! System Migration check failed: " + e.getMessage());
                 Log.warnf(" Execution of Request:%s caused this error", requestContext.getUriInfo().getPath());
             }
+            failRequest=false;
         }
 
         if (failRequest) {
