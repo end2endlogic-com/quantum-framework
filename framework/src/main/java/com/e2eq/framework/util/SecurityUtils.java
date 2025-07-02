@@ -11,6 +11,9 @@ import lombok.Data;
 import lombok.Getter;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+import java.security.SecureRandom;
+import java.util.Random;
+
 
 @ApplicationScoped
 @Data
@@ -76,6 +79,9 @@ public class SecurityUtils {
    @Getter
    @ConfigProperty(name = "quantum.realmConfig.testRealm", defaultValue = "test-system-com"  )
    protected String testRealm;
+
+   private static final SecureRandom secureRandom = new SecureRandom();
+
 
    public static  final String any = "*";
    protected final String securityArea = "security";
@@ -163,6 +169,51 @@ public class SecurityUtils {
    public DomainContext getDefaultDomainContext() {
       return new DomainContext(this.defaultDataDomain, this.defaultRealm);
    }
+
+
+
+   public String randomPassword(int length) {
+      if (length < 4) {
+         throw new IllegalArgumentException("Password length must be at least 4 to include required character types.");
+      }
+
+      String upperCaseLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+      String numbers = "0123456789";
+      String specialCharacters = "!#$%^*?";
+      String lowerCaseLetters = "abcdefghijklmnopqrstuvwxyz";
+      String allCharacters = upperCaseLetters + lowerCaseLetters + numbers + specialCharacters;
+
+      StringBuilder sb = new StringBuilder(length);
+
+      // Ensure at least one character from each required set
+      sb.append(upperCaseLetters.charAt(secureRandom.nextInt(upperCaseLetters.length())));
+      sb.append(numbers.charAt(secureRandom.nextInt(numbers.length())));
+      sb.append(lowerCaseLetters.charAt(secureRandom.nextInt(upperCaseLetters.length())));
+      sb.append(specialCharacters.charAt(secureRandom.nextInt(specialCharacters.length())));
+
+      // Fill the rest of the password length with random characters
+      for (int i = 4; i < length; i++) {
+         sb.append(allCharacters.charAt(secureRandom.nextInt(allCharacters.length())));
+      }
+
+      // Shuffle the characters to ensure randomness
+      return shuffleString(sb.toString());
+   }
+
+   private String shuffleString(String input) {
+      char[] characters = input.toCharArray();
+      for (int i = 0; i < characters.length; i++) {
+         int randomIndex = secureRandom.nextInt(characters.length);
+         char temp = characters[i];
+         characters[i] = characters[randomIndex];
+         characters[randomIndex] = temp;
+      }
+      return new String(characters);
+   }
+
+
+
+
 
 
 

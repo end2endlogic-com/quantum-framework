@@ -1,6 +1,9 @@
 package com.e2eq.framework.model.general;
 
 import com.e2eq.framework.model.persistent.base.BaseModel;
+import com.fasterxml.jackson.databind.JsonNode;
+import dev.morphia.annotations.Entity;
+import io.quarkus.runtime.annotations.RegisterForReflection;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -9,6 +12,12 @@ import lombok.NoArgsConstructor;
 import java.util.List;
 import java.util.Map;
 
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@RegisterForReflection
+@Entity
 public class FeatureFlag extends BaseModel {
 
    // Flag Management Interface: Attributes for creating/updating flags
@@ -25,6 +34,7 @@ public class FeatureFlag extends BaseModel {
    private Map<String, String> customAttributes; // Key-value pairs for custom user properties (e.g., "plan=premium")
    // Environment Support: Environment-specific configuration
    private String environment;          // Environment (e.g., "dev", "staging", "prod")
+   private JsonNode jsonConfiguration;  // Configuration of feature in JSON format
 
    @Override
    public String bmFunctionalArea () {

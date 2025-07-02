@@ -20,7 +20,9 @@ import lombok.experimental.SuperBuilder;
 @RegisterForReflection
 @NoArgsConstructor
 @SuperBuilder
-public @Data class UserProfile extends BaseModel {
+@Data
+@ToString(callSuper = true)
+public  class UserProfile extends BaseModel {
     public enum Status {
         ACTIVE("ACTIVE"),
         DEACTIVATED("DEACTIVATED"),
@@ -73,9 +75,6 @@ public @Data class UserProfile extends BaseModel {
     @Builder.Default
     protected String defaultTimezone = "EST";
     protected DataDomainPolicy dataDomainPolicy;
-    protected Status status = Status.ACTIVE;
-
-
 
 
     @Override
