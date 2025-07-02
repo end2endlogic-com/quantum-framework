@@ -126,7 +126,6 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
          throw new ValidationException("userId:" + up.getUserId() + " must be an email address");
       }
 
-      up = save(datastore,up);
 
       // convert roles array to a set of strings
       Set<String> roleSet = new HashSet<>(Arrays.asList(roles));
@@ -144,6 +143,18 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
       } else {
         Log.warnf("User  with username %s already exists in the auth provider. skipping create", up.getUsername());
       }
+
+      Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId( up.getUserId(), datastore.getDatabase().getName());
+      if (ocred.isPresent()) {
+         up.setUsername(ocred.get().getUsername());
+         up.setRefName(ocred.get().getRefName());
+         Log.infof("updated userprofile with username %s", up.getUsername());
+      } else {
+         throw new IllegalStateException(String.format("Failed to find the user in the credential repository for userId %s in realm:%s", up.getUserId(), datastore.getDatabase().getName()));
+      }
+
+      // now create the user profile
+      up = save(datastore,up);
 
       return up;
    }
