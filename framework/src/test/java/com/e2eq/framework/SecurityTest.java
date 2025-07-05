@@ -224,6 +224,7 @@ public class SecurityTest extends BaseRepoTest {
         Response response2 = given()
                 .header("Content-type", "application/json")
                 .header("Authorization", "Bearer " + accessToken)
+                .header("X-Realm", testUtils.getTestRealm())
                 .when().get("/user/userProfile/list")
                 .then()
                 .statusCode(200)

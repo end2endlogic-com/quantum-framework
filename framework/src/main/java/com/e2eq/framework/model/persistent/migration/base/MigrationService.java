@@ -272,7 +272,7 @@ public class MigrationService {
                     emitter.emit(String.format("        Starting Transaction for Change Set:%s", changeSetBean.getName()));
                     ds.startTransaction();
 
-                    changeSetBean.execute(ds,mongoClient);
+                    changeSetBean.execute(ds,mongoClient, emitter);
                     ChangeSetRecord record = newChangeSetRecord(realm, changeSetBean);
                     changesetRecordRepo.save(ds, record);
                     DatabaseVersion databaseVersion;

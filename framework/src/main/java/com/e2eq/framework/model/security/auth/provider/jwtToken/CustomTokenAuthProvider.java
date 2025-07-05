@@ -20,6 +20,7 @@ import io.smallrye.jwt.auth.principal.JWTParser;
 import io.smallrye.jwt.auth.principal.ParseException;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.validation.Valid;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import javax.crypto.Mac;
@@ -75,6 +76,11 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
 
     @Override
     public void createUser(String realm, String userId, String password, String username, Set<String> roles, DomainContext domainContext) throws SecurityException {
+       Objects.requireNonNull(realm, "Realm cannot be null");
+       Objects.requireNonNull(userId, "UserId cannot be null");
+       Objects.requireNonNull(username, "Username cannot be null");
+       Objects.requireNonNull(password, "Password cannot be null");
+       Objects.requireNonNull(domainContext, "DomainContext cannot be null");
 
     try {
         byte[] utf8Bytes = password.getBytes("UTF-8");
@@ -111,6 +117,8 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
 
     @Override
     public boolean removeUser(String realm, String username) throws ReferentialIntegrityViolationException {
+        Objects.requireNonNull(realm, "Realm cannot be null");
+        Objects.requireNonNull(username, "Username cannot be null");
         Optional<CredentialUserIdPassword> ocredentialUserIdPassword = credentialRepo.findByUsername(username);
         if (ocredentialUserIdPassword.isPresent()) {
             long val = credentialRepo.delete(ocredentialUserIdPassword.get());
@@ -124,11 +132,16 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
 
    @Override
    public void assignRoles(String username, Set<String> roles) throws SecurityException {
+       Objects.requireNonNull(username, "Username cannot be null");
        assignRoles(securityUtils.getSystemRealm(), username, roles);
    }
 
     @Override
     public void assignRoles(String realm, String username, Set<String> roles) throws SecurityException {
+        Objects.requireNonNull(realm, "Realm cannot be null");
+        Objects.requireNonNull(username, "Username cannot be null");
+        Objects.requireNonNull( roles, "Roles cannot be null");
+
         credentialRepo.findByUsername(username).ifPresentOrElse(credential -> {
             Set<String> existingRoles = new HashSet<>(Arrays.asList(credential.getRoles()));
             existingRoles.addAll(roles);
@@ -142,11 +155,22 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
 
     @Override
     public void removeRoles(String username, Set<String> roles) throws SecurityException {
+        Objects.requireNonNull(username, "Username cannot be null");
+        Objects.requireNonNull(roles, "Roles cannot be null");
+        if (roles.isEmpty()) {
+            throw new IllegalArgumentException("Roles cannot be empty");
+        }
         removeRoles(securityUtils.getSystemRealm(), username, roles);
     }
 
     @Override
     public void removeRoles(String realm, String username, Set<String> roles) throws SecurityException {
+       Objects.requireNonNull(realm, "Realm cannot be null");
+       Objects.requireNonNull(username, "Username cannot be null");
+       Objects.requireNonNull(roles, "Roles cannot be null");
+       if (roles.isEmpty()) {
+           throw new IllegalArgumentException("Roles cannot be empty");
+       }
        credentialRepo.findByUsername(username).ifPresentOrElse(
                credential -> {
                    Set<String> existingRoles = new HashSet<>(Arrays.asList(credential.getRoles()));

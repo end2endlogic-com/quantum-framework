@@ -77,43 +77,19 @@ public class SecurityFilter implements ContainerRequestFilter {
         // left around, determine how to clear the context after the action is complete, vs, upfront here.
         //SecurityContext.clear();
 
-        if (Log.isDebugEnabled()) {
-            String path = requestContext.getUriInfo().getPath();
+        ResourceContext resourceContext;
+        PrincipalContext principalContext;
 
-            String method = requestContext.getMethod();
-            String body = "";
-            // here for debug purposes if you enable this you will break media upload types like multipart/form-data
-            if ("POST".equalsIgnoreCase(method) && false) {
-                // Buffer the entity stream
-                BufferedInputStream bufferedInputStream = new BufferedInputStream(requestContext.getEntityStream());
-                String rawBody = new BufferedReader(new InputStreamReader(bufferedInputStream))
-                        .lines().collect(Collectors.joining("\n"));
-
-                // Reset the entity stream so it can be read again by downstream filters
-                requestContext.setEntityStream(new ByteArrayInputStream(rawBody.getBytes(StandardCharsets.UTF_8)));
-
-                // Pretty print JSON
-                try {
-                    Object json = mapper.readValue(rawBody, Object.class);
-                    ObjectWriter writer = mapper.writerWithDefaultPrettyPrinter();
-                    body = writer.writeValueAsString(json);
-                } catch (Exception e) {
-                    body = rawBody; // Fallback to raw body if not JSON
-                }
-                if (Log.isDebugEnabled() && !requestContext.getUriInfo().getPath().contains("login"))
-                    Log.debugf("SecurityFilter: %s %s?%s body[%s]", method, path, body);
-                else
-                if  (Log.isDebugEnabled())
-                    Log.debugf("SecurityFilter: %s %s?%s", method, path);
-            }
-
-
-
-
+        if (requestContext.getUriInfo().getPath().contains("/system/migration") && securityIdentity != null && securityIdentity.getRoles().contains("admin")) {
+            Log.warnf("System migration detected, setting up system principal context");
+           resourceContext = determineResourceContext(requestContext);
+           principalContext = securityUtils.getSystemPrincipalContext();
+        } else {
+            resourceContext = determineResourceContext(requestContext);
+            principalContext = determinePrincipalContext(requestContext);
         }
 
-        ResourceContext resourceContext = determineResourceContext(requestContext);
-        PrincipalContext principalContext = determinePrincipalContext(requestContext);
+
         if (principalContext == null) {
             throw new IllegalStateException("Principal context came back null and should not be null");
         }
@@ -292,7 +268,7 @@ public class SecurityFilter implements ContainerRequestFilter {
             }
 
             if (username != null) {
-                Optional<CredentialUserIdPassword> ocreds = (realm == null ) ? credentialRepo.findByUsername(username) : credentialRepo.findByUsername(username, realm);
+                Optional<CredentialUserIdPassword> ocreds = (realm == null ) ? credentialRepo.findByUsername(username, securityUtils.getSystemRealm()) : credentialRepo.findByUsername(username, realm);
 
                 if (ocreds.isPresent()) {
                     Log.debugf("Found user with username %s userId:%s in the database, adding roles %s", username, ocreds.get().getUserId(), Arrays.toString(ocreds.get().getRoles()));
@@ -309,9 +285,9 @@ public class SecurityFilter implements ContainerRequestFilter {
                     if (impersonate) {
                         Optional<CredentialUserIdPassword> oicreds;
                         if (impersonateUsername != null) {
-                             oicreds =(realm == null) ? credentialRepo.findByUsername(impersonateUsername) : credentialRepo.findByUsername(impersonateUsername, realm);
+                             oicreds =(realm == null) ? credentialRepo.findByUsername(impersonateUsername, securityUtils.getSystemRealm()) : credentialRepo.findByUsername(impersonateUsername, realm);
                         } else if (impersonateUserId!= null) {
-                             oicreds = (realm == null ) ? credentialRepo.findByUserId(impersonateUserId) : credentialRepo.findByUserId(impersonateUserId, realm)  ;
+                             oicreds = (realm == null ) ? credentialRepo.findByUserId(impersonateUserId, securityUtils.getSystemRealm()) : credentialRepo.findByUserId(impersonateUserId, realm)  ;
                         } else
                         {
                             throw new IllegalStateException("Logic error on server side impersonating user, neither X-Impersonate-Username nor X-Impersonate-UserId header is present yet impersonate is true?");
@@ -374,13 +350,13 @@ public class SecurityFilter implements ContainerRequestFilter {
                     }
                 } else {
                     // we did not find the user in the database lets see if we can find a realm based on email address
-                    Log.warnf("Could not find user with username: %s in realm %s", username,( realm == null) ? credentialRepo.getDatabaseName() : realm );
+                    Log.warnf("Could not find user with username: %s in realm %s", username,( realm == null) ? securityUtils.getSystemRealm() : realm );
                     Log.warn("Attempting to see if the realm is defined via the user/subject being an email address");
                     if (ValidateUtils.isValidEmailAddress(username)) {
 
                         String emailDomain = username.substring(username.indexOf("@") + 1);
                         Log.infof("UserId appears to be an email address with domain %s searching realms for domain Context", emailDomain);
-                        Optional<Realm> orealm = realmRepo.findByEmailDomain(emailDomain, true);
+                        Optional<Realm> orealm = realmRepo.findByEmailDomain(emailDomain, true, securityUtils.getSystemRealm());
                         if (orealm.isPresent()) {
                             Realm rrealm = orealm.get();
                             DataDomain dataDomain = rrealm.getDomainContext().toDataDomain(username);

@@ -6,16 +6,21 @@ import com.e2eq.framework.model.persistent.morphia.DatabaseVersionRepo;
 import com.e2eq.framework.model.securityrules.RuleContext;
 import com.e2eq.framework.util.SecurityUtils;
 import io.quarkus.logging.Log;
+import io.quarkus.security.identity.SecurityIdentity;
 import io.smallrye.mutiny.Multi;
 import jakarta.annotation.security.PermitAll;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.sse.Sse;
 import jakarta.ws.rs.sse.SseEventSink;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+import java.net.http.HttpRequest;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.Executor;
 
@@ -39,6 +44,9 @@ public class MigrationResource {
     @Inject
     DatabaseVersionRepo databaseVersionRepo;
 
+    @Inject
+    SecurityIdentity identity;
+
     @GET
     @Path("/dbversion/{realm}")
     @Produces(MediaType.APPLICATION_JSON)
@@ -49,6 +57,37 @@ public class MigrationResource {
             return oversion.get();
         } else
         throw new NotFoundException(String.format( "realm:%s not found", realm));
+    }
+
+    @POST
+    @Path("/initialize/{realm}")
+    @Produces(MediaType.SERVER_SENT_EVENTS)
+    public void initializeDatabase( @PathParam("realm") String realm, SseEventSink eventSink, Sse sse) {
+
+        if (!identity.isAnonymous() && identity.hasRole("admin")) {
+
+            Multi.createFrom().publisher(initializeDatabaseTask(realm))
+               .emitOn(managedExecutor)
+               .subscribe().with(
+                  message -> {
+                      if (!eventSink.isClosed()) {
+                          eventSink.send(sse.newEvent(message));
+                      }
+                  },
+                  failure -> {
+                      if (!eventSink.isClosed()) {
+                          eventSink.send(sse.newEvent("Error: " + failure.getMessage()));
+                          eventSink.close();
+                      }
+                  },
+                  () -> {
+                      if (!eventSink.isClosed()) {
+                          eventSink.send(sse.newEvent("Task completed"));
+                          eventSink.close();
+                      }
+                  }
+               );
+        }
     }
 
     @GET
@@ -107,11 +146,32 @@ public class MigrationResource {
            );
     }
 
+    private Multi<String> initializeDatabaseTask(String realm) {
+        Objects.requireNonNull(realm);
+        return Multi.createFrom().emitter(emitter -> {
+           try {
+               String[] roles = {"admin", "user"};
+               ruleContext.ensureDefaultRules();
+               securityUtils.setSecurityContext();
+               try {
+                   Log.infof("----Running migrations for system realm:%s---- ", realm);
+                   migrationService.runAllUnRunMigrations(realm, emitter);
+               }finally {
+                   securityUtils.clearSecurityContext();
+               }
+
+                emitter.complete();
+            } catch (Throwable e) {
+                emitter.fail(e);
+            }
+        });
+    }
+
     private Multi<String> runMigrateAllTask() {
         return Multi.createFrom().emitter(emitter -> {
             try {
 
-                Log.warn("-----!!!  Migrations ENABLED !!!!-----");
+                Log.warn("-----!!!  RUNNING ALL MIGRATION TASKS !!!!-----");
                 String[] roles = {"admin", "user"};
                 ruleContext.ensureDefaultRules();
                 securityUtils.setSecurityContext();

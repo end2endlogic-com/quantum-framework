@@ -32,7 +32,7 @@ import static dev.morphia.mapping.IndexType.DESC;
                     @Field(value="dataDomain.orgRefName", type=DESC),
                     @Field(value="dataDomain.tenantId", type=DESC),
                     @Field(value="dataDomain.ownerId", type=DESC)},
-                   options=@IndexOptions(unique=true, collation = @Collation(locale = "en", strength = CollationStrength.SECONDARY))
+                   options=@IndexOptions(unique=true, collation = @Collation(locale = "en", strength = CollationStrength.SECONDARY), name = "idx_refIdUniqueInDomain")
                   )
 })
 @RegisterForReflection

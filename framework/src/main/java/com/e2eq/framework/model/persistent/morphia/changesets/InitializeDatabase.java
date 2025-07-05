@@ -19,6 +19,7 @@ import dev.morphia.Datastore;
 import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.logging.Log;
 import io.quarkus.runtime.Startup;
+import io.smallrye.mutiny.subscription.MultiEmitter;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
@@ -59,8 +60,10 @@ public class InitializeDatabase implements ChangeSetBean {
    String defaultSystemPassword;
 
    @Execution
-   public void execute(MorphiaSession session, MongoClient mongoClient) throws Exception{
+   public void execute(MorphiaSession session, MongoClient mongoClient, MultiEmitter<? super String> emitter) throws Exception{
       // get flag from app config
+              Log.infof("Initializing Database: %s", session.getDatabase().getName());
+              emitter.emit(String.format("Initializing Database: %s", session.getDatabase().getName()));
 
                ensureCounter(session, "accountNumber", 2000);
                Organization org = ensureOrganization(session, securityUtils.getSystemOrgRefName(),

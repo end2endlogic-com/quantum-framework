@@ -17,8 +17,12 @@ public class RealmRepo extends MorphiaRepo<Realm> {
       return findByEmailDomain(emailDomain, false);
    }
 
-
    public Optional<Realm> findByEmailDomain(String emailDomain, boolean ignoreRules) {
+      return findByEmailDomain(emailDomain, ignoreRules, getSecurityContextRealmId());
+   }
+
+
+   public Optional<Realm> findByEmailDomain(String emailDomain, boolean ignoreRules, String realm) {
       List<Filter> filters = new ArrayList<>();
       filters.add(Filters.eq("emailDomain", emailDomain));
       Filter[] qfilters = new Filter[1];;
@@ -28,7 +32,7 @@ public class RealmRepo extends MorphiaRepo<Realm> {
          qfilters = filters.toArray(qfilters);
       }
 
-      Query<Realm> query = morphiaDataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass()).filter(qfilters);
+      Query<Realm> query = morphiaDataStore.getDataStore(realm).find(getPersistentClass()).filter(qfilters);
       Realm obj = query.first();
       return Optional.ofNullable(obj);
    }
