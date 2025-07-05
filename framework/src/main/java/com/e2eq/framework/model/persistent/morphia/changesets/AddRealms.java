@@ -14,6 +14,7 @@ import com.mongodb.client.MongoClient;
 import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.logging.Log;
 import io.quarkus.runtime.Startup;
+import io.smallrye.mutiny.subscription.MultiEmitter;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -97,12 +98,14 @@ public class AddRealms implements ChangeSetBean  {
     }
 
     @Override
-    public void execute(MorphiaSession session, MongoClient mongoClient) throws Exception {
+    public void execute(MorphiaSession session, MongoClient mongoClient, MultiEmitter<? super String> emitter) throws Exception {
         Log.infof("Adding Default Realm to the database: realm passed to execution: %s", session.getDatabase().getName());
+        emitter.emit(String.format("Adding Default Realm to the database: realm passed to execution: %s", session.getDatabase().getName()));
 
         // check if realms already exist
         if (realmRepo.findByEmailDomain(systemTenantId, true).isPresent()) {
             Log.infof("Realm %s already exists. Skipping", systemTenantId);
+            emitter.emit("Realm " + systemTenantId + " already exists. Skipping");
             return;
         }
         DomainContext domainContext = DomainContext.builder()
@@ -123,5 +126,6 @@ public class AddRealms implements ChangeSetBean  {
         realmRepo.save(session, realm);
 
         Log.info(".  Added Successfully");
+        emitter.emit(".  Added Successfully");
     }
 }

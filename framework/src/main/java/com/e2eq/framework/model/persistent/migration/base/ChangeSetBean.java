@@ -2,6 +2,7 @@ package com.e2eq.framework.model.persistent.migration.base;
 
 import com.mongodb.client.MongoClient;
 import dev.morphia.transactions.MorphiaSession;
+import io.smallrye.mutiny.subscription.MultiEmitter;
 
 public interface ChangeSetBean {
    public String getId();
@@ -14,5 +15,5 @@ public interface ChangeSetBean {
    public String getName();
    public String getDescription();
    public String getScope();
-   public void execute(MorphiaSession session, MongoClient mongoClient) throws Exception;
+   public void execute(MorphiaSession session, MongoClient mongoClient, MultiEmitter<? super String> emitter) throws Exception;
 }

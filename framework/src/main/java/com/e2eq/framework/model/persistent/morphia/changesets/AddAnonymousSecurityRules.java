@@ -14,6 +14,7 @@ import com.mongodb.client.MongoClient;
 import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.logging.Log;
 import io.quarkus.runtime.Startup;
+import io.smallrye.mutiny.subscription.MultiEmitter;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
@@ -78,7 +79,9 @@ public class AddAnonymousSecurityRules implements ChangeSetBean {
     }
 
     @Override
-    public void execute(MorphiaSession session, MongoClient mongoClient) throws Exception {
+    public void execute(MorphiaSession session, MongoClient mongoClient, MultiEmitter<? super String> emitter) throws Exception {
+        Log.infof("Adding Anonymouse Security Rules: %s", session.getDatabase().getName());
+        emitter.emit(String.format("Adding Anonymous Security Rules: %s", session.getDatabase().getName()));
 
         // check if the policies already exist
         if (!policyRepo.findByRefName(session, "defaultAnonymousPolicy").isPresent()) {

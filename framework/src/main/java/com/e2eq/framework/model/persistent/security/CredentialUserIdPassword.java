@@ -7,6 +7,7 @@ import java.util.Map;
 
 import com.e2eq.framework.util.EncryptionUtils;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.mongodb.client.model.CollationStrength;
 import dev.morphia.annotations.*;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import com.e2eq.framework.model.persistent.base.BaseModel;
@@ -27,13 +28,13 @@ import lombok.experimental.SuperBuilder;
 @NoArgsConstructor
 public class CredentialUserIdPassword extends BaseModel {
 
-    @Indexed(options= @IndexOptions(unique=true))
+    @Indexed(options= @IndexOptions(unique=true, collation= @Collation(locale="en", strength= CollationStrength.SECONDARY)))
     @NotNull ( message = "userId must be provided for userIdPassword credential")
     @NonNull
     @Size(min =3, max=50, message="userId length must be less than or equal to 50 and greater than or equal to 3 characters")
     protected String userId;
 
-    @Indexed(options= @IndexOptions(unique=true))
+    @Indexed(options= @IndexOptions(unique=true, collation= @Collation(locale="en", strength= CollationStrength.SECONDARY)))
     @NonNull
     @NotNull(message = "username must be non null")
     @NotEmpty
