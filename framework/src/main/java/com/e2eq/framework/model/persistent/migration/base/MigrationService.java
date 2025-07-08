@@ -93,6 +93,16 @@ public class MigrationService {
 
     }
 
+    public void dropIndexOnCollection(String realm, String collectionName) {
+        mongoClient.getDatabase(realm).getCollection(collectionName).dropIndexes();
+    }
+
+    public void applyIndexes(String realmId) {
+        Objects.requireNonNull(realmId, "RealmId cannot be null");
+        morphiaDataStore.getDataStore(realmId).applyIndexes();
+    }
+
+
     public void checkMigrationRequired () {
       checkInitialized(defaultRealm);
       checkInitialized(systemRealm);

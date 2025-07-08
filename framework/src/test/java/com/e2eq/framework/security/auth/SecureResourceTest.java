@@ -96,13 +96,15 @@ public class SecureResourceTest {
         testUtils.initDefaultRules(ruleContext, "security","userProfile", testUtils.getTestUserId());
         AuthProvider.LoginResponse loginResponse;
         try (final SecuritySession ss = new SecuritySession(pContext, rContext)) {
-            if (authFactory.getUserManager().usernameExists(testUtils.getTestRealm(), "testuser@end2endlogic.com")) {
-                authFactory.getUserManager().removeUser(testUtils.getTestRealm(),"testuser@end2endlogic.com");
+
+            if (authFactory.getUserManager().userIdExists(testUtils.getTestRealm(), "testuser@end2endlogic.com")) {
+                authFactory.getUserManager().removeUserWithUserId(testUtils.getTestRealm(),"testuser@end2endlogic.com");
             }
+
             authFactory.getUserManager().createUser(testUtils.getTestRealm(), "testuser@end2endlogic.com", "P@55w@rd", "testuser@end2endlogic.com", Set.of("user"), testUtils.getTestDomainContext());
 
-            if (authFactory.getUserManager().usernameExists(testUtils.getTestRealm(),"testadmin@end2endlogic.com")) {
-                authFactory.getUserManager().removeUser(testUtils.getTestRealm(),"testadmin@end2endlogic.com");
+            if (authFactory.getUserManager().userIdExists(testUtils.getTestRealm(),"testadmin@end2endlogic.com")) {
+                authFactory.getUserManager().removeUserWithUserId(testUtils.getTestRealm(),"testadmin@end2endlogic.com");
             }
 
             authFactory.getUserManager().createUser(testUtils.getTestRealm(), "testadmin@end2endlogic.com", "P@55w@rd", "testadmin@end2endlogic.com", Set.of("admin"), testUtils.getTestDomainContext());
