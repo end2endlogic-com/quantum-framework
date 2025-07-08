@@ -68,6 +68,14 @@ public class MigrationResource {
     }
 
     @POST
+    @Path("/indexes/dropAllIndexes/{realm}")
+    @RolesAllowed("admin")
+    @Produces(MediaType.APPLICATION_JSON)
+    public void dropIndexes(@Context HttpHeaders headers, @PathParam( "realm") String realm) {
+        migrationService.dropAllIndexes(realm);
+    }
+
+    @POST
     @Path("/initialize/{realm}")
     @Produces(MediaType.SERVER_SENT_EVENTS)
     public void initializeDatabase( @PathParam("realm") String realm, SseEventSink eventSink, Sse sse) {

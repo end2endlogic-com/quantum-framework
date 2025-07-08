@@ -102,6 +102,13 @@ public class MigrationService {
         morphiaDataStore.getDataStore(realmId).applyIndexes();
     }
 
+    public void dropAllIndexes(String realmId) {
+        Objects.requireNonNull(realmId, "RealmId cannot be null");
+        morphiaDataStore.getDataStore(realmId).getMapper().getMappedEntities().forEach(entity -> {
+            mongoClient.getDatabase(realmId).getCollection(entity.collectionName()).dropIndexes();
+        });
+    }
+
 
     public void checkMigrationRequired () {
       checkInitialized(defaultRealm);
