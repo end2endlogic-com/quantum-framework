@@ -9,7 +9,10 @@ public interface UserManagement {
 
     void createUser(String userId, String password, String username, Set<String> roles,  DomainContext domainContext) throws SecurityException;
     void enableImpersonation(String userId, String impersonationScript, String realmFilter, String realmToEnableIn);
-    boolean removeUser(String username) throws ReferentialIntegrityViolationException;
+    boolean removeUserWithUsername(String username) throws ReferentialIntegrityViolationException;
+    boolean removeUserWithUsername(String realm, String username) throws ReferentialIntegrityViolationException;
+    boolean removeUserWithUserId(String userId) throws ReferentialIntegrityViolationException;
+    boolean removeUserWithUserId(String realm, String userId) throws ReferentialIntegrityViolationException;
     void assignRoles(String username, Set<String> roles) throws SecurityException;
     void removeRoles(String username, Set<String> roles) throws SecurityException;
     Set<String> getUserRoles(String username) throws SecurityException;
@@ -17,7 +20,7 @@ public interface UserManagement {
     boolean userIdExists (String userId) throws SecurityException;
 
     void createUser(String realm, String userId, String password, String username, Set<String> roles,  DomainContext domainContext) throws SecurityException;
-    boolean removeUser(String realm, String username) throws ReferentialIntegrityViolationException;
+
     void assignRoles(String realm,String username, Set<String> roles) throws SecurityException;
     void removeRoles(String realm, String username, Set<String> roles) throws SecurityException;
     Set<String> getUserRoles(String realm, String username) throws SecurityException;

@@ -43,7 +43,7 @@ public class TestBasicRepo extends BaseRepoTest{
    public void testUserProfileRepo() {
       PrincipalContext pContext = securityUtils.getSystemPrincipalContext();
       try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
-         Optional<UserProfile> oup = userProfileRepo.findByRefName(securityUtils.getSystemUserId());
+         Optional<UserProfile> oup = userProfileRepo.getByUserId(securityUtils.getSystemUserId());
          assertTrue(oup.isPresent());
       }
    }
@@ -53,7 +53,7 @@ public class TestBasicRepo extends BaseRepoTest{
    public void testUserProfileFilteredQuery() {
       PrincipalContext pContext = securityUtils.getSystemPrincipalContext();
       try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
-         Filter x = MorphiaUtils.convertToFilter("refName:" + securityUtils.getSystemUserId(), UserProfile.class);
+         Filter x = MorphiaUtils.convertToFilter("userId:" + securityUtils.getSystemUserId(), UserProfile.class);
          Query<UserProfile> q = dataStore.getDefaultSystemDataStore().find(UserProfile.class);
          MongoCursor<UserProfile> cursor = q.filter(x).iterator(new FindOptions().skip(0).limit(10));
 

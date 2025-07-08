@@ -93,35 +93,70 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
     {
         throw new SecurityException("Security exception: " + ex.getMessage());
     }
+    Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(userId);
+    if (ocred.isPresent()) {
+       if (!ocred.get().getUsername().equalsIgnoreCase(username)) {
+          throw new SecurityException(String.format("User with the same userId:%s already exists with different username:%s, than given username:%s", userId, ocred.get().getUsername(), username));
+       }
+       if (!ocred.get().getDomainContext().equals(domainContext)) {
+          throw new SecurityException(String.format("User with the same userId:%s already exists with different domainContext:%s, than given domainContext:%s", userId, ocred.get().getDomainContext(), domainContext));
+       }
+       if(!Arrays.equals(ocred.get().getRoles(), roles.toArray(new String[roles.size()]))) {
+          throw new SecurityException(String.format("User with the same userId:%s already exists with different roles:%s, than given roles:%s", userId, ocred.get().getRoles(), roles));
+       }
+       throw new SecurityException(String.format("User with userId:%s and username:%s already exists with same domain context, and roles", userId, username));
+    } else {
 
-        CredentialUserIdPassword credential = new CredentialUserIdPassword();
-        credential.setUserId(userId);
-        credential.setUsername(username);
-        if (credential.getHashingAlgorithm().equalsIgnoreCase("BCrypt.default")) {
-            credential.setPasswordHash(EncryptionUtils.hashPassword(password));
-        } else {
-            throw new SecurityException("Unsupported hashing algorithm: " + credential.getHashingAlgorithm());
+       CredentialUserIdPassword credential = new CredentialUserIdPassword();
+       credential.setUserId(userId);
+       credential.setUsername(username);
+       if (credential.getHashingAlgorithm().equalsIgnoreCase("BCrypt.default")) {
+          credential.setPasswordHash(EncryptionUtils.hashPassword(password));
+       } else {
+          throw new SecurityException("Unsupported hashing algorithm: " + credential.getHashingAlgorithm());
+       }
+       credential.setDomainContext(domainContext);
+       credential.setRoles(roles.toArray(new String[roles.size()]));
+       credential.setLastUpdate(new Date());
+
+       credentialRepo.save(realm, credential);
+    }
+
+    }
+
+
+    @Override
+    public boolean removeUserWithUserId(String userId) throws ReferentialIntegrityViolationException {
+        return removeUserWithUserId(securityUtils.getSystemRealm(), userId);
+    }
+
+    @Override
+    public boolean removeUserWithUserId(String realm, String userId) throws ReferentialIntegrityViolationException {
+        Objects.requireNonNull(realm, "Realm cannot be null");
+        Objects.requireNonNull(userId, "UserId cannot be null");
+        Optional<CredentialUserIdPassword> ocredentialUserIdPassword = credentialRepo.findByUserId(userId, realm);
+        if (ocredentialUserIdPassword.isPresent()) {
+            long val = credentialRepo.delete(realm, ocredentialUserIdPassword.get());
+            if (val != 0)
+                return true;
+            else
+                return false;
         }
-        credential.setDomainContext(domainContext);
-        credential.setRoles(roles.toArray(new String[roles.size()]));
-        credential.setLastUpdate(new Date());
-
-        credentialRepo.save(realm, credential);
-
+        return false;
     }
 
     @Override
-    public boolean removeUser(String username) throws ReferentialIntegrityViolationException {
-        return removeUser(securityUtils.getSystemRealm(), username);
+    public boolean removeUserWithUsername(String username) throws ReferentialIntegrityViolationException {
+        return removeUserWithUsername(securityUtils.getSystemRealm(), username);
     }
 
     @Override
-    public boolean removeUser(String realm, String username) throws ReferentialIntegrityViolationException {
+    public boolean removeUserWithUsername(String realm, String username) throws ReferentialIntegrityViolationException {
         Objects.requireNonNull(realm, "Realm cannot be null");
         Objects.requireNonNull(username, "Username cannot be null");
-        Optional<CredentialUserIdPassword> ocredentialUserIdPassword = credentialRepo.findByUsername(username);
+        Optional<CredentialUserIdPassword> ocredentialUserIdPassword = credentialRepo.findByUsername(username, realm);
         if (ocredentialUserIdPassword.isPresent()) {
-            long val = credentialRepo.delete(ocredentialUserIdPassword.get());
+            long val = credentialRepo.delete(realm, ocredentialUserIdPassword.get());
             if (val != 0)
                 return true;
             else
@@ -142,11 +177,11 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
         Objects.requireNonNull(username, "Username cannot be null");
         Objects.requireNonNull( roles, "Roles cannot be null");
 
-        credentialRepo.findByUsername(username).ifPresentOrElse(credential -> {
+        credentialRepo.findByUsername(username, realm).ifPresentOrElse(credential -> {
             Set<String> existingRoles = new HashSet<>(Arrays.asList(credential.getRoles()));
             existingRoles.addAll(roles);
             credential.setRoles(existingRoles.toArray(new String[existingRoles.size()]));
-            credentialRepo.save(credential);
+            credentialRepo.save(realm,credential);
         }, () -> {
             throw new SecurityException("User not found: " + username);
         });
@@ -171,12 +206,12 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
        if (roles.isEmpty()) {
            throw new IllegalArgumentException("Roles cannot be empty");
        }
-       credentialRepo.findByUsername(username).ifPresentOrElse(
+       credentialRepo.findByUsername(username, realm).ifPresentOrElse(
                credential -> {
                    Set<String> existingRoles = new HashSet<>(Arrays.asList(credential.getRoles()));
                    existingRoles.removeAll(roles);
                    credential.setRoles(existingRoles.toArray(new String[existingRoles.size()]));
-                   credentialRepo.save(credential);
+                   credentialRepo.save(realm,credential);
                }, () -> {
                    throw new SecurityException("User not found: " + username);
                });
@@ -192,7 +227,7 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
     public Set<String> getUserRoles(String realm, String username) throws SecurityException {
         Set<String> rolesHolder = new HashSet<>();
 
-        credentialRepo.findByUsername(username).ifPresentOrElse(
+        credentialRepo.findByUsername(username, realm).ifPresentOrElse(
                 credential -> {
                     rolesHolder.addAll(Arrays.asList(credential.getRoles()));
                 },
@@ -226,7 +261,7 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
 
     @Override
     public boolean usernameExists (String realm, String username) throws SecurityException {
-       return credentialRepo.findByUsername(username).isPresent();
+       return credentialRepo.findByUsername(username, realm).isPresent();
     }
 
 
@@ -236,7 +271,7 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
     }
     @Override
     public boolean userIdExists (String realm,String userId) throws SecurityException {
-        return credentialRepo.findByUserId(realm, userId).isPresent();
+        return credentialRepo.findByUserId( userId, realm).isPresent();
     }
 
 
@@ -424,7 +459,7 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
                 credential -> {
                     credential.setImpersonateFilter(impersonationScript);
                     credential.setRealmFilter(realmFilter);
-                    credentialRepo.save(credential);
+                    credentialRepo.save(realmToEnableIn,credential);
                 },
                 () -> {
                     throw new SecurityException(String.format("UserId:%s not found in realm:%s ",userId, realmToEnableIn));

@@ -28,6 +28,8 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
    T fillUIActions(@NotNull T model);
    Collection<T> fillUIActions(@NotNull Collection<T> collection);
 
+   void ensureIndexes(String realmId, String collection);
+
    // Read based API's
    Optional<T> findById(@NotNull String id);
    Optional<T> findById(@NotNull String id, String realmId);

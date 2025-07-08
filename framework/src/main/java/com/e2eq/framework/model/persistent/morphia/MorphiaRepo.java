@@ -118,7 +118,15 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         return (Class<T>) paramClazz.getRawType();
     }
 
-    protected List<String> getDefaultUIActionsFromFD(@NotNull String fdRefName) {
+    @Override
+    public void ensureIndexes (String realmId, String collection) {
+      Objects.requireNonNull(realmId, "RealmId cannot be null");
+      Objects.requireNonNull(collection, "Collection cannot be null");
+      morphiaDataStore.getDataStore(realmId).ensureIndexes(getPersistentClass());
+   }
+
+
+      protected List<String> getDefaultUIActionsFromFD(@NotNull String fdRefName) {
         return getDefaultUIActionsFromFD(morphiaDataStore.getDataStore(getSecurityContextRealmId()), fdRefName);
     }
 
