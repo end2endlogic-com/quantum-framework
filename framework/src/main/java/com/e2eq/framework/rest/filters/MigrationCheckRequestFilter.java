@@ -28,6 +28,11 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
     public void filter(ContainerRequestContext requestContext) throws IOException {
         boolean failRequest=false;
         DatabaseMigrationException ex = null;
+
+        if (requestContext.getUriInfo().getPath().contains("hello")) {
+            return;
+        }
+
         try {
             // check the realm .. so first see if the realm is overridden
             String realmOverride = (requestContext.getHeaders().get("X-Realm") != null ) ? requestContext.getHeaders().get("X-Realm").get(0) : null;
