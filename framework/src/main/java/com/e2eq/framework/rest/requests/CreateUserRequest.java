@@ -26,12 +26,18 @@ public class CreateUserRequest {
    @NonNull
    String username;
 
+   String displayName;
+
    String firstName;
    String lastName;
 
 
    @Pattern(regexp = "^\\+?[0-9. ()-]{7,25}$", message = "Invalid phone number")
    String phoneNumber;
+
+   String defaultLanguage;
+   String defaultTimezone;
+   String defaultCurrency;
 
    /**
     * The user's email address where we will send the user information  / confirmation

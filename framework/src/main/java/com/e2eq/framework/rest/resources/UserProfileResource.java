@@ -1,5 +1,6 @@
 package com.e2eq.framework.rest.resources;
 
+import com.e2eq.framework.model.persistent.base.ActiveStatus;
 import com.e2eq.framework.model.security.auth.AuthProviderFactory;
 import com.e2eq.framework.rest.models.Role;
 import com.e2eq.framework.model.securityrules.SecurityContext;
@@ -107,8 +108,13 @@ public class UserProfileResource extends BaseResource<UserProfile, UserProfileRe
                  .username(createUserRequest.getUsername())
                  .email(createUserRequest.getEmail())
                  .phoneNumber(createUserRequest.getPhoneNumber())
+                 .displayName(createUserRequest.getDisplayName())
                  .fname(createUserRequest.getFirstName())
                  .lname(createUserRequest.getLastName())
+                 .activeStatus(ActiveStatus.ACTIVE)
+                 .defaultLanguage( createUserRequest.getDefaultLanguage() != null? createUserRequest.getDefaultLanguage() : "en_US")
+                 .defaultCurrency(createUserRequest.getDefaultCurrency()!= null? createUserRequest.getDefaultCurrency() : "USD")
+                 .defaultTimezone(createUserRequest.getDefaultTimezone()!= null? createUserRequest.getDefaultTimezone() : "EST")
                  .build();
          up = repo.save(up);
       }

@@ -201,7 +201,7 @@ public class SecurityResource {
             Log.info("me: - UserId:" + securityContext.getUserPrincipal().getName());
 
         try {
-            Optional<UserProfile> userProfileOp = userProfileRepo.getByUserId(securityContext.getUserPrincipal().getName());
+            Optional<UserProfile> userProfileOp = userProfileRepo.getByUsername(securityUtils.getSystemRealm(), securityContext.getUserPrincipal().getName());
             if (userProfileOp.isPresent()) {
                 userProfileRepo.fillUIActions(userProfileOp.get());
             }
@@ -252,7 +252,7 @@ public class SecurityResource {
         if (qrealm != null ) {
             Log.infof("Overriding to realm:%s ",  qrealm);
             realm = qrealm;
-        } 
+        }
 
 
         Log.infof("Logging in userid: %s realm: %s",authRequest.getUserId(), realm);

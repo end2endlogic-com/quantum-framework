@@ -8,6 +8,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.mongodb.client.model.CollationStrength;
 import dev.morphia.annotations.*;
 import io.quarkus.runtime.annotations.RegisterForReflection;
+import jakarta.annotation.security.PermitAll;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
 import lombok.Builder;
@@ -74,6 +75,9 @@ public abstract  class UnversionedBaseModel {
     protected DataDomain dataDomain;
 
     protected ActiveStatus activeStatus;
+
+    @Transient
+    protected String realm;
 
     /**
      The set of tags associated with this record.  A tag can be used for billing purposes, searching purposes or other purposes.
