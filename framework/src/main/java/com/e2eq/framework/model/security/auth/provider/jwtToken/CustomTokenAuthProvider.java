@@ -93,7 +93,7 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
     {
         throw new SecurityException("Security exception: " + ex.getMessage());
     }
-    Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(userId);
+    Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(userId, realm);
     if (ocred.isPresent()) {
        if (!ocred.get().getUsername().equalsIgnoreCase(username)) {
           throw new SecurityException(String.format("User with the same userId:%s already exists with different username:%s, than given username:%s", userId, ocred.get().getUsername(), username));

@@ -188,6 +188,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
             if (!actions.isEmpty()) {
                 obj.setDefaultUIActions(actions);
             }
+            obj.setRealm(datastore.getDatabase().getName());
         }
         return Optional.ofNullable(obj);
     }
@@ -221,6 +222,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
             if (!actions.isEmpty()) {
                 obj.setDefaultUIActions(actions);
             }
+            obj.setRealm(datastore.getDatabase().getName());
         }
 
         return Optional.ofNullable(obj);
@@ -322,6 +324,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
                 UIActionList uiActions = model.calculateStateBasedUIActions();
                 model.setActionList(uiActions);
+                model.setRealm(datastore.getDatabase().getName());
                 entityReference = model.createEntityReference();
                 list.add(entityReference);
             }
@@ -479,6 +482,8 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                     if (!actions.isEmpty()) {
                         model.setDefaultUIActions(actions);
                     }
+
+                    model.setRealm(datastore.getDatabase().getName());
                     UIActionList uiActions = model.calculateStateBasedUIActions();
                     model.setActionList(uiActions);
                 }
@@ -540,7 +545,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
                 UIActionList uiActions = model.calculateStateBasedUIActions();
                 model.setActionList(uiActions);
-
+                model.setRealm(datastore.getDatabase().getName());
                 list.add(model);
             }
         }
@@ -614,6 +619,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                 UIActionList uiActions = model.calculateStateBasedUIActions();
                 model.setActionList(uiActions);
 
+                model.setRealm(datastore.getDatabase().getName());
                 list.add(model);
             }
         }
@@ -669,6 +675,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
             UIActionList uiActions = model.calculateStateBasedUIActions();
             model.setActionList(uiActions);
+            model.setRealm(datastore.getDatabase().getName());
         }
 
         return list;
@@ -720,6 +727,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
             UIActionList uiActions = model.calculateStateBasedUIActions();
             model.setActionList(uiActions);
+            model.setRealm(datastore.getDatabase().getName());
         }
 
         return list;
