@@ -50,12 +50,12 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
 
 
    public Optional<CredentialUserIdPassword> findByUsername(  @NotNull String username, @NotNull String realmId) {
-      return findByUsername( username,realmId, true);
+      return findByUsername( username,realmId, false);
    }
 
 
    public Optional<CredentialUserIdPassword> findByUserId( @NotNull String userId,  @NotNull String realmId) {
-      return findByUserId( userId, realmId,true);
+      return findByUserId( userId, realmId,false);
    }
 
    public Optional<CredentialUserIdPassword> findByUsername( @NotNull String username, @NotNull String realmId, boolean ignoreRules) {
