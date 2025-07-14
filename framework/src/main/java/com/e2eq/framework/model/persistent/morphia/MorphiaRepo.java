@@ -309,6 +309,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         List<EntityReference> list = new ArrayList<>();
         List<String> actions = null;
         boolean gotActions = false;
+        String realmId = datastore.getDatabase().getName();
         try (cursor) {
             EntityReference entityReference;
             for (T model : cursor.toList()) {
@@ -324,7 +325,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
                 UIActionList uiActions = model.calculateStateBasedUIActions();
                 model.setActionList(uiActions);
-                model.setRealm(datastore.getDatabase().getName());
+                model.setRealm(realmId);
                 entityReference = model.createEntityReference();
                 list.add(entityReference);
             }
@@ -483,7 +484,6 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                         model.setDefaultUIActions(actions);
                     }
 
-                    model.setRealm(datastore.getDatabase().getName());
                     UIActionList uiActions = model.calculateStateBasedUIActions();
                     model.setActionList(uiActions);
                 }
@@ -531,6 +531,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         List<T> list = new ArrayList<>();
         List<String> actions = null;
         boolean gotActions = false;
+       String realm = datastore.getDatabase().getName();
         try (cursor) {
             for (T model : cursor.toList()) {
 
@@ -545,7 +546,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
                 UIActionList uiActions = model.calculateStateBasedUIActions();
                 model.setActionList(uiActions);
-                model.setRealm(datastore.getDatabase().getName());
+                model.setRealm(realm);
                 list.add(model);
             }
         }
@@ -604,6 +605,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         List<T> list = new ArrayList<>();
         List<String> actions = null;
         boolean gotActions = false;
+       String realm = datastore.getDatabase().getName();
         try (cursor) {
             for (T model : cursor.toList()) {
 
@@ -619,7 +621,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                 UIActionList uiActions = model.calculateStateBasedUIActions();
                 model.setActionList(uiActions);
 
-                model.setRealm(datastore.getDatabase().getName());
+                model.setRealm(realm);
                 list.add(model);
             }
         }
@@ -663,6 +665,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
         List<String> actions = null;
         boolean gotActions = false;
+       String realm = datastore.getDatabase().getName();
         for (T model : list) {
             if (!gotActions) {
                 actions = this.getDefaultUIActionsFromFD(model.bmFunctionalDomain());
@@ -675,7 +678,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
             UIActionList uiActions = model.calculateStateBasedUIActions();
             model.setActionList(uiActions);
-            model.setRealm(datastore.getDatabase().getName());
+            model.setRealm(realm);
         }
 
         return list;
@@ -706,15 +709,17 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         filters.add(Filters.in("refName", refNames));
 
         FindOptions findOptions = new FindOptions();
+       String realm= getSecurityContextRealmId();
 
         Filter[] filterArray = new Filter[filters.size()];
-        Query<T> query = morphiaDataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass())
+        Query<T> query = morphiaDataStore.getDataStore(realm).find(getPersistentClass())
                 .filter(filters.toArray(filterArray));
 
         List<T> list = query.iterator(findOptions).toList();
 
         List<String> actions = null;
         boolean gotActions = false;
+
         for (T model : list) {
             if (!gotActions) {
                 actions = this.getDefaultUIActionsFromFD(model.bmFunctionalDomain());
@@ -727,7 +732,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
             UIActionList uiActions = model.calculateStateBasedUIActions();
             model.setActionList(uiActions);
-            model.setRealm(datastore.getDatabase().getName());
+            model.setRealm(realm);
         }
 
         return list;
