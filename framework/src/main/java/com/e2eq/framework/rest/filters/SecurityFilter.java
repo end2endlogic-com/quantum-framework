@@ -272,7 +272,7 @@ public class SecurityFilter implements ContainerRequestFilter {
             }
 
             if (username != null) {
-                Optional<CredentialUserIdPassword> ocreds = (realm == null ) ? credentialRepo.findByUsername(username, securityUtils.getSystemRealm()) : credentialRepo.findByUsername(username, realm);
+                Optional<CredentialUserIdPassword> ocreds = (realm == null ) ? credentialRepo.findByUsername(username, securityUtils.getSystemRealm(), true) : credentialRepo.findByUsername(username, realm, true);
 
                 if (ocreds.isPresent()) {
                     Log.debugf("Found user with username %s userId:%s in the database, adding roles %s", username, ocreds.get().getUserId(), Arrays.toString(ocreds.get().getRoles()));
@@ -289,9 +289,9 @@ public class SecurityFilter implements ContainerRequestFilter {
                     if (impersonate) {
                         Optional<CredentialUserIdPassword> oicreds;
                         if (impersonateUsername != null) {
-                             oicreds =(realm == null) ? credentialRepo.findByUsername(impersonateUsername, securityUtils.getSystemRealm()) : credentialRepo.findByUsername(impersonateUsername, realm);
+                             oicreds =(realm == null) ? credentialRepo.findByUsername(impersonateUsername, securityUtils.getSystemRealm(), true) : credentialRepo.findByUsername(impersonateUsername, realm, true);
                         } else if (impersonateUserId!= null) {
-                             oicreds = (realm == null ) ? credentialRepo.findByUserId(impersonateUserId, securityUtils.getSystemRealm()) : credentialRepo.findByUserId(impersonateUserId, realm)  ;
+                             oicreds = (realm == null ) ? credentialRepo.findByUserId(impersonateUserId, securityUtils.getSystemRealm(), true) : credentialRepo.findByUserId(impersonateUserId, realm, true)  ;
                         } else
                         {
                             throw new IllegalStateException("Logic error on server side impersonating user, neither X-Impersonate-Username nor X-Impersonate-UserId header is present yet impersonate is true?");
@@ -392,7 +392,7 @@ public class SecurityFilter implements ContainerRequestFilter {
                 }
             }
         }
-        // either the context was set or we defaulted to the anonmyous context
+        // either the context was set or we defaulted to the anonymous context
 
 
         return pcontext;

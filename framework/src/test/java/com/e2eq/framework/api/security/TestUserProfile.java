@@ -90,7 +90,9 @@ public class TestUserProfile extends BaseRepoTest {
 
     @Test void testCredentialsNoSecuritySession() {
         Datastore datastore = morphiaDataStore.getDataStore(testUtils.getTestRealm());
-        Optional<CredentialUserIdPassword> opCreds = credentialRepo.findByUserId( securityUtils.getTestUserId(), securityUtils.getTestRealm());
+
+
+        Optional<CredentialUserIdPassword> opCreds = credentialRepo.findByUserId( securityUtils.getTestUserId(), securityUtils.getTestRealm(), true);
         if (opCreds.isPresent()) {
             Log.debug("Found it");
         } else {

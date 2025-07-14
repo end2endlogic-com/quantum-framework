@@ -97,9 +97,10 @@ public class TestBasicRepo extends BaseRepoTest{
    public void testTransactions() {
       Log.infof("TestTransactions: Realm: %s",testUtils.getTestRealm());
       Datastore ds = dataStore.getDataStore(testUtils.getTestRealm());
-      ensureUserProfile(ds, securityUtils.getTestUserId(), roles, "test123xxxxxxx");
+
 
       try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
+         ensureUserProfile(ds, securityUtils.getTestUserId(), roles, "test123xxxxxxx");
          try (MorphiaSession session = ds.startSession()) {
             session.startTransaction();
             Optional<UserProfile> u = userProfileRepo.findByRefName(ds,securityUtils.getTestUserId());

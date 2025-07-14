@@ -148,7 +148,10 @@ public class SecurityTest extends BaseRepoTest {
 
     @Test
     public void testLoginAPI() throws JsonProcessingException, ReferentialIntegrityViolationException {
-        ensureTestUserExists();
+       try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
+          ensureTestUserExists();
+       }
+
         AuthRequest request = new AuthRequest();
         if (authProvider.equals("custom")) {
             request.setUserId(securityUtils.getTestUserId());
@@ -187,7 +190,9 @@ public class SecurityTest extends BaseRepoTest {
     public void testGetUserProfileRESTAPI() throws JsonProcessingException, ReferentialIntegrityViolationException {
 
         // ensure that the user exists;
-        ensureTestUserExists();
+       try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
+          ensureTestUserExists();
+       }
 
 
         AuthRequest request = new AuthRequest();

@@ -1,6 +1,7 @@
 package com.e2eq.framework.rest.filters;
 
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
+import com.e2eq.framework.util.SecurityUtils;
 import io.quarkus.logging.Log;
 import io.quarkus.security.identity.AuthenticationRequestContext;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -19,6 +20,9 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
     @Inject
     CredentialRepo credentialRepo;
 
+    @Inject
+    SecurityUtils securityUtils;
+
     @Override
     public Uni<SecurityIdentity> augment(SecurityIdentity identity, AuthenticationRequestContext context) {
        // Log.debugf("RolesAugmenter: augmenting identity %s \n", identity);
@@ -35,7 +39,7 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
             QuarkusSecurityIdentity.Builder builder = QuarkusSecurityIdentity.builder(identity);
 
             String principal = identity.getPrincipal().getName();
-            credentialRepo.findByUsername(principal).ifPresent(c -> builder.addRoles(new HashSet<>(List.of(c.getRoles()))));
+            credentialRepo.findByUsername(principal, securityUtils.getSystemRealm(), true).ifPresent(c -> builder.addRoles(new HashSet<>(List.of(c.getRoles()))));
 
             // add user role by default we already know at least we are not anonymous give the above else condition
             if (identity.getRoles().contains("user") == false)
