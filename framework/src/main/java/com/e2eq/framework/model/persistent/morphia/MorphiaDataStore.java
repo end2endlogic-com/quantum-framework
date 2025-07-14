@@ -5,16 +5,19 @@ import com.e2eq.framework.model.persistent.morphia.interceptors.*;
 import com.e2eq.framework.util.SecurityUtils;
 import com.mongodb.client.MongoClient;
 import dev.morphia.Datastore;
-import dev.morphia.Morphia;
+
 import dev.morphia.MorphiaDatastore;
 import dev.morphia.config.MorphiaConfig;
 import io.quarkus.logging.Log;
+
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.validation.constraints.NotNull;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 @ApplicationScoped
 public class MorphiaDataStore {
@@ -44,7 +47,9 @@ public class MorphiaDataStore {
 
   // @ConfigProperty(name = "quarkus.mongodb.database") public String databaseName;
 
-   protected Map<String, MorphiaDatastore> datastoreMap = new HashMap<>();
+   protected Map<String, MorphiaDatastore> datastoreMap = new ConcurrentHashMap<>();
+   private static final ConcurrentMap<String, Object> realmLocks = new ConcurrentHashMap<>();
+
 
    protected static final boolean ENABLE_ONE_DB_PER_TENANT = false;
 
@@ -55,7 +60,7 @@ public class MorphiaDataStore {
       return getDataStore(securityUtils.getSystemRealm());
    }
 
-   public synchronized MorphiaDatastore getDataStore(@NotNull String realm) {
+   public MorphiaDatastore getDataStore(@NotNull String realm) {
 
       if (realm == null || realm.isEmpty()) {
          throw new IllegalArgumentException("parameter realm needs to be non null and non-empty");
@@ -67,43 +72,56 @@ public class MorphiaDataStore {
       } */
 
 
-      MorphiaDatastore mdatastore = datastoreMap.get(realm);
 
-      if (mdatastore == null) {
-         Log.info("Creating MorphiaDatastore for realm/database: " + realm);
 
-         // Clone the MorphiaConfig and override the database
-         MorphiaConfig baseConfig = dataStore.getMapper().getConfig();
-         MorphiaConfig configForRealm = baseConfig.database(realm);
+         MorphiaDatastore mdatastore = datastoreMap.get(realm);
 
-         mdatastore = new MorphiaDatastore(mongoClient, configForRealm);
+         if (mdatastore == null) {
+            Log.infof("-- Attempting to create  MorphiaDatastore for realm/database:%s ", realm);
+            Object lock = realmLocks.computeIfAbsent(realm, r -> new Object());
+            synchronized (lock) {
+               Log.infof("Acquired lock for realm: %s", realm);
+               mdatastore = datastoreMap.get(realm);
+               if (mdatastore == null) {
+                  Log.infof("Creating MorphiaDatastore for realm/database: %s", realm);
 
-         // Add interceptors
-         mdatastore.getMapper().addInterceptor(validationInterceptor);
-         mdatastore.getMapper().addInterceptor(permissionRuleInterceptor);
-         mdatastore.getMapper().addInterceptor(auditInterceptor);
-         mdatastore.getMapper().addInterceptor(referenceInterceptor);
-         mdatastore.getMapper().addInterceptor(persistenceAuditEventInterceptor);
+                  // Clone the MorphiaConfig and override the database
+                  MorphiaConfig baseConfig = dataStore.getMapper().getConfig();
+                  MorphiaConfig configForRealm = baseConfig.database(realm);
 
-         // Optionally map the same packages as the base dataStore
-         for (String pkg : baseConfig.packages()) {
-            mdatastore.getMapper().map(pkg);
+                  mdatastore = new MorphiaDatastore(mongoClient, configForRealm);
+
+                  // Add interceptors
+                  mdatastore.getMapper().addInterceptor(validationInterceptor);
+                  mdatastore.getMapper().addInterceptor(permissionRuleInterceptor);
+                  mdatastore.getMapper().addInterceptor(auditInterceptor);
+                  mdatastore.getMapper().addInterceptor(referenceInterceptor);
+                  mdatastore.getMapper().addInterceptor(persistenceAuditEventInterceptor);
+
+                  // Optionally map the same packages as the base dataStore
+                  for (String pkg : baseConfig.packages()) {
+                     Log.warnf("!!! Costly Call --- Mapping package: %s", pkg);
+                     mdatastore.getMapper().map(pkg);
+                  }
+
+                  // Apply indexes and document validations
+                  if (baseConfig.applyIndexes()) {
+                     mdatastore.applyIndexes();
+                  }
+
+                  if (baseConfig.applyDocumentValidations()) {
+                     mdatastore.applyDocumentValidations();
+                  }
+
+                  datastoreMap.put(realm, mdatastore);
+               }
+            }
+         } else {
+            Log.debug("Reusing existing MorphiaDatastore for realm/database: " + realm);
          }
 
-         // Apply indexes and document validations
-         if (baseConfig.applyIndexes()) {
-            mdatastore.applyIndexes();
-         }
-         if (baseConfig.applyDocumentValidations()) {
-            mdatastore.applyDocumentValidations();
-         }
-
-         datastoreMap.put(realm, mdatastore);
-      } else {
-         Log.debug("Reusing existing MorphiaDatastore for realm/database: " + realm);
+         return mdatastore;
       }
-
-      return mdatastore;
 
 
     /* Original as of March 26th 2025
@@ -164,7 +182,5 @@ public class MorphiaDataStore {
             Log.debug("Data Store already connected for realm:" + realm + " database name:" + datastore.getDatabase().getName());
          }
       } */
-
-   }
 
 }

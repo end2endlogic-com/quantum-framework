@@ -34,7 +34,8 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
 
    @Override
    public String getDatabaseName () {
-      return morphiaDataStore.getDataStore(securityUtils.getSystemRealm()).getDatabase().getName();
+      //return morphiaDataStore.getDataStore(securityUtils.getSystemRealm()).getDatabase().getName();
+      return securityUtils.getSystemRealm();
    }
 
 

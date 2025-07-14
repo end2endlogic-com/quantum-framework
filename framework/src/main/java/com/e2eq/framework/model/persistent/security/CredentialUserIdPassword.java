@@ -55,21 +55,20 @@ public class CredentialUserIdPassword extends BaseModel {
 
     @NotNull(message = "roles must be non null and not empty")
     @NonNull
-    @NotEmpty protected String[] roles;
+    protected String[] roles;
 
 
     protected String issuer;
 
     @Builder.Default
-    @NotNull
     @NonNull
     @JsonIgnore
     protected String hashingAlgorithm= EncryptionUtils.hashAlgorithm();
 
-    @NotNull @NonNull protected Date lastUpdate;
+    @NonNull protected Date lastUpdate;
 
     @Builder.Default
-    @NotNull @NonNull protected Map<String, String> area2RealmOverrides = new HashMap<>();
+    protected Map<String, String> area2RealmOverrides = new HashMap<>();
 
     protected String impersonateFilter;
 
