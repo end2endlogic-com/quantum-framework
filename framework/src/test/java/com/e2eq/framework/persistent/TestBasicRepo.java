@@ -82,7 +82,7 @@ public class TestBasicRepo extends BaseRepoTest{
                    .dataDomain(testUtils.getTestDataDomain())
                     .build();
             userProfile = userProfileRepo.createUser(ds,
-                    userProfile,roles,password );
+                    userProfile,null, roles,password );
          } else {
             userProfile = ouserProfile.get();
          }
