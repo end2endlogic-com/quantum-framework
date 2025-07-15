@@ -98,26 +98,30 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
 
    public UserProfile createUser( @NotNull String realmId,
                                   @Valid UserProfile up,
+                                  Boolean forceChangePassword,
                                   @NotNull @NotEmpty String[] roles,
                                   @NotNull @NonNull @NotEmpty @Size(min=8, max=50, message = "password must be between 8 and 50 characters") String password) {
-      return createUser(morphiaDataStore.getDataStore(realmId), up, roles, password);
+      return createUser(morphiaDataStore.getDataStore(realmId), up, forceChangePassword, roles, password);
    }
 
    public UserProfile createUser( @Valid UserProfile up,
+                                 Boolean forceChangePassword,
                                  @NotNull @NotEmpty String[] roles,
                                  @NotNull @NonNull @NotEmpty @Size(min=8, max=50, message = "password must be between 8 and 50 characters") String password) {
-      return createUser(morphiaDataStore.getDataStore(getSecurityContextRealmId()), up, roles, password);
+      return createUser(morphiaDataStore.getDataStore(getSecurityContextRealmId()), up, forceChangePassword, roles, password);
    }
 
    public UserProfile createUser(Datastore  datastore,
                                  @Valid UserProfile up,
+                                 Boolean forceChangePassword,
                                  @NotNull @NotEmpty String[] roles,
                                  @NotNull @NonNull @NotEmpty @Size(min=8, max=50, message = "password must be between 8 and 50 characters") String password) {
-      return createUser(datastore, up, roles, password, securityUtils.getDefaultDomainContext());
+      return createUser(datastore, up, forceChangePassword, roles, password,  securityUtils.getDefaultDomainContext());
    }
 
    public UserProfile createUser(Datastore  datastore,
                                  @Valid UserProfile up,
+                                 Boolean forceChangePassword,
                                  @NotNull @NotEmpty String[] roles,
                                  @NotNull @NonNull @NotEmpty @Size(min=8, max=50, message = "password must be between 8 and 50 characters") String password,
                                  DomainContext domainContext) {
@@ -139,7 +143,7 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
          // this will handle the password encryption and storage in the system
          // and will also handle the creation of the user in the authentication system
          // (like LDAP, Active Directory, etc.)
-         authProviderFactory.getUserManager().createUser(datastore.getDatabase().getName(), up.getUserId(), password, up.getUsername(), roleSet, domainContext);
+         authProviderFactory.getUserManager().createUser(datastore.getDatabase().getName(), up.getUserId(), password, forceChangePassword, up.getUsername(), roleSet, domainContext);
       } else {
         Log.warnf("User  with username %s already exists in the auth provider. skipping create", up.getUsername());
       }

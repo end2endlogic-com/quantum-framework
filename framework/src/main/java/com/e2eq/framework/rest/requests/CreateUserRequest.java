@@ -39,6 +39,8 @@ public class CreateUserRequest {
    String defaultTimezone;
    String defaultCurrency;
 
+   Boolean forceChangePassword;
+
    /**
     * The user's email address where we will send the user information  / confirmation
     *

@@ -882,6 +882,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
            }
         }
        setDefaultValues(value);
+        value.validate();
         return session.save(value);
     }
 
@@ -907,6 +908,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
              }
           }
           setDefaultValues(entity);
+          entity.validate();
        });
        return datastore.save(entities);
     }
@@ -923,7 +925,9 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
              }
           }
           setDefaultValues(entity);
+          entity.validate();
        });
+
        return session.save(entities);
     }
 
@@ -938,6 +942,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
           }
        }
        setDefaultValues(value);
+       value.validate();
        return datastore.save(value);
     }
 

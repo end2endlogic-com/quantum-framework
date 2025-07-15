@@ -137,6 +137,9 @@ public abstract  class UnversionedBaseModel {
     @JsonIgnore
     abstract public String bmFunctionalDomain();
 
+    public void validate() {
+    }
+
 
     public void setDataDomain (@Valid DataDomain dataDomain) {
         this.dataDomain = dataDomain;

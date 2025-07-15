@@ -52,11 +52,11 @@ public class CredentialUserIdPassword extends BaseModel {
     @JsonIgnore
     protected String passwordHash;
 
+    Boolean forceChangePassword;
 
     @NotNull(message = "roles must be non null and not empty")
     @NonNull
     protected String[] roles;
-
 
     protected String issuer;
 

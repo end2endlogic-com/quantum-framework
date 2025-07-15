@@ -122,6 +122,7 @@ public class UserProfileResource extends BaseResource<UserProfile, UserProfileRe
       authProviderFactory.getUserManager().createUser(
          up.getUserId(),
          createUserRequest.getPassword(),
+         createUserRequest.getForceChangePassword(),
          createUserRequest.getUsername(),
          createUserRequest.getRoles(),
          createUserRequest.getDomainContext());
