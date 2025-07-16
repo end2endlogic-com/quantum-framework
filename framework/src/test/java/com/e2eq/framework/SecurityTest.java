@@ -97,6 +97,8 @@ public class SecurityTest extends BaseRepoTest {
             cred.setDomainContext(new DomainContext(dataDomain, testUtils.getTestRealm()));
             cred.setLastUpdate(new Date());
             cred.setDataDomain(dataDomain);
+            cred.setRealmRegEx("*");
+            cred.setImpersonateFilterScript("return true");
             cred = credRepo.save(testUtils.getTestRealm(),cred);
         }
 

@@ -9,6 +9,7 @@ import dev.morphia.query.Sort;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
 import dev.morphia.query.filters.RegexFilter;
+import io.quarkus.logging.Log;
 import org.antlr.v4.runtime.*;
 import org.antlr.v4.runtime.tree.ParseTree;
 import org.antlr.v4.runtime.tree.ParseTreeWalker;
@@ -117,7 +118,8 @@ public class MorphiaUtils {
 
    public static Optional<ParseTree> validateQueryString(String queryString) {
 
-      if (queryString == null || queryString.isEmpty()) {
+      if (queryString == null || queryString.isBlank()) {
+         Log.warnf("Validation of query string failed: null or empty query string");
          return Optional.empty();
       }
 

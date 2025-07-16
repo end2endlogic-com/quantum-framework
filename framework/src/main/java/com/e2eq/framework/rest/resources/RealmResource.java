@@ -77,14 +77,14 @@ public class RealmResource extends BaseResource<Realm, BaseMorphiaRepo<Realm>> {
       List<Realm> realms;
       if (ocredential.isPresent()) {
          CredentialUserIdPassword credential = ocredential.get();
-         String realmFilter = credential.getRealmFilter();
+         String realmFilter = credential.getRealmRegEx();
 
-         if (credential.getImpersonateFilter() != null && realmFilter != null) {
+         if (credential.getImpersonateFilterScript() != null && realmFilter != null) {
             realms = repo.getListByQuery(0,-1, realmFilter);
 
-         } else if (credential.getImpersonateFilter() != null && realmFilter == null) {
+         } else if (credential.getImpersonateFilterScript() != null && realmFilter == null) {
              realms = repo.getAllList();
-         } else if (credential.getImpersonateFilter() == null && realmFilter!= null) {
+         } else if (credential.getImpersonateFilterScript() == null && realmFilter!= null) {
             RestError error = RestError.builder()
                     .status(Response.Status.PRECONDITION_FAILED .getStatusCode())
                     .statusMessage(String.format("For userId:%s impersonateFilter is null but realmFilter has been provided, invalid configuration, must specify a imPersonateFilter ", credential.getUserId())).build();

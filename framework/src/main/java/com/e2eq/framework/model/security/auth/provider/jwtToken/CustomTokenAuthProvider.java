@@ -3,7 +3,6 @@ package com.e2eq.framework.model.security.auth.provider.jwtToken;
 
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
-import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
 import com.e2eq.framework.model.persistent.security.CredentialRefreshToken;
 import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.persistent.security.DomainContext;
@@ -12,7 +11,6 @@ import com.e2eq.framework.model.security.auth.UserManagement;
 import com.e2eq.framework.util.EncryptionUtils;
 import com.e2eq.framework.util.SecurityUtils;
 import com.e2eq.framework.util.TokenUtils;
-import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.logging.Log;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.security.runtime.QuarkusSecurityIdentity;
@@ -20,7 +18,6 @@ import io.smallrye.jwt.auth.principal.JWTParser;
 import io.smallrye.jwt.auth.principal.ParseException;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.validation.Valid;
 import jakarta.ws.rs.NotFoundException;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -32,9 +29,10 @@ import java.security.NoSuchAlgorithmException;
 import java.security.spec.InvalidKeySpecException;
 import java.util.*;
 import java.util.Arrays;
+import java.util.regex.Pattern;
 
 @ApplicationScoped
-public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
+public class CustomTokenAuthProvider  extends BaseAuthProvider implements AuthProvider, UserManagement{
 
    @ConfigProperty(name = "auth.jwt.secret")
    String secretKey;
@@ -54,13 +52,6 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
    @Inject
    JWTParser jwtParser;
 
-
-   @Inject
-   CredentialRepo credentialRepo;
-
-   @Inject
-   SecurityUtils securityUtils;
-
    // problems with permissions if you need to save
    //@Inject
    //CredentialRefreshTokenRepo credentialRefreshTokenRepo;
@@ -68,6 +59,8 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
    public String getName () {
       return "custom";
    }
+
+
 
    @Override
    public void changePassword(String userId, String oldPassword, String newPassword, Boolean forceChangePassword) {
@@ -88,7 +81,7 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
       }
       cred.setPasswordHash(EncryptionUtils.hashPassword(newPassword));
       cred.setForceChangePassword(forceChangePassword);
-      credentialRepo.save(cred);
+      credentialRepo.save(realm, cred);
    }
 
    @Override
@@ -187,6 +180,8 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
       }
       return false;
    }
+
+
 
    @Override
    public boolean removeUserWithUsername (String username) throws ReferentialIntegrityViolationException {
@@ -505,24 +500,5 @@ public class CustomTokenAuthProvider implements AuthProvider, UserManagement {
    }
 
 
-   @Override
-   public void enableImpersonation (String userId, String impersonationScript, String realmFilter,
-                                    String realmToEnableIn) {
-      Objects.requireNonNull(userId, "userId must be provided");
-      Objects.requireNonNull(impersonationScript, "impersonationScript must be provided");
-      Objects.requireNonNull(realmFilter, "realmFilter must be provided");
-      Objects.requireNonNull(realmToEnableIn, "realmToEnableIn must be provided");
 
-      MorphiaUtils.validateQueryString(realmFilter);
-      Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(userId, realmToEnableIn);
-      ocred.ifPresentOrElse(
-         credential -> {
-            credential.setImpersonateFilter(impersonationScript);
-            credential.setRealmFilter(realmFilter);
-            credentialRepo.save(realmToEnableIn, credential);
-         },
-         () -> {
-            throw new SecurityException(String.format("UserId:%s not found in realm:%s ", userId, realmToEnableIn));
-         });
-   }
 }

@@ -22,6 +22,8 @@ public class AuditInfo {
    protected String lastUpdateIdentity;
    protected String impersonatorUsername;
    protected String impersonatorUserId;
+   protected String actingOnBehalfOfUsername;
+   protected String actingOnBehalfOfUserId;
 
    public AuditInfo(Date createTs, String createIdentity, Date lastUpdateTs, String lastUpdateIdentity) {
       this.creationTs = createTs;
