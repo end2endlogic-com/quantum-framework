@@ -2,7 +2,6 @@ package com.e2eq.framework.rest.filters;
 
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
-import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
@@ -14,7 +13,6 @@ import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import com.e2eq.framework.util.SecurityUtils;
 import com.e2eq.framework.util.ValidateUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.ObjectWriter;
 import io.quarkus.logging.Log;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
@@ -22,7 +20,6 @@ import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ContainerRequestFilter;
 import jakarta.ws.rs.core.HttpHeaders;
-import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.Provider;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -31,9 +28,9 @@ import org.graalvm.polyglot.Context;
 import org.jboss.logging.Logger;
 
 import java.io.*;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.stream.Collectors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 
 @Provider
@@ -174,6 +171,7 @@ public class SecurityFilter implements ContainerRequestFilter {
         Objects.requireNonNull(realm, "Realm cannot be null");
         Objects.requireNonNull(script, "Script cannot be null");
 
+        Log.debugf("Running impersonation filter script:%s for user:%s, userId:%s, realm:%s", script, username, userId, realm);
 
         // Context c = Context.newBuilder().allowAllAccess(true).build();
         Context c = Context.newBuilder().allowAllAccess(true).build();
@@ -182,6 +180,7 @@ public class SecurityFilter implements ContainerRequestFilter {
         c.getBindings("js").putMember("realm", realm);
 
         boolean allow = c.eval("js", script).asBoolean();
+        Log.debugf("returning allow: %s", allow ? "true" : "false");
         return allow;
 
     }
@@ -190,6 +189,8 @@ public class SecurityFilter implements ContainerRequestFilter {
 
         String impersonateUsername = requestContext.getHeaderString("X-Impersonate-Username");
         String impersonateUserId = requestContext.getHeaderString("X-Impersonate-UserId");
+        String actingOnBehalfOfUsername = requestContext.getHeaderString("X-Acting-On-Behalf-Of-Username");
+        String actingOnBehalfOfUserId = requestContext.getHeaderString("X-Acting-On-Behalf-Of-UserId");
         boolean impersonate = false;
 
         if (impersonateUsername != null && impersonateUserId != null) {
@@ -212,6 +213,15 @@ public class SecurityFilter implements ContainerRequestFilter {
                 Log.debugf("Impersonating user, X-Impersonate-UserId header present %s", impersonateUserId);
             } else {
                 Log.debug("No impersonation header present");
+            }
+
+            if (actingOnBehalfOfUsername!= null) {
+                Log.debugf("Acting on behalf of user, X-Acting-On-Behalf-Of-Username: %s present", actingOnBehalfOfUsername );
+            } else
+            if(actingOnBehalfOfUserId != null) {
+                Log.debugf("Acting on behalf of user, X-Acting-On-Behalf-Of-UserId header present %s", actingOnBehalfOfUserId);
+            } else {
+                Log.debug("No acting on behalf of user header present");
             }
         }
 
@@ -266,9 +276,7 @@ public class SecurityFilter implements ContainerRequestFilter {
                 Log.debugf("Found user with username %s in the claims", username);
             }
             if (impersonate) {
-                //TODO check if the user that is impersonating another user is authorized to
                 Log.warnf("Impersonating user %s with userId %s from username %s, authorization check not implemented!!", impersonateUsername, impersonateUserId, username);
-
             }
 
             if (username != null) {
@@ -277,14 +285,24 @@ public class SecurityFilter implements ContainerRequestFilter {
                 if (ocreds.isPresent()) {
                     Log.debugf("Found user with username %s userId:%s in the database, adding roles %s", username, ocreds.get().getUserId(), Arrays.toString(ocreds.get().getRoles()));
                     CredentialUserIdPassword creds = ocreds.get();
+                    String contextRealm = (realm == null ) ? creds.getDomainContext().getDefaultRealm() : realm;
 
-                    if (impersonate && creds.getImpersonateFilter() == null) {
+
+                    if (impersonate && creds.getImpersonateFilterScript() == null) {
                         throw new IllegalArgumentException(String.format("username %s with userId %s is not configured with a impersonateFilter in realm:%s", creds.getUsername(), creds.getUserId(), credentialRepo.getDatabaseName()));
                     } else if (impersonate) {
-                        if (!runScript(username, ocreds.get().getUserId(), (realm== null ) ? credentialRepo.getDatabaseName() : realm, creds.getImpersonateFilter())) {
+                        if (!runScript(username, ocreds.get().getUserId(), (realm== null ) ? credentialRepo.getDatabaseName() : realm, creds.getImpersonateFilterScript())) {
                             throw new WebApplicationException(String.format("User %s with userId %s is not authorized to impersonate user %s with userId %s in realm:%s", username, ocreds.get().getUserId(), impersonateUsername, impersonateUserId, (realm== null ) ? credentialRepo.getDatabaseName() : realm), Response.Status.FORBIDDEN);
                         }
                     }
+
+                    if (realm != null ) {
+                        // check the creds to see if your allowed to go to this realm
+                        if (!matchesRealmFilter(realm, creds.getRealmRegEx())) {
+                            throw new WebApplicationException(String.format("User %s with userId %s is not authorized to access realm:%s realm filter:%s", username, ocreds.get().getUserId(), realm, ocreds.get().getRealmRegEx() == null ? "null" : "'" + ocreds.get().getRealmRegEx())+ "'" , Response.Status.FORBIDDEN);
+                        }
+                    }
+
 
                     if (impersonate) {
                         Optional<CredentialUserIdPassword> oicreds;
@@ -320,6 +338,8 @@ public class SecurityFilter implements ContainerRequestFilter {
                                       .withScope("AUTHENTICATED")
                                       .withImpersonatedByUsername(oicreds.get().getUsername())
                                       .withImpersonatedByUserId(oicreds.get().getUserId())
+                                      .withActingOnBehalfOfUserId(actingOnBehalfOfUserId)
+                                      .withActingOnBehalfOfUsername(actingOnBehalfOfUserId)
                                       .build();
 
                         if (Log.isDebugEnabled()) {
@@ -397,7 +417,28 @@ public class SecurityFilter implements ContainerRequestFilter {
 
         return pcontext;
     }
+    public boolean matchesRealmFilter(String realm, String filterPattern) {
+        if (filterPattern == null || realm == null)
+            return false;
+
+        if (realm.trim().isBlank() ) {
+            Log.warnf("Realm is blank, this is not allowed, realm:%s", realm);
+            return false;
+        }
+
+        if (filterPattern.isBlank()) {
+            Log.warnf("Filter pattern is blank, this is not allowed, filter pattern:%s", filterPattern);
+            return false;
+        }
+        // Convert wildcard pattern to regex
+        String regex = filterPattern.replace("*", ".*");
+        Pattern pattern = Pattern.compile(regex, Pattern.CASE_INSENSITIVE);
+        Matcher matcher = pattern.matcher(realm);
+        return matcher.matches();
+    }
 }
+
+
 
     /*
     protected PrincipalContext determinePrincipalContext(ContainerRequestContext requestContext) {

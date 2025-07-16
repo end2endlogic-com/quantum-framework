@@ -32,7 +32,7 @@ public class SecureResourceTest {
     RuleContext ruleContext;
 
     @Test
-    public void testSecuredEndpoints() {
+    public void testSecuredEndpoints() throws ReferentialIntegrityViolationException {
         AuthProvider.LoginResponse loginResponse = null;
 
         String[] roles = {"admin", "user"};
@@ -40,10 +40,14 @@ public class SecureResourceTest {
         ResourceContext rContext = testUtils.getResourceContext(testUtils.getArea(), "userProfile", "update");
         testUtils.initDefaultRules(ruleContext, "security","userProfile", testUtils.getTestUserId());
         try (final SecuritySession ss = new SecuritySession(pContext, rContext)) {
-            if (authProvider.equals("cognito")) {
+            authFactory.getUserManager().removeUserWithUsername(testUtils.getTestRealm(), "testuser@end2endlogic.com");
+            if (authProvider.equals("custom")) {
                 // Create test user with roles
                 if (!authFactory.getUserManager().usernameExists(testUtils.getTestRealm(), "testuser@end2endlogic.com")) {
-                    authFactory.getUserManager().createUser(testUtils.getTestRealm(), "testuser@end2endlogic.com", "P@55w@rd", "testuser@end2endlogic.com", Set.of("user"), null);
+
+                    authFactory.getUserManager().createUser(testUtils.getTestRealm(), "testuser@end2endlogic.com", "P@55w@rd", "testuser@end2endlogic.com", Set.of("user"), testUtils.getTestDomainContext());
+                    authFactory.getUserManager().enableRealmOverrideWithUsername("testuser@end2endlogic.com", testUtils.getTestRealm(), "*");
+
                 } else {
                     Log.info("User already exists, skipping creation");
                 }
@@ -115,7 +119,7 @@ public class SecureResourceTest {
             }
 
             authFactory.getUserManager().createUser(testUtils.getTestRealm(), "testadmin@end2endlogic.com", "P@55w@rd", "testadmin@end2endlogic.com", Set.of("admin"), testUtils.getTestDomainContext());
-            authFactory.getUserManager().enableImpersonation("testadmin@end2endlogic.com", "true", "", testUtils.getTestRealm());
+            authFactory.getUserManager().enableImpersonationWithUserId("testadmin@end2endlogic.com", "true", "*", testUtils.getTestRealm());
 
            loginResponse = authFactory.getAuthProvider().login(testUtils.getTestRealm(), "testadmin@end2endlogic.com", "P@55w@rd");
             Assertions.assertTrue(loginResponse.authenticated());

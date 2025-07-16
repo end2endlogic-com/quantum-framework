@@ -2,7 +2,6 @@ package com.e2eq.framework.model.persistent.security;
 
 
 import java.util.Date;
-import java.util.HashMap;
 import java.util.Map;
 
 import com.e2eq.framework.util.EncryptionUtils;
@@ -67,12 +66,13 @@ public class CredentialUserIdPassword extends BaseModel {
 
     @NonNull protected Date lastUpdate;
 
-    @Builder.Default
-    protected Map<String, String> area2RealmOverrides = new HashMap<>();
+    protected Map<String, String> area2RealmOverrides;
 
-    protected String impersonateFilter;
+    // this is really a script.
+    protected String impersonateFilterScript;
 
-    protected String realmFilter;
+    //@Regex
+    protected String realmRegEx;
 
 
     @Override

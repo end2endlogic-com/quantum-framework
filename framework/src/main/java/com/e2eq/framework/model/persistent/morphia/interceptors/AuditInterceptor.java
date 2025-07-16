@@ -43,7 +43,8 @@ public class AuditInterceptor implements EntityListener<Object> {
                         SecurityContext.getPrincipalContext().get().getImpersonatedByUserId() != null)) {
                     auditInfo.setImpersonatorUsername(SecurityContext.getPrincipalContext().get().getImpersonatedByUsername() );
                     auditInfo.setImpersonatorUserId(SecurityContext.getPrincipalContext().get().getImpersonatedByUserId());
-
+                    auditInfo.setActingOnBehalfOfUserId(SecurityContext.getPrincipalContext().get().getActingOnBehalfOfUserId());
+                    auditInfo.setActingOnBehalfOfUsername(SecurityContext.getPrincipalContext().get().getActingOnBehalfOfUsername());
                 }
                 bm.setAuditInfo(auditInfo);
             } else {

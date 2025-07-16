@@ -92,6 +92,8 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
       );
 
       UserProfile p = q.first();
+      if (p != null )
+         p.setRealm(datastore.getDatabase().getName());
 
       return Optional.ofNullable(p);
    }
