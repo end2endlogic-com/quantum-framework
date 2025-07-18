@@ -23,7 +23,7 @@ public class ContentLengthFilter implements ContainerRequestFilter, ContainerRes
     public void filter(ContainerRequestContext requestContext) {
         if (Log.isDebugEnabled()) {
             // intentionally logging warning but only when debug is enabled
-            Log.warn("** Filter call in ContentLengthFilter.filter() being ignored **");
+            Log.warnf("** Filter call in ContentLengthFilter.filter() being ignored method:%s  url:% **", requestContext.getRequest().getMethod(), requestContext.getUriInfo().getAbsolutePath().toString());
         }
     }
 
