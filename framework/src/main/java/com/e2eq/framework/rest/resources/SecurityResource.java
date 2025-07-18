@@ -3,12 +3,8 @@ package com.e2eq.framework.rest.resources;
 
 import com.e2eq.framework.model.security.auth.AuthProvider;
 import com.e2eq.framework.model.security.auth.AuthProviderFactory;
-import com.e2eq.framework.rest.models.Role;
+import com.e2eq.framework.rest.models.*;
 import com.e2eq.framework.model.securityrules.SecurityCheckException;
-import com.e2eq.framework.rest.models.AuthRequest;
-import com.e2eq.framework.rest.models.AuthResponse;
-import com.e2eq.framework.rest.models.RegistrationRequest;
-import com.e2eq.framework.rest.models.RestError;
 import com.e2eq.framework.model.persistent.security.ApplicationRegistration;
 
 import com.e2eq.framework.model.persistent.security.UserProfile;
@@ -25,6 +21,7 @@ import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.smallrye.jwt.auth.principal.JWTParser;
 import jakarta.annotation.security.PermitAll;
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
 import jakarta.validation.ConstraintViolation;
@@ -472,4 +469,46 @@ public class SecurityResource {
                 securityContext.getUserPrincipal().getName()
                 + " is authenticated/n" + "Token will expire at: " + date).build();
     }
+
+
+    @PUT
+    @RolesAllowed("admin")
+    @Path("/enableRealmOverride/{realmWhereCredentialRecordIs}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response enableRealmOverride(@PathParam("realmWhereCredentialRecordIs") String realmWhereCredentialRecordIs, @QueryParam("username") String username, @QueryParam("realmRegEx") String realmRegEx) {
+        authProviderFactory.getUserManager().enableRealmOverrideWithUsername(username, realmWhereCredentialRecordIs, realmRegEx);
+        return Response.ok().build();
+    }
+
+    @PUT
+    @RolesAllowed("admin")
+    @Path("/disableRealmOverride/{realmWhereCredentialRecordIs}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response disableRealmOverride(@PathParam("realmWhereCredentialRecordIs") String realmWhereCredentialRecordIs, @QueryParam("username") String username) {
+        authProviderFactory.getUserManager().disableRealmOverrideWithUsername(username, realmWhereCredentialRecordIs);
+        return Response.ok().build();
+    }
+
+    @PUT
+    @RolesAllowed("admin")
+    @Path("/disableImpersonation")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response enableImpersonation(EnableImpersonationRequest request) {
+        authProviderFactory.getUserManager().enableImpersonationWithUsername(request.getUsername(), request.getImpersonationScript(), request.getRealmRegExFilter(), request.getRealmToEnableIn());
+        return Response.ok().build();
+    }
+
+    @PUT
+    @RolesAllowed("admin")
+    @Path("/disableImpersonation/{username}/{realmToDisableIn}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response disableImpersonation(@PathParam("username") String username, @PathParam("realmToDisableIn") String realmToDisableIn) {
+        authProviderFactory.getUserManager().disableImpersonationWithUserName(username, realmToDisableIn);
+        return Response.ok().build();
+    }
+
 }
