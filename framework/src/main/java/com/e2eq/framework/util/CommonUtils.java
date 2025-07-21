@@ -5,9 +5,10 @@ import io.quarkus.logging.Log;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.io.UnsupportedEncodingException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.nio.charset.StandardCharsets;
+import java.util.HexFormat;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
@@ -141,20 +142,13 @@ public class CommonUtils {
             return null;
         }
 
-        MessageDigest messageDigest = null;
         try {
-            messageDigest = MessageDigest.getInstance("MD5");
+            MessageDigest messageDigest = MessageDigest.getInstance("MD5");
 
-            byte[] array = messageDigest.digest(input.getBytes("UTF-8"));
+            byte[] array = messageDigest.digest(input.getBytes(StandardCharsets.UTF_8));
 
-            StringBuffer sb = new StringBuffer();
-            for (int i = 0; i < array.length; ++i) {
-                sb.append(Integer.toHexString((array[i] & 0xFF) | 0x100).substring(1, 3));
-            }
-            return sb.toString();
+            return HexFormat.of().formatHex(array);
         } catch (NoSuchAlgorithmException e) {
-            e.printStackTrace();
-        } catch (UnsupportedEncodingException e) {
             e.printStackTrace();
         }
         throw new IllegalStateException("MD5 calculation failed");
