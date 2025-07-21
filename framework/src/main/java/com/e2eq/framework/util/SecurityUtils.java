@@ -13,6 +13,8 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.security.SecureRandom;
 import java.util.Random;
+import java.util.Deque;
+import java.util.LinkedList;
 
 
 @ApplicationScoped
@@ -138,10 +140,33 @@ public class SecurityUtils {
    }
 
 
-   //TODO: create a stack and push and pop instead of set and reset
+   private static final ThreadLocal<Deque<PrincipalContext>> principalContextStack =
+         ThreadLocal.withInitial(java.util.LinkedList::new);
+   private static final ThreadLocal<Deque<ResourceContext>> resourceContextStack =
+         ThreadLocal.withInitial(java.util.LinkedList::new);
+
+   // push the current contexts and set the system context
    public void setSecurityContext() {
+      principalContextStack.get().push(SecurityContext.getPrincipalContext().orElse(null));
+      resourceContextStack.get().push(SecurityContext.getResourceContext().orElse(null));
       SecurityContext.setPrincipalContext(systemPrincipalContext);
       SecurityContext.setResourceContext(systemSecurityResourceContext);
+   }
+
+   // restore the previous contexts
+   public void popSecurityContext() {
+      PrincipalContext pctx = principalContextStack.get().poll();
+      ResourceContext rctx = resourceContextStack.get().poll();
+      if (pctx == null) {
+         SecurityContext.clearPrincipalContext();
+      } else {
+         SecurityContext.setPrincipalContext(pctx);
+      }
+      if (rctx == null) {
+         SecurityContext.clearResourceContext();
+      } else {
+         SecurityContext.setResourceContext(rctx);
+      }
    }
 
    public static void clearSecurityContext() {

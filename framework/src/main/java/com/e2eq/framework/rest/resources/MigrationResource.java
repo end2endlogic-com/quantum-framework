@@ -173,7 +173,7 @@ public class MigrationResource {
                    Log.infof("----Running migrations for system realm:%s---- ", realm);
                    migrationService.runAllUnRunMigrations(realm, emitter);
                }finally {
-                   securityUtils.clearSecurityContext();
+                   securityUtils.popSecurityContext();
                }
 
                 emitter.complete();
@@ -201,7 +201,7 @@ public class MigrationResource {
                         migrationService.runAllUnRunMigrations(securityUtils.getDefaultRealm(), emitter);
                     }
                 } finally {
-                    securityUtils.clearSecurityContext();
+                    securityUtils.popSecurityContext();
                 }
 
                 emitter.complete();
@@ -223,7 +223,7 @@ public class MigrationResource {
                     Log.info("----Running migrations for realm:---- " + realm);
                     migrationService.runAllUnRunMigrations(realm, emitter);
                 } finally {
-                    securityUtils.clearSecurityContext();
+                    securityUtils.popSecurityContext();
                 }
 
                 emitter.complete();
