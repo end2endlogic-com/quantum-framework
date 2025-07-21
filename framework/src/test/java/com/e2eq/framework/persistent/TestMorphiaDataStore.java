@@ -3,7 +3,13 @@ package com.e2eq.framework.persistent;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
 import com.e2eq.framework.model.securityrules.SecuritySession;
 import com.e2eq.framework.test.ParentModel;
-import com.mongodb.assertions.Assertions;
+import org.junit.jupiter.api.Assertions;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import dev.morphia.MorphiaDatastore;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
@@ -38,6 +44,33 @@ public class TestMorphiaDataStore extends BaseRepoTest{
             realm1DataStore.getDatabase().drop();
             realm2DataStore.getDatabase().drop();
         }
+    }
+
+    @Test
+    public void testConcurrentAccessCreatesSingleDatastore() throws Exception {
+        String realm = "concurrent-test-realm";
+
+        int threads = 10;
+        ExecutorService executor = Executors.newFixedThreadPool(threads);
+        Set<MorphiaDatastore> results = new HashSet<>();
+
+        try {
+            Set<Callable<MorphiaDatastore>> tasks = new HashSet<>();
+            for (int i = 0; i < threads; i++) {
+                tasks.add(() -> dataStore.getDataStore(realm));
+            }
+
+            for (Future<MorphiaDatastore> f : executor.invokeAll(tasks)) {
+                results.add(f.get());
+            }
+        } finally {
+            executor.shutdownNow();
+        }
+
+        Assertions.assertEquals(1, results.size());
+        Assertions.assertTrue(dataStore.datastoreMap.containsKey(realm));
+
+        dataStore.getDataStore(realm).getDatabase().drop();
     }
 
 }
