@@ -86,13 +86,15 @@ public class SecurityContext {
    }
 
    public static void clearResourceContext() {
-      tlResourceContext.set(null);  if (Log.isDebugEnabled()) {
+      tlResourceContext.remove();
+      if (Log.isDebugEnabled()) {
          Log.debug("=====CLEAR Resource Context ");
       }
    }
 
    public static void clearPrincipalContext() {
-      tlPrincipalContext.set(null); if (Log.isDebugEnabled()) {
+      tlPrincipalContext.remove();
+      if (Log.isDebugEnabled()) {
          Log.debug("===== CLEAR Principal Context" );
       }
    }
