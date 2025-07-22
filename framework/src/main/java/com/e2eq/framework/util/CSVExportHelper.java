@@ -433,7 +433,8 @@ public class CSVExportHelper {
                     type == float.class || type == Float.class) {
                 processors[i] = new org.supercsv.cellprocessor.Optional(new ParseDouble());
             } else if (type == java.math.BigDecimal.class) {
-                processors[i] = new org.supercsv.cellprocessor.Optional(new ParseBigDecimal());
+                // No need to parse BigDecimal, just use Optional
+                processors[i] = new org.supercsv.cellprocessor.Optional();
             } else {
                 processors[i] = new org.supercsv.cellprocessor.Optional();
             }
