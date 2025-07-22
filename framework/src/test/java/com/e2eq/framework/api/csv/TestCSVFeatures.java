@@ -17,6 +17,8 @@ import org.junit.jupiter.api.Test;
 import org.supercsv.cellprocessor.CellProcessorAdaptor;
 import org.supercsv.cellprocessor.Optional;
 import org.supercsv.cellprocessor.constraint.NotNull;
+import org.supercsv.cellprocessor.ParseInt;
+import org.supercsv.cellprocessor.ParseBigDecimal;
 import org.supercsv.cellprocessor.ift.CellProcessor;
 import org.supercsv.io.dozer.CsvDozerBeanReader;
 import org.supercsv.io.dozer.CsvDozerBeanWriter;
@@ -47,11 +49,15 @@ public class TestCSVFeatures extends BaseRepoTest {
                         .testField1("value1")
                         .testList(List.of("value2", "value3"))
                         .displayName("testDisplayName")
+                        .numberField(1)
+                        .decimalField(new java.math.BigDecimal("10.5"))
                         .build(),
                 CSVModel.builder()
                         .testField1("value4")
                         .testList(List.of("value5", "value6"))
                         .displayName("testDisplayName2")
+                        .numberField(2)
+                        .decimalField(new java.math.BigDecimal("20.5"))
                         .build()
         );
     }
@@ -126,7 +132,9 @@ public class TestCSVFeatures extends BaseRepoTest {
         Map<String, String> headerToFieldMap = Map.of(
                 "f1", "testField1",
                 "a1", "testList",
-                "ds", "displayName"
+                "ds", "displayName",
+                "num", "numberField",
+                "dec", "decimalField"
         );
         String nestedProperty = null;
 
@@ -169,13 +177,13 @@ public class TestCSVFeatures extends BaseRepoTest {
                 getRecords(),
                 null,
                 ',',
-                List.of("testField1", "testList", "displayName"),
+                List.of("testField1", "testList", "displayName", "numberField", "decimalField"),
                 "QUOTE_ALL_COLUMNS",
                 '"',
                 Charset.forName("UTF-8"),
                 true,
                 true,
-                List.of("a1","a2","a3"),
+                List.of("a1","a2","a3","a4","a5"),
                 null);
 
         streamingOutput.write(System.out);
@@ -183,8 +191,8 @@ public class TestCSVFeatures extends BaseRepoTest {
 
     @Test
     public void testSuperCSVImport() throws IOException {
-        final String[] FIELD_MAPPING = {"refName", "displayName", "testField", "testField2", "testField3", "testList[0]"};
-        final String[] PREFERRED_FIELD_MAPPING = {"ID", "NAME", "testField", "testField2", "testField3", "testListField1"};
+        final String[] FIELD_MAPPING = {"refName", "displayName", "testField", "testField2", "testField3", "testList[0]", "numberField", "decimalField"};
+        final String[] PREFERRED_FIELD_MAPPING = {"ID", "NAME", "testField", "testField2", "testField3", "testListField1", "numberField", "decimalField"};
 
         final CellProcessor[] processors = new CellProcessor[]{
           new NotNull(),
@@ -192,7 +200,9 @@ public class TestCSVFeatures extends BaseRepoTest {
           new NotNull(),
           new Optional(),
           new Optional(),
-          new Optional()
+          new Optional(),
+          new ParseInt(),
+          new ParseBigDecimal()
         };
 
         ICsvDozerBeanReader beanReader=null;
@@ -231,7 +241,7 @@ public class TestCSVFeatures extends BaseRepoTest {
                ',',
                '"',
                false,
-               List.of("refName", "displayName", "testField", "testField2", "testField3", "testList[0]"),
+               List.of("refName", "displayName", "testField", "testField2", "testField3", "testList[0]", "numberField", "decimalField"),
                chosenCharset,
                false,
                "QUOTE_WHERE_ESSENTIAL",
@@ -262,7 +272,7 @@ public class TestCSVFeatures extends BaseRepoTest {
                     ',',
                     '"',
                     false,
-                    List.of("refName", "displayName", "testField", "testField2", "testField3", "testList[0]"),
+                    List.of("refName", "displayName", "testField", "testField2", "testField3", "testList[0]", "numberField", "decimalField"),
                     chosenCharset,
                     false,
                     "QUOTE_WHERE_ESSENTIAL",

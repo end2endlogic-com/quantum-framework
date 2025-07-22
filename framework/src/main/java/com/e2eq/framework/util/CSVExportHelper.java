@@ -12,6 +12,10 @@ import org.apache.commons.beanutils.PropertyUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.dozer.MappingException;
 import org.supercsv.cellprocessor.CellProcessorAdaptor;
+import org.supercsv.cellprocessor.ParseBigDecimal;
+import org.supercsv.cellprocessor.ParseDouble;
+import org.supercsv.cellprocessor.ParseInt;
+import org.supercsv.cellprocessor.ParseLong;
 import org.supercsv.cellprocessor.ift.CellProcessor;
 import org.supercsv.io.dozer.CsvDozerBeanWriter;
 import org.supercsv.io.dozer.ICsvDozerBeanWriter;
@@ -135,11 +139,8 @@ public class CSVExportHelper {
 
                 Writer writer = new BufferedWriter(new OutputStreamWriter(output, chosenCharset), 16384);
 
-                final CellProcessor[] processors = new CellProcessor[requestedColumns.size()];
                 ListCellProcessor listProcessor = new ListCellProcessor();
-                org.supercsv.cellprocessor.Optional processor = new org.supercsv.cellprocessor.Optional(listProcessor);
-                Arrays.fill(processors, new org.supercsv.cellprocessor.Optional());
-                // TODO: Fix this simplistic assumption, specifically to handle decimal values properly
+                final CellProcessor[] processors = buildProcessors(clazz, requestedColumns, listProcessor);
 
                 ICsvDozerBeanWriter beanWriter = null;
 
@@ -413,6 +414,44 @@ public class CSVExportHelper {
                 quotingStrategy, quoteChar,
                 chosenCharset, mustUseBOM, prependHeaderRow, preferredColumnNames,
                 soleNestedPropertyIfAny);
+    }
+
+    private CellProcessor[] buildProcessors(Class<?> clazz, List<String> cols, ListCellProcessor listProcessor) {
+        CellProcessor[] processors = new CellProcessor[cols.size()];
+        for (int i = 0; i < cols.size(); i++) {
+            String fieldName = cols.get(i);
+            if (fieldName.contains("[")) {
+                processors[i] = new org.supercsv.cellprocessor.Optional(listProcessor);
+                continue;
+            }
+            Class<?> type = getFieldType(clazz, fieldName);
+            if (type == int.class || type == Integer.class) {
+                processors[i] = new org.supercsv.cellprocessor.Optional(new ParseInt());
+            } else if (type == long.class || type == Long.class) {
+                processors[i] = new org.supercsv.cellprocessor.Optional(new ParseLong());
+            } else if (type == double.class || type == Double.class ||
+                    type == float.class || type == Float.class) {
+                processors[i] = new org.supercsv.cellprocessor.Optional(new ParseDouble());
+            } else if (type == java.math.BigDecimal.class) {
+                processors[i] = new org.supercsv.cellprocessor.Optional(new ParseBigDecimal());
+            } else {
+                processors[i] = new org.supercsv.cellprocessor.Optional();
+            }
+        }
+        return processors;
+    }
+
+    private Class<?> getFieldType(Class<?> clazz, String name) {
+        String clean = name.replace("[0]", "");
+        Class<?> current = clazz;
+        while (current != null) {
+            try {
+                return current.getDeclaredField(clean).getType();
+            } catch (NoSuchFieldException ignored) {
+                current = current.getSuperclass();
+            }
+        }
+        return null;
     }
 
     /**
