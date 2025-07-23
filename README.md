@@ -245,3 +245,35 @@ a certain realm.
 
 
 
+
+## Completion Tasks
+
+The framework exposes endpoints to manage groups of completion tasks.
+
+### Creating a group
+
+```bash
+curl -X POST http://localhost:8080/integration/completionTaskGroup/create \
+     -H "Content-Type: application/json" \
+     -d '{"refName":"demo","displayName":"Demo group"}'
+```
+
+### Adding a task to a group
+
+```bash
+curl -X POST http://localhost:8080/integration/completionTask/create/{groupId} \
+     -H "Content-Type: application/json" \
+     -d '{"refName":"task1","displayName":"First task"}'
+```
+
+### Checking task status
+
+```bash
+curl http://localhost:8080/integration/completionTask/id/{taskId}
+```
+
+### Subscribing for completion events
+
+```bash
+curl http://localhost:8080/integration/completionTaskGroup/subscribe/{groupId}
+```
