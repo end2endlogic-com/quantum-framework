@@ -54,27 +54,28 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
    List<T> getAllList (String realmId);
    List<T> getAllList(Datastore datastore);
    /**
-    * @param skip must be 0 or greater
-    * @param limit can be 0 or a negative number in which case  all records are returned,
-    *              a positive number and only the amount specified will be returned
-    * @param filter can be null but if given must follow Filter syntax
-    * @return
+    * Retrieves a list of entities using optional paging and filtering.
+    *
+    * @param skip   must be {@code 0} or greater
+    * @param limit  can be {@code 0} or a negative number in which case all records are returned,
+    *               a positive number and only the amount specified will be returned
+    * @param filter can be {@code null} but if given must follow Filter syntax
+    * @return list of matching entities
     */
-
    List<T> getListByQuery(int skip, int limit, @Nullable String filter);
 
 
 
    /**
-    * This method is used to get a list of entities based on the given query, skip, limit, sort fields, and projected properties.
-    * It allows for flexible querying and projection of data.
-    * @param skip must be 0 or greater
-    * @param limit can be 0 or a negative number in which case  all records are returned,
-    *              a positive number and only the amount specified will be returned
-    * @param filter can be null but if given must follow Filter syntax
-    * @param sortFields    can be null but if given must follow SortField syntax
-    * @param projectedProperties can be null but if given must follow ProjectionField syntax
-    * @return
+    * Returns a list of entities for the provided query with optional sorting and projection.
+    *
+    * @param skip                 must be {@code 0} or greater
+    * @param limit                can be {@code 0} or a negative number in which case all records are returned,
+    *                             a positive number and only the amount specified will be returned
+    * @param filter               can be {@code null} but if given must follow Filter syntax
+    * @param sortFields           can be {@code null} but if given must follow SortField syntax
+    * @param projectedProperties  can be {@code null} but if given must follow ProjectionField syntax
+    * @return list of matching entities
     */
    List<T> getListByQuery(int skip, int limit, @Nullable String filter, List<SortField> sortFields, List<ProjectionField> projectedProperties);
    List<T> getListByQuery (String realmId, int skip, int limit, @Nullable String query, List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields);
@@ -120,11 +121,15 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
    List<T> getList(Datastore datastore, int skip, int limit, @Nullable List<Filter> filters, @Nullable List<SortField> sortFields);
 
    /**
-    * This method is used to get a list of entities based on the given query, filter,
-    * @param ids  can be null but if given must follow Filter syntax
-    * @return  List of entities matching the given criteria
+    * Retrieves a list of entities by their identifiers within the provided realm.
+    *
+    * @param realmId the realm identifier, must not be {@code null}
+    * @param ids     list of entity ids, must not be empty
+    * @return list of matching entities
     */
-   List<T> getListFromIds(@NotNull(value="RealmId can not be null") String realmId,@NotNull(value="List of objectids can not be null") @NotEmpty (message = "list of ids can not be empty") List<ObjectId> ids);
+   List<T> getListFromIds(@NotNull(value="RealmId can not be null") String realmId,
+                          @NotNull(value="List of objectids can not be null")
+                          @NotEmpty(message = "list of ids can not be empty") List<ObjectId> ids);
    List<T> getListFromIds(@NotNull(value="List of objectids can not be null") @NotEmpty (message = "list of ids can not be empty") List<ObjectId> ids);
    List<T> getListFromIds(Datastore datastore,@NotNull(value="List of objectids can not be null") @NotEmpty (message = "list of ids can not be empty") List<ObjectId> ids);
    List<T> getListFromRefNames(String realmId,List<String> refNames);

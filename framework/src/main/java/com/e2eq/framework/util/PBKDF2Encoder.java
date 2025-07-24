@@ -11,6 +11,10 @@ import jakarta.enterprise.context.RequestScoped;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 /**
+ * Utility class that encodes passwords using the
+ * {@code PBKDF2WithHmacSHA512} algorithm.  The encoder
+ * is configured via MicroProfile configuration properties
+ * for the salt, iteration count and key length.
  *
  * @author ard333
  */
