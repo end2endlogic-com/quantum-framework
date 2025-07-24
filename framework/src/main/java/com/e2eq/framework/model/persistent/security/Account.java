@@ -10,6 +10,10 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 
+/**
+ * Represents a user account that belongs to an {@link Organization}.
+ * Each account is identified by a 10 digit account number.
+ */
 @Entity("account")
 @RegisterForReflection
 public class Account extends FullBaseModel {
@@ -20,11 +24,18 @@ public class Account extends FullBaseModel {
    @Reference
    Organization owningOrg;
 
+   /**
+    * Creates a new empty account instance.
+    */
    public Account() {
       super();
    }
 
 
+   /**
+    * Ensure the display name is set to the owning organisation's display name
+    * before the entity is persisted.
+    */
    @PrePersist
    public void prePersist () {
       if (displayName == null ) {
@@ -42,18 +53,34 @@ public class Account extends FullBaseModel {
       return "ACCOUNT";
    }
 
+   /**
+    * Returns the ten digit account number.
+    */
    public String getAccountNumber () {
       return accountNumber;
    }
 
+   /**
+    * Sets the account number.
+    *
+    * @param accountNumber ten digit identifier for the account
+    */
    public void setAccountNumber (@NotNull String accountNumber) {
       this.accountNumber = accountNumber;
    }
 
+   /**
+    * Returns the organisation that owns this account.
+    */
    public Organization getOwningOrg () {
       return owningOrg;
    }
 
+   /**
+    * Assigns the organisation that owns this account.
+    *
+    * @param owningOrg organisation that must already be persisted
+    */
    public void setOwningOrg (@NotNull @Valid Organization owningOrg) {
       if (owningOrg.getId() == null) {
          throw new IllegalArgumentException("owning org must have been persisted prior to this call and thus have a non null id");
