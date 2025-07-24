@@ -7,6 +7,9 @@ import jakarta.validation.constraints.NotNull;
 
 import java.util.Set;
 
+/**
+ * Abstraction for different authentication providers used by the framework.
+ */
 public interface AuthProvider {
     SecurityIdentity validateAccessToken(String token);
 

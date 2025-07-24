@@ -34,13 +34,16 @@ import static dev.morphia.query.filters.Filters.eq;
 // TR - The repository for HierarchicalModel type
 
 /**
+ * Generic resource that exposes REST endpoints for hierarchical structures.
+ * It is parameterised with the model type at each level and the associated
+ * repositories.
  *
- * @param <O> - The base model at each level of the hierarchy
- * @param <L> - the static dynamic list of O's at each level of the hierarchy
- * @param <OR> - the repository for O's at each level of the hierarchy
- * @param <LR> - the repository for static dynamic list of O's at each level of the hierarchy
- * @param <T> - The HierarchicalModel type
- * @param <TR> - The repository for HierarchicalModel type
+ * @param <O>  The base model at each level of the hierarchy
+ * @param <L>  the static dynamic list of {@code O}'s at each level of the hierarchy
+ * @param <OR> the repository for {@code O}
+ * @param <LR> the repository for the lists of {@code O}
+ * @param <T>  the hierarchical model type
+ * @param <TR> the repository for the hierarchical model
  */
 
 public class HierarchyResource<
