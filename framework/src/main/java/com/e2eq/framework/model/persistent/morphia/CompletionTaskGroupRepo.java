@@ -2,7 +2,7 @@ package com.e2eq.framework.model.persistent.morphia;
 
 import com.e2eq.framework.model.persistent.tasks.CompletionTaskGroup;
 import io.smallrye.mutiny.Multi;
-import io.smallrye.mutiny.MultiEmitter;
+import io.smallrye.mutiny.subscription.MultiEmitter;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.util.Map;
@@ -24,7 +24,7 @@ public class CompletionTaskGroupRepo extends MorphiaRepo<CompletionTaskGroup> {
         return save(group);
     }
 
-    public Multi<String> subscribe(String groupId) {
+    public Multi<Object> subscribe(String groupId) {
         return Multi.createFrom().emitter(emitter -> emitters.put(groupId, emitter))
                 .onTermination().invoke(() -> emitters.remove(groupId));
     }

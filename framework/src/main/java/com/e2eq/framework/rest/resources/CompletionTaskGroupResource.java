@@ -29,10 +29,10 @@ public class CompletionTaskGroupResource extends BaseResource<CompletionTaskGrou
     @Path("subscribe/{id}")
     @Produces(MediaType.SERVER_SENT_EVENTS)
     public void subscribe(@PathParam("id") String id, SseEventSink sink, Sse sse) {
-        Multi<String> stream = repo.subscribe(id);
+        Multi<Object> stream = repo.subscribe(id);
         stream.subscribe().with(item -> {
             if (!sink.isClosed()) {
-                sink.send(sse.newEvent(item));
+                sink.send(sse.newEvent(item.toString()));
             }
         },
         failure -> {
