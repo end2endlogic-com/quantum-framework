@@ -42,8 +42,10 @@ import java.util.*;
 import static java.lang.String.format;
 
 /**
- A base resource class
- @param <T> The type of the entity
+ * Base REST resource exposing CRUD style operations for an entity type.
+ *
+ * @param <T> The type of the entity
+ * @param <R> The repository used to access the entity
  */
 @SecurityScheme(
         securitySchemeName = "bearerAuth",
