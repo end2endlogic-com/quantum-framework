@@ -209,4 +209,28 @@ public abstract class HierarchicalRepo<
         return getAllObjectsForHierarchy(ohiearchyNode.get());
     }
 
+    /**
+     * Visits each child in the hierarchy starting with the supplied identifier.
+     *
+     * @param objectId the id of the hierarchy node to start traversal from
+     * @param visitor  the visitor that will be invoked for each child id
+     */
+    public void visitHierarchy(ObjectId objectId, HierarchyVisitor visitor) {
+        Objects.requireNonNull(objectId, "objectId can not be null for visitHierarchy method");
+        Objects.requireNonNull(visitor, "visitor can not be null for visitHierarchy method");
+        List<T> children = getAllChildren(objectId);
+        if (children != null) {
+            for (T child : children) {
+                if (child != null && child.getId() != null) {
+                    visitor.visit(child.getId());
+                }
+            }
+        }
+    }
+
+    @FunctionalInterface
+    public interface HierarchyVisitor {
+        void visit(ObjectId id);
+    }
+
 }
