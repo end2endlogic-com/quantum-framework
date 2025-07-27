@@ -4,6 +4,10 @@ import com.mongodb.client.MongoClient;
 import dev.morphia.transactions.MorphiaSession;
 import io.smallrye.mutiny.subscription.MultiEmitter;
 
+/**
+ * Defines a unit of database migration to be executed as part of the
+ * framework's change set mechanism.
+ */
 public interface ChangeSetBean {
    public String getId();
    public int getDbFromVersionInt();

@@ -28,10 +28,15 @@ import jakarta.ws.rs.NotFoundException;
  */
 public class TokenUtils {
 
-	public static final String REFRESH_SCOPE = "refreshToken";
-	public static final String AUTH_SCOPE = "authToken";
-	public static final String AUDIENCE = "b2bi-api-client";
-	public static final int REFRESH_ADDITIONAL_DURATION_SECONDS= 10;
+        public static final String REFRESH_SCOPE = "refreshToken";
+        public static final String AUTH_SCOPE = "authToken";
+        public static final String AUDIENCE = "b2bi-api-client";
+        public static final int REFRESH_ADDITIONAL_DURATION_SECONDS= 10;
+
+        private static volatile PrivateKey cachedPrivateKey;
+        private static volatile PublicKey cachedPublicKey;
+        private static final Object PRIVATE_KEY_LOCK = new Object();
+        private static final Object PUBLIC_KEY_LOCK = new Object();
 
 	// add builder class for the generateUserToken method.
 
@@ -48,8 +53,8 @@ public class TokenUtils {
 			throw new ValidationException("Duration must be greater than" + REFRESH_ADDITIONAL_DURATION_SECONDS + " seconds");
 		}
 
-		String privateKeyLocation = "privateKey.pem";
-		PrivateKey privateKey = readPrivateKey(privateKeyLocation);
+                String privateKeyLocation = "privateKey.pem";
+                PrivateKey privateKey = cachedPrivateKey != null ? cachedPrivateKey : readPrivateKey(privateKeyLocation);
 
 		JwtClaimsBuilder claimsBuilder = Jwt.claims();
 		long currentTimeInSecs = currentTimeInSecs();
@@ -76,8 +81,8 @@ public class TokenUtils {
 
 
 
-		String privateKeyLocation = "privateKey.pem";
-		PrivateKey privateKey = readPrivateKey(privateKeyLocation);
+                String privateKeyLocation = "privateKey.pem";
+                PrivateKey privateKey = cachedPrivateKey != null ? cachedPrivateKey : readPrivateKey(privateKeyLocation);
 		JwtClaimsBuilder claimsBuilder = Jwt.claims();
 		long currentTimeInSecs = currentTimeInSecs();
 		claimsBuilder.issuer(issuer);
@@ -104,33 +109,46 @@ public class TokenUtils {
 		return claimsBuilder.jws().keyId(privateKeyLocation).sign(privateKey);
 	}
 
-	public static PrivateKey readPrivateKey(final String pemResName) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
-		ClassLoader loader = Thread.currentThread().getContextClassLoader();
-		try (InputStream contentIS = loader.getResourceAsStream(pemResName)) {
-			if (contentIS == null ) {
-				throw new IOException("Could not find Private Key with ResourceName:" + pemResName);
-			}
-			byte[] tmp = new byte[4096];
-			int length = contentIS.read(tmp);
-			if (length == 0) {
-				throw new IOException("Could not find private key");
-			}
-			return decodePrivateKey(new String(tmp, 0, length, StandardCharsets.UTF_8));
-		}
-	}
+        public static PrivateKey readPrivateKey(final String pemResName) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+                if (cachedPrivateKey == null) {
+                        synchronized (PRIVATE_KEY_LOCK) {
+                                if (cachedPrivateKey == null) {
+                                        ClassLoader loader = Thread.currentThread().getContextClassLoader();
+                                        try (InputStream contentIS = loader.getResourceAsStream(pemResName)) {
+                                                if (contentIS == null) {
+                                                        throw new IOException("Could not find Private Key with ResourceName:" + pemResName);
+                                                }
+                                                byte[] tmp = new byte[4096];
+                                                int length = contentIS.read(tmp);
+                                                if (length == 0) {
+                                                        throw new IOException("Could not find private key");
+                                                }
+                                                cachedPrivateKey = decodePrivateKey(new String(tmp, 0, length, StandardCharsets.UTF_8));
+                                        }
+                                }
+                        }
+                }
+                return cachedPrivateKey;
+        }
 
-	public static PublicKey readPublicKey(String pemResName) throws Exception {
-		ClassLoader loader = Thread.currentThread().getContextClassLoader();
-		try (InputStream contentIS = loader.getResourceAsStream(pemResName)) {
-			if (contentIS == null ) {
-				throw new Exception("Could not find Public Key with ResourceName:" + pemResName);
-			}
-			byte[] tmp = new byte[4096];
-			assert contentIS != null;
-			int length = contentIS.read(tmp);
-			return decodePublicKey(new String(tmp, 0, length));
-		}
-	}
+        public static PublicKey readPublicKey(String pemResName) throws Exception {
+                if (cachedPublicKey == null) {
+                        synchronized (PUBLIC_KEY_LOCK) {
+                                if (cachedPublicKey == null) {
+                                        ClassLoader loader = Thread.currentThread().getContextClassLoader();
+                                        try (InputStream contentIS = loader.getResourceAsStream(pemResName)) {
+                                                if (contentIS == null) {
+                                                        throw new Exception("Could not find Public Key with ResourceName:" + pemResName);
+                                                }
+                                                byte[] tmp = new byte[4096];
+                                                int length = contentIS.read(tmp);
+                                                cachedPublicKey = decodePublicKey(new String(tmp, 0, length));
+                                        }
+                                }
+                        }
+                }
+                return cachedPublicKey;
+        }
 
 	public static PublicKey decodePublicKey(String pemEncoded) throws Exception {
 		pemEncoded = removeBeginEnd(pemEncoded);
