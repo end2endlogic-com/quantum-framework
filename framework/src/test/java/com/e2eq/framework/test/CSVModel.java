@@ -24,6 +24,8 @@ public class CSVModel extends BaseModel {
     protected String testField3;
     protected List<String> testList;
     protected Map<String, String> testMap;
+    protected int numberField;
+    protected java.math.BigDecimal decimalField;
 
 
     @Override

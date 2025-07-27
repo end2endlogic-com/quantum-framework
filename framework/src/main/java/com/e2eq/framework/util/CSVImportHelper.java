@@ -11,6 +11,7 @@ import jakarta.validation.ValidationException;
 import jakarta.validation.Validator;
 import jakarta.ws.rs.WebApplicationException;
 
+import org.supercsv.cellprocessor.*;
 import org.supercsv.cellprocessor.ift.CellProcessor;
 import org.supercsv.io.dozer.CsvDozerBeanReader;
 import org.supercsv.io.dozer.ICsvDozerBeanReader;
@@ -18,6 +19,7 @@ import org.supercsv.prefs.CsvPreference;
 import org.supercsv.quote.AlwaysQuoteMode;
 import org.supercsv.quote.NormalQuoteMode;
 import org.supercsv.quote.QuoteMode;
+import org.supercsv.util.CsvContext;
 
 import java.io.*;
 import java.nio.charset.Charset;
@@ -184,7 +186,8 @@ public class CSVImportHelper {
 
             beanReader.configureBeanMapping(repo.getPersistentClass(), fieldMapping);
 
-            CellProcessor[] processors = new CellProcessor[fieldMapping.length];
+            ListCellProcessor listProcessor = new ListCellProcessor();
+            CellProcessor[] processors = buildProcessors(repo.getPersistentClass(), requestedColumns, listProcessor);
 
             result = preprocessFlatProperty(repo, beanReader, processors, failedRecordHandler);
 
@@ -194,6 +197,69 @@ public class CSVImportHelper {
         }
 
         return result;
+    }
+
+    private CellProcessor[] buildProcessors(Class<?> clazz, List<String> cols, ListCellProcessor listProcessor) {
+        CellProcessor[] processors = new CellProcessor[cols.size()];
+        for (int i = 0; i < cols.size(); i++) {
+            String fieldName = cols.get(i);
+            if (fieldName.contains("[")) {
+                processors[i] = new org.supercsv.cellprocessor.Optional(listProcessor);
+                continue;
+            }
+            Class<?> type = getFieldType(clazz, fieldName);
+            if (type == int.class || type == Integer.class) {
+                processors[i] = new org.supercsv.cellprocessor.Optional(new ParseInt());
+            } else if (type == long.class || type == Long.class) {
+                processors[i] = new org.supercsv.cellprocessor.Optional(new ParseLong());
+            } else if (type == double.class || type == Double.class ||
+                    type == float.class || type == Float.class) {
+                processors[i] = new org.supercsv.cellprocessor.Optional(new ParseDouble());
+            } else if (type == java.math.BigDecimal.class) {
+                processors[i] = new org.supercsv.cellprocessor.Optional(new ParseBigDecimal());
+            } else {
+                processors[i] = new org.supercsv.cellprocessor.Optional();
+            }
+        }
+        return processors;
+    }
+
+    private Class<?> getFieldType(Class<?> clazz, String name) {
+        String clean = name.replace("[0]", "");
+        Class<?> current = clazz;
+        while (current != null) {
+            try {
+                return current.getDeclaredField(clean).getType();
+            } catch (NoSuchFieldException ignored) {
+                current = current.getSuperclass();
+            }
+        }
+        return null;
+    }
+
+    public class ListCellProcessor extends CellProcessorAdaptor {
+
+        protected int i;
+
+        public Object execute(Object value, CsvContext context) {
+            validateInputNotNull(value, context);
+
+            if (value instanceof List) {
+                List list = ((List) value);
+                if (i >= list.size()) {
+                    return next.execute("", context);
+                } else {
+                    return next.execute(((List) value).get(i), context);
+                }
+
+            } else {
+                return next.execute(value, context);
+            }
+        }
+
+        public void setIndex(int index) {
+            this.i = index;
+        }
     }
 
     public <T extends UnversionedBaseModel> ImportResult<T> importCSV(
@@ -231,8 +297,8 @@ public class CSVImportHelper {
 
             beanReader.configureBeanMapping(repo.getPersistentClass(), fieldMapping);
 
-            CellProcessor[] processors = new CellProcessor[fieldMapping.length];
-            // TODO: Configure appropriate CellProcessors based on field types
+            ListCellProcessor listProcessor = new ListCellProcessor();
+            CellProcessor[] processors = buildProcessors(repo.getPersistentClass(), requestedColumns, listProcessor);
 
            result = importFlatProperty(repo, beanReader, processors, failedRecordHandler);
 

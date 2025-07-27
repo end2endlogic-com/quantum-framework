@@ -10,10 +10,13 @@ import java.util.*;
 
 
 /**
+ * Repository helper for {@link StaticDynamicList} types.  It manages lists
+ * that can either contain static items or dynamically resolved items based on
+ * a query.
  *
- * @param <O> - the object that is in the list
- * @param <OR> - the repo for that object
- * @param <T> - The static dynamic list type
+ * @param <O>  the object that is in the list
+ * @param <OR> the repository for that object
+ * @param <T>  the static dynamic list type
  */
 public abstract class StaticDynamicListRepo<O extends UnversionedBaseModel, OR extends MorphiaRepo<O>, T extends StaticDynamicList> extends MorphiaRepo<T>{
     OR objectRepo;
