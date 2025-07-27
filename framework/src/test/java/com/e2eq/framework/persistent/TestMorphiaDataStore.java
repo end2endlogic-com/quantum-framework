@@ -68,7 +68,7 @@ public class TestMorphiaDataStore extends BaseRepoTest{
         }
 
         Assertions.assertEquals(1, results.size());
-        Assertions.assertTrue(dataStore.datastoreMap.containsKey(realm));
+        Assertions.assertTrue(dataStore.getDataStore(realm) != null);
 
         dataStore.getDataStore(realm).getDatabase().drop();
     }
