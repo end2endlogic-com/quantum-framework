@@ -65,30 +65,6 @@ public class HierarchyResource<
     protected TR hierarchicalRepo;
 
 
-    @GET
-    @Path("/childrenById/{id}")
-    @Produces(MediaType.APPLICATION_JSON)
-    @Consumes(MediaType.APPLICATION_JSON)
-    public List<T> getChildrenById(@PathParam("id") ObjectId id) {
-        return hierarchicalRepo.getAllChildren(id);
-    }
-
-    @GET
-    @Path("/objectsById/{id}")
-    @Produces(MediaType.APPLICATION_JSON)
-    @Consumes(MediaType.APPLICATION_JSON)
-    public List<O> getObjectsById(@PathParam("id") ObjectId id) {
-        return hierarchicalRepo.getAllObjectsForHierarchy(id);
-    }
-
-    @GET
-    @Path("/objectsByRefName/{refName}")
-    @Produces(MediaType.APPLICATION_JSON)
-    @Consumes(MediaType.APPLICATION_JSON)
-    public List<O> getObjectsByRefName(@PathParam("refName") String refName) {
-        return hierarchicalRepo.getAllObjectsForHierarchy(refName);
-    }
-
 
     @GET
     @Path("/trees")
