@@ -590,7 +590,7 @@
                     <fileSet>
                       <dependency>
                         <groupId>com.end2endlogic</groupId>
-                        <artfactId>quantum-models</artfactId>
+                        <artifactId>quantum-models</artifactId>
                       </dependency>
                     </fileSet>
                   </fileSets>

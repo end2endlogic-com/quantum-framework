@@ -1,6 +1,5 @@
 package com.e2eq.framework.rest.resources;
 
-import com.e2eq.framework.model.persistent.base.BaseModel;
 import com.e2eq.framework.model.persistent.base.HierarchicalModel;
 import com.e2eq.framework.model.persistent.base.StaticDynamicList;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
@@ -12,10 +11,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mongodb.client.MongoCursor;
 import dev.morphia.MorphiaDatastore;
 import jakarta.inject.Inject;
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.GET;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import org.bson.Document;
 import org.bson.types.ObjectId;
@@ -69,13 +65,36 @@ public class HierarchyResource<
     protected TR hierarchicalRepo;
 
 
+    @GET
+    @Path("/childrenById/{id}")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public List<T> getChildrenById(@PathParam("id") ObjectId id) {
+        return hierarchicalRepo.getAllChildren(id);
+    }
+
+    @GET
+    @Path("/objectsById/{id}")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public List<O> getObjectsById(@PathParam("id") ObjectId id) {
+        return hierarchicalRepo.getAllObjectsForHierarchy(id);
+    }
+
+    @GET
+    @Path("/objectsByRefName/{refName}")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public List<O> getObjectsByRefName(@PathParam("refName") String refName) {
+        return hierarchicalRepo.getAllObjectsForHierarchy(refName);
+    }
 
 
     @GET
     @Path("/trees")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public List<TreeNode> getTerritoryTrees() {
+    public List<TreeNode> getTrees () {
         List<TreeNode> nodes = new ArrayList<>();
         Document query = new Document("parent", new Document("$exists", false));
         try (MongoCursor<T> cursor = datastore.getCollection(repo.getPersistentClass()).find(query).iterator()) {
