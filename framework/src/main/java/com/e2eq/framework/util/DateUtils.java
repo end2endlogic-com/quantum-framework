@@ -17,7 +17,9 @@ public class DateUtils {
       // Step 2: Apply the desired time zone
       ZonedDateTime zonedDateTime = instant.atZone(desiredTimezone.toZoneId());
 
-      // Step 3: Return as a Date, representing the *wall-clock time* in the new time zone
-      return Date.from(zonedDateTime.toInstant());
+      // Step 3: Adjust the instant by the zone offset so the returned Date
+      // represents the wall-clock time in the supplied time zone
+      Instant adjustedInstant = instant.minusSeconds(zonedDateTime.getOffset().getTotalSeconds());
+      return Date.from(adjustedInstant);
    }
 }

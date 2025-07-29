@@ -22,7 +22,7 @@ import java.util.List;
 @EqualsAndHashCode(callSuper = true)
 @RegisterForReflection
 @ToString
-public abstract class HierarchicalModel<T extends HierarchicalModel,
+public abstract class HierarchicalModel<T extends HierarchicalModel<T,O,L>,
         O extends UnversionedBaseModel,
         L extends StaticDynamicList<O>> extends BaseModel {
 

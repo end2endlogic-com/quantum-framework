@@ -34,7 +34,7 @@ import static dev.morphia.query.filters.Filters.eq;
  * @param <LR> - The repository for the static or dynamic list of Object O's
  */
 public abstract class HierarchicalRepo<
-        T extends HierarchicalModel,
+        T extends HierarchicalModel<T,O,L>,
         O extends UnversionedBaseModel,
         L extends StaticDynamicList<O>,
         OR extends MorphiaRepo<O>,
@@ -121,13 +121,13 @@ public abstract class HierarchicalRepo<
     }
 
 
-    public List<T> getAllChildren(ObjectId territoryId) {
+    public List<T> getAllChildren(ObjectId nodeId) {
         // Start the pipeline on the "territory" collection
         Class<T> entityClass = getPersistentClass();
         Aggregation<T> pipeline = morphiaDataStore
                 .getDataStore(getSecurityContextRealmId())
                 .aggregate(entityClass)
-                .match(eq("_id", territoryId))
+                .match(eq("_id", nodeId))
                 .graphLookup(
                         graphLookup(entityClass)
                                 .startWith("$descendants")
@@ -177,15 +177,15 @@ public abstract class HierarchicalRepo<
         return objects;
     }
 
-    protected List<O> getAllObjectsForHierarchy(@Valid T territory) {
-        Objects.requireNonNull(territory, "territory can not be null for getAllLocationsForTerritory method");
-        Objects.requireNonNull(territory.getId(), "territory id can not be null for getAllLocationsForTerritory method");
-        Optional<T> oterritory = findById(territory.getId());
+    protected List<O> getAllObjectsForHierarchy(@Valid T node) {
+        Objects.requireNonNull(node, "node can not be null for getAllObjectsForHierarchy method");
+        Objects.requireNonNull(node.getId(), "node id can not be null for getAllObjectsForHierarchy method");
+        Optional<T> oterritory = findById(node.getId());
         if (!oterritory.isPresent()) {
-            throw new NotFoundException("Territory not found for id: " + territory.getId());
+            throw new NotFoundException("Object not found for id: " + node.getId());
         }
         Set<O> locationSet = new HashSet<>();
-        List<T> descendants = getAllChildren(territory.getId());
+        List<T> descendants = getAllChildren(node.getId());
         if (descendants != null && !descendants.isEmpty()) {
 
             for (T t : descendants) {
