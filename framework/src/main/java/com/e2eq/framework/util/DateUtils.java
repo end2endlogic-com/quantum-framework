@@ -1,25 +1,32 @@
 package com.e2eq.framework.util;
 
-import java.time.Instant;
-import java.time.ZonedDateTime;
+import java.time.*;
 import java.util.Date;
+import java.util.Objects;
 import java.util.TimeZone;
 
 public class DateUtils {
-   public static Date calculateLocalDate(Date dateToConvert, TimeZone desiredTimezone) {
-      if (dateToConvert == null || desiredTimezone == null) {
-         throw new IllegalArgumentException("Date and TimeZone must not be null");
+   public static Date calculateDate(ZonedDateTime zt, ZoneId targetTimeZone) {
+      ZonedDateTime converted = zt.withZoneSameInstant(targetTimeZone);
+      LocalDateTime localInTarget = converted.toLocalDateTime();
+      ZoneId originalZone = zt.getZone();
+      ZonedDateTime adjusted = ZonedDateTime.of(localInTarget, originalZone);
+      return Date.from(adjusted.toInstant());
+   }
+
+   public static ZonedDateTime getZonedDateTime (LocalDate date, LocalTime time, ZoneId zoneId) {
+      try {
+         return ZonedDateTime.of(date, time, zoneId);
+      } catch (Exception e) {
+         return null;
       }
+   }
 
-      // Step 1: Convert the Date (which is UTC-based) to an Instant
-      Instant instant = dateToConvert.toInstant();
-
-      // Step 2: Apply the desired time zone
-      ZonedDateTime zonedDateTime = instant.atZone(desiredTimezone.toZoneId());
-
-      // Step 3: Adjust the instant by the zone offset so the returned Date
-      // represents the wall-clock time in the supplied time zone
-      Instant adjustedInstant = instant.minusSeconds(zonedDateTime.getOffset().getTotalSeconds());
-      return Date.from(adjustedInstant);
+   public static Date parseDateTime (String inputDateTimeString) {
+      try {
+         return Date.from(Instant.parse(inputDateTimeString));
+      } catch (Exception e) {
+         return null;
+      }
    }
 }
