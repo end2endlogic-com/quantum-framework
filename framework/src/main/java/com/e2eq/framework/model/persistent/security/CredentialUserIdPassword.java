@@ -39,6 +39,10 @@ public class CredentialUserIdPassword extends BaseModel {
     @NotEmpty
     protected String username;
 
+    /**
+     Not currently used but in various plugins it may be good to capture this value
+     */
+    protected String subject;
 
     @NonNull
     @NotNull ( message = "domain context is required")
