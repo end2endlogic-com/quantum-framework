@@ -13,8 +13,11 @@ import dev.morphia.MorphiaDatastore;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
 import org.bson.Document;
 import org.bson.types.ObjectId;
+import com.e2eq.framework.rest.services.HierarchyTreeService;
+import com.e2eq.framework.rest.dto.GenericHierarchyDto;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -64,6 +67,9 @@ public class HierarchyResource<
     @Inject
     protected TR hierarchicalRepo;
 
+    @Inject
+    protected HierarchyTreeService treeService;
+
 
 
     @GET
@@ -81,6 +87,25 @@ public class HierarchyResource<
         }
 
         return nodes;
+    }
+
+    @GET
+    @Path("/{id}/tree")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getTree(@PathParam("id") String id,
+                            @QueryParam("depth") @DefaultValue("1") int depth) {
+        ObjectId oid;
+        try {
+            oid = new ObjectId(id);
+        } catch (IllegalArgumentException ex) {
+            return Response.status(Response.Status.BAD_REQUEST).entity("Invalid id").build();
+        }
+        depth = Math.max(0, Math.min(depth, 5));
+        GenericHierarchyDto dto = treeService.buildTree(oid, repo.getPersistentClass(), depth);
+        if (dto == null) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+        return Response.ok(dto).build();
     }
 
     private TreeNode toTreeNode(T object) {

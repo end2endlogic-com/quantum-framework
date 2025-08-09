@@ -34,6 +34,7 @@ public abstract class HierarchicalModel<T extends HierarchicalModel<T,O,L>,
 
     @Schema(implementation = HierarchicalModel.class, description = "this is calculated and not saved to the database and therefore should be read only")
     @JsonIgnore
+    @EqualsAndHashCode.Exclude
     protected List<T> children;
 
     @Schema(implementation = HierarchicalModel.class, description = "The parent of the HierarchicalModel, null if it is a root node")
