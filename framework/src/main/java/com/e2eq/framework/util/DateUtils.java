@@ -7,11 +7,8 @@ import java.util.TimeZone;
 
 public class DateUtils {
    public static Date calculateDate(ZonedDateTime zt, ZoneId targetTimeZone) {
-      ZonedDateTime converted = zt.withZoneSameInstant(targetTimeZone);
-      LocalDateTime localInTarget = converted.toLocalDateTime();
-      ZoneId originalZone = zt.getZone();
-      ZonedDateTime adjusted = ZonedDateTime.of(localInTarget, originalZone);
-      return Date.from(adjusted.toInstant());
+      // Represent the same instant in the target timezone and return the corresponding Date (instant)
+      return Date.from(zt.withZoneSameInstant(targetTimeZone).toInstant());
    }
 
    public static ZonedDateTime getZonedDateTime (LocalDate date, LocalTime time, ZoneId zoneId) {

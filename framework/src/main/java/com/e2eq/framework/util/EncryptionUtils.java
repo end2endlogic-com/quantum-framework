@@ -14,6 +14,7 @@ public class EncryptionUtils {
     }
 
     public static String hashAlgorithm() {
-        return "BCrypt.default";
+        // Include algorithm metadata for auditability/migrations
+        return "bcrypt$cost=12$favre-0.10.2";
     }
 }

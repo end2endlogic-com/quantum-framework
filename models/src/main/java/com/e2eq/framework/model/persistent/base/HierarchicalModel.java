@@ -2,6 +2,7 @@ package com.e2eq.framework.model.persistent.base;
 
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import dev.morphia.annotations.Entity;
 import dev.morphia.annotations.PrePersist;
 import io.quarkus.logging.Log;
@@ -31,8 +32,8 @@ public abstract class HierarchicalModel<T extends HierarchicalModel<T,O,L>,
     @Schema(implementation = String.class, description = "collection of child HierarchicalModel ids")
     protected List<ObjectId> descendants;
 
-    @Schema(implementation = HierarchicalModel.class, description = "this is calculated and not saved to the database and there for  should be read only")
-
+    @Schema(implementation = HierarchicalModel.class, description = "this is calculated and not saved to the database and therefore should be read only")
+    @JsonIgnore
     protected List<T> children;
 
     @Schema(implementation = HierarchicalModel.class, description = "The parent of the HierarchicalModel, null if it is a root node")
@@ -41,7 +42,7 @@ public abstract class HierarchicalModel<T extends HierarchicalModel<T,O,L>,
     @PrePersist
     void beforeSave() {
         if (children != null) {
-            Log.warnf("WARNING: Children set and will be ignored used descendants if your intentions are to add children, collection contains %d items", children.size());
+            Log.warnf("WARNING: Children set on HierarchicalModel id=%s; will be ignored. Use 'descendants' to add children. Collection contains %d items", getId(), children.size());
             this.children = null; // or cache it somewhere else
         }
     }

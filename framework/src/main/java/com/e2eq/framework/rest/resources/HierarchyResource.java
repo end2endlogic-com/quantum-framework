@@ -95,31 +95,53 @@ public class HierarchyResource<
         // Convert object to TreeNode
         TreeNode node = toTreeNode(object);
 
-        // Populate metadata
-        Map<String, Object> data = objectMapper.convertValue(object, new TypeReference<>() {
-        });
+        // Populate curated metadata only (avoid leaking internal fields)
+        Map<String, Object> data = new java.util.HashMap<>();
         data.put("id", node.key);
+        data.put("displayName", object.getDisplayName());
         data.put("skipValidation", false);
         // TODO should pull this from functional domain definition
         data.put("defaultUIActions", List.of("CREATE", "UPDATE", "VIEW", "DELETE", "ARCHIVE"));
         node.data = data;
 
+        // Guard against accidental cycles
+        return resolveChildren(object, node, new java.util.HashSet<>());
+    }
 
-        // Handle child territories
+    private TreeNode resolveChildren(T object, TreeNode node, java.util.Set<ObjectId> visited) {
+        if (object.getId() != null && !visited.add(object.getId())) {
+            // already visited, break the cycle
+            return node;
+        }
+
+        // Handle child nodes with one batch fetch per level
         if (object.getDescendants() != null && !object.getDescendants().isEmpty()) {
-            for ( ObjectId decendentObjectId : object.getDescendants()) {
-                // Find the child object first and check if it exists
-                T childObject = datastore.find(repo.getPersistentClass())
-                        .filter(eq("_id", decendentObjectId))
-                        .first();
+            List<ObjectId> ids = object.getDescendants();
+            List<T> children = datastore.find(repo.getPersistentClass())
+                    .filter(dev.morphia.query.filters.Filters.in("_id", ids))
+                    .iterator().toList();
+            java.util.Map<ObjectId, T> byId = new java.util.HashMap<>();
+            for (T c : children) {
+                if (c.getId() != null) {
+                    byId.put(c.getId(), c);
+                }
+            }
+            for (ObjectId id : ids) {
+                T childObject = byId.get(id);
                 if (childObject != null) {
-                    // Recursively resolve descendant territories
-                    TreeNode childNode = resolveToHierarchy(childObject);
-                    node.children.add(childNode);
+                    TreeNode childNode = toTreeNode(childObject);
+                    // Curated child data
+                    java.util.Map<String, Object> childData = new java.util.HashMap<>();
+                    childData.put("id", childNode.key);
+                    childData.put("displayName", childObject.getDisplayName());
+                    childData.put("skipValidation", false);
+                    childData.put("defaultUIActions", List.of("CREATE", "UPDATE", "VIEW", "DELETE", "ARCHIVE"));
+                    childNode.data = childData;
+
+                    node.children.add(resolveChildren(childObject, childNode, visited));
                 }
             }
         }
-
         return node;
     }
 

@@ -146,10 +146,11 @@ public class CustomTokenAuthProvider  extends BaseAuthProvider implements AuthPr
          credential.setUserId(userId);
          credential.setUsername(username);
          credential.setForceChangePassword(forceChangePassword);
-         if (credential.getHashingAlgorithm().equalsIgnoreCase("BCrypt.default")) {
+         String alg = credential.getHashingAlgorithm();
+         if (alg != null && (alg.equalsIgnoreCase("BCrypt.default") || alg.toLowerCase().startsWith("bcrypt"))) {
             credential.setPasswordHash(EncryptionUtils.hashPassword(password));
          } else {
-            throw new SecurityException("Unsupported hashing algorithm: " + credential.getHashingAlgorithm());
+            throw new SecurityException("Unsupported hashing algorithm: " + alg);
          }
          credential.setDomainContext(domainContext);
          credential.setRoles(roles.toArray(new String[roles.size()]));
@@ -337,7 +338,8 @@ public class CustomTokenAuthProvider  extends BaseAuthProvider implements AuthPr
                      "Password change required")
                );
             }
-            if (credential.getHashingAlgorithm().equalsIgnoreCase("BCrypt.default")) {
+            String alg = credential.getHashingAlgorithm();
+            if (alg != null && (alg.equalsIgnoreCase("BCrypt.default") || alg.toLowerCase().startsWith("bcrypt"))) {
                boolean isCredentialValid = EncryptionUtils.checkPassword(password, credential.getPasswordHash());
                if (isCredentialValid) {
                   // String authToken = generateAuthToken(userId);

@@ -53,6 +53,7 @@ public class CredentialUserIdPassword extends BaseModel {
     @NotNull( message = "passwordHash must be non null")
     @NonNull
     @JsonIgnore
+    @ToString.Exclude
     protected String passwordHash;
 
     Boolean forceChangePassword;
@@ -70,9 +71,11 @@ public class CredentialUserIdPassword extends BaseModel {
 
     @NonNull protected Date lastUpdate;
 
+    @ToString.Exclude
     protected Map<String, String> area2RealmOverrides;
 
     // this is really a script.
+    @ToString.Exclude
     protected String impersonateFilterScript;
 
     //@Regex
