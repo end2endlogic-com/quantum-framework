@@ -25,20 +25,31 @@ public class TestDateUtils {
 
    @Test
    public void testTimezoneConversion() {
+      LocalDate date = LocalDate.of(2022, 1, 1);
+      LocalTime time = LocalTime.of(12, 0);
+      ZoneId ny = ZoneId.of("America/New_York");
+      ZonedDateTime dtNY = DateUtils.getZonedDateTime(date, time, ny);
+      ZoneId chicago  = ZoneId.of("America/Chicago");
 
-   LocalDate date = LocalDate.of(2022, 1, 1);
-   LocalTime time = LocalTime.of(12, 0);
-   ZoneId zoneId = ZoneId.of("America/New_York");
-   ZonedDateTime dt = DateUtils.getZonedDateTime(date, time, zoneId);
-   System.out.println("ZonedDateTime: " + dt);;
-   ZoneId desiredTimezone  = ZoneId.of("America/Chicago");
+      Date convertedDate = DateUtils.calculateDate(dtNY, chicago);
 
-   Date convertedDate = DateUtils.calculateDate(dt, desiredTimezone);
-   // validate that the dateToConvert and the convertedDate are 1 hour apart with the convertedDate being 1 hour less
-   SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss Z");
-   sdf.setTimeZone(TimeZone.getTimeZone("America/New_York"));
-  System.out.println("Converted Date: " + sdf.format(convertedDate));
-  // assert the time of the convertedDate is 1 hr earlier than the ZonedDateTime dt
+      // The conversion should preserve the instant, i.e., equal to dtNY instant
+      assertEquals(dtNY.toInstant(), convertedDate.toInstant());
+
+      // And when rendering that instant in Chicago, the local wall time should be one hour earlier than NY on this date
+      ZonedDateTime dtChicagoSameInstant = dtNY.withZoneSameInstant(chicago);
+
+      SimpleDateFormat sdfNY = new SimpleDateFormat("yyyy-MM-dd HH:mm");
+      sdfNY.setTimeZone(TimeZone.getTimeZone("America/New_York"));
+      SimpleDateFormat sdfCHI = new SimpleDateFormat("yyyy-MM-dd HH:mm");
+      sdfCHI.setTimeZone(TimeZone.getTimeZone("America/Chicago"));
+
+      String nyRendered = sdfNY.format(Date.from(dtNY.toInstant()));
+      String chiRendered = sdfCHI.format(convertedDate);
+
+      // Expect 11:00 in Chicago when it's 12:00 in New York for this date
+      org.junit.jupiter.api.Assertions.assertTrue(nyRendered.endsWith("12:00"));
+      org.junit.jupiter.api.Assertions.assertTrue(chiRendered.endsWith("11:00"));
    }
 
 
