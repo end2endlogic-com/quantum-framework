@@ -250,8 +250,14 @@ public class CSVExportHelper {
                     writeErrorToCSV(writer, 400, e);
                     throw new WebApplicationException(e, 400);
                 } finally {
-                    beanWriter.close();
-                    output.close();
+                    try {
+                        if (beanWriter != null) {
+                            beanWriter.flush();
+                            beanWriter.close();
+                        }
+                    } catch (Exception ignore) { }
+                    try { writer.flush(); } catch (Exception ignore) { }
+                    try { output.close(); } catch (Exception ignore) { }
                 }
             }
 

@@ -32,6 +32,8 @@ import static java.lang.String.format;
 
 @ApplicationScoped
 public class CSVImportHelper {
+    // Minimal in-memory session store for preview/commit workflow
+    private static final java.util.Map<String, ImportSession<?>> SESSIONS = new java.util.concurrent.ConcurrentHashMap<>();
     private static final int BATCH_SIZE = 1000;
 
     @Inject
@@ -91,65 +93,144 @@ public class CSVImportHelper {
     }
 
     public static class ImportResult<T> {
-        private int updateCount;
-        private int insertCount;
-        private int importedCount;
-        private int failedCount;
-        private final List<String> failedRecordsFeedback;
+            // New: session and detailed metrics/results for preview and commit
+            private String sessionId;
+            private int totalRows;
+            private int validRows;
+            private int errorRows;
+            private int updateCount;
+            private int insertCount;
+            private int importedCount;
+            private int failedCount;
+            private final List<String> failedRecordsFeedback;
+            private final List<ImportRowResult<T>> rowResults = new ArrayList<>();
 
-        public ImportResult(int importedCount, int failedCount) {
-            this.importedCount = importedCount;
-            this.failedCount = failedCount;
-            this.failedRecordsFeedback = new ArrayList<>();
+            public ImportResult(int importedCount, int failedCount) {
+                this.importedCount = importedCount;
+                this.failedCount = failedCount;
+                this.failedRecordsFeedback = new ArrayList<>();
+            }
+
+            public String getSessionId() { return sessionId; }
+            public void setSessionId(String sessionId) { this.sessionId = sessionId; }
+            public int getTotalRows() { return totalRows; }
+            public void incrementTotalRows() { this.totalRows++; }
+            public int getValidRows() { return validRows; }
+            public void incrementValidRows() { this.validRows++; }
+            public int getErrorRows() { return errorRows; }
+            public void incrementErrorRows() { this.errorRows++; }
+
+            public int getImportedCount() {
+                return importedCount;
+            }
+
+            public void incrementFailedCount() {
+                incrementFailedCount(1);
+            }
+
+            public void incrementFailedCount(int amount) {
+                this.failedCount = this.failedCount + amount;
+            }
+
+            public void incrementImportedCount() {
+              incrementImportedCount(1);
+            }
+
+            public void incrementImportedCount(int amount) {
+                this.importedCount = this.importedCount + amount;
+            }
+
+            public int getFailedCount() {
+                return failedCount;
+            }
+            public List<String> getFailedRecordsFeedback() {
+                return failedRecordsFeedback;
+            }
+
+            public void addFailedRecordFeedback(String feedback) {
+                this.failedRecordsFeedback.add(feedback);
+            }
+
+            public void setInsertCount(int insertCount) {
+                this.insertCount = insertCount;
+            }
+
+            public void setUpdateCount(int updateCount) {
+                this.updateCount = updateCount;
+            }
+
+            public int getInsertCount() {
+                return insertCount;
+            }
+
+            public int getUpdateCount () {
+                return updateCount;
+            }
+
+            public List<ImportRowResult<T>> getRowResults() { return rowResults; }
         }
 
-        public int getImportedCount() {
-            return importedCount;
+        // Per-field error information
+        public static class FieldError {
+            private String field; // may be null if unknown
+            private String message;
+            private String code; // e.g., VALIDATION, PARSE, MAPPING, DB
+            public FieldError() {}
+            public FieldError(String field, String message, String code) {
+                this.field = field; this.message = message; this.code = code;
+            }
+            public String getField() { return field; }
+            public String getMessage() { return message; }
+            public String getCode() { return code; }
+            public void setField(String field) { this.field = field; }
+            public void setMessage(String message) { this.message = message; }
+            public void setCode(String code) { this.code = code; }
         }
 
-        public void incrementFailedCount() {
-            incrementFailedCount(1);
+        public enum Intent { INSERT, UPDATE, SKIP }
+
+        // Per-row result
+        public static class ImportRowResult<T> {
+            private int rowNumber;
+            private String refName;
+            private Intent intent = Intent.SKIP;
+            private final List<FieldError> errors = new ArrayList<>();
+            private T record; // optional reference for debugging
+            public int getRowNumber() { return rowNumber; }
+            public void setRowNumber(int rowNumber) { this.rowNumber = rowNumber; }
+            public String getRefName() { return refName; }
+            public void setRefName(String refName) { this.refName = refName; }
+            public Intent getIntent() { return intent; }
+            public void setIntent(Intent intent) { this.intent = intent; }
+            public List<FieldError> getErrors() { return errors; }
+            public T getRecord() { return record; }
+            public void setRecord(T record) { this.record = record; }
+            public boolean hasErrors() { return !errors.isEmpty(); }
         }
 
-        public void incrementFailedCount(int amount) {
-            this.failedCount = this.failedCount + amount;
+        // Minimal session holder for preview/commit flow
+        public static class ImportSession<T> {
+            private final String id;
+            private final Class<T> type;
+            private final List<ImportRowResult<T>> rows;
+            private String status; // PENDING, READY, COMMITTED, CANCELED
+            public ImportSession(String id, Class<T> type, List<ImportRowResult<T>> rows) {
+                this.id = id; this.type = type; this.rows = rows; this.status = "READY";
+            }
+            public String getId() { return id; }
+            public Class<T> getType() { return type; }
+            public List<ImportRowResult<T>> getRows() { return rows; }
+            public String getStatus() { return status; }
+            public void setStatus(String status) { this.status = status; }
         }
 
-        public void incrementImportedCount() {
-          incrementImportedCount(1);
+        public static class CommitResult {
+            private int imported;
+            private int failed;
+            public CommitResult(int imported, int failed) { this.imported = imported; this.failed = failed; }
+            public int getImported() { return imported; }
+            public int getFailed() { return failed; }
         }
-
-        public void incrementImportedCount(int amount) {
-            this.importedCount = this.importedCount + amount;
-        }
-
-        public int getFailedCount() {
-            return failedCount;
-        }
-        public List<String> getFailedRecordsFeedback() {
-            return failedRecordsFeedback;
-        }
-
-        public void addFailedRecordFeedback(String feedback) {
-            this.failedRecordsFeedback.add(feedback);
-        }
-
-        public void setInsertCount(int insertCount) {
-            this.insertCount = insertCount;
-        }
-
-        public void setUpdateCount(int updateCount) {
-            this.updateCount = updateCount;
-        }
-
-        public int getInsertCount() {
-            return insertCount;
-        }
-
-        public int getUpdateCount () {
-            return updateCount;
-        }
-    }
 
     public <T extends UnversionedBaseModel> ImportResult<T> preProcessCSV(
        BaseMorphiaRepo<T> repo,
@@ -381,30 +462,41 @@ public class CSVImportHelper {
        ImportResult<T> result) {
         if (batch.isEmpty()) return result;
 
-        // gather a list of refNames from the batch using streaming
+        // gather a list of refNames from the batch
         List<String> refNames = batch.stream().map(T::getRefName).toList();
 
-
-        // determine which records are updates which ones are inserts
+        // determine which records are updates and which ones are inserts
         List<T> foundEntities = repo.getListFromRefNames(refNames);
         List<String> foundRefNames = foundEntities.stream().map(T::getRefName).toList();
 
-        // determine the difference
         List<T> newEntities = batch.stream().filter(entity -> !foundRefNames.contains(entity.getRefName())).toList();
         List<T> existingEntities = batch.stream().filter(entity -> foundRefNames.contains(entity.getRefName())).toList();
 
+        int validNew = 0;
         for (T model : newEntities) {
             try {
                 validateBean(model);
+                validNew++;
             } catch (ValidationException e) {
                 result.incrementFailedCount();
                 result.addFailedRecordFeedback("Validation failed for record: " + model.toString() + " due to " + e.getMessage());
-                continue;
             }
         }
 
-        result.setInsertCount(newEntities.size() - result.getFailedCount());
-        result.setUpdateCount(existingEntities.size());
+        int validExisting = 0;
+        for (T model : existingEntities) {
+            try {
+                validateBean(model);
+                validExisting++;
+            } catch (ValidationException e) {
+                result.incrementFailedCount();
+                result.addFailedRecordFeedback("Validation failed for record: " + model.toString() + " due to " + e.getMessage());
+            }
+        }
+
+        // accumulate counts
+        result.setInsertCount(result.getInsertCount() + validNew);
+        result.setUpdateCount(result.getUpdateCount() + validExisting);
 
         return result;
     }
@@ -435,5 +527,169 @@ public class CSVImportHelper {
         }
 
         return result;
+    }
+
+    // New: analyze (preview) the CSV without saving, and create a session
+    public <T extends UnversionedBaseModel> ImportResult<T> analyzeCSV(
+            BaseMorphiaRepo<T> repo,
+            InputStream inputStream,
+            char fieldSeparator,
+            char quoteChar,
+            boolean skipHeaderRow,
+            List<String> requestedColumns,
+            Charset charset,
+            boolean mustUseBOM,
+            String quotingStrategy) throws IOException {
+
+        ImportResult<T> result = new ImportResult<>(0, 0);
+        List<ImportRowResult<T>> rows = new ArrayList<>();
+        try (Reader reader = new InputStreamReader(inputStream, charset)) {
+            if (mustUseBOM) {
+                reader.read();
+            }
+            ICsvDozerBeanReader beanReader = new CsvDozerBeanReader(reader,
+                    new CsvPreference.Builder(quoteChar, fieldSeparator, "\r\n")
+                            .useQuoteMode(getQuoteMode(quotingStrategy))
+                            .build());
+
+            String[] header = beanReader.getHeader(true);
+            if (skipHeaderRow && header == null) {
+                throw new IllegalArgumentException("CSV file does not contain a header row");
+            }
+            String[] fieldMapping = requestedColumns.toArray(new String[requestedColumns.size()]);
+            beanReader.configureBeanMapping(repo.getPersistentClass(), fieldMapping);
+
+            ListCellProcessor listProcessor = new ListCellProcessor();
+            CellProcessor[] processors = buildProcessors(repo.getPersistentClass(), requestedColumns, listProcessor);
+
+            List<T> batchBeans = new ArrayList<>(BATCH_SIZE);
+            List<Integer> batchRowNums = new ArrayList<>(BATCH_SIZE);
+            int rowNum = 1; // after header
+            while (true) {
+                T bean;
+                try {
+                    bean = beanReader.read(repo.getPersistentClass(), processors);
+                } catch (Exception ex) {
+                    ImportRowResult<T> rr = new ImportRowResult<>();
+                    rr.setRowNumber(rowNum);
+                    rr.setIntent(Intent.SKIP);
+                    rr.getErrors().add(new FieldError(null, ex.getMessage(), "PARSE"));
+                    rows.add(rr);
+                    result.incrementErrorRows();
+                    result.incrementTotalRows();
+                    rowNum++;
+                    continue;
+                }
+                if (bean == null) break;
+                ImportRowResult<T> rr = new ImportRowResult<>();
+                rr.setRowNumber(rowNum);
+                rr.setRefName(bean.getRefName());
+                rr.setRecord(bean);
+
+                batchBeans.add(bean);
+                batchRowNums.add(rowNum);
+
+                // flush batch for intent detection
+                if (batchBeans.size() >= BATCH_SIZE) {
+                    annotateIntentsAndValidate(repo, batchBeans, batchRowNums, rows, result);
+                    batchBeans.clear();
+                    batchRowNums.clear();
+                }
+                rowNum++;
+            }
+            if (!batchBeans.isEmpty()) {
+                annotateIntentsAndValidate(repo, batchBeans, batchRowNums, rows, result);
+            }
+        } catch (IOException e) {
+            throw new WebApplicationException("Error analyzing CSV: " + e.getMessage(), e, 400);
+        }
+
+        // summarize insert/update by scanning rows without errors
+        int inserts = 0, updates = 0;
+        for (ImportRowResult<T> rr : rows) {
+            result.incrementTotalRows(); // total for rows read successfully also incremented above for parse errors
+            if (!rr.hasErrors()) {
+                result.incrementValidRows();
+                if (rr.getIntent() == Intent.INSERT) inserts++;
+                else if (rr.getIntent() == Intent.UPDATE) updates++;
+            } else {
+                result.incrementErrorRows();
+            }
+        }
+        result.setInsertCount(inserts);
+        result.setUpdateCount(updates);
+        result.getRowResults().addAll(rows);
+
+        String sessionId = java.util.UUID.randomUUID().toString();
+        result.setSessionId(sessionId);
+        SESSIONS.put(sessionId, new ImportSession<>(sessionId, repo.getPersistentClass(), rows));
+        return result;
+    }
+
+    private <T extends UnversionedBaseModel> void annotateIntentsAndValidate(
+            BaseMorphiaRepo<T> repo,
+            List<T> batchBeans,
+            List<Integer> batchRowNums,
+            List<ImportRowResult<T>> outRows,
+            ImportResult<T> aggregate) {
+        List<String> refNames = batchBeans.stream().map(T::getRefName).toList();
+        List<T> found = repo.getListFromRefNames(refNames);
+        java.util.Set<String> existing = found.stream().map(T::getRefName).collect(java.util.stream.Collectors.toSet());
+
+        for (int i = 0; i < batchBeans.size(); i++) {
+            T bean = batchBeans.get(i);
+            int rn = batchRowNums.get(i);
+            ImportRowResult<T> rr = new ImportRowResult<>();
+            rr.setRowNumber(rn);
+            rr.setRefName(bean.getRefName());
+            rr.setRecord(bean);
+            rr.setIntent(existing.contains(bean.getRefName()) ? Intent.UPDATE : Intent.INSERT);
+            // validate
+            try {
+                Set<ConstraintViolation<T>> violations = validator.validate(bean);
+                if (violations != null) {
+                    for (ConstraintViolation<T> v : violations) {
+                        rr.getErrors().add(new FieldError(
+                                v.getPropertyPath() != null ? v.getPropertyPath().toString() : null,
+                                v.getMessage(),
+                                "VALIDATION"));
+                    }
+                }
+            } catch (Exception ex) {
+                rr.getErrors().add(new FieldError(null, ex.getMessage(), "VALIDATION"));
+            }
+            outRows.add(rr);
+        }
+    }
+
+    // Minimal commit: save all valid rows for INSERT/UPDATE from a session
+    @SuppressWarnings("unchecked")
+    public <T extends UnversionedBaseModel> CommitResult commitImport(String sessionId, BaseMorphiaRepo<T> repo) {
+        ImportSession<T> session = (ImportSession<T>) SESSIONS.get(sessionId);
+        if (session == null) {
+            throw new ValidationException("Unknown import session: " + sessionId);
+        }
+        if ("COMMITTED".equals(session.getStatus())) {
+            return new CommitResult(0, 0);
+        }
+        List<T> toSave = new ArrayList<>();
+        for (ImportRowResult<T> rr : session.getRows()) {
+            if (!rr.hasErrors() && (rr.getIntent() == Intent.INSERT || rr.getIntent() == Intent.UPDATE)) {
+                toSave.add(rr.getRecord());
+            }
+        }
+        int imported = 0;
+        ImportResult<T> tmp = new ImportResult<>(0, 0);
+        processBatch(repo, toSave, rec -> {}, tmp);
+        imported = tmp.getImportedCount();
+        session.setStatus("COMMITTED");
+        return new CommitResult(imported, tmp.getFailedCount());
+    }
+
+    public void cancelImport(String sessionId) {
+        ImportSession<?> session = SESSIONS.remove(sessionId);
+        if (session != null) {
+            session.setStatus("CANCELED");
+        }
     }
 }
