@@ -66,54 +66,90 @@ public abstract class HierarchicalRepo<
 
 
     @Override
-    public long delete(@NotNull("the datastore must not be null") Datastore datastore, T aobj) throws ReferentialIntegrityViolationException {
-        if (aobj.getParent() != null) {
-            Optional<T> oParentTerritory = findById(aobj.getParent().getEntityId());
-            if (oParentTerritory.isPresent()) {
-                oParentTerritory.get().getDescendants().remove(aobj.getId());
-                super.save(datastore,oParentTerritory.get());
+    public long delete(@NotNull("the datastore must not be null") Datastore datastore, T node) throws ReferentialIntegrityViolationException {
+        if (node.getParent() != null) {
+            Optional<T> oParent = findById(node.getParent().getEntityId());
+            if (oParent.isPresent()) {
+                oParent.get().getDescendants().remove(node.getId());
+                super.save(datastore, oParent.get());
             }
         }
-        return super.delete(datastore, aobj);
+        return super.delete(datastore, node);
     }
 
     @Override
     public T save(@Valid T value) {
-        T saved = null;
+        T saved;
         // create a transactional session
         try (MorphiaSession session = morphiaDataStore.getDataStore(getSecurityContextRealmId()).startSession()) {
-            // check if the territory already exists
-            // assuming the value has a id this is an update to the object
+            // if updating, and parent changed, remove from old parent's descendants
             if (value.getId() != null) {
-                // get the existing territory from the database
                 T existing = this.findById(value.getId()).orElse(null);
-                if (existing != null && existing.getParent() != null && !existing.getParent().getEntityId().equals(value.getParent().getEntityId())) {
-                    // remove the territory from the old parent
-                    Optional<T> ooldParent = this.findById(existing.getParent().getEntityId());
-                    if (ooldParent.isPresent()) {
-                        ooldParent.get().getDescendants().remove(existing.getId());
-                        super.save(session, ooldParent.get());
+                if (existing != null && existing.getParent() != null) {
+                    ObjectId oldParentId = existing.getParent().getEntityId();
+                    ObjectId newParentId = (value.getParent() != null) ? value.getParent().getEntityId() : null;
+                    if (!Objects.equals(oldParentId, newParentId)) {
+                        Optional<T> oOldParent = this.findById(oldParentId);
+                        if (oOldParent.isPresent()) {
+                            oOldParent.get().getDescendants().remove(existing.getId());
+                            super.save(session, oOldParent.get());
+                        }
                     }
                 }
             }
-            saved = super.save(session, value);
-            // check if there is a parent territory
-            if (saved.getParent() != null) {
-                // get the parent territory
-                Optional<T> oparent = findById(saved.getParent().getEntityId());
-                if (!oparent.isPresent()) {
-                    throw new NotFoundException("Parent territory not found for id: " + saved.getParent().getEntityId());
+
+            // Validate parent assignment (no self-parenting, no cycles, parent exists)
+            if (value.getParent() != null) {
+                ObjectId newParentId = value.getParent().getEntityId();
+                if (newParentId == null) {
+                    throw new NotFoundException("Parent id is null");
                 }
-                T parent = oparent.get();
+
+                // Parent must exist
+                this.findById(newParentId)
+                        .orElseThrow(() -> new NotFoundException("Parent node not found for id: " + newParentId));
+
+                // Self-parenting check
+                if (value.getId() != null && value.getId().equals(newParentId)) {
+                    throw new IllegalArgumentException("Invalid hierarchy: a node cannot be its own parent (id=" + value.getId() + ")");
+                }
+
+                // Cycle check: parent must not be a descendant of value
+                if (value.getId() != null) {
+                    ObjectId cursor = newParentId;
+                    while (cursor != null) {
+                        if (cursor.equals(value.getId())) {
+                            throw new IllegalArgumentException(
+                                    "Invalid hierarchy: setting parent to a descendant would create a cycle (node="
+                                            + value.getId() + ", parent=" + newParentId + ")");
+                        }
+                        Optional<T> p = findById(cursor);
+                        if (!p.isPresent() || p.get().getParent() == null) {
+                            break; // reached root
+                        }
+                        cursor = p.get().getParent().getEntityId();
+                    }
+                }
+            }
+
+            // Persist the node
+            saved = super.save(session, value);
+
+            // Ensure parent's descendants include this node
+            if (saved.getParent() != null) {
+                Optional<T> oParent = findById(saved.getParent().getEntityId());
+                if (!oParent.isPresent()) {
+                    throw new NotFoundException("Parent node not found for id: " + saved.getParent().getEntityId());
+                }
+                T parent = oParent.get();
                 if (parent.getDescendants() == null) {
                     parent.setDescendants(new ArrayList<>());
-                    parent.getDescendants().add(value.getId());
-                    super.save(session, parent);
-                } else if (!parent.getDescendants().contains(value.getId())) {
+                }
+                if (!parent.getDescendants().contains(saved.getId())) {
                     parent.getDescendants().add(saved.getId());
                     super.save(session, parent);
                 } else {
-                    Log.warnf("Child territory id: %s already exists as a child of territory id: %s", saved.getId().toHexString(), parent.getId().toHexString());
+                    Log.warnf("Child node id: %s already exists as a child of node id: %s", saved.getId().toHexString(), parent.getId().toHexString());
                 }
             }
             return saved;
@@ -122,7 +158,7 @@ public abstract class HierarchicalRepo<
 
 
     public List<T> getAllChildren(ObjectId nodeId) {
-        // Start the pipeline on the "territory" collection
+        // Start the pipeline on the hierarchy collection for this entity class
         Class<T> entityClass = getPersistentClass();
         Aggregation<T> pipeline = morphiaDataStore
                 .getDataStore(getSecurityContextRealmId())
@@ -137,8 +173,7 @@ public abstract class HierarchicalRepo<
                         // No .maxDepth() => unlimited depth
                 );
 
-
-        // Execute and return the list of Territory documents
+        // Execute and return the list of child documents
         MongoCursor<T> cursor = pipeline.execute(entityClass);
         while (cursor.hasNext()) {
             T t = cursor.next();
@@ -150,26 +185,26 @@ public abstract class HierarchicalRepo<
     }
 
     public List<O> getAllObjectsForHierarchy(String refName) {
-        Optional<T> ohiearchicalObject = findByRefName(refName);
-        if (!ohiearchicalObject.isPresent()) {
-            throw new NotFoundException("Territory not found for refName: " + refName);
+        Optional<T> oHierarchyNode = findByRefName(refName);
+        if (!oHierarchyNode.isPresent()) {
+            throw new NotFoundException("Hierarchy node not found for refName: " + refName);
         }
         List<O> objects = new ArrayList<>();
-        if (ohiearchicalObject.isPresent()) {
-            HashSet<O> objectSet = new HashSet<>();
-            if (ohiearchicalObject.get().getStaticDynamicList() != null) {
-                StaticDynamicList<O> staticDynamicList = ohiearchicalObject.get().getStaticDynamicList();
+        if (oHierarchyNode.isPresent()) {
+            Set<O> objectSet = new HashSet<>();
+            if (oHierarchyNode.get().getStaticDynamicList() != null) {
+                StaticDynamicList<O> staticDynamicList = oHierarchyNode.get().getStaticDynamicList();
                 objectSet.addAll(objectListRepo.resolveItems(staticDynamicList, new ArrayList<>()));
             }
 
-            List<T> decendents = getAllChildren(ohiearchicalObject.get().getId());
-            if (!decendents.isEmpty()) {
-                for (T t : decendents) {
-                   StaticDynamicList<O> objectList = t.getStaticDynamicList();
+            List<T> descendants = getAllChildren(oHierarchyNode.get().getId());
+            if (!descendants.isEmpty()) {
+                for (T t : descendants) {
+                    StaticDynamicList<O> objectList = t.getStaticDynamicList();
                     if (objectList == null) {
                         continue;
                     }
-                    objectSet.addAll(objectListRepo.getObjectsForList(objectList, new ArrayList<O>()));
+                    objectSet.addAll(objectListRepo.getObjectsForList(objectList, new ArrayList<>()));
                 }
                 objects.addAll(objectSet);
             }
@@ -180,9 +215,9 @@ public abstract class HierarchicalRepo<
     protected List<O> getAllObjectsForHierarchy(@Valid T node) {
         Objects.requireNonNull(node, "node can not be null for getAllObjectsForHierarchy method");
         Objects.requireNonNull(node.getId(), "node id can not be null for getAllObjectsForHierarchy method");
-        Optional<T> oterritory = findById(node.getId());
-        if (!oterritory.isPresent()) {
-            throw new NotFoundException("Object not found for id: " + node.getId());
+        Optional<T> oNode = findById(node.getId());
+        if (!oNode.isPresent()) {
+            throw new NotFoundException("Node not found for id: " + node.getId());
         }
         Set<O> locationSet = new HashSet<>();
         List<T> descendants = getAllChildren(node.getId());
