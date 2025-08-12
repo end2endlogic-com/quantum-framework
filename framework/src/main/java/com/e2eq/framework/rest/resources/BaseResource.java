@@ -327,6 +327,112 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
         }
     }
 
+    @POST
+    @Path("csv/session")
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    @Produces(MediaType.APPLICATION_JSON)
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(summary = "Create an import session by analyzing an uploaded CSV file and returning a preview")
+    @APIResponses({
+            @APIResponse(responseCode = "200", description = "CSV analyzed; session created and preview returned"),
+            @APIResponse(responseCode = "400", description = "Bad request - invalid CSV file or parameters")
+    })
+    public Response createCsvImportSession(
+            @Context UriInfo info,
+            @BeanParam FileUpload fileUpload,
+            @Parameter(description = "The character that must be used to separate fields of the same record")
+            @QueryParam("fieldSeparator") @DefaultValue(",") String fieldSeparator,
+            @Parameter(description = "The choice of strategy for quoting columns. One of \"QUOTE_WHERE_ESSENTIAL\" or \"QUOTE_ALL_COLUMNS\"")
+            @QueryParam("quotingStrategy") @DefaultValue("QUOTE_WHERE_ESSENTIAL") String quotingStrategy,
+            @Parameter(description = "The character that is used to surround the values of specific (or all) fields")
+            @QueryParam("quoteChar") @DefaultValue("\"") String quoteChar,
+            @Parameter(description = "Whether to skip the header row in the CSV file")
+            @QueryParam("skipHeaderRow") @DefaultValue("true") boolean skipHeaderRow,
+            @Parameter(description = "The charset encoding to use for the file")
+            @QueryParam("charsetEncoding") @DefaultValue("UTF-8-without-BOM") String charsetEncoding,
+            @Parameter(description = "A non-empty list of the names of the columns expected in the CSV file that map to the model fields")
+            @QueryParam("requestedColumns") List<String> requestedColumns
+    ) {
+        try {
+            if (fileUpload.file == null) {
+                throw new WebApplicationException("No file uploaded", Response.Status.BAD_REQUEST);
+            }
+            rejectUnrecognizedQueryParams(info, "fieldSeparator", "quotingStrategy",
+                    "quoteChar", "skipHeaderRow", "charsetEncoding", "requestedColumns");
+
+            String charsetName = charsetEncoding.replaceAll("-with.*", "");
+            final Charset chosenCharset;
+            final boolean mustUseBOM;
+            try {
+                chosenCharset = Charset.forName(charsetName);
+                mustUseBOM = charsetEncoding.contains("-with-BOM");
+            } catch (UnsupportedCharsetException | IllegalCharsetNameException e) {
+                throw new ValidationException(format("The value %s is not one of the supported charsetEncodings",
+                        charsetEncoding));
+            }
+
+            CSVImportHelper.ImportResult<T> preview = csvImportHelper.analyzeCSV(
+                    repo,
+                    new FileInputStream(fileUpload.file),
+                    fieldSeparator.charAt(0),
+                    quoteChar.charAt(0),
+                    skipHeaderRow,
+                    requestedColumns,
+                    chosenCharset,
+                    mustUseBOM,
+                    quotingStrategy
+            );
+            return Response.ok(preview).build();
+        } catch (Exception e) {
+            RestError error = RestError.builder()
+                    .status(Response.Status.BAD_REQUEST.getStatusCode())
+                    .statusMessage("Error analyzing CSV file: " + e.getMessage())
+                    .build();
+            return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+        }
+    }
+
+    @POST
+    @Path("csv/session/{sessionId}/commit")
+    @Produces(MediaType.APPLICATION_JSON)
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(summary = "Commit a previously analyzed CSV import session (imports only error-free rows)")
+    @APIResponses({
+            @APIResponse(responseCode = "200", description = "Import committed"),
+            @APIResponse(responseCode = "400", description = "Unknown or invalid session")
+    })
+    public Response commitCsvImportSession(
+            @PathParam("sessionId") String sessionId
+    ) {
+        try {
+            CSVImportHelper.CommitResult result = csvImportHelper.commitImport(sessionId, repo);
+            return Response.ok(result).build();
+        } catch (Exception e) {
+            RestError error = RestError.builder()
+                    .status(Response.Status.BAD_REQUEST.getStatusCode())
+                    .statusMessage("Error committing import session: " + e.getMessage())
+                    .build();
+            return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+        }
+    }
+
+    @DELETE
+    @Path("csv/session/{sessionId}")
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(summary = "Cancel a CSV import session and discard its state")
+    @APIResponses({
+            @APIResponse(responseCode = "204", description = "Session canceled (or did not exist)")
+    })
+    public Response cancelCsvImportSession(@PathParam("sessionId") String sessionId) {
+        try {
+            csvImportHelper.cancelImport(sessionId);
+            return Response.noContent().build();
+        } catch (Exception e) {
+            // Even on error, do not leak details; treat as not found/canceled
+            return Response.noContent().build();
+        }
+    }
+
     @PUT
     @Path("activeStatus/{id}")
     public Response updateActiveStatus(@PathParam("id") ObjectId id, boolean active) {
