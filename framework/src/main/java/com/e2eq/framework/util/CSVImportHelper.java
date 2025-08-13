@@ -3,6 +3,7 @@ package com.e2eq.framework.util;
 
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
+import com.e2eq.framework.model.persistent.morphia.ImportSessionRepo;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -32,15 +33,23 @@ import static java.lang.String.format;
 
 @ApplicationScoped
 public class CSVImportHelper {
-    // Minimal in-memory session store for preview/commit workflow
-    private static final java.util.Map<String, ImportSession<?>> SESSIONS = new java.util.concurrent.ConcurrentHashMap<>();
     private static final int BATCH_SIZE = 1000;
+    private static final int PREVIEW_LIMIT = 100;
 
     @Inject
     Validator validator;
 
     @Inject
     ObjectMapper objectMapper;
+
+    @Inject
+    ImportSessionRepo importSessionRepo;
+
+    @Inject
+    com.e2eq.framework.model.persistent.morphia.ImportSessionRowRepo importSessionRowRepo;
+
+    @Inject
+    io.quarkus.security.identity.SecurityIdentity securityIdentity;
 
     public <T> void validateBean(T bean) {
         Set<ConstraintViolation<T>> violations = validator.validate(bean);
@@ -542,7 +551,25 @@ public class CSVImportHelper {
             String quotingStrategy) throws IOException {
 
         ImportResult<T> result = new ImportResult<>(0, 0);
-        List<ImportRowResult<T>> rows = new ArrayList<>();
+        // Create session summary first (OPEN) and stream rows into ImportSessionRow
+        String sessionId = java.util.UUID.randomUUID().toString();
+        result.setSessionId(sessionId);
+        com.e2eq.framework.model.persistent.imports.ImportSession session = new com.e2eq.framework.model.persistent.imports.ImportSession();
+        session.setRefName(sessionId);
+        session.setDisplayName("Import Session " + sessionId);
+        session.setTargetType(repo.getPersistentClass().getName());
+        session.setStatus("OPEN");
+        String currentUser = null;
+        try {
+            if (securityIdentity != null && securityIdentity.getPrincipal() != null) {
+                currentUser = securityIdentity.getPrincipal().getName();
+            }
+        } catch (Exception ignored) {}
+        if (currentUser == null || currentUser.isEmpty()) currentUser = "anonymous";
+        session.setUserId(currentUser);
+        session.setCollectionName(repo.getPersistentClass().getSimpleName());
+        session.setStartedAt(java.time.Instant.now());
+        importSessionRepo.save(session);
         try (Reader reader = new InputStreamReader(inputStream, charset)) {
             if (mustUseBOM) {
                 reader.read();
@@ -574,9 +601,23 @@ public class CSVImportHelper {
                     rr.setRowNumber(rowNum);
                     rr.setIntent(Intent.SKIP);
                     rr.getErrors().add(new FieldError(null, ex.getMessage(), "PARSE"));
-                    rows.add(rr);
+                    // persist this error row immediately
+                    com.e2eq.framework.model.persistent.imports.ImportSessionRow row = new com.e2eq.framework.model.persistent.imports.ImportSessionRow();
+                    row.setSessionRefName(sessionId);
+                    row.setRowNumber(rowNum);
+                    row.setRefName(null);
+                    row.setIntent(Intent.SKIP.name());
+                    row.setHasErrors(true);
+                    try {
+                        row.setErrorsJson(objectMapper.writeValueAsString(rr.getErrors()));
+                    } catch (Exception ignore) {}
+                    importSessionRowRepo.save(row);
+                    // update counters and preview
                     result.incrementErrorRows();
                     result.incrementTotalRows();
+                    if (result.getRowResults().size() < PREVIEW_LIMIT) {
+                        result.getRowResults().add(rr);
+                    }
                     rowNum++;
                     continue;
                 }
@@ -591,38 +632,79 @@ public class CSVImportHelper {
 
                 // flush batch for intent detection
                 if (batchBeans.size() >= BATCH_SIZE) {
-                    annotateIntentsAndValidate(repo, batchBeans, batchRowNums, rows, result);
+                    java.util.List<ImportRowResult<T>> annotated = new java.util.ArrayList<>();
+                    annotateIntentsAndValidate(repo, batchBeans, batchRowNums, annotated, result);
+                    // persist and update counters/preview
+                    for (ImportRowResult<T> ar : annotated) {
+                        result.incrementTotalRows();
+                        boolean hasErrors = ar.hasErrors();
+                        if (hasErrors) {
+                            result.incrementErrorRows();
+                        } else {
+                            result.incrementValidRows();
+                            if (ar.getIntent() == Intent.INSERT) result.setInsertCount(result.getInsertCount() + 1);
+                            else if (ar.getIntent() == Intent.UPDATE) result.setUpdateCount(result.getUpdateCount() + 1);
+                        }
+                        if (result.getRowResults().size() < PREVIEW_LIMIT) {
+                            result.getRowResults().add(ar);
+                        }
+                        com.e2eq.framework.model.persistent.imports.ImportSessionRow row = new com.e2eq.framework.model.persistent.imports.ImportSessionRow();
+                        row.setSessionRefName(sessionId);
+                        row.setRowNumber(ar.getRowNumber());
+                        row.setRefName(ar.getRefName());
+                        row.setIntent(ar.getIntent().name());
+                        row.setHasErrors(hasErrors);
+                        try {
+                            row.setErrorsJson(objectMapper.writeValueAsString(ar.getErrors()));
+                            row.setRecordJson(objectMapper.writeValueAsString(ar.getRecord()));
+                        } catch (Exception ignore) {}
+                        importSessionRowRepo.save(row);
+                    }
                     batchBeans.clear();
                     batchRowNums.clear();
                 }
                 rowNum++;
             }
             if (!batchBeans.isEmpty()) {
-                annotateIntentsAndValidate(repo, batchBeans, batchRowNums, rows, result);
+                java.util.List<ImportRowResult<T>> annotated = new java.util.ArrayList<>();
+                annotateIntentsAndValidate(repo, batchBeans, batchRowNums, annotated, result);
+                for (ImportRowResult<T> ar : annotated) {
+                    result.incrementTotalRows();
+                    boolean hasErrors = ar.hasErrors();
+                    if (hasErrors) {
+                        result.incrementErrorRows();
+                    } else {
+                        result.incrementValidRows();
+                        if (ar.getIntent() == Intent.INSERT) result.setInsertCount(result.getInsertCount() + 1);
+                        else if (ar.getIntent() == Intent.UPDATE) result.setUpdateCount(result.getUpdateCount() + 1);
+                    }
+                    if (result.getRowResults().size() < PREVIEW_LIMIT) {
+                        result.getRowResults().add(ar);
+                    }
+                    com.e2eq.framework.model.persistent.imports.ImportSessionRow row = new com.e2eq.framework.model.persistent.imports.ImportSessionRow();
+                    row.setSessionRefName(sessionId);
+                    row.setRowNumber(ar.getRowNumber());
+                    row.setRefName(ar.getRefName());
+                    row.setIntent(ar.getIntent().name());
+                    row.setHasErrors(hasErrors);
+                    try {
+                        row.setErrorsJson(objectMapper.writeValueAsString(ar.getErrors()));
+                        row.setRecordJson(objectMapper.writeValueAsString(ar.getRecord()));
+                    } catch (Exception ignore) {}
+                    importSessionRowRepo.save(row);
+                }
             }
         } catch (IOException e) {
             throw new WebApplicationException("Error analyzing CSV: " + e.getMessage(), e, 400);
         }
 
-        // summarize insert/update by scanning rows without errors
-        int inserts = 0, updates = 0;
-        for (ImportRowResult<T> rr : rows) {
-            result.incrementTotalRows(); // total for rows read successfully also incremented above for parse errors
-            if (!rr.hasErrors()) {
-                result.incrementValidRows();
-                if (rr.getIntent() == Intent.INSERT) inserts++;
-                else if (rr.getIntent() == Intent.UPDATE) updates++;
-            } else {
-                result.incrementErrorRows();
-            }
-        }
-        result.setInsertCount(inserts);
-        result.setUpdateCount(updates);
-        result.getRowResults().addAll(rows);
-
-        String sessionId = java.util.UUID.randomUUID().toString();
-        result.setSessionId(sessionId);
-        SESSIONS.put(sessionId, new ImportSession<>(sessionId, repo.getPersistentClass(), rows));
+        // finalize session summary and persist
+        session.setTotalRows(result.getTotalRows());
+        session.setValidRows(result.getValidRows());
+        session.setErrorRows(result.getErrorRows());
+        session.setInsertCount(result.getInsertCount());
+        session.setUpdateCount(result.getUpdateCount());
+        importSessionRepo.save(session);
         return result;
     }
 
@@ -665,31 +747,70 @@ public class CSVImportHelper {
     // Minimal commit: save all valid rows for INSERT/UPDATE from a session
     @SuppressWarnings("unchecked")
     public <T extends UnversionedBaseModel> CommitResult commitImport(String sessionId, BaseMorphiaRepo<T> repo) {
-        ImportSession<T> session = (ImportSession<T>) SESSIONS.get(sessionId);
-        if (session == null) {
-            throw new ValidationException("Unknown import session: " + sessionId);
-        }
-        if ("COMMITTED".equals(session.getStatus())) {
+        com.e2eq.framework.model.persistent.imports.ImportSession session = importSessionRepo.findByRefName(sessionId)
+                .orElseThrow(() -> new ValidationException("Unknown import session: " + sessionId));
+        String st = session.getStatus();
+        if ("COMPLETED".equalsIgnoreCase(st) || "COMMITTED".equalsIgnoreCase(st)) {
             return new CommitResult(0, 0);
         }
-        List<T> toSave = new ArrayList<>();
-        for (ImportRowResult<T> rr : session.getRows()) {
-            if (!rr.hasErrors() && (rr.getIntent() == Intent.INSERT || rr.getIntent() == Intent.UPDATE)) {
-                toSave.add(rr.getRecord());
+        try {
+            Class<?> targetClazz = Class.forName(session.getTargetType());
+            if (!repo.getPersistentClass().isAssignableFrom(targetClazz)) {
+                throw new ValidationException("Session target type does not match repository persistent class");
             }
+        } catch (ClassNotFoundException e) {
+            throw new WebApplicationException("Failed to resolve session target type: " + e.getMessage(), e, 500);
         }
-        int imported = 0;
         ImportResult<T> tmp = new ImportResult<>(0, 0);
-        processBatch(repo, toSave, rec -> {}, tmp);
-        imported = tmp.getImportedCount();
-        session.setStatus("COMMITTED");
-        return new CommitResult(imported, tmp.getFailedCount());
+        int skip = 0;
+        int pageSize = BATCH_SIZE;
+        while (true) {
+            java.util.List<dev.morphia.query.filters.Filter> filters = new java.util.ArrayList<>();
+            filters.add(dev.morphia.query.filters.Filters.eq("sessionRefName", sessionId));
+            filters.add(dev.morphia.query.filters.Filters.eq("hasErrors", false));
+            filters.add(dev.morphia.query.filters.Filters.in("intent", java.util.List.of(Intent.INSERT.name(), Intent.UPDATE.name())));
+            java.util.List<com.e2eq.framework.model.persistent.imports.ImportSessionRow> page = importSessionRowRepo.getList(skip, pageSize, filters, null);
+            if (page == null || page.isEmpty()) break;
+            List<T> toSave = new ArrayList<>(page.size());
+            for (com.e2eq.framework.model.persistent.imports.ImportSessionRow r : page) {
+                if (r.getRecordJson() == null) continue;
+                try {
+                    T bean = objectMapper.readValue(r.getRecordJson(), repo.getPersistentClass());
+                    toSave.add(bean);
+                } catch (Exception ex) {
+                    // treat as failed row; skip
+                }
+            }
+            if (!toSave.isEmpty()) {
+                processBatch(repo, toSave, rec -> {}, tmp);
+            }
+            skip += page.size();
+        }
+        session.setStatus("COMPLETED");
+        importSessionRepo.save(session);
+        return new CommitResult(tmp.getImportedCount(), tmp.getFailedCount());
     }
 
     public void cancelImport(String sessionId) {
-        ImportSession<?> session = SESSIONS.remove(sessionId);
-        if (session != null) {
-            session.setStatus("CANCELED");
+        importSessionRepo.findByRefName(sessionId).ifPresent(s -> {
+            s.setStatus("CANCELLED");
+            importSessionRepo.save(s);
+        });
+        // delete per-row data for this session to free storage
+        int skip = 0;
+        int pageSize = BATCH_SIZE;
+        while (true) {
+            java.util.List<dev.morphia.query.filters.Filter> filters = new java.util.ArrayList<>();
+            filters.add(dev.morphia.query.filters.Filters.eq("sessionRefName", sessionId));
+            java.util.List<com.e2eq.framework.model.persistent.imports.ImportSessionRow> page = importSessionRowRepo.getList(skip, pageSize, filters, null);
+            if (page == null || page.isEmpty()) break;
+            for (com.e2eq.framework.model.persistent.imports.ImportSessionRow r : page) {
+                try {
+                    importSessionRowRepo.delete(r);
+                } catch (Exception ignore) {}
+            }
+            // do not increase skip since we delete as we go; always fetch from 0 until empty
+            skip = 0;
         }
     }
 }
