@@ -4,6 +4,7 @@ import com.e2eq.framework.model.persistent.migration.base.MigrationService;
 import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import com.e2eq.framework.model.persistent.security.DomainContext;
 import com.e2eq.framework.model.persistent.security.Realm;
+import com.e2eq.framework.model.security.auth.AuthProviderFactory;
 import com.e2eq.framework.model.security.auth.UserManagement;
 import com.e2eq.framework.util.SecurityUtils;
 import io.quarkus.logging.Log;
@@ -24,7 +25,7 @@ public class TenantProvisioningService {
 
     @Inject RealmRepo realmRepo;
     @Inject MigrationService migrationService;
-    @Inject UserManagement userManagement;
+    @Inject AuthProviderFactory authProviderFactory;
     @Inject SecurityUtils securityUtils;
 
     /**
@@ -105,6 +106,7 @@ public class TenantProvisioningService {
 
         // 4) Create initial tenant admin credentials inside the new realm
         Set<String> roles = Set.of("admin", "user");
+        UserManagement userManagement = authProviderFactory.getUserManager();
         userManagement.createUser(
                 realmId,
                 adminUserId,
