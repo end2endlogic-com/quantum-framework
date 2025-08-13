@@ -433,6 +433,54 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
         }
     }
 
+    @Inject
+    protected com.e2eq.framework.model.persistent.morphia.ImportSessionRowRepo importSessionRowRepo;
+
+    @GET
+    @Path("csv/session/{sessionId}/rows")
+    @Produces(MediaType.APPLICATION_JSON)
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(summary = "Fetch analyzed CSV session rows with pagination",
+            description = "Returns persisted per-row analysis results for a session. Supports paging and basic filtering.")
+    @APIResponses({
+            @APIResponse(responseCode = "200", description = "Rows returned"),
+            @APIResponse(responseCode = "400", description = "Bad request - invalid parameters or session")
+    })
+    public Response getCsvImportSessionRows(
+            @PathParam("sessionId") String sessionId,
+            @DefaultValue("0") @QueryParam("skip") int skip,
+            @DefaultValue("50") @QueryParam("limit") int limit,
+            @DefaultValue("false") @QueryParam("onlyErrors") boolean onlyErrors,
+            @QueryParam("intent") String intent // INSERT, UPDATE, SKIP
+    ) {
+        try {
+            if (sessionId == null || sessionId.isEmpty()) {
+                throw new WebApplicationException("sessionId is required", Response.Status.BAD_REQUEST);
+            }
+            java.util.List<dev.morphia.query.filters.Filter> filters = new java.util.ArrayList<>();
+            filters.add(dev.morphia.query.filters.Filters.eq("sessionRefName", sessionId));
+            if (onlyErrors) {
+                filters.add(dev.morphia.query.filters.Filters.eq("hasErrors", true));
+            }
+            if (intent != null && !intent.isEmpty()) {
+                filters.add(dev.morphia.query.filters.Filters.eq("intent", intent));
+            }
+            java.util.List<com.e2eq.framework.model.persistent.base.SortField> sortFields = java.util.List.of(
+                    new com.e2eq.framework.model.persistent.base.SortField("rowNumber",
+                            com.e2eq.framework.model.persistent.base.SortField.SortDirection.ASC)
+            );
+            java.util.List<com.e2eq.framework.model.persistent.imports.ImportSessionRow> rows =
+                    importSessionRowRepo.getList(skip, limit, filters, sortFields);
+            return Response.ok(rows).build();
+        } catch (Exception e) {
+            RestError error = RestError.builder()
+                    .status(Response.Status.BAD_REQUEST.getStatusCode())
+                    .statusMessage("Error fetching session rows: " + e.getMessage())
+                    .build();
+            return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+        }
+    }
+
     @PUT
     @Path("activeStatus/{id}")
     public Response updateActiveStatus(@PathParam("id") ObjectId id, boolean active) {
