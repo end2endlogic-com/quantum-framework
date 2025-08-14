@@ -90,6 +90,36 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
       return matches;
    }
 
+   public Optional<CredentialUserIdPassword> findBySubject(@NotNull String subject) {
+      return findBySubject(subject, securityUtils.getSystemRealm(), false);
+   }
+
+   public Optional<CredentialUserIdPassword> findBySubject(@NotNull String subject, @NotNull String realmId) {
+      return findBySubject(subject, realmId, false);
+   }
+
+   public Optional<CredentialUserIdPassword> findBySubject(@NotNull String subject, @NotNull String realmId, boolean ignoreRules) {
+      Datastore ds = morphiaDataStore.getDataStore(realmId);
+      if (Log.isDebugEnabled()) {
+         Log.debug("DataStore: dataBaseName:" + ds.getDatabase().getName() + " retrieved via realmId:" + realmId);
+      }
+
+      List<Filter> filters = new ArrayList<>();
+      filters.add(Filters.eq("subject", subject));
+      // Add filters based upon rule and resourceContext;
+      Filter[] qfilters = new Filter[1];
+      if (!ignoreRules) {
+         qfilters = getFilterArray(filters, getPersistentClass());
+      } else {
+         qfilters = filters.toArray(qfilters);
+      }
+
+      Query<CredentialUserIdPassword> query = ds.find(CredentialUserIdPassword.class).filter(qfilters);
+      //Query<CredentialUserIdPassword> query = dataStore.getDataStore(getRealmId()).find(getPersistentClass()).filter(qfilters);
+      CredentialUserIdPassword obj = query.first();
+      return Optional.ofNullable(obj);
+   }
+
 
    public Optional<CredentialUserIdPassword> findByUserId(@NotNull String userId)
    {

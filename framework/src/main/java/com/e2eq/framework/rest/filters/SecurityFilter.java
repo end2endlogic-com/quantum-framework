@@ -281,6 +281,10 @@ public class SecurityFilter implements ContainerRequestFilter {
 
             if (username != null) {
                 Optional<CredentialUserIdPassword> ocreds = (realm == null ) ? credentialRepo.findByUsername(username, securityUtils.getSystemRealm(), true) : credentialRepo.findByUsername(username, realm, true);
+                if (!ocreds.isPresent()) {
+                    // attempt to find the user by the subject perhaps username is configured to be subject
+                    ocreds = (realm == null ) ? credentialRepo.findBySubject(jwt.getSubject(), securityUtils.getSystemRealm(), true) : credentialRepo.findBySubject(jwt.getSubject(), realm, true);
+                }
 
                 if (ocreds.isPresent()) {
                     Log.debugf("Found user with username %s userId:%s in the database, adding roles %s", username, ocreds.get().getUserId(), Arrays.toString(ocreds.get().getRoles()));

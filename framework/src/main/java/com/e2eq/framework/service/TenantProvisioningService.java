@@ -135,10 +135,10 @@ public class TenantProvisioningService {
         // 4) Ensure initial tenant admin credentials inside the realm
         Set<String> desiredRoles = Set.of("admin", "user");
         UserManagement userManagement = authProviderFactory.getUserManager();
-        boolean userExists = userManagement.userIdExists(realmId, adminUserId);
+        boolean userExists = userManagement.userIdExists(systemRealm, adminUserId);
         if (!userExists) {
             userManagement.createUser(
-                    realmId,
+                    systemRealm,
                     adminUserId,
                     adminPassword,
                     Boolean.FALSE,
@@ -148,7 +148,7 @@ public class TenantProvisioningService {
             );
             result.userCreated = true;
         } else {
-            Optional<CredentialUserIdPassword> credOpt = credentialRepo.findByUserId(adminUserId, realmId, true);
+            Optional<CredentialUserIdPassword> credOpt = credentialRepo.findByUserId(adminUserId, systemRealm, true);
             if (credOpt.isEmpty()) {
                 throw new IllegalStateException("Admin user exists but cannot be loaded for validation.");
             }
