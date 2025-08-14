@@ -267,7 +267,13 @@ public class SecurityResource {
 
             if (loginResponse.authenticated()) {
                 Log.info("Login successful for userId:" + authRequest.getUserId());
-                return Response.ok(new AuthResponse(loginResponse.positiveResponse().accessToken(), loginResponse.positiveResponse().refreshToken(), loginResponse.positiveResponse().expirationTime())).build();
+                return Response.ok(new AuthResponse(
+                                        loginResponse.positiveResponse().accessToken(),
+                                        loginResponse.positiveResponse().refreshToken(),
+                                        loginResponse.positiveResponse().expirationTime(),
+                                        loginResponse.positiveResponse().mongodbUrl(),
+                                        loginResponse.positiveResponse().realm()
+                                )).build();
             }
             else {
                 Log.warn("Login failed for userId:" + authRequest.getUserId());

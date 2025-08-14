@@ -31,7 +31,9 @@ public interface AuthProvider {
             @JsonProperty("roles") Set<String> roles,
             @JsonProperty("accessToken") String accessToken,
             @JsonProperty("refreshToken") String refreshToken,
-            @JsonProperty("expirationTime") long expirationTime
+            @JsonProperty("expirationTime") long expirationTime,
+            @JsonProperty("mongodbUrl") String mongodbUrl,
+            @JsonProperty("realm") String realm
             ) {};
 
     @RegisterForReflection
