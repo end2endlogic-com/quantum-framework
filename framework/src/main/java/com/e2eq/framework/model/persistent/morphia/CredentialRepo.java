@@ -32,10 +32,62 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
    @Inject
    SecurityUtils securityUtils;
 
+   @Inject
+   RealmRepo realmRepo;
+
    @Override
    public String getDatabaseName () {
       //return morphiaDataStore.getDataStore(securityUtils.getSystemRealm()).getDatabase().getName();
       return securityUtils.getSystemRealm();
+   }
+
+   /**
+    * Returns the list of realm IDs (database names) that match the current user's realmRegEx.
+    * The current user is resolved from SecurityContext's PrincipalContext. The set of candidate
+    * realms is obtained from the realm catalog stored in the system realm.
+    *
+    * Behavior:
+    * - If the user cannot be resolved or no credential is found, returns an empty list.
+    * - If realmRegEx is null/blank, returns an empty list.
+    * - If realmRegEx is "*", matches all realms.
+    */
+   public List<String> getMatchingRealmsForCurrentUser() {
+      var pctxOpt = com.e2eq.framework.model.securityrules.SecurityContext.getPrincipalContext();
+      if (pctxOpt.isEmpty()) {
+         return java.util.Collections.emptyList();
+      }
+      var pctx = pctxOpt.get();
+      String userId = pctx.getUserId();
+      String defaultRealm = pctx.getDefaultRealm();
+
+      Optional<CredentialUserIdPassword> ocred = findByUserId(userId, defaultRealm, true);
+      if (ocred.isEmpty()) {
+         return java.util.Collections.emptyList();
+      }
+
+      String realmRegex = ocred.get().getRealmRegEx();
+      if (realmRegex == null || realmRegex.isBlank()) {
+         return java.util.Collections.emptyList();
+      }
+
+      String patternText = "*".equals(realmRegex) ? ".*" : realmRegex;
+      java.util.regex.Pattern pattern;
+      try {
+         pattern = java.util.regex.Pattern.compile(patternText);
+      } catch (Exception e) {
+         // Fallback to exact match if invalid regex provided
+         pattern = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote(realmRegex));
+      }
+
+      List<com.e2eq.framework.model.persistent.security.Realm> realms = realmRepo.getAllList(securityUtils.getSystemRealm());
+      List<String> matches = new java.util.ArrayList<>(realms.size());
+      for (var r : realms) {
+         String realmId = r.getDatabaseName();
+         if (realmId != null && pattern.matcher(realmId).matches()) {
+            matches.add(realmId);
+         }
+      }
+      return matches;
    }
 
 
