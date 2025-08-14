@@ -91,4 +91,12 @@ public class CredentialsResource extends BaseResource<CredentialUserIdPassword, 
         return Response.status(Response.Status.OK).entity("Password changed").build();
     }
 
+    @GET
+    @Path("matching-realms")
+    @RolesAllowed({ "user", "admin" })
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getMatchingRealms() {
+        List<String> realms = repo.getMatchingRealmsForCurrentUser();
+        return Response.ok(realms).build();
+    }
 }
