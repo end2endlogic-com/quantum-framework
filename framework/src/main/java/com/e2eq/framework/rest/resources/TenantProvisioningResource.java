@@ -33,7 +33,15 @@ public class TenantProvisioningResource {
 
     public static class ProvisionTenantResponse {
         public String realmId;
-        public ProvisionTenantResponse(String realmId) { this.realmId = realmId; }
+        public boolean realmCreated;
+        public boolean userCreated;
+        public java.util.List<String> warnings;
+        public ProvisionTenantResponse(TenantProvisioningService.ProvisionResult r) {
+            this.realmId = r.realmId;
+            this.realmCreated = r.realmCreated;
+            this.userCreated = r.userCreated;
+            this.warnings = r.warnings;
+        }
     }
 
     @POST
@@ -42,7 +50,7 @@ public class TenantProvisioningResource {
     @RolesAllowed({"admin"})
     public Response provision(ProvisionTenantRequest req) {
         try {
-            String realmId = provisioningService.provisionTenant(
+            TenantProvisioningService.ProvisionResult r = provisioningService.provisionTenant(
                     req.tenantEmailDomain,
                     req.orgRefName,
                     req.accountId,
@@ -50,7 +58,8 @@ public class TenantProvisioningResource {
                     req.adminUsername,
                     req.adminPassword
             );
-            return Response.status(Response.Status.CREATED).entity(new ProvisionTenantResponse(realmId)).build();
+            int status = (r.realmCreated || r.userCreated) ? Response.Status.CREATED.getStatusCode() : Response.Status.OK.getStatusCode();
+            return Response.status(status).entity(new ProvisionTenantResponse(r)).build();
         } catch (IllegalStateException ise) {
             Log.warn("Provisioning rejected: " + ise.getMessage());
             return Response.status(Response.Status.CONFLICT).entity(ise.getMessage()).build();
