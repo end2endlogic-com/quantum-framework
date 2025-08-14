@@ -49,6 +49,9 @@ public class CustomTokenAuthProvider  extends BaseAuthProvider implements AuthPr
    @ConfigProperty(name = "quantum.realmConfig.systemRealm", defaultValue = "system-com")
    String systemRealm;
 
+   @ConfigProperty(name = "quarkus.mongodb.connection-string")
+   String mongodbConnectionString;
+
    @Inject
    JWTParser jwtParser;
 
@@ -357,8 +360,15 @@ public class CustomTokenAuthProvider  extends BaseAuthProvider implements AuthPr
 
                   return new LoginResponse(
                      true,
-                     new LoginPositiveResponse(userId,
-                        identity, rolesSet, authToken, refreshToken, TokenUtils.currentTimeInSecs() + durationInSeconds)
+                     new LoginPositiveResponse(
+                        userId,
+                        identity,
+                        rolesSet,
+                        authToken,
+                        refreshToken,
+                        TokenUtils.currentTimeInSecs() + durationInSeconds,
+                        mongodbConnectionString,
+                        realm)
                   );
                } else {
                   return new LoginResponse(false,
@@ -405,12 +415,15 @@ public class CustomTokenAuthProvider  extends BaseAuthProvider implements AuthPr
       try {
          newRefreshToken = generateRefreshToken(userId, newAuthToken, durationInSeconds);
          return new LoginResponse(true,
-            new LoginPositiveResponse(userId,
-               identity,
-               identity.getRoles(),
-               newAuthToken,
-               newRefreshToken,
-               TokenUtils.currentTimeInSecs() + durationInSeconds));
+           new LoginPositiveResponse(
+              userId,
+              identity,
+              identity.getRoles(),
+              newAuthToken,
+              newRefreshToken,
+              TokenUtils.currentTimeInSecs() + durationInSeconds,
+              mongodbConnectionString,
+              systemRealm));
       } catch (IOException | NoSuchAlgorithmException | InvalidKeySpecException e) {
          return new LoginResponse(false,
             new LoginNegativeResponse(userId,
