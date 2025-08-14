@@ -1,6 +1,6 @@
 package com.e2eq.framework.model.persistent.imports;
 
-import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
+import com.e2eq.framework.model.persistent.base.BaseModel;
 import dev.morphia.annotations.Entity;
 import dev.morphia.annotations.Field;
 import dev.morphia.annotations.Index;
@@ -22,10 +22,9 @@ import lombok.experimental.SuperBuilder;
         @Index(fields = {@Field(value = "sessionRefName")}, options = @IndexOptions()),
         @Index(fields = {@Field(value = "rowNumber")}, options = @IndexOptions())
 })
-public class ImportSessionRow extends UnversionedBaseModel {
+public class ImportSessionRow extends BaseModel {
     private String sessionRefName; // ImportSession.refName
     private int rowNumber;
-    private String refName;
     private String intent; // INSERT, UPDATE, SKIP
     private boolean hasErrors;
 
@@ -35,8 +34,16 @@ public class ImportSessionRow extends UnversionedBaseModel {
     // JSON-serialized T (target entity)
     private String recordJson;
 
+    // Original CSV line
+    private String rawLine;
+
     @Override
-    public String bmFunctionalArea() { return "IMPORTS"; }
+    public String bmFunctionalArea() {
+        return "IMPORTS";
+    }
+
     @Override
-    public String bmFunctionalDomain() { return "IMPORTS"; }
+    public String bmFunctionalDomain() {
+        return "IMPORTS";
+    }
 }
