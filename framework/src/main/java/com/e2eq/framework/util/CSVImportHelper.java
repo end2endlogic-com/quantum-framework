@@ -12,8 +12,11 @@ import jakarta.validation.ValidationException;
 import jakarta.validation.Validator;
 import jakarta.ws.rs.WebApplicationException;
 
+import lombok.Getter;
+import lombok.Setter;
 import org.supercsv.cellprocessor.*;
 import org.supercsv.cellprocessor.ift.CellProcessor;
+import org.supercsv.exception.SuperCsvException;
 import org.supercsv.io.dozer.CsvDozerBeanReader;
 import org.supercsv.io.dozer.ICsvDozerBeanReader;
 import org.supercsv.prefs.CsvPreference;
@@ -27,6 +30,8 @@ import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.Map;
+import java.util.IdentityHashMap;
 import java.util.stream.Collectors;
 
 import static java.lang.String.format;
@@ -79,7 +84,7 @@ public class CSVImportHelper {
         }
     }
 
-    private  String[] createFieldMapping(String[] header, List<String> requestedColumns, List<String> preferredColumnNames) {
+    private String[] createFieldMapping(String[] header, List<String> requestedColumns, List<String> preferredColumnNames) {
         if (requestedColumns == null || requestedColumns.isEmpty()) {
             return header;
         }
@@ -103,168 +108,172 @@ public class CSVImportHelper {
         void handleFailedRecord(T record);
     }
 
+    @Getter
     public static class ImportResult<T> {
-            // New: session and detailed metrics/results for preview and commit
-            private String sessionId;
-            private int totalRows;
-            private int validRows;
-            private int errorRows;
-            private int updateCount;
-            private int insertCount;
-            private int importedCount;
-            private int failedCount;
-            private final List<String> failedRecordsFeedback;
-            private final List<ImportRowResult<T>> rowResults = new ArrayList<>();
+        // New: session and detailed metrics/results for preview and commit
+        @Setter
+        private String sessionId;
+        private int totalRows;
+        private int validRows;
+        private int errorRows;
+        @Setter
+        private int updateCount;
+        @Setter
+        private int insertCount;
+        private int importedCount;
+        private int failedCount;
+        private final List<String> failedRecordsFeedback;
+        private final List<ImportRowResult<T>> rowResults = new ArrayList<>();
 
-            public ImportResult(int importedCount, int failedCount) {
-                this.importedCount = importedCount;
-                this.failedCount = failedCount;
-                this.failedRecordsFeedback = new ArrayList<>();
-            }
-
-            public String getSessionId() { return sessionId; }
-            public void setSessionId(String sessionId) { this.sessionId = sessionId; }
-            public int getTotalRows() { return totalRows; }
-            public void incrementTotalRows() { this.totalRows++; }
-            public int getValidRows() { return validRows; }
-            public void incrementValidRows() { this.validRows++; }
-            public int getErrorRows() { return errorRows; }
-            public void incrementErrorRows() { this.errorRows++; }
-
-            public int getImportedCount() {
-                return importedCount;
-            }
-
-            public void incrementFailedCount() {
-                incrementFailedCount(1);
-            }
-
-            public void incrementFailedCount(int amount) {
-                this.failedCount = this.failedCount + amount;
-            }
-
-            public void incrementImportedCount() {
-              incrementImportedCount(1);
-            }
-
-            public void incrementImportedCount(int amount) {
-                this.importedCount = this.importedCount + amount;
-            }
-
-            public int getFailedCount() {
-                return failedCount;
-            }
-            public List<String> getFailedRecordsFeedback() {
-                return failedRecordsFeedback;
-            }
-
-            public void addFailedRecordFeedback(String feedback) {
-                this.failedRecordsFeedback.add(feedback);
-            }
-
-            public void setInsertCount(int insertCount) {
-                this.insertCount = insertCount;
-            }
-
-            public void setUpdateCount(int updateCount) {
-                this.updateCount = updateCount;
-            }
-
-            public int getInsertCount() {
-                return insertCount;
-            }
-
-            public int getUpdateCount () {
-                return updateCount;
-            }
-
-            public List<ImportRowResult<T>> getRowResults() { return rowResults; }
+        public ImportResult(int importedCount, int failedCount) {
+            this.importedCount = importedCount;
+            this.failedCount = failedCount;
+            this.failedRecordsFeedback = new ArrayList<>();
         }
 
-        // Per-field error information
-        public static class FieldError {
-            private String field; // may be null if unknown
-            private String message;
-            private String code; // e.g., VALIDATION, PARSE, MAPPING, DB
-            public FieldError() {}
-            public FieldError(String field, String message, String code) {
-                this.field = field; this.message = message; this.code = code;
-            }
-            public String getField() { return field; }
-            public String getMessage() { return message; }
-            public String getCode() { return code; }
-            public void setField(String field) { this.field = field; }
-            public void setMessage(String message) { this.message = message; }
-            public void setCode(String code) { this.code = code; }
+        public void incrementTotalRows() {
+            this.totalRows++;
         }
 
-        public enum Intent { INSERT, UPDATE, SKIP }
-
-        // Per-row result
-        public static class ImportRowResult<T> {
-            private int rowNumber;
-            private String refName;
-            private Intent intent = Intent.SKIP;
-            private final List<FieldError> errors = new ArrayList<>();
-            private T record; // optional reference for debugging
-            public int getRowNumber() { return rowNumber; }
-            public void setRowNumber(int rowNumber) { this.rowNumber = rowNumber; }
-            public String getRefName() { return refName; }
-            public void setRefName(String refName) { this.refName = refName; }
-            public Intent getIntent() { return intent; }
-            public void setIntent(Intent intent) { this.intent = intent; }
-            public List<FieldError> getErrors() { return errors; }
-            public T getRecord() { return record; }
-            public void setRecord(T record) { this.record = record; }
-            public boolean hasErrors() { return !errors.isEmpty(); }
+        public void incrementValidRows() {
+            this.validRows++;
         }
 
-        // Minimal session holder for preview/commit flow
-        public static class ImportSession<T> {
-            private final String id;
-            private final Class<T> type;
-            private final List<ImportRowResult<T>> rows;
-            private String status; // PENDING, READY, COMMITTED, CANCELED
-            public ImportSession(String id, Class<T> type, List<ImportRowResult<T>> rows) {
-                this.id = id; this.type = type; this.rows = rows; this.status = "READY";
-            }
-            public String getId() { return id; }
-            public Class<T> getType() { return type; }
-            public List<ImportRowResult<T>> getRows() { return rows; }
-            public String getStatus() { return status; }
-            public void setStatus(String status) { this.status = status; }
+        public void incrementErrorRows() {
+            this.errorRows++;
         }
 
-        public static class CommitResult {
-            private int imported;
-            private int failed;
-            public CommitResult(int imported, int failed) { this.imported = imported; this.failed = failed; }
-            public int getImported() { return imported; }
-            public int getFailed() { return failed; }
+        public void incrementFailedCount() {
+            incrementFailedCount(1);
         }
+
+        public void incrementFailedCount(int amount) {
+            this.failedCount = this.failedCount + amount;
+        }
+
+        public void incrementImportedCount() {
+            incrementImportedCount(1);
+        }
+
+        public void incrementImportedCount(int amount) {
+            this.importedCount = this.importedCount + amount;
+        }
+
+        public void addFailedRecordFeedback(String feedback) {
+            this.failedRecordsFeedback.add(feedback);
+        }
+
+    }
+
+    public enum FieldErrorCode {
+        VALIDATION,
+        PARSE,
+        MAPPING,
+        DB,
+        DB_DOC_TOO_LARGE,
+        DB_SCHEMA_VALIDATION
+    }
+
+    // Per-field error information
+    @Setter
+    @Getter
+    public static class FieldError {
+        private String field; // may be null if unknown
+        private String message;
+        private FieldErrorCode code; // e.g., VALIDATION, PARSE, MAPPING, DB
+
+        public FieldError() {
+        }
+
+        public FieldError(String field, String message, FieldErrorCode code) {
+            this.field = field;
+            this.message = message;
+            this.code = code;
+        }
+
+    }
+
+    public enum Intent {INSERT, UPDATE, SKIP}
+
+    // Per-row result
+    @Getter
+    public static class ImportRowResult<T> {
+        @Setter
+        private int rowNumber;
+        @Setter
+        private String refName;
+        @Setter
+        private Intent intent = Intent.SKIP;
+        @Setter
+        private String rawData;
+        private final List<FieldError> errors = new ArrayList<>();
+        @Setter
+        private T record; // optional reference for debugging
+
+        public boolean hasErrors() {
+            return !errors.isEmpty();
+        }
+    }
+
+    // Minimal session holder for preview/commit flow
+    @Getter
+    public static class ImportSession<T> {
+        private final String id;
+        private final Class<T> type;
+        private final List<ImportRowResult<T>> rows;
+        @Setter
+        private String status; // PENDING, READY, COMMITTED, CANCELED
+
+        public ImportSession(String id, Class<T> type, List<ImportRowResult<T>> rows) {
+            this.id = id;
+            this.type = type;
+            this.rows = rows;
+            this.status = "READY";
+        }
+
+    }
+
+    @Getter
+    public static class CommitResult {
+        private final int imported;
+        private final int failed;
+
+        public CommitResult(int imported, int failed) {
+            this.imported = imported;
+            this.failed = failed;
+        }
+    }
+
+    private static String safeRaw(org.supercsv.io.ICsvReader r) {
+        try {
+            return r.getUntokenizedRow();
+        } catch (Exception ignore) {
+            return null;
+        }
+    }
 
     public <T extends UnversionedBaseModel> ImportResult<T> preProcessCSV(
-       BaseMorphiaRepo<T> repo,
-       InputStream inputStream,
-       char fieldSeparator,
-       char quoteChar,
-       boolean skipHeaderRow,
-       List<String> requestedColumns,
-       Charset charset,
-       boolean mustUseBOM,
-       String quotingStrategy,
-       FailedRecordHandler<T> failedRecordHandler
+            BaseMorphiaRepo<T> repo,
+            InputStream inputStream,
+            char fieldSeparator,
+            char quoteChar,
+            boolean skipHeaderRow,
+            List<String> requestedColumns,
+            Charset charset,
+            boolean mustUseBOM,
+            String quotingStrategy,
+            FailedRecordHandler<T> failedRecordHandler
     ) throws IOException {
-        ImportResult<T> result= new ImportResult<>(0, 0);
+        ImportResult<T> result = new ImportResult<>(0, 0);
         try (Reader reader = new InputStreamReader(inputStream, charset)) {
             if (mustUseBOM) {
                 reader.read(); // Skip BOM character
             }
 
             ICsvDozerBeanReader beanReader = new CsvDozerBeanReader(reader,
-               new CsvPreference.Builder(quoteChar, fieldSeparator, "\r\n")
-                  .useQuoteMode(getQuoteMode(quotingStrategy))
-                  .build());
+                    new CsvPreference.Builder(quoteChar, fieldSeparator, "\r\n")
+                            .useQuoteMode(getQuoteMode(quotingStrategy))
+                            .build());
 
             String[] header = beanReader.getHeader(true);
             if (skipHeaderRow && header == null) {
@@ -291,6 +300,27 @@ public class CSVImportHelper {
         return result;
     }
 
+    public static class ParseEnum<E extends Enum<E>> extends CellProcessorAdaptor {
+        private final Class<E> enumType;
+
+        public ParseEnum(Class<E> enumType) {
+            this.enumType = enumType;
+        }
+
+        @Override
+        public Object execute(Object value, CsvContext ctx) {
+            if (value == null) return next.execute(null, ctx);
+            String s = value.toString().trim();
+            for (E e : enumType.getEnumConstants()) {
+                if (e.name().equalsIgnoreCase(s)) {
+                    return next.execute(e, ctx);
+                }
+            }
+            throw new org.supercsv.exception.SuperCsvCellProcessorException(
+                    "Invalid enum value '" + s + "' for " + enumType.getSimpleName(), ctx, this);
+        }
+    }
+
     private CellProcessor[] buildProcessors(Class<?> clazz, List<String> cols, ListCellProcessor listProcessor) {
         CellProcessor[] processors = new CellProcessor[cols.size()];
         for (int i = 0; i < cols.size(); i++) {
@@ -309,6 +339,10 @@ public class CSVImportHelper {
                 processors[i] = new org.supercsv.cellprocessor.Optional(new ParseDouble());
             } else if (type == java.math.BigDecimal.class) {
                 processors[i] = new org.supercsv.cellprocessor.Optional(new ParseBigDecimal());
+            } else if (type != null && type.isEnum()) {
+                @SuppressWarnings("unchecked")
+                Class<? extends Enum<?>> e = (Class<? extends Enum<?>>) type;
+                processors[i] = new Optional(new ParseEnum(e));  // << key change
             } else {
                 processors[i] = new org.supercsv.cellprocessor.Optional();
             }
@@ -354,6 +388,14 @@ public class CSVImportHelper {
         }
     }
 
+    private Reader makeReader(InputStream in, Charset cs, boolean mustUseBOM) throws IOException {
+        BufferedReader br = new BufferedReader(new InputStreamReader(in, cs));
+        br.mark(1);
+        int ch = br.read();
+        if (!(mustUseBOM && ch == 0xFEFF)) br.reset(); // only consume if BOM was required and present
+        return br;
+    }
+
     public <T extends UnversionedBaseModel> ImportResult<T> importCSV(
             BaseMorphiaRepo<T> repo,
             InputStream inputStream,
@@ -366,35 +408,26 @@ public class CSVImportHelper {
             String quotingStrategy,
             FailedRecordHandler<T> failedRecordHandler) {
 
-        ImportResult<T> result = new ImportResult<>(0,0);
-        try (Reader reader = new InputStreamReader(inputStream, charset)) {
-            if (mustUseBOM) {
-                reader.read(); // Skip BOM character
-            }
+        ImportResult<T> result = new ImportResult<>(0, 0);
 
+        try (Reader reader = makeReader(inputStream, charset, mustUseBOM)) {
             ICsvDozerBeanReader beanReader = new CsvDozerBeanReader(reader,
                     new CsvPreference.Builder(quoteChar, fieldSeparator, "\r\n")
                             .useQuoteMode(getQuoteMode(quotingStrategy))
                             .build());
 
-            String[] header = beanReader.getHeader(true);
+            String[] header = beanReader.getHeader(skipHeaderRow);
             if (skipHeaderRow && header == null) {
                 throw new IllegalArgumentException("CSV file does not contain a header row");
             }
 
-            //String[] fieldMapping = createFieldMapping(header, requestedColumns, preferredColumnNames);
-
-            // convert requestedColumns to an array of strings
-            String[] fieldMapping = requestedColumns.toArray(new String[requestedColumns.size()]);
-
+            final String[] fieldMapping = requestedColumns.toArray(new String[0]);
             beanReader.configureBeanMapping(repo.getPersistentClass(), fieldMapping);
 
             ListCellProcessor listProcessor = new ListCellProcessor();
             CellProcessor[] processors = buildProcessors(repo.getPersistentClass(), requestedColumns, listProcessor);
 
-           result = importFlatProperty(repo, beanReader, processors, failedRecordHandler);
-
-
+            result = importFlatProperty(repo, beanReader, processors, failedRecordHandler, fieldMapping);
         } catch (IOException e) {
             throw new WebApplicationException("Error importing CSV: " + e.getMessage(), e, 400);
         }
@@ -403,10 +436,10 @@ public class CSVImportHelper {
     }
 
 
-    private  <T extends UnversionedBaseModel> ImportResult<T> preprocessFlatProperty(BaseMorphiaRepo<T> repo,
-                                                                                 ICsvDozerBeanReader beanReader,
-                                                                                 CellProcessor[] processors,
-                                                                                 FailedRecordHandler<T> failedRecordHandler) throws IOException {
+    private <T extends UnversionedBaseModel> ImportResult<T> preprocessFlatProperty(BaseMorphiaRepo<T> repo,
+                                                                                    ICsvDozerBeanReader beanReader,
+                                                                                    CellProcessor[] processors,
+                                                                                    FailedRecordHandler<T> failedRecordHandler) throws IOException {
         ImportResult<T> result = new ImportResult<>(0, 0);
         List<T> batch = new ArrayList<>(BATCH_SIZE);
 
@@ -416,61 +449,139 @@ public class CSVImportHelper {
 
             batch.add(bean);
             if (batch.size() >= BATCH_SIZE) {
-                preProcessBatch(repo, batch,  result);
+                preProcessBatch(repo, batch, result);
                 batch.clear();
             }
         }
 
         // Process any remaining entities in the buffer
         if (!batch.isEmpty()) {
-            result = preProcessBatch(repo, batch,  result);
+            result = preProcessBatch(repo, batch, result);
         }
 
         return result;
     }
 
-    private  <T extends UnversionedBaseModel> ImportResult<T> importFlatProperty(BaseMorphiaRepo<T> repo,
-                                                                     ICsvDozerBeanReader beanReader,
-                                                                     CellProcessor[] processors,
-                                                                     FailedRecordHandler<T> failedRecordHandler) throws IOException {
+    private static String resolveFieldFromParseException(Exception ex, String[] fieldMapping) {
+        if (ex instanceof SuperCsvException sce) {
+            CsvContext ctx = sce.getCsvContext();
+            if (ctx != null) {
+                int col = ctx.getColumnNumber(); // 1-based
+                if (col > 0 && col <= fieldMapping.length) {
+                    return fieldMapping[col - 1];
+                }
+            }
+        }
+        return null; // fallback if not available
+    }
+
+    private <T extends UnversionedBaseModel> ImportResult<T> importFlatProperty(
+            BaseMorphiaRepo<T> repo,
+            ICsvDozerBeanReader beanReader,
+            CellProcessor[] processors,
+            FailedRecordHandler<T> failedRecordHandler,
+            String[] fieldMapping) throws IOException {
 
         ImportResult<T> result = new ImportResult<>(0, 0);
         List<T> batch = new ArrayList<>(BATCH_SIZE);
 
+        // Track CSV row numbers and raw lines so we can annotate DB failures later
+        Map<T, Integer> rowNums = new IdentityHashMap<>();
+        Map<T, String> raws = new IdentityHashMap<>();
 
-
-
+        int rowNum = 1; // first data row after header
         while (true) {
-            T bean = beanReader.read(repo.getPersistentClass(), processors);
-            if (bean == null) break;
+            T bean;
             try {
-                validateBean(bean);
-            } catch (ValidationException e) {
-                failedRecordHandler.handleFailedRecord(bean);
+                bean = beanReader.read(repo.getPersistentClass(), processors);
+            } catch (SuperCsvException ex) {
+                String field = resolveFieldFromParseException(ex, fieldMapping);
+                ImportRowResult<T> rr = new ImportRowResult<>();
+                rr.setRowNumber(rowNum);
+                rr.setIntent(Intent.SKIP);
+                rr.setRawData(safeRaw(beanReader));
+                rr.getErrors().add(new FieldError(field, ex.getMessage(), FieldErrorCode.PARSE));
+                rowNum++;
+                continue;
+            } catch (Exception ex) {
+                ImportRowResult<T> rr = new ImportRowResult<>();
+                rr.setRowNumber(rowNum);
+                rr.setIntent(Intent.SKIP);
+                rr.setRawData(safeRaw(beanReader)); // NEW
+                rr.getErrors().add(new FieldError(null, ex.getMessage(), FieldErrorCode.PARSE));
+
+                result.incrementTotalRows();
+                result.incrementErrorRows();
                 result.incrementFailedCount();
-                result.addFailedRecordFeedback("Validation failed for record: " + bean.toString() + " due to " + e.getMessage());
+                result.getRowResults().add(rr);
+
+                rowNum++;
                 continue;
             }
 
-            batch.add(bean);
-            if (batch.size() >= BATCH_SIZE) {
-                processBatch(repo, batch, failedRecordHandler, result);
-                batch.clear();
+            if (bean == null) break; // EOF
+
+            result.incrementTotalRows();
+
+            // Validate (collect, don't throw)
+            Set<jakarta.validation.ConstraintViolation<T>> violations = validator.validate(bean);
+            if (violations != null && !violations.isEmpty()) {
+                ImportRowResult<T> rr = new ImportRowResult<>();
+                rr.setRowNumber(rowNum);
+                rr.setRefName(bean.getRefName());
+                rr.setRawData(safeRaw(beanReader)); // NEW
+
+                for (jakarta.validation.ConstraintViolation<T> v : violations) {
+                    rr.getErrors().add(new FieldError(
+                            v.getPropertyPath() != null ? v.getPropertyPath().toString() : null,
+                            v.getMessage(),
+                            FieldErrorCode.VALIDATION
+                    ));
+                }
+                if (failedRecordHandler != null) failedRecordHandler.handleFailedRecord(bean);
+                result.incrementFailedCount();
+                result.incrementErrorRows();
+
+                result.getRowResults().add(rr);
+
+
+                rowNum++;
+                continue; // skip DB save
             }
+
+            // Valid row (pre-DB)
+            result.incrementValidRows();
+
+            // Buffer for DB save + keep pointers for error reporting
+            batch.add(bean);
+            rowNums.put(bean, rowNum);
+            raws.put(bean, safeRaw(beanReader));
+
+            if (batch.size() >= BATCH_SIZE) {
+                processBatch(repo, batch, failedRecordHandler, result, rowNums, raws);
+                batch.clear();
+                rowNums.clear();
+                raws.clear();
+            }
+
+            rowNum++;
         }
 
-        // Process any remaining entities in the buffer
+        // Flush remaining
         if (!batch.isEmpty()) {
-             result = processBatch(repo, batch, failedRecordHandler, result);
+            result = processBatch(repo, batch, failedRecordHandler, result, rowNums, raws);
+            batch.clear();
+            rowNums.clear();
+            raws.clear();
         }
 
         return result;
     }
 
     public <T extends UnversionedBaseModel> ImportResult<T> preProcessBatch(
-       BaseMorphiaRepo<T> repo,
-       List<T> batch,
-       ImportResult<T> result) {
+            BaseMorphiaRepo<T> repo,
+            List<T> batch,
+            ImportResult<T> result) {
         if (batch.isEmpty()) return result;
 
         // gather a list of refNames from the batch
@@ -512,32 +623,99 @@ public class CSVImportHelper {
         return result;
     }
 
-    private <T extends UnversionedBaseModel> ImportResult<T> processBatch(BaseMorphiaRepo<T> repo,
-                                                               List<T> batch,
-                                                               FailedRecordHandler<T> failedRecordHandler,
-                                                               ImportResult<T> result) {
+    private <T extends UnversionedBaseModel> ImportResult<T> processBatch(
+            BaseMorphiaRepo<T> repo,
+            List<T> batch,
+            FailedRecordHandler<T> failedRecordHandler,
+            ImportResult<T> result,
+            Map<T, Integer> rowNums,
+            Map<T, String> raws) {
+
         if (batch.isEmpty()) return result;
 
+        // Determine intended INSERT vs UPDATE counts for this batch (used on success)
+        List<String> refNames = batch.stream().map(T::getRefName).toList();
+        List<T> found = repo.getListFromRefNames(refNames);
+        Set<String> existing = found.stream()
+                .map(T::getRefName)
+                .collect(java.util.stream.Collectors.toSet());
+
+        int batchInserts = 0, batchUpdates = 0;
+        for (T b : batch) {
+            if (existing.contains(b.getRefName())) batchUpdates++;
+            else batchInserts++;
+        }
+
         try {
+            // Attempt save
             repo.save(batch);
+
+            // On success, reflect counts
             result.incrementImportedCount(batch.size());
+            result.setInsertCount(result.getInsertCount() + batchInserts);
+            result.setUpdateCount(result.getUpdateCount() + batchUpdates);
+
         } catch (Exception e) {
             if (batch.size() == 1) {
+                // Single-record failure: attach structured DB error
                 T failedRecord = batch.get(0);
-                failedRecordHandler.handleFailedRecord(failedRecord);
+
+                ImportRowResult<T> rr = new ImportRowResult<>();
+                rr.setRowNumber(rowNums.getOrDefault(failedRecord, -1));
+                rr.setRefName(failedRecord.getRefName());
+                rr.setRawData(raws.get(failedRecord)); // NEW
+
+                // Classify DB error (duplicate key, etc.)
+                Throwable root = e;
+                while (root.getCause() != null) root = root.getCause();
+
+                FieldErrorCode code = FieldErrorCode.DB;
+                String message = root.getMessage();
+                if (message != null) {
+                    if (message.contains("E11000")) {
+                        message = "Duplicate key violation (unique index).";
+                    } else if (message.contains("Document too large")) {
+                        code = FieldErrorCode.DB_DOC_TOO_LARGE;
+                    } else if (message.contains("Validation failed")) {
+                        code = FieldErrorCode.DB_SCHEMA_VALIDATION;
+                    }
+                }
+
+                rr.getErrors().add(new FieldError(
+                        "refName", // set null if unknown
+                        message != null ? message : "Database write failed.",
+                        code
+                ));
+
+                if (failedRecordHandler != null) failedRecordHandler.handleFailedRecord(failedRecord);
                 result.incrementFailedCount();
-                result.addFailedRecordFeedback("Failed to process record: " + failedRecord.toString() + " due to " + e.getMessage());
+                result.incrementErrorRows();
+
+                result.getRowResults().add(rr);
+
+
             } else {
+                // Bisect to isolate failing records without losing successes
                 int midPoint = batch.size() / 2;
                 List<T> firstHalf = new ArrayList<>(batch.subList(0, midPoint));
                 List<T> secondHalf = new ArrayList<>(batch.subList(midPoint, batch.size()));
 
-                processBatch(repo, firstHalf, failedRecordHandler, result);
-                processBatch(repo, secondHalf, failedRecordHandler, result);
+                processBatch(repo, firstHalf, failedRecordHandler, result, rowNums, raws);
+                processBatch(repo, secondHalf, failedRecordHandler, result, rowNums, raws);
             }
         }
 
         return result;
+    }
+
+    // Backward-compatible delegator (kept)
+    private <T extends UnversionedBaseModel> ImportResult<T> processBatch(
+            BaseMorphiaRepo<T> repo,
+            List<T> batch,
+            FailedRecordHandler<T> failedRecordHandler,
+            ImportResult<T> result) {
+        return processBatch(repo, batch, failedRecordHandler, result,
+                java.util.Collections.emptyMap(), java.util.Collections.emptyMap());
     }
 
     // New: analyze (preview) the CSV without saving, and create a session
@@ -553,12 +731,13 @@ public class CSVImportHelper {
             String quotingStrategy) throws IOException {
 
         ImportResult<T> result = new ImportResult<>(0, 0);
-        // Determine if we have persistence available (CDI injection) or should fallback to in-memory for tests
+
         boolean memMode = (importSessionRepo == null || importSessionRowRepo == null);
-        java.util.List<ImportRowResult<T>> memRows = memMode ? new java.util.ArrayList<>() : null;
-        // Create session summary first (OPEN) and stream rows into ImportSessionRow when persistence is available
+        List<ImportRowResult<T>> memRows = memMode ? new ArrayList<>() : null;
+
         String sessionId = java.util.UUID.randomUUID().toString();
         result.setSessionId(sessionId);
+
         com.e2eq.framework.model.persistent.imports.ImportSession session = null;
         if (!memMode) {
             session = new com.e2eq.framework.model.persistent.imports.ImportSession();
@@ -571,27 +750,27 @@ public class CSVImportHelper {
                 if (securityIdentity != null && securityIdentity.getPrincipal() != null) {
                     currentUser = securityIdentity.getPrincipal().getName();
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+            }
             if (currentUser == null || currentUser.isEmpty()) currentUser = "anonymous";
             session.setUserId(currentUser);
             session.setCollectionName(repo.getPersistentClass().getSimpleName());
             session.setStartedAt(java.time.Instant.now());
             importSessionRepo.save(session);
         }
-        try (Reader reader = new InputStreamReader(inputStream, charset)) {
-            if (mustUseBOM) {
-                reader.read();
-            }
+
+        try (Reader reader = makeReader(inputStream, charset, mustUseBOM)) {
             ICsvDozerBeanReader beanReader = new CsvDozerBeanReader(reader,
                     new CsvPreference.Builder(quoteChar, fieldSeparator, "\r\n")
                             .useQuoteMode(getQuoteMode(quotingStrategy))
                             .build());
 
-            String[] header = beanReader.getHeader(true);
+            String[] header = beanReader.getHeader(skipHeaderRow);
             if (skipHeaderRow && header == null) {
                 throw new IllegalArgumentException("CSV file does not contain a header row");
             }
-            String[] fieldMapping = requestedColumns.toArray(new String[requestedColumns.size()]);
+
+            final String[] fieldMapping = requestedColumns.toArray(new String[0]);
             beanReader.configureBeanMapping(repo.getPersistentClass(), fieldMapping);
 
             ListCellProcessor listProcessor = new ListCellProcessor();
@@ -599,116 +778,186 @@ public class CSVImportHelper {
 
             List<T> batchBeans = new ArrayList<>(BATCH_SIZE);
             List<Integer> batchRowNums = new ArrayList<>(BATCH_SIZE);
-            int rowNum = 1; // after header
+            Map<Integer, String> batchRawByRowNum = new java.util.HashMap<>(BATCH_SIZE);
+
+            int rowNum = 1; // first data row after (optional) header
             while (true) {
                 T bean;
                 try {
                     bean = beanReader.read(repo.getPersistentClass(), processors);
-                } catch (Exception ex) {
+                } catch (SuperCsvException ex) {
+                    String field = resolveFieldFromParseException(ex, fieldMapping);
+
                     ImportRowResult<T> rr = new ImportRowResult<>();
                     rr.setRowNumber(rowNum);
                     rr.setIntent(Intent.SKIP);
-                    rr.getErrors().add(new FieldError(null, ex.getMessage(), "PARSE"));
+                    rr.setRawData(safeRaw(beanReader));
+                    rr.getErrors().add(new FieldError(field, ex.getMessage(), FieldErrorCode.PARSE));
+
                     if (!memMode) {
-                        // persist this error row immediately
-                        com.e2eq.framework.model.persistent.imports.ImportSessionRow row = new com.e2eq.framework.model.persistent.imports.ImportSessionRow();
+                        com.e2eq.framework.model.persistent.imports.ImportSessionRow row =
+                                new com.e2eq.framework.model.persistent.imports.ImportSessionRow();
                         row.setSessionRefName(sessionId);
                         row.setRowNumber(rowNum);
                         row.setRefName(null);
                         row.setIntent(Intent.SKIP.name());
                         row.setHasErrors(true);
+                        row.setRawLine(safeRaw(beanReader));
                         try {
                             row.setErrorsJson(objectMapper.writeValueAsString(rr.getErrors()));
-                        } catch (Exception ignore) {}
+                        } catch (Exception ignore) {
+                        }
                         importSessionRowRepo.save(row);
                     } else {
-                        // in-memory fallback
                         memRows.add(rr);
                     }
-                    // update counters and preview
-                    result.incrementErrorRows();
+
                     result.incrementTotalRows();
+                    result.incrementErrorRows();
                     if (result.getRowResults().size() < PREVIEW_LIMIT) {
                         result.getRowResults().add(rr);
                     }
+
+                    rowNum++;
+                    continue;
+                } catch (Exception ex) {
+                    ImportRowResult<T> rr = new ImportRowResult<>();
+                    rr.setRowNumber(rowNum);
+                    rr.setIntent(Intent.SKIP);
+                    rr.setRawData(safeRaw(beanReader));
+                    rr.getErrors().add(new FieldError(null, ex.getMessage(), FieldErrorCode.PARSE));
+
+                    if (!memMode) {
+                        com.e2eq.framework.model.persistent.imports.ImportSessionRow row =
+                                new com.e2eq.framework.model.persistent.imports.ImportSessionRow();
+                        row.setSessionRefName(sessionId);
+                        row.setRowNumber(rowNum);
+                        row.setRefName(null);
+                        row.setIntent(Intent.SKIP.name());
+                        row.setHasErrors(true);
+                        // NEW: persist raw CSV line
+                        row.setRawLine(safeRaw(beanReader));
+                        try {
+                            row.setErrorsJson(objectMapper.writeValueAsString(rr.getErrors()));
+                        } catch (Exception ignore) {
+                        }
+                        importSessionRowRepo.save(row);
+                    } else {
+                        memRows.add(rr);
+                    }
+
+                    result.incrementTotalRows();
+                    result.incrementErrorRows();
+                    if (result.getRowResults().size() < PREVIEW_LIMIT) {
+                        result.getRowResults().add(rr);
+                    }
+
                     rowNum++;
                     continue;
                 }
-                if (bean == null) break;
+
+                if (bean == null) break; // EOF
+
                 ImportRowResult<T> rr = new ImportRowResult<>();
                 rr.setRowNumber(rowNum);
                 rr.setRefName(bean.getRefName());
                 rr.setRecord(bean);
 
+                batchRawByRowNum.put(rowNum, safeRaw(beanReader));
                 batchBeans.add(bean);
                 batchRowNums.add(rowNum);
 
-                // flush batch for intent detection
                 if (batchBeans.size() >= BATCH_SIZE) {
-                    java.util.List<ImportRowResult<T>> annotated = new java.util.ArrayList<>();
+                    List<ImportRowResult<T>> annotated = new ArrayList<>();
                     annotateIntentsAndValidate(repo, batchBeans, batchRowNums, annotated, result);
-                    // persist and update counters/preview
+
                     for (ImportRowResult<T> ar : annotated) {
                         result.incrementTotalRows();
+
                         boolean hasErrors = ar.hasErrors();
                         if (hasErrors) {
                             result.incrementErrorRows();
                         } else {
                             result.incrementValidRows();
-                            if (ar.getIntent() == Intent.INSERT) result.setInsertCount(result.getInsertCount() + 1);
-                            else if (ar.getIntent() == Intent.UPDATE) result.setUpdateCount(result.getUpdateCount() + 1);
+                            if (ar.getIntent() == Intent.INSERT) {
+                                result.setInsertCount(result.getInsertCount() + 1);
+                            } else if (ar.getIntent() == Intent.UPDATE) {
+                                result.setUpdateCount(result.getUpdateCount() + 1);
+                            }
                         }
+
                         if (result.getRowResults().size() < PREVIEW_LIMIT) {
                             result.getRowResults().add(ar);
                         }
+
                         if (!memMode) {
-                            com.e2eq.framework.model.persistent.imports.ImportSessionRow row = new com.e2eq.framework.model.persistent.imports.ImportSessionRow();
+                            com.e2eq.framework.model.persistent.imports.ImportSessionRow row =
+                                    new com.e2eq.framework.model.persistent.imports.ImportSessionRow();
                             row.setSessionRefName(sessionId);
                             row.setRowNumber(ar.getRowNumber());
                             row.setRefName(ar.getRefName());
                             row.setIntent(ar.getIntent().name());
                             row.setHasErrors(hasErrors);
+                            // NEW: persist raw CSV line for valid/validated rows as well
+                            row.setRawLine(safeRaw(beanReader));
                             try {
                                 row.setErrorsJson(objectMapper.writeValueAsString(ar.getErrors()));
                                 row.setRecordJson(objectMapper.writeValueAsString(ar.getRecord()));
-                            } catch (Exception ignore) {}
+                            } catch (Exception ignore) {
+                            }
                             importSessionRowRepo.save(row);
                         } else {
                             memRows.add(ar);
                         }
                     }
+
                     batchBeans.clear();
                     batchRowNums.clear();
+                    batchRawByRowNum.clear();
+
                 }
+
                 rowNum++;
             }
+
             if (!batchBeans.isEmpty()) {
-                java.util.List<ImportRowResult<T>> annotated = new java.util.ArrayList<>();
+                List<ImportRowResult<T>> annotated = new ArrayList<>();
                 annotateIntentsAndValidate(repo, batchBeans, batchRowNums, annotated, result);
+
                 for (ImportRowResult<T> ar : annotated) {
                     result.incrementTotalRows();
+
                     boolean hasErrors = ar.hasErrors();
                     if (hasErrors) {
                         result.incrementErrorRows();
                     } else {
                         result.incrementValidRows();
-                        if (ar.getIntent() == Intent.INSERT) result.setInsertCount(result.getInsertCount() + 1);
-                        else if (ar.getIntent() == Intent.UPDATE) result.setUpdateCount(result.getUpdateCount() + 1);
+                        if (ar.getIntent() == Intent.INSERT) {
+                            result.setInsertCount(result.getInsertCount() + 1);
+                        } else if (ar.getIntent() == Intent.UPDATE) {
+                            result.setUpdateCount(result.getUpdateCount() + 1);
+                        }
                     }
+
                     if (result.getRowResults().size() < PREVIEW_LIMIT) {
                         result.getRowResults().add(ar);
                     }
+
                     if (!memMode) {
-                        com.e2eq.framework.model.persistent.imports.ImportSessionRow row = new com.e2eq.framework.model.persistent.imports.ImportSessionRow();
+                        com.e2eq.framework.model.persistent.imports.ImportSessionRow row =
+                                new com.e2eq.framework.model.persistent.imports.ImportSessionRow();
                         row.setSessionRefName(sessionId);
                         row.setRowNumber(ar.getRowNumber());
                         row.setRefName(ar.getRefName());
                         row.setIntent(ar.getIntent().name());
                         row.setHasErrors(hasErrors);
+                        // NEW: persist raw CSV line for the final flush too
+                        row.setRawLine(safeRaw(beanReader));
                         try {
                             row.setErrorsJson(objectMapper.writeValueAsString(ar.getErrors()));
                             row.setRecordJson(objectMapper.writeValueAsString(ar.getRecord()));
-                        } catch (Exception ignore) {}
+                        } catch (Exception ignore) {
+                        }
                         importSessionRowRepo.save(row);
                     } else {
                         memRows.add(ar);
@@ -719,7 +968,6 @@ public class CSVImportHelper {
             throw new WebApplicationException("Error analyzing CSV: " + e.getMessage(), e, 400);
         }
 
-        // finalize session summary and persist
         if (!memMode) {
             session.setTotalRows(result.getTotalRows());
             session.setValidRows(result.getValidRows());
@@ -728,9 +976,9 @@ public class CSVImportHelper {
             session.setUpdateCount(result.getUpdateCount());
             importSessionRepo.save(session);
         } else {
-            // In-memory session store for unit tests
             MEMORY_SESSIONS.put(sessionId, new ImportSession<>(sessionId, repo.getPersistentClass(), memRows));
         }
+
         return result;
     }
 
@@ -760,11 +1008,11 @@ public class CSVImportHelper {
                         rr.getErrors().add(new FieldError(
                                 v.getPropertyPath() != null ? v.getPropertyPath().toString() : null,
                                 v.getMessage(),
-                                "VALIDATION"));
+                                FieldErrorCode.VALIDATION));
                     }
                 }
             } catch (Exception ex) {
-                rr.getErrors().add(new FieldError(null, ex.getMessage(), "VALIDATION"));
+                rr.getErrors().add(new FieldError(null, ex.getMessage(), FieldErrorCode.VALIDATION));
             }
             outRows.add(rr);
         }
@@ -789,7 +1037,8 @@ public class CSVImportHelper {
                 }
             }
             ImportResult<T> tmp = new ImportResult<>(0, 0);
-            processBatch(repo, toSave, rec -> {}, tmp);
+            processBatch(repo, toSave, rec -> {
+            }, tmp);
             session.setStatus("COMMITTED");
             return new CommitResult(tmp.getImportedCount(), tmp.getFailedCount());
         }
@@ -828,7 +1077,8 @@ public class CSVImportHelper {
                 }
             }
             if (!toSave.isEmpty()) {
-                processBatch(repo, toSave, rec -> {}, tmp);
+                processBatch(repo, toSave, rec -> {
+                }, tmp);
             }
             skip += page.size();
         }
@@ -861,7 +1111,8 @@ public class CSVImportHelper {
             for (com.e2eq.framework.model.persistent.imports.ImportSessionRow r : page) {
                 try {
                     importSessionRowRepo.delete(r);
-                } catch (Exception ignore) {}
+                } catch (Exception ignore) {
+                }
             }
             // do not increase skip since we delete as we go; always fetch from 0 until empty
             skip = 0;
