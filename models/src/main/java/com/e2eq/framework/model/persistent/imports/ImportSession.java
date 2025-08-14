@@ -1,5 +1,6 @@
 package com.e2eq.framework.model.persistent.imports;
 
+import com.e2eq.framework.model.persistent.base.BaseModel;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import dev.morphia.annotations.Entity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
@@ -18,7 +19,7 @@ import lombok.experimental.SuperBuilder;
 @SuperBuilder
 @NoArgsConstructor
 @Entity
-public class ImportSession extends UnversionedBaseModel {
+public class ImportSession extends BaseModel {
     /**
      * Fully qualified class name of the target entity being imported.
      */
