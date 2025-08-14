@@ -1,7 +1,9 @@
 package com.e2eq.framework.service;
 
 import com.e2eq.framework.model.persistent.migration.base.MigrationService;
+import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.RealmRepo;
+import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.persistent.security.DomainContext;
 import com.e2eq.framework.model.persistent.security.Realm;
 import com.e2eq.framework.model.security.auth.AuthProviderFactory;
@@ -12,6 +14,9 @@ import io.smallrye.mutiny.subscription.MultiEmitter;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -27,6 +32,15 @@ public class TenantProvisioningService {
     @Inject MigrationService migrationService;
     @Inject AuthProviderFactory authProviderFactory;
     @Inject SecurityUtils securityUtils;
+    @Inject CredentialRepo credentialRepo;
+
+    public static class ProvisionResult {
+        public String realmId;
+        public boolean realmCreated;
+        public boolean userCreated;
+        public List<String> warnings = new java.util.ArrayList<>();
+        public void addWarning(String w) { if (w != null && !w.isBlank()) warnings.add(w); }
+    }
 
     /**
      * Provisions a new tenant.
@@ -37,14 +51,14 @@ public class TenantProvisioningService {
      * @param adminUserId       e.g. "admin@acme.com"
      * @param adminUsername     display/login name
      * @param adminPassword     plaintext password to be hashed and stored
-     * @return the created realmId (database name)
+     * @return details about what happened and any warnings
      */
-    public String provisionTenant(String tenantEmailDomain,
-                                  String orgRefName,
-                                  String accountId,
-                                  String adminUserId,
-                                  String adminUsername,
-                                  String adminPassword) {
+    public ProvisionResult provisionTenant(String tenantEmailDomain,
+                                           String orgRefName,
+                                           String accountId,
+                                           String adminUserId,
+                                           String adminUsername,
+                                           String adminPassword) {
         Objects.requireNonNull(tenantEmailDomain, "tenantEmailDomain cannot be null");
         Objects.requireNonNull(orgRefName, "orgRefName cannot be null");
         Objects.requireNonNull(accountId, "accountId cannot be null");
@@ -52,17 +66,17 @@ public class TenantProvisioningService {
         Objects.requireNonNull(adminUsername, "adminUsername cannot be null");
         Objects.requireNonNull(adminPassword, "adminPassword cannot be null");
 
+        ProvisionResult result = new ProvisionResult();
+
         // 1) Compute realm id
         String realmId = tenantEmailDomain.replace('.', '-');
+        result.realmId = realmId;
 
-        // 2) Prevent duplicates in the system catalog (system realm)
+        // 2) Lookup/Prevent duplicates in the system catalog (system realm)
         String systemRealm = securityUtils.getSystemRealm();
-        Optional<Realm> existing = realmRepo.findByEmailDomain(tenantEmailDomain, true, systemRealm);
-        if (existing.isPresent()) {
-            throw new IllegalStateException("A realm for tenant domain already exists: " + tenantEmailDomain);
-        }
+        Optional<Realm> existingOpt = realmRepo.findByEmailDomain(tenantEmailDomain, true, systemRealm);
 
-        // Build DomainContext
+        // Build DomainContext desired
         DomainContext dc = DomainContext.builder()
                 .tenantId(tenantEmailDomain)
                 .orgRefName(orgRefName)
@@ -70,8 +84,8 @@ public class TenantProvisioningService {
                 .defaultRealm(realmId)
                 .build();
 
-        // Create Realm record
-        Realm realm = Realm.builder()
+        // Desired Realm representation
+        Realm desiredRealm = Realm.builder()
                 .refName(realmId)
                 .displayName(realmId)
                 .emailDomain(tenantEmailDomain)
@@ -80,11 +94,25 @@ public class TenantProvisioningService {
                 .defaultAdminUserId(adminUserId)
                 .build();
 
-        // Save realm in the system realm catalog
-        realmRepo.save(systemRealm, realm);
-        Log.infof("Created realm catalog entry for %s in system realm %s", realmId, systemRealm);
+        if (existingOpt.isPresent()) {
+            Realm existing = existingOpt.get();
+            boolean same = Objects.equals(existing.getEmailDomain(), desiredRealm.getEmailDomain()) &&
+                           Objects.equals(existing.getDatabaseName(), desiredRealm.getDatabaseName()) &&
+                           Objects.equals(existing.getDefaultAdminUserId(), desiredRealm.getDefaultAdminUserId()) &&
+                           Objects.equals(existing.getDomainContext(), desiredRealm.getDomainContext());
+            if (!same) {
+                throw new IllegalStateException("Realm already exists, and the request would modify it. Aborting.");
+            }
+            Log.warnf("Realm %s already exists in system catalog; proceeding idempotently.", realmId);
+            result.addWarning("Realm already exists; no catalog changes were made.");
+        } else {
+            // Save realm in the system realm catalog
+            realmRepo.save(systemRealm, desiredRealm);
+            Log.infof("Created realm catalog entry for %s in system realm %s", realmId, systemRealm);
+            result.realmCreated = true;
+        }
 
-        // 3) Run migrations in the new realm DB with a lightweight proxy-emitter for logging
+        // 3) Run migrations in the realm DB with a lightweight proxy-emitter for logging
         @SuppressWarnings("unchecked")
         MultiEmitter<String> emitter = (MultiEmitter<String>) java.lang.reflect.Proxy.newProxyInstance(
                 MultiEmitter.class.getClassLoader(),
@@ -104,24 +132,44 @@ public class TenantProvisioningService {
         );
         migrationService.runAllUnRunMigrations(realmId, emitter);
 
-        // 4) Create initial tenant admin credentials inside the new realm
-        Set<String> roles = Set.of("admin", "user");
+        // 4) Ensure initial tenant admin credentials inside the realm
+        Set<String> desiredRoles = Set.of("admin", "user");
         UserManagement userManagement = authProviderFactory.getUserManager();
-        userManagement.createUser(
-                realmId,
-                adminUserId,
-                adminPassword,
-                Boolean.FALSE,
-                adminUsername,
-                roles,
-                dc
-        );
+        boolean userExists = userManagement.userIdExists(realmId, adminUserId);
+        if (!userExists) {
+            userManagement.createUser(
+                    realmId,
+                    adminUserId,
+                    adminPassword,
+                    Boolean.FALSE,
+                    adminUsername,
+                    desiredRoles,
+                    dc
+            );
+            result.userCreated = true;
+        } else {
+            Optional<CredentialUserIdPassword> credOpt = credentialRepo.findByUserId(adminUserId, realmId, true);
+            if (credOpt.isEmpty()) {
+                throw new IllegalStateException("Admin user exists but cannot be loaded for validation.");
+            }
+            CredentialUserIdPassword cred = credOpt.get();
+            Set<String> storedRoles = cred.getRoles() == null ? java.util.Collections.emptySet() : new HashSet<>(Arrays.asList(cred.getRoles()));
+            boolean attributesMatch = Objects.equals(cred.getUsername(), adminUsername)
+                    && Objects.equals(storedRoles, desiredRoles)
+                    && Objects.equals(Boolean.FALSE, cred.getForceChangePassword())
+                    && Objects.equals(cred.getDomainContext(), dc);
+            if (!attributesMatch) {
+                throw new IllegalStateException("Admin user already exists with different attributes.");
+            }
+            Log.warnf("Admin user %s already exists in realm %s; proceeding idempotently.", adminUserId, realmId);
+            result.addWarning("Admin user already exists; no user changes were made.");
+        }
 
-        // 5) Optional: Apply indexes and verify
+        // 5) Idempotent: Apply indexes and verify
         migrationService.applyIndexes(realmId);
         migrationService.checkInitialized(realmId);
 
-        return realmId;
+        return result;
     }
 
 }

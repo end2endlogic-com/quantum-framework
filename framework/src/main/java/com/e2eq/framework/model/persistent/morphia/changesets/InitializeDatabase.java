@@ -81,6 +81,7 @@ public class InitializeDatabase implements ChangeSetBean {
       Counter counter;
 
       if (!oCounter.isPresent()) {
+         Log.infof("Creating counter %s in realm:", counterName, session.getDatabase().getName());
          counter = new Counter();
          counter.setDisplayName(counterName);
          counter.setCurrentValue(initialValue);
@@ -88,6 +89,7 @@ public class InitializeDatabase implements ChangeSetBean {
          counter.setDataDomain(securityUtils.getSystemDataDomain());
          counter =  counterRepo.save(session, counter);
       } else {
+         Log.infof("Skipping counter %s already exists in realm:%s", counterName, session.getDatabase().getName());
          counter = oCounter.get();
       }
 
@@ -98,7 +100,8 @@ public class InitializeDatabase implements ChangeSetBean {
       Optional<Organization> oOrg = orgRepo.findByRefName(session, securityUtils.getSystemOrgRefName());
       Organization org;
       if (!oOrg.isPresent()) {
-       org =  orgRepo.createOrganization(session, securityUtils.getSystemOrgRefName(), securityUtils.getSystemOrgRefName(), securityUtils.getSystemDataDomain());
+         Log.infof("Creating org:%s refName:%s, with dataDomain:%s in realm:%s", displayName, refName, dataDomain.toString(), session.getDatabase().getName());
+       org =  orgRepo.createOrganization(session, displayName, refName, dataDomain);
       }
       else {
          org = oOrg.get();
@@ -112,8 +115,10 @@ public class InitializeDatabase implements ChangeSetBean {
       Optional<Account> oAccount = accountRepo.findByRefName(ds,securityUtils.getSystemPrincipalContext().getDataDomain().getAccountNum());
       Account account;
       if (!oAccount.isPresent()) {
+         Log.infof("Creating account:%s for org:%s in realm:%s", securityUtils.getSystemPrincipalContext().getDataDomain().getAccountNum(), org.getDisplayName(), ds.getDatabase().getName());
           account =   accountRepo.createAccount(ds,securityUtils.getSystemPrincipalContext().getDataDomain().getAccountNum(), org);
       } else {
+         Log.infof("Skipping account:%s for org:%s already exists in realm:%s", securityUtils.getSystemPrincipalContext().getDataDomain().getAccountNum(), org.getDisplayName(), ds.getDatabase().getName());
          account = oAccount.get();
       }
 
@@ -209,9 +214,12 @@ public class InitializeDatabase implements ChangeSetBean {
       defaultUserPolicy.setDataDomain(securityUtils.getSystemDataDomain());
 
       // Name the policy
-      if (!(policyRepo.findByRefName(datastore,"defaultUserPolicy").isPresent()))
+      if (!(policyRepo.findByRefName(datastore,"defaultUserPolicy").isPresent())) {
+         Log.infof("Creating policy:%s in realm:%s", defaultUserPolicy.getDisplayName(), datastore.getDatabase().getName());
          policyRepo.save(datastore, defaultUserPolicy);
-
+      } else {
+         Log.infof("Policy:%s already exists in realm:%s", defaultUserPolicy.getDisplayName(), datastore.getDatabase().getName());
+      }
       // So if the resource is "owned" by the principal then they see it
       // if the resource is owned by the system then they see it.
       // Ultimately what we want is a filter that says "ownerId:${userId} || ownerId:system@b2bintegrator.com"
@@ -221,7 +229,7 @@ public class InitializeDatabase implements ChangeSetBean {
    public void createInitialUserProfiles(Datastore datastore) throws CloneNotSupportedException {
 
       Log.infof("Checking to create initial user profiles in realm: %s", datastore.getDatabase().getName());
-      if (!userProfileRepo.getByUserId(datastore,securityUtils.getSystemUserId()).isPresent()) {
+      if (!userProfileRepo.getByUserId(securityUtils.getSystemRealm(),securityUtils.getSystemUserId()).isPresent()) {
          Log.infof("UserProfile:%s not found creating ", securityUtils.getSystemUserId());
          DataDomain upDataDomain = securityUtils.getSystemDataDomain().clone();
          upDataDomain.setOwnerId(securityUtils.getSystemUserId());
@@ -245,7 +253,9 @@ public class InitializeDatabase implements ChangeSetBean {
          for (Role r : roles) {
             rolesArray[i++] = r.name();
          }
-         userProfileRepo.createUser(datastore, up, null, rolesArray, defaultSystemPassword);
+         userProfileRepo.createUser(securityUtils.getSystemRealm(), up, null, rolesArray, defaultSystemPassword);
+      } else {
+         Log.infof("UserProfile:%s already exists in realm: %s", securityUtils.getSystemUserId(),securityUtils.getSystemRealm());
       }
 
    }
