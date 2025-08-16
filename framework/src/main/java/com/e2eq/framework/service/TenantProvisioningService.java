@@ -63,7 +63,6 @@ public class TenantProvisioningService {
         Objects.requireNonNull(orgRefName, "orgRefName cannot be null");
         Objects.requireNonNull(accountId, "accountId cannot be null");
         Objects.requireNonNull(adminUserId, "adminUserId cannot be null");
-        Objects.requireNonNull(adminUsername, "adminUsername cannot be null");
         Objects.requireNonNull(adminPassword, "adminPassword cannot be null");
 
         ProvisionResult result = new ProvisionResult();

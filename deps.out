@@ -1,12 +1,4 @@
 [INFO] Scanning for projects...
-[WARNING] 
-[WARNING] Some problems were encountered while building the effective model for com.end2endlogic:quantum-framework:jar:1.2.1-SNAPSHOT
-[WARNING] 'dependencies.dependency.(groupId:artifactId:type:classifier)' must be unique: io.quarkus:quarkus-container-image-docker:jar -> duplicate declaration of version (?) @ line 325, column 17
-[WARNING] 
-[WARNING] It is highly recommended to fix these problems because they threaten the stability of your build.
-[WARNING] 
-[WARNING] For this reason, future Maven versions might no longer support building such malformed projects.
-[WARNING] 
 [INFO] Inspecting build with total of 3 modules
 [INFO] Installing Central Publishing features
 [INFO] ------------------------------------------------------------------------
@@ -17,12 +9,12 @@
 [INFO] com.end2endlogic:quantum-framework                                 [jar]
 [INFO] 
 [INFO] ------------------< com.end2endlogic:quantum-parent >-------------------
-[INFO] Building com.end2endlogic:quantum-parent 1.2.1-SNAPSHOT            [1/3]
+[INFO] Building com.end2endlogic:quantum-parent 1.2.2-SNAPSHOT            [1/3]
 [INFO]   from pom.xml
 [INFO] --------------------------------[ pom ]---------------------------------
 [INFO] 
 [INFO] --- dependency:3.7.0:tree (default-cli) @ quantum-parent ---
-[INFO] com.end2endlogic:quantum-parent:pom:1.2.1-SNAPSHOT
+[INFO] com.end2endlogic:quantum-parent:pom:1.2.2-SNAPSHOT
 [INFO] +- org.apache.commons:commons-text:jar:1.10.0:compile
 [INFO] |  \- org.apache.commons:commons-lang3:jar:3.17.0:compile
 [INFO] +- org.projectlombok:lombok:jar:1.18.34:provided
@@ -135,12 +127,12 @@
 [INFO]          \- com.fasterxml.jackson.core:jackson-core:jar:2.18.2:compile
 [INFO] 
 [INFO] ------------------< com.end2endlogic:quantum-models >-------------------
-[INFO] Building com.end2endlogic:quantum-models 1.2.1-SNAPSHOT            [2/3]
+[INFO] Building com.end2endlogic:quantum-models 1.2.2-SNAPSHOT            [2/3]
 [INFO]   from models/pom.xml
 [INFO] --------------------------------[ jar ]---------------------------------
 [INFO] 
 [INFO] --- dependency:3.7.0:tree (default-cli) @ quantum-models ---
-[INFO] com.end2endlogic:quantum-models:jar:1.2.1-SNAPSHOT
+[INFO] com.end2endlogic:quantum-models:jar:1.2.2-SNAPSHOT
 [INFO] +- com.end2endlogic:morphia-core:jar:3.0.0:compile
 [INFO] |  +- io.smallrye.config:smallrye-config:jar:3.10.2:compile
 [INFO] |  |  \- io.smallrye.config:smallrye-config-core:jar:3.10.2:compile
@@ -370,12 +362,12 @@
 [INFO]             \- io.netty:netty-codec-dns:jar:4.1.115.Final:compile
 [INFO] 
 [INFO] -----------------< com.end2endlogic:quantum-framework >-----------------
-[INFO] Building com.end2endlogic:quantum-framework 1.2.1-SNAPSHOT         [3/3]
+[INFO] Building com.end2endlogic:quantum-framework 1.2.2-SNAPSHOT         [3/3]
 [INFO]   from framework/pom.xml
 [INFO] --------------------------------[ jar ]---------------------------------
 [INFO] 
 [INFO] --- dependency:3.7.0:tree (default-cli) @ quantum-framework ---
-[INFO] com.end2endlogic:quantum-framework:jar:1.2.1-SNAPSHOT
+[INFO] com.end2endlogic:quantum-framework:jar:1.2.2-SNAPSHOT
 [INFO] +- io.quarkus:quarkus-arc:jar:3.17.7:compile
 [INFO] |  +- io.quarkus.arc:arc:jar:3.17.7:compile
 [INFO] |  |  +- jakarta.transaction:jakarta.transaction-api:jar:2.0.1:compile
@@ -481,7 +473,7 @@
 [INFO] |     \- org.jsoup:jsoup:jar:1.18.1:compile
 [INFO] +- io.quarkus:quarkus-qute:jar:3.17.7:compile
 [INFO] |  \- io.quarkus.qute:qute-core:jar:3.17.7:compile
-[INFO] +- com.end2endlogic:quantum-models:jar:1.2.1-SNAPSHOT:compile
+[INFO] +- com.end2endlogic:quantum-models:jar:1.2.2-SNAPSHOT:compile
 [INFO] |  +- org.antlr:antlr4:jar:4.13.0:compile
 [INFO] |  |  +- org.antlr:antlr-runtime:jar:3.5.3:compile
 [INFO] |  |  +- org.antlr:ST4:jar:4.3.4:compile
@@ -629,7 +621,7 @@
 [INFO] |     +- commons-beanutils:commons-beanutils:jar:1.8.3:compile
 [INFO] |     \- org.slf4j:jcl-over-slf4j:jar:1.6.6:compile
 [INFO] +- net.sf.supercsv:super-csv-java8:jar:2.4.0:compile
-[INFO] +- org.apache.commons:commons-lang3:jar:3.12.0:compile
+[INFO] +- org.apache.commons:commons-lang3:jar:3.18.0:compile
 [INFO] +- com.github.java-json-tools:json-schema-validator:jar:2.2.14:compile
 [INFO] |  +- com.github.java-json-tools:jackson-coreutils-equivalence:jar:1.0:compile
 [INFO] |  |  \- com.github.java-json-tools:jackson-coreutils:jar:2.0:compile
@@ -739,8 +731,7 @@
 [INFO] |  |  +- org.apache.groovy:groovy-json:jar:4.0.22:test
 [INFO] |  |  \- io.rest-assured:rest-assured-common:jar:5.5.0:test
 [INFO] |  \- io.rest-assured:xml-path:jar:5.5.0:test
-[INFO] +- org.osgi:org.osgi.annotation.bundle:jar:2.0.0:provided
-[INFO] |  \- org.osgi:org.osgi.annotation.versioning:jar:1.1.2:provided
+[INFO] +- org.osgi:osgi.annotation:jar:8.1.0:provided
 [INFO] +- org.apache.commons:commons-text:jar:1.10.0:compile
 [INFO] \- io.quarkus:quarkus-rest:jar:3.17.7:compile
 [INFO]    +- io.quarkus:quarkus-rest-common:jar:3.17.7:compile
@@ -752,14 +743,14 @@
 [INFO]       \- jakarta.xml.bind:jakarta.xml.bind-api:jar:4.0.2:compile
 [INFO]          \- jakarta.activation:jakarta.activation-api:jar:2.1.3:compile
 [INFO] ------------------------------------------------------------------------
-[INFO] Reactor Summary for com.end2endlogic:quantum-parent 1.2.1-SNAPSHOT:
+[INFO] Reactor Summary for com.end2endlogic:quantum-parent 1.2.2-SNAPSHOT:
 [INFO] 
-[INFO] com.end2endlogic:quantum-parent .................... SUCCESS [  0.400 s]
-[INFO] com.end2endlogic:quantum-models .................... SUCCESS [  0.099 s]
-[INFO] com.end2endlogic:quantum-framework ................. SUCCESS [  0.340 s]
+[INFO] com.end2endlogic:quantum-parent .................... SUCCESS [  0.404 s]
+[INFO] com.end2endlogic:quantum-models .................... SUCCESS [  0.120 s]
+[INFO] com.end2endlogic:quantum-framework ................. SUCCESS [  0.334 s]
 [INFO] ------------------------------------------------------------------------
 [INFO] BUILD SUCCESS
 [INFO] ------------------------------------------------------------------------
-[INFO] Total time:  1.513 s
-[INFO] Finished at: 2025-05-27T15:51:57-05:00
+[INFO] Total time:  1.595 s
+[INFO] Finished at: 2025-08-14T20:48:40-05:00
 [INFO] ------------------------------------------------------------------------

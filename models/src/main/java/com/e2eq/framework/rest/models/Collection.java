@@ -27,6 +27,7 @@ public  class Collection<T> {
    protected Long totalCount = null;
 
    protected String filter;
+   protected String realm;
 
    @Transient
    protected UIActionList actionList = new UIActionList();
