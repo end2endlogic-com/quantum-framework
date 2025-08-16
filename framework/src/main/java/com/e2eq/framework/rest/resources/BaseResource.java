@@ -716,6 +716,8 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
 
          // fill in ui-actions
          collection = repo.fillUIActions(collection);
+         collection.setFilter(filter);
+         collection.setRealm(realmId == null ? repo.getDatabaseName() : realmId);
 
          return collection;
       } catch (IllegalArgumentException | ValidationException e) {
