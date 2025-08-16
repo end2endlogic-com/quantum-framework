@@ -6,6 +6,7 @@ import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.security.CredentialRefreshToken;
 import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.persistent.security.DomainContext;
+import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.security.auth.AuthProvider;
 import com.e2eq.framework.model.security.auth.UserManagement;
 import com.e2eq.framework.util.EncryptionUtils;
@@ -105,6 +106,25 @@ public class CustomTokenAuthProvider  extends BaseAuthProvider implements AuthPr
       createUser(realm, userId, password, null, username, roles, domainContext);
    }
 
+   // New overloads supporting explicit DataDomain
+   @Override
+   public void createUser(String userId, String password, String username,
+                          Set<String> roles, DomainContext domainContext, DataDomain dataDomain) throws SecurityException {
+      createUser(securityUtils.getSystemRealm(), userId, password, null, username, roles, domainContext, dataDomain);
+   }
+
+   @Override
+   public void createUser(String userId, String password, Boolean forceChangePassword, String username,
+                          Set<String> roles, DomainContext domainContext, DataDomain dataDomain) throws SecurityException {
+      createUser(securityUtils.getSystemRealm(), userId, password, forceChangePassword, username, roles, domainContext, dataDomain);
+   }
+
+   @Override
+   public void createUser(String realm, String userId, String password, String username,
+                          Set<String> roles, DomainContext domainContext, DataDomain dataDomain) throws SecurityException {
+      createUser(realm, userId, password, null, username, roles, domainContext, dataDomain);
+   }
+
    @Override
    public void createUser (String realm, String userId, String password, Boolean forceChangePassword, String username
       , Set<String> roles, DomainContext domainContext) throws SecurityException {
@@ -162,6 +182,65 @@ public class CustomTokenAuthProvider  extends BaseAuthProvider implements AuthPr
          credentialRepo.save(realm, credential);
       }
 
+   }
+
+   // Main implementation that accepts explicit DataDomain
+   @Override
+   public void createUser(String realm, String userId, String password, Boolean forceChangePassword, String username,
+                          Set<String> roles, DomainContext domainContext, DataDomain dataDomain) throws SecurityException {
+      Objects.requireNonNull(realm, "Realm cannot be null");
+      Objects.requireNonNull(userId, "UserId cannot be null");
+      Objects.requireNonNull(username, "Username cannot be null");
+      Objects.requireNonNull(password, "Password cannot be null");
+      Objects.requireNonNull(domainContext, "DomainContext cannot be null");
+
+      try {
+         byte[] utf8Bytes = password.getBytes("UTF-8");
+         int byteLength = utf8Bytes.length;
+         if (byteLength > 72) {
+            throw new SecurityException("Username too long must be smaller than 17 characters");
+         }
+      } catch (UnsupportedEncodingException ex) {
+         throw new SecurityException("Security exception: " + ex.getMessage());
+      }
+
+      Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(userId, realm);
+      if (ocred.isPresent()) {
+         if (!ocred.get().getUsername().equalsIgnoreCase(username)) {
+            throw new SecurityException(String.format("User with the same userId:%s already exists with different username:%s, than given username:%s", userId, ocred.get().getUsername(), username));
+         }
+         if (!ocred.get().getDomainContext().equals(domainContext)) {
+            throw new SecurityException(String.format("User with the same userId:%s already exists with different domainContext:%s, than given domainContext:%s", userId, ocred.get().getDomainContext(), domainContext));
+         }
+         if (!Arrays.equals(ocred.get().getRoles(), roles.toArray(new String[roles.size()]))) {
+            throw new SecurityException(String.format("User with the same userId:%s already exists with different roles:%s, than given roles:%s", userId, ocred.get().getRoles(), roles));
+         }
+         throw new SecurityException(String.format("User with userId:%s and username:%s already exists with same domain context, and roles", userId, username));
+      } else {
+         CredentialUserIdPassword credential = new CredentialUserIdPassword();
+         credential.setUserId(userId);
+         credential.setUsername(username);
+         credential.setForceChangePassword(forceChangePassword);
+         String alg = credential.getHashingAlgorithm();
+         if (alg != null && (alg.equalsIgnoreCase("BCrypt.default") || alg.toLowerCase().startsWith("bcrypt"))) {
+            credential.setPasswordHash(EncryptionUtils.hashPassword(password));
+         } else {
+            throw new SecurityException("Unsupported hashing algorithm: " + alg);
+         }
+         credential.setDomainContext(domainContext);
+         credential.setRoles(roles.toArray(new String[roles.size()]));
+         credential.setLastUpdate(new Date());
+
+         // Set explicit DataDomain if provided; else leave null to let ValidationInterceptor set from SecurityContext
+         if (dataDomain != null) {
+            if (dataDomain.getOwnerId() == null || dataDomain.getOwnerId().isEmpty()) {
+               dataDomain.setOwnerId(userId);
+            }
+            credential.setDataDomain(dataDomain);
+         }
+
+         credentialRepo.save(realm, credential);
+      }
    }
 
 
