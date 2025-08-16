@@ -2,6 +2,7 @@ package com.e2eq.framework.model.security.auth;
 
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.security.DomainContext;
+import com.e2eq.framework.model.persistent.base.DataDomain;
 
 import java.util.Set;
 
@@ -28,6 +29,19 @@ public interface UserManagement extends UserManagementBase{
     void createUser(String userId, String password, Boolean forceChangePassword, String username, Set<String> roles,  DomainContext domainContext) throws SecurityException;
     void createUser(String realm, String userId, String password, String username, Set<String> roles,  DomainContext domainContext) throws SecurityException;
     void createUser(String realm, String userId, String password, Boolean forceChangePassword, String username, Set<String> roles,  DomainContext domainContext) throws SecurityException;
+
+    // New overloads to support explicit DataDomain specification
+    void createUser(String userId, String password, String username,
+                    Set<String> roles, DomainContext domainContext, DataDomain dataDomain) throws SecurityException;
+
+    void createUser(String userId, String password, Boolean forceChangePassword, String username,
+                    Set<String> roles, DomainContext domainContext, DataDomain dataDomain) throws SecurityException;
+
+    void createUser(String realm, String userId, String password, String username,
+                    Set<String> roles, DomainContext domainContext, DataDomain dataDomain) throws SecurityException;
+
+    void createUser(String realm, String userId, String password, Boolean forceChangePassword, String username,
+                    Set<String> roles, DomainContext domainContext, DataDomain dataDomain) throws SecurityException;
 
     public void changePassword(String userId, String oldPassword, String newPassword, Boolean forceChangePassword);
     void changePassword(String realm, String userId, String oldPassword, String newPassword, Boolean forceChangePassword);
