@@ -1,6 +1,8 @@
 package com.e2eq.framework.rest.resources;
 
 import com.e2eq.framework.model.persistent.base.ActiveStatus;
+import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
+import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.auth.AuthProviderFactory;
 import com.e2eq.framework.rest.models.Role;
 import com.e2eq.framework.model.securityrules.SecurityContext;
@@ -30,6 +32,9 @@ public class UserProfileResource extends BaseResource<UserProfile, UserProfileRe
 
    @Inject
    AuthProviderFactory authProviderFactory;
+
+   @Inject
+   CredentialRepo credentialRepo;
 
    UserProfileResource (UserProfileRepo repo ) {
       super(repo);
@@ -103,9 +108,23 @@ public class UserProfileResource extends BaseResource<UserProfile, UserProfileRe
                                                                     .reasonCode(Response.Status.CONFLICT.getStatusCode())
                                                                     .build()).build();
       } else {
+
+         // create the credential
+
+         authProviderFactory.getUserManager().createUser(
+            createUserRequest.getUserId(),
+            createUserRequest.getPassword(),
+            createUserRequest.getForceChangePassword(),
+            createUserRequest.getRoles(),
+            createUserRequest.getDomainContext());
+
+         Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(createUserRequest.getUserId());
+         if (!ocred.isPresent())
+            throw new IllegalStateException(String.format("User created but credential not found for userId: %s", createUserRequest.getUserId()));
+
+
          up = UserProfile.builder()
-                 .userId(createUserRequest.getUserId())
-                 .username(createUserRequest.getUsername())
+                 .credentialUserIdPasswordRef(ocred.get().createEntityReference())
                  .email(createUserRequest.getEmail())
                  .phoneNumber(createUserRequest.getPhoneNumber())
                  .displayName(createUserRequest.getDisplayName())
@@ -119,13 +138,7 @@ public class UserProfileResource extends BaseResource<UserProfile, UserProfileRe
          up = repo.save(up);
       }
 
-      authProviderFactory.getUserManager().createUser(
-         up.getUserId(),
-         createUserRequest.getPassword(),
-         createUserRequest.getForceChangePassword(),
-         createUserRequest.getUsername(),
-         createUserRequest.getRoles(),
-         createUserRequest.getDomainContext());
+
 
       return Response.ok(up).build();
 

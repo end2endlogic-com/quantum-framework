@@ -198,7 +198,7 @@ public class SecurityResource {
             Log.info("me: - UserId:" + securityContext.getUserPrincipal().getName());
 
         try {
-            Optional<UserProfile> userProfileOp = userProfileRepo.getByUsername(securityUtils.getSystemRealm(), securityContext.getUserPrincipal().getName());
+            Optional<UserProfile> userProfileOp = userProfileRepo.getBySubject(securityUtils.getSystemRealm(), securityContext.getUserPrincipal().getName());
             if (userProfileOp.isPresent()) {
                 userProfileRepo.fillUIActions(userProfileOp.get());
             }
@@ -251,12 +251,9 @@ public class SecurityResource {
             realm = qrealm;
         }
 
-
         Log.infof("Logging in userid: %s realm: %s",authRequest.getUserId(), realm);
 
-
         var authProvider = authProviderFactory.getAuthProvider();
-
 
         try {
             AuthProvider.LoginResponse loginResponse;
@@ -331,20 +328,20 @@ public class SecurityResource {
          */
     }
 
-    protected AuthResponse generateAuthResponse(@NotNull (message = "userId for generating auth response can not be null") String username,
+    protected AuthResponse generateAuthResponse(@NotNull (message = "subject for generating auth response can not be null") String subject,
                                              @NotNull (message = "the roles array can not be null for generating an auth response") String[] roles,
                                              long durationInSeconds,
                                              long incrementRefreshDuration,
                                              @NotNull(message = "the issuer can not be null for for generating an auth response") String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
         long expiresAt =  TokenUtils.expiresAt(durationInSeconds);
         String userToken = TokenUtils.generateUserToken(
-                username,
+                subject,
                 new HashSet<>(Arrays.asList(roles)),
                expiresAt,
                 issuer);
 
         String refreshToken = TokenUtils.generateRefreshToken(
-                username,
+                subject,
                 durationInSeconds + incrementRefreshDuration,
                 issuer);
 
@@ -482,8 +479,8 @@ public class SecurityResource {
     @Path("/enableRealmOverride/{realmWhereCredentialRecordIs}")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response enableRealmOverride(@PathParam("realmWhereCredentialRecordIs") String realmWhereCredentialRecordIs, @QueryParam("username") String username, @QueryParam("realmRegEx") String realmRegEx) {
-        authProviderFactory.getUserManager().enableRealmOverrideWithUsername(username, realmWhereCredentialRecordIs, realmRegEx);
+    public Response enableRealmOverride(@PathParam("realmWhereCredentialRecordIs") String realmWhereCredentialRecordIs, @QueryParam("subject") String subject, @QueryParam("realmRegEx") String realmRegEx) {
+        authProviderFactory.getUserManager().enableRealmOverrideWithSubject(subject, realmWhereCredentialRecordIs, realmRegEx);
         return Response.ok().build();
     }
 
@@ -492,8 +489,8 @@ public class SecurityResource {
     @Path("/disableRealmOverride/{realmWhereCredentialRecordIs}")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response disableRealmOverride(@PathParam("realmWhereCredentialRecordIs") String realmWhereCredentialRecordIs, @QueryParam("username") String username) {
-        authProviderFactory.getUserManager().disableRealmOverrideWithUsername(username, realmWhereCredentialRecordIs);
+    public Response disableRealmOverride(@PathParam("realmWhereCredentialRecordIs") String realmWhereCredentialRecordIs, @QueryParam("subject") String subject) {
+        authProviderFactory.getUserManager().disableRealmOverrideWithSubject(subject, realmWhereCredentialRecordIs);
         return Response.ok().build();
     }
 
@@ -503,17 +500,17 @@ public class SecurityResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response enableImpersonation(EnableImpersonationRequest request) {
-        authProviderFactory.getUserManager().enableImpersonationWithUsername(request.getUsername(), request.getImpersonationScript(), request.getRealmRegExFilter(), request.getRealmToEnableIn());
+        authProviderFactory.getUserManager().enableImpersonationWithSubject(request.getSubject(), request.getImpersonationScript(), request.getRealmRegExFilter(), request.getRealmToEnableIn());
         return Response.ok().build();
     }
 
     @PUT
     @RolesAllowed("admin")
-    @Path("/disableImpersonation/{username}/{realmToDisableIn}")
+    @Path("/disableImpersonation/withSubject/{subject}/{realmToDisableIn}")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response disableImpersonation(@PathParam("username") String username, @PathParam("realmToDisableIn") String realmToDisableIn) {
-        authProviderFactory.getUserManager().disableImpersonationWithUserName(username, realmToDisableIn);
+    public Response disableImpersonation(@PathParam("subject") String subject, @PathParam("realmToDisableIn") String realmToDisableIn) {
+        authProviderFactory.getUserManager().disableImpersonationWithSubject(subject, realmToDisableIn);
         return Response.ok().build();
     }
 

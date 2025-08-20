@@ -29,7 +29,7 @@ public class BaseAuthProvider implements UserManagementBase {
 
       Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(userId, realmToEnableIn);
       if (ocred.isPresent()) {
-         enableImpersonation(ocred.get().getUsername(), impersonationScript, realmFilter, realmToEnableIn, ocred.get());
+         enableImpersonation(ocred.get().getSubject(), impersonationScript, realmFilter, realmToEnableIn, ocred.get());
       }
       else {
          throw new NotFoundException(String.format("User with userId %s not found in realm %s", userId, realmToEnableIn));
@@ -37,35 +37,35 @@ public class BaseAuthProvider implements UserManagementBase {
    }
 
    @Override
-   public void enableImpersonationWithUsername (String username, String impersonationScript, String realmFilter, String realmToEnableIn) {
-      Objects.requireNonNull(username, "UserId cannot be null");
+   public void enableImpersonationWithSubject (String subject, String impersonationScript, String realmFilter, String realmToEnableIn) {
+      Objects.requireNonNull(subject, "subject cannot be null");
       Objects.requireNonNull(impersonationScript, "ImpersonationScript cannot be null");
       Objects.requireNonNull(realmFilter, "RealmFilter cannot be null");
       Objects.requireNonNull(realmToEnableIn, "RealmToEnableIn cannot be null");
 
-      Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUsername(username, realmToEnableIn);
+      Optional<CredentialUserIdPassword> ocred = credentialRepo.findBySubject(subject, realmToEnableIn);
       if (ocred.isPresent()) {
-         enableImpersonation(ocred.get().getUsername(), impersonationScript, realmFilter, realmToEnableIn, ocred.get());
+         enableImpersonation(ocred.get().getSubject(), impersonationScript, realmFilter, realmToEnableIn, ocred.get());
       }
       else {
-         throw new NotFoundException(String.format("User with username %s not found in realm %s", username, realmToEnableIn));
+         throw new NotFoundException(String.format("User with username %s not found in realm %s", subject, realmToEnableIn));
       }
    }
 
 
 
-   protected void enableImpersonation(String username, String impersonationScript, String realmFilter, String realmToEnableIn, CredentialUserIdPassword cred) {
+   protected void enableImpersonation(String subject, String impersonationScript, String realmFilter, String realmToEnableIn, CredentialUserIdPassword cred) {
       cred.setImpersonateFilterScript(impersonationScript);
       cred.setRealmRegEx(realmFilter);
       credentialRepo.save( realmToEnableIn, cred);
    }
 
    @Override
-   public void disableImpersonationWithUserName (String username, String realmToDisableIn) {
-      Objects.requireNonNull(username, "Username cannot be null");
+   public void disableImpersonationWithSubject (String subject, String realmToDisableIn) {
+      Objects.requireNonNull(subject, "subject cannot be null");
       Objects.requireNonNull(realmToDisableIn, "RealmToDisableIn cannot be null");
-      credentialRepo.findByUsername(username, realmToDisableIn).ifPresent(cred -> {
-         disableImpersonation( username, realmToDisableIn, cred);
+      credentialRepo.findBySubject(subject, realmToDisableIn).ifPresent(cred -> {
+         disableImpersonation( subject, realmToDisableIn, cred);
       });
    }
 
@@ -76,7 +76,7 @@ public class BaseAuthProvider implements UserManagementBase {
 
       Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(userId, realmToDisableIn);
       if (ocred.isPresent()) {
-         disableImpersonation(ocred.get().getUsername(), realmToDisableIn, ocred.get());
+         disableImpersonation(ocred.get().getSubject(), realmToDisableIn, ocred.get());
       }
       else {
          throw new NotFoundException(String.format("User with userId %s not found in realm %s", userId, realmToDisableIn));
@@ -84,9 +84,9 @@ public class BaseAuthProvider implements UserManagementBase {
    }
 
 
-   protected void disableImpersonation(String username, String realmToDisableIn, CredentialUserIdPassword cred) {
+   protected void disableImpersonation(String subject, String realmToDisableIn, CredentialUserIdPassword cred) {
 
-      Objects.requireNonNull(username, "Username cannot be null");
+      Objects.requireNonNull(subject, "Subject cannot be null");
       Objects.requireNonNull(realmToDisableIn, "RealmToDisableIn cannot be null");
 
       if (cred != null && cred.getId() != null ) {
@@ -94,14 +94,14 @@ public class BaseAuthProvider implements UserManagementBase {
          cred.setRealmRegEx(null);
          credentialRepo.save(realmToDisableIn, cred);
       } else {
-         if (username.isBlank()) {
-            throw new IllegalArgumentException("Username cannot be blank when disabling impersonation");
+         if (subject.isBlank()) {
+            throw new IllegalArgumentException("Subject cannot be blank when disabling impersonation");
          }
          if (realmToDisableIn.isBlank()) {
             throw new IllegalArgumentException("RealmToDisableIn cannot be blank when disabling impersonation");
          }
 
-         Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUsername(username, realmToDisableIn);
+         Optional<CredentialUserIdPassword> ocred = credentialRepo.findBySubject(subject, realmToDisableIn);
 
          if (ocred.isPresent()) {
             cred = ocred.get();
@@ -120,7 +120,7 @@ public class BaseAuthProvider implements UserManagementBase {
 
       Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(userId, realmToOverrideIn);
       if (ocred.isPresent()) {
-         enableRealmOverrideWithUsername(ocred.get().getUsername(), realmToOverrideIn, regexForRealm);
+         enableRealmOverrideWithSubject(ocred.get().getSubject(), realmToOverrideIn, regexForRealm);
       }
       else {
          throw new NotFoundException(String.format("User with userId %s not found in realm %s", userId, realmToOverrideIn));
@@ -128,8 +128,8 @@ public class BaseAuthProvider implements UserManagementBase {
    }
 
    @Override
-   public void enableRealmOverrideWithUsername (String username, String realmToOverrideIn, String regexForRealm) {
-      Objects.requireNonNull(username, "Username cannot be null");
+   public void enableRealmOverrideWithSubject (String subject, String realmToOverrideIn, String regexForRealm) {
+      Objects.requireNonNull(subject, "Subject cannot be null");
       Objects.requireNonNull(realmToOverrideIn, "RealmToOverrideIn cannot be null");
       Objects.requireNonNull(regexForRealm, "RegexForRealm cannot be null");
 
@@ -142,11 +142,11 @@ public class BaseAuthProvider implements UserManagementBase {
       if (realmToOverrideIn.isBlank()) {
          throw new IllegalArgumentException("Realm cannot be blank");
       }
-      if (username.isBlank()) {
+      if (subject.isBlank()) {
          throw new IllegalArgumentException("Username cannot be blank");
       }
 
-      credentialRepo.findByUsername(username, realmToOverrideIn).ifPresent(cred -> {
+      credentialRepo.findBySubject(subject, realmToOverrideIn).ifPresent(cred -> {
          cred.setRealmRegEx(regexForRealm);
          credentialRepo.save( realmToOverrideIn, cred);
       });
@@ -164,10 +164,10 @@ public class BaseAuthProvider implements UserManagementBase {
    }
 
    @Override
-   public void disableRealmOverrideWithUsername (String username, String realmToDisableIn) {
-      Objects.requireNonNull(username, "Username cannot be null");
+   public void disableRealmOverrideWithSubject (String subject, String realmToDisableIn) {
+      Objects.requireNonNull(subject, "Subject cannot be null");
       Objects.requireNonNull(realmToDisableIn, "RealmToDisableIn cannot be null");
-      credentialRepo.findByUsername(username, realmToDisableIn).ifPresent(cred -> {
+      credentialRepo.findBySubject(subject, realmToDisableIn).ifPresent(cred -> {
          disableRealmOverride( realmToDisableIn, cred);
       });
    }

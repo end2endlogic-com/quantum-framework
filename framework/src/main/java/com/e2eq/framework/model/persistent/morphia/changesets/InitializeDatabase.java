@@ -231,29 +231,34 @@ public class InitializeDatabase implements ChangeSetBean {
       Log.infof("Checking to create initial user profiles in realm: %s", datastore.getDatabase().getName());
       if (!userProfileRepo.getByUserId(securityUtils.getSystemRealm(),securityUtils.getSystemUserId()).isPresent()) {
          Log.infof("UserProfile:%s not found creating ", securityUtils.getSystemUserId());
-         DataDomain upDataDomain = securityUtils.getSystemDataDomain().clone();
-         upDataDomain.setOwnerId(securityUtils.getSystemUserId());
          Set<Role> roles = new HashSet<>();
          roles.add(Role.admin);
-         UserProfile up = new UserProfile();
-
-         up.setDataDomain(upDataDomain);
-         up.setEmail(securityUtils.getSystemUserId());
-         up.setRefName(securityUtils.getSystemUserId());
-         up.setUserId(securityUtils.getSystemUserId());
-         up.setUsername(UUID.randomUUID().toString());
-         up.setDisplayName("Generic Admin");
-         up.setFname("Generic");
-         up.setLname("Admin");
-
          roles.add(Role.user);
+
          int i = 0;
          String[] rolesArray = new String[roles.size()];
 
          for (Role r : roles) {
             rolesArray[i++] = r.name();
          }
-         userProfileRepo.createUser(securityUtils.getSystemRealm(), up, null, rolesArray, defaultSystemPassword);
+
+         userProfileRepo.createUser(securityUtils.getSystemRealm(), securityUtils.getSystemUserId(),
+            "Generic","Admin", null, rolesArray, defaultSystemPassword);
+
+         DataDomain upDataDomain = securityUtils.getSystemDataDomain().clone();
+         upDataDomain.setOwnerId(securityUtils.getSystemUserId());
+
+         UserProfile up = new UserProfile();
+
+         up.setDataDomain(upDataDomain);
+         up.setEmail(securityUtils.getSystemUserId());
+         up.setRefName(securityUtils.getSystemUserId());
+         up.setDisplayName("Generic Admin");
+         up.setFname("Generic");
+         up.setLname("Admin");
+
+
+
       } else {
          Log.infof("UserProfile:%s already exists in realm: %s", securityUtils.getSystemUserId(),securityUtils.getSystemRealm());
       }

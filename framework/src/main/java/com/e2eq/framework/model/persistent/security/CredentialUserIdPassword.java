@@ -35,13 +35,8 @@ public class CredentialUserIdPassword extends BaseModel {
 
     @Indexed(options= @IndexOptions(unique=true, collation= @Collation(locale="en", strength= CollationStrength.SECONDARY)))
     @NonNull
-    @NotNull(message = "username must be non null")
+    @NotNull(message = "subject must be non null")
     @NotEmpty
-    protected String username;
-
-    /**
-     Not currently used but in various plugins it may be good to capture this value
-     */
     protected String subject;
 
     @NonNull

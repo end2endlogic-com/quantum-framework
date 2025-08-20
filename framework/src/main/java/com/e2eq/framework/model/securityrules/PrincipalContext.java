@@ -23,9 +23,9 @@ public final class PrincipalContext {
    @NotNull String userId;          // The userId, of this principal
    @NotNull String[] roles;         // The roles associated with this principal
    @NotNull String scope;
-   String impersonatedByUsername;// The scope under which this context was built, be that for authentication purposes or refresh purposes
+   String impersonatedBySubject;// The scope under which this context was built, be that for authentication purposes or refresh purposes
    String impersonatedByUserId; // The scope under which this context was built, be that for authentication purposes or refresh purposes
-   String actingOnBehalfOfUsername;
+   String actingOnBehalfOfSubject;
    String actingOnBehalfOfUserId;
 
    PrincipalContext(@NotNull String defaultRealm,
@@ -38,10 +38,10 @@ public final class PrincipalContext {
       this.userId = userId;
       this.roles = roles;
       this.scope = scope;
-      this.impersonatedByUsername = null;
+      this.impersonatedBySubject = null;
       this.impersonatedByUserId = null;
       this.actingOnBehalfOfUserId = null;
-      this.actingOnBehalfOfUsername = null;
+      this.actingOnBehalfOfSubject = null;
    }
 
    PrincipalContext(@NotNull String defaultRealm,
@@ -49,18 +49,18 @@ public final class PrincipalContext {
                     @NotNull String userId,
                     @NotNull String[] roles,
                     @NotNull String scope,
-                    String impersonatedByUsername,
+                    String impersonatedBySubject,
                     String impersonatedByUserId,
                     String actingOnBehalfOfUserId,
-                    String actingOnBehalfOfUsername) {
+                    String actingOnBehalfOfSubject) {
       this.defaultRealm = defaultRealm;
       this.dataDomain = dataDomain;
       this.userId = userId;
       this.roles = roles;
       this.scope = scope;
-      this.impersonatedByUsername = impersonatedByUsername;
+      this.impersonatedBySubject = impersonatedBySubject;
       this.impersonatedByUserId = impersonatedByUserId;
-      this.actingOnBehalfOfUsername = actingOnBehalfOfUsername;
+      this.actingOnBehalfOfSubject = actingOnBehalfOfSubject;
       this.actingOnBehalfOfUserId = actingOnBehalfOfUserId;
    }
 
@@ -71,10 +71,10 @@ public final class PrincipalContext {
       String userId = null;
       String[] roles = null;
       String scope= null;
-      String impersonatedByUsername;
+      String impersonatedBySubject;
       String impersonatedByUserId;
       String actingOnBehalfOfUserId;
-      String actingOnBehalfOfUsername;
+      String actingOnBehalfOfSubject;
 
       public Builder withDefaultRealm(String realm) {
          this.defaultRealm = realm;
@@ -97,8 +97,8 @@ public final class PrincipalContext {
          return this;
       }
 
-      public Builder withImpersonatedByUsername(String username) {
-         this.impersonatedByUsername = username;
+      public Builder withImpersonatedBySubject(String subject) {
+         this.impersonatedBySubject = subject;
          return this;
       }
 
@@ -112,15 +112,15 @@ public final class PrincipalContext {
          return this;
       }
 
-      public Builder withActingOnBehalfOfUsername(String username) {
-         this.actingOnBehalfOfUsername = username;
+      public Builder withActingOnBehalfOfSubject(String subject) {
+         this.actingOnBehalfOfSubject = subject;
          return this;
       }
 
       public PrincipalContext build() {
          return
             new PrincipalContext(defaultRealm, dataDomain, userId, roles, scope,
-               impersonatedByUsername, impersonatedByUserId, actingOnBehalfOfUsername, actingOnBehalfOfUserId);
+               impersonatedBySubject, impersonatedByUserId, actingOnBehalfOfSubject, actingOnBehalfOfUserId);
       }
 
    }
@@ -165,12 +165,12 @@ public final class PrincipalContext {
    }
 
    @HostAccess.Export
-   public String getImpersonatedByUsername() {
-      return impersonatedByUsername;
+   public String getImpersonatedBySubject() {
+      return impersonatedBySubject;
    }
 
-   public void setImpersonatedByUsername(String impersonatedByUsername) {
-      this.impersonatedByUsername = impersonatedByUsername;
+   public void setImpersonatedBySubject(String impersonatedBySubject) {
+      this.impersonatedBySubject = impersonatedBySubject;
    }
 
    @HostAccess.Export
@@ -193,12 +193,12 @@ public final class PrincipalContext {
    }
 
    @HostAccess.Export
-   public String getActingOnBehalfOfUsername() {
-      return actingOnBehalfOfUsername;
+   public String getActingOnBehalfOfSubject() {
+      return actingOnBehalfOfSubject;
    }
 
-   public void setActingOnBehalfOfUsername(String username) {
-      this.actingOnBehalfOfUsername = username;
+   public void setActingOnBehalfOfSubject(String subject) {
+      this.actingOnBehalfOfSubject = subject;
    }
 
 
@@ -214,9 +214,9 @@ public final class PrincipalContext {
       if (defaultRealm != null ? !defaultRealm.equals(that.defaultRealm) : that.defaultRealm != null) return false;
       if (dataDomain != null ? !dataDomain.equals(that.dataDomain) : that.dataDomain != null) return false;
       if (userId != null ? !userId.equals(that.userId) : that.userId != null) return false;
-      if (impersonatedByUsername != null ? !impersonatedByUsername.equals(that.impersonatedByUsername) : that.impersonatedByUsername != null) return false;
+      if (impersonatedBySubject != null ? !impersonatedBySubject.equals(that.impersonatedBySubject) : that.impersonatedBySubject != null) return false;
       if (impersonatedByUserId != null ? !impersonatedByUserId.equals(that.impersonatedByUserId) : that.impersonatedByUserId != null) return false;
-      if (actingOnBehalfOfUsername != null ? !actingOnBehalfOfUsername.equals(that.actingOnBehalfOfUsername) : that.actingOnBehalfOfUsername != null) return false;
+      if (actingOnBehalfOfSubject != null ? !actingOnBehalfOfSubject.equals(that.actingOnBehalfOfSubject) : that.actingOnBehalfOfSubject != null) return false;
       if (actingOnBehalfOfUserId != null ? !actingOnBehalfOfUserId.equals(that.actingOnBehalfOfUserId) : that.actingOnBehalfOfUserId != null) return false;
       // Probably incorrect - comparing Object[] arrays with Arrays.equals
       if (!Arrays.equals(roles, that.roles)) return false;
@@ -231,9 +231,9 @@ public final class PrincipalContext {
       result = 31 * result + (userId != null ? userId.hashCode() : 0);
       result = 31 * result + Arrays.hashCode(roles);
       result = 31 * result + (scope != null ? scope.hashCode() : 0);
-      result = 31 * result + (impersonatedByUsername!= null? impersonatedByUsername.hashCode() : 0);
+      result = 31 * result + (impersonatedBySubject!= null? impersonatedBySubject.hashCode() : 0);
       result = 31 * result + (impersonatedByUserId!= null? impersonatedByUserId.hashCode() : 0);
-      result = 31 * result + (actingOnBehalfOfUsername!= null? actingOnBehalfOfUsername.hashCode() : 0);
+      result = 31 * result + (actingOnBehalfOfSubject!= null? actingOnBehalfOfSubject.hashCode() : 0);
       result = 31 * result + (actingOnBehalfOfUserId!= null? actingOnBehalfOfUserId.hashCode() : 0);
       return result;
    }
@@ -246,10 +246,10 @@ public final class PrincipalContext {
                 ", userId='" + userId + '\'' +
                 ", roles=" + Arrays.toString(roles) +
                 ", scope='" + scope + '\'' +
-                ", impersonatedByUsername='" + impersonatedByUsername + '\'' +
+                ", impersonatedBySubject='" + impersonatedBySubject + '\'' +
                 ", impersonatedByUserId='" + impersonatedByUserId + '\'' +
                 ", actingOnBehalfOfUserId='" + actingOnBehalfOfUserId + '\'' +
-                ", actingOnBehalfOfUsername='" + actingOnBehalfOfUsername + '\'' +
+                ", actingOnBehalfOfSubject='" + actingOnBehalfOfSubject + '\'' +
                 '}';
    }
 }

@@ -39,24 +39,24 @@ public class AuditInterceptor implements EntityListener<Object> {
                 auditInfo.setCreationTs(new Date());
                 auditInfo.setCreationIdentity(SecurityContext.getPrincipalContext().isPresent() ? SecurityContext.getPrincipalContext().get().getUserId() : "ANONYMOUS");
                 if (SecurityContext.getPrincipalContext().isPresent() &&
-                       (SecurityContext.getPrincipalContext().get().getImpersonatedByUsername() != null ||
+                       (SecurityContext.getPrincipalContext().get().getImpersonatedBySubject() != null ||
                         SecurityContext.getPrincipalContext().get().getImpersonatedByUserId() != null)) {
-                    auditInfo.setImpersonatorUsername(SecurityContext.getPrincipalContext().get().getImpersonatedByUsername() );
+                    auditInfo.setImpersonatorSubject(SecurityContext.getPrincipalContext().get().getImpersonatedBySubject() );
                     auditInfo.setImpersonatorUserId(SecurityContext.getPrincipalContext().get().getImpersonatedByUserId());
                     auditInfo.setActingOnBehalfOfUserId(SecurityContext.getPrincipalContext().get().getActingOnBehalfOfUserId());
-                    auditInfo.setActingOnBehalfOfUsername(SecurityContext.getPrincipalContext().get().getActingOnBehalfOfUsername());
+                    auditInfo.setActingOnBehalfOfSubject(SecurityContext.getPrincipalContext().get().getActingOnBehalfOfSubject());
                 }
                 bm.setAuditInfo(auditInfo);
             } else {
                 bm.getAuditInfo().setLastUpdateTs(new Date());
                 bm.getAuditInfo().setLastUpdateIdentity(SecurityContext.getPrincipalContext().isPresent() ? SecurityContext.getPrincipalContext().get().getUserId() : "ANONYMOUS");
                 if (SecurityContext.getPrincipalContext().isPresent() &&
-                       (SecurityContext.getPrincipalContext().get().getImpersonatedByUsername() != null ||
+                       (SecurityContext.getPrincipalContext().get().getImpersonatedBySubject() != null ||
                            SecurityContext.getPrincipalContext().get().getImpersonatedByUserId() != null)) {
-                    bm.getAuditInfo().setImpersonatorUsername(SecurityContext.getPrincipalContext().get().getImpersonatedByUsername() );
+                    bm.getAuditInfo().setImpersonatorSubject(SecurityContext.getPrincipalContext().get().getImpersonatedBySubject() );
                     bm.getAuditInfo().setImpersonatorUserId(SecurityContext.getPrincipalContext().get().getImpersonatedByUserId());
                     bm.getAuditInfo().setActingOnBehalfOfUserId(SecurityContext.getPrincipalContext().get().getActingOnBehalfOfUserId());
-                    bm.getAuditInfo().setActingOnBehalfOfUsername(SecurityContext.getPrincipalContext().get().getActingOnBehalfOfUsername());
+                    bm.getAuditInfo().setActingOnBehalfOfSubject(SecurityContext.getPrincipalContext().get().getActingOnBehalfOfSubject());
                 };
 
             }

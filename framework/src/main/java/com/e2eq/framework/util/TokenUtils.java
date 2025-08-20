@@ -41,12 +41,12 @@ public class TokenUtils {
 	// add builder class for the generateUserToken method.
 
 
-	public static String generateUserToken ( String username,
+	public static String generateUserToken ( String subject,
 											 Set<String> groups,
 											 long expiresAt,
 											 String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
 
-		Objects.requireNonNull(username, "Username cannot be null");
+		Objects.requireNonNull(subject, "subject cannot be null");
 		Objects.requireNonNull(issuer, "Issuer cannot be null");
 
 		if (expiresAt <= REFRESH_ADDITIONAL_DURATION_SECONDS) {
@@ -61,12 +61,12 @@ public class TokenUtils {
 
 
 		claimsBuilder.issuer(issuer);
-		claimsBuilder.subject(username);
+		claimsBuilder.subject(subject);
 		claimsBuilder.issuedAt(currentTimeInSecs);
 		claimsBuilder.audience(AUDIENCE);
 		claimsBuilder.expiresAt(expiresAt);
 		claimsBuilder.groups(groups);
-		claimsBuilder.claim("username", username);
+		//claimsBuilder.claim("username", subject);
 		claimsBuilder.claim("scope", AUTH_SCOPE);
 
 		/*Map<String, String> area2Realm = new HashMap<>();
@@ -77,7 +77,7 @@ public class TokenUtils {
 		return claimsBuilder.jws().keyId(privateKeyLocation).sign(privateKey);
 	}
 
-	public static String generateRefreshToken(String username,  long durationInSeconds, String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+	public static String generateRefreshToken(String subject,  long durationInSeconds, String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
 
 
 
@@ -86,11 +86,11 @@ public class TokenUtils {
 		JwtClaimsBuilder claimsBuilder = Jwt.claims();
 		long currentTimeInSecs = currentTimeInSecs();
 		claimsBuilder.issuer(issuer);
-		claimsBuilder.subject(username);
+		claimsBuilder.subject(subject);
 		claimsBuilder.issuedAt(currentTimeInSecs);
 		claimsBuilder.audience("b2bi-api-client-refresh");
 		claimsBuilder.expiresAt(currentTimeInSecs + durationInSeconds + REFRESH_ADDITIONAL_DURATION_SECONDS);
-		claimsBuilder.claim("username", username );
+		//claimsBuilder.claim("username", username );
 		/* claimsBuilder.claim("tenantId", credentialUserIdPassword.getTenantId());
 		claimsBuilder.claim("defaultRealm", credentialUserIdPassword.getDefaultRealm() );
 

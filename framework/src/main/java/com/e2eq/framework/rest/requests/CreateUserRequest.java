@@ -22,9 +22,6 @@ public class CreateUserRequest {
    @NotNull
    @NonNull
    String password;
-   @NotNull
-   @NonNull
-   String username;
 
    String displayName;
 

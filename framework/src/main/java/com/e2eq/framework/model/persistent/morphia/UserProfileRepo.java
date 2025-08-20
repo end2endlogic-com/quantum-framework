@@ -13,6 +13,7 @@ import com.mongodb.client.model.ReturnDocument;
 import dev.morphia.Datastore;
 import dev.morphia.ModifyOptions;
 import dev.morphia.query.Query;
+import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
 import dev.morphia.query.updates.UpdateOperators;
 import dev.morphia.transactions.MorphiaSession;
@@ -24,6 +25,7 @@ import jakarta.validation.ValidationException;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import jakarta.ws.rs.NotFoundException;
 import lombok.NonNull;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -55,18 +57,18 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
      return Optional.ofNullable(p);
    }
 
-   public Optional<UserProfile> getByUsername(@NotNull String username) {
-     return getByUsername(getSecurityContextRealmId(), username);
+   public Optional<UserProfile> getBySubject(@NotNull String subject) {
+     return getBySubject(getSecurityContextRealmId(), subject);
    }
 
-   public Optional<UserProfile> getByUsername(String realm, @NotNull String username) {
-      return getByUsername(  morphiaDataStore.getDataStore(realm), username );
+   public Optional<UserProfile> getBySubject(String realm, @NotNull String subject) {
+      return getBySubject(  morphiaDataStore.getDataStore(realm), subject);
    }
 
-   public Optional<UserProfile> getByUsername(Datastore datastore,@NotNull String username) {
+   public Optional<UserProfile> getBySubject(Datastore datastore,@NotNull String subject) {
       Query<UserProfile> q = datastore.find(this.getPersistentClass()).filter(
          Filters.and(
-            Filters.eq("username", username)
+            Filters.eq("credentialUserIdPasswordRef.entityRefName", subject)
          )
       );
 
@@ -85,51 +87,52 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
    }
 
    public Optional<UserProfile> getByUserId(Datastore datastore,@NotNull String userId) {
+      // find the credentail for the user
+      Optional<CredentialUserIdPassword> ocred = credRepo.findByUserId(userId);
+
+      if (!ocred.isPresent()) {
+         Log.warnf("No credential found for user: %s", userId);
+         return Optional.empty();
+      }
+      String credRefName = ocred.get().getRefName();
+
+      List<Filter> filters = new ArrayList<>();
+      filters.add(Filters.and(
+         Filters.eq("credentialUserIdPasswordRef.entityRefName", credRefName)
+         ));
+
+      // build filters calling getFilterArray then add the filter: Filters.eq("credentialUserIdPasswordRef.entityRefName", credRefName)
+      Filter[] filtersArray = getFilterArray(filters, getPersistentClass());
+      // find the userprofile by the credentialUserIdPasswordReference.entityRefName passing in the credRefName
       Query<UserProfile> q = datastore.find(this.getPersistentClass()).filter(
-         Filters.and(
-            Filters.eq("userId", userId)
-            )
+         filtersArray
       );
-
       UserProfile p = q.first();
-      if (p != null )
-         p.setRealm(datastore.getDatabase().getName());
-
       return Optional.ofNullable(p);
    }
 
    public UserProfile createUser( @NotNull String realmId,
-                                  @Valid UserProfile up,
+                                  String userId,
+                                  String fname,
+                                  String lname,
                                   Boolean forceChangePassword,
                                   @NotNull @NotEmpty String[] roles,
                                   @NotNull @NonNull @NotEmpty @Size(min=8, max=50, message = "password must be between 8 and 50 characters") String password) {
-      return createUser(morphiaDataStore.getDataStore(realmId), up, forceChangePassword, roles, password);
+      return createUser(morphiaDataStore.getDataStore(realmId), userId, fname, lname, forceChangePassword, roles, password, securityUtils.getDefaultDomainContext());
    }
 
-   public UserProfile createUser( @Valid UserProfile up,
-                                 Boolean forceChangePassword,
-                                 @NotNull @NotEmpty String[] roles,
-                                 @NotNull @NonNull @NotEmpty @Size(min=8, max=50, message = "password must be between 8 and 50 characters") String password) {
-      return createUser(morphiaDataStore.getDataStore(getSecurityContextRealmId()), up, forceChangePassword, roles, password);
-   }
 
    public UserProfile createUser(Datastore  datastore,
-                                 @Valid UserProfile up,
-                                 Boolean forceChangePassword,
-                                 @NotNull @NotEmpty String[] roles,
-                                 @NotNull @NonNull @NotEmpty @Size(min=8, max=50, message = "password must be between 8 and 50 characters") String password) {
-      return createUser(datastore, up, forceChangePassword, roles, password,  securityUtils.getDefaultDomainContext());
-   }
-
-   public UserProfile createUser(Datastore  datastore,
-                                 @Valid UserProfile up,
+                                 String userId,
+                                 String fname,
+                                 String lname,
                                  Boolean forceChangePassword,
                                  @NotNull @NotEmpty String[] roles,
                                  @NotNull @NonNull @NotEmpty @Size(min=8, max=50, message = "password must be between 8 and 50 characters") String password,
                                  DomainContext domainContext) {
 
-      if (!ValidateUtils.isValidEmailAddress(up.getUserId())) {
-         throw new ValidationException("userId:" + up.getUserId() + " must be an email address");
+      if (!ValidateUtils.isValidEmailAddress(userId)) {
+         throw new ValidationException("userId:" + userId + " must be an email address");
       }
 
 
@@ -140,25 +143,26 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
       // if not, create the user in the authProvider
       // if the user exists, update the roles in the auth provider
       UserManagement userManager = authProviderFactory.getUserManager();
-      if (!userManager.usernameExists(datastore.getDatabase().getName(), up.getUsername())) {
+      if (!userManager.userIdExists(datastore.getDatabase().getName(), userId)) {
          // create the user in the system using the provided auth provider
          // this will handle the password encryption and storage in the system
          // and will also handle the creation of the user in the authentication system
          // (like LDAP, Active Directory, etc.)
-         authProviderFactory.getUserManager().createUser(datastore.getDatabase().getName(), up.getUserId(), password, forceChangePassword, up.getUsername(), roleSet, domainContext);
+         authProviderFactory.getUserManager().createUser(datastore.getDatabase().getName(), userId, password, forceChangePassword, roleSet, domainContext);
       } else {
-        Log.warnf("User  with username %s already exists in the auth provider. skipping create", up.getUsername());
+        Log.warnf("User  with userId %s already exists in the auth provider. skipping create", userId);
       }
 
-      Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId( up.getUserId(), datastore.getDatabase().getName());
+      Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId( userId, datastore.getDatabase().getName());
+      UserProfile up = new UserProfile();
       if (ocred.isPresent()) {
-         up.setUsername(ocred.get().getUsername());
-         up.setRefName(ocred.get().getRefName());
-         Log.infof("updated userprofile with username %s", up.getUsername());
+        up.setCredentialUserIdPasswordRef(ocred.get().createEntityReference());
       } else {
-         throw new IllegalStateException(String.format("Failed to find the user in the credential repository for userId %s in realm:%s", up.getUserId(), datastore.getDatabase().getName()));
+         throw new IllegalStateException(String.format("Failed to find the user in the credential repository for userId %s in realm:%s", userId, datastore.getDatabase().getName()));
       }
-
+      up.setEmail(userId);
+      up.setFname(fname);
+      up.setLname(lname);
       // now create the user profile
       up = save(datastore,up);
 
@@ -170,7 +174,7 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
       long ret = 0;
       try (MorphiaSession s = morphiaDataStore.getDataStore(realmId).startSession()) {
          s.startTransaction();
-         Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId( obj.getUserId(), realmId);
+         Optional<CredentialUserIdPassword> ocred = credentialRepo.findByRefName( obj.getCredentialUserIdPasswordRef().getEntityRefName(), realmId);
          if (ocred.isPresent()) {
             credentialRepo.delete(s, ocred.get());
          }

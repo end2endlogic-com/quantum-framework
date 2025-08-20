@@ -42,7 +42,7 @@ public class AuthResource {
     public Response createUser(CreateUserRequest request) {
         UserManagement usermanager = authProviderFactory.getUserManager();
         usermanager.createUser(request.getUserId(), request.getPassword(),
-           request.getUsername(), request.getRoles(), request.getDomainContext());
+            request.getRoles(), request.getDomainContext());
         return Response.ok().build();
     }
 

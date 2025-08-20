@@ -171,17 +171,29 @@ public class ApplicationRegistrationRequestRepo extends MorphiaRepo<ApplicationR
 
             Optional<UserProfile> ouserProfile = userProfileRepo.findByRefName(applicationRegistration.getUserId());
             UserProfile up;
+            CredentialUserIdPassword cred;
             if (ouserProfile.isEmpty()) {
                DataDomain userdd = dataDomain.clone();
                userdd.setOwnerId(applicationRegistration.getUserId());
 
+               cred = new CredentialUserIdPassword();
+               cred.setUserId(applicationRegistration.getUserId());
+               cred.setSubject(UUID.randomUUID().toString());
+               cred.setRefName(applicationRegistration.getUserId());
+               cred.setDomainContext(new DomainContext(dataDomain, securityUtils.getSystemRealm() ));
+               cred.setDataDomain(dataDomain);
+               cred.setHashingAlgorithm(EncryptionUtils.hashAlgorithm());
+               cred.setPasswordHash(EncryptionUtils.hashPassword(applicationRegistration.getPassword()));
+               cred.setLastUpdate(new Date());
+               String[] roles = {"admin"};
+               cred.setRoles(roles);
+               cred = credRepo.save(session, cred);
+
+
                // create new user profile
                up = new UserProfile();
-               up.setUsername(applicationRegistration.getUserId());
+               up.setCredentialUserIdPasswordRef(cred.createEntityReference());
                up.setEmail(applicationRegistration.getUserEmail());
-
-               up.setUserId(applicationRegistration.getUserId());
-               up.setRefName(applicationRegistration.getUserId());
                up.setDataDomain(userdd);
                userProfileRepo.save(session, up);
 
@@ -189,20 +201,27 @@ public class ApplicationRegistrationRequestRepo extends MorphiaRepo<ApplicationR
                overrides.put("accountManagement", securityUtils.getSystemRealm());
                overrides.put("security", securityUtils.getSystemRealm());
 
-               CredentialUserIdPassword cred = new CredentialUserIdPassword();
-               cred.setUserId(applicationRegistration.getUserId());
-               cred.setRefName(applicationRegistration.getUserId());
-               cred.setDomainContext(new DomainContext(dataDomain, securityUtils.getSystemRealm() ));
-               cred.setDataDomain(dataDomain);
-               cred.setHashingAlgorithm("BCrypt.default");
-               cred.setPasswordHash(EncryptionUtils.hashPassword(applicationRegistration.getPassword()));
-               cred.setLastUpdate(new Date());
-               String[] roles = {"admin"};
-               cred.setRoles(roles);
-               credRepo.save(session, cred);
+
             } else {
                Log.warn("UserProfile:" + ouserProfile.get().getRefName() + " already exists skipping creation");
                up = ouserProfile.get();
+               Optional<CredentialUserIdPassword> ocred = credRepo.findByUserId(applicationRegistration.getUserId());
+               if (!ocred.isPresent()) {
+                  cred = new CredentialUserIdPassword();
+                  cred.setUserId(applicationRegistration.getUserId());
+                  cred.setSubject(UUID.randomUUID().toString());
+                  cred.setRefName(applicationRegistration.getUserId());
+                  cred.setDomainContext(new DomainContext(dataDomain, securityUtils.getSystemRealm()));
+                  cred.setDataDomain(dataDomain);
+                  cred.setHashingAlgorithm(EncryptionUtils.hashAlgorithm());
+                  cred.setPasswordHash(EncryptionUtils.hashPassword(applicationRegistration.getPassword()));
+                  cred.setLastUpdate(new Date());
+                  String[] roles = {"admin"};
+                  cred.setRoles(roles);
+                  cred = credRepo.save(session, cred);
+               } else {
+                  cred = ocred.get();
+               }
             }
 
             // Register the realm
@@ -218,7 +237,7 @@ public class ApplicationRegistrationRequestRepo extends MorphiaRepo<ApplicationR
                             .accountId(account.getAccountNumber())
                             .build();
             realm.setDomainContext(domainContext);
-            realm.setDefaultAdminUserId(up.getUserId());
+            realm.setDefaultAdminUserId(cred.getUserId());
 
             realmRepo.save(session, realm);
 
