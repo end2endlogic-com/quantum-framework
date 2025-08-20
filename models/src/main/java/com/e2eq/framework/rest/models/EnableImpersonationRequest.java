@@ -6,7 +6,7 @@ import lombok.Data;
 @Data
 @RegisterForReflection
 public class EnableImpersonationRequest {
-   protected String username;
+   protected String subject;
    protected String realmToEnableIn;
    protected String impersonationScript;
    protected String realmRegExFilter;

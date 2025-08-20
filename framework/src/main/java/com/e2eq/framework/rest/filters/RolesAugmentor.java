@@ -56,7 +56,7 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
             contextRealm = securityUtils.getSystemRealm();
         }
 
-        Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUsername(principal, contextRealm, true);
+        Optional<CredentialUserIdPassword> ocred = credentialRepo.findBySubject(principal, contextRealm, true);
         if (ocred.isPresent()) {
             builder.addRoles(new HashSet<>(List.of(ocred.get().getRoles())));
         } else {

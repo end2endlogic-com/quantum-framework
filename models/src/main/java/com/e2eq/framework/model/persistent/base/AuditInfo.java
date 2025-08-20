@@ -20,9 +20,9 @@ public class AuditInfo {
    protected String creationIdentity;
    protected Date lastUpdateTs;
    protected String lastUpdateIdentity;
-   protected String impersonatorUsername;
+   protected String impersonatorSubject;
    protected String impersonatorUserId;
-   protected String actingOnBehalfOfUsername;
+   protected String actingOnBehalfOfSubject;
    protected String actingOnBehalfOfUserId;
 
    public AuditInfo(Date createTs, String createIdentity, Date lastUpdateTs, String lastUpdateIdentity) {

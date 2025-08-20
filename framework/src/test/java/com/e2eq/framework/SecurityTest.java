@@ -74,7 +74,7 @@ public class SecurityTest extends BaseRepoTest {
 
 
     public UserProfile ensureTestUserExists() throws ReferentialIntegrityViolationException {
-        Optional<CredentialUserIdPassword> credop = credRepo.findByUserId(testUtils.getTestUserId(), testUtils.getTestRealm());
+        Optional<CredentialUserIdPassword> credop = credRepo.findByUserId(testUtils.getTestUserId(), testUtils.getSystemRealm());
         CredentialUserIdPassword cred;
         if (credop.isPresent()) {
             Log.info("cred:" + credop.get().getUserId());
@@ -83,8 +83,8 @@ public class SecurityTest extends BaseRepoTest {
             cred = new CredentialUserIdPassword();
             cred.setUserId(testUtils.getTestUserId());
           //  cred.setPasswordHash("$2a$12$76wQJLgSAdm6ZTHFHtzksuSkWG9eW0qe5YXMXaZIBo52ncXHO0EDy"); //Test123456
-           cred.setPasswordHash(EncryptionUtils.hashPassword(testUtils.getDefaultTestPassword()));
-            cred.setUsername(UUID.randomUUID().toString());
+            cred.setPasswordHash(EncryptionUtils.hashPassword(testUtils.getDefaultTestPassword()));
+            cred.setSubject(UUID.randomUUID().toString());
 
             DataDomain dataDomain = new DataDomain();
             dataDomain.setOrgRefName(testUtils.getTestOrgRefName());
@@ -99,21 +99,20 @@ public class SecurityTest extends BaseRepoTest {
             cred.setDataDomain(dataDomain);
             cred.setRealmRegEx("*");
             cred.setImpersonateFilterScript("return true");
-            cred = credRepo.save(testUtils.getTestRealm(),cred);
+            cred = credRepo.save(testUtils.getSystemRealm(),cred);
         }
 
         Optional<UserProfile> userProfileOp = userProfileRepo.getByUserId(testUtils.getTestRealm(),testUtils.getTestUserId());
         UserProfile profile;
 
         if (userProfileOp.isPresent()) {
-            Log.info("User Id:" + userProfileOp.get().getUserId());
+            Log.info("User Id:" + cred.getUserId());
             profile = userProfileOp.get();
 
         } else {
             profile = new UserProfile();
             profile.setRefName(testUtils.getTestUserId());
-            profile.setUserId(testUtils.getTestUserId());
-            profile.setUsername(testUtils.getTestUserId());
+            profile.setCredentialUserIdPasswordRef(cred.createEntityReference());
             profile.setEmail(testUtils.getTestEmail());
 
             DataDomain dataDomain = new DataDomain();
@@ -135,13 +134,14 @@ public class SecurityTest extends BaseRepoTest {
         try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
            UserProfile profile = ensureTestUserExists();
             Assert.assertNotNull(profile.getId());
-            Assert.assertTrue(credRepo.findByUserId(testUtils.getTestUserId(), testUtils.getTestRealm()).isPresent());
+            Assert.assertTrue(credRepo.findByUserId(testUtils.getTestUserId()).isPresent());
 
-            authProviderFactory.getAuthProvider().login(testUtils.getTestRealm(), profile.getUserId(), testUtils.getDefaultTestPassword());
+            authProviderFactory.getAuthProvider().login( testUtils.getSystemUserId(), testUtils.getDefaultTestPassword());
             Assert.assertTrue(userProfileRepo.delete(testUtils.getTestRealm(), profile)==1);
             Optional<UserProfile> userProfileOp = userProfileRepo.getByUserId(testUtils.getTestRealm(),testUtils.getTestUserId());
             Assert.assertFalse(userProfileOp.isPresent());
-            Assert.assertFalse(credRepo.findByUserId(testUtils.getTestUserId(), testUtils.getTestRealm()).isPresent());
+            credRepo.delete(credRepo.findByUserId(testUtils.getTestUserId()).get());
+            Assert.assertFalse(credRepo.findByUserId(testUtils.getTestUserId()).isPresent());
         } finally {
             ruleContext.clear();
         }
@@ -169,7 +169,6 @@ public class SecurityTest extends BaseRepoTest {
         String value = mapper.writeValueAsString(request);
         given()
             .header("Content-type", "application/json")
-           .header("X-Realm", testUtils.getTestRealm())
             .and()
             .body(value)
             .when().post("/security/login")
@@ -180,7 +179,6 @@ public class SecurityTest extends BaseRepoTest {
         value = mapper.writeValueAsString(request);
         given()
                 .header("Content-type", "application/json")
-                .header("X-Realm", testUtils.getTestRealm())
                 .and()
                 .body(value)
                 .when().post("/security/login")
@@ -195,7 +193,6 @@ public class SecurityTest extends BaseRepoTest {
        try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
           ensureTestUserExists();
        }
-
 
         AuthRequest request = new AuthRequest();
         if (authProvider.equals("custom")) {
@@ -213,11 +210,11 @@ public class SecurityTest extends BaseRepoTest {
         // ensure that the status code is 200 but also get the access token and refresh token from the response
         Response response = given()
                 .header("Content-type", "application/json")
-                .header("X-Realm", testUtils.getTestRealm())
                 .and()
                 .body(value)
                 .when().post("/security/login")
                 .then()
+                .log().ifValidationFails()
                 .statusCode(200)
                 .extract().response();
 
@@ -234,12 +231,11 @@ public class SecurityTest extends BaseRepoTest {
                 .header("X-Realm", testUtils.getTestRealm())
                 .when().get("/user/userProfile/list")
                 .then()
+                .log().ifValidationFails()
                 .statusCode(200)
                 .extract().response();
         String userProfileJson = response2.jsonPath().prettify();
         Log.info(userProfileJson);
-
-
     }
 
 }

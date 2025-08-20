@@ -67,20 +67,20 @@ public class TestUserProfile extends BaseRepoTest {
                 Log.info("==== Attempting to run migration scripts ======");
                 // attempt to mitigate by running migrations
                 Multi.createFrom().emitter(emitter -> {
-                    migrationService.runAllUnRunMigrations(testUtils.getTestRealm(), emitter);
-                    migrationService.runAllUnRunMigrations(testUtils.getDefaultRealm(), emitter);
                     migrationService.runAllUnRunMigrations(testUtils.getSystemRealm(), emitter);
+                    migrationService.runAllUnRunMigrations(testUtils.getDefaultRealm(), emitter);
+                    migrationService.runAllUnRunMigrations(testUtils.getTestRealm(), emitter);
                 }).subscribe().with(
                    item -> System.out.println("Emitting: " + item),
                    failure ->fail("Failed with: " + failure)
                 );
             }
 
-            Optional<CredentialUserIdPassword> opCreds = credentialRepo.findByUserId(securityUtils.getSystemUserId(), testUtils.getTestRealm());
+            Optional<CredentialUserIdPassword> opCreds = credentialRepo.findByUserId(securityUtils.getSystemUserId());
             if (opCreds.isPresent()) {
                 Log.debug("Found it");
             } else {
-                Assertions.fail("No credentials found");
+                Assertions.fail("No credentials found but they should have been post migration");
             }
         }
         finally {
@@ -92,7 +92,7 @@ public class TestUserProfile extends BaseRepoTest {
         Datastore datastore = morphiaDataStore.getDataStore(testUtils.getTestRealm());
 
 
-        Optional<CredentialUserIdPassword> opCreds = credentialRepo.findByUserId( securityUtils.getTestUserId(), securityUtils.getTestRealm(), true);
+        Optional<CredentialUserIdPassword> opCreds = credentialRepo.findByUserId( securityUtils.getTestUserId(), securityUtils.getSystemRealm(), true);
         if (opCreds.isPresent()) {
             Log.debug("Found it");
         } else {
@@ -116,11 +116,13 @@ public class TestUserProfile extends BaseRepoTest {
 
                 oProfile = userProfileRepo.findByRefName(testUtils.getTestUserId());
                 if (!oProfile.isPresent()) {
+
+                    Optional<CredentialUserIdPassword> opCreds = credentialRepo.findByUserId( securityUtils.getTestUserId(), securityUtils.getTestRealm(), true);
+
                     Log.info("About to execute");
                     UserProfile profile = new UserProfile();
-                    profile.setUsername(testUtils.getTestUserId());
+                    profile.setCredentialUserIdPasswordRef(opCreds.get().createEntityReference());
                     profile.setEmail(testUtils.getTestEmail());
-                    profile.setUserId(testUtils.getTestUserId());
                     profile.setRefName(testUtils.getTestUserId());
                     profile.setDataDomain(testUtils.getTestDataDomain());
 
@@ -162,7 +164,7 @@ public class TestUserProfile extends BaseRepoTest {
             List<UserProfile> userProfiles = userProfileRepo.getList(testUtils.getTestRealm(), 0, 10, null, null);
             Assertions.assertTrue(!userProfiles.isEmpty());
             userProfiles.forEach((up) -> {
-                Log.info(up.getId().toString() + ":" + up.getUserId() + ":" + up.getUsername());
+                Log.info(up.toString());
             });
         } finally {
             ruleContext.clear();
@@ -177,7 +179,7 @@ public class TestUserProfile extends BaseRepoTest {
             //Filter[] filterArray = userProfileRepo.getFilterArray(filters);
             List<UserProfile> userProfiles = userProfileRepo.getList(testUtils.getTestRealm(), 0,10,null, null);
             for (UserProfile up : userProfiles) {
-                Log.info(up.getId().toString() + ":" + up.getUserId() + ":" + up.getUsername());
+                Log.info(up.toString());
             }
         }
         finally {
@@ -192,7 +194,7 @@ public class TestUserProfile extends BaseRepoTest {
             //Filter[] filterArray = userProfileRepo.getFilterArray(filters);
             List<UserProfile> userProfiles = userProfileRepo.getAllList(testUtils.getTestRealm());
             for (UserProfile up : userProfiles) {
-                Log.info(up.getId().toString() + ":" + up.getUserId() + ":" + up.getUsername());
+                Log.info(up.toString());
             }
         }
         finally {
@@ -206,7 +208,7 @@ public class TestUserProfile extends BaseRepoTest {
 
         try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
          //   List<RegistrationRequest> registrationRequests = regRepo.getList(0, 10, null, null, null);
-            List<ApplicationRegistration> registrationRequests = regRepo.getListByQuery(0,10, "userId:tuser@test-b2bintegrator.com");
+            List<ApplicationRegistration> registrationRequests = regRepo.getListByQuery(0,10, "credentialUserIdPasswordRef.entityRefName:tuser@test-b2bintegrator.com");
             Assertions.assertFalse(registrationRequests.isEmpty());
             registrationRequests.forEach((req) -> {
                 Log.info(req.getId().toString() + ":" + req.getUserId() + ":" + req.getUserDisplayName());

@@ -49,7 +49,7 @@ public class TenantProvisioningService {
      * @param orgRefName        e.g. "acme.com"
      * @param accountId         e.g. initial account number for the tenant
      * @param adminUserId       e.g. "admin@acme.com"
-     * @param adminUsername     display/login name
+     * @param adminSubject      the unique immutable identifier for this user
      * @param adminPassword     plaintext password to be hashed and stored
      * @return details about what happened and any warnings
      */
@@ -57,12 +57,13 @@ public class TenantProvisioningService {
                                            String orgRefName,
                                            String accountId,
                                            String adminUserId,
-                                           String adminUsername,
+                                           String adminSubject,
                                            String adminPassword) {
         Objects.requireNonNull(tenantEmailDomain, "tenantEmailDomain cannot be null");
         Objects.requireNonNull(orgRefName, "orgRefName cannot be null");
         Objects.requireNonNull(accountId, "accountId cannot be null");
         Objects.requireNonNull(adminUserId, "adminUserId cannot be null");
+        Objects.requireNonNull(adminSubject, "adminSubject cannot be null");
         Objects.requireNonNull(adminPassword, "adminPassword cannot be null");
 
         ProvisionResult result = new ProvisionResult();
@@ -141,7 +142,6 @@ public class TenantProvisioningService {
                     adminUserId,
                     adminPassword,
                     Boolean.FALSE,
-                    adminUsername,
                     desiredRoles,
                     dc
             );
@@ -153,7 +153,7 @@ public class TenantProvisioningService {
             }
             CredentialUserIdPassword cred = credOpt.get();
             Set<String> storedRoles = cred.getRoles() == null ? java.util.Collections.emptySet() : new HashSet<>(Arrays.asList(cred.getRoles()));
-            boolean attributesMatch = Objects.equals(cred.getUsername(), adminUsername)
+            boolean attributesMatch = Objects.equals(cred.getSubject(), adminSubject)
                     && Objects.equals(storedRoles, desiredRoles)
                     && Objects.equals(Boolean.FALSE, cred.getForceChangePassword())
                     && Objects.equals(cred.getDomainContext(), dc);

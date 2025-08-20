@@ -2,7 +2,7 @@ package com.e2eq.framework.model.security.auth.provider.jwtToken;
 
 
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
-import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
+
 import com.e2eq.framework.model.persistent.security.CredentialRefreshToken;
 import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.persistent.security.DomainContext;
@@ -10,7 +10,6 @@ import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.security.auth.AuthProvider;
 import com.e2eq.framework.model.security.auth.UserManagement;
 import com.e2eq.framework.util.EncryptionUtils;
-import com.e2eq.framework.util.SecurityUtils;
 import com.e2eq.framework.util.TokenUtils;
 import io.quarkus.logging.Log;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -89,68 +88,64 @@ public class CustomTokenAuthProvider  extends BaseAuthProvider implements AuthPr
    }
 
    @Override
-   public void createUser (String userId, String password, String username, Set<String> roles,
+   public String createUser (String userId, String password,  Set<String> roles,
                            DomainContext domainContext) throws SecurityException {
-      createUser(securityUtils.getSystemRealm(), userId, password, null, username, roles, domainContext);
+      return createUser(securityUtils.getSystemRealm(), userId, password, roles, domainContext);
    }
 
    @Override
-   public void createUser (String userId, String password, Boolean forceChangePassword, String username, Set<String> roles,
+   public String createUser (String userId, String password, Boolean forceChangePassword,  Set<String> roles,
                            DomainContext domainContext) throws SecurityException {
-      createUser(securityUtils.getSystemRealm(), userId, password, forceChangePassword, username, roles, domainContext);
+      return createUser(securityUtils.getSystemRealm(), userId, password, forceChangePassword,  roles, domainContext);
    }
 
 
-   @Override
-   public void createUser (String realm, String userId, String password, String username, Set<String> roles, DomainContext domainContext) throws SecurityException {
-      createUser(realm, userId, password, null, username, roles, domainContext);
-   }
 
    // New overloads supporting explicit DataDomain
    @Override
-   public void createUser(String userId, String password, String username,
+   public String createUser(String userId, String password,
                           Set<String> roles, DomainContext domainContext, DataDomain dataDomain) throws SecurityException {
-      createUser(securityUtils.getSystemRealm(), userId, password, null, username, roles, domainContext, dataDomain);
+      return createUser(securityUtils.getSystemRealm(), userId, password, null,  roles, domainContext, dataDomain);
    }
 
    @Override
-   public void createUser(String userId, String password, Boolean forceChangePassword, String username,
+   public String createUser(String userId, String password, Boolean forceChangePassword,
                           Set<String> roles, DomainContext domainContext, DataDomain dataDomain) throws SecurityException {
-      createUser(securityUtils.getSystemRealm(), userId, password, forceChangePassword, username, roles, domainContext, dataDomain);
+      return createUser(securityUtils.getSystemRealm(), userId, password, forceChangePassword,  roles, domainContext, dataDomain);
    }
 
    @Override
-   public void createUser(String realm, String userId, String password, String username,
-                          Set<String> roles, DomainContext domainContext, DataDomain dataDomain) throws SecurityException {
-      createUser(realm, userId, password, null, username, roles, domainContext, dataDomain);
+   public String createUser (String realm, String userId, String password, Set<String> roles, DomainContext domainContext) throws SecurityException {
+      return createUser(realm, userId, password, null, roles, domainContext);
    }
 
    @Override
-   public void createUser (String realm, String userId, String password, Boolean forceChangePassword, String username
+   public String createUser(String realm, String userId, String password,
+                          Set<String> roles, DomainContext domainContext, DataDomain dataDomain) throws SecurityException {
+      return createUser(realm, userId, password, null, roles, domainContext);
+   }
+
+   @Override
+   public String createUser (String realm, String userId, String password, Boolean forceChangePassword
       , Set<String> roles, DomainContext domainContext) throws SecurityException {
       Objects.requireNonNull(realm, "Realm cannot be null");
       Objects.requireNonNull(userId, "UserId cannot be null");
-      Objects.requireNonNull(username, "Username cannot be null");
       Objects.requireNonNull(password, "Password cannot be null");
       Objects.requireNonNull(domainContext, "DomainContext cannot be null");
 
+      String subject;
       try {
          byte[] utf8Bytes = password.getBytes("UTF-8");
          int byteLength = utf8Bytes.length;
 
-         if (byteLength > 72) { // Limit username to 17 characters due to Bcrypt limitations
-            throw new SecurityException("Username too long must be smaller than 17 characters");
+         if (byteLength > 72) { // Limit subject to 17 characters due to Bcrypt limitations
+            throw new SecurityException("subject too long must be smaller than 17 characters");
          }
       } catch (UnsupportedEncodingException ex) {
          throw new SecurityException("Security exception: " + ex.getMessage());
       }
       Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(userId, realm);
       if (ocred.isPresent()) {
-         if (!ocred.get().getUsername().equalsIgnoreCase(username)) {
-            throw new SecurityException(String.format("User with the same userId:%s already exists with different " +
-                                                         "username:%s, than given username:%s", userId,
-               ocred.get().getUsername(), username));
-         }
          if (!ocred.get().getDomainContext().equals(domainContext)) {
             throw new SecurityException(String.format("User with the same userId:%s already exists with different " +
                                                          "domainContext:%s, than given domainContext:%s", userId,
@@ -161,16 +156,18 @@ public class CustomTokenAuthProvider  extends BaseAuthProvider implements AuthPr
                                                          "roles:%s, than given roles:%s", userId,
                ocred.get().getRoles(), roles));
          }
-         throw new SecurityException(String.format("User with userId:%s and username:%s already exists with same " +
-                                                      "domain context, and roles", userId, username));
+         throw new SecurityException(String.format("User with userId:%s  already exists with same " +
+                                                      "domain context, and roles", userId));
       } else {
 
          CredentialUserIdPassword credential = new CredentialUserIdPassword();
          credential.setUserId(userId);
-         credential.setUsername(username);
+         subject = UUID.randomUUID().toString();
+         credential.setRefName(subject);
+         credential.setSubject(subject);
          credential.setForceChangePassword(forceChangePassword);
          String alg = credential.getHashingAlgorithm();
-         if (alg != null && (alg.equalsIgnoreCase("BCrypt.default") || alg.toLowerCase().startsWith("bcrypt"))) {
+         if (alg != null && (alg.equalsIgnoreCase("BCrypt.default") || alg.toLowerCase().startsWith("bcrypt") || alg.equals(EncryptionUtils.hashAlgorithm()))) {
             credential.setPasswordHash(EncryptionUtils.hashPassword(password));
          } else {
             throw new SecurityException("Unsupported hashing algorithm: " + alg);
@@ -178,27 +175,27 @@ public class CustomTokenAuthProvider  extends BaseAuthProvider implements AuthPr
          credential.setDomainContext(domainContext);
          credential.setRoles(roles.toArray(new String[roles.size()]));
          credential.setLastUpdate(new Date());
-
          credentialRepo.save(realm, credential);
       }
+      return subject;
 
    }
 
    // Main implementation that accepts explicit DataDomain
    @Override
-   public void createUser(String realm, String userId, String password, Boolean forceChangePassword, String username,
+   public String createUser(String realm, String userId, String password, Boolean forceChangePassword,
                           Set<String> roles, DomainContext domainContext, DataDomain dataDomain) throws SecurityException {
       Objects.requireNonNull(realm, "Realm cannot be null");
       Objects.requireNonNull(userId, "UserId cannot be null");
-      Objects.requireNonNull(username, "Username cannot be null");
+
       Objects.requireNonNull(password, "Password cannot be null");
       Objects.requireNonNull(domainContext, "DomainContext cannot be null");
-
+      String subject;
       try {
          byte[] utf8Bytes = password.getBytes("UTF-8");
          int byteLength = utf8Bytes.length;
          if (byteLength > 72) {
-            throw new SecurityException("Username too long must be smaller than 17 characters");
+            throw new SecurityException("subject too long must be smaller than 17 characters");
          }
       } catch (UnsupportedEncodingException ex) {
          throw new SecurityException("Security exception: " + ex.getMessage());
@@ -206,23 +203,22 @@ public class CustomTokenAuthProvider  extends BaseAuthProvider implements AuthPr
 
       Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(userId, realm);
       if (ocred.isPresent()) {
-         if (!ocred.get().getUsername().equalsIgnoreCase(username)) {
-            throw new SecurityException(String.format("User with the same userId:%s already exists with different username:%s, than given username:%s", userId, ocred.get().getUsername(), username));
-         }
+
          if (!ocred.get().getDomainContext().equals(domainContext)) {
             throw new SecurityException(String.format("User with the same userId:%s already exists with different domainContext:%s, than given domainContext:%s", userId, ocred.get().getDomainContext(), domainContext));
          }
          if (!Arrays.equals(ocred.get().getRoles(), roles.toArray(new String[roles.size()]))) {
             throw new SecurityException(String.format("User with the same userId:%s already exists with different roles:%s, than given roles:%s", userId, ocred.get().getRoles(), roles));
          }
-         throw new SecurityException(String.format("User with userId:%s and username:%s already exists with same domain context, and roles", userId, username));
+         throw new SecurityException(String.format("User with userId:%s and already exists with same domain context, and roles", userId));
       } else {
          CredentialUserIdPassword credential = new CredentialUserIdPassword();
          credential.setUserId(userId);
-         credential.setUsername(username);
+         subject = UUID.randomUUID().toString();
+         credential.setSubject(subject);
          credential.setForceChangePassword(forceChangePassword);
          String alg = credential.getHashingAlgorithm();
-         if (alg != null && (alg.equalsIgnoreCase("BCrypt.default") || alg.toLowerCase().startsWith("bcrypt"))) {
+         if (alg != null && (alg.equalsIgnoreCase("BCrypt.default") || alg.toLowerCase().startsWith("bcrypt") || alg.equals(EncryptionUtils.hashAlgorithm()))) {
             credential.setPasswordHash(EncryptionUtils.hashPassword(password));
          } else {
             throw new SecurityException("Unsupported hashing algorithm: " + alg);
@@ -240,8 +236,53 @@ public class CustomTokenAuthProvider  extends BaseAuthProvider implements AuthPr
          }
 
          credentialRepo.save(realm, credential);
+
+      }
+      return subject;
+   }
+
+
+   @Override
+   public Optional<String> getSubjectForUserId (String userId) throws SecurityException {
+      Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(userId);
+      if (ocred.isPresent()){
+         return Optional.of(ocred.get().getSubject());
+      } else {
+         return Optional.empty();
       }
    }
+
+   @Override
+   public Optional<String> getSubjectForUserId (String realm, String userId) throws SecurityException {
+      Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(userId, realm);
+      if (ocred.isPresent()){
+         return Optional.of(ocred.get().getSubject());
+      } else {
+         return Optional.empty();
+      }
+   }
+
+   @Override
+   public Optional<String> getUserIdForSubject (String subject) throws SecurityException {
+      Optional<CredentialUserIdPassword> ocred = credentialRepo.findBySubject(subject);
+      if (ocred.isPresent()){
+         return Optional.of(ocred.get().getUserId());
+      } else {
+         return Optional.empty();
+      }
+   }
+
+   @Override
+   public Optional<String> getUserIdForSubject (String realm, String subject) throws SecurityException {
+      Optional<CredentialUserIdPassword> ocred = credentialRepo.findBySubject(subject, realm);
+      if (ocred.isPresent()){
+         return Optional.of(ocred.get().getUserId());
+      } else {
+         return Optional.empty();
+      }
+   }
+
+
 
 
    @Override
@@ -267,15 +308,15 @@ public class CustomTokenAuthProvider  extends BaseAuthProvider implements AuthPr
 
 
    @Override
-   public boolean removeUserWithUsername (String username) throws ReferentialIntegrityViolationException {
-      return removeUserWithUsername(securityUtils.getSystemRealm(), username);
+   public boolean removeUserWithSubject (String subject) throws ReferentialIntegrityViolationException {
+      return removeUserWithSubject(securityUtils.getSystemRealm(), subject);
    }
 
    @Override
-   public boolean removeUserWithUsername (String realm, String username) throws ReferentialIntegrityViolationException {
+   public boolean removeUserWithSubject (String realm, String subject) throws ReferentialIntegrityViolationException {
       Objects.requireNonNull(realm, "Realm cannot be null");
-      Objects.requireNonNull(username, "Username cannot be null");
-      Optional<CredentialUserIdPassword> ocredentialUserIdPassword = credentialRepo.findByUsername(username, realm);
+      Objects.requireNonNull(subject, "Subject cannot be null");
+      Optional<CredentialUserIdPassword> ocredentialUserIdPassword = credentialRepo.findBySubject(subject, realm);
       if (ocredentialUserIdPassword.isPresent()) {
          long val = credentialRepo.delete(realm, ocredentialUserIdPassword.get());
          if (val != 0)
@@ -287,74 +328,113 @@ public class CustomTokenAuthProvider  extends BaseAuthProvider implements AuthPr
    }
 
    @Override
-   public void assignRoles (String username, Set<String> roles) throws SecurityException {
-      Objects.requireNonNull(username, "Username cannot be null");
-      assignRoles(securityUtils.getSystemRealm(), username, roles);
+   public void assignRolesForUserId (String userId, Set<String> roles) throws SecurityException {
+      Objects.requireNonNull(userId, "userId cannot be null");
+      assignRolesForUserId(securityUtils.getSystemRealm(), userId, roles);
    }
 
    @Override
-   public void assignRoles (String realm, String username, Set<String> roles) throws SecurityException {
+   public void assignRolesForUserId(String realm, String userId, Set<String> roles) throws SecurityException {
       Objects.requireNonNull(realm, "Realm cannot be null");
-      Objects.requireNonNull(username, "Username cannot be null");
+      Objects.requireNonNull(userId, "userId cannot be null");
       Objects.requireNonNull(roles, "Roles cannot be null");
 
-      credentialRepo.findByUsername(username, realm).ifPresentOrElse(credential -> {
+      credentialRepo.findByUserId(userId, realm).ifPresentOrElse(credential -> {
          Set<String> existingRoles = new HashSet<>(Arrays.asList(credential.getRoles()));
          existingRoles.addAll(roles);
          credential.setRoles(existingRoles.toArray(new String[existingRoles.size()]));
          credentialRepo.save(realm, credential);
       }, () -> {
-         throw new SecurityException("User not found: " + username);
+         throw new SecurityException(String.format("User not found userId: %s", userId));
       });
    }
 
-
    @Override
-   public void removeRoles (String username, Set<String> roles) throws SecurityException {
-      Objects.requireNonNull(username, "Username cannot be null");
-      Objects.requireNonNull(roles, "Roles cannot be null");
-      if (roles.isEmpty()) {
-         throw new IllegalArgumentException("Roles cannot be empty");
-      }
-      removeRoles(securityUtils.getSystemRealm(), username, roles);
+   public void assignRolesForSubject (String subject, Set<String> roles) throws SecurityException {
+      assignRolesForSubject(securityUtils.getSystemRealm(), subject, roles);
    }
 
    @Override
-   public void removeRoles (String realm, String username, Set<String> roles) throws SecurityException {
+   public void assignRolesForSubject (String realm, String subject, Set<String> roles) throws SecurityException {
       Objects.requireNonNull(realm, "Realm cannot be null");
-      Objects.requireNonNull(username, "Username cannot be null");
+      Objects.requireNonNull(subject, "userId cannot be null");
+      Objects.requireNonNull(roles, "Roles cannot be null");
+
+      credentialRepo.findBySubject(subject, realm).ifPresentOrElse(credential -> {
+         Set<String> existingRoles = new HashSet<>(Arrays.asList(credential.getRoles()));
+         existingRoles.addAll(roles);
+         credential.setRoles(existingRoles.toArray(new String[existingRoles.size()]));
+         credentialRepo.save(realm, credential);
+      }, () -> {
+         throw new SecurityException(String.format("User not found subject: %s", subject));
+      });
+   }
+
+   @Override
+   public void removeRolesForUserId (String userId, Set<String> roles) throws SecurityException {
+      Objects.requireNonNull(userId, "userId cannot be null");
       Objects.requireNonNull(roles, "Roles cannot be null");
       if (roles.isEmpty()) {
          throw new IllegalArgumentException("Roles cannot be empty");
       }
-      credentialRepo.findByUsername(username, realm).ifPresentOrElse(
+      removeRolesForUserId(securityUtils.getSystemRealm(), userId, roles);
+   }
+
+   @Override
+   public void removeRolesForUserId (String realm, String userId, Set<String> roles) throws SecurityException {
+      Objects.requireNonNull(realm, "Realm cannot be null");
+      Objects.requireNonNull(userId, "userId cannot be null");
+      Objects.requireNonNull(roles, "Roles cannot be null");
+      if (roles.isEmpty()) {
+         throw new IllegalArgumentException("Roles cannot be empty");
+      }
+      credentialRepo.findByUserId(userId, realm).ifPresentOrElse(
          credential -> {
             Set<String> existingRoles = new HashSet<>(Arrays.asList(credential.getRoles()));
             existingRoles.removeAll(roles);
             credential.setRoles(existingRoles.toArray(new String[existingRoles.size()]));
             credentialRepo.save(realm, credential);
          }, () -> {
-            throw new SecurityException("User not found: " + username);
+            throw new SecurityException("User not found with userId: " + userId);
          });
 
    }
 
+   @Override
+   public void removeRolesForSubject (String realm, String subject, Set<String> roles) throws SecurityException {
+      Objects.requireNonNull(realm, "Realm cannot be null");
+      Objects.requireNonNull(subject, "subject cannot be null");
+      Objects.requireNonNull(roles, "Roles cannot be null");
+      if (roles.isEmpty()) {
+         throw new IllegalArgumentException("Roles cannot be empty");
+      }
+      credentialRepo.findBySubject(subject, realm).ifPresentOrElse(
+         credential -> {
+            Set<String> existingRoles = new HashSet<>(Arrays.asList(credential.getRoles()));
+            existingRoles.removeAll(roles);
+            credential.setRoles(existingRoles.toArray(new String[existingRoles.size()]));
+            credentialRepo.save(realm, credential);
+         }, () -> {
+            throw new SecurityException("User not found with userId: " + subject);
+         });
+   }
+
 
    @Override
-   public Set<String> getUserRoles (String username) throws SecurityException {
-      return getUserRoles(securityUtils.getSystemRealm(), username);
+   public Set<String> getUserRolesForSubject (String subject) throws SecurityException {
+      return getUserRolesForSubject(securityUtils.getSystemRealm(), subject);
    }
 
    @Override
-   public Set<String> getUserRoles (String realm, String username) throws SecurityException {
+   public Set<String> getUserRolesForSubject (String realm, String subject) throws SecurityException {
       Set<String> rolesHolder = new HashSet<>();
 
-      credentialRepo.findByUsername(username, realm).ifPresentOrElse(
+      credentialRepo.findBySubject(subject, realm).ifPresentOrElse(
          credential -> {
             rolesHolder.addAll(Arrays.asList(credential.getRoles()));
          },
          () -> {
-            throw new SecurityException("User not found: " + username);
+            throw new SecurityException(String.format("User with subject:%s not found: ", subject));
          }
       );
 
@@ -364,12 +444,12 @@ public class CustomTokenAuthProvider  extends BaseAuthProvider implements AuthPr
         /* old code can be removed
         final Set<String>[] rolesHolder = new Set[1];
 
-        credentialRepo.findByUserId(username).ifPresentOrElse(
+        credentialRepo.findByUserId(subject).ifPresentOrElse(
             credential -> {
                 rolesHolder[0] = new HashSet<>(Arrays.asList(credential.getRoles()));
             },
             () -> {
-                throw new SecurityException("User not found: " + username);
+                throw new SecurityException("User not found: " + subject);
             }
         );
 
@@ -377,13 +457,34 @@ public class CustomTokenAuthProvider  extends BaseAuthProvider implements AuthPr
    }
 
    @Override
-   public boolean usernameExists (String username) throws SecurityException {
-      return usernameExists(securityUtils.getSystemRealm(), username);
+   public Set<String> getUserRolesForUserId (String realm, String userId) throws SecurityException {
+      Set<String> rolesHolder = new HashSet<>();
+
+      credentialRepo.findByUserId(userId, realm).ifPresentOrElse(
+         credential -> {
+            rolesHolder.addAll(Arrays.asList(credential.getRoles()));
+         },
+         () -> {
+            throw new SecurityException(String.format("User with userId:%s not found: ", userId));
+         }
+      );
+
+      return rolesHolder;
    }
 
    @Override
-   public boolean usernameExists (String realm, String username) throws SecurityException {
-      return credentialRepo.findByUsername(username, realm).isPresent();
+   public Set<String> getUserRolesForUserId (String userId) throws SecurityException {
+      return getUserRolesForUserId(securityUtils.getSystemRealm(), userId);
+   }
+
+   @Override
+   public boolean subjectExists (String subject) throws SecurityException {
+      return subjectExists(securityUtils.getSystemRealm(), subject);
+   }
+
+   @Override
+   public boolean subjectExists (String realm, String subject) throws SecurityException {
+      return credentialRepo.findBySubject(subject, realm).isPresent();
    }
 
 
@@ -421,13 +522,13 @@ public class CustomTokenAuthProvider  extends BaseAuthProvider implements AuthPr
                );
             }
             String alg = credential.getHashingAlgorithm();
-            if (alg != null && (alg.equalsIgnoreCase("BCrypt.default") || alg.toLowerCase().startsWith("bcrypt"))) {
+            if (alg != null && (alg.equalsIgnoreCase("BCrypt.default") || alg.toLowerCase().startsWith("bcrypt") || alg.toLowerCase().equals(EncryptionUtils.hashAlgorithm().toLowerCase()))) {
                boolean isCredentialValid = EncryptionUtils.checkPassword(password, credential.getPasswordHash());
                if (isCredentialValid) {
                   // String authToken = generateAuthToken(userId);
                   Set<String> groups = new HashSet<>(Arrays.asList(credential.getRoles()));
                   String authToken = TokenUtils.generateUserToken(
-                     credential.getUsername(),
+                     credential.getSubject(),
                      groups,
                      TokenUtils.expiresAt(durationInSeconds),
                      issuer);

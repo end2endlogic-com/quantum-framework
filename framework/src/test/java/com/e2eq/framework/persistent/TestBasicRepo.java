@@ -1,6 +1,8 @@
 package com.e2eq.framework.persistent;
 
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
+import com.e2eq.framework.model.persistent.base.EntityReference;
+import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.SecuritySession;
 import com.e2eq.framework.util.SecurityUtils;
@@ -37,6 +39,8 @@ public class TestBasicRepo extends BaseRepoTest{
 
    @Inject
    SecurityUtils securityUtils;
+   @Inject
+   CredentialRepo credentialRepo;
 
 
    @Test
@@ -51,9 +55,12 @@ public class TestBasicRepo extends BaseRepoTest{
 
    @Test
    public void testUserProfileFilteredQuery() {
+
       PrincipalContext pContext = securityUtils.getSystemPrincipalContext();
       try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
-         Filter x = MorphiaUtils.convertToFilter("userId:" + securityUtils.getSystemUserId(), UserProfile.class);
+         ensureUserProfile(dataStore.getDefaultSystemDataStore(), securityUtils.getSystemUserId(), "John", "Doe", new String[]{"ROLE_USER"}, "password");
+         String subject = credentialRepo.findByUserId(securityUtils.getSystemUserId()).get().getSubject();
+         Filter x = MorphiaUtils.convertToFilter(String.format("credentialUserIdPasswordRef.entityRefName:%s" ,subject), UserProfile.class);
          Query<UserProfile> q = dataStore.getDefaultSystemDataStore().find(UserProfile.class);
          MongoCursor<UserProfile> cursor = q.filter(x).iterator(new FindOptions().skip(0).limit(10));
 
@@ -63,7 +70,7 @@ public class TestBasicRepo extends BaseRepoTest{
       }
    }
 
-   protected UserProfile ensureUserProfile(Datastore ds, String userId, String[] roles, String password) {
+   protected UserProfile ensureUserProfile(Datastore ds, String userId, String fname, String lname, String[] roles, String password) {
 
       UserProfile userProfile = null;
 
@@ -73,16 +80,14 @@ public class TestBasicRepo extends BaseRepoTest{
          Optional<UserProfile> ouserProfile = userProfileRepo.getByUserId(ds,userId);
 
          if (!ouserProfile.isPresent()) {
-           userProfile = UserProfile.builder()
-                    .refName(userId)
-                    .email(userId)
-                    .displayName("Test User")
-                    .username(userId)
-                    .userId(userId)
-                   .dataDomain(testUtils.getTestDataDomain())
-                    .build();
-            userProfile = userProfileRepo.createUser(ds,
-                    userProfile,null, roles,password );
+       userProfile =  userProfileRepo.createUser(ds,
+         userId,
+         fname,
+         lname,
+         null,
+         roles,
+         password,
+          securityUtils.getDefaultDomainContext());
          } else {
             userProfile = ouserProfile.get();
          }
@@ -90,7 +95,6 @@ public class TestBasicRepo extends BaseRepoTest{
       }
 
       return userProfile;
-
    }
 
    @Test
@@ -100,7 +104,7 @@ public class TestBasicRepo extends BaseRepoTest{
 
 
       try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
-         ensureUserProfile(ds, securityUtils.getTestUserId(), roles, "test123xxxxxxx");
+         ensureUserProfile(ds, securityUtils.getTestUserId(),  "test","test", roles,"test123xxxxxxx");
          try (MorphiaSession session = ds.startSession()) {
             session.startTransaction();
             Optional<UserProfile> u = userProfileRepo.findByRefName(ds,securityUtils.getTestUserId());
@@ -126,10 +130,15 @@ public class TestBasicRepo extends BaseRepoTest{
          userProfile.setRefName("tuser@test-system.com");
          userProfile.setEmail("tuser@test-system.com");
          userProfile.setDisplayName("Test");
-         userProfile.setUsername("tuser@test-system.com");
-         userProfile.setUserId("tuser@test-system.com");
          userProfile.setDataDomain(testUtils.getTestDataDomain());
+         // create a dummy credential reference
+         EntityReference fakeCredRef = new EntityReference();
+         fakeCredRef.setEntityRefName("fakeCred");
+         fakeCredRef.setEntityDisplayName("FakeCred");
+         userProfile.setCredentialUserIdPasswordRef(fakeCredRef);
          userProfile = userProfileRepo.save(userProfile);
+
+
          assertTrue(userProfile.getId()!= null);
 
          UserProfile userProfile2 = new UserProfile();
@@ -139,13 +148,15 @@ public class TestBasicRepo extends BaseRepoTest{
          userProfile2.setVersion(userProfile.getVersion()); // need to deal with this somehow.
 
          // if this is the only thing we want to change
-         userProfile2.setUsername("changed");
+        // userProfile2.setUsername("changed");
+         userProfile2.setFname("changed");
+         userProfile2.setCredentialUserIdPasswordRef(userProfile.getCredentialUserIdPasswordRef());
          userProfile2.setSkipValidation(true);
          userProfileRepo.merge(userProfile2);
 
          UserProfile dbProfile = userProfileRepo.findById(userProfile.getId()).get();
-         assertTrue(dbProfile.getUsername().equals("changed"));
-         assertTrue(dbProfile.getUserId().equals("tuser@test-system.com"));
+         assertTrue(dbProfile.getFname().equals("changed"));
+         //assertTrue(dbProfile.getUserId().equals("tuser@test-system.com"));
          assertTrue(dbProfile.getDisplayName().equals("Test"));
          userProfileRepo.delete(dbProfile);
 
