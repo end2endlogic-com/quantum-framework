@@ -1,5 +1,6 @@
 package com.e2eq.framework.model.persistent.base;
 
+import dev.morphia.annotations.Entity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.validation.constraints.NotNull;
 import lombok.Builder;
@@ -14,6 +15,7 @@ import java.util.List;
 @SuperBuilder
 @EqualsAndHashCode
 @RegisterForReflection
+@Entity
 public class DynamicAttributeDefinition {
     @NonNull
     @NotNull
