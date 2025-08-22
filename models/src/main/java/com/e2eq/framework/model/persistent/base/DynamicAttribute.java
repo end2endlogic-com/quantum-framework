@@ -1,5 +1,6 @@
 package com.e2eq.framework.model.persistent.base;
 
+import dev.morphia.annotations.Entity;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 
@@ -10,6 +11,7 @@ import java.util.List;
 @AllArgsConstructor
 @Builder
 @ToString
+@Entity
 public @Data class DynamicAttribute {
     protected String id;
     @NotNull
