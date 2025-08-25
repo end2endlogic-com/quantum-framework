@@ -1,6 +1,7 @@
 package com.e2eq.framework.model.persistent.morphia;
 
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
+import com.e2eq.framework.model.persistent.base.EntityReference;
 import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.persistent.security.DomainContext;
 import com.e2eq.framework.model.persistent.security.UserProfile;
@@ -153,18 +154,39 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
         Log.warnf("User  with userId %s already exists in the auth provider. skipping create", userId);
       }
 
-      Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId( userId, datastore.getDatabase().getName());
-      UserProfile up = new UserProfile();
-      if (ocred.isPresent()) {
-        up.setCredentialUserIdPasswordRef(ocred.get().createEntityReference());
+
+      UserProfile up;
+      Optional<UserProfile> oup = getByUserId(datastore, userId);
+      if (!oup.isPresent()) {
+         up = new UserProfile();
+         up.setEmail(userId);
+         up.setFname(fname);
+         up.setLname(lname);
+
+        // check if credential is present
+         Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId( userId, datastore.getDatabase().getName());
+         if (ocred.isPresent()) {
+            // try to find the up
+            up.setCredentialUserIdPasswordRef(ocred.get().createEntityReference());
+         } else {
+            throw new IllegalStateException(String.format("Failed to find the user in the credential repository for userId %s in realm:%s", userId, datastore.getDatabase().getName()));
+         }
+         // now create the user profile
+         up = save(datastore,up);
       } else {
-         throw new IllegalStateException(String.format("Failed to find the user in the credential repository for userId %s in realm:%s", userId, datastore.getDatabase().getName()));
+         up = oup.get();
+         Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId( userId, datastore.getDatabase().getName());
+         if (ocred.isPresent()) {
+            EntityReference ref = ocred.get().createEntityReference();
+            // ensure reference is correct
+            if (!ref.equals(up.getCredentialUserIdPasswordRef())) {
+               up.setCredentialUserIdPasswordRef(ref);
+               up = save(datastore, up);
+            }
+         } else {
+            throw new IllegalStateException(String.format("Failed to find the user in the credential repository for userId %s in realm:%s", userId, datastore.getDatabase().getName()));
+         }
       }
-      up.setEmail(userId);
-      up.setFname(fname);
-      up.setLname(lname);
-      // now create the user profile
-      up = save(datastore,up);
 
       return up;
    }
