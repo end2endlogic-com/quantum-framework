@@ -1,1 +1,1 @@
-com.e2eq.framework.model.persistent.base.MailingAddressValidator
+com.e2eq.framework.model.validators.MailingAddressValidator

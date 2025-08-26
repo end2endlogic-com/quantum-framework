@@ -159,10 +159,6 @@
                         </path>
                         <path>
                             <groupId>io.quarkus</groupId>
-                            <artifactId>quarkus-hibernate-validator</artifactId>
-                        </path>
-                        <path>
-                            <groupId>io.quarkus</groupId>
                             <artifactId>quarkus-scheduler</artifactId>
                         </path>
                         <path>
