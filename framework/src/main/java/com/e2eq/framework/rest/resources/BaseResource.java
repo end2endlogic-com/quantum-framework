@@ -89,7 +89,8 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
 
    @Path("indexes/ensureIndexes/{realm}")
    @POST
-   @RolesAllowed("admin")
+   @SecurityRequirement(name = "bearerAuth")
+   @RolesAllowed("{admin}")
    @Produces(MediaType.APPLICATION_JSON)
    public Response ensureIndexes(@PathParam( "realm") String realm, @QueryParam("collectionName") String collectionName) {
        repo.ensureIndexes(realm, collectionName);

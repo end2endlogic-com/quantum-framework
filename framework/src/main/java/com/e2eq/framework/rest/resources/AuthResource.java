@@ -5,6 +5,8 @@ import com.e2eq.framework.model.security.auth.AuthProvider;
 import com.e2eq.framework.model.security.auth.AuthProviderFactory;
 import com.e2eq.framework.model.security.auth.UserManagement;
 import com.e2eq.framework.rest.requests.CreateUserRequest;
+import jakarta.annotation.security.PermitAll;
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.Response;
@@ -17,6 +19,7 @@ import java.util.Map;
 
 @Path("/auth")
 @Tag(name = "Authentication", description = "Operations related to user authentication and management")
+
 public class AuthResource {
 
     @Inject
@@ -27,6 +30,7 @@ public class AuthResource {
     @Path("/provider/name")
     @Operation(summary = "Get Authentication Provider Name", description = "Returns the name of the current authentication provider.")
     @APIResponse(responseCode = "200", description = "Successfully retrieved prov")
+    @RolesAllowed({ "user","admin"})
     public Response getProviderName() {
         AuthProvider authProvider = authProviderFactory.getAuthProvider();
         return Response.ok(authProvider.getName()).build();
@@ -39,6 +43,7 @@ public class AuthResource {
        @APIResponse(responseCode = "200", description = "User created successfully"),
        @APIResponse(responseCode = "400", description = "Invalid request data")
     })
+    @RolesAllowed({ "admin"})
     public Response createUser(CreateUserRequest request) {
         UserManagement usermanager = authProviderFactory.getUserManager();
         usermanager.createUser(request.getUserId(), request.getPassword(),
@@ -54,6 +59,7 @@ public class AuthResource {
        @APIResponse(responseCode = "200", description = "Login successful"),
        @APIResponse(responseCode = "401", description = "Unauthorized")
     })
+    @PermitAll
     public Response login(@QueryParam("userId") String userId, @QueryParam("password") String password) {
         var authProvider = authProviderFactory.getAuthProvider();
         var loginResponse = authProvider.login(userId, password);
@@ -71,6 +77,7 @@ public class AuthResource {
        @APIResponse(responseCode = "200", description = "Login successful"),
        @APIResponse(responseCode = "401", description = "Unauthorized")
     })
+    @PermitAll
     public Response refresh(@HeaderParam("Authorization") String refreshToken) {
         var authProvider = authProviderFactory.getAuthProvider();
         if (refreshToken == null || refreshToken.isEmpty()) {
