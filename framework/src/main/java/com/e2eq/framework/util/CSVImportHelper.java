@@ -802,7 +802,7 @@ public class CSVImportHelper {
                         row.setRefName(null);
                         row.setIntent(Intent.SKIP.name());
                         row.setHasErrors(true);
-                        row.setRawLine(safeRaw(beanReader));
+                        row.setRawLine(rr.getRawData()); // use captured raw
                         try {
                             row.setErrorsJson(objectMapper.writeValueAsString(rr.getErrors()));
                         } catch (Exception ignore) {
@@ -835,8 +835,7 @@ public class CSVImportHelper {
                         row.setRefName(null);
                         row.setIntent(Intent.SKIP.name());
                         row.setHasErrors(true);
-                        // NEW: persist raw CSV line
-                        row.setRawLine(safeRaw(beanReader));
+                        row.setRawLine(rr.getRawData()); // use captured raw
                         try {
                             row.setErrorsJson(objectMapper.writeValueAsString(rr.getErrors()));
                         } catch (Exception ignore) {
@@ -863,13 +862,15 @@ public class CSVImportHelper {
                 rr.setRefName(bean.getRefName());
                 rr.setRecord(bean);
 
+                // capture raw for this row (to be attached during validation)
                 batchRawByRowNum.put(rowNum, safeRaw(beanReader));
                 batchBeans.add(bean);
                 batchRowNums.add(rowNum);
 
                 if (batchBeans.size() >= BATCH_SIZE) {
                     List<ImportRowResult<T>> annotated = new ArrayList<>();
-                    annotateIntentsAndValidate(repo, batchBeans, batchRowNums, annotated, result);
+                    // >>> PASS raw map
+                    annotateIntentsAndValidate(repo, batchBeans, batchRowNums, batchRawByRowNum, annotated, result);
 
                     for (ImportRowResult<T> ar : annotated) {
                         result.incrementTotalRows();
@@ -898,8 +899,10 @@ public class CSVImportHelper {
                             row.setRefName(ar.getRefName());
                             row.setIntent(ar.getIntent().name());
                             row.setHasErrors(hasErrors);
-                            // NEW: persist raw CSV line for valid/validated rows as well
-                            row.setRawLine(safeRaw(beanReader));
+                            // use the captured raw for the specific row
+                            String raw = batchRawByRowNum.get(ar.getRowNumber());
+                            if (raw == null) raw = ar.getRawData();
+                            row.setRawLine(raw);
                             try {
                                 row.setErrorsJson(objectMapper.writeValueAsString(ar.getErrors()));
                                 row.setRecordJson(objectMapper.writeValueAsString(ar.getRecord()));
@@ -914,7 +917,6 @@ public class CSVImportHelper {
                     batchBeans.clear();
                     batchRowNums.clear();
                     batchRawByRowNum.clear();
-
                 }
 
                 rowNum++;
@@ -922,7 +924,8 @@ public class CSVImportHelper {
 
             if (!batchBeans.isEmpty()) {
                 List<ImportRowResult<T>> annotated = new ArrayList<>();
-                annotateIntentsAndValidate(repo, batchBeans, batchRowNums, annotated, result);
+                // >>> PASS raw map for final flush
+                annotateIntentsAndValidate(repo, batchBeans, batchRowNums, batchRawByRowNum, annotated, result);
 
                 for (ImportRowResult<T> ar : annotated) {
                     result.incrementTotalRows();
@@ -951,8 +954,10 @@ public class CSVImportHelper {
                         row.setRefName(ar.getRefName());
                         row.setIntent(ar.getIntent().name());
                         row.setHasErrors(hasErrors);
-                        // NEW: persist raw CSV line for the final flush too
-                        row.setRawLine(safeRaw(beanReader));
+                        // use the captured raw for the specific row
+                        String raw = batchRawByRowNum.get(ar.getRowNumber());
+                        if (raw == null) raw = ar.getRawData();
+                        row.setRawLine(raw);
                         try {
                             row.setErrorsJson(objectMapper.writeValueAsString(ar.getErrors()));
                             row.setRecordJson(objectMapper.writeValueAsString(ar.getRecord()));
@@ -982,24 +987,37 @@ public class CSVImportHelper {
         return result;
     }
 
+
     private <T extends UnversionedBaseModel> void annotateIntentsAndValidate(
             BaseMorphiaRepo<T> repo,
             List<T> batchBeans,
             List<Integer> batchRowNums,
+            Map<Integer, String> rawByRowNum,          // <<< added
             List<ImportRowResult<T>> outRows,
             ImportResult<T> aggregate) {
+
         List<String> refNames = batchBeans.stream().map(T::getRefName).toList();
         List<T> found = repo.getListFromRefNames(refNames);
-        java.util.Set<String> existing = found.stream().map(T::getRefName).collect(java.util.stream.Collectors.toSet());
+        java.util.Set<String> existing = found.stream()
+                .map(T::getRefName)
+                .collect(java.util.stream.Collectors.toSet());
 
         for (int i = 0; i < batchBeans.size(); i++) {
             T bean = batchBeans.get(i);
             int rn = batchRowNums.get(i);
+
             ImportRowResult<T> rr = new ImportRowResult<>();
             rr.setRowNumber(rn);
             rr.setRefName(bean.getRefName());
             rr.setRecord(bean);
             rr.setIntent(existing.contains(bean.getRefName()) ? Intent.UPDATE : Intent.INSERT);
+
+            // attach captured raw line (always; or gate this on errors if desired)
+            String raw = rawByRowNum != null ? rawByRowNum.get(rn) : null;
+            if (raw != null) {
+                rr.setRawData(raw);
+            }
+
             // validate
             try {
                 Set<ConstraintViolation<T>> violations = validator.validate(bean);
@@ -1014,9 +1032,11 @@ public class CSVImportHelper {
             } catch (Exception ex) {
                 rr.getErrors().add(new FieldError(null, ex.getMessage(), FieldErrorCode.VALIDATION));
             }
+
             outRows.add(rr);
         }
     }
+
 
     // Minimal commit: save all valid rows for INSERT/UPDATE from a session
     @SuppressWarnings("unchecked")
@@ -1048,13 +1068,10 @@ public class CSVImportHelper {
         if ("COMPLETED".equalsIgnoreCase(st) || "COMMITTED".equalsIgnoreCase(st)) {
             return new CommitResult(0, 0);
         }
-        try {
-            Class<?> targetClazz = Class.forName(session.getTargetType());
-            if (!repo.getPersistentClass().isAssignableFrom(targetClazz)) {
-                throw new ValidationException("Session target type does not match repository persistent class");
-            }
-        } catch (ClassNotFoundException e) {
-            throw new WebApplicationException("Failed to resolve session target type: " + e.getMessage(), e, 500);
+        if (!repo.getPersistentClass().getName().equals(session.getTargetType())) {
+            throw new ValidationException(
+                    "Session target type does not match repository persistent class"
+            );
         }
         ImportResult<T> tmp = new ImportResult<>(0, 0);
         int skip = 0;
