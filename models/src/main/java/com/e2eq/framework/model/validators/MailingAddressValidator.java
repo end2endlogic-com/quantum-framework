@@ -27,7 +27,7 @@ public class MailingAddressValidator implements ConstraintValidator<ValidMailing
             "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
             "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
             "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
-            "AS", "GU", "MP", "PR", "VI"
+            "AS", "GU", "MP", "PR", "VI", "DC"
     };
 
     protected static final Set<String> US_STATES_SET = new HashSet<>(Arrays.asList(US_STATES));
