@@ -58,12 +58,16 @@
         <skipITs>true</skipITs>
         <surefire-plugin.version>3.2.5</surefire-plugin.version>
         <lombrok.version>1.18.34</lombrok.version>
-
+        <quantum.version>1.2.2-SNAPSHOT</quantum.version>
+        <apachecommons.lang3.version>3.18.0</apachecommons.lang3.version>
     </properties>
 
     <modules>
-        <module>models</module>
-        <module>framework</module>
+        <module>quantum-models</module>
+        <module>quantum-util</module>
+        <module>quantum-morphia-repos</module>
+        <module>quantum-framework</module>
+
     </modules>
 
 
