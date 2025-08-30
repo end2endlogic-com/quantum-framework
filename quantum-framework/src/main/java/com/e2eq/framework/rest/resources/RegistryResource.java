@@ -4,7 +4,7 @@ package com.e2eq.framework.rest.resources;
 import com.e2eq.framework.exceptions.E2eqValidationException;
 import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
 import com.e2eq.framework.rest.filters.PermissionCheck;
-import com.e2eq.framework.model.persistent.security.ApplicationRegistration;
+import com.e2eq.framework.model.security.ApplicationRegistration;
 import com.e2eq.framework.model.persistent.morphia.ApplicationRegistrationRequestRepo;
 
 

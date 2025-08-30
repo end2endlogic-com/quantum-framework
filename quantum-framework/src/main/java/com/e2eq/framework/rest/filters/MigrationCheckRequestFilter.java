@@ -1,8 +1,8 @@
 package com.e2eq.framework.rest.filters;
 
 import com.e2eq.framework.model.persistent.migration.base.MigrationService;
-import com.e2eq.framework.rest.exceptions.DatabaseMigrationException;
-import com.e2eq.framework.util.SecurityUtils;
+import com.e2eq.framework.exceptions.DatabaseMigrationException;
+import com.e2eq.framework.util.EnvConfigUtils;
 import io.quarkus.logging.Log;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
@@ -22,7 +22,7 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
     MigrationService migrationService;
 
     @Inject
-    SecurityUtils securityUtils;
+    EnvConfigUtils envConfigUtils;
 
     @Override
     public void filter(ContainerRequestContext requestContext) throws IOException {
@@ -41,7 +41,7 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
                 Log.debug("Realm override found: " + realmOverride);
                 migrationService.checkInitialized(realmOverride);
             } else {
-                migrationService.checkInitialized(securityUtils.getDefaultRealm());
+                migrationService.checkInitialized(envConfigUtils.getDefaultRealm());
             }
 
         } catch (DatabaseMigrationException e) {
@@ -54,7 +54,7 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
         if (failRequest && (requestContext.getUriInfo().getPath().contains("login") ||
                   requestContext.getUriInfo().getPath().contains("migration"))) {
             try {
-                migrationService.checkInitialized(securityUtils.getSystemRealm());
+                migrationService.checkInitialized(envConfigUtils.getSystemRealm());
             } catch (DatabaseMigrationException e) {
                 Log.warn("!! System Migration check failed: " + e.getMessage());
                 Log.warnf(" Execution of Request:%s caused this error", requestContext.getUriInfo().getPath());

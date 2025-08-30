@@ -1,7 +1,7 @@
 package com.e2eq.framework.persistent;
 
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
-import com.e2eq.framework.model.securityrules.SecuritySession;
+import com.e2eq.framework.securityrules.SecuritySession;
 import com.e2eq.framework.test.ParentModel;
 import org.junit.jupiter.api.Assertions;
 import java.util.HashSet;

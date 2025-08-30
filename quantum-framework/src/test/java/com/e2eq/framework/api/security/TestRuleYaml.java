@@ -1,7 +1,7 @@
 package com.e2eq.framework.api.security;
 
-import com.e2eq.framework.model.persistent.security.FunctionalDomain;
-import com.e2eq.framework.model.persistent.security.Rule;
+import com.e2eq.framework.model.security.FunctionalDomain;
+import com.e2eq.framework.model.security.Rule;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.type.CollectionType;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;

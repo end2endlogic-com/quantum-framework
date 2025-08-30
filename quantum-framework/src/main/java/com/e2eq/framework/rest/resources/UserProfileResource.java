@@ -2,16 +2,13 @@ package com.e2eq.framework.rest.resources;
 
 import com.e2eq.framework.model.persistent.base.ActiveStatus;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
-import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
-import com.e2eq.framework.model.security.auth.AuthProviderFactory;
-import com.e2eq.framework.rest.models.Role;
-import com.e2eq.framework.model.securityrules.SecurityContext;
+import com.e2eq.framework.model.security.CredentialUserIdPassword;
+import com.e2eq.framework.model.auth.AuthProviderFactory;
 import com.e2eq.framework.rest.filters.PermissionCheck;
 import com.e2eq.framework.rest.models.RestError;
-import com.e2eq.framework.model.persistent.security.UserProfile;
+import com.e2eq.framework.model.security.UserProfile;
 import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import com.e2eq.framework.rest.requests.CreateUserRequest;
-import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
@@ -21,9 +18,7 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
-import java.util.HashSet;
 import java.util.Optional;
-import java.util.Set;
 
 @Path("/user/userProfile")
 @RolesAllowed({"user", "admin"})

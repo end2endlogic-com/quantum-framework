@@ -5,9 +5,9 @@ import com.e2eq.framework.model.persistent.migration.base.DatabaseVersion;
 import com.e2eq.framework.model.persistent.migration.base.MigrationService;
 import com.e2eq.framework.model.persistent.morphia.DatabaseVersionRepo;
 
-import com.e2eq.framework.model.securityrules.SecuritySession;
+import com.e2eq.framework.securityrules.SecuritySession;
 import com.e2eq.framework.persistent.BaseRepoTest;
-import com.e2eq.framework.rest.exceptions.DatabaseMigrationException;
+import com.e2eq.framework.exceptions.DatabaseMigrationException;
 import com.e2eq.framework.util.TestUtils;
 
 import dev.morphia.transactions.MorphiaSession;

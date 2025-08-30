@@ -6,7 +6,6 @@ import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.HierarchicalRepo;
 import com.e2eq.framework.model.persistent.morphia.MorphiaRepo;
 import com.e2eq.framework.model.persistent.morphia.ObjectListRepo;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mongodb.client.MongoCursor;
 import dev.morphia.MorphiaDatastore;
@@ -22,8 +21,6 @@ import com.e2eq.framework.rest.dto.GenericHierarchyDto;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-
-import static dev.morphia.query.filters.Filters.eq;
 
 // O the base model at each level of the hierarchy
 // L the static dynamic list of O's at each level of the hierarchy

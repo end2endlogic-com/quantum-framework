@@ -1,7 +1,7 @@
 package com.e2eq.framework.api.csv;
 
 
-import com.e2eq.framework.model.securityrules.SecuritySession;
+import com.e2eq.framework.securityrules.SecuritySession;
 import com.e2eq.framework.persistent.BaseRepoTest;
 import com.e2eq.framework.persistent.TestCSVModelRepo;
 import com.e2eq.framework.test.CSVModel;

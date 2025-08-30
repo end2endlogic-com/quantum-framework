@@ -1,7 +1,7 @@
 package com.e2eq.framework.rest.resources;
 
 import com.e2eq.framework.model.persistent.morphia.UserGroupRepo;
-import com.e2eq.framework.model.persistent.security.UserGroup;
+import com.e2eq.framework.model.security.UserGroup;
 import jakarta.ws.rs.Path;
 
 @Path("/user/usergroup")

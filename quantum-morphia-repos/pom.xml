@@ -133,7 +133,12 @@
     <dependency>
       <groupId>com.end2endlogic</groupId>
       <artifactId>quantum-models</artifactId>
-      <version>1.2.2-SNAPSHOT</version>
+      <version>${quantum.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.end2endlogic</groupId>
+      <artifactId>quantum-util</artifactId>
+      <version>${quantum.version}</version>
     </dependency>
 
 
@@ -153,10 +158,6 @@
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-hibernate-validator</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>io.quarkus</groupId>
-      <artifactId>quarkus-scheduler</artifactId>
     </dependency>
     <dependency>
       <groupId>com.end2endlogic</groupId>
@@ -425,14 +426,6 @@
         <configuration>
           <indexName>jandex.idx</indexName>
           <verbose>true</verbose>
-          <fileSets>
-            <fileSet>
-              <dependency>
-                <groupId>com.end2endlogic</groupId>
-                <artifactId>quantum-models</artifactId>
-              </dependency>
-            </fileSet>
-          </fileSets>
         </configuration>
       </plugin>
 <plugin>

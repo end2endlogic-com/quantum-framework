@@ -4,7 +4,7 @@ import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.InvalidStateTransitionException;
 import com.e2eq.framework.model.persistent.base.*;
 import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
-import com.e2eq.framework.model.securityrules.RuleContext;
+import com.e2eq.framework.securityrules.RuleContext;
 import com.e2eq.framework.rest.models.*;
 import com.e2eq.framework.rest.models.Collection;
 import com.e2eq.framework.util.CSVExportHelper;

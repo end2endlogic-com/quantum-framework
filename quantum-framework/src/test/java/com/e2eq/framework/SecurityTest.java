@@ -4,15 +4,15 @@ import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
-import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
-import com.e2eq.framework.model.persistent.security.DomainContext;
-import com.e2eq.framework.model.persistent.security.UserProfile;
-import com.e2eq.framework.model.security.auth.AuthProviderFactory;
-import com.e2eq.framework.model.securityrules.SecuritySession;
+import com.e2eq.framework.model.security.CredentialUserIdPassword;
+import com.e2eq.framework.model.security.DomainContext;
+import com.e2eq.framework.model.security.UserProfile;
+import com.e2eq.framework.model.auth.AuthProviderFactory;
+import com.e2eq.framework.securityrules.SecuritySession;
 import com.e2eq.framework.persistent.BaseRepoTest;
 import com.e2eq.framework.rest.models.AuthRequest;
 import com.e2eq.framework.util.EncryptionUtils;
-import com.e2eq.framework.util.SecurityUtils;
+import com.e2eq.framework.util.EnvConfigUtils;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.logging.Log;
@@ -46,7 +46,7 @@ public class SecurityTest extends BaseRepoTest {
     UserProfileRepo userProfileRepo;
 
     @Inject
-    SecurityUtils securityUtils;
+    EnvConfigUtils envConfigUtils;
    @Inject
    AuthProviderFactory authProviderFactory;
 
@@ -156,7 +156,7 @@ public class SecurityTest extends BaseRepoTest {
 
         AuthRequest request = new AuthRequest();
         if (authProvider.equals("custom")) {
-            request.setUserId(securityUtils.getTestUserId());
+            request.setUserId(envConfigUtils.getTestUserId());
             request.setPassword(testUtils.getDefaultTestPassword());
            // request.setTenantId(securityUtils.getSystemTenantId());
         } else {
