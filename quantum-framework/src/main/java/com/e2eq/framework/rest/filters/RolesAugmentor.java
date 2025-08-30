@@ -1,8 +1,8 @@
 package com.e2eq.framework.rest.filters;
 
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
-import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
-import com.e2eq.framework.util.SecurityUtils;
+import com.e2eq.framework.model.security.CredentialUserIdPassword;
+import com.e2eq.framework.util.EnvConfigUtils;
 import io.quarkus.logging.Log;
 import io.quarkus.security.identity.AuthenticationRequestContext;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -24,7 +24,7 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
     CredentialRepo credentialRepo;
 
     @Inject
-    SecurityUtils securityUtils;
+    EnvConfigUtils envConfigUtils;
 
     @Inject
     HttpHeaders httpHeaders;
@@ -53,7 +53,7 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
 
         // Fallback to system realm if contextRealm is not set
         if (contextRealm == null) {
-            contextRealm = securityUtils.getSystemRealm();
+            contextRealm = envConfigUtils.getSystemRealm();
         }
 
         Optional<CredentialUserIdPassword> ocred = credentialRepo.findBySubject(principal, contextRealm, true);

@@ -4,7 +4,7 @@ import com.e2eq.framework.grammar.BIAPIQueryLexer;
 import com.e2eq.framework.grammar.BIAPIQueryParser;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
-import com.e2eq.framework.model.persistent.security.UserProfile;
+import com.e2eq.framework.model.security.UserProfile;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.util.TestUtils;

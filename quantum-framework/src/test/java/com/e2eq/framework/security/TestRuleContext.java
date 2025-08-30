@@ -1,9 +1,11 @@
 package com.e2eq.framework.security;
 
-import com.e2eq.framework.model.persistent.security.Rule;
-import com.e2eq.framework.model.persistent.security.UserProfile;
+import com.e2eq.framework.model.security.Rule;
+import com.e2eq.framework.model.security.UserProfile;
 import com.e2eq.framework.model.securityrules.*;
 import com.e2eq.framework.persistent.BaseRepoTest;
+import com.e2eq.framework.securityrules.RuleContext;
+import com.e2eq.framework.util.EnvConfigUtils;
 import com.e2eq.framework.util.IOCase;
 import com.e2eq.framework.util.SecurityUtils;
 import com.e2eq.framework.util.WildCardMatcher;
@@ -29,6 +31,9 @@ public class TestRuleContext extends BaseRepoTest {
 
     @Inject
     SecurityUtils securityUtils;
+
+    @Inject
+    EnvConfigUtils envConfigUtils;
 
     @Test
     public void testWildCardMatcher() {
@@ -307,7 +312,9 @@ public class TestRuleContext extends BaseRepoTest {
 
         List<Filter> filters = new ArrayList<>();
 
-        RuleContext ruleContext = new RuleContext(securityUtils);
+        RuleContext ruleContext = new RuleContext(securityUtils, envConfigUtils);
+
+
 
         // initialize with the default rules in place
         ruleContext.ensureDefaultRules();

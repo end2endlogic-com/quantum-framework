@@ -5,12 +5,12 @@ import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
-import com.e2eq.framework.model.securityrules.RuleContext;
-import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
+import com.e2eq.framework.securityrules.RuleContext;
+import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.RealmRepo;
+import com.e2eq.framework.util.EnvConfigUtils;
 import com.e2eq.framework.util.SecurityUtils;
-import com.e2eq.framework.util.ValidateUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.logging.Log;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -59,6 +59,9 @@ public class SecurityFilter implements ContainerRequestFilter {
 
     @Inject
     ObjectMapper mapper;
+
+    @Inject
+    EnvConfigUtils envConfigUtils;
 
     @Inject
     SecurityUtils securityUtils;
@@ -242,9 +245,9 @@ public class SecurityFilter implements ContainerRequestFilter {
         if (realm == null ) {
             Log.debug("Defaulting to anonymous with system realm default");
             pcontext = new PrincipalContext.Builder()
-                          .withDefaultRealm(securityUtils.getSystemRealm())
+                          .withDefaultRealm(envConfigUtils.getSystemRealm())
                           .withDataDomain(securityUtils.getSystemDataDomain())
-                          .withUserId(securityUtils.getAnonymousUserId())
+                          .withUserId(envConfigUtils.getAnonymousUserId())
                           .withRoles(new String[]{"ANONYMOUS"})
                           .withScope("systemGenerated")
                           .build();
@@ -254,7 +257,7 @@ public class SecurityFilter implements ContainerRequestFilter {
             pcontext = new PrincipalContext.Builder()
                           .withDefaultRealm(realm)
                           .withDataDomain(securityUtils.getSystemDataDomain())
-                          .withUserId(securityUtils.getAnonymousUserId())
+                          .withUserId(envConfigUtils.getAnonymousUserId())
                           .withRoles(new String[]{"ANONYMOUS"})
                           .withScope("systemGenerated")
                           .build();
@@ -278,12 +281,12 @@ public class SecurityFilter implements ContainerRequestFilter {
             }
 
             if (sub != null) {
-                Optional<CredentialUserIdPassword> ocreds = (realm == null ) ? credentialRepo.findBySubject(sub, securityUtils.getSystemRealm(), true) : credentialRepo.findBySubject(sub, realm, true);
+                Optional<CredentialUserIdPassword> ocreds = (realm == null ) ? credentialRepo.findBySubject(sub, envConfigUtils.getSystemRealm(), true) : credentialRepo.findBySubject(sub, realm, true);
                 if (!ocreds.isPresent()) {
                     String username = jwt.getClaim("username");
                     if (username != null ) {
                         // attempt to find the user by the userId
-                        ocreds = (realm == null) ? credentialRepo.findByUserId(username, securityUtils.getSystemRealm(), true) : credentialRepo.findByUserId(username, realm, true);
+                        ocreds = (realm == null) ? credentialRepo.findByUserId(username, envConfigUtils.getSystemRealm(), true) : credentialRepo.findByUserId(username, realm, true);
                         if (ocreds.isPresent()) {
                             String text = String.format("Found user with userId %s but subject is:%s but token has subject:%s in the database, roles in credential is %s", username, ocreds.get().getSubject(), sub,  Arrays.toString(ocreds.get().getRoles()));
                             Log.warn(text);
@@ -318,9 +321,9 @@ public class SecurityFilter implements ContainerRequestFilter {
                     if (impersonate) {
                         Optional<CredentialUserIdPassword> oicreds;
                         if (impersonateSubject != null) {
-                             oicreds =(realm == null) ? credentialRepo.findBySubject(impersonateSubject, securityUtils.getSystemRealm(), true) : credentialRepo.findBySubject(impersonateSubject, realm, true);
+                             oicreds =(realm == null) ? credentialRepo.findBySubject(impersonateSubject, envConfigUtils.getSystemRealm(), true) : credentialRepo.findBySubject(impersonateSubject, realm, true);
                         } else if (impersonateUserId!= null) {
-                             oicreds = (realm == null ) ? credentialRepo.findByUserId(impersonateUserId, securityUtils.getSystemRealm(), true) : credentialRepo.findByUserId(impersonateUserId, realm, true)  ;
+                             oicreds = (realm == null ) ? credentialRepo.findByUserId(impersonateUserId, envConfigUtils.getSystemRealm(), true) : credentialRepo.findByUserId(impersonateUserId, realm, true)  ;
                         } else
                         {
                             throw new IllegalStateException("Logic error on server side impersonating user, neither X-Impersonate-Subject nor X-Impersonate-UserId header is present yet impersonate is true?");

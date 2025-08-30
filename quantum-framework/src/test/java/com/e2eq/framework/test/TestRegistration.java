@@ -1,6 +1,6 @@
 package com.e2eq.framework.test;
 
-import com.e2eq.framework.model.persistent.security.ApplicationRegistration;
+import com.e2eq.framework.model.security.ApplicationRegistration;
 import com.e2eq.framework.rest.models.RegistrationRequest;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;

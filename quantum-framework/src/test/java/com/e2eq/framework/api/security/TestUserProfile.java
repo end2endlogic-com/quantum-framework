@@ -4,16 +4,16 @@ import com.e2eq.framework.model.persistent.migration.base.MigrationService;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
 import com.e2eq.framework.model.securityrules.SecurityCheckException;
 import com.e2eq.framework.model.securityrules.SecurityContext;
-import com.e2eq.framework.model.securityrules.SecuritySession;
-import com.e2eq.framework.model.persistent.security.ApplicationRegistration;
-import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
-import com.e2eq.framework.model.persistent.security.UserProfile;
+import com.e2eq.framework.securityrules.SecuritySession;
+import com.e2eq.framework.model.security.ApplicationRegistration;
+import com.e2eq.framework.model.security.CredentialUserIdPassword;
+import com.e2eq.framework.model.security.UserProfile;
 import com.e2eq.framework.model.persistent.morphia.ApplicationRegistrationRequestRepo;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import com.e2eq.framework.persistent.BaseRepoTest;
-import com.e2eq.framework.rest.exceptions.DatabaseMigrationException;
-import com.e2eq.framework.util.SecurityUtils;
+import com.e2eq.framework.exceptions.DatabaseMigrationException;
+import com.e2eq.framework.util.EnvConfigUtils;
 import com.e2eq.framework.util.TestUtils;
 import dev.morphia.Datastore;
 import io.quarkus.logging.Log;
@@ -45,7 +45,7 @@ public class TestUserProfile extends BaseRepoTest {
     CredentialRepo credentialRepo;
 
     @Inject
-    SecurityUtils securityUtils;
+    EnvConfigUtils envConfigUtils;
 
     @Inject
     TestUtils testUtils;
@@ -76,7 +76,7 @@ public class TestUserProfile extends BaseRepoTest {
                 );
             }
 
-            Optional<CredentialUserIdPassword> opCreds = credentialRepo.findByUserId(securityUtils.getSystemUserId());
+            Optional<CredentialUserIdPassword> opCreds = credentialRepo.findByUserId(envConfigUtils.getSystemUserId());
             if (opCreds.isPresent()) {
                 Log.debug("Found it");
             } else {
@@ -92,7 +92,7 @@ public class TestUserProfile extends BaseRepoTest {
         Datastore datastore = morphiaDataStore.getDataStore(testUtils.getTestRealm());
 
 
-        Optional<CredentialUserIdPassword> opCreds = credentialRepo.findByUserId( securityUtils.getTestUserId(), securityUtils.getSystemRealm(), true);
+        Optional<CredentialUserIdPassword> opCreds = credentialRepo.findByUserId( envConfigUtils.getTestUserId(), envConfigUtils.getSystemRealm(), true);
         if (opCreds.isPresent()) {
             Log.debug("Found it");
         } else {
@@ -117,7 +117,7 @@ public class TestUserProfile extends BaseRepoTest {
                 oProfile = userProfileRepo.findByRefName(testUtils.getTestUserId());
                 if (!oProfile.isPresent()) {
 
-                    Optional<CredentialUserIdPassword> opCreds = credentialRepo.findByUserId( securityUtils.getTestUserId(), securityUtils.getTestRealm(), true);
+                    Optional<CredentialUserIdPassword> opCreds = credentialRepo.findByUserId( envConfigUtils.getTestUserId(), envConfigUtils.getTestRealm(), true);
 
                     Log.info("About to execute");
                     UserProfile profile = new UserProfile();

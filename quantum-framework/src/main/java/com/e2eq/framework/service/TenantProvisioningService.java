@@ -3,12 +3,12 @@ package com.e2eq.framework.service;
 import com.e2eq.framework.model.persistent.migration.base.MigrationService;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.RealmRepo;
-import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
-import com.e2eq.framework.model.persistent.security.DomainContext;
-import com.e2eq.framework.model.persistent.security.Realm;
-import com.e2eq.framework.model.security.auth.AuthProviderFactory;
-import com.e2eq.framework.model.security.auth.UserManagement;
-import com.e2eq.framework.util.SecurityUtils;
+import com.e2eq.framework.model.security.CredentialUserIdPassword;
+import com.e2eq.framework.model.security.DomainContext;
+import com.e2eq.framework.model.security.Realm;
+import com.e2eq.framework.model.auth.AuthProviderFactory;
+import com.e2eq.framework.model.auth.UserManagement;
+import com.e2eq.framework.util.EnvConfigUtils;
 import io.quarkus.logging.Log;
 import io.smallrye.mutiny.subscription.MultiEmitter;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -31,7 +31,7 @@ public class TenantProvisioningService {
     @Inject RealmRepo realmRepo;
     @Inject MigrationService migrationService;
     @Inject AuthProviderFactory authProviderFactory;
-    @Inject SecurityUtils securityUtils;
+    @Inject EnvConfigUtils envConfigUtils;
     @Inject CredentialRepo credentialRepo;
 
     public static class ProvisionResult {
@@ -73,7 +73,7 @@ public class TenantProvisioningService {
         result.realmId = realmId;
 
         // 2) Lookup/Prevent duplicates in the system catalog (system realm)
-        String systemRealm = securityUtils.getSystemRealm();
+        String systemRealm = envConfigUtils.getSystemRealm();
         Optional<Realm> existingOpt = realmRepo.findByEmailDomain(tenantEmailDomain, true, systemRealm);
 
         // Build DomainContext desired

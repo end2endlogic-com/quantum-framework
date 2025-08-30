@@ -4,7 +4,8 @@ import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.base.EntityReference;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
-import com.e2eq.framework.model.securityrules.SecuritySession;
+import com.e2eq.framework.securityrules.SecuritySession;
+import com.e2eq.framework.util.EnvConfigUtils;
 import com.e2eq.framework.util.SecurityUtils;
 import com.mongodb.client.MongoCursor;
 import dev.morphia.Datastore;
@@ -14,8 +15,8 @@ import dev.morphia.query.filters.Filter;
 import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.logging.Log;
 import io.quarkus.test.junit.QuarkusTest;
-import com.e2eq.framework.model.persistent.security.ApplicationRegistration;
-import com.e2eq.framework.model.persistent.security.UserProfile;
+import com.e2eq.framework.model.security.ApplicationRegistration;
+import com.e2eq.framework.model.security.UserProfile;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
 import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
 import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
@@ -38,6 +39,9 @@ public class TestBasicRepo extends BaseRepoTest{
    UserProfileRepo userProfileRepo;
 
    @Inject
+   EnvConfigUtils envConfigUtils;
+
+   @Inject
    SecurityUtils securityUtils;
    @Inject
    CredentialRepo credentialRepo;
@@ -47,7 +51,7 @@ public class TestBasicRepo extends BaseRepoTest{
    public void testUserProfileRepo() {
       PrincipalContext pContext = securityUtils.getSystemPrincipalContext();
       try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
-         Optional<UserProfile> oup = userProfileRepo.getByUserId(securityUtils.getSystemUserId());
+         Optional<UserProfile> oup = userProfileRepo.getByUserId(envConfigUtils.getSystemUserId());
          assertTrue(oup.isPresent());
       }
    }
@@ -58,8 +62,8 @@ public class TestBasicRepo extends BaseRepoTest{
 
       PrincipalContext pContext = securityUtils.getSystemPrincipalContext();
       try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
-         ensureUserProfile(dataStore.getDefaultSystemDataStore(), securityUtils.getSystemUserId(), "John", "Doe", new String[]{"ROLE_USER"}, "password");
-         String subject = credentialRepo.findByUserId(securityUtils.getSystemUserId()).get().getSubject();
+         ensureUserProfile(dataStore.getDefaultSystemDataStore(), envConfigUtils.getSystemUserId(), "John", "Doe", new String[]{"ROLE_USER"}, "password");
+         String subject = credentialRepo.findByUserId(envConfigUtils.getSystemUserId()).get().getSubject();
          Filter x = MorphiaUtils.convertToFilter(String.format("credentialUserIdPasswordRef.entityRefName:%s" ,subject), UserProfile.class);
          Query<UserProfile> q = dataStore.getDefaultSystemDataStore().find(UserProfile.class);
          MongoCursor<UserProfile> cursor = q.filter(x).iterator(new FindOptions().skip(0).limit(10));
@@ -104,10 +108,10 @@ public class TestBasicRepo extends BaseRepoTest{
 
 
       try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
-         ensureUserProfile(ds, securityUtils.getTestUserId(),  "test","test", roles,"test123xxxxxxx");
+         ensureUserProfile(ds, envConfigUtils.getTestUserId(),  "test","test", roles,"test123xxxxxxx");
          try (MorphiaSession session = ds.startSession()) {
             session.startTransaction();
-            Optional<UserProfile> u = userProfileRepo.findByRefName(ds,securityUtils.getTestUserId());
+            Optional<UserProfile> u = userProfileRepo.findByRefName(ds, envConfigUtils.getTestUserId());
             Assertions.assertTrue(u.isPresent());
             userProfileRepo.findById(session, u.get().getId());
             session.commitTransaction();

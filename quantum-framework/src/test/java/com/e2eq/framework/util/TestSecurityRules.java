@@ -1,8 +1,8 @@
 package com.e2eq.framework.util;
 
 import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
-import com.e2eq.framework.model.persistent.security.UserProfile;
-import com.e2eq.framework.model.securityrules.RuleContext;
+import com.e2eq.framework.model.security.UserProfile;
+import com.e2eq.framework.securityrules.RuleContext;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;

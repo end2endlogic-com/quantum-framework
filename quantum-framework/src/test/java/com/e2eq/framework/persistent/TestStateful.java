@@ -2,10 +2,9 @@ package com.e2eq.framework.persistent;
 
 
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
-import com.e2eq.framework.model.persistent.InvalidStateTransitionException;
 import com.e2eq.framework.model.persistent.base.StateGraphManager;
 
-import com.e2eq.framework.model.securityrules.SecuritySession;
+import com.e2eq.framework.securityrules.SecuritySession;
 
 import com.e2eq.framework.test.TestOrder;
 import io.quarkus.test.junit.QuarkusTest;

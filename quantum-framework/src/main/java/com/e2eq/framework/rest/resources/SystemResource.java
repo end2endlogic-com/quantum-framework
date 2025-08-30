@@ -3,7 +3,7 @@ package com.e2eq.framework.rest.resources;
 
 import com.e2eq.framework.model.persistent.morphia.FunctionalDomainRepo;
 
-import com.e2eq.framework.model.persistent.security.FunctionalDomain;
+import com.e2eq.framework.model.security.FunctionalDomain;
 import com.e2eq.framework.rest.models.ComponentVersion;
 import com.e2eq.framework.rest.models.DeployedVersion;
 import com.e2eq.framework.util.SecurityUtils;

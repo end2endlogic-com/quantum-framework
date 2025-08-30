@@ -1,6 +1,6 @@
 package com.e2eq.framework.rest.requests;
 
-import com.e2eq.framework.model.persistent.security.DomainContext;
+import com.e2eq.framework.model.security.DomainContext;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotNull;

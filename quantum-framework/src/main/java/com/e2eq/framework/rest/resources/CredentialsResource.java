@@ -3,7 +3,7 @@ package com.e2eq.framework.rest.resources;
 import com.e2eq.framework.rest.models.ChangePasswordRequest;
 import com.e2eq.framework.rest.models.FileUpload;
 import com.e2eq.framework.rest.models.RestError;
-import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
+import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.util.EncryptionUtils;
 import jakarta.annotation.security.RolesAllowed;

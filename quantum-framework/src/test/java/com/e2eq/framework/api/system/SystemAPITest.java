@@ -1,7 +1,7 @@
 package com.e2eq.framework.api.system;
 
 import com.e2eq.framework.model.persistent.migration.base.MigrationService;
-import com.e2eq.framework.model.securityrules.SecuritySession;
+import com.e2eq.framework.securityrules.SecuritySession;
 import com.e2eq.framework.persistent.BaseRepoTest;
 import com.e2eq.framework.util.TestUtils;
 import io.quarkus.test.junit.QuarkusTest;

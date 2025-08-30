@@ -1,6 +1,6 @@
 package com.e2eq.framework.rest.filters;
 
-import com.e2eq.framework.model.securityrules.RuleContext;
+import com.e2eq.framework.securityrules.RuleContext;
 
 import com.e2eq.framework.rest.filters.inactive.PermissionPreFilter;
 import io.quarkus.logging.Log;

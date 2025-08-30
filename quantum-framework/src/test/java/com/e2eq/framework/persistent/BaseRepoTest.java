@@ -3,9 +3,9 @@ package com.e2eq.framework.persistent;
 import com.e2eq.framework.model.persistent.migration.base.MigrationService;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
-import com.e2eq.framework.model.securityrules.RuleContext;
-import com.e2eq.framework.model.securityrules.SecuritySession;
-import com.e2eq.framework.rest.exceptions.DatabaseMigrationException;
+import com.e2eq.framework.securityrules.RuleContext;
+import com.e2eq.framework.securityrules.SecuritySession;
+import com.e2eq.framework.exceptions.DatabaseMigrationException;
 import com.e2eq.framework.util.TestUtils;
 import io.quarkus.logging.Log;
 import io.quarkus.test.junit.QuarkusTest;
@@ -34,7 +34,7 @@ public class BaseRepoTest {
         ruleContext.ensureDefaultRules();
         pContext = testUtils.getTestPrincipalContext(testUtils.getSystemUserId(), roles);
         rContext = testUtils.getResourceContext(testUtils.getArea(), "userProfile", "update");
-        testUtils.initDefaultRules(ruleContext, "security","userProfile", testUtils.getTestUserId());
+        ruleContext.initDefaultRules( "security","userProfile", testUtils.getTestUserId());
         // check if testDatabase has been migrated if not migrate it
 
         try(final SecuritySession ignored = new SecuritySession(pContext, rContext)) {

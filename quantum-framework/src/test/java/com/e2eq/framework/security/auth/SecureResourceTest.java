@@ -1,9 +1,12 @@
 package com.e2eq.framework.security.auth;
 
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
-import com.e2eq.framework.model.security.auth.AuthProvider;
-import com.e2eq.framework.model.security.auth.AuthProviderFactory;
-import com.e2eq.framework.model.securityrules.*;
+import com.e2eq.framework.model.auth.AuthProvider;
+import com.e2eq.framework.model.auth.AuthProviderFactory;
+import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.ResourceContext;
+import com.e2eq.framework.securityrules.RuleContext;
+import com.e2eq.framework.securityrules.SecuritySession;
 import com.e2eq.framework.util.TestUtils;
 import io.quarkus.logging.Log;
 import io.quarkus.test.junit.QuarkusTest;
@@ -38,7 +41,7 @@ public class SecureResourceTest {
         String[] roles = {"admin", "user"};
         PrincipalContext pContext = testUtils.getTestPrincipalContext(testUtils.getSystemUserId(), roles);
         ResourceContext rContext = testUtils.getResourceContext(testUtils.getArea(), "userProfile", "update");
-        testUtils.initDefaultRules(ruleContext, "security","userProfile", testUtils.getTestUserId());
+        ruleContext.initDefaultRules("security","userProfile", testUtils.getTestUserId());
         try (final SecuritySession ss = new SecuritySession(pContext, rContext)) {
             authFactory.getUserManager().removeUserWithUserId(testUtils.getTestRealm(), "testuser@end2endlogic.com");
             if (authProvider.equals("custom")) {
@@ -104,7 +107,7 @@ public class SecureResourceTest {
         String[] roles = {"admin", "user"};
         PrincipalContext pContext = testUtils.getTestPrincipalContext(testUtils.getSystemUserId(), roles);
         ResourceContext rContext = testUtils.getResourceContext(testUtils.getArea(), "userProfile", "update");
-        testUtils.initDefaultRules(ruleContext, "security","userProfile", testUtils.getTestUserId());
+        ruleContext.initDefaultRules( "security","userProfile", testUtils.getTestUserId());
         AuthProvider.LoginResponse loginResponse;
         try (final SecuritySession ss = new SecuritySession(pContext, rContext)) {
 

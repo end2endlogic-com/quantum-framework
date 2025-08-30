@@ -1,5 +1,6 @@
 package com.e2eq.framework.util;
 
+import com.e2eq.framework.model.auth.provider.jwtToken.TokenUtils;
 import org.junit.jupiter.api.Test;
 
 import java.security.PrivateKey;

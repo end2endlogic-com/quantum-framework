@@ -3,13 +3,10 @@ package com.e2eq.framework.api.security;
 //import com.fasterxml.jackson.databind.ObjectMapper;
 //import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 
-import com.e2eq.framework.model.securityrules.RuleContext;
-import com.e2eq.framework.model.persistent.security.Rule;
-import com.e2eq.framework.util.IOCase;
-import com.e2eq.framework.util.SecurityUtils;
-import com.e2eq.framework.util.TestUtils;
-import com.e2eq.framework.util.WildCardMatcher;
 import com.e2eq.framework.model.securityrules.*;
+import com.e2eq.framework.model.security.Rule;
+import com.e2eq.framework.securityrules.RuleContext;
+import com.e2eq.framework.util.*;
 import io.quarkus.logging.Log;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
@@ -41,7 +38,7 @@ public class TestSecurity {
 
 
    @Inject
-   SecurityUtils securityUtils;
+   EnvConfigUtils envConfigUtils;
 
    @Inject
    TestUtils testUtils;
@@ -74,7 +71,7 @@ public class TestSecurity {
 
       PrincipalContext pcontext = new PrincipalContext.Builder()
          .withDataDomain(testUtils.getTestDataDomain())
-         .withDefaultRealm(securityUtils.getSystemRealm())
+         .withDefaultRealm(envConfigUtils.getSystemRealm())
          .withUserId(testUtils.getSystemUserId())
          .withRoles(roles)
          .build();
@@ -123,7 +120,7 @@ public class TestSecurity {
       String[] roles = new String[]{"user", "admin"};
 
       PrincipalContext pcontext = new PrincipalContext.Builder()
-         .withDefaultRealm(securityUtils.getTestRealm())
+         .withDefaultRealm(envConfigUtils.getTestRealm())
          .withUserId(testUtils.getTestUserId())
          .withRoles(roles)
          .withDataDomain(testUtils.getTestDataDomain())
@@ -143,10 +140,10 @@ public class TestSecurity {
          .withAction("view")
          .build();
       SecurityURIBody body = new SecurityURIBody.Builder()
-         .withOrgRefName(securityUtils.getTestOrgRefName())
-         .withAccountNumber(securityUtils.getTestAccountNumber())
-         .withRealm(securityUtils.getTestRealm())
-         .withTenantId(securityUtils.getTestTenantId())
+         .withOrgRefName(envConfigUtils.getTestOrgRefName())
+         .withAccountNumber(envConfigUtils.getTestAccountNumber())
+         .withRealm(envConfigUtils.getTestRealm())
+         .withTenantId(envConfigUtils.getTestTenantId())
          .withOwnerId("*")
          .withDataSegment("*")
          .build();
@@ -171,7 +168,7 @@ public class TestSecurity {
 
       uri = uri.clone();
       uri.getHeader().setFunctionalDomain("credential");
-      uri.getBody().setOwnerId(testUtils.getSecurityUtils().getTestUserId());
+      uri.getBody().setOwnerId(testUtils.getTestUserId());
       uri.getHeader().setAction("update");
       b.withName("change your own credential")
          .withSecurityURI(uri)

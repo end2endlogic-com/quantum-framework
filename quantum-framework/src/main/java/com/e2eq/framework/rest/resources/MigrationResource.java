@@ -3,7 +3,8 @@ package com.e2eq.framework.rest.resources;
 import com.e2eq.framework.model.persistent.migration.base.DatabaseVersion;
 import com.e2eq.framework.model.persistent.migration.base.MigrationService;
 import com.e2eq.framework.model.persistent.morphia.DatabaseVersionRepo;
-import com.e2eq.framework.model.securityrules.RuleContext;
+import com.e2eq.framework.securityrules.RuleContext;
+import com.e2eq.framework.util.EnvConfigUtils;
 import com.e2eq.framework.util.SecurityUtils;
 import io.quarkus.logging.Log;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -33,6 +34,9 @@ public class MigrationResource {
 
     @Inject
     MigrationService migrationService;
+
+    @Inject
+    EnvConfigUtils envConfigUtils;
 
     @Inject
     SecurityUtils securityUtils;
@@ -191,13 +195,13 @@ public class MigrationResource {
                 ruleContext.ensureDefaultRules();
                 securityUtils.setSecurityContext();
                 try {
-                    Log.info("----Running migrations for test realm:---- " + securityUtils.getTestRealm());
-                    migrationService.runAllUnRunMigrations(securityUtils.getTestRealm(), emitter);
-                    Log.info("----Running migrations for system realm:---- " + securityUtils.getSystemRealm());
-                    migrationService.runAllUnRunMigrations(securityUtils.getSystemRealm(), emitter);
-                    if (!securityUtils.getSystemRealm().equals(securityUtils.getDefaultRealm())) {
-                        Log.info("----Running migrations for Default realm:---- " + securityUtils.getDefaultRealm());
-                        migrationService.runAllUnRunMigrations(securityUtils.getDefaultRealm(), emitter);
+                    Log.info("----Running migrations for test realm:---- " + envConfigUtils.getTestRealm());
+                    migrationService.runAllUnRunMigrations(envConfigUtils.getTestRealm(), emitter);
+                    Log.info("----Running migrations for system realm:---- " + envConfigUtils.getSystemRealm());
+                    migrationService.runAllUnRunMigrations(envConfigUtils.getSystemRealm(), emitter);
+                    if (!envConfigUtils.getSystemRealm().equals(envConfigUtils.getDefaultRealm())) {
+                        Log.info("----Running migrations for Default realm:---- " + envConfigUtils.getDefaultRealm());
+                        migrationService.runAllUnRunMigrations(envConfigUtils.getDefaultRealm(), emitter);
                     }
                 } finally {
                     securityUtils.clearSecurityContext();

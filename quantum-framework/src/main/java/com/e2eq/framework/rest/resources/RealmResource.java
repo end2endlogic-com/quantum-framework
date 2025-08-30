@@ -3,12 +3,12 @@ package com.e2eq.framework.rest.resources;
 
 import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
-import com.e2eq.framework.model.persistent.security.CredentialUserIdPassword;
+import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.rest.filters.PermissionCheck;
 import com.e2eq.framework.rest.models.RestError;
-import com.e2eq.framework.model.persistent.security.Realm;
+import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;

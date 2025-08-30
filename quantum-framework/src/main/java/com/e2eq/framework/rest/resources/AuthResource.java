@@ -1,9 +1,9 @@
 package com.e2eq.framework.rest.resources;
 
 
-import com.e2eq.framework.model.security.auth.AuthProvider;
-import com.e2eq.framework.model.security.auth.AuthProviderFactory;
-import com.e2eq.framework.model.security.auth.UserManagement;
+import com.e2eq.framework.model.auth.AuthProvider;
+import com.e2eq.framework.model.auth.AuthProviderFactory;
+import com.e2eq.framework.model.auth.UserManagement;
 import com.e2eq.framework.rest.requests.CreateUserRequest;
 import jakarta.annotation.security.PermitAll;
 import jakarta.annotation.security.RolesAllowed;

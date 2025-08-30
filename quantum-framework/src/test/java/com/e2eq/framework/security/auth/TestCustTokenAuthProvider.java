@@ -1,12 +1,12 @@
 package com.e2eq.framework.security.auth;
 
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
-import com.e2eq.framework.model.persistent.security.DomainContext;
-import com.e2eq.framework.model.security.auth.AuthProvider;
-import com.e2eq.framework.model.security.auth.AuthProviderFactory;
-import com.e2eq.framework.model.security.auth.UserManagement;
-import com.e2eq.framework.model.securityrules.RuleContext;
-import com.e2eq.framework.model.securityrules.SecuritySession;
+import com.e2eq.framework.model.security.DomainContext;
+import com.e2eq.framework.model.auth.AuthProvider;
+import com.e2eq.framework.model.auth.AuthProviderFactory;
+import com.e2eq.framework.model.auth.UserManagement;
+import com.e2eq.framework.securityrules.RuleContext;
+import com.e2eq.framework.securityrules.SecuritySession;
 import com.e2eq.framework.persistent.BaseRepoTest;
 import com.e2eq.framework.util.TestUtils;
 import io.quarkus.test.junit.QuarkusTest;

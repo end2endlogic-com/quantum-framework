@@ -1,6 +1,6 @@
 package com.e2eq.framework.persistent;
 
-import com.e2eq.framework.model.securityrules.SecuritySession;
+import com.e2eq.framework.securityrules.SecuritySession;
 import com.e2eq.framework.test.MenuHierarchyModel;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;

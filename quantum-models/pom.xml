@@ -21,6 +21,11 @@
     <dependencies>
         <dependency>
             <groupId>com.end2endlogic</groupId>
+            <artifactId>quantum-util</artifactId>
+            <version>${quantum.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.end2endlogic</groupId>
             <artifactId>morphia-core</artifactId>
             <version>3.0.0</version>
         </dependency>
@@ -66,6 +71,7 @@
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-core</artifactId>
         </dependency>
+
 
 
 
@@ -147,6 +153,23 @@
                     </execution>
                 </executions>
             </plugin>
+        <plugin>
+            <groupId>io.smallrye</groupId>
+            <artifactId>jandex-maven-plugin</artifactId>
+            <version>3.2.2</version>
+            <executions>
+                <execution>
+                    <id>make-index</id>
+                    <goals>
+                        <goal>jandex</goal>
+                    </goals>
+                </execution>
+            </executions>
+            <configuration>
+                <indexName>jandex.idx</indexName>
+                <verbose>true</verbose>
+            </configuration>
+        </plugin>
         </plugins>
     </build>
 

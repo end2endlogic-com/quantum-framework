@@ -1,20 +1,20 @@
 package com.e2eq.framework.rest.resources;
 
 
-import com.e2eq.framework.model.security.auth.AuthProvider;
-import com.e2eq.framework.model.security.auth.AuthProviderFactory;
+import com.e2eq.framework.model.auth.AuthProvider;
+import com.e2eq.framework.model.auth.AuthProviderFactory;
 import com.e2eq.framework.rest.models.*;
 import com.e2eq.framework.model.securityrules.SecurityCheckException;
-import com.e2eq.framework.model.persistent.security.ApplicationRegistration;
+import com.e2eq.framework.model.security.ApplicationRegistration;
 
-import com.e2eq.framework.model.persistent.security.UserProfile;
+import com.e2eq.framework.model.security.UserProfile;
 import com.e2eq.framework.model.persistent.morphia.ApplicationRegistrationRequestRepo;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import com.e2eq.framework.rest.responses.RestSecurityError;
 
-import com.e2eq.framework.util.SecurityUtils;
-import com.e2eq.framework.util.TokenUtils;
+import com.e2eq.framework.util.EnvConfigUtils;
+import com.e2eq.framework.model.auth.provider.jwtToken.TokenUtils;
 import com.e2eq.framework.util.ValidateUtils;
 import io.quarkus.logging.Log;
 import io.quarkus.security.Authenticated;
@@ -87,7 +87,7 @@ public class SecurityResource {
     JWTParser parser;
 
     @Inject
-    SecurityUtils securityUtils;
+    EnvConfigUtils envConfigUtils;
 
     @ConfigProperty(name = "mp.jwt.verify.issuer")
     protected String issuer;
@@ -198,7 +198,7 @@ public class SecurityResource {
             Log.info("me: - UserId:" + securityContext.getUserPrincipal().getName());
 
         try {
-            Optional<UserProfile> userProfileOp = userProfileRepo.getBySubject(securityUtils.getSystemRealm(), securityContext.getUserPrincipal().getName());
+            Optional<UserProfile> userProfileOp = userProfileRepo.getBySubject(envConfigUtils.getSystemRealm(), securityContext.getUserPrincipal().getName());
             if (userProfileOp.isPresent()) {
                 userProfileRepo.fillUIActions(userProfileOp.get());
             }

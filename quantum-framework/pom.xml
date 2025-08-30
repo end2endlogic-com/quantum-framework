@@ -140,6 +140,16 @@
       <artifactId>quantum-util</artifactId>
       <version>${quantum.version}</version>
     </dependency>
+    <dependency>
+      <groupId>com.end2endlogic</groupId>
+      <artifactId>quantum-morphia-repos</artifactId>
+      <version>${quantum.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.end2endlogic</groupId>
+      <artifactId>quantum-jwt-provider</artifactId>
+      <version>${quantum.version}</version>
+    </dependency>
 
 
     <dependency>
@@ -430,14 +440,6 @@
         <configuration>
           <indexName>jandex.idx</indexName>
           <verbose>true</verbose>
-          <fileSets>
-            <fileSet>
-              <dependency>
-                <groupId>com.end2endlogic</groupId>
-                <artifactId>quantum-models</artifactId>
-              </dependency>
-            </fileSet>
-          </fileSets>
         </configuration>
       </plugin>
 <plugin>
@@ -590,16 +592,6 @@
                 <goals>
                   <goal>jandex</goal>
                 </goals>
-                <configuration>
-                  <fileSets>
-                    <fileSet>
-                      <dependency>
-                        <groupId>com.end2endlogic</groupId>
-                        <artifactId>quantum-models</artifactId>
-                      </dependency>
-                    </fileSet>
-                  </fileSets>
-                </configuration>
               </execution>
             </executions>
           </plugin>
