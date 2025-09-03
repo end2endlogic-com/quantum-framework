@@ -26,7 +26,7 @@ public class AccountRepo extends MorphiaRepo<Account> {
     *
     * @param datastore     the datastore to persist the account in
     * @param accountNumber account number for the new account
-    * @param org           owning organisation of the account
+    * @param org           owning organization of the account
     * @return the persisted account
     */
    public Account createAccount(Datastore datastore, String accountNumber, @Valid @NotNull Organization org) {

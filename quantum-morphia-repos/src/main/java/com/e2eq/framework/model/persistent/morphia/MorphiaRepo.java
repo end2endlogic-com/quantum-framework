@@ -67,6 +67,15 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     @Inject
     protected SecurityIdentity securityIdentity;
 
+    @Inject
+    protected CredentialRepo credentialRepo;
+
+    @Inject
+    protected com.e2eq.framework.util.EnvConfigUtils envConfigUtils;
+
+    @Inject
+    protected com.e2eq.framework.util.SecurityUtils securityUtils;
+
    @ConfigProperty(name = "quantum.realmConfig.defaultRealm"  )
    protected String defaultRealm;
 
@@ -78,7 +87,86 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     @Inject
     StateGraphManager stateGraphManager;
 
-    public String getSecurityContextRealmId() {
+    private void ensureSecurityContextFromIdentity() {
+            try {
+                String currentIdentity = null;
+                var tlPctxOpt = com.e2eq.framework.model.securityrules.SecurityContext.getPrincipalContext();
+                if (tlPctxOpt.isPresent()) {
+                    currentIdentity = tlPctxOpt.get().getUserId();
+                }
+
+                boolean hasIdentity = (securityIdentity != null && !securityIdentity.isAnonymous());
+                String identityName = null;
+                if (hasIdentity && securityIdentity.getPrincipal() != null) {
+                    identityName = securityIdentity.getPrincipal().getName();
+                }
+
+                boolean needRebuild = false;
+                if (tlPctxOpt.isEmpty()) {
+                    needRebuild = hasIdentity; // build if we have identity and no TL
+                } else if (hasIdentity && identityName != null && !identityName.equals(currentIdentity)) {
+                    // Mismatch between TL and current SecurityIdentity: rebuild from current identity
+                    needRebuild = true;
+                }
+
+                if (needRebuild) {
+                    String principalName = (identityName != null) ? identityName : envConfigUtils.getAnonymousUserId();
+                    java.util.Set<String> rolesSet = hasIdentity ? securityIdentity.getRoles() : java.util.Collections.emptySet();
+                    String[] roles = (rolesSet == null || rolesSet.isEmpty()) ? new String[]{"ANONYMOUS"} : rolesSet.toArray(new String[0]);
+
+                    // Try to enrich from credentials in system/default realm
+                    java.util.Optional<com.e2eq.framework.model.security.CredentialUserIdPassword> ocreds = credentialRepo.findByUserId(principalName, envConfigUtils.getSystemRealm(), true);
+
+                    com.e2eq.framework.model.persistent.base.DataDomain dataDomain;
+                    String userId;
+                    String contextRealm;
+                    if (ocreds.isPresent()) {
+                        var creds = ocreds.get();
+                        dataDomain = creds.getDomainContext().toDataDomain(creds.getUserId());
+                        userId = creds.getUserId();
+                        contextRealm = creds.getDomainContext().getDefaultRealm();
+                        String[] credRoles = creds.getRoles();
+                        if (credRoles != null && credRoles.length > 0) {
+                            java.util.Set<String> combined = new java.util.HashSet<>(rolesSet);
+                            combined.addAll(java.util.Arrays.asList(credRoles));
+                            roles = combined.toArray(new String[0]);
+                        }
+                    } else {
+                        dataDomain = securityUtils.getSystemDataDomain();
+                        userId = principalName;
+                        contextRealm = envConfigUtils.getSystemRealm();
+                    }
+
+                    var pcontext = new com.e2eq.framework.model.securityrules.PrincipalContext.Builder()
+                            .withDefaultRealm(contextRealm)
+                            .withDataDomain(dataDomain)
+                            .withUserId(userId)
+                            .withRoles(roles)
+                            .withScope("AUTHENTICATED")
+                            .build();
+
+                    com.e2eq.framework.model.securityrules.SecurityContext.setPrincipalContext(pcontext);
+
+                    if (com.e2eq.framework.model.securityrules.SecurityContext.getResourceContext().isEmpty()) {
+                        // set a safe default resource context to enable rule evaluation in tests
+                        com.e2eq.framework.model.securityrules.SecurityContext.setResourceContext(
+                                com.e2eq.framework.model.securityrules.ResourceContext.DEFAULT_ANONYMOUS_CONTEXT
+                        );
+                    }
+                    if (io.quarkus.logging.Log.isDebugEnabled()) {
+                        io.quarkus.logging.Log.debugf("[MorphiaRepo] Principal Context %s from SecurityIdentity for user %s, roles=%s",
+                                (tlPctxOpt.isEmpty() ? "built" : "rebuilt"), userId, java.util.Arrays.toString(roles));
+                    }
+                }
+            } catch (Throwable t) {
+                // Do not break repo operations if building context fails; leave as-is.
+                io.quarkus.logging.Log.warn("Failed to ensure PrincipalContext from SecurityIdentity: " + t.getMessage());
+            }
+        }
+
+        public String getSecurityContextRealmId() {
+        // Ensure contexts can be derived from SecurityIdentity when not explicitly set
+        ensureSecurityContextFromIdentity();
         String realmId = defaultRealm;
 
         if (SecurityContext.getPrincipalContext().isPresent() && SecurityContext.getResourceContext().isPresent()) {
@@ -99,6 +187,8 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
     public Filter[] getFilterArray(@NotNull List<Filter> filters, Class<? extends UnversionedBaseModel> modelClass) {
+           // Ensure context exists for repo calls executed under @TestSecurity (no SecuritySession)
+           ensureSecurityContextFromIdentity();
        if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
             filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get(), modelClass);
             if (Log.isDebugEnabled()) {
