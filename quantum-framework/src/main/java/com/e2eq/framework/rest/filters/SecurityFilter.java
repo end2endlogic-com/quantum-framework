@@ -35,7 +35,7 @@ import java.util.regex.Pattern;
 @Provider
 //@PreMatching
 //@PermissionCheck
-public class SecurityFilter implements ContainerRequestFilter {
+public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.container.ContainerResponseFilter {
 
     private static final String AUTHENTICATION_SCHEME = "Bearer";
 
@@ -102,8 +102,14 @@ public class SecurityFilter implements ContainerRequestFilter {
 
     }
 
+        @Override
+        public void filter(ContainerRequestContext requestContext, jakarta.ws.rs.container.ContainerResponseContext responseContext) throws IOException {
+            // Clear ThreadLocal contexts after response is produced
+            SecurityContext.clear();
+        }
 
-    protected ResourceContext determineResourceContext(ContainerRequestContext requestContext) {
+
+        protected ResourceContext determineResourceContext(ContainerRequestContext requestContext) {
 
         if (!SecurityContext.getResourceContext().isPresent()) {
             ResourceContext rcontext = null;
@@ -265,6 +271,63 @@ public class SecurityFilter implements ContainerRequestFilter {
 
         // Get the Authorization header from the request
         String authorizationHeader = requestContext.getHeaderString(HttpHeaders.AUTHORIZATION);
+
+        boolean hasJwt = (authorizationHeader != null && jwt != null);
+        boolean hasIdentity = (securityIdentity != null && !securityIdentity.isAnonymous());
+
+        // Fallback: if no JWT but we have a SecurityIdentity (e.g., @TestSecurity), build context from it
+        if (!hasJwt && hasIdentity) {
+            String principalName = securityIdentity.getPrincipal() != null ? securityIdentity.getPrincipal().getName() : envConfigUtils.getAnonymousUserId();
+            Set<String> rolesSet = securityIdentity.getRoles();
+            String[] roles = rolesSet == null || rolesSet.isEmpty() ? new String[]{"ANONYMOUS"} : rolesSet.toArray(new String[0]);
+
+            String contextRealm = (realm != null) ? realm : envConfigUtils.getSystemRealm();
+
+            Optional<CredentialUserIdPassword> ocreds = (realm == null)
+                    ? credentialRepo.findByUserId(principalName, envConfigUtils.getSystemRealm(), true)
+                    : credentialRepo.findByUserId(principalName, realm, true);
+
+            DataDomain dataDomain;
+            String userId;
+            if (ocreds.isPresent()) {
+                CredentialUserIdPassword creds = ocreds.get();
+                // If realm override provided, validate against user's realm filter
+                if (realm != null) {
+                    if (!matchesRealmFilter(realm, creds.getRealmRegEx())) {
+                        throw new WebApplicationException(String.format(
+                                "User %s is not authorized to access realm %s", creds.getUserId(), realm), Response.Status.FORBIDDEN);
+                    }
+                }
+                contextRealm = (realm == null) ? creds.getDomainContext().getDefaultRealm() : realm;
+                dataDomain = creds.getDomainContext().toDataDomain(creds.getUserId());
+                userId = creds.getUserId();
+                String[] credRoles = creds.getRoles();
+                if (credRoles != null && credRoles.length > 0) {
+                    Set<String> combined = new HashSet<>(rolesSet);
+                    combined.addAll(Arrays.asList(credRoles));
+                    roles = combined.toArray(new String[0]);
+                }
+            } else {
+                // Default/test fallback when user not found in DB
+                dataDomain = securityUtils.getSystemDataDomain();
+                userId = principalName;
+            }
+
+            pcontext = new PrincipalContext.Builder()
+                    .withDefaultRealm(contextRealm)
+                    .withDataDomain(dataDomain)
+                    .withUserId(userId)
+                    .withRoles(roles)
+                    .withScope("AUTHENTICATED")
+                    .withActingOnBehalfOfUserId(actingOnBehalfOfUserId)
+                    .withActingOnBehalfOfSubject(actingOnBehalfOfSubject)
+                    .build();
+
+            if (Log.isDebugEnabled()) {
+                Log.debugf("Principal Context (identity fallback) built with roles: %s", Arrays.toString(roles));
+                Log.debugf("Principal Context: %s", pcontext.toString());
+            }
+        }
 
         // if there is an authorization header then we can authenticate this call.
         if (authorizationHeader != null && jwt != null) {

@@ -45,8 +45,6 @@ public class CredentialUserIdPassword extends BaseModel {
     protected DomainContext domainContext;
 
     // ignored for rest api's for security reasons we don't expose this field to the rest api.
-    @NotNull( message = "passwordHash must be non null")
-    @NonNull
     @JsonIgnore
     @ToString.Exclude
     protected String passwordHash;
