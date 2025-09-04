@@ -88,14 +88,20 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     StateGraphManager stateGraphManager;
 
     private void ensureSecurityContextFromIdentity() {
-            try {
                 String currentIdentity = null;
+
+                // check to see if we have a security context principal set.
                 var tlPctxOpt = com.e2eq.framework.model.securityrules.SecurityContext.getPrincipalContext();
                 if (tlPctxOpt.isPresent()) {
+                   Log.debugf("ensureSecurityContextFromIdentity: security context present, identity:%s", tlPctxOpt.get().getUserId());
                     currentIdentity = tlPctxOpt.get().getUserId();
                 }
 
+                // do we have an existing securityIdentity in place that is not anonymous?
                 boolean hasIdentity = (securityIdentity != null && !securityIdentity.isAnonymous());
+                if (hasIdentity) {
+                   Log.debugf("non anonymous identity:%s", securityIdentity.getPrincipal().getName());
+                }
                 String identityName = null;
                 if (hasIdentity && securityIdentity.getPrincipal() != null) {
                     identityName = securityIdentity.getPrincipal().getName();
@@ -103,19 +109,25 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
                 boolean needRebuild = false;
                 if (tlPctxOpt.isEmpty()) {
-                    needRebuild = hasIdentity; // build if we have identity and no TL
+                    needRebuild = hasIdentity; // build if we have identity and no PrincipleContext
                 } else if (hasIdentity && identityName != null && !identityName.equals(currentIdentity)) {
                     // Mismatch between TL and current SecurityIdentity: rebuild from current identity
                     needRebuild = true;
                 }
 
                 if (needRebuild) {
+                   Log.debug("rebuilding identity because identityName is null or does not equal current identity");
                     String principalName = (identityName != null) ? identityName : envConfigUtils.getAnonymousUserId();
                     java.util.Set<String> rolesSet = hasIdentity ? securityIdentity.getRoles() : java.util.Collections.emptySet();
-                    String[] roles = (rolesSet == null || rolesSet.isEmpty()) ? new String[]{"ANONYMOUS"} : rolesSet.toArray(new String[0]);
+                    String[] roles = (rolesSet == null || rolesSet.isEmpty()) ? new String[0] : rolesSet.toArray(new String[rolesSet.size()]);
 
                     // Try to enrich from credentials in system/default realm
+                   Log.debugf("Attempting to locate user using userId:%s", principalName);
                     java.util.Optional<com.e2eq.framework.model.security.CredentialUserIdPassword> ocreds = credentialRepo.findByUserId(principalName, envConfigUtils.getSystemRealm(), true);
+                    if (!ocreds.isPresent()) {
+                       // attempt to get via subject
+                       ocreds = credentialRepo.findBySubject(principalName, envConfigUtils.getSystemRealm(), true);
+                    }
 
                     com.e2eq.framework.model.persistent.base.DataDomain dataDomain;
                     String userId;
@@ -132,9 +144,10 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                             roles = combined.toArray(new String[0]);
                         }
                     } else {
-                        dataDomain = securityUtils.getSystemDataDomain();
-                        userId = principalName;
-                        contextRealm = envConfigUtils.getSystemRealm();
+                        //dataDomain = securityUtils.getSystemDataDomain();
+                        //userId = principalName;
+                        //contextRealm = envConfigUtils.getSystemRealm();
+                        throw new IllegalStateException("Unable to locate credentials for userId:" + principalName);
                     }
 
                     var pcontext = new com.e2eq.framework.model.securityrules.PrincipalContext.Builder()
@@ -158,15 +171,14 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                                 (tlPctxOpt.isEmpty() ? "built" : "rebuilt"), userId, java.util.Arrays.toString(roles));
                     }
                 }
-            } catch (Throwable t) {
-                // Do not break repo operations if building context fails; leave as-is.
-                io.quarkus.logging.Log.warn("Failed to ensure PrincipalContext from SecurityIdentity: " + t.getMessage());
-            }
+
         }
 
         public String getSecurityContextRealmId() {
-        // Ensure contexts can be derived from SecurityIdentity when not explicitly set
-        ensureSecurityContextFromIdentity();
+           if (!SecurityContext.getResourceContext().isPresent() || !SecurityContext.getPrincipalContext().isPresent()) {
+              // Ensure contexts can be derived from SecurityIdentity when not explicitly set
+              ensureSecurityContextFromIdentity();
+           }
         String realmId = defaultRealm;
 
         if (SecurityContext.getPrincipalContext().isPresent() && SecurityContext.getResourceContext().isPresent()) {
@@ -187,8 +199,10 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
     public Filter[] getFilterArray(@NotNull List<Filter> filters, Class<? extends UnversionedBaseModel> modelClass) {
-           // Ensure context exists for repo calls executed under @TestSecurity (no SecuritySession)
-           ensureSecurityContextFromIdentity();
+       if (!SecurityContext.getResourceContext().isPresent() || !SecurityContext.getPrincipalContext().isPresent()) {
+          // Ensure context exists for repo calls executed under @TestSecurity (no SecuritySession)
+          ensureSecurityContextFromIdentity();
+       }
        if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
             filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get(), modelClass);
             if (Log.isDebugEnabled()) {
