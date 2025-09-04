@@ -31,7 +31,7 @@ public class TestSecurityAnnotationTest {
     }
 
     @Test
-    @TestSecurity(user = "alice@end2endlogic.com", roles = {"user"})
+    @TestSecurity(user = "test@system.com", roles = {"user"})
     public void testAuthenticatedWithTestSecurityDefaultRealm() {
         // Do NOT create SecuritySession. Trigger repo logic that uses MorphiaRepo.getFilterArray,
         // which should lazily build PrincipalContext from SecurityIdentity.
@@ -41,21 +41,23 @@ public class TestSecurityAnnotationTest {
            Assertions.fail("Should not have thrown exception");
         }
         Assertions.assertTrue(SecurityContext.getPrincipalContext().isPresent(), "PrincipalContext should be present via lazy fallback");
-        Assertions.assertEquals("alice@end2endlogic.com", SecurityContext.getPrincipalContext().get().getUserId());
+        Assertions.assertEquals("test@system.com", SecurityContext.getPrincipalContext().get().getUserId());
         // ResourceContext should also be set to DEFAULT_ANONYMOUS_CONTEXT by the repo fallback
         Assertions.assertTrue(com.e2eq.framework.model.securityrules.SecurityContext.getResourceContext().isPresent());
     }
 
     @Test
-    @TestSecurity(user = "bob@end2endlogic.com", roles = {"admin","user"})
+    @TestSecurity(user = "another-nonexistent@system.com", roles = {"admin","user"})
     public void testAuthenticatedWithoutSecuritySession_RepoFallback() {
         try {
-            credentialRepo.findByUserId("another-nonexistent@end2endlogic.com", testUtils.getTestRealm(), false);
-        } catch (Exception ignored) {
-           Assertions.fail("Should not have thrown exception");
+            credentialRepo.findByUserId("test@system.com", testUtils.getTestRealm(), false);
+        } catch (Throwable notFound) {
+           // should throw because nonexistent is not configured
+           return;
         }
-        Assertions.assertTrue(SecurityContext.getPrincipalContext().isPresent());
-        Assertions.assertEquals("bob@end2endlogic.com", SecurityContext.getPrincipalContext().get().getUserId());
-        // We do not assert realm here because fallback uses system/default realm when DB user is absent.
+
+
+       Assertions.fail("Should have thrown exception");
+
     }
 }

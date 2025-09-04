@@ -485,16 +485,6 @@
                                 <goals>
                                     <goal>jandex</goal>
                                 </goals>
-                                <configuration>
-                                    <fileSets>
-                                        <fileSet>
-                                            <dependency>
-                                                <groupId>com.end2endlogic</groupId>
-                                                <artifactId>quantum-models</artifactId>
-                                            </dependency>
-                                        </fileSet>
-                                    </fileSets>
-                                </configuration>
                             </execution>
                         </executions>
                     </plugin>

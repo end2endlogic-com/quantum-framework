@@ -355,6 +355,10 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                             Log.warn(text);
                             throw new IllegalStateException(text);
                         }
+                    } else {
+                       String text = String.format("Subject value:%s was not found in credentialUserIdPassword collection", sub);
+                       Log.warn(text);
+                       throw new IllegalStateException(text);
                     }
                 }
 
@@ -363,7 +367,6 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                     Log.debugf("Found user with subject %s userId:%s in the database, adding roles %s", sub, ocreds.get().getUserId(), Arrays.toString(ocreds.get().getRoles()));
                     CredentialUserIdPassword creds = ocreds.get();
                     String contextRealm = (realm == null ) ? creds.getDomainContext().getDefaultRealm() : realm;
-
 
                     if (impersonate && creds.getImpersonateFilterScript() == null) {
                         throw new IllegalArgumentException(String.format("subject %s with userId %s is not configured with a impersonateFilter in realm:%s", creds.getSubject(), creds.getUserId(), credentialRepo.getDatabaseName()));

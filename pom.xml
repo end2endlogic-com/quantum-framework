@@ -135,11 +135,6 @@
                             <artifactId>annotations</artifactId>
                             <version>24.0.1</version>
                         </path>
-                        <path>
-                            <groupId>com.end2endlogic</groupId>
-                            <artifactId>quantum-models</artifactId>
-                            <version>1.2.2-SNAPSHOT</version>
-                        </path>
                     </annotationProcessorPaths>
                     <release>${maven.compiler.release}</release>
                 </configuration>
