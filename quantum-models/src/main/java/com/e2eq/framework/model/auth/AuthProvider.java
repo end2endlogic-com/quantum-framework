@@ -22,7 +22,8 @@ public interface AuthProvider {
             @JsonProperty("errorReasonCode") int errorReasonCode,
             @JsonProperty("errorMessage") String errorMessage,
             @JsonProperty("errorType") String errorType,
-            @JsonProperty("errorDetails") String errorDetails
+            @JsonProperty("errorDetails") String errorDetails,
+            @JsonProperty("realm") String realm
     ) {};
     @RegisterForReflection
     record LoginPositiveResponse(
@@ -60,6 +61,5 @@ public interface AuthProvider {
     }
 
     LoginResponse login(String userId, String password);
-    LoginResponse login(String realm, String userId, String password);
     LoginResponse refreshTokens(String refreshToken);
 }

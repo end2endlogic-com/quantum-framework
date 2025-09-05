@@ -110,18 +110,18 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
       return Optional.ofNullable(p);
    }
 
-   public UserProfile createUser( @NotNull String realmId,
+   public UserProfile createUser(
                                   String userId,
                                   String fname,
                                   String lname,
                                   Boolean forceChangePassword,
                                   @NotNull @NotEmpty String[] roles,
                                   @NotNull @NonNull @NotEmpty @Size(min=8, max=50, message = "password must be between 8 and 50 characters") String password) {
-      return createUser(morphiaDataStore.getDataStore(realmId), userId, fname, lname, forceChangePassword, roles, password, securityUtils.getDefaultDomainContext());
+      return createUser( userId, fname, lname, forceChangePassword, roles, password, securityUtils.getDefaultDomainContext());
    }
 
 
-   public UserProfile createUser(Datastore  datastore,
+   public UserProfile createUser(
                                  String userId,
                                  String fname,
                                  String lname,
@@ -130,11 +130,6 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
                                  @NotNull @NonNull @NotEmpty @Size(min=8, max=50, message = "password must be between 8 and 50 characters") String password,
                                  DomainContext domainContext) {
 
-      if (!ValidateUtils.isValidEmailAddress(userId)) {
-         throw new ValidationException("userId:" + userId + " must be an email address");
-      }
-
-
       // convert roles array to a set of strings
       Set<String> roleSet = new HashSet<>(Arrays.asList(roles));
 
@@ -142,19 +137,18 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
       // if not, create the user in the authProvider
       // if the user exists, update the roles in the auth provider
       UserManagement userManager = authProviderFactory.getUserManager();
-      if (!userManager.userIdExists(datastore.getDatabase().getName(), userId)) {
+      if (!userManager.userIdExists( userId)) {
          // create the user in the system using the provided auth provider
          // this will handle the password encryption and storage in the system
          // and will also handle the creation of the user in the authentication system
          // (like LDAP, Active Directory, etc.)
-         authProviderFactory.getUserManager().createUser(datastore.getDatabase().getName(), userId, password, forceChangePassword, roleSet, domainContext);
+         authProviderFactory.getUserManager().createUser( userId, password, forceChangePassword, roleSet, domainContext);
       } else {
         Log.warnf("User  with userId %s already exists in the auth provider. skipping create", userId);
       }
 
-
       UserProfile up;
-      Optional<UserProfile> oup = getByUserId(datastore, userId);
+      Optional<UserProfile> oup = getByUserId( userId);
       if (!oup.isPresent()) {
          up = new UserProfile();
          up.setEmail(userId);
@@ -162,27 +156,27 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
          up.setLname(lname);
 
         // check if credential is present
-         Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId( userId, datastore.getDatabase().getName());
+         Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId( userId, envConfigUtils.getSystemRealm(), true);
          if (ocred.isPresent()) {
             // try to find the up
-            up.setCredentialUserIdPasswordRef(ocred.get().createEntityReference());
+            up.setCredentialUserIdPasswordRef(ocred.get().createEntityReference(envConfigUtils.getSystemRealm()));
          } else {
-            throw new IllegalStateException(String.format("Failed to find the user in the credential repository for userId %s in realm:%s", userId, datastore.getDatabase().getName()));
+            throw new IllegalStateException(String.format("Failed to find the user in the credential repository for userId %s", userId));
          }
          // now create the user profile
-         up = save(datastore,up);
+         up = save(up);
       } else {
          up = oup.get();
-         Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId( userId, datastore.getDatabase().getName());
+         Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId( userId, envConfigUtils.getSystemRealm(), true);
          if (ocred.isPresent()) {
-            EntityReference ref = ocred.get().createEntityReference();
-            // ensure reference is correct
+            EntityReference ref = ocred.get().createEntityReference(envConfigUtils.getSystemRealm());
+            // ensure the reference is correct
             if (!ref.equals(up.getCredentialUserIdPasswordRef())) {
                up.setCredentialUserIdPasswordRef(ref);
-               up = save(datastore, up);
+               up = save(up);
             }
          } else {
-            throw new IllegalStateException(String.format("Failed to find the user in the credential repository for userId %s in realm:%s", userId, datastore.getDatabase().getName()));
+            throw new IllegalStateException(String.format("Failed to find the user in the credential repository for userId %s", userId));
          }
       }
 
@@ -192,15 +186,13 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
    @Override
    public long delete (String realmId, UserProfile obj) throws ReferentialIntegrityViolationException {
       long ret = 0;
-      try (MorphiaSession s = morphiaDataStore.getDataStore(realmId).startSession()) {
-         s.startTransaction();
-         Optional<CredentialUserIdPassword> ocred = credentialRepo.findByRefName( obj.getCredentialUserIdPasswordRef().getEntityRefName(), realmId);
-         if (ocred.isPresent()) {
-            credentialRepo.delete(s, ocred.get());
-         }
-         ret= super.delete(s, obj);
-         s.commitTransaction();
+
+      Optional<CredentialUserIdPassword> ocred = credentialRepo.findByRefName( obj.getCredentialUserIdPasswordRef().getEntityRefName(), (obj.getCredentialUserIdPasswordRef().getRealm() != null) ? obj.getCredentialUserIdPasswordRef().getRealm() : envConfigUtils.getSystemRealm());
+      if (ocred.isPresent()) {
+         credentialRepo.delete(ocred.get());
       }
+      ret= super.delete(realmId, obj);
+
       return ret;
    }
 }

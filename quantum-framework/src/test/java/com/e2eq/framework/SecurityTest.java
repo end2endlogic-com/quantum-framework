@@ -84,7 +84,15 @@ public class SecurityTest extends BaseRepoTest {
             cred.setUserId(testUtils.getTestUserId());
           //  cred.setPasswordHash("$2a$12$76wQJLgSAdm6ZTHFHtzksuSkWG9eW0qe5YXMXaZIBo52ncXHO0EDy"); //Test123456
             cred.setPasswordHash(EncryptionUtils.hashPassword(testUtils.getDefaultTestPassword()));
-            cred.setSubject(UUID.randomUUID().toString());
+
+            // determine what the subjectId for the user is:
+            Optional<String> osubjectId = authProviderFactory.getUserManager().getSubjectForUserId(testUtils.getTestUserId());
+            if (!osubjectId.isPresent()) {
+               Log.warnf("No subjectId found for user: %s using authProvider:%s defaulting to userId", testUtils.getTestUserId(), authProvider);
+               cred.setSubject(testUtils.getTestUserId());
+            } else {
+               cred.setSubject(osubjectId.get());
+            }
 
             DataDomain dataDomain = new DataDomain();
             dataDomain.setOrgRefName(testUtils.getTestOrgRefName());
@@ -140,7 +148,6 @@ public class SecurityTest extends BaseRepoTest {
             Assert.assertTrue(userProfileRepo.delete(testUtils.getTestRealm(), profile)==1);
             Optional<UserProfile> userProfileOp = userProfileRepo.getByUserId(testUtils.getTestRealm(),testUtils.getTestUserId());
             Assert.assertFalse(userProfileOp.isPresent());
-            credRepo.delete(credRepo.findByUserId(testUtils.getTestUserId()).get());
             Assert.assertFalse(credRepo.findByUserId(testUtils.getTestUserId()).isPresent());
         } finally {
             ruleContext.clear();

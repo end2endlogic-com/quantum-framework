@@ -227,6 +227,10 @@ public class MigrationService {
         Semver currentSemDatabaseVersion = currentDbVersion.getCurrentSemVersion();
         List<ChangeSetBean> changeSets = getAllChangeSetBeans();
         Log.infof("Found %d Change Sets:", changeSets.size());
+        if (changeSets.isEmpty()) {
+           Log.warnf("No Change Sets found");
+           emitter.emit(String.format("No Change Sets found"));
+        }
         emitter.emit(String.format("Found %d Change Sets:", changeSets.size()));
         changeSets.forEach(changeSetBean -> {
             Log.infof("    Change Set: %s", changeSetBean.getName());
@@ -326,6 +330,9 @@ public class MigrationService {
         emitter.emit(String.format("-- All Change Sets executed --"));
         Log.infof("-------------- Migration Completed for: %s--------------", realm);
         emitter.emit(String.format("-------------- Migration Completed for %s--------------", realm));
+        } else {
+            Log.infof("-- No pending change sets found for realm: %s", realm);
+            emitter.emit(String.format("-- No pending change sets found for realm: %s", realm));
         }
 
     }
