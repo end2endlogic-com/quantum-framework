@@ -344,19 +344,23 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             }
 
             if (sub != null) {
-                Optional<CredentialUserIdPassword> ocreds = (realm == null ) ? credentialRepo.findBySubject(sub, envConfigUtils.getSystemRealm(), true) : credentialRepo.findBySubject(sub, realm, true);
+                Optional<CredentialUserIdPassword> ocreds =  credentialRepo.findBySubject(sub, envConfigUtils.getSystemRealm(), true);
                 if (!ocreds.isPresent()) {
                     String username = jwt.getClaim("username");
                     if (username != null ) {
                         // attempt to find the user by the userId
-                        ocreds = (realm == null) ? credentialRepo.findByUserId(username, envConfigUtils.getSystemRealm(), true) : credentialRepo.findByUserId(username, realm, true);
+                        ocreds = credentialRepo.findByUserId(username, envConfigUtils.getSystemRealm(), true);
                         if (ocreds.isPresent()) {
                             String text = String.format("Found user with userId %s but subject is:%s but token has subject:%s in the database, roles in credential is %s", username, ocreds.get().getSubject(), sub,  Arrays.toString(ocreds.get().getRoles()));
                             Log.warn(text);
                             throw new IllegalStateException(text);
                         }
                     } else {
-                       String text = String.format("Subject value:%s was not found in credentialUserIdPassword collection", sub);
+                       String text = String.format("Only Subject provided, no username, and subject value:%s was not found in credentialUserIdPassword collection in realm:%s", sub, envConfigUtils.getSystemRealm());
+
+                       if (realm != null )
+                          text.concat(String.format(" realm override is present with value:%s", realm));
+
                        Log.warn(text);
                        throw new IllegalStateException(text);
                     }
@@ -387,9 +391,9 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                     if (impersonate) {
                         Optional<CredentialUserIdPassword> oicreds;
                         if (impersonateSubject != null) {
-                             oicreds =(realm == null) ? credentialRepo.findBySubject(impersonateSubject, envConfigUtils.getSystemRealm(), true) : credentialRepo.findBySubject(impersonateSubject, realm, true);
+                             oicreds = credentialRepo.findBySubject(impersonateSubject, envConfigUtils.getSystemRealm(), true);
                         } else if (impersonateUserId!= null) {
-                             oicreds = (realm == null ) ? credentialRepo.findByUserId(impersonateUserId, envConfigUtils.getSystemRealm(), true) : credentialRepo.findByUserId(impersonateUserId, realm, true)  ;
+                             oicreds = credentialRepo.findByUserId(impersonateUserId, envConfigUtils.getSystemRealm(), true);
                         } else
                         {
                             throw new IllegalStateException("Logic error on server side impersonating user, neither X-Impersonate-Subject nor X-Impersonate-UserId header is present yet impersonate is true?");

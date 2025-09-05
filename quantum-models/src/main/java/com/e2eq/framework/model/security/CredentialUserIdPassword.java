@@ -74,6 +74,8 @@ public class CredentialUserIdPassword extends BaseModel {
     //@Regex
     protected String realmRegEx;
 
+    protected String authProviderName;
+
 
     @Override
     public String bmFunctionalArea() {

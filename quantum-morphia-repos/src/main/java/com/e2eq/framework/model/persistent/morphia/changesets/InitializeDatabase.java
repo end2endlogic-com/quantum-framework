@@ -232,11 +232,10 @@ public class InitializeDatabase implements ChangeSetBean {
       // Ultimately what we want is a filter that says "ownerId:${userId} || ownerId:system@b2bintegrator.com"
    }
 
-
    public void createInitialUserProfiles(Datastore datastore) throws CloneNotSupportedException {
 
       Log.infof("Checking to create initial user profiles in realm: %s", datastore.getDatabase().getName());
-      if (!userProfileRepo.getByUserId(envConfigUtils.getSystemRealm(), envConfigUtils.getSystemUserId()).isPresent()) {
+      if (!userProfileRepo.getByUserId( datastore.getDatabase().getName(), envConfigUtils.getSystemUserId()).isPresent()) {
          Log.infof("UserProfile:%s not found creating ", envConfigUtils.getSystemUserId());
          Set<Role> roles = new HashSet<>();
          roles.add(Role.admin);
@@ -249,7 +248,7 @@ public class InitializeDatabase implements ChangeSetBean {
             rolesArray[i++] = r.name();
          }
 
-         userProfileRepo.createUser(envConfigUtils.getSystemRealm(), envConfigUtils.getSystemUserId(),
+         userProfileRepo.createUser( envConfigUtils.getSystemUserId(),
             "Generic","Admin", null, rolesArray, defaultSystemPassword);
 
          DataDomain upDataDomain = securityUtils.getSystemDataDomain().clone();

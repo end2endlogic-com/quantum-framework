@@ -153,6 +153,15 @@ public abstract  class UnversionedBaseModel {
                 .entityDisplayName(this.getDisplayName())
                 .build();
     }
+   public EntityReference createEntityReference (String realmOverride) {
+      return EntityReference.builder()
+                .entityId(this.getId())
+                .entityType(this.getClass().getSimpleName())
+                .entityRefName(this.getRefName())
+                .entityDisplayName(this.getDisplayName())
+                .realm(realmOverride)
+                .build();
+   }
 
 
     public UIActionList calculateStateBasedUIActions () {

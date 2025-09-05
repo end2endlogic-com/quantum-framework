@@ -43,20 +43,21 @@ public class SecureResourceTest {
         ResourceContext rContext = testUtils.getResourceContext(testUtils.getArea(), "userProfile", "update");
         ruleContext.initDefaultRules("security","userProfile", testUtils.getTestUserId());
         try (final SecuritySession ss = new SecuritySession(pContext, rContext)) {
-            authFactory.getUserManager().removeUserWithUserId(testUtils.getTestRealm(), "testuser@end2endlogic.com");
+            authFactory.getUserManager().removeUserWithUserId( "testuser@end2endlogic.com");
             if (authProvider.equals("custom")) {
                 // Create test user with roles
-                if (!authFactory.getUserManager().userIdExists(testUtils.getTestRealm(), "testuser@end2endlogic.com")) {
+                if (!authFactory.getUserManager().userIdExists("testuser@end2endlogic.com")) {
 
-                    authFactory.getUserManager().createUser(testUtils.getTestRealm(), "testuser@end2endlogic.com", "P@55w@rd",  Set.of("user"), testUtils.getTestDomainContext());
-                    authFactory.getUserManager().enableRealmOverrideWithUserId("testuser@end2endlogic.com", testUtils.getTestRealm(), "*");
+                    authFactory.getUserManager().createUser("testuser@end2endlogic.com", "P@55w@rd",  Set.of("user"), testUtils.getTestDomainContext());
+
 
                 } else {
                     Log.info("User already exists, skipping creation");
                 }
-                loginResponse = authFactory.getAuthProvider().login(testUtils.getTestRealm(), "testuser@end2endlogic.com", "P@55w@rd");
+               authFactory.getUserManager().enableRealmOverrideWithUserId("testuser@end2endlogic.com",  "*");
+                loginResponse = authFactory.getAuthProvider().login( "testuser@end2endlogic.com", "P@55w@rd");
             } else {
-                loginResponse = authFactory.getAuthProvider().login(testUtils.getTestRealm(), "system@system.com", "test123456");
+                loginResponse = authFactory.getAuthProvider().login( "system@system.com", "test123456");
             }
         }
 
@@ -111,20 +112,20 @@ public class SecureResourceTest {
         AuthProvider.LoginResponse loginResponse;
         try (final SecuritySession ss = new SecuritySession(pContext, rContext)) {
 
-            if (authFactory.getUserManager().userIdExists(testUtils.getTestRealm(), "testuser@end2endlogic.com")) {
-                authFactory.getUserManager().removeUserWithUserId(testUtils.getTestRealm(),"testuser@end2endlogic.com");
+            if (authFactory.getUserManager().userIdExists("testuser@end2endlogic.com")) {
+                authFactory.getUserManager().removeUserWithUserId("testuser@end2endlogic.com");
             }
 
-            authFactory.getUserManager().createUser(testUtils.getTestRealm(), "testuser@end2endlogic.com", "P@55w@rd", Set.of("user"), testUtils.getTestDomainContext());
+            authFactory.getUserManager().createUser( "testuser@end2endlogic.com", "P@55w@rd", Set.of("user"), testUtils.getTestDomainContext());
 
-            if (authFactory.getUserManager().userIdExists(testUtils.getTestRealm(),"testadmin@end2endlogic.com")) {
-                authFactory.getUserManager().removeUserWithUserId(testUtils.getTestRealm(),"testadmin@end2endlogic.com");
+            if (authFactory.getUserManager().userIdExists("testadmin@end2endlogic.com")) {
+                authFactory.getUserManager().removeUserWithUserId("testadmin@end2endlogic.com");
             }
 
-            authFactory.getUserManager().createUser(testUtils.getTestRealm(), "testadmin@end2endlogic.com", "P@55w@rd",  Set.of("admin"), testUtils.getTestDomainContext());
-            authFactory.getUserManager().enableImpersonationWithUserId("testadmin@end2endlogic.com", "true", "*", testUtils.getTestRealm());
+            authFactory.getUserManager().createUser("testadmin@end2endlogic.com", "P@55w@rd",  Set.of("admin"), testUtils.getTestDomainContext());
+            authFactory.getUserManager().enableImpersonationWithUserId("testadmin@end2endlogic.com", "true", "*", testUtils.getSystemRealm());
 
-           loginResponse = authFactory.getAuthProvider().login(testUtils.getTestRealm(), "testadmin@end2endlogic.com", "P@55w@rd");
+           loginResponse = authFactory.getAuthProvider().login("testadmin@end2endlogic.com", "P@55w@rd");
             Assertions.assertTrue(loginResponse.authenticated());
         }
 

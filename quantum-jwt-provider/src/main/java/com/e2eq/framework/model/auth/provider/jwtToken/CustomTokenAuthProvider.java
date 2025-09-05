@@ -76,17 +76,14 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
 
 
 
+
+
+
    @Override
    public void changePassword(String userId, String oldPassword, String newPassword, Boolean forceChangePassword) {
-      changePassword(envConfigUtils.getSystemRealm(), userId, oldPassword, newPassword, forceChangePassword);
-   }
-
-
-   @Override
-   public void changePassword(String realm, String userId, String oldPassword, String newPassword, Boolean forceChangePassword) {
-      Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(userId, realm);
+      Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(userId);
       if (!ocred.isPresent()) {
-         throw new NotFoundException(String.format("User with userId %s not found in realm %s", userId, realm));
+         throw new NotFoundException(String.format("User with userId %s not found in realm %s", userId, envConfigUtils.getSystemRealm()));
       }
 
       CredentialUserIdPassword cred = ocred.get();
@@ -95,20 +92,17 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
       }
       cred.setPasswordHash(EncryptionUtils.hashPassword(newPassword));
       cred.setForceChangePassword(forceChangePassword);
-      credentialRepo.save(realm, cred);
+      cred.setAuthProviderName(getName());
+      credentialRepo.save( cred);
    }
 
    @Override
    public String createUser (String userId, String password,  Set<String> roles,
                            DomainContext domainContext) throws SecurityException {
-      return createUser(envConfigUtils.getSystemRealm(), userId, password, roles, domainContext);
+      return createUser( userId, password, false, roles, domainContext);
    }
 
-   @Override
-   public String createUser (String userId, String password, Boolean forceChangePassword,  Set<String> roles,
-                           DomainContext domainContext) throws SecurityException {
-      return createUser(envConfigUtils.getSystemRealm(), userId, password, forceChangePassword,  roles, domainContext);
-   }
+
 
 
 
@@ -116,30 +110,13 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
    @Override
    public String createUser(String userId, String password,
                           Set<String> roles, DomainContext domainContext, DataDomain dataDomain) throws SecurityException {
-      return createUser(envConfigUtils.getSystemRealm(), userId, password, null,  roles, domainContext, dataDomain);
+      return createUser( userId, password, null, roles, domainContext, dataDomain);
    }
 
    @Override
-   public String createUser(String userId, String password, Boolean forceChangePassword,
-                          Set<String> roles, DomainContext domainContext, DataDomain dataDomain) throws SecurityException {
-      return createUser(envConfigUtils.getSystemRealm(), userId, password, forceChangePassword,  roles, domainContext, dataDomain);
-   }
-
-   @Override
-   public String createUser (String realm, String userId, String password, Set<String> roles, DomainContext domainContext) throws SecurityException {
-      return createUser(realm, userId, password, null, roles, domainContext);
-   }
-
-   @Override
-   public String createUser(String realm, String userId, String password,
-                          Set<String> roles, DomainContext domainContext, DataDomain dataDomain) throws SecurityException {
-      return createUser(realm, userId, password, null, roles, domainContext);
-   }
-
-   @Override
-   public String createUser (String realm, String userId, String password, Boolean forceChangePassword
+   public String createUser (String userId, String password, Boolean forceChangePassword
       , Set<String> roles, DomainContext domainContext) throws SecurityException {
-      Objects.requireNonNull(realm, "Realm cannot be null");
+
       Objects.requireNonNull(userId, "UserId cannot be null");
       Objects.requireNonNull(password, "Password cannot be null");
       Objects.requireNonNull(domainContext, "DomainContext cannot be null");
@@ -155,7 +132,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
       } catch (UnsupportedEncodingException ex) {
          throw new SecurityException("Security exception: " + ex.getMessage());
       }
-      Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(userId, realm);
+      Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(userId);
       if (ocred.isPresent()) {
          if (!ocred.get().getDomainContext().equals(domainContext)) {
             throw new SecurityException(String.format("User with the same userId:%s already exists with different " +
@@ -186,7 +163,8 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
          credential.setDomainContext(domainContext);
          credential.setRoles(roles.toArray(new String[roles.size()]));
          credential.setLastUpdate(new Date());
-         credentialRepo.save(realm, credential);
+         credential.setAuthProviderName(getName());
+         credentialRepo.save(credential);
       }
       return subject;
 
@@ -194,9 +172,8 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
 
    // Main implementation that accepts explicit DataDomain
    @Override
-   public String createUser(String realm, String userId, String password, Boolean forceChangePassword,
+   public String createUser(String userId, String password, Boolean forceChangePassword,
                           Set<String> roles, DomainContext domainContext, DataDomain dataDomain) throws SecurityException {
-      Objects.requireNonNull(realm, "Realm cannot be null");
       Objects.requireNonNull(userId, "UserId cannot be null");
 
       Objects.requireNonNull(password, "Password cannot be null");
@@ -212,7 +189,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
          throw new SecurityException("Security exception: " + ex.getMessage());
       }
 
-      Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(userId, realm);
+      Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(userId);
       if (ocred.isPresent()) {
 
          if (!ocred.get().getDomainContext().equals(domainContext)) {
@@ -245,8 +222,8 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
             }
             credential.setDataDomain(dataDomain);
          }
-
-         credentialRepo.save(realm, credential);
+         credential.setAuthProviderName(getName());
+         credentialRepo.save(credential);
 
       }
       return subject;
@@ -263,18 +240,9 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
       }
    }
 
-   @Override
-   public Optional<String> getSubjectForUserId (String realm, String userId) throws SecurityException {
-      Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(userId, realm);
-      if (ocred.isPresent()){
-         return Optional.of(ocred.get().getSubject());
-      } else {
-         return Optional.empty();
-      }
-   }
 
    @Override
-   public Optional<String> getUserIdForSubject (String subject) throws SecurityException {
+   public Optional<String> getUserIdForSubject ( String subject) throws SecurityException {
       Optional<CredentialUserIdPassword> ocred = credentialRepo.findBySubject(subject);
       if (ocred.isPresent()){
          return Optional.of(ocred.get().getUserId());
@@ -283,31 +251,17 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
       }
    }
 
-   @Override
-   public Optional<String> getUserIdForSubject (String realm, String subject) throws SecurityException {
-      Optional<CredentialUserIdPassword> ocred = credentialRepo.findBySubject(subject, realm);
-      if (ocred.isPresent()){
-         return Optional.of(ocred.get().getUserId());
-      } else {
-         return Optional.empty();
-      }
-   }
 
 
 
 
    @Override
    public boolean removeUserWithUserId (String userId) throws ReferentialIntegrityViolationException {
-      return removeUserWithUserId(envConfigUtils.getSystemRealm(), userId);
-   }
 
-   @Override
-   public boolean removeUserWithUserId (String realm, String userId) throws ReferentialIntegrityViolationException {
-      Objects.requireNonNull(realm, "Realm cannot be null");
       Objects.requireNonNull(userId, "UserId cannot be null");
-      Optional<CredentialUserIdPassword> ocredentialUserIdPassword = credentialRepo.findByUserId(userId, realm);
+      Optional<CredentialUserIdPassword> ocredentialUserIdPassword = credentialRepo.findByUserId(userId,envConfigUtils.getSystemRealm(),true);
       if (ocredentialUserIdPassword.isPresent()) {
-         long val = credentialRepo.delete(realm, ocredentialUserIdPassword.get());
+         long val = credentialRepo.delete(envConfigUtils.getSystemRealm(), ocredentialUserIdPassword.get());
          if (val != 0)
             return true;
          else
@@ -315,21 +269,17 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
       }
       return false;
    }
+
+
 
 
 
    @Override
    public boolean removeUserWithSubject (String subject) throws ReferentialIntegrityViolationException {
-      return removeUserWithSubject(envConfigUtils.getSystemRealm(), subject);
-   }
-
-   @Override
-   public boolean removeUserWithSubject (String realm, String subject) throws ReferentialIntegrityViolationException {
-      Objects.requireNonNull(realm, "Realm cannot be null");
       Objects.requireNonNull(subject, "Subject cannot be null");
-      Optional<CredentialUserIdPassword> ocredentialUserIdPassword = credentialRepo.findBySubject(subject, realm);
+      Optional<CredentialUserIdPassword> ocredentialUserIdPassword = credentialRepo.findBySubject(subject);
       if (ocredentialUserIdPassword.isPresent()) {
-         long val = credentialRepo.delete(realm, ocredentialUserIdPassword.get());
+         long val = credentialRepo.delete(envConfigUtils.getSystemRealm(), ocredentialUserIdPassword.get());
          if (val != 0)
             return true;
          else
@@ -339,108 +289,86 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
    }
 
    @Override
-   public void assignRolesForUserId (String userId, Set<String> roles) throws SecurityException {
-      Objects.requireNonNull(userId, "userId cannot be null");
-      assignRolesForUserId(envConfigUtils.getSystemRealm(), userId, roles);
-   }
+   public void assignRolesForUserId( String userId, Set<String> roles) throws SecurityException {
 
-   @Override
-   public void assignRolesForUserId(String realm, String userId, Set<String> roles) throws SecurityException {
-      Objects.requireNonNull(realm, "Realm cannot be null");
       Objects.requireNonNull(userId, "userId cannot be null");
       Objects.requireNonNull(roles, "Roles cannot be null");
 
-      credentialRepo.findByUserId(userId, realm).ifPresentOrElse(credential -> {
+      credentialRepo.findByUserId(userId).ifPresentOrElse(credential -> {
          Set<String> existingRoles = new HashSet<>(Arrays.asList(credential.getRoles()));
          existingRoles.addAll(roles);
          credential.setRoles(existingRoles.toArray(new String[existingRoles.size()]));
-         credentialRepo.save(realm, credential);
+         credentialRepo.save(credential);
       }, () -> {
          throw new SecurityException(String.format("User not found userId: %s", userId));
       });
    }
 
-   @Override
-   public void assignRolesForSubject (String subject, Set<String> roles) throws SecurityException {
-      assignRolesForSubject(envConfigUtils.getSystemRealm(), subject, roles);
-   }
+
 
    @Override
-   public void assignRolesForSubject (String realm, String subject, Set<String> roles) throws SecurityException {
-      Objects.requireNonNull(realm, "Realm cannot be null");
+   public void assignRolesForSubject ( String subject, Set<String> roles) throws SecurityException {
+
       Objects.requireNonNull(subject, "userId cannot be null");
       Objects.requireNonNull(roles, "Roles cannot be null");
 
-      credentialRepo.findBySubject(subject, realm).ifPresentOrElse(credential -> {
+      credentialRepo.findBySubject(subject).ifPresentOrElse(credential -> {
          Set<String> existingRoles = new HashSet<>(Arrays.asList(credential.getRoles()));
          existingRoles.addAll(roles);
          credential.setRoles(existingRoles.toArray(new String[existingRoles.size()]));
-         credentialRepo.save(realm, credential);
+         credentialRepo.save(credential);
       }, () -> {
          throw new SecurityException(String.format("User not found subject: %s", subject));
       });
    }
 
-   @Override
-   public void removeRolesForUserId (String userId, Set<String> roles) throws SecurityException {
-      Objects.requireNonNull(userId, "userId cannot be null");
-      Objects.requireNonNull(roles, "Roles cannot be null");
-      if (roles.isEmpty()) {
-         throw new IllegalArgumentException("Roles cannot be empty");
-      }
-      removeRolesForUserId(envConfigUtils.getSystemRealm(), userId, roles);
-   }
 
-   @Override
-   public void removeRolesForUserId (String realm, String userId, Set<String> roles) throws SecurityException {
-      Objects.requireNonNull(realm, "Realm cannot be null");
+
+   public void removeRolesForUserId (String userId, Set<String> roles) throws SecurityException {
+
       Objects.requireNonNull(userId, "userId cannot be null");
       Objects.requireNonNull(roles, "Roles cannot be null");
       if (roles.isEmpty()) {
          throw new IllegalArgumentException("Roles cannot be empty");
       }
-      credentialRepo.findByUserId(userId, realm).ifPresentOrElse(
+      credentialRepo.findByUserId(userId).ifPresentOrElse(
          credential -> {
             Set<String> existingRoles = new HashSet<>(Arrays.asList(credential.getRoles()));
             existingRoles.removeAll(roles);
             credential.setRoles(existingRoles.toArray(new String[existingRoles.size()]));
-            credentialRepo.save(realm, credential);
+            credentialRepo.save(credential);
          }, () -> {
             throw new SecurityException("User not found with userId: " + userId);
          });
 
    }
 
-   @Override
-   public void removeRolesForSubject (String realm, String subject, Set<String> roles) throws SecurityException {
-      Objects.requireNonNull(realm, "Realm cannot be null");
+
+   public void removeRolesForSubject (String subject, Set<String> roles) throws SecurityException {
+
       Objects.requireNonNull(subject, "subject cannot be null");
       Objects.requireNonNull(roles, "Roles cannot be null");
       if (roles.isEmpty()) {
          throw new IllegalArgumentException("Roles cannot be empty");
       }
-      credentialRepo.findBySubject(subject, realm).ifPresentOrElse(
+      credentialRepo.findBySubject(subject).ifPresentOrElse(
          credential -> {
             Set<String> existingRoles = new HashSet<>(Arrays.asList(credential.getRoles()));
             existingRoles.removeAll(roles);
             credential.setRoles(existingRoles.toArray(new String[existingRoles.size()]));
-            credentialRepo.save(realm, credential);
+            credentialRepo.save(credential);
          }, () -> {
             throw new SecurityException("User not found with userId: " + subject);
          });
    }
 
 
-   @Override
-   public Set<String> getUserRolesForSubject (String subject) throws SecurityException {
-      return getUserRolesForSubject(envConfigUtils.getSystemRealm(), subject);
-   }
 
    @Override
-   public Set<String> getUserRolesForSubject (String realm, String subject) throws SecurityException {
+   public Set<String> getUserRolesForSubject ( String subject) throws SecurityException {
       Set<String> rolesHolder = new HashSet<>();
 
-      credentialRepo.findBySubject(subject, realm).ifPresentOrElse(
+      credentialRepo.findBySubject(subject).ifPresentOrElse(
          credential -> {
             rolesHolder.addAll(Arrays.asList(credential.getRoles()));
          },
@@ -450,28 +378,16 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
       );
 
       return rolesHolder;
-
-
-        /* old code can be removed
-        final Set<String>[] rolesHolder = new Set[1];
-
-        credentialRepo.findByUserId(subject).ifPresentOrElse(
-            credential -> {
-                rolesHolder[0] = new HashSet<>(Arrays.asList(credential.getRoles()));
-            },
-            () -> {
-                throw new SecurityException("User not found: " + subject);
-            }
-        );
-
-        return rolesHolder[0]; */
    }
 
+
+
+
    @Override
-   public Set<String> getUserRolesForUserId (String realm, String userId) throws SecurityException {
+   public Set<String> getUserRolesForUserId ( String userId) throws SecurityException {
       Set<String> rolesHolder = new HashSet<>();
 
-      credentialRepo.findByUserId(userId, realm).ifPresentOrElse(
+      credentialRepo.findByUserId(userId).ifPresentOrElse(
          credential -> {
             rolesHolder.addAll(Arrays.asList(credential.getRoles()));
          },
@@ -483,42 +399,27 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
       return rolesHolder;
    }
 
-   @Override
-   public Set<String> getUserRolesForUserId (String userId) throws SecurityException {
-      return getUserRolesForUserId(envConfigUtils.getSystemRealm(), userId);
-   }
+
+
 
    @Override
    public boolean subjectExists (String subject) throws SecurityException {
-      return subjectExists(envConfigUtils.getSystemRealm(), subject);
-   }
-
-   @Override
-   public boolean subjectExists (String realm, String subject) throws SecurityException {
-      return credentialRepo.findBySubject(subject, realm).isPresent();
+      return credentialRepo.findBySubject(subject).isPresent();
    }
 
 
-   @Override
-   public boolean userIdExists (String userId) throws SecurityException {
-      return userIdExists(envConfigUtils.getSystemRealm(), userId);
-   }
+
 
    @Override
-   public boolean userIdExists (String realm, String userId) throws SecurityException {
-      return credentialRepo.findByUserId(userId, realm).isPresent();
+   public boolean userIdExists ( String userId) throws SecurityException {
+      return credentialRepo.findByUserId(userId).isPresent();
    }
 
 
    @Override
    public LoginResponse login (String userId, String password) {
-      return login(envConfigUtils.getSystemRealm(), userId, password);
-   }
-
-   @Override
-   public LoginResponse login (String realm, String userId, String password) {
       try {
-         Optional<CredentialUserIdPassword> ocredential = getCredentials(realm, userId);
+         Optional<CredentialUserIdPassword> ocredential = getCredentials(envConfigUtils.getSystemRealm(), userId);
 
          if (ocredential.isPresent()) {
             CredentialUserIdPassword credential = ocredential.get();
@@ -529,7 +430,8 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                      403,
                      "Password change required",
                      "PasswordChangeRequired",
-                     "Password change required")
+                     "Password change required",
+                     envConfigUtils.getSystemRealm())
                );
             }
             String alg = credential.getHashingAlgorithm();
@@ -559,7 +461,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                         refreshToken,
                         TokenUtils.currentTimeInSecs() + durationInSeconds,
                         mongodbConnectionString,
-                        realm)
+                        envConfigUtils.getSystemRealm())
                   );
                } else {
                   return new LoginResponse(false,
@@ -568,7 +470,8 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                         401,
                         "Invalid credentials",
                         "Invalid credentials",
-                        "credentials did not match")
+                        "credentials did not match",
+                         envConfigUtils.getSystemRealm())
                   );
                }
             } else {
@@ -581,7 +484,8 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                   404,
                   "Invalid credentials",
                   "NotFound",
-                  "Credentials not found")
+                  "Credentials not found",
+                   envConfigUtils.getSystemRealm())
             );
          }
       } catch (IOException | NoSuchAlgorithmException | InvalidKeySpecException e) {
@@ -591,7 +495,8 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                500,
                e.getMessage(),
                e.getClass().getName(),
-               e.toString()
+               e.toString(),
+               envConfigUtils.getSystemRealm()
             )
          );
       }
@@ -622,7 +527,8 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                500,
                e.getMessage(),
                e.getClass().getName(),
-               e.toString()));
+               e.toString(),
+               envConfigUtils.getSystemRealm()));
       }
    }
 
