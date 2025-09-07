@@ -20,7 +20,7 @@ public class DatabaseVersionRepo extends MorphiaRepo<DatabaseVersion> {
 
 
    public Optional<DatabaseVersion> findCurrentVersion(Datastore datastore) {
-      Log.infof("Finding database version for datastore: %s", datastore.getDatabase().getName() );
+      Log.debugf("Finding database version for datastore: %s", datastore.getDatabase().getName() );
 
 
       DatabaseVersion version =  datastore.find(DatabaseVersion.class)
@@ -30,9 +30,9 @@ public class DatabaseVersionRepo extends MorphiaRepo<DatabaseVersion> {
               .tryNext();
 
       if (version == null) {
-         Log.infof("No database version found for datastore: %s", datastore.getDatabase().getName());
+         Log.debugf("No database version found for datastore: %s", datastore.getDatabase().getName());
       } else {
-         Log.infof("Found database version %s for datastore: %s", version.getCurrentVersionString(), datastore.getDatabase().getName());
+         Log.debugf("Found database version %s for datastore: %s", version.getCurrentVersionString(), datastore.getDatabase().getName());
       }
       return Optional.ofNullable(version);
    }

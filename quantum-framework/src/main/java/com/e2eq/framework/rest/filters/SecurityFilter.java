@@ -125,16 +125,16 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             String action;
             int tokenCount = tokenizer.countTokens();
 
-            if (tokenCount > 2) {
+            if (tokenCount > 3) {
                 if (Log.isEnabled(Logger.Level.WARN)) {
-                    Log.warn("Path: +" + path + " three or more levels");
+                    Log.warnf("Path: %s has  more than 3 levels", path );
                 }
                 area = tokenizer.nextToken();
                 functionalDomain = tokenizer.nextToken();
                 action = tokenizer.nextToken();
 
                 if (Log.isDebugEnabled()) {
-                    Log.debug("Based upon request convention assumed that the area is:" + area + " functional domain is:" + functionalDomain + " and action is:" + action);
+                    Log.debugf("Based upon request convention assumed that the area is:%s  functional domain is:%s  and action is:%s", area, functionalDomain, action);
                 }
 
                 rcontext = new ResourceContext.Builder()
@@ -146,7 +146,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 if (Log.isDebugEnabled())
                     Log.debug("Resource Context set");
 
-            } else if (tokenCount == 2) {
+            } else if (tokenCount == 3) {
                 functionalDomain = tokenizer.nextToken();
                 action = tokenizer.nextToken();
                 rcontext = new ResourceContext.Builder()
@@ -155,16 +155,13 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                         .withFunctionalDomain(functionalDomain)
                         .build();
                 SecurityContext.setResourceContext(rcontext);
-                if (Log.isEnabled(Logger.Level.WARN)) {
-                    Log.warnf( "%s:Odd request convention, not following /area/fd/fa .. so assuming the fd and area are equal: %s only two tokens for resource, assuming area as fd, fd=%s action=%s" , path, functionalDomain, functionalDomain, action);
-                }
 
                 if (Log.isDebugEnabled()) {
                     Log.debug("Resource Context set");
                 }
 
             } else {
-                Log.warn("Non conformant url:" + path + " could not set resource context as a result, expecting /area/functionalDomain/action: TokenCount:" + tokenCount);
+                Log.warnf("Non conformant path:%s could not set resource context as a result, expecting /area/functionalDomain/action: TokenCount:%s -- setting to an anonymous context", path, tokenCount);
                 rcontext = ResourceContext.DEFAULT_ANONYMOUS_CONTEXT;
             }
             return rcontext;
@@ -420,6 +417,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                                       .withUserId(oicreds.get().getUserId())
                                       .withRoles(roles)
                                       .withScope("AUTHENTICATED")
+                                      .withArea2RealmOverrides(oicreds.get().getArea2RealmOverrides())
                                       .withImpersonatedBySubject(oicreds.get().getSubject())
                                       .withImpersonatedByUserId(oicreds.get().getUserId())
                                       .withActingOnBehalfOfUserId(actingOnBehalfOfUserId)
@@ -450,6 +448,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                                       .withUserId(creds.getUserId())
                                       .withRoles(roles)
                                       .withScope("AUTHENTICATED")
+                                      .withArea2RealmOverrides(creds.getArea2RealmOverrides())
                                       .build();
                         if (Log.isDebugEnabled()) {
                             Log.debugf("Principal Context updated with roles: %s", Arrays.toString(roles));

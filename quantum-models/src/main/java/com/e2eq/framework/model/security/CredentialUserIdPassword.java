@@ -39,6 +39,12 @@ public class CredentialUserIdPassword extends BaseModel {
     @NotEmpty
     protected String subject;
 
+    /** optional field to provide a description of the credential */
+    protected String description;
+
+    /** optional field to provide an email of the responsible party */
+    protected String emailOfResponsibleParty;
+
     @NonNull
     @NotNull ( message = "domain context is required")
     @Valid

@@ -1,5 +1,6 @@
 package com.e2eq.framework.model.persistent.morphia.changesets;
 
+import com.e2eq.framework.model.persistent.migration.base.ChangeSetBase;
 import com.e2eq.framework.model.persistent.morphia.*;
 import com.e2eq.framework.model.security.*;
 import com.e2eq.framework.model.securityrules.RuleEffect;
@@ -37,7 +38,7 @@ import java.util.*;
 
 @Startup
 @ApplicationScoped
-public class InitializeDatabase implements ChangeSetBean {
+public class InitializeDatabase extends ChangeSetBase {
 
    @Inject
    OrganizationRepo orgRepo;
