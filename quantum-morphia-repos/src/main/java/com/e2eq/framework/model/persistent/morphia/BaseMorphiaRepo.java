@@ -117,6 +117,8 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
     */
    Optional<T> findById (@NotNull ObjectId id, String realmId);
 
+   Optional<T> findById (@NotNull ObjectId id, String realmId, boolean ignoreRules);
+
    /**
     * Finds an entity by its {@link ObjectId} using an explicit datastore.
     * @param s  the datastore to use; must not be null
@@ -124,6 +126,16 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
     * @return an {@link Optional} with the entity if found
     */
    Optional<T> findById(@NotNull Datastore s, @NotNull ObjectId id);
+
+   /**
+    * Finds an entity by its {@link ObjectId} using an explicit datastore.
+    * @param s  the datastore to use; must not be null
+    * @param id the object id; must not be null
+    * @param ignoreRules whether to ignore rules for reference name/alias resolution
+    * @return an {@link Optional} with the entity if found
+    */
+   public Optional<T> findById(@NotNull Datastore datastore, @NotNull ObjectId id, boolean ignoreRules);
+
 
    /**
     * Finds an entity by its reference name/alias in the default/current realm.
@@ -147,6 +159,15 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
     * @return an {@link Optional} with the entity if found
     */
    Optional<T> findByRefName(@NotNull Datastore datastore, @NotNull String refName);
+
+   /**
+    * Finds an entity by its reference name/alias using an explicit datastore.
+    * @param datastore the datastore to use; must not be null
+    * @param refName   the reference value; must not be null
+    * @param ignoreRules whether to ignore rules for reference name/alias resolution
+    * @return an {@link Optional} with the entity if found
+    */
+   public Optional<T> findByRefName(@NotNull Datastore datastore, @NotNull String refName, boolean ignoreRules);
 
    /**
     * Returns a JSON Schema representation of the entity for validation and UI-generation.

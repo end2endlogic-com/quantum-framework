@@ -7,6 +7,7 @@ import org.graalvm.polyglot.HostAccess;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.util.Arrays;
+import java.util.Map;
 
 /**
  * PrincipalContext holds the contextual information about the authenticated principal.
@@ -27,6 +28,7 @@ public final class PrincipalContext {
    String impersonatedByUserId; // The scope under which this context was built, be that for authentication purposes or refresh purposes
    String actingOnBehalfOfSubject;
    String actingOnBehalfOfUserId;
+   Map<String, String> area2RealmOverrides;
 
    PrincipalContext(@NotNull String defaultRealm,
                     @Valid @NotNull DataDomain dataDomain,
@@ -64,6 +66,8 @@ public final class PrincipalContext {
       this.actingOnBehalfOfUserId = actingOnBehalfOfUserId;
    }
 
+
+
    public static class Builder {
 
       String defaultRealm = null;
@@ -75,6 +79,7 @@ public final class PrincipalContext {
       String impersonatedByUserId;
       String actingOnBehalfOfUserId;
       String actingOnBehalfOfSubject;
+      Map<String, String> area2RealmOverrides;
 
       public Builder withDefaultRealm(String realm) {
          this.defaultRealm = realm;
@@ -117,6 +122,11 @@ public final class PrincipalContext {
          return this;
       }
 
+      public Builder withArea2RealmOverrides(Map<String, String> overrides) {
+         this.area2RealmOverrides = overrides;
+         return this;
+      }
+
       public PrincipalContext build() {
          return
             new PrincipalContext(defaultRealm, dataDomain, userId, roles, scope,
@@ -128,6 +138,11 @@ public final class PrincipalContext {
    @HostAccess.Export
    public String getDefaultRealm () {
       return defaultRealm;
+   }
+
+   @HostAccess.Export
+   public Map<String, String> getArea2RealmOverrides () {
+      return area2RealmOverrides;
    }
 
    public void setDefaultRealm (String defaultRealm) {

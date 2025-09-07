@@ -132,6 +132,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                     com.e2eq.framework.model.persistent.base.DataDomain dataDomain;
                     String userId;
                     String contextRealm;
+                    Map<String, String> area2RealmOverrides=null;
                     if (ocreds.isPresent()) {
                         var creds = ocreds.get();
                         dataDomain = creds.getDomainContext().toDataDomain(creds.getUserId());
@@ -142,6 +143,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                             java.util.Set<String> combined = new java.util.HashSet<>(rolesSet);
                             combined.addAll(java.util.Arrays.asList(credRoles));
                             roles = combined.toArray(new String[0]);
+                            area2RealmOverrides = creds.getArea2RealmOverrides();
                         }
                     } else {
                         //dataDomain = securityUtils.getSystemDataDomain();
@@ -155,6 +157,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                             .withDataDomain(dataDomain)
                             .withUserId(userId)
                             .withRoles(roles)
+                            .withArea2RealmOverrides(area2RealmOverrides)
                             .withScope("AUTHENTICATED")
                             .build();
 
@@ -206,7 +209,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
        if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
             filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get(), modelClass);
             if (Log.isDebugEnabled()) {
-                Log.debugf("getFilterArray for %s security context: %s", SecurityContext.getPrincipalContext().get().getUserId(), filters);
+                Log.debugf("getFilterArray for %s security context: %s using Database:%s", SecurityContext.getPrincipalContext().get().getUserId(), filters, getDatabaseName());
             }
         } else {
             throw new RuntimeException("Logic error SecurityContext should be present; this implies that an attempt to call a method was made where the user was not logged in");
@@ -274,15 +277,30 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
    @Override
    public Optional<T> findById (@NotNull ObjectId id, String realmId) {
-      return findById(morphiaDataStore.getDataStore(realmId), id);
+      return findById(morphiaDataStore.getDataStore(realmId), id, false);
+   }
+
+   @Override
+   public Optional<T> findById (@NotNull ObjectId id, String realmId, boolean ignoreRules) {
+       return findById(morphiaDataStore.getDataStore(realmId), id, ignoreRules);
+   }
+
+   @Override
+   public Optional<T> findById(@NotNull Datastore datastore, @NotNull ObjectId id) {
+      return findById(datastore, id, false);
    }
 
     @Override
-    public Optional<T> findById(@NotNull Datastore datastore, @NotNull ObjectId id) {
+    public Optional<T> findById(@NotNull Datastore datastore, @NotNull ObjectId id, boolean ignoreRules) {
         List<Filter> filters = new ArrayList<>();
         filters.add(Filters.eq("_id", id));
         // Add filters based upon rule and resourceContext;
-        Filter[] qfilters = getFilterArray(filters, getPersistentClass());
+       Filter[] qfilters = new Filter[1];
+       if (!ignoreRules) {
+          qfilters = getFilterArray(filters, getPersistentClass());
+       } else {
+          qfilters = filters.toArray(qfilters);
+       }
 
         Query<T> query = datastore.find(getPersistentClass()).filter(qfilters);
         T obj = query.first();
@@ -308,15 +326,25 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
       return findByRefName(morphiaDataStore.getDataStore(realmId), refName);
    }
 
+   @Override
+   public Optional<T> findByRefName(@NotNull Datastore datastore, @NotNull String refName) {
+      return findByRefName(datastore, refName, false);
+   }
+
 
     @Override
-    public Optional<T> findByRefName(@NotNull Datastore datastore, @NotNull String refName) {
+    public Optional<T> findByRefName(@NotNull Datastore datastore, @NotNull String refName, boolean ignoreRules) {
         Objects.requireNonNull(refName, "the refName can not be null");
 
         List<Filter> filters = new ArrayList<>();
         filters.add(Filters.eq("refName", refName));
         // Add filters based upon rule and resourceContext;
-        Filter[] qfilters = getFilterArray(filters, getPersistentClass());
+       Filter[] qfilters = new Filter[1];;
+       if (!ignoreRules) {
+          qfilters = getFilterArray(filters, getPersistentClass());
+       } else {
+          qfilters = filters.toArray(qfilters);
+       }
 
         Query<T> query = datastore.find(getPersistentClass()).filter(qfilters);
         T obj = query.first();

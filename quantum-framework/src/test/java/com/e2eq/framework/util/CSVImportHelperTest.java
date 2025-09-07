@@ -5,6 +5,7 @@ import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import org.bson.types.ObjectId;
+import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -51,10 +52,13 @@ public class CSVImportHelperTest {
         @Override public java.util.Optional<TestItem> findById(String id, String realmId) { throw new UnsupportedOperationException(); }
         @Override public java.util.Optional<TestItem> findById(ObjectId id) { throw new UnsupportedOperationException(); }
         @Override public java.util.Optional<TestItem> findById(ObjectId id, String realmId) { throw new UnsupportedOperationException(); }
+       @Override public  java.util.Optional<TestItem> findById (@NotNull ObjectId id, String realmId, boolean ignoreRules) { throw new UnsupportedOperationException(); }
         @Override public java.util.Optional<TestItem> findById(dev.morphia.Datastore s, ObjectId id) { throw new UnsupportedOperationException(); }
+       @Override public java.util.Optional<TestItem> findById(dev.morphia.Datastore s, ObjectId id, boolean ignoreRules) { throw new UnsupportedOperationException(); }
         @Override public java.util.Optional<TestItem> findByRefName(String refId) { throw new UnsupportedOperationException(); }
         @Override public java.util.Optional<TestItem> findByRefName(String refName, String realmId) { throw new UnsupportedOperationException(); }
         @Override public java.util.Optional<TestItem> findByRefName(dev.morphia.Datastore datastore, String refName) { throw new UnsupportedOperationException(); }
+       @Override public java.util.Optional<TestItem> findByRefName(dev.morphia.Datastore datastore, String refName, boolean ignoreRules) { throw new UnsupportedOperationException(); }
         @Override public com.fasterxml.jackson.module.jsonSchema.jakarta.JsonSchema getSchema() { throw new UnsupportedOperationException(); }
         @Override public List<TestItem> getAllList() { return new ArrayList<>(store.values()); }
         @Override public List<TestItem> getAllList(String realmId) { return getAllList(); }

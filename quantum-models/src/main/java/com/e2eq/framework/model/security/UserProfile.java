@@ -45,6 +45,7 @@ public  class UserProfile extends BaseModel {
     @NotNull (message = "credential reference must not be null")
     @NonNull
     protected EntityReference credentialUserIdPasswordRef;
+    protected String userId;
 
     protected String fname;
     protected String lname;
