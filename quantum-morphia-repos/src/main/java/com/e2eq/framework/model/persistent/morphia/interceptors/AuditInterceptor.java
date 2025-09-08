@@ -18,9 +18,9 @@ public class AuditInterceptor implements EntityListener<Object> {
     @Override
     @PrePersist
     public void prePersist(Object ent, Document document, Datastore datastore) {
-        BaseModel bm = null;
+        UnversionedBaseModel bm = null;
         if (ent instanceof UnversionedBaseModel) {
-            bm = (BaseModel) ent;
+            bm = (UnversionedBaseModel) ent;
 
             // Moved to the ValidationInterceptor to set the DataDomain.
            /* if (SecurityContext.getPrincipalContext().isPresent()) {
