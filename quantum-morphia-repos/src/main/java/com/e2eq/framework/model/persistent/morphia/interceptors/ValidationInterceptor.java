@@ -42,11 +42,11 @@ public class ValidationInterceptor implements EntityListener<Object> {
 
    @Override
    public void prePersist (Object ent, Document document, Datastore datastore) {
-      BaseModel bm = null;
+      UnversionedBaseModel bm = null;
       boolean skipValidation = false;
 
       if (ent instanceof UnversionedBaseModel) {
-         bm = (BaseModel) ent;
+         bm = (UnversionedBaseModel) ent;
          if (!bm.isSkipValidation()) {
             if (SecurityContext.getPrincipalContext().isPresent()) {
                if (bm.getDataDomain() == null) {
