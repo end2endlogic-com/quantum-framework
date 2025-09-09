@@ -623,6 +623,72 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
     */
    public long update(MorphiaSession session, @NotNull ObjectId id, @NotNull Pair<String, Object>... pairs);
 
+   // --- Bulk update operations ---
+   /**
+    * Bulk update by query string (ANTLR DSL) in the default realm applying security rules.
+    */
+   default long updateManyByQuery(@Nullable String query, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+      throw new UnsupportedOperationException("updateManyByQuery not implemented");
+   }
+   /** Bulk update by query within a realm applying security rules. */
+   default long updateManyByQuery(@NotNull String realmId, @Nullable String query, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+      throw new UnsupportedOperationException("updateManyByQuery not implemented");
+   }
+   /** Bulk update by query using explicit datastore and applying security rules. */
+   default long updateManyByQuery(@NotNull Datastore datastore, @Nullable String query, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+      throw new UnsupportedOperationException("updateManyByQuery not implemented");
+   }
+   /** Bulk update by query with option to ignore security rules using explicit datastore. */
+   default long updateManyByQuery(@NotNull Datastore datastore, @Nullable String query, boolean ignoreRules, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+      throw new UnsupportedOperationException("updateManyByQuery not implemented");
+   }
+
+   /**
+    * Bulk update by list of ids in the default realm applying security rules.
+    */
+   default long updateManyByIds(@NotNull @NotEmpty List<ObjectId> ids, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+      throw new UnsupportedOperationException("updateManyByIds not implemented");
+   }
+   /** Bulk update by ids within a realm applying security rules. */
+   default long updateManyByIds(@NotNull String realmId, @NotNull @NotEmpty List<ObjectId> ids, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+      throw new UnsupportedOperationException("updateManyByIds not implemented");
+   }
+   /** Bulk update by ids using explicit datastore and applying security rules. */
+   default long updateManyByIds(@NotNull Datastore datastore, @NotNull @NotEmpty List<ObjectId> ids, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+      throw new UnsupportedOperationException("updateManyByIds not implemented");
+   }
+   /** Bulk update by ids with option to ignore security rules using explicit datastore. */
+   default long updateManyByIds(@NotNull Datastore datastore, @NotNull @NotEmpty List<ObjectId> ids, boolean ignoreRules, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+      throw new UnsupportedOperationException("updateManyByIds not implemented");
+   }
+
+   /**
+    * Bulk update by list of (refName, DataDomain) pairs in the default realm applying security rules.
+    */
+   default long updateManyByRefAndDomain(@NotNull @NotEmpty List<org.apache.commons.lang3.tuple.Pair<String, com.e2eq.framework.model.persistent.base.DataDomain>> items,
+                                 @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+      throw new UnsupportedOperationException("updateManyByRefAndDomain not implemented");
+   }
+   /** Bulk update by ref/domain within a realm applying security rules. */
+   default long updateManyByRefAndDomain(@NotNull String realmId,
+                                 @NotNull @NotEmpty List<org.apache.commons.lang3.tuple.Pair<String, com.e2eq.framework.model.persistent.base.DataDomain>> items,
+                                 @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+      throw new UnsupportedOperationException("updateManyByRefAndDomain not implemented");
+   }
+   /** Bulk update by ref/domain using explicit datastore and applying security rules. */
+   default long updateManyByRefAndDomain(@NotNull Datastore datastore,
+                                 @NotNull @NotEmpty List<org.apache.commons.lang3.tuple.Pair<String, com.e2eq.framework.model.persistent.base.DataDomain>> items,
+                                 @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+      throw new UnsupportedOperationException("updateManyByRefAndDomain not implemented");
+   }
+   /** Bulk update by ref/domain with option to ignore security rules using explicit datastore. */
+   default long updateManyByRefAndDomain(@NotNull Datastore datastore,
+                                 @NotNull @NotEmpty List<org.apache.commons.lang3.tuple.Pair<String, com.e2eq.framework.model.persistent.base.DataDomain>> items,
+                                 boolean ignoreRules,
+                                 @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+      throw new UnsupportedOperationException("updateManyByRefAndDomain not implemented");
+   }
+
    /**
     * Merges the detached entity state into persistence context in the default realm.
     * Semantics are similar to JPA merge: fields are reconciled and the persistent instance is returned.
