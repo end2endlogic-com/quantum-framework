@@ -67,6 +67,9 @@ field.subfield:^[67648ff00fb5e63655b172f9,67648ff00fb5e63655b172f6]
 field.subfield.subsubfield:^[deepvalue1,deepvalue2]
 
 
+#-- ElemMatch operator tests
+arrayField:{subField:1&&otherSub:2}
+
 #-- Combination of Operators
 (field:1&&field2:2)||field3:3
 field1:1&&(field2:2||field3:3)

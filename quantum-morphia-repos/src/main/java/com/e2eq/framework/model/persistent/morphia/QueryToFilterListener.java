@@ -11,6 +11,7 @@ import dev.morphia.query.filters.Filters;
 import io.quarkus.logging.Log;
 import org.antlr.v4.runtime.CommonToken;
 import org.antlr.v4.runtime.Token;
+import org.antlr.v4.runtime.tree.ParseTreeWalker;
 import org.apache.commons.text.StringSubstitutor;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
@@ -315,6 +316,15 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
 
         Filter f = Filters.in(ctx.field.getText(), values);
 
+        filterStack.push(f);
+    }
+
+    @Override
+    public void enterElemMatchExpr(BIAPIQueryParser.ElemMatchExprContext ctx) {
+        QueryToFilterListener listener = new QueryToFilterListener(variableMap, sub, modelClass);
+        ParseTreeWalker walker = new ParseTreeWalker();
+        walker.walk(listener, ctx.nested);
+        Filter f = Filters.elemMatch(ctx.field.getText(), listener.getFilter());
         filterStack.push(f);
     }
 

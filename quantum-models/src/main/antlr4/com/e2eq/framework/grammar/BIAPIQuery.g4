@@ -3,7 +3,7 @@ grammar BIAPIQuery;
 query: (exprGroup | compoundExpr) (exprOp (exprGroup | compoundExpr))*;
 exprGroup: lp=LPAREN (exprGroup | compoundExpr) (exprOp (exprGroup | compoundExpr))* rp=RPAREN;
 compoundExpr: allowedExpr (exprOp allowedExpr)*;
-allowedExpr: inExpr |  basicExpr |  nullExpr | existsExpr | booleanExpr | notExpr | regexExpr ;
+allowedExpr: elemMatchExpr | inExpr |  basicExpr |  nullExpr | existsExpr | booleanExpr | notExpr | regexExpr ;
 exprOp: op=(AND | OR);
 existsExpr: field=STRING op=EXISTS;
 booleanExpr: field=STRING op=(EQ | NEQ) value=(TRUE | FALSE);
@@ -33,6 +33,8 @@ regex: ((leftW=WILDCARD value=STRING rightW=WILDCARD)
 regexExpr: field=STRING op=(EQ | NEQ) regex;
 
 nullExpr: field=STRING op=(EQ | NEQ) value=NULL;
+
+elemMatchExpr: field=STRING op=EQ lp=LBRCE nested=query rp=RBRCE;
 
 
 // Operators
