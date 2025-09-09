@@ -112,6 +112,11 @@ mongod --wiredTigerCacheSizeGB 1 --dbpath /Users/<your userId>/data
 #### REST Conventions
 #### Error Handling and Responses
 #### LIST API Conventions
+The List API supports query parameters for filtering, pagination, sorting, and projection.
+To sort results, supply a `sort` parameter with comma-separated field names prefixed by `+` for ascending
+or `-` for descending order. For example: `?sort=-name,+id` sorts by name descending and id ascending.
+To limit returned fields, use the `projection` parameter with a comma-separated list of fields to include or
+exclude. Prefix a field with `+` to include it or `-` to exclude it, e.g. `?projection=+id,+name,-internalNotes`.
 #### Search API Conventions
 #### Invalid / Valid Object Persistence
 #### Merge vs. Replace Update Models
