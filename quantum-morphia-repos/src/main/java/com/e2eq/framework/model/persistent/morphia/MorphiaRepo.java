@@ -1526,6 +1526,196 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         return update.getModifiedCount();
     }
 
+    // --- Bulk update implementations ---
+    @Override
+    public long updateManyByQuery(@Nullable String query, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+        return updateManyByQuery(morphiaDataStore.getDataStore(getSecurityContextRealmId()), query, false, pairs);
+    }
+
+    @Override
+    public long updateManyByQuery(@NotNull String realmId, @Nullable String query, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+        return updateManyByQuery(morphiaDataStore.getDataStore(realmId), query, false, pairs);
+    }
+
+    @Override
+    public long updateManyByQuery(@NotNull Datastore datastore, @Nullable String query, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+        return updateManyByQuery(datastore, query, false, pairs);
+    }
+
+    @Override
+    public long updateManyByQuery(@NotNull Datastore datastore, @Nullable String query, boolean ignoreRules, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+        List<Filter> filters = new ArrayList<>();
+        if (query != null && !query.trim().isEmpty()) {
+            Filter qf = MorphiaUtils.convertToFilter(query, getPersistentClass());
+            filters.add(Filters.and(qf));
+        }
+        Filter[] qfilters;
+        if (!ignoreRules) {
+            qfilters = getFilterArray(filters, getPersistentClass());
+        } else {
+            qfilters = filters.toArray(new Filter[filters.size()]);
+        }
+        List<UpdateOperator> ops = buildValidatedUpdateOperators(pairs);
+        if (BaseModel.class.isAssignableFrom(getPersistentClass())) {
+            ops.add(UpdateOperators.inc("version", 1));
+        }
+        ops.add(UpdateOperators.set("auditInfo.lastUpdateTs", new Date()));
+        ops.add(UpdateOperators.set("auditInfo.lastUpdateIdentity", securityIdentity.getPrincipal().getName()));
+        UpdateResult res;
+        if (ops.size() == 1) {
+            res = datastore.find(getPersistentClass()).filter(qfilters).update(ops.get(0));
+        } else {
+            UpdateOperator[] arr = ops.toArray(new UpdateOperator[0]);
+            res = datastore.find(getPersistentClass()).filter(qfilters).update(arr[0], Arrays.copyOfRange(arr, 1, arr.length));
+        }
+        return res.getModifiedCount();
+    }
+
+    @Override
+    public long updateManyByIds(@NotNull List<ObjectId> ids, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+        return updateManyByIds(morphiaDataStore.getDataStore(getSecurityContextRealmId()), ids, false, pairs);
+    }
+
+    @Override
+    public long updateManyByIds(@NotNull String realmId, @NotNull List<ObjectId> ids, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+        return updateManyByIds(morphiaDataStore.getDataStore(realmId), ids, false, pairs);
+    }
+
+    @Override
+    public long updateManyByIds(@NotNull Datastore datastore, @NotNull List<ObjectId> ids, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+        return updateManyByIds(datastore, ids, false, pairs);
+    }
+
+    @Override
+    public long updateManyByIds(@NotNull Datastore datastore, @NotNull List<ObjectId> ids, boolean ignoreRules, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+        Objects.requireNonNull(ids, "ids must not be null");
+        if (ids.isEmpty()) return 0;
+        List<Filter> filters = new ArrayList<>();
+        filters.add(Filters.in("_id", ids));
+        Filter[] qfilters;
+        if (!ignoreRules) {
+            qfilters = getFilterArray(filters, getPersistentClass());
+        } else {
+            qfilters = filters.toArray(new Filter[filters.size()]);
+        }
+        List<UpdateOperator> ops = buildValidatedUpdateOperators(pairs);
+        if (BaseModel.class.isAssignableFrom(getPersistentClass())) {
+            ops.add(UpdateOperators.inc("version", 1));
+        }
+        ops.add(UpdateOperators.set("auditInfo.lastUpdateTs", new Date()));
+        ops.add(UpdateOperators.set("auditInfo.lastUpdateIdentity", securityIdentity.getPrincipal().getName()));
+        UpdateResult res;
+        if (ops.size() == 1) {
+            res = datastore.find(getPersistentClass()).filter(qfilters).update(ops.get(0));
+        } else {
+            UpdateOperator[] arr = ops.toArray(new UpdateOperator[0]);
+            res = datastore.find(getPersistentClass()).filter(qfilters).update(arr[0], Arrays.copyOfRange(arr, 1, arr.length));
+        }
+        return res.getModifiedCount();
+    }
+
+    @Override
+    public long updateManyByRefAndDomain(@NotNull List<Pair<String, com.e2eq.framework.model.persistent.base.DataDomain>> items,
+                                         @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+        return updateManyByRefAndDomain(morphiaDataStore.getDataStore(getSecurityContextRealmId()), items, false, pairs);
+    }
+
+    @Override
+    public long updateManyByRefAndDomain(@NotNull String realmId,
+                                         @NotNull List<Pair<String, com.e2eq.framework.model.persistent.base.DataDomain>> items,
+                                         @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+        return updateManyByRefAndDomain(morphiaDataStore.getDataStore(realmId), items, false, pairs);
+    }
+
+    @Override
+    public long updateManyByRefAndDomain(@NotNull Datastore datastore,
+                                         @NotNull List<Pair<String, com.e2eq.framework.model.persistent.base.DataDomain>> items,
+                                         @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+        return updateManyByRefAndDomain(datastore, items, false, pairs);
+    }
+
+    @Override
+    public long updateManyByRefAndDomain(@NotNull Datastore datastore,
+                                         @NotNull List<Pair<String, com.e2eq.framework.model.persistent.base.DataDomain>> items,
+                                         boolean ignoreRules,
+                                         @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+        Objects.requireNonNull(items, "items must not be null");
+        if (items.isEmpty()) return 0;
+        List<Filter> orClauses = new ArrayList<>();
+        for (Pair<String, com.e2eq.framework.model.persistent.base.DataDomain> it : items) {
+            String ref = it.getLeft();
+            com.e2eq.framework.model.persistent.base.DataDomain dd = it.getRight();
+            List<Filter> ands = new ArrayList<>();
+            ands.add(Filters.eq("refName", ref));
+            // match full embedded dataDomain object
+            ands.add(Filters.eq("dataDomain", dd));
+            orClauses.add(Filters.and(ands.toArray(new Filter[0])));
+        }
+        List<Filter> filters = new ArrayList<>();
+        filters.add(Filters.or(orClauses.toArray(new Filter[0])));
+        Filter[] qfilters;
+        if (!ignoreRules) {
+            qfilters = getFilterArray(filters, getPersistentClass());
+        } else {
+            qfilters = filters.toArray(new Filter[filters.size()]);
+        }
+        List<UpdateOperator> ops = buildValidatedUpdateOperators(pairs);
+        if (BaseModel.class.isAssignableFrom(getPersistentClass())) {
+            ops.add(UpdateOperators.inc("version", 1));
+        }
+        ops.add(UpdateOperators.set("auditInfo.lastUpdateTs", new Date()));
+        ops.add(UpdateOperators.set("auditInfo.lastUpdateIdentity", securityIdentity.getPrincipal().getName()));
+        UpdateResult res;
+        if (ops.size() == 1) {
+            res = datastore.find(getPersistentClass()).filter(qfilters).update(ops.get(0));
+        } else {
+            UpdateOperator[] arr = ops.toArray(new UpdateOperator[0]);
+            res = datastore.find(getPersistentClass()).filter(qfilters).update(arr[0], Arrays.copyOfRange(arr, 1, arr.length));
+        }
+        return res.getModifiedCount();
+    }
+
+    private List<UpdateOperator> buildValidatedUpdateOperators(@NotNull Pair<String, Object>... pairs) {
+        Objects.requireNonNull(pairs, "update pairs must not be null");
+        List<UpdateOperator> updateOperators = new ArrayList<>();
+        List<String> reservedFields = List.of("refName", "id", "version", "references", "auditInfo", "persistentEvents");
+        for (Pair<String, Object> pair : pairs) {
+            if (reservedFields.contains(pair.getKey())) {
+                throw new IllegalArgumentException("Field:" + pair.getKey() + " is a reserved field and can't be updated");
+            }
+            Field field;
+            try {
+                field = getFieldFromHierarchy(getPersistentClass(), pair.getKey());
+                Reference ref = field.getAnnotation(Reference.class);
+                if (ref != null) {
+                    throw new NotSupportedException("Field:" + field + " is a managed reference, and not updatable via put. Use Post");
+                }
+                if (field.getType().isEnum()) {
+                    if (!Arrays.stream(field.getType().getEnumConstants())
+                            .anyMatch(e -> e.toString().equals(String.valueOf(pair.getValue())))) {
+                        throw new IllegalArgumentException("Invalid value for enum field " + pair.getKey() + " can't set value:" + pair.getValue());
+                    }
+                }
+                if (field.getAnnotation(NotNull.class) != null && pair.getValue() == null) {
+                    throw new IllegalArgumentException("Field " + pair.getKey() + " is not nullable, but null value provided");
+                }
+                if (pair.getValue() != null && !field.getType().isAssignableFrom(pair.getValue().getClass())) {
+                    throw new IllegalArgumentException("Invalid value for field " + pair.getKey() +
+                            " can't set value:" + pair.getValue() +
+                            " expected type: " + field.getType() +
+                            " but got: " + pair.getValue().getClass().getSimpleName());
+                }
+                updateOperators.add(UpdateOperators.set(pair.getKey(), pair.getValue()));
+            } catch (NoSuchFieldException e) {
+                throw new RuntimeException(e);
+            }
+        }
+        if (updateOperators.isEmpty()) {
+            throw new IllegalArgumentException("No update pairs provided, or a parsing of the update pairs failed");
+        }
+        return updateOperators;
+    }
+
     @Override
     public T merge(@NotNull T entity){
         return merge(morphiaDataStore.getDataStore(getSecurityContextRealmId()), entity);
