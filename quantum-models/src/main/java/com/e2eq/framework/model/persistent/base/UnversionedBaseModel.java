@@ -5,6 +5,7 @@ import com.e2eq.framework.annotations.ImportRequiredField;
 import com.e2eq.framework.rest.models.UIAction;
 import com.e2eq.framework.rest.models.UIActionList;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.mongodb.client.model.CollationStrength;
 import dev.morphia.annotations.*;
 import io.quarkus.runtime.annotations.RegisterForReflection;
@@ -41,6 +42,7 @@ import static dev.morphia.mapping.IndexType.DESC;
 @SuperBuilder
 @Data
 @NoArgsConstructor
+@JsonIgnoreProperties({"bmFunctionalArea","bmFunctionalDomain"})
 public abstract  class UnversionedBaseModel {
 
     @Id
