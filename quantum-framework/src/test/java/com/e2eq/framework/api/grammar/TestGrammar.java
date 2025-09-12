@@ -165,8 +165,16 @@ public class TestGrammar {
       f = MorphiaUtils.convertToFilter(dateTimeTsString, UserProfile.class);
       Log.infof("Value:%s", f.getValue());
 
-      dateTimeTsString = "field1:>2022-01-01T12:00:00Z";
+      dateTimeTsString = "field1:>2022-01-01T12:00:00Z"; 
       f = MorphiaUtils.convertToFilter(dateTimeTsString, UserProfile.class);
       Log.infof("Value:%s", f.getValue());
+   }
+
+   @Test
+   public void testElemMatchFilter() {
+      String queryString = "arrayField:{subField:1&&otherSub:2}";
+      Filter f = MorphiaUtils.convertToFilter(queryString, UserProfile.class);
+      assertNotNull(f);
+      assertEquals("arrayField", f.getField());
    }
 }
