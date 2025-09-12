@@ -1,0 +1,204 @@
+[[rest-crud]]
+= REST: Find, Get, List, Save, Update, Delete
+
+Quantum provides consistent REST resources backed by repositories. Extend BaseResource to expose CRUD quickly and consistently.
+
+== Base Concepts
+
+- BaseResource<T, R extends Repo<T>> provides endpoints for:
+  - find: query by criteria (filters, pagination)
+  - get: fetch by id or refName
+  - list: list all within scope with paging
+  - save: create
+  - update: modify existing
+  - delete: delete or soft-delete/archival depending on model
+- UIActionList: derive available actions based on current model state.
+- DataDomain filtering is applied across all operations to enforce multi-tenancy.
+
+== Example Resource
+
+[source,java]
+----
+import com.e2eq.framework.rest.resources.BaseResource;
+import jakarta.ws.rs.Path;
+
+@Path("/products")
+public class ProductResource extends BaseResource<Product, ProductRepo> {
+}
+----
+
+== Authorization Layers in REST CRUD
+
+Quantum combines static, identity-based checks with dynamic, domain-aware policy evaluation. In practice you will often use both:
+
+1) Hard-coded permissions via annotations
+
+- Use standard Jakarta annotations like @RolesAllowed (or the framework’s @RoleAllow if present) on resource classes or methods to declare role-based checks that must pass before executing an endpoint.
+- These checks are fast and decisive. They rely on the caller’s roles as established by the current SecurityIdentity.
+
+Example:
+
+[source,java]
+----
+import jakarta.annotation.security.RolesAllowed;
+
+@RolesAllowed({"ADMIN", "CATALOG_EDITOR"})
+@Path("/products")
+public class ProductResource extends BaseResource<Product, ProductRepo> {
+    // Only ADMIN or CATALOG_EDITOR can access all inherited CRUD endpoints
+}
+----
+
+2) JWT groups and role mapping
+
+- When using the JWT provider, the token’s groups/roles claims are mapped into the Quarkus SecurityIdentity (see the Authentication guide).
+- Groups in JWT typically become roles on SecurityIdentity; these roles are what @RolesAllowed/@RoleAllow checks evaluate.
+- You can augment or transform roles using a SecurityIdentityAugmentor (see RolesAugmentor in the framework) to add derived roles based on claims or external lookups.
+
+3) RuleContext layered authorization (dynamic policies)
+
+- After annotation checks pass, RuleContext evaluates domain-aware permissions. This layer can:
+  - Enforce DataDomain scoping (tenant/org/owner)
+  - Allow cross-tenant reads for specific functional areas when policy permits
+  - Contribute query predicates and projections to repositories
+- Think of @RolesAllowed/@RoleAllow as the coarse-grained gate, and RuleContext as the fine-grained, context-sensitive policy engine.
+
+4) Quarkus SecurityIdentity and SecurityFilter
+
+- Quarkus produces a SecurityIdentity for each request containing principal name and roles.
+- The framework’s SecurityFilter inspects the incoming request (e.g., JWT) and populates/augments the SecurityIdentity and the derived DomainContext used by RuleContext and repositories.
+- BaseResource and underlying repos (e.g., MorphiaRepo) consume SecurityIdentity/DomainContext to apply permissions and filters consistently.
+
+For detailed rule-base matching (URL, headers, body predicates, priorities), see the Permissions section.
+
+== Querying
+
+- Use query parameters or a request body (depending on your API convention) to express filters.
+- RuleContext contributes tenant-aware filters and projections automatically.
+
+== Responses and Schemas
+
+- Models are returned with calculated fields (e.g., actionList) when appropriate.
+- OpenAPI annotations in your models/resources integrate with MicroProfile OpenAPI for schema docs.
+
+== Error Handling
+
+- Validation errors (e.g., ImportRequiredField, Size) return helpful messages.
+- Rule-based denials return appropriate HTTP statuses (403/404) without leaking cross-tenant metadata.
+
+
+== Query Language (ANTLR‑based)
+
+The find/list endpoints accept a filter string parsed by an ANTLR grammar (BIAPIQuery.g4). Use the filter query parameter to express predicates; combine them with logical operators and grouping. Sorting and projection are separate query parameters.
+
+- Operators:
+  - Equals: ':'
+  - Not equals: ':!'
+  - Less than/Greater than: ':<' / ':>'
+  - Less‑than‑or‑equal/Greater‑than‑or‑equal: ':<=' / ':>='
+  - Exists (field present): ':~' (no value)
+  - In list: ':^' followed by [v1,v2,...]
+  - Boolean literals: true/false
+  - Null literal: null
+- Logical:
+  - AND: '&&'
+  - OR: '||'
+  - NOT: '!!' (applies to a single allowed expression)
+- Grouping: parentheses '(' and ')'
+- Values by type:
+  - Strings: unquoted or quoted with "..."; quotes allow spaces and punctuation
+  - Whole numbers: prefix with '#' (e.g., #10)
+  - Decimals: prefix with '##' (e.g., ##19.99)
+  - Date: yyyy-MM-dd (e.g., 2025-09-10)
+  - DateTime (ISO‑8601): 2025-09-10T12:30:00Z (timezone supported)
+  - ObjectId (Mongo 24‑hex): 5f1e9b9c8a0b0c0d1e2f3a4b
+  - Reference by ObjectId: @@5f1e9b9c8a0b0c0d1e2f3a4b
+  - Variables: ${ownerId|principalId|resourceId|action|functionalDomain|pTenantId|pAccountId|rTenantId|rAccountId|realm|area}
+
+=== Simple filters (equals)
+
+[source]
+----
+# string equality
+name:"Acme Widget"
+# whole number
+quantity:#10
+# decimal number
+price:##19.99
+# date and datetime
+shipDate:2025-09-12
+updatedAt:2025-09-12T10:15:00Z
+# boolean
+active:true
+# null checks
+description:null
+# field exists
+lastLogin:~
+# object id equality
+id:5f1e9b9c8a0b0c0d1e2f3a4b
+# variable usage (e.g., tenant scoping)
+dataDomain.tenantId:${pTenantId}
+----
+
+=== Advanced filters: grouping and AND/OR/NOT
+
+[source]
+----
+# Products that are active and (name contains widget OR gizmo), excluding discontinued
+active:true && (name:*widget* || name:*gizmo*) && status:!"DISCONTINUED"
+
+# Shipments updated after a date AND (destination NY OR CA)
+updatedAt:>=2025-09-01 && (destination:"NY" || destination:"CA")
+
+# NOT example: items where category is not null and not (price < 10)
+category:!null && !!(price:<##10)
+----
+
+Notes:
+- Wildcard matching uses '*': name:*widget* (prefix/suffix/contains). '?' matches a single character.
+- Use parentheses to enforce precedence; otherwise AND/OR follow standard left‑to‑right with explicit operators.
+
+=== IN lists
+
+[source]
+----
+status:^["OPEN","CLOSED","ON_HOLD"]
+ownerId:^["u1","u2","u3"]
+referenceId:^[@@5f1e9b9c8a0b0c0d1e2f3a4b, @@6a7b8c9d0e1f2a3b4c5d6e7f]
+----
+
+=== Sorting
+
+Provide a sort query parameter (comma‑separated fields):
+- '-' prefix = descending, '+' or no prefix = ascending.
+
+Examples:
+
+[source]
+----
+# single field descending
+?sort=-createdAt
+
+# multiple fields: createdAt desc, refName asc
+?sort=-createdAt,refName
+----
+
+=== Projections
+
+Limit returned fields with the projection parameter (comma‑separated):
+- '+' prefix = include, '-' prefix = exclude.
+
+Examples:
+
+[source]
+----
+# include only id and refName, exclude heavy fields
+?projection=+id,+refName,-auditInfo,-persistentEvents
+----
+
+=== End‑to‑end examples
+
+- GET /products/list?skip=0&limit=50&filter=active:true&&name:*widget*&sort=-updatedAt&projection=+id,+name,-auditInfo
+- GET /shipments/list?filter=(destination:"NY"||destination:"CA")&&updatedAt:>=2025-09-01&sort=origin
+
+These features integrate with RuleContext and DataDomain: your filter runs within the tenant/org scope derived from the security context; RuleContext may add further predicates or projections automatically.

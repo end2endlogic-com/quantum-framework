@@ -1,0 +1,24 @@
+:toc: left
+:toclevels: 3
+:sectnums:
+:doctype: book
+:icons: font
+:revnumber: {project-version}
+
+= Quantum Framework Documentation
+
+This documentation provides user guides and tutorials for mid-level Java developers to build SaaS applications with multi-tenancy on the Quantum framework, in a structure similar to Spring’s reference documentation. Artifacts are generated as HTML and PDF via Maven.
+
+== Guides
+
+include::user-guide/overview.adoc[]
+include::user-guide/tenant-models.adoc[]
+include::user-guide/modeling.adoc[]
+include::user-guide/domain-rule-context.adoc[]
+include::user-guide/rest-crud.adoc[]
+include::user-guide/auth.adoc[]
+include::user-guide/permissions.adoc[]
+
+== Tutorials
+
+include::tutorials/supply-chain.adoc[]

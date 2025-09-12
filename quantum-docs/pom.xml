@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.end2endlogic</groupId>
+        <artifactId>quantum-parent</artifactId>
+        <version>1.2.2-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>quantum-docs</artifactId>
+    <name>Quantum Framework Documentation</name>
+    <packaging>jar</packaging>
+
+    <properties>
+        <asciidoctor.maven.plugin.version>2.2.6</asciidoctor.maven.plugin.version>
+        <asciidoctorj.pdf.version>2.3.9</asciidoctorj.pdf.version>
+        <docs.output.dir>${project.build.directory}/docs</docs.output.dir>
+    </properties>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.asciidoctor</groupId>
+                <artifactId>asciidoctor-maven-plugin</artifactId>
+                <version>${asciidoctor.maven.plugin.version}</version>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.asciidoctor</groupId>
+                        <artifactId>asciidoctorj-pdf</artifactId>
+                        <version>${asciidoctorj.pdf.version}</version>
+                    </dependency>
+                </dependencies>
+                <configuration>
+                    <sourceDirectory>${project.basedir}/src/docs/asciidoc</sourceDirectory>
+                    <outputDirectory>${docs.output.dir}</outputDirectory>
+                    <attributes>
+                        <toc>left</toc>
+                        <toclevels>3</toclevels>
+                        <sectnums>true</sectnums>
+                        <icons>font</icons>
+                        <revnumber>${project.version}</revnumber>
+                        <revdate>${maven.build.timestamp}</revdate>
+                        <doctype>book</doctype>
+                        <pdf-theme>default</pdf-theme>
+                        <pdf-fontsdir>${project.basedir}/src/docs/fonts</pdf-fontsdir>
+                        <source-highlighter>coderay</source-highlighter>
+                    </attributes>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>html-docs</id>
+                        <phase>prepare-package</phase>
+                        <goals>
+                            <goal>process-asciidoc</goal>
+                        </goals>
+                        <configuration>
+                            <backend>html5</backend>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>pdf-docs</id>
+                        <phase>prepare-package</phase>
+                        <goals>
+                            <goal>process-asciidoc</goal>
+                        </goals>
+                        <configuration>
+                            <backend>pdf</backend>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
