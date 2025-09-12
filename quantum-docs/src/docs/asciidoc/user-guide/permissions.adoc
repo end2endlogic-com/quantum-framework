@@ -1,0 +1,152 @@
+[[permissions]]
+= Permissions: Rule Bases, SecurityURLHeaders, and SecurityURLBody
+
+This section explains how Quantum evaluates permissions for REST requests using rule bases that match on URL, HTTP method, headers, and request body content. It also covers how identities and roles (as found on userProfile or credentialUserIdPassword) are matched, how priority works, and how multiple matching rule bases are evaluated.
+
+Note: The terms SecurityURLHeaders and SecurityURLBody in this document describe the matching dimensions for rules. Implementations may vary, but the semantics below are stable for authoring and reasoning about permissions.
+
+== Key Concepts
+
+- Identity: The authenticated principal, typically originating from JWT or another provider. It includes:
+  - userId (or credentialUserIdPassword username)
+  - roles (authorities/groups)
+  - tenantId, orgRefName, optional realm, and other claims that contribute to DomainContext
+- userProfile: A domain representation of the user that aggregates identity, roles, and policy decorations (feature flags, plans, expiration, etc.).
+- Rule Base (Permission Rule): A declarative rule with matching criteria and an effect (ALLOW or DENY). Criteria may include:
+  - HTTP method and URL pattern
+  - SecurityURLHeaders: predicates over selected HTTP headers (e.g., x-functional-area, x-functional-domain, x-tenant-id)
+  - SecurityURLBody: predicates over request body fields (JSON paths) or query parameters
+  - Required roles/attributes on identity or userProfile
+  - Functional area/domain/action
+  - Priority: integer used to sort rule evaluation
+- Effect: ALLOW or DENY; an ALLOW may also contribute scope filters (e.g., DataDomain constraints) to be applied downstream by repositories.
+
+== Rule Structure (Illustrative)
+
+[source,yaml]
+----
+- name: allow-public-reads
+  priority: 100
+  match:
+    method: [GET]
+    url: /api/catalog/**
+    headers:
+      x-functional-area: [Catalog]
+    rolesAny: [USER, ADMIN]
+  effect: ALLOW
+  filters:
+    # Optional: contribute additional DataDomain filters
+    readScope: { orgRefName: PUBLIC }
+
+- name: deny-non-admin-delete
+  priority: 10
+  match:
+    method: [DELETE]
+    url: /api/**
+  requireRolesAll: [ADMIN]
+  effect: ALLOW
+
+- name: default-deny
+  priority: 10000
+  match: {}
+  effect: DENY
+----
+
+- headers under match are the SecurityURLHeaders predicates.
+- Body predicates (SecurityURLBody) can be expressed similarly as JSONPath-like constraints:
+
+[source,yaml]
+----
+  body:
+    $.dataDomain.tenantId: ${identity.tenantId}
+    $.action: [CREATE, UPDATE]
+----
+
+== Matching Algorithm
+
+Given a request R and identity I, evaluate a set of rule bases RB as follows:
+
+1. Candidate selection
+   - From RB, select all rules whose URL pattern and HTTP method match R.
+2. Attribute and header/body checks
+   - For each candidate, check:
+     - SecurityURLHeaders: header predicates must all match (case-insensitive header names; values support exact string, regex, or one-of lists depending on rule authoring capability).
+     - SecurityURLBody: if present, evaluate body predicates against parsed JSON body (or query params when body is absent). Predicates must all match.
+     - Identity/UserProfile: role requirements and attribute requirements must be satisfied.
+3. Priority sort
+   - Sort matching candidates by ascending priority (lower numbers indicate higher precedence). If not specified, default priority is 1000.
+4. Evaluation order and decision
+   - Iterate in sorted order; the first rule that yields a decisive effect (ALLOW or DENY) becomes the decision.
+   - If the rule is ALLOW and contributes filters (e.g., DataDomain read/write scope), attach those to the request context for downstream repositories.
+5. Multi-match aggregation (optional advanced mode)
+   - In advanced configurations, if multiple ALLOW rules match at the same priority, their filters may be merged (intersection for restrictive scope, union for permissive scope) according to a configured merge strategy. If not configured, the default is first-match-wins.
+6. Fallback
+   - If no rules match decisively, apply a default policy (typically DENY).
+
+== Priorities
+
+- Lower integer = higher priority. Example: priority 1 overrides priority 10.
+- Use tight scopes with low priority for critical protections (e.g., denies), and broader ALLOWs with higher numeric priority.
+- Recommended ranges:
+  - 1–99: global deny rules and emergency blocks
+  - 100–499: domain/area-specific critical rules
+  - 500–999: standard ALLOW policies
+  - 1000+: defaults and catch-alls
+
+== Multiple Matching RuleBases
+
+- First-match-wins (default): after sorting by priority, the first decisive rule determines the result; subsequent matches are ignored.
+- Merge strategy (optional):
+  - When enabled and multiple ALLOW rules share the same priority, scopes/filters are merged.
+  - Conflicts between ALLOW and DENY at the same priority resolve to DENY unless explicitly configured otherwise (fail-safe).
+
+== Identity and Role Matching
+
+- RolesAny: request is allowed if identity has at least one of the specified roles.
+- RolesAll: request requires all listed roles.
+- Attribute predicates can compare identity/userProfile attributes (e.g., identity.tenantId == header.x-tenant-id).
+- Time or plan-based conditions: userProfile can embed plan and expiration; rules may check that trials are active or features are enabled.
+
+== Example Scenarios
+
+1) Public catalog browsing
+   - Request: GET /api/catalog/products?search=widgets
+   - Headers: x-functional-area=Catalog
+   - Identity: anonymous or role USER
+   - Rules:
+     - allow-public-reads (priority 100) ALLOW + readScope orgRefName=PUBLIC
+   - Outcome: ALLOW; repository applies DataDomain filter orgRefName=PUBLIC
+
+2) Tenant-scoped shipment update
+   - Request: PUT /api/shipments/ABC123
+   - Headers: x-functional-area=Collaboration, x-tenant-id=T1
+   - Body: { dataDomain: { tenantId: "T1" }, ... }
+   - Identity: user in tenant T1 with roles [USER]
+   - Rules:
+     - allow-collab-update (priority 300) requires body.dataDomain.tenantId == identity.tenantId and rolesAny USER, ADMIN => ALLOW
+   - Outcome: ALLOW; Rule contributes writeScope tenantId=T1
+
+3) Cross-tenant admin read with higher priority
+   - Request: GET /api/partners
+   - Identity: role ADMIN (super-admin)
+   - Rules:
+     - admin-override (priority 50) ALLOW
+     - default-tenant-read (priority 600) ALLOW with tenant filter
+   - Outcome: admin-override wins due to higher precedence (lower number), allowing broader read
+
+4) Conflicting ALLOW and DENY at same priority
+   - Two rules match with priority 200: one ALLOW, one DENY
+   - Resolution: DENY wins unless merge strategy configured to handle explicitly; recommended to avoid same-priority conflicts by policy.
+
+== Operational Tips
+
+- Author specific DENY rules with low numbers to prevent accidental exposure.
+- Keep URL patterns narrowly tailored for sensitive domains.
+- Prefer header/body predicates to refine matches without exploding URL patterns.
+- Log matched rule names and applied scopes for auditability.
+
+== How This Integrates End-to-End
+
+- BaseResource extracts identity and headers to construct DomainContext.
+- Rule evaluation uses URL/method + SecurityURLHeaders + SecurityURLBody + identity/userProfile to reach a decision and derive scope filters.
+- Repositories (e.g., MorphiaRepo) apply the filters to queries and updates, ensuring DataDomain-respecting access.

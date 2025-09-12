@@ -1,0 +1,43 @@
+[[domain-rule-context]]
+= DomainContext, RuleContext, and DataDomain
+
+Quantum enforces multi-tenant isolation and sharing through contextual data carried on models and evaluated at runtime.
+
+== DataDomain
+
+Every persisted model includes a DataDomain that describes ownership and scope, commonly including fields such as:
+
+- tenantId: Identifies the tenant
+- orgRefName: Organization unit reference within a tenant
+- ownerId: Owning user or system entity
+- realm: Optional runtime override for partitioning
+
+These fields enable filtering, authorization, and controlled sharing of data between tenants or org units.
+
+== DomainContext
+
+DomainContext represents the current execution context for a request or operation, typically capturing:
+
+- current tenant/org/user identity
+- functional area / functional domain
+- the action being executed (e.g., CREATE, UPDATE, VIEW, DELETE, ARCHIVE)
+
+It feeds downstream components (repositories, resources) to consistently apply filtering and policy decisions.
+
+== RuleContext
+
+RuleContext encapsulates policy evaluation. It can:
+
+- Enforce whether an action is allowed for a given model and DataDomain
+- Produce additional filters and projections used by repositories
+- Grant cross-tenant read access for specific functional areas (e.g., shared catalogs) while keeping others strictly isolated
+
+== End-to-End Flow
+
+1. A REST request enters a BaseResource-derived endpoint.
+2. The resource builds a DomainContext from the security principal and request parameters.
+3. RuleContext evaluates permissions and returns effective filters.
+4. Repository applies filters (DataDomain-aware) to find/get/list/update/delete.
+5. The model’s UIActionList can be computed to reflect what the caller can do next.
+
+This pattern ensures consistent enforcement across all CRUD operations, independent of the specific model or repository.

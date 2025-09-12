@@ -1,0 +1,30 @@
+[[auth]]
+= Authentication and Authorization
+
+Quantum integrates with Quarkus security while providing a pluggable approach to authentication. The repository includes a JWT provider module to get started quickly and an extension surface to replace or complement it.
+
+== JWT Provider
+
+- Module: quantum-jwt-provider
+- Purpose: Validate JWTs on incoming requests, populate the security principal, and surface tenant/org/user claims that feed DomainContext.
+- Configuration: Standard Quarkus/MicroProfile JWT properties plus custom claim mappings as needed for DataDomain.
+
+== Pluggable Authentication
+
+You can introduce alternative authentication mechanisms (e.g., API keys, SAML/OIDC front-channel tokens exchanged for back-end JWTs, HMAC signatures) by providing CDI beans that integrate with the security layer and emit the same normalized context consumed by DomainContext/RuleContext.
+
+Typical steps:
+
+1. Implement a request filter or identity provider that validates the token/credential.
+2. Map identity and tenant claims into a principal model (tenantId, orgRefName, userId, roles).
+3. Ensure BaseResource (and other entry points) can derive DomainContext from that principal.
+
+== Authorization via RuleContext
+
+Authentication establishes identity; RuleContext enforces what the identity can do. For each action (CREATE, UPDATE, VIEW, DELETE, ARCHIVE), RuleContext can:
+
+- Allow or deny the action
+- Contribute additional filters (e.g., org scoping, functional-area specific sharing)
+- Adjust UIActionList to reflect permitted next steps
+
+This division of responsibilities keeps providers focused on identity while policies remain centralized in RuleContext.

@@ -1,0 +1,121 @@
+[[tutorial-supply-chain]]
+= Tutorial: Supply Chain Collaboration End-to-End
+
+In this tutorial, we will model a simplified supply chain collaboration system, create repositories and REST resources, and see how Quantum provides a robust set of APIs that a UI can utilize—all with multi-tenancy baked in.
+
+== Domain Overview
+
+Functional Area: Collaboration
+
+Functional Domains:
+
+- Partner: Companies participating in the supply chain (manufacturers, carriers, retailers)
+- Shipment: Units of transport moving goods between locations
+- Task: Collaborative tasks associated with shipments (e.g., confirm pickup, update ETA)
+
+== Models
+
+[source,java]
+----
+import dev.morphia.annotations.Entity;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.NoArgsConstructor;
+import lombok.experimental.SuperBuilder;
+import com.e2eq.framework.model.persistent.base.BaseModel;
+
+@Entity
+@Data
+@NoArgsConstructor
+@SuperBuilder
+@EqualsAndHashCode(callSuper = true)
+public class Partner extends BaseModel {
+    private String refCode;
+    private String name;
+    @Override public String bmFunctionalArea() { return "Collaboration"; }
+    @Override public String bmFunctionalDomain() { return "Partner"; }
+}
+
+@Entity
+@Data
+@NoArgsConstructor
+@SuperBuilder
+@EqualsAndHashCode(callSuper = true)
+public class Shipment extends BaseModel {
+    private String trackingNumber;
+    private String origin;
+    private String destination;
+    @Override public String bmFunctionalArea() { return "Collaboration"; }
+    @Override public String bmFunctionalDomain() { return "Shipment"; }
+}
+----
+
+DataDomain on BaseModel ensures tenant context (tenantId/orgRefName/etc.) is carried and indexed as needed (see idx_refIdUniqueInDomain).
+
+== Repositories
+
+[source,java]
+----
+import com.e2eq.framework.model.persistent.morphia.MorphiaRepo;
+
+public interface PartnerRepo extends MorphiaRepo<Partner> {}
+public interface ShipmentRepo extends MorphiaRepo<Shipment> {}
+----
+
+== REST Resources
+
+[source,java]
+----
+import com.e2eq.framework.rest.resources.BaseResource;
+import jakarta.ws.rs.Path;
+
+@Path("/partners")
+public class PartnerResource extends BaseResource<Partner, PartnerRepo> {}
+
+@Path("/shipments")
+public class ShipmentResource extends BaseResource<Shipment, ShipmentRepo> {}
+----
+
+These resources automatically expose consistent find/get/list/save/update/delete endpoints with DataDomain-aware filtering.
+
+== Multi-Tenant Sharing Scenarios
+
+- Shared Partner Directory: Allow cross-tenant read of Partner records while keeping Shipments strictly tenant-scoped. Implement in RuleContext by permitting VIEW on Partner across tenants when a sharing flag is set in DataDomain (e.g., orgRefName == "PUBLIC").
+- Strict Shipment Isolation: Enforce that Shipment queries always constrain by tenantId and (optionally) orgRefName.
+
+== RuleContext Sketch
+
+[source,java]
+----
+public class CollaborationRuleContext /* implements your RuleContext SPI */ {
+    public boolean canView(Object model, DomainContext ctx) {
+        // Allow partner directory reads across tenants if shared
+        if (model instanceof Partner p) {
+            return p.getDataDomain() != null && "PUBLIC".equals(p.getDataDomain().getOrgRefName());
+        }
+        // Default: require same tenant
+        return ctx.getTenantId().equals(extractTenant(model));
+    }
+}
+----
+
+== Authentication
+
+Use quantum-jwt-provider to accept JWTs from your IdP. Map claims to tenantId/orgRefName/user/roles; BaseResource builds DomainContext for RuleContext.
+
+== Separating Models and Repos for Workflows
+
+Keep models and repositories in their own modules (as this repository does for quantum-models and quantum-morphia-repos). This allows:
+
+- Integration into workflows like Temporal (activities operating directly on repos/models)
+- Orchestration by tools like Windmill, while REST APIs remain in another service/module
+
+== Result
+
+With these building blocks, a UI can:
+
+- Search the Partner directory (cross-tenant where allowed)
+- Create/manage Shipments scoped to the tenant
+- Update and track tasks with action-driven UIActionList feedback
+
+All while maintaining consistent policy enforcement via RuleContext and DataDomain.
