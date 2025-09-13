@@ -10,7 +10,7 @@ import jakarta.ws.rs.core.Response;
 import java.util.Optional;
 
 @Path("/integration/completionTask")
-@RolesAllowed({"user","admin"})
+@RolesAllowed({"user", "admin"})
 public class CompletionTaskResource extends BaseResource<CompletionTask, CompletionTaskRepo> {
 
     public CompletionTaskResource(CompletionTaskRepo repo) {
