@@ -5,6 +5,43 @@ This section explains how Quantum evaluates permissions for REST requests using 
 
 Note: The terms SecurityURLHeaders and SecurityURLBody in this document describe the matching dimensions for rules. Implementations may vary, but the semantics below are stable for authoring and reasoning about permissions.
 
+== Introduction: Layered Enforcement Overview
+
+Quantum evaluates "can this identity do X?" through three complementary layers. Understanding them in order helps you pick the right tool for the job and combine them safely:
+
+1) REST API annotations (top layer, code-level)
+- What: JAX-RS/Jakarta Security annotations on resource methods, e.g., @RolesAllowed("ADMIN"), @PermitAll, @DenyAll, @Authenticated.
+- Purpose: Coarse-grained, immediate gates right at the endpoint. Ideal for baseline protections (e.g., only ADMIN may call /admin/**) and for non-dynamic constraints that rarely change.
+- Pros: Simple, fast, visible in code reviews.
+- Cons: Hard-coded; changing access requires a code change, build, and deploy. No data-aware scoping (e.g., cannot express tenant/domain filters).
+
+2) Feature flags (exposure and variants)
+- What: Turn capabilities on/off per environment or cohort and select variants (A/B, multivariate). See "Feature Flags, Variants, and Target Rules" below.
+- Purpose: Control who even sees or can reach a capability during rollout (by tenant, role, geography, plan), independently of authorization. Flags answer "is the feature ON and which variant?"; they do not by themselves prove the caller is authorized.
+- Pros: Reversible, environment-aware, safe rollout and experimentation.
+- Cons: Not a substitute for authorization; must be paired with roles/permission rules for enforcement.
+
+3) Permission Rules with DataDomain filtering (fine-grained, dynamic)
+- What: Declarative rule bases that match URL, method, SecurityURLHeaders, and SecurityURLBody, and decide ALLOW/DENY. ALLOWs can contribute DataDomain constraints applied by repositories. See sections "Key Concepts", "Matching Algorithm", and examples below.
+- Purpose: Express least-privilege, data-aware policies that evolve without code changes (data-driven authoring).
+- Pros: Dynamic, auditable, supports role checks plus attribute predicates and domain scoping.
+- Cons: Requires governance of rulebases and careful priority management.
+
+How roles, Functional Areas, and Functional Domains fit in
+- Roles: Used by both layers (1) and (3). Annotations directly reference roles; rules can require rolesAny/rolesAll. Effective roles are resolved by merging IdP roles with roles on the user record; see "How roles are defined for an identity" below.
+- Functional Area/Domain: Provide the vocabulary for rules and headers. Services set x-functional-area and x-functional-domain (or models expose bmFunctionalArea()/bmFunctionalDomain()); rules can match on these to target policies to business capabilities rather than raw URLs.
+- DataDomain: When rules ALLOW an action, they can attach data-scope filters (tenant/org/owner) so downstream reads/writes are constrained to the caller’s domain.
+
+Choosing the right approach
+- Use annotations for stable, coarse gates you want visible in code (e.g., admin-only endpoints, health endpoints with @PermitAll).
+- Use feature flags to manage rollout/exposure and variants across environments and cohorts.
+- Use permission rules to encode fine-grained, data-aware authorization and to evolve policy without redeploying.
+
+Compare and contrast
+- Annotation-based controls are compile-time and hard-code policy into the service; changing them requires code changes.
+- Permission Rules and the Rule Language are data-driven and user-changeable (with proper governance), enabling rapid, auditable policy changes and DataDomain scoping.
+- In practice: apply annotations as the first gate, evaluate feature flags to determine exposure/variant, then evaluate permission rules to decide ALLOW/DENY and attach scopes. This layered approach yields both safety and agility.
+
 == Key Concepts
 
 - Identity: The authenticated principal, typically originating from JWT or another provider. It includes:
@@ -93,6 +130,134 @@ Given a request R and identity I, evaluate a set of rule bases RB as follows:
   - 500–999: standard ALLOW policies
   - 1000+: defaults and catch-alls
 
+== Grant-based vs Deny-based Rule Sets
+
+Grant-based rule sets start with a default decision of DENY and then incrementally add ALLOW scenarios through explicit rules. This model is fail‑safe by default: any URL, action, or functional area that does not have a matching ALLOW rule remains inaccessible. As new endpoints or capabilities are added to the system, users will not gain access until an explicit ALLOW is authored. This is the recommended posture for security‑sensitive systems and multi‑tenant platforms.
+
+Deny-based rule sets start with a default decision of ALLOW and then add DENY scenarios to carve away disallowed cases. In this model, new functionality is exposed by default unless a DENY is added. While convenient during rapid prototyping, this posture risks accidental exposure as the surface area grows.
+
+Practical implications:
+- Change management: Grant-based requires adding ALLOWs when shipping new features; Deny-based requires remembering to add new DENYs.
+- Auditability: Grant-based policies make it easy to enumerate what is permitted; Deny-based requires proving the absence of permissive gaps.
+- Safety: In merge conflicts or partial deployments, Grant-based tends to fail closed (DENY), which is usually safer.
+
+Example defaults:
+
+- Grant-based (recommended):
+
+[source,yaml]
+----
+- name: default-deny
+  priority: 10000
+  match: {}
+  effect: DENY
+----
+
+- Deny-based (use with caution):
+
+[source,yaml]
+----
+- name: default-allow
+  priority: 10000
+  match: {}
+  effect: ALLOW
+----
+
+Tip: Even in a deny-based set, author low‑number DENY rules for critical protections. In most production systems, prefer the grant-based model and layer specific ALLOWs for each capability.
+
+== Feature Flags, Variants, and Target Rules
+
+Feature flags complement permission rules by controlling whether a capability is active for a given principal, cohort, or environment. Permissions answer “may this identity perform this action?”; feature flags answer “is this capability turned on, and which variant applies?” Use them together to achieve safe rollouts and fine‑grained authorization.
+
+Model reference: com.e2eq.framework.model.general.FeatureFlag with key fields:
+- enabled: master on/off
+- type: BOOLEAN or MULTIVARIATE
+- variants: list of variant keys for multivariate experiments
+- targetRules: cohort targeting rules
+- environment: e.g., dev, staging, prod
+- jsonConfiguration: arbitrary configuration for the feature (e.g., rollout %, UI copy, limits)
+
+Example: Boolean flag for a new export API with environment‑specific targeting
+
+[source,json]
+----
+{
+  "refName": "EXPORT_API",
+  "description": "Enable CSV export endpoint",
+  "enabled": true,
+  "type": "BOOLEAN",
+  "environment": "prod",
+  "targetRules": [
+    { "attribute": "role",     "operator": "equals",  "values": ["BETA"] },
+    { "attribute": "tenantId", "operator": "in",      "values": ["T100", "T200"] }
+  ],
+  "jsonConfiguration": { "rateLimitPerMin": 60 }
+}
+----
+
+Example: Multivariate flag to roll out Search v2 to 10% of users and all members of a beta role
+
+[source,json]
+----
+{
+  "refName": "SEARCH_V2",
+  "description": "New search implementation",
+  "enabled": true,
+  "type": "MULTIVARIATE",
+  "variants": ["control", "v2"],
+  "environment": "prod",
+  "targetRules": [
+    { "attribute": "role", "operator": "equals", "values": ["BETA"], "variant": "v2" },
+    { "attribute": "userId", "operator": "hashMod", "values": ["10"], "variant": "v2" }
+  ],
+  "jsonConfiguration": { "defaultVariant": "control" }
+}
+----
+
+Notes on TargetRules:
+- attribute: a property from identity/userProfile (e.g., userId, role, tenantId, location, plan).
+- operator: equals, in, contains, startsWith, regex, or domain‑specific operators like hashMod for percentage rollouts.
+- values: comparison values; semantics depend on operator.
+- variant: when type is MULTIVARIATE, selects which variant applies when the rule matches.
+
+How feature flags complement Permission Rule Context:
+- The evaluation of a request can enrich the Rule Context (SecurityURLHeaders/Body or userProfile) with resolved feature flags and variants (e.g., userProfile.features["SEARCH_V2"] = "v2").
+- Permission rules can then require a feature to be present before ALLOWing an action:
+
+[source,yaml]
+----
+- name: allow-export-when-flag-on
+  priority: 300
+  match:
+    method: [GET]
+    url: /api/export/**
+    headers:
+      x-functional-area: [Reports]
+    # Example predicate that assumes features are surfaced in userProfile
+    userProfile.features.EXPORT_API: [true]
+  rolesAny: [ADMIN, REPORTER]
+  effect: ALLOW
+----
+
+Alternatively, systems may surface feature decisions via headers (e.g., X-Feature-SEARCH_V2: v2) so that SecurityURLHeaders can match directly.
+
+Business usage examples for TargetRules and their correlation to Permission Rules:
+- Progressive rollout by tenant: TargetRule tenantId in [T100, T200] → Permission adds ALLOW for endpoints guarded by that flag so only those tenants can call them during rollout.
+- Role‑based beta access: TargetRule role equals BETA → Permission requires both the BETA feature flag and standard role checks (e.g., USER/ADMIN) to ALLOW sensitive actions.
+- Plan/entitlement tiers: TargetRule plan in [Pro, Enterprise] → Permission rules enforce additional data‑domain constraints (e.g., export size limits) while the flag simply turns the feature on for eligible plans.
+
+Guidance: Feature Flags vs Permission Rules
+- Put into Feature Flags:
+  - Gradual, reversible rollouts; A/B or multivariate experiments; UI/behavior switches.
+  - Environment gates (dev/staging/prod) and cohort targeting (tenants, beta users, geography).
+  - Non‑security configuration values in jsonConfiguration (limits, thresholds, copy) that do not change who is authorized.
+- Put into Permission Rules:
+  - Durable authorization logic: roles, identities, functional area/domain/action, and DataDomain constraints.
+  - Compliance and least‑privilege decisions where fail‑closed behavior is required.
+  - Enforcement that remains valid after a feature is fully launched (even when the flag is removed).
+
+Recommendation: Use a grant‑based permission posture (default DENY) and let feature flags decide which cohorts even see or can reach new capabilities. Then author explicit ALLOW rules for those capabilities, conditioned on both role and feature presence.
+
 == Multiple Matching RuleBases
 
 - First-match-wins (default): after sorting by priority, the first decisive rule determines the result; subsequent matches are ignored.
@@ -106,6 +271,59 @@ Given a request R and identity I, evaluate a set of rule bases RB as follows:
 - RolesAll: request requires all listed roles.
 - Attribute predicates can compare identity/userProfile attributes (e.g., identity.tenantId == header.x-tenant-id).
 - Time or plan-based conditions: userProfile can embed plan and expiration; rules may check that trials are active or features are enabled.
+
+=== How roles are defined for an identity (role sources and resolution)
+
+Quantum composes the effective roles for a request by merging:
+- Roles from the identity provider (JWT/SecurityIdentity)
+- Roles configured on the user record (CredentialUserIdPassword.roles)
+
+Source details:
+- Identity Provider (JWT): roles commonly arrive via standard claims (e.g., groups, roles, or provider-specific fields). Quarkus maps these into SecurityIdentity.getRoles(). In multi-realm setups, the realm in X-Realm can scope lookups but does not alter what the JWT asserts.
+- Quantum user record: com.e2eq.framework.model.security.CredentialUserIdPassword has a String[] roles field stored per realm. This can be administered by Quantum to grant platform- or tenant-level roles.
+
+Merge semantics (current implementation):
+- Union: the effective role set is the union of JWT roles and CredentialUserIdPassword.roles. If either source is empty, the other source defines the set.
+- Fallback: when neither source yields roles, the framework defaults to [ANONYMOUS].
+- Where implemented: SecurityFilter.determinePrincipalContext builds PrincipalContext with the merged roles.
+
+Realm considerations:
+- The user record is looked up by subject or userId in the active realm (default or X-Realm). If a realm override is provided, it is validated with CredentialUserIdPassword.realmRegEx.
+- Roles stored in a user record are realm-specific; JWT roles are whatever the IdP asserts for the token.
+
+Operating models:
+- Quantum-managed roles:
+  - IdP authenticates the user (subject, username). Authorization is primarily driven by roles stored in CredentialUserIdPassword.roles.
+  - Use when you want central, auditable role assignment within Quantum, independent of IdP groups.
+- IdP-managed roles:
+  - IdP carries authoritative roles/groups in the JWT. Keep CredentialUserIdPassword.roles minimal or empty.
+  - Use when enterprises require IdP as the source of truth for access groups.
+- Hybrid (recommended in many deployments):
+  - Effective roles = JWT roles ∪ CredentialUserIdPassword.roles.
+  - Use JWT for enterprise groups (e.g., DEPT_SALES, ORG_ADMIN) and Quantum roles for app-specific grants (e.g., REPORT_EXPORTER, BETA).
+  - This avoids IdP churn for application-local concerns while respecting org policies.
+
+Examples:
+- JWT-only:
+  - JWT.groups = [USER, REPORTER]; user record roles = []
+  - Effective roles = [USER, REPORTER]
+- Quantum-only:
+  - JWT.groups = []; user record roles = [USER, ADMIN]
+  - Effective roles = [USER, ADMIN]
+- Hybrid union:
+  - JWT.groups = [USER]; user record roles = [BETA, REPORT_EXPORTER]
+  - Effective roles = [USER, BETA, REPORT_EXPORTER]
+
+Guidance and best practices:
+- Keep role names stable and environment-agnostic; use realms/permissions to scope where needed.
+- Avoid overloading roles for feature rollout; use Feature Flags for rollout and variants, and roles for durable authorization.
+- When IdP is authoritative, ensure consistent claim mapping so SecurityIdentity.getRoles() contains the expected values; commonly via 'groups' claim in JWT.
+- Use grant-based permission rules and require the minimal set of roles (rolesAny/rolesAll) needed for each capability.
+
+Cross-references:
+- User model: com.e2eq.framework.model.security.CredentialUserIdPassword.roles
+- Context: com.e2eq.framework.model.securityrules.PrincipalContext.getRoles()
+- Filter logic: com.e2eq.framework.rest.filters.SecurityFilter.determinePrincipalContext
 
 == Example Scenarios
 
