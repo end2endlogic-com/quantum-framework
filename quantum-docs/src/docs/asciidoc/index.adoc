@@ -77,6 +77,7 @@ include::user-guide/rest-crud.adoc[]
 include::user-guide/migrations.adoc[]
 include::user-guide/auth.adoc[]
 include::user-guide/permissions.adoc[]
+include::user-guide/testing.adoc[]
 
 == Tutorials
 
