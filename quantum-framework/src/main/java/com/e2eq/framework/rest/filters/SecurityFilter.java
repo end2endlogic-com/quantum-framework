@@ -286,6 +286,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
             DataDomain dataDomain;
             String userId;
+            com.e2eq.framework.model.security.DataDomainPolicy principalPolicy = null;
             if (ocreds.isPresent()) {
                 CredentialUserIdPassword creds = ocreds.get();
                 // If realm override provided, validate against user's realm filter
@@ -298,6 +299,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 contextRealm = (realm == null) ? creds.getDomainContext().getDefaultRealm() : realm;
                 dataDomain = creds.getDomainContext().toDataDomain(creds.getUserId());
                 userId = creds.getUserId();
+                principalPolicy = creds.getDataDomainPolicy();
                 String[] credRoles = creds.getRoles();
                 if (credRoles != null && credRoles.length > 0) {
                     Set<String> combined = new HashSet<>(rolesSet);
@@ -318,6 +320,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                     .withScope("AUTHENTICATED")
                     .withActingOnBehalfOfUserId(actingOnBehalfOfUserId)
                     .withActingOnBehalfOfSubject(actingOnBehalfOfSubject)
+                    .withDataDomainPolicy(principalPolicy)
                     .build();
 
             if (Log.isDebugEnabled()) {
@@ -422,6 +425,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                                       .withImpersonatedByUserId(oicreds.get().getUserId())
                                       .withActingOnBehalfOfUserId(actingOnBehalfOfUserId)
                                       .withActingOnBehalfOfSubject(actingOnBehalfOfSubject)
+                                      .withDataDomainPolicy(oicreds.get().getDataDomainPolicy())
                                       .build();
 
                         if (Log.isDebugEnabled()) {
@@ -449,6 +453,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                                       .withRoles(roles)
                                       .withScope("AUTHENTICATED")
                                       .withArea2RealmOverrides(creds.getArea2RealmOverrides())
+                                      .withDataDomainPolicy(creds.getDataDomainPolicy())
                                       .build();
                         if (Log.isDebugEnabled()) {
                             Log.debugf("Principal Context updated with roles: %s", Arrays.toString(roles));

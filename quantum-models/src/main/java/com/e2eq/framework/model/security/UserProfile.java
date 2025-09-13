@@ -65,8 +65,6 @@ public  class UserProfile extends BaseModel {
     //protected TimeZone defaultTimezone;
     @Builder.Default
     protected String defaultTimezone = "EST";
-    protected DataDomainPolicy dataDomainPolicy;
-
 
     @Override
     public String bmFunctionalArea() {

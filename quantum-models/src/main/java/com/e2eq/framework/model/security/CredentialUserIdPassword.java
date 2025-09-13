@@ -50,6 +50,9 @@ public class CredentialUserIdPassword extends BaseModel {
     @Valid
     protected DomainContext domainContext;
 
+    // Optional data domain policy attached to this credential (overrides global)
+    protected DataDomainPolicy dataDomainPolicy;
+
     // ignored for rest api's for security reasons we don't expose this field to the rest api.
     @JsonIgnore
     @ToString.Exclude

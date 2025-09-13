@@ -476,3 +476,132 @@ curl -H "Authorization: Bearer $JWT" \
 ----
 
 Security outcomes in all cases continue to be driven by your rule bases (Policy rules) matched against the effective PrincipalContext and ResourceContext.
+
+
+
+== Data domain assignment on create: DomainContext and DataDomainPolicy
+
+[[_data_domain_assignment]]
+This section explains how Quantum decides which dataDomain is stamped on newly created records, why this decision is necessary in a multi‑tenant system, what the default behavior is, and how you can override it globally or per Functional Area / Functional Domain. It also describes the DataDomainResolver interface and the default implementation provided by the framework.
+
+=== The problem this solves (and why it matters)
+In a multi‑tenant platform you must ensure each new record is written to the correct data partition so later reads/updates can be scoped safely. If the dataDomain is wrong or missing, you risk leaking data across tenants or making your own data inaccessible due to mis‑scoping.
+
+Historically, Quantum set the dataDomain of new entities to match the creator’s credential (i.e., the principal’s DomainContext → DataDomain). That default is sensible in many cases, but real systems often need more specific behavior per business area or type. For example:
+- You may centralize HR records in a single org‑level domain regardless of who created them.
+- Sales invoices for EU customers must live under an EU data segment.
+- A specific product area might always write into a shared catalog domain separate from the author’s tenant.
+
+These needs require a simple, deterministic way to override the default per Functional Area and/or Functional Domain.
+
+=== Key concepts recap: DomainContext and DataDomain
+- DomainContext (on credentials/realms) captures the principal’s scoping defaults (realm, org/account/tenant identifiers, data segment). At request time this is materialized into a DataDomain.
+- DataDomain is what gets stamped onto persisted entities and later used by repositories to constrain queries and updates.
+
+If you do nothing, new records inherit the principal’s DataDomain.
+
+=== The default policy (do nothing and it works)
+Out of the box, Quantum preserves the existing behavior: if no policy is configured, the resolver falls back to the authenticated principal’s DataDomain. This guarantees compatibility with existing applications.
+
+Concretely:
+- ValidationInterceptor checks if an entity being persisted lacks a dataDomain.
+- If missing, it calls DataDomainResolver.resolveForCreate(area, domain).
+- The DefaultDataDomainResolver first looks for overrides (credential‑attached or global); if none match, it returns the principal’s DataDomain from the current SecurityContext.
+
+=== Policy scopes: principal‑attached vs. global
+You can define overrides at two levels:
+- Principal‑attached (per credential): attach a DataDomainPolicy to a CredentialUserIdPassword. The SecurityFilter places this policy into the PrincipalContext, so it applies only to records created by that principal. This is useful for VIP service accounts or specific partners.
+- Global policy: an application‑wide DataDomainPolicy provided by GlobalDataDomainPolicyProvider. If present, this applies when the principal has no specific override for the matching area/domain.
+
+Precedence: principal‑attached policy wins over global policy; if neither applies, fall back to the principal’s credential domain.
+
+=== The policy map and matching
+A DataDomainPolicy is a small map of rules: Map<String, DataDomainPolicyEntry> policyEntries, keyed by "<FunctionalArea>:<FunctionalDomain>" with support for "*" wildcards. The resolver evaluates keys in this order:
+
+1. area:domain (most specific)
+2. area:*
+3. *:domain
+4. *:* (global catch‑all)
+5. Fallback to principal’s domain if no entry yields a value
+
+Each DataDomainPolicyEntry has a resolutionMode:
+- FROM_CREDENTIAL (default): use the principal’s credential domain (i.e., the historical behavior).
+- FIXED: use the first DataDomain listed in dataDomains on the entry.
+
+Example policy definitions (illustrative JSON):
+
+[source,json]
+----
+{
+  "policyEntries": {
+    "Sales:Invoice": { "resolutionMode": "FIXED", "dataDomains": [ {"orgRefName": "ACME", "tenantId": "eu-1", "dataSegment": "INVOICE"} ] },
+    "Sales:*":      { "resolutionMode": "FROM_CREDENTIAL" },
+    "*:HR":         { "resolutionMode": "FIXED", "dataDomains": [ {"orgRefName": "GLOBAL", "tenantId": "hr", "dataSegment": "HR"} ] },
+    "*:*":          { "resolutionMode": "FROM_CREDENTIAL" }
+  }
+}
+----
+
+Behavior of the above:
+- Sales:Invoice records always go to the fixed EU invoices domain.
+- Any other Sales:* creation uses the creator’s credential domain.
+- All HR records go to a central HR domain.
+- Otherwise, default to the creator’s domain.
+
+=== How the resolver works
+Interfaces and default implementation:
+
+[source,java]
+----
+public interface DataDomainResolver {
+  DataDomain resolveForCreate(String functionalArea, String functionalDomain);
+}
+
+@ApplicationScoped
+public class DefaultDataDomainResolver implements DataDomainResolver {
+  @Inject GlobalDataDomainPolicyProvider globalPolicyProvider;
+  public DataDomain resolveForCreate(String area, String domain) {
+    DataDomain principalDD = SecurityContext.getPrincipalDataDomain()
+      .orElseThrow(() -> new IllegalStateException("Principal context not providing a data domain"));
+    List<String> keys = List.of(areaOrStar(area)+":"+areaOrStar(domain), areaOrStar(area)+":*", "*:"+areaOrStar(domain), "*:*");
+    // 1) principal‑attached policy from PrincipalContext
+    DataDomain fromPrincipal = resolveFrom(policyFromPrincipal(), keys, principalDD);
+    if (fromPrincipal != null) return fromPrincipal;
+    // 2) global policy
+    DataDomain fromGlobal = resolveFrom(globalPolicyProvider.getPolicy().orElse(null), keys, principalDD);
+    if (fromGlobal != null) return fromGlobal;
+    // 3) default fallback
+    return principalDD;
+  }
+}
+----
+
+Integration point:
+- ValidationInterceptor injects DataDomainResolver and calls it in prePersist when an entity’s dataDomain is null.
+- SecurityFilter propagates a principal’s attached DataDomainPolicy (if any) into the PrincipalContext so the resolver can see it.
+
+=== When would you want a non‑global policy?
+Here are a few concrete scenarios:
+- Centralized HR: All HR Employee records are written to a shared HR domain regardless of the team creating them. This supports a shared‑service HR model without duplicating HR data per tenant.
+- Regulated invoices: In the Sales:Invoice domain for EU, you must write under a specific EU tenantId/dataSegment to satisfy data residency. Other Sales domains can keep default behavior.
+- Shared catalog: The Catalog:Item domain is a cross‑tenant shared catalog maintained by a core team. Writes should go to a canonical catalog domain even when initiated by tenant‑specific users.
+- VIP account override: A particular integration user should always write to a staging domain for testing purposes, while all others use defaults. Attach a small policy to just that credential.
+
+=== Relation to tenancy models
+The policy mechanism supports both siloed and pooled tenancy:
+- Siloed tenancy: Most domains default to FROM_CREDENTIAL (each tenant writes to its own partition). Only a few shared services (e.g., HR, catalog) use FIXED to centralize data.
+- Pooled tenancy: You may lean on FIXED policies more often to route writes into pooled/segment‑specific domains (e.g., region, product line), while still enforcing read/write scoping via permissions.
+
+Because the resolver always validates through the principal context and falls back safely, you can introduce overrides gradually without destabilizing existing flows.
+
+=== Authoring tips
+- Start with no policy and verify your default flows. Add entries only where necessary.
+- Prefer specific keys (area:domain) for clarity; use wildcards sparingly.
+- Keep FIXED DataDomain objects minimal and valid for your deployment (orgRefName, tenantId, and dataSegment as needed).
+- Document any global policy so teams know which areas are centralized.
+
+=== API pointers
+- CredentialUserIdPassword.dataDomainPolicy: optional per‑credential overrides (propagated to PrincipalContext).
+- GlobalDataDomainPolicyProvider: holds an optional in‑memory global policy (null by default).
+- DataDomainPolicyEntry.resolutionMode: FROM_CREDENTIAL (default) or FIXED.
+- DataDomainResolver / DefaultDataDomainResolver: the extension point and default behavior.
