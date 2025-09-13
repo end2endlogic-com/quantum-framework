@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Framework Documentation</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-09-13T02:57:15Z</span>
+<span id="revdate">2025-09-13T10:41:36Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -646,20 +646,44 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_how_changes_affect_rule_bases_and_enforcement">62.4. How changes affect rule bases and enforcement</a></li>
 </ul>
 </li>
-<li><a href="#_tutorials">63. Tutorials</a></li>
+<li><a href="#_realm_override_x_realm_and_impersonation_x_impersonate">63. Realm override (X-Realm) and Impersonation (X-Impersonate)</a>
+<ul class="sectlevel2">
+<li><a href="#_what_they_do_at_a_glance">63.1. What they do (at a glance)</a></li>
+<li><a href="#_how_the_headers_integrate_with_permission_evaluation">63.2. How the headers integrate with permission evaluation</a></li>
+<li><a href="#_required_credential_configuration_credentialuseridpassword">63.3. Required credential configuration (CredentialUserIdPassword)</a></li>
+<li><a href="#_end_to_end_behavior_from_securityfilter_reference">63.4. End-to-end behavior from SecurityFilter (reference)</a></li>
+<li><a href="#_practical_differences_and_use_cases">63.5. Practical differences and use cases</a></li>
+<li><a href="#_examples_2">63.6. Examples</a></li>
+</ul>
+</li>
+<li><a href="#_data_domain_assignment_on_create_domaincontext_and_datadomainpolicy">64. Data domain assignment on create: DomainContext and DataDomainPolicy</a>
+<ul class="sectlevel2">
+<li><a href="#_the_problem_this_solves_and_why_it_matters">64.1. The problem this solves (and why it matters)</a></li>
+<li><a href="#_key_concepts_recap_domaincontext_and_datadomain">64.2. Key concepts recap: DomainContext and DataDomain</a></li>
+<li><a href="#_the_default_policy_do_nothing_and_it_works">64.3. The default policy (do nothing and it works)</a></li>
+<li><a href="#_policy_scopes_principalattached_vs_global">64.4. Policy scopes: principal‑attached vs. global</a></li>
+<li><a href="#_the_policy_map_and_matching">64.5. The policy map and matching</a></li>
+<li><a href="#_how_the_resolver_works">64.6. How the resolver works</a></li>
+<li><a href="#_when_would_you_want_a_nonglobal_policy">64.7. When would you want a non‑global policy?</a></li>
+<li><a href="#_relation_to_tenancy_models">64.8. Relation to tenancy models</a></li>
+<li><a href="#_authoring_tips">64.9. Authoring tips</a></li>
+<li><a href="#_api_pointers">64.10. API pointers</a></li>
+</ul>
+</li>
+<li><a href="#_tutorials">65. Tutorials</a></li>
 </ul>
 </li>
 <li><a href="#tutorial-supply-chain">Tutorial: Supply Chain Collaboration End-to-End</a>
 <ul class="sectlevel1">
-<li><a href="#_domain_overview">64. Domain Overview</a></li>
-<li><a href="#_models">65. Models</a></li>
-<li><a href="#_repositories">66. Repositories</a></li>
-<li><a href="#_rest_resources">67. REST Resources</a></li>
-<li><a href="#_multi_tenant_sharing_scenarios">68. Multi-Tenant Sharing Scenarios</a></li>
-<li><a href="#_rulecontext_sketch">69. RuleContext Sketch</a></li>
-<li><a href="#_authentication">70. Authentication</a></li>
-<li><a href="#_separating_models_and_repos_for_workflows">71. Separating Models and Repos for Workflows</a></li>
-<li><a href="#_result">72. Result</a></li>
+<li><a href="#_domain_overview">66. Domain Overview</a></li>
+<li><a href="#_models">67. Models</a></li>
+<li><a href="#_repositories">68. Repositories</a></li>
+<li><a href="#_rest_resources">69. REST Resources</a></li>
+<li><a href="#_multi_tenant_sharing_scenarios">70. Multi-Tenant Sharing Scenarios</a></li>
+<li><a href="#_rulecontext_sketch">71. RuleContext Sketch</a></li>
+<li><a href="#_authentication">72. Authentication</a></li>
+<li><a href="#_separating_models_and_repos_for_workflows">73. Separating Models and Repos for Workflows</a></li>
+<li><a href="#_result">74. Result</a></li>
 </ul>
 </li>
 </ul>
@@ -3749,7 +3773,426 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_tutorials">63. Tutorials</h2>
+<h2 id="_realm_override_x_realm_and_impersonation_x_impersonate">63. Realm override (X-Realm) and Impersonation (X-Impersonate)</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>This section explains how to use the request headers X-Realm and X-Impersonate-* alongside permission rule bases. These headers influence which realm (database) a request operates against and, in the case of impersonation, which identity’s roles are evaluated by the rule engine.</p>
+</div>
+<div class="sect2">
+<h3 id="_what_they_do_at_a_glance">63.1. What they do (at a glance)</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>X-Realm: Overrides the target realm (MongoDB database) used by repositories for this request. Your own identity and roles remain the same; only the data context (tenant/realm) changes for this call. This lets you “switch tenants” at the database level in deployments that use the one-tenant-per-database model.</p>
+</li>
+<li>
+<p>X-Impersonate-Subject or X-Impersonate-UserId: Causes the request to run as another identity. The effective permissions become those of the impersonated identity (potentially more or less than your own). This is analogous to sudo on Unix or to “simulate a user/role” for troubleshooting.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Only one of X-Impersonate-Subject or X-Impersonate-UserId may be supplied per request. Supplying both results in a 400/IllegalArgumentException.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_how_the_headers_integrate_with_permission_evaluation">63.2. How the headers integrate with permission evaluation</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Rule matching and effects (ALLOW/DENY) still follow the standard algorithm described earlier.</p>
+</li>
+<li>
+<p>With X-Realm (no impersonation):</p>
+</li>
+<li>
+<p>The PrincipalContext.defaultRealm is set to the header value (after validation), and repositories operate in that realm.</p>
+</li>
+<li>
+<p>Your own roles and identity remain intact; the rule base is evaluated for your identity and roles but in the specified realm’s data context.</p>
+</li>
+<li>
+<p>With impersonation:</p>
+</li>
+<li>
+<p>The PrincipalContext is rebuilt from the impersonated user’s credential. The effective roles used by the rule engine include the impersonated user’s roles; the platform also merges in the caller’s security roles from Quarkus SecurityIdentity. This means permissions can be a superset; design policy rules accordingly.</p>
+</li>
+<li>
+<p>The effective realm for the request is set to the impersonated user’s default realm (not the X-Realm header). If you passed X-Realm, it is still validated (see below) but not used to override the impersonated default realm in the current implementation.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_required_credential_configuration_credentialuseridpassword">63.3. Required credential configuration (CredentialUserIdPassword)</h3>
+<div class="paragraph">
+<p>Two fields on CredentialUserIdPassword govern whether a user may use these headers:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>realmRegEx (for X-Realm):</p>
+</li>
+<li>
+<p>A wildcard pattern ("*" matches any sequence; case-insensitive) listing the realms a user is allowed to target with X-Realm.</p>
+</li>
+<li>
+<p>If X-Realm is present but realmRegEx is null/blank or does not match the requested realm, the server returns 403 Forbidden.</p>
+</li>
+<li>
+<p>Examples:</p>
+</li>
+<li>
+<p>"*" → allow any realm</p>
+</li>
+<li>
+<p>"acme-*" → allow realms that start with acme-</p>
+</li>
+<li>
+<p>"dev|stage|prod" is not supported as-is; use wildcards like "dev*" and "stage*" or a combined pattern like "(dev|stage|prod)" only if you store a true regex. The current validator replaces '<strong>' with ".</strong>" and matches case-insensitively.</p>
+</li>
+<li>
+<p>impersonateFilterScript (for X-Impersonate-*):</p>
+</li>
+<li>
+<p>A JavaScript snippet executed by the server (GraalVM) that must return a boolean. It receives three variables: username (the caller’s subject), userId (caller’s userId), and realm (the requested realm or current DB name).</p>
+</li>
+<li>
+<p>If the script evaluates to false, the server returns 403 Forbidden for impersonation.</p>
+</li>
+<li>
+<p>If the script is missing (null) and you attempt impersonation, the server rejects the request with 400/IllegalArgumentException.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Example impersonation script (allow only company admins to impersonate in dev realms):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="javascript"><span class="comment">// username = caller's subject, userId = caller's userId, realm = requested realm (or current)</span>
+(username.endsWith(<span class="string"><span class="delimiter">'</span><span class="content">@acme.com</span><span class="delimiter">'</span></span>) &amp;&amp; realm.startsWith(<span class="string"><span class="delimiter">'</span><span class="content">dev-</span><span class="delimiter">'</span></span>))</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Tip: Manage these two fields via your auth provider’s admin APIs or directly through CredentialRepo in controlled environments.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_end_to_end_behavior_from_securityfilter_reference">63.4. End-to-end behavior from SecurityFilter (reference)</h3>
+<div class="paragraph">
+<p>The SecurityFilter constructs the PrincipalContext/ResourceContext before rule evaluation:
+- X-Realm is read and, if present, validated against the caller’s credential.realmRegEx.
+- If impersonation headers are present:
+  - The caller’s credential.impersonateFilterScript is executed. If it returns true, the impersonated user’s credential is loaded and used to build the PrincipalContext.
+  - The final PrincipalContext carries the impersonated user’s defaultRealm and roles (merged with the caller’s SecurityIdentity roles), and may copy area2RealmOverrides from the impersonated credential.
+- Without impersonation, the PrincipalContext is built from the caller’s credential; X-Realm, when valid, sets the defaultRealm for this request.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_practical_differences_and_use_cases">63.5. Practical differences and use cases</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Realm override (X-Realm):</p>
+</li>
+<li>
+<p>Who you are does not change; only where you act changes. Your permissions (as determined by policies attached to your identity/roles) are applied against data in the specified realm.</p>
+</li>
+<li>
+<p>Use cases:</p>
+</li>
+<li>
+<p>Multi-tenant admin tooling that needs to inspect or repair data in customer realms.</p>
+</li>
+<li>
+<p>Reporting or backfills where the same service is pointed at different tenant databases per request.</p>
+</li>
+<li>
+<p>Impersonation (X-Impersonate-*):</p>
+</li>
+<li>
+<p>Who you are (for authorization purposes) changes. You act with the impersonated identity’s permissions; depending on your configuration, additional caller roles may be merged.</p>
+</li>
+<li>
+<p>Use cases:</p>
+</li>
+<li>
+<p>Temporary elevation to an admin identity (sudo-like) for break-glass operations.</p>
+</li>
+<li>
+<p>Simulate what a given role/identity can see/do for troubleshooting or customer support.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Caveats:
+- Never set a permissive impersonateFilterScript in production. Keep it restrictive and auditable.
+- When using both X-Realm and impersonation in one call, be aware that the effective realm will be the impersonated user’s default realm; X-Realm is not applied in the impersonation branch in the current implementation.
+- realmRegEx must be populated for any user who needs realm override; leaving it blank effectively disables X-Realm for that user.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_examples_2">63.6. Examples</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>List policies in a different realm using your own identity</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="bash">curl -H &quot;Authorization: Bearer $JWT&quot; \
+     -H &quot;X-Realm: acme-prod&quot; \
+     &quot;https://host/api/security/permission/policies/list?limit=20&amp;sort=+refName&quot;</code></pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Simulate another user by subject while staying in their default realm</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="bash">curl -H &quot;Authorization: Bearer $JWT&quot; \
+     -H &quot;X-Impersonate-Subject: 3d8f4e7b-...-idp-subject&quot; \
+     &quot;https://host/api/security/permission/policies/list?limit=20&quot;</code></pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Attempt impersonation with a realm hint (validated by script; effective realm = impersonated default)</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="bash">curl -H &quot;Authorization: Bearer $JWT&quot; \
+     -H &quot;X-Realm: dev-acme&quot; \
+     -H &quot;X-Impersonate-UserId: tenant-admin&quot; \
+     &quot;https://host/api/security/permission/policies/list?limit=20&quot;</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Security outcomes in all cases continue to be driven by your rule bases (Policy rules) matched against the effective PrincipalContext and ResourceContext.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_data_domain_assignment_on_create_domaincontext_and_datadomainpolicy">64. Data domain assignment on create: DomainContext and DataDomainPolicy</h2>
+<div class="sectionbody">
+<div id="_data_domain_assignment" class="paragraph">
+<p>This section explains how Quantum decides which dataDomain is stamped on newly created records, why this decision is necessary in a multi‑tenant system, what the default behavior is, and how you can override it globally or per Functional Area / Functional Domain. It also describes the DataDomainResolver interface and the default implementation provided by the framework.</p>
+</div>
+<div class="sect2">
+<h3 id="_the_problem_this_solves_and_why_it_matters">64.1. The problem this solves (and why it matters)</h3>
+<div class="paragraph">
+<p>In a multi‑tenant platform you must ensure each new record is written to the correct data partition so later reads/updates can be scoped safely. If the dataDomain is wrong or missing, you risk leaking data across tenants or making your own data inaccessible due to mis‑scoping.</p>
+</div>
+<div class="paragraph">
+<p>Historically, Quantum set the dataDomain of new entities to match the creator’s credential (i.e., the principal’s DomainContext → DataDomain). That default is sensible in many cases, but real systems often need more specific behavior per business area or type. For example:
+- You may centralize HR records in a single org‑level domain regardless of who created them.
+- Sales invoices for EU customers must live under an EU data segment.
+- A specific product area might always write into a shared catalog domain separate from the author’s tenant.</p>
+</div>
+<div class="paragraph">
+<p>These needs require a simple, deterministic way to override the default per Functional Area and/or Functional Domain.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_key_concepts_recap_domaincontext_and_datadomain">64.2. Key concepts recap: DomainContext and DataDomain</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>DomainContext (on credentials/realms) captures the principal’s scoping defaults (realm, org/account/tenant identifiers, data segment). At request time this is materialized into a DataDomain.</p>
+</li>
+<li>
+<p>DataDomain is what gets stamped onto persisted entities and later used by repositories to constrain queries and updates.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>If you do nothing, new records inherit the principal’s DataDomain.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_the_default_policy_do_nothing_and_it_works">64.3. The default policy (do nothing and it works)</h3>
+<div class="paragraph">
+<p>Out of the box, Quantum preserves the existing behavior: if no policy is configured, the resolver falls back to the authenticated principal’s DataDomain. This guarantees compatibility with existing applications.</p>
+</div>
+<div class="paragraph">
+<p>Concretely:
+- ValidationInterceptor checks if an entity being persisted lacks a dataDomain.
+- If missing, it calls DataDomainResolver.resolveForCreate(area, domain).
+- The DefaultDataDomainResolver first looks for overrides (credential‑attached or global); if none match, it returns the principal’s DataDomain from the current SecurityContext.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_policy_scopes_principalattached_vs_global">64.4. Policy scopes: principal‑attached vs. global</h3>
+<div class="paragraph">
+<p>You can define overrides at two levels:
+- Principal‑attached (per credential): attach a DataDomainPolicy to a CredentialUserIdPassword. The SecurityFilter places this policy into the PrincipalContext, so it applies only to records created by that principal. This is useful for VIP service accounts or specific partners.
+- Global policy: an application‑wide DataDomainPolicy provided by GlobalDataDomainPolicyProvider. If present, this applies when the principal has no specific override for the matching area/domain.</p>
+</div>
+<div class="paragraph">
+<p>Precedence: principal‑attached policy wins over global policy; if neither applies, fall back to the principal’s credential domain.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_the_policy_map_and_matching">64.5. The policy map and matching</h3>
+<div class="paragraph">
+<p>A DataDomainPolicy is a small map of rules: Map&lt;String, DataDomainPolicyEntry&gt; policyEntries, keyed by "&lt;FunctionalArea&gt;:&lt;FunctionalDomain&gt;" with support for "*" wildcards. The resolver evaluates keys in this order:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>area:domain (most specific)</p>
+</li>
+<li>
+<p>area:*</p>
+</li>
+<li>
+<p>*:domain</p>
+</li>
+<li>
+<p><strong>:</strong> (global catch‑all)</p>
+</li>
+<li>
+<p>Fallback to principal’s domain if no entry yields a value</p>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p>Each DataDomainPolicyEntry has a resolutionMode:
+- FROM_CREDENTIAL (default): use the principal’s credential domain (i.e., the historical behavior).
+- FIXED: use the first DataDomain listed in dataDomains on the entry.</p>
+</div>
+<div class="paragraph">
+<p>Example policy definitions (illustrative JSON):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">policyEntries</span><span class="delimiter">&quot;</span></span>: {
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">Sales:Invoice</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">resolutionMode</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">FIXED</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">dataDomains</span><span class="delimiter">&quot;</span></span>: [ {<span class="key"><span class="delimiter">&quot;</span><span class="content">orgRefName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">ACME</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">tenantId</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">eu-1</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">dataSegment</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">INVOICE</span><span class="delimiter">&quot;</span></span>} ] },
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">Sales:*</span><span class="delimiter">&quot;</span></span>:      { <span class="key"><span class="delimiter">&quot;</span><span class="content">resolutionMode</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">FROM_CREDENTIAL</span><span class="delimiter">&quot;</span></span> },
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">*:HR</span><span class="delimiter">&quot;</span></span>:         { <span class="key"><span class="delimiter">&quot;</span><span class="content">resolutionMode</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">FIXED</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">dataDomains</span><span class="delimiter">&quot;</span></span>: [ {<span class="key"><span class="delimiter">&quot;</span><span class="content">orgRefName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">GLOBAL</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">tenantId</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">hr</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">dataSegment</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">HR</span><span class="delimiter">&quot;</span></span>} ] },
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">*:*</span><span class="delimiter">&quot;</span></span>:          { <span class="key"><span class="delimiter">&quot;</span><span class="content">resolutionMode</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">FROM_CREDENTIAL</span><span class="delimiter">&quot;</span></span> }
+  }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Behavior of the above:
+- Sales:Invoice records always go to the fixed EU invoices domain.
+- Any other Sales:* creation uses the creator’s credential domain.
+- All HR records go to a central HR domain.
+- Otherwise, default to the creator’s domain.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_how_the_resolver_works">64.6. How the resolver works</h3>
+<div class="paragraph">
+<p>Interfaces and default implementation:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="directive">public</span> <span class="type">interface</span> <span class="class">DataDomainResolver</span> {
+  DataDomain resolveForCreate(<span class="predefined-type">String</span> functionalArea, <span class="predefined-type">String</span> functionalDomain);
+}
+
+<span class="annotation">@ApplicationScoped</span>
+<span class="directive">public</span> <span class="type">class</span> <span class="class">DefaultDataDomainResolver</span> <span class="directive">implements</span> DataDomainResolver {
+  <span class="annotation">@Inject</span> GlobalDataDomainPolicyProvider globalPolicyProvider;
+  <span class="directive">public</span> DataDomain resolveForCreate(<span class="predefined-type">String</span> area, <span class="predefined-type">String</span> domain) {
+    DataDomain principalDD = SecurityContext.getPrincipalDataDomain()
+      .orElseThrow(() -&gt; <span class="keyword">new</span> <span class="exception">IllegalStateException</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">Principal context not providing a data domain</span><span class="delimiter">&quot;</span></span>));
+    <span class="predefined-type">List</span>&lt;<span class="predefined-type">String</span>&gt; keys = <span class="predefined-type">List</span>.of(areaOrStar(area)+<span class="string"><span class="delimiter">&quot;</span><span class="content">:</span><span class="delimiter">&quot;</span></span>+areaOrStar(domain), areaOrStar(area)+<span class="string"><span class="delimiter">&quot;</span><span class="content">:*</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">*:</span><span class="delimiter">&quot;</span></span>+areaOrStar(domain), <span class="string"><span class="delimiter">&quot;</span><span class="content">*:*</span><span class="delimiter">&quot;</span></span>);
+    <span class="comment">// 1) principal‑attached policy from PrincipalContext</span>
+    DataDomain fromPrincipal = resolveFrom(policyFromPrincipal(), keys, principalDD);
+    <span class="keyword">if</span> (fromPrincipal != <span class="predefined-constant">null</span>) <span class="keyword">return</span> fromPrincipal;
+    <span class="comment">// 2) global policy</span>
+    DataDomain fromGlobal = resolveFrom(globalPolicyProvider.getPolicy().orElse(<span class="predefined-constant">null</span>), keys, principalDD);
+    <span class="keyword">if</span> (fromGlobal != <span class="predefined-constant">null</span>) <span class="keyword">return</span> fromGlobal;
+    <span class="comment">// 3) default fallback</span>
+    <span class="keyword">return</span> principalDD;
+  }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Integration point:
+- ValidationInterceptor injects DataDomainResolver and calls it in prePersist when an entity’s dataDomain is null.
+- SecurityFilter propagates a principal’s attached DataDomainPolicy (if any) into the PrincipalContext so the resolver can see it.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_when_would_you_want_a_nonglobal_policy">64.7. When would you want a non‑global policy?</h3>
+<div class="paragraph">
+<p>Here are a few concrete scenarios:
+- Centralized HR: All HR Employee records are written to a shared HR domain regardless of the team creating them. This supports a shared‑service HR model without duplicating HR data per tenant.
+- Regulated invoices: In the Sales:Invoice domain for EU, you must write under a specific EU tenantId/dataSegment to satisfy data residency. Other Sales domains can keep default behavior.
+- Shared catalog: The Catalog:Item domain is a cross‑tenant shared catalog maintained by a core team. Writes should go to a canonical catalog domain even when initiated by tenant‑specific users.
+- VIP account override: A particular integration user should always write to a staging domain for testing purposes, while all others use defaults. Attach a small policy to just that credential.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_relation_to_tenancy_models">64.8. Relation to tenancy models</h3>
+<div class="paragraph">
+<p>The policy mechanism supports both siloed and pooled tenancy:
+- Siloed tenancy: Most domains default to FROM_CREDENTIAL (each tenant writes to its own partition). Only a few shared services (e.g., HR, catalog) use FIXED to centralize data.
+- Pooled tenancy: You may lean on FIXED policies more often to route writes into pooled/segment‑specific domains (e.g., region, product line), while still enforcing read/write scoping via permissions.</p>
+</div>
+<div class="paragraph">
+<p>Because the resolver always validates through the principal context and falls back safely, you can introduce overrides gradually without destabilizing existing flows.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_authoring_tips">64.9. Authoring tips</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Start with no policy and verify your default flows. Add entries only where necessary.</p>
+</li>
+<li>
+<p>Prefer specific keys (area:domain) for clarity; use wildcards sparingly.</p>
+</li>
+<li>
+<p>Keep FIXED DataDomain objects minimal and valid for your deployment (orgRefName, tenantId, and dataSegment as needed).</p>
+</li>
+<li>
+<p>Document any global policy so teams know which areas are centralized.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_api_pointers">64.10. API pointers</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>CredentialUserIdPassword.dataDomainPolicy: optional per‑credential overrides (propagated to PrincipalContext).</p>
+</li>
+<li>
+<p>GlobalDataDomainPolicyProvider: holds an optional in‑memory global policy (null by default).</p>
+</li>
+<li>
+<p>DataDomainPolicyEntry.resolutionMode: FROM_CREDENTIAL (default) or FIXED.</p>
+</li>
+<li>
+<p>DataDomainResolver / DefaultDataDomainResolver: the extension point and default behavior.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_tutorials">65. Tutorials</h2>
 <div class="sectionbody">
 
 </div>
@@ -3763,7 +4206,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_domain_overview">64. Domain Overview</h2>
+<h2 id="_domain_overview">66. Domain Overview</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Functional Area: Collaboration</p>
@@ -3787,7 +4230,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_models">65. Models</h2>
+<h2 id="_models">67. Models</h2>
 <div class="sectionbody">
 <div class="listingblock">
 <div class="content">
@@ -3830,7 +4273,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_repositories">66. Repositories</h2>
+<h2 id="_repositories">68. Repositories</h2>
 <div class="sectionbody">
 <div class="listingblock">
 <div class="content">
@@ -3843,7 +4286,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_rest_resources">67. REST Resources</h2>
+<h2 id="_rest_resources">69. REST Resources</h2>
 <div class="sectionbody">
 <div class="listingblock">
 <div class="content">
@@ -3863,7 +4306,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_multi_tenant_sharing_scenarios">68. Multi-Tenant Sharing Scenarios</h2>
+<h2 id="_multi_tenant_sharing_scenarios">70. Multi-Tenant Sharing Scenarios</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -3878,7 +4321,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_rulecontext_sketch">69. RuleContext Sketch</h2>
+<h2 id="_rulecontext_sketch">71. RuleContext Sketch</h2>
 <div class="sectionbody">
 <div class="listingblock">
 <div class="content">
@@ -3897,7 +4340,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_authentication">70. Authentication</h2>
+<h2 id="_authentication">72. Authentication</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Use quantum-jwt-provider to accept JWTs from your IdP. Map claims to tenantId/orgRefName/user/roles; BaseResource builds DomainContext for RuleContext.</p>
@@ -3905,7 +4348,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_separating_models_and_repos_for_workflows">71. Separating Models and Repos for Workflows</h2>
+<h2 id="_separating_models_and_repos_for_workflows">73. Separating Models and Repos for Workflows</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Keep models and repositories in their own modules (as this repository does for quantum-models and quantum-morphia-repos). This allows:</p>
@@ -3923,7 +4366,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_result">72. Result</h2>
+<h2 id="_result">74. Result</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>With these building blocks, a UI can:</p>
