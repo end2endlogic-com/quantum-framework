@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Framework Documentation</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-09-13T13:48:38Z</span>
+<span id="revdate">2025-09-13T18:01:35Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -675,6 +675,15 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_relation_to_tenancy_models">67.8. Relation to tenancy models</a></li>
 <li><a href="#_authoring_tips">67.9. Authoring tips</a></li>
 <li><a href="#_api_pointers">67.10. API pointers</a></li>
+<li><a href="#_prerequisites_and_glossary">67.11. Prerequisites and glossary</a></li>
+<li><a href="#_pattern_1_extend_baserepotest">67.12. Pattern 1 — Extend BaseRepoTest</a></li>
+<li><a href="#_pattern_2_try_with_resources_securitysession">67.13. Pattern 2 — Try-with-resources SecuritySession</a></li>
+<li><a href="#_pattern_3_scoped_call_wrapper_scopedcallscope">67.14. Pattern 3 — Scoped-call wrapper (ScopedCallScope)</a></li>
+<li><a href="#_pattern_4_testsecurity_annotation_quarkus">67.15. Pattern 4 — @TestSecurity annotation (Quarkus)</a></li>
+<li><a href="#_testing_rest_apis_vs_repository_logic">67.16. Testing REST APIs vs. Repository Logic</a></li>
+<li><a href="#_useful_quarkus_test_features">67.17. Useful Quarkus Test features</a></li>
+<li><a href="#_real_world_tips">67.18. Real-world tips</a></li>
+<li><a href="#_summary">67.19. Summary</a></li>
 </ul>
 </li>
 <li><a href="#_tutorials">68. Tutorials</a></li>
@@ -4459,7 +4468,326 @@ Summary:
 <p>DataDomainPolicyEntry.resolutionMode: FROM_CREDENTIAL (default) or FIXED.</p>
 </li>
 <li>
-<p>DataDomainResolver / DefaultDataDomainResolver: the extension point and default behavior.</p>
+<p>DataDomainResolver / DefaultDataDomainResolver: the extension point and default behavior.
+== Testing in Quantum: Security Contexts, Repos, and REST APIs</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>This guide explains how to write effective tests in the Quantum framework, with a focus on setting the security context and choosing the right Quarkus testing patterns for repository logic vs. REST APIs.</p>
+</div>
+<div class="paragraph">
+<p>It covers four practical patterns you can use to establish the security context in tests:
+- Extending BaseRepoTest
+- Using a try-with-resources SecuritySession
+- Using a scoped-call pattern to wrap work under a SecuritySession
+- Using the @TestSecurity annotation</p>
+</div>
+<div class="paragraph">
+<p>In addition, it outlines how to test REST endpoints vs. repository logic and highlights useful features of the Quarkus Test Framework.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_prerequisites_and_glossary">67.11. Prerequisites and glossary</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>RuleContext: the in-memory rule engine configuration used by authorization checks.</p>
+</li>
+<li>
+<p>PrincipalContext (pContext): who is performing the action (userId, roles, realms, data domain).</p>
+</li>
+<li>
+<p>ResourceContext (rContext): what is being acted upon (area/domain, resource, action).</p>
+</li>
+<li>
+<p>SecuritySession: a small utility that binds PrincipalContext and ResourceContext to SecurityContext for the current thread, and clears them on close.</p>
+</li>
+<li>
+<p>SecurityIdentity: Quarkus’ current identity (used by @TestSecurity and HTTP request security).</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_pattern_1_extend_baserepotest">67.12. Pattern 1 — Extend BaseRepoTest</h3>
+<div class="paragraph">
+<p>For repository tests (no HTTP), the simplest approach is to extend BaseRepoTest.</p>
+</div>
+<div class="paragraph">
+<p>What BaseRepoTest does for you:
+- Initializes RuleContext with default rules.
+- Builds default pContext and rContext for a system/test user.
+- Ensures test database migrations are applied.
+- Gives you protected fields pContext and rContext you can use in your test.</p>
+</div>
+<div class="paragraph">
+<p>Example:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@QuarkusTest</span>
+<span class="type">class</span> <span class="class">MyRepoTest</span> <span class="directive">extends</span> com.e2eq.framework.persistent.BaseRepoTest {
+
+  <span class="annotation">@Inject</span>
+  com.e2eq.framework.model.persistent.morphia.UserProfileRepo userProfileRepo;
+
+  <span class="annotation">@Test</span>
+  <span class="type">void</span> canReadUnderTestUser() {
+    <span class="comment">// Activate the security context for this block</span>
+    <span class="keyword">try</span> (<span class="directive">final</span> com.e2eq.framework.securityrules.SecuritySession ignored =
+             <span class="keyword">new</span> com.e2eq.framework.securityrules.SecuritySession(pContext, rContext)) {
+      <span class="type">var</span> list = userProfileRepo.list(testUtils.getTestRealm());
+      org.junit.jupiter.api.Assertions.assertNotNull(list);
+    }
+  }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Notes:
+- BaseRepoTest prepares contexts but does not keep them permanently active. Wrap repo calls that require authorization in a SecuritySession (see Pattern 2), or activate it in @BeforeEach if many test methods use it.
+- BaseRepoTest also runs migrations once using your test principal, which avoids authorization failures during initialization.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_pattern_2_try_with_resources_securitysession">67.13. Pattern 2 — Try-with-resources SecuritySession</h3>
+<div class="paragraph">
+<p>Use SecuritySession explicitly to scope work that should run under a specific PrincipalContext and ResourceContext. This is the most explicit pattern and works in both repository and service-level tests.</p>
+</div>
+<div class="paragraph">
+<p>Example:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@QuarkusTest</span>
+<span class="type">class</span> <span class="class">CredentialRepoTest</span> <span class="directive">extends</span> com.e2eq.framework.persistent.BaseRepoTest {
+
+  <span class="annotation">@Inject</span>
+  com.e2eq.framework.model.persistent.morphia.CredentialRepo credRepo;
+
+  <span class="annotation">@Test</span>
+  <span class="type">void</span> findByUserId_asTestUser() {
+    <span class="keyword">try</span> (<span class="directive">final</span> com.e2eq.framework.securityrules.SecuritySession s =
+             <span class="keyword">new</span> com.e2eq.framework.securityrules.SecuritySession(pContext, rContext)) {
+      <span class="type">var</span> op = credRepo.findByUserId(testUtils.getTestUserId(), testUtils.getSystemRealm());
+      org.junit.jupiter.api.Assertions.assertTrue(op.isPresent());
+    }
+  }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Tips:
+- Prefer try-with-resources so contexts are always cleared, even when assertions fail.
+- You can construct custom PrincipalContext/ResourceContext for specific scenarios (e.g., different roles or realms) and pass them to SecuritySession.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_pattern_3_scoped_call_wrapper_scopedcallscope">67.14. Pattern 3 — Scoped-call wrapper (ScopedCallScope)</h3>
+<div class="paragraph">
+<p>If you prefer not to repeat try-with-resources blocks, wrap your work in a helper that creates a SecuritySession, runs your logic, and ensures cleanup. This is sometimes called a “scoped call” pattern, often referred to as a ScopedCallScope.</p>
+</div>
+<div class="paragraph">
+<p>Example helper (placed in test sources):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="directive">public</span> <span class="directive">final</span> <span class="type">class</span> <span class="class">SecurityScopes</span> {
+  <span class="directive">private</span> SecurityScopes() {}
+
+  <span class="directive">public</span> <span class="directive">static</span> &lt;T&gt; T call(
+      com.e2eq.framework.model.securityrules.PrincipalContext p,
+      com.e2eq.framework.model.securityrules.ResourceContext r,
+      java.util.concurrent.Callable&lt;T&gt; work) {
+    <span class="keyword">try</span> (<span class="directive">final</span> com.e2eq.framework.securityrules.SecuritySession s =
+             <span class="keyword">new</span> com.e2eq.framework.securityrules.SecuritySession(p, r)) {
+      <span class="keyword">try</span> { <span class="keyword">return</span> work.call(); }
+      <span class="keyword">catch</span> (<span class="exception">Exception</span> e) { <span class="keyword">throw</span> <span class="keyword">new</span> <span class="exception">RuntimeException</span>(e); }
+    }
+  }
+
+  <span class="directive">public</span> <span class="directive">static</span> <span class="type">void</span> run(
+      com.e2eq.framework.model.securityrules.PrincipalContext p,
+      com.e2eq.framework.model.securityrules.ResourceContext r,
+      <span class="predefined-type">Runnable</span> work) {
+    <span class="keyword">try</span> (<span class="directive">final</span> com.e2eq.framework.securityrules.SecuritySession s =
+             <span class="keyword">new</span> com.e2eq.framework.securityrules.SecuritySession(p, r)) {
+      work.run();
+    }
+  }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Usage:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>var result = SecurityScopes.call(pContext, rContext, () -&gt; repo.getByUserId(realm, userId));
+SecurityScopes.run(pContext, rContext, () -&gt; repo.save(realm, entity));</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This achieves the same effect as try-with-resources but centralizes the pattern.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_pattern_4_testsecurity_annotation_quarkus">67.15. Pattern 4 — @TestSecurity annotation (Quarkus)</h3>
+<div class="paragraph">
+<p>For tests that run through HTTP (and in some repo tests), you can use Quarkus’ @io.quarkus.test.security.TestSecurity to set the SecurityIdentity without creating a SecuritySession.</p>
+</div>
+<div class="paragraph">
+<p>Quantum integrates with this in two places:
+- SecurityFilter: when a request has a SecurityIdentity but no JWT, it builds a PrincipalContext from the identity (user and roles). You can also pass X-Realm to control the realm.
+- MorphiaRepo: when repo methods are invoked under @TestSecurity with no active SecuritySession, MorphiaRepo lazily builds PrincipalContext from SecurityIdentity and sets a safe default ResourceContext to enable rule evaluation.</p>
+</div>
+<div class="paragraph">
+<p>Example (HTTP):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@QuarkusTest</span>
+<span class="type">class</span> <span class="class">SecureResourceTest</span> {
+
+  <span class="annotation">@Inject</span> com.e2eq.framework.util.TestUtils testUtils;
+
+  <span class="annotation">@Test</span>
+  <span class="annotation">@io</span>.quarkus.test.security.TestSecurity(user = <span class="string"><span class="delimiter">&quot;</span><span class="content">test@system.com</span><span class="delimiter">&quot;</span></span>, roles = {<span class="string"><span class="delimiter">&quot;</span><span class="content">user</span><span class="delimiter">&quot;</span></span>})
+  <span class="type">void</span> listProfiles_asUser() {
+    io.restassured.RestAssured.given()
+      .header(<span class="string"><span class="delimiter">&quot;</span><span class="content">X-Realm</span><span class="delimiter">&quot;</span></span>, testUtils.getTestRealm())
+      .when().get(<span class="string"><span class="delimiter">&quot;</span><span class="content">/user/userProfile/list</span><span class="delimiter">&quot;</span></span>)
+      .then().statusCode(<span class="integer">200</span>);
+  }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Example (repo call under @TestSecurity fallback, no SecuritySession):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@QuarkusTest</span>
+<span class="type">class</span> <span class="class">RepoFallbackTest</span> {
+
+  <span class="annotation">@Inject</span> com.e2eq.framework.util.TestUtils testUtils;
+  <span class="annotation">@Inject</span> com.e2eq.framework.model.persistent.morphia.CredentialRepo credentialRepo;
+
+  <span class="annotation">@Test</span>
+  <span class="annotation">@io</span>.quarkus.test.security.TestSecurity(user = <span class="string"><span class="delimiter">&quot;</span><span class="content">test@system.com</span><span class="delimiter">&quot;</span></span>, roles = {<span class="string"><span class="delimiter">&quot;</span><span class="content">user</span><span class="delimiter">&quot;</span></span>})
+  <span class="type">void</span> repoUsesIdentityWhenNoSecuritySession() {
+    <span class="comment">// Internally, MorphiaRepo will ensure PrincipalContext exists using SecurityIdentity</span>
+    credentialRepo.findByUserId(<span class="string"><span class="delimiter">&quot;</span><span class="content">nonexistent@end2endlogic.com</span><span class="delimiter">&quot;</span></span>, testUtils.getTestRealm(), <span class="predefined-constant">false</span>);
+    <span class="comment">// Optionally assert that SecurityContext has been initialized</span>
+    org.junit.jupiter.api.Assertions.assertTrue(
+      com.e2eq.framework.model.securityrules.SecurityContext.getPrincipalContext().isPresent());
+  }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Notes:
+- @TestSecurity is perfect for authorizing requests in HTTP tests without generating JWTs.
+- For repo tests that require precise ResourceContext (area/domain/action), prefer SecuritySession; MorphiaRepo sets a generic default ResourceContext when needed.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_testing_rest_apis_vs_repository_logic">67.16. Testing REST APIs vs. Repository Logic</h3>
+<div class="paragraph">
+<p>When to prefer REST (HTTP) tests:
+- End-to-end authorization: validate request filters, identity mapping, realm headers, and JWT handling.
+- Request/response shape and status codes.
+- Role-based access checks via @TestSecurity.</p>
+</div>
+<div class="paragraph">
+<p>How to test REST APIs:
+- Use @QuarkusTest and RestAssured:
+  [source,java]
+  ----
+  var resp = io.restassured.RestAssured.given()
+      .header("Content-Type", "application/json")
+      .header("X-Realm", testUtils.getTestRealm())
+      .when().get("/user/userProfile/list")
+      .then().statusCode(200).extract().response();
+  ----
+- To test JWT-protected endpoints end-to-end, first call the login API to obtain a token, then pass Authorization: Bearer &lt;token&gt;. See SecurityTest.testGetUserProfileRESTAPI for a complete example.</p>
+</div>
+<div class="paragraph">
+<p>When to prefer repository/service tests:
+- You want precise control over PrincipalContext/ResourceContext and rule evaluation without HTTP overhead.
+- You are asserting persistence logic, query filters, or domain rules.</p>
+</div>
+<div class="paragraph">
+<p>How to test repository logic:
+- Extend BaseRepoTest (Pattern 1) for ready-to-use pContext/rContext and migrations.
+- Wrap calls with SecuritySession (Pattern 2) or use a scoped-call helper (Pattern 3).</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_useful_quarkus_test_features">67.17. Useful Quarkus Test features</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>@QuarkusTest: boots the app for integration tests with CDI, config, and persistence.</p>
+</li>
+<li>
+<p>RestAssured: fluent HTTP client baked into Quarkus tests; supports JSON assertions and extraction.</p>
+</li>
+<li>
+<p>@TestSecurity: set SecurityIdentity (user, roles) for tests.</p>
+</li>
+<li>
+<p>@InjectMock/@InjectSpy (quarkus-junit5-mockito): replace beans with mocks/spies for isolation.</p>
+</li>
+<li>
+<p>@QuarkusTestResource: manage external resources (e.g., starting/stopping containers) for a test class or suite.</p>
+</li>
+<li>
+<p>@TestHTTPEndpoint and @TestHTTPResource: convenient endpoint URI injection.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_real_world_tips">67.18. Real-world tips</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Clearing thread locals: If you manipulate SecurityContext directly in advanced tests, clear it in @AfterEach to avoid cross-test leakage:
+[source,java]
+----
+@AfterEach
+void cleanup() { com.e2eq.framework.model.securityrules.SecurityContext.clear(); }
+----</p>
+</li>
+<li>
+<p>Realm routing: pass X-Realm in REST tests to select the target realm. SecurityFilter also validates realm access against user credentials when present.</p>
+</li>
+<li>
+<p>Data prep: If your test needs specific users/roles, create them under a SecuritySession beforehand (see SecurityTest.ensureTestUserExists()).</p>
+</li>
+<li>
+<p>Logging: enable DEBUG for com.e2eq to inspect rule evaluation and identity resolution during tests.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_summary">67.19. Summary</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Use BaseRepoTest for repository tests and migrations, and wrap work in SecuritySession.</p>
+</li>
+<li>
+<p>For less ceremony, create a simple scoped-call helper to run code under a SecuritySession.</p>
+</li>
+<li>
+<p>For REST/API tests and quick identity setup, use @TestSecurity, realm headers, and RestAssured.</p>
+</li>
+<li>
+<p>For full e2e security, obtain a JWT via the login API and include it in requests.</p>
 </li>
 </ul>
 </div>
@@ -4815,7 +5143,7 @@ Summary:
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-09-12 22:56:24 -0400
+Last updated 2025-09-13 13:58:27 -0400
 </div>
 </div>
 </body>
