@@ -1,6 +1,7 @@
 package com.e2eq.framework.model.securityrules;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.security.DataDomainPolicy;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.graalvm.polyglot.HostAccess;
 
@@ -29,6 +30,8 @@ public final class PrincipalContext {
    String actingOnBehalfOfSubject;
    String actingOnBehalfOfUserId;
    Map<String, String> area2RealmOverrides;
+   // Optional: data domain policy attached to the principal's credential
+   DataDomainPolicy dataDomainPolicy;
 
    PrincipalContext(@NotNull String defaultRealm,
                     @Valid @NotNull DataDomain dataDomain,
@@ -80,6 +83,7 @@ public final class PrincipalContext {
       String actingOnBehalfOfUserId;
       String actingOnBehalfOfSubject;
       Map<String, String> area2RealmOverrides;
+      DataDomainPolicy dataDomainPolicy;
 
       public Builder withDefaultRealm(String realm) {
          this.defaultRealm = realm;
@@ -127,10 +131,18 @@ public final class PrincipalContext {
          return this;
       }
 
+      public Builder withDataDomainPolicy(DataDomainPolicy policy) {
+         this.dataDomainPolicy = policy;
+         return this;
+      }
+
       public PrincipalContext build() {
-         return
+         PrincipalContext pc =
             new PrincipalContext(defaultRealm, dataDomain, userId, roles, scope,
                impersonatedBySubject, impersonatedByUserId, actingOnBehalfOfSubject, actingOnBehalfOfUserId);
+         pc.area2RealmOverrides = this.area2RealmOverrides;
+         pc.dataDomainPolicy = this.dataDomainPolicy;
+         return pc;
       }
 
    }
@@ -216,6 +228,13 @@ public final class PrincipalContext {
       this.actingOnBehalfOfSubject = subject;
    }
 
+   public DataDomainPolicy getDataDomainPolicy() {
+      return dataDomainPolicy;
+   }
+
+   public void setDataDomainPolicy(DataDomainPolicy dataDomainPolicy) {
+      this.dataDomainPolicy = dataDomainPolicy;
+   }
 
 
    @HostAccess.Export
@@ -235,7 +254,9 @@ public final class PrincipalContext {
       if (actingOnBehalfOfUserId != null ? !actingOnBehalfOfUserId.equals(that.actingOnBehalfOfUserId) : that.actingOnBehalfOfUserId != null) return false;
       // Probably incorrect - comparing Object[] arrays with Arrays.equals
       if (!Arrays.equals(roles, that.roles)) return false;
-      return scope != null ? scope.equals(that.scope) : that.scope == null;
+      if (scope != null ? !scope.equals(that.scope) : that.scope != null) return false;
+      if (dataDomainPolicy != null ? !dataDomainPolicy.equals(that.dataDomainPolicy) : that.dataDomainPolicy != null) return false;
+      return true;
    }
 
    @Override
@@ -250,21 +271,22 @@ public final class PrincipalContext {
       result = 31 * result + (impersonatedByUserId!= null? impersonatedByUserId.hashCode() : 0);
       result = 31 * result + (actingOnBehalfOfSubject!= null? actingOnBehalfOfSubject.hashCode() : 0);
       result = 31 * result + (actingOnBehalfOfUserId!= null? actingOnBehalfOfUserId.hashCode() : 0);
+      result = 31 * result + (dataDomainPolicy != null ? dataDomainPolicy.hashCode() : 0);
       return result;
    }
 
    @Override
    public String toString () {
       return "PrincipalContext{" +
-                "realm='" + defaultRealm + '\'' +
-                ", dataDomain=" + dataDomain +
-                ", userId='" + userId + '\'' +
-                ", roles=" + Arrays.toString(roles) +
-                ", scope='" + scope + '\'' +
-                ", impersonatedBySubject='" + impersonatedBySubject + '\'' +
-                ", impersonatedByUserId='" + impersonatedByUserId + '\'' +
-                ", actingOnBehalfOfUserId='" + actingOnBehalfOfUserId + '\'' +
-                ", actingOnBehalfOfSubject='" + actingOnBehalfOfSubject + '\'' +
-                '}';
+               "realm='" + defaultRealm + '\'' +
+               ", dataDomain=" + dataDomain +
+               ", userId='" + userId + '\'' +
+               ", roles=" + Arrays.toString(roles) +
+               ", scope='" + scope + '\'' +
+               ", impersonatedBySubject='" + impersonatedBySubject + '\'' +
+               ", impersonatedByUserId='" + impersonatedByUserId + '\'' +
+               ", actingOnBehalfOfUserId='" + actingOnBehalfOfUserId + '\'' +
+               ", actingOnBehalfOfSubject='" + actingOnBehalfOfSubject + '\'' +
+               '}';
    }
 }
