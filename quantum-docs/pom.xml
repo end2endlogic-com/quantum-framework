@@ -20,7 +20,7 @@
         <docs.output.dir>${project.reporting.outputDirectory}</docs.output.dir>
         <!-- Configure GitHub Pages (Option 2: gh-pages branch) -->
         <!-- Replace ORG/REPO with your GitHub org/user and repository name -->
-        <gh.repo.scm.url>${project.scm.developerConnection}</gh.repo.scm.url>
+        <gh.repo.scm.url>${project.parent.scm.developerConnection}</gh.repo.scm.url>
         <gh.pages.branch>gh-pages</gh.pages.branch>
         <scmpublish.checkout.dir>${project.build.directory}/scmpublish</scmpublish.checkout.dir>
     </properties>
@@ -108,6 +108,8 @@
                     <scmBranch>${gh.pages.branch}</scmBranch>
                     <tryUpdate>true</tryUpdate>
                     <checkinComment>[docs] Publish site for ${project.artifactId} ${project.version}</checkinComment>
+                    <!-- Use the Asciidoctor output (target/site) as the content to publish -->
+                    <content>${project.reporting.outputDirectory}</content>
                 </configuration>
                 <executions>
                     <execution>
