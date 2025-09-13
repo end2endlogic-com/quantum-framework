@@ -202,3 +202,140 @@ Examples:
 - GET /shipments/list?filter=(destination:"NY"||destination:"CA")&&updatedAt:>=2025-09-01&sort=origin
 
 These features integrate with RuleContext and DataDomain: your filter runs within the tenant/org scope derived from the security context; RuleContext may add further predicates or projections automatically.
+
+
+== CSV Export and Import
+
+These endpoints are inherited by every resource that extends BaseResource. They are mounted under the resource’s base path. For example, PolicyResource at /security/permission/policies exposes:
+- GET /security/permission/policies/csv
+- POST /security/permission/policies/csv
+- POST /security/permission/policies/csv/session
+- POST /security/permission/policies/csv/session/{sessionId}/commit
+- DELETE /security/permission/policies/csv/session/{sessionId}
+- GET /security/permission/policies/csv/session/{sessionId}/rows
+
+Authorization and scoping:
+- All CSV endpoints are protected by the same @RolesAllowed("user", "admin") checks as other CRUD operations.
+- RuleContext filters and DataDomain scoping apply the same way as list/find; exports stream only what the caller may see, and imports are saved under the same permissions.
+- In multi‑realm deployments, include your X-Realm header as you do for CRUD; underlying repos resolve realm and domain context consistently.
+
+=== Export: GET /csv
+
+Produces a streamed CSV download of the current resource collection.
+
+Query parameters and behavior:
+- fieldSeparator (default ",")
+  - Single character used to separate fields. Typical values: , ; \t
+- requestedColumns (default refName)
+  - Comma‑separated list of model field names to include, in output order. If omitted, BaseResource defaults to refName.
+  - Nested list extraction is supported with the [0] notation on a single nested property across all requested columns (e.g., addresses[0].city, addresses[0].zip). Indices other than [0] are rejected. If the nested list has multiple items, multiple rows are emitted per record (one per list element), preserving other column values.
+- quotingStrategy (default QUOTE_WHERE_ESSENTIAL)
+  - QUOTE_WHERE_ESSENTIAL: quote only when needed (when a value contains the separator or quoteChar).
+  - QUOTE_ALL_COLUMNS: quote every column in every row.
+- quoteChar (default ")
+  - The character used to surround quoted values.
+- decimalSeparator (default .)
+  - Reserved for decimal formatting. Note: current implementation ignores this value; decimals are rendered using the locale‑independent dot.
+- charsetEncoding (default UTF-8-without-BOM)
+  - One of: US-ASCII, UTF-8-without-BOM, UTF-8-with-BOM, UTF-16-with-BOM, UTF-16BE, UTF-16LE.
+  - “with-BOM” values write a Byte Order Mark at the beginning of the file (UTF‑8: EF BB BF; UTF‑16: FE FF).
+- filter (optional)
+  - ANTLR DSL filter applied server‑side before streaming (see Query Language section). Reduces rows and can improve performance.
+- filename (default downloaded.csv)
+  - Suggested download filename returned via Content‑Disposition header.
+- offset (default 0)
+  - Zero‑based index of the first record to stream.
+- length (default 1000, use -1 for all)
+  - Maximum number of records to stream from offset. Use -1 to stream all (be mindful of client memory/time).
+- prependHeaderRow (optional boolean, default false)
+  - When true, the first row contains column headers. Requires requestedColumns to be set (the default refName satisfies this requirement).
+- preferredColumnNames (optional list)
+  - Overrides header names positionally when prependHeaderRow=true. The list length must be ≤ requestedColumns; an empty string entry means “use default field name” for that column.
+
+Response:
+- 200 OK with Content-Type: text/csv and Content-Disposition: attachment; filename="...".
+- On validation/processing errors, the response status is 400/500 and the body contains a single text line describing the problem (e.g., “Incorrect information supplied: …”). Unrecognized query parameters are rejected with 400.
+
+Examples:
+
+- Export selected fields with header, custom filename and filter
+
+[source,bash]
+----
+curl -H "Authorization: Bearer $JWT" \
+     -H "X-Realm: system-com" \
+     "https://host/api/products/csv?requestedColumns=id,refName,price&prependHeaderRow=true&filename=products.csv&filter=active:true&sort=+refName"
+----
+
+- Export nested list’s first element across columns
+
+[source,bash]
+----
+# emits one row per address entry when more than one is present
+curl -H "Authorization: Bearer $JWT" \
+     "https://host/api/customers/csv?requestedColumns=refName,addresses[0].city,addresses[0].zip&prependHeaderRow=true"
+----
+
+=== Import: POST /csv (multipart)
+
+Consumes a CSV file (multipart/form‑data) and imports records in batches. The form field name for the file is file.
+
+Query parameters and behavior:
+- fieldSeparator (default ",")
+  - Single character expected between fields.
+- quotingStrategy (default QUOTE_WHERE_ESSENTIAL)
+  - Same values as export; controls how embedded quotes are recognized.
+- quoteChar (default ")
+  - The expected quote character in the file.
+- skipHeaderRow (default true)
+  - When true, the first row is treated as a header and skipped. Mapping is positional, not by header names.
+- charsetEncoding (default UTF-8-without-BOM)
+  - The file encoding. “with-BOM” variants allow consuming a BOM at the start.
+- requestedColumns (required)
+  - Comma‑separated list of model field names in the same order as the CSV columns. This positional mapping drives parsing and validation. Nested list syntax [0] is allowed with the same constraints as export.
+
+Behavior:
+- Each row is parsed into a model instance using type‑aware processors (ints, longs, decimals, enums, etc.).
+- Bean Validation is applied; rows with violations are collected as errors and not saved; valid rows are batched and saved.
+- For each saved batch, insert vs update is determined by refName presence in the repository.
+- Response entity includes counts (importedCount, failedCount) and per‑row results when available.
+- Response headers:
+  - X-Import-Success-Count: number of rows successfully imported.
+  - X-Import-Failed-Count: number of rows that failed validation or DB write.
+  - X-Import-Message: summary message.
+
+Example (direct import):
+
+[source,bash]
+----
+curl -X POST \
+  -H "Authorization: Bearer $JWT" \
+  -H "X-Realm: system-com" \
+  -F "file=@policies.csv" \
+  "https://host/api/security/permission/policies/csv?requestedColumns=refName,principalId,description&skipHeaderRow=true&fieldSeparator=,&quoteChar=\"&quotingStrategy=QUOTE_WHERE_ESSENTIAL&charsetEncoding=UTF-8-without-BOM"
+----
+
+=== Import with preview sessions
+
+Use a two‑step flow to analyze first, then commit only valid rows.
+
+- POST /csv/session (multipart): analyzes the file and creates a session
+  - Same parameters as POST /csv (fieldSeparator, quotingStrategy, quoteChar, skipHeaderRow, charsetEncoding, requestedColumns).
+  - Returns a preview ImportResult including sessionId, totals (totalRows, validRows, errorRows), and row‑level findings. No data is saved yet.
+
+- POST /csv/session/{sessionId}/commit: imports only error‑free rows from the analyzed session
+  - Returns CommitResult with inserted/updated counts.
+
+- DELETE /csv/session/{sessionId}: cancels and discards session state (idempotent; always returns 204).
+
+- GET /csv/session/{sessionId}/rows: page through analyzed rows
+  - Query params:
+    - skip (default 0), limit (default 50)
+    - onlyErrors (default false): when true, returns only rows with errors
+    - intent (optional): filter rows by intended action: INSERT, UPDATE, or SKIP
+
+Notes and constraints:
+- requestedColumns must reference actual model fields. Unknown fields or multiple different nested properties are rejected (only one nested property across requestedColumns is allowed when using [0]).
+- Unrecognized query parameters are rejected with HTTP 400 to prevent silent misconfiguration.
+- Very large exports should prefer streaming with sensible length settings or server‑side filters to reduce memory and time.
+- Imports run under the same security rules as POST / (save). Ensure the caller has permission to create/update the target entities in the chosen realm.

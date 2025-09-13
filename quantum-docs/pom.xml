@@ -17,7 +17,12 @@
     <properties>
         <asciidoctor.maven.plugin.version>2.2.6</asciidoctor.maven.plugin.version>
         <asciidoctorj.pdf.version>2.3.9</asciidoctorj.pdf.version>
-        <docs.output.dir>${project.build.directory}/docs</docs.output.dir>
+        <docs.output.dir>${project.reporting.outputDirectory}</docs.output.dir>
+        <!-- Configure GitHub Pages (Option 2: gh-pages branch) -->
+        <!-- Replace ORG/REPO with your GitHub org/user and repository name -->
+        <gh.repo.scm.url>${project.scm.developerConnection}</gh.repo.scm.url>
+        <gh.pages.branch>gh-pages</gh.pages.branch>
+        <scmpublish.checkout.dir>${project.build.directory}/scmpublish</scmpublish.checkout.dir>
     </properties>
 
     <build>
@@ -69,6 +74,48 @@
                         <configuration>
                             <backend>pdf</backend>
                         </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- Ensure .nojekyll file exists in the published site to disable Jekyll processing -->
+            <plugin>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>create-nojekyll</id>
+                        <phase>prepare-package</phase>
+                        <configuration>
+                            <target>
+                                <mkdir dir="${docs.output.dir}"/>
+                                <touch file="${docs.output.dir}/.nojekyll"/>
+                            </target>
+                        </configuration>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- Publish generated HTML to gh-pages branch during 'deploy' -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-scm-publish-plugin</artifactId>
+                <version>3.1.0</version>
+                <configuration>
+                    <checkoutDirectory>${scmpublish.checkout.dir}</checkoutDirectory>
+                    <pubScmUrl>${gh.repo.scm.url}</pubScmUrl>
+                    <scmBranch>${gh.pages.branch}</scmBranch>
+                    <tryUpdate>true</tryUpdate>
+                    <checkinComment>[docs] Publish site for ${project.artifactId} ${project.version}</checkinComment>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>publish-gh-pages</id>
+                        <phase>deploy</phase>
+                        <goals>
+                            <goal>publish-scm</goal>
+                        </goals>
                     </execution>
                 </executions>
             </plugin>

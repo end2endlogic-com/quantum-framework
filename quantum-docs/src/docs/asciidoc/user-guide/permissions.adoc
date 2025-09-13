@@ -145,8 +145,227 @@ Given a request R and identity I, evaluate a set of rule bases RB as follows:
 - Prefer header/body predicates to refine matches without exploding URL patterns.
 - Log matched rule names and applied scopes for auditability.
 
+== How UIActions and DefaultUIActions are calculated
+
+When the server returns a collection of entities (for example, userProfiles), each entity may expose two action lists:
+- DefaultUIActions: the full set of actions that conceptually apply to this type of entity (e.g., CREATE, UPDATE, VIEW, DELETE, ARCHIVE). Think of this as the “menu template” for the type.
+- UIActions: the subset of actions the current user is actually permitted to perform on that specific entity instance right now.
+
+Why they can differ per entity:
+- Entity attributes: state or flags (e.g., archived, soft-deleted, immutable) can remove or alter available actions at instance level.
+- Permission rule base: evaluated against the current request, identity, and context to allow or deny actions.
+- DataDomain membership: tenant/org/owner scoping can further restrict actions if the identity is outside the entity’s domain.
+
+How the server computes them:
+1) Start with a default action template for the entity type (DefaultUIActions).
+2) Apply simple state-based adjustments (e.g., suppress CREATE on already-persisted instances).
+3) Evaluate the permission rules with the current identity and context:
+   - Consider roles, functional area/domain, action intent, headers/body, and any rule-contributed scopes.
+   - Resolve DataDomain constraints to ensure the identity is permitted to act within the entity’s domain.
+4) Produce UIActions as the allowed subset for that entity instance.
+5) Return both lists with each entity in collection responses.
+
+How the client should use the two lists:
+- Render the full DefaultUIActions as the visible set of possible actions (icons, buttons, menus) so the UI stays consistent.
+- Enable only those actions present in UIActions; gray out or disable the remainder to signal capability but lack of current permission.
+- This approach avoids flicker and keeps affordances discoverable while remaining truthful to the user’s current authorization.
+
+Example:
+- You fetch 25 userProfiles.
+- DefaultUIActions for the type = [CREATE, VIEW, UPDATE, DELETE, ARCHIVE].
+- For a specific profile A (owned by your tenant), UIActions may be [VIEW, UPDATE] based on your roles and domain.
+- For another profile B (in a different tenant), UIActions may be [VIEW] only.
+- The UI renders the same controls for both A and B, but only enables the actions present in each item’s UIActions list.
+
+Operational considerations:
+- Keep action names stable and documented so front-ends can map to icons and tooltips consistently.
+- Prefer small, composable rules that evaluate action permissions explicitly by functional area/domain to avoid surprises.
+- Consider server-side caching of action evaluations for list views to reduce latency, respecting identity and scope.
+
 == How This Integrates End-to-End
 
 - BaseResource extracts identity and headers to construct DomainContext.
 - Rule evaluation uses URL/method + SecurityURLHeaders + SecurityURLBody + identity/userProfile to reach a decision and derive scope filters.
 - Repositories (e.g., MorphiaRepo) apply the filters to queries and updates, ensuring DataDomain-respecting access.
+
+
+== Administering Policies via REST (PolicyResource)
+
+The PolicyResource exposes CRUD-style REST APIs for creating and managing policies (rule bases) that drive authorization decisions. Each Policy targets a principalId (either a specific userId or a role name) and contains an ordered list of Rule objects. Rules match requests using SecurityURIHeader and SecurityURIBody and then contribute an effect (ALLOW/DENY) and optional repository filters.
+
+- Base path: /security/permission/policies
+- Auth: Bearer JWT (see Authentication); resource methods are guarded by @RolesAllowed("user", "admin") at the BaseResource level and your own realm/role policies.
+- Multi-realm: pass X-Realm header to operate within a specific realm; otherwise the default realm is used.
+
+=== Model shape (Policy)
+
+A Policy extends FullBaseModel and includes:
+- id, refName, displayName, dataDomain, archived/expired flags (inherited)
+- principalId: userId or role name that this policy attaches to
+- description: human-readable summary
+- rules: array of Rule entries
+
+Rule fields (key ones):
+- name, description
+- securityURI.header: identity, area, functionalDomain, action (supports wildcard "*")
+- securityURI.body: realm, orgRefName, accountNumber, tenantId, ownerId, dataSegment, resourceId (supports wildcard "*")
+- effect: ALLOW or DENY
+- priority: integer; lower numbers evaluated first
+- finalRule: boolean; stop evaluating when this rule applies
+- andFilterString / orFilterString: ANTLR filter DSL snippets injected into repository queries (see Query Language section)
+
+Example payload:
+
+[source,json]
+----
+{
+  "refName": "defaultUserPolicy",
+  "displayName": "Default user policy",
+  "principalId": "user",
+  "description": "Users can act on their own data; deny dangerous ops in security area",
+  "rules": [
+    {
+      "name": "view-own-resources",
+      "description": "Limit reads to owner and default data segment",
+      "securityURI": {
+        "header": { "identity": "user", "area": "*", "functionalDomain": "*", "action": "*" },
+        "body":   { "realm": "*", "orgRefName": "*", "accountNumber": "*", "tenantId": "*", "ownerId": "*", "dataSegment": "*", "resourceId": "*" }
+      },
+      "andFilterString": "dataDomain.ownerId:${principalId}&&dataDomain.dataSegment:#0",
+      "effect": "ALLOW",
+      "priority": 300,
+      "finalRule": false
+    },
+    {
+      "name": "deny-delete-in-security",
+      "securityURI": {
+        "header": { "identity": "user", "area": "security", "functionalDomain": "*", "action": "delete" },
+        "body":   { "realm": "*", "orgRefName": "*", "accountNumber": "*", "tenantId": "*", "ownerId": "*", "dataSegment": "*", "resourceId": "*" }
+      },
+      "effect": "DENY",
+      "priority": 100,
+      "finalRule": true
+    }
+  ]
+}
+----
+
+=== Endpoints
+
+All endpoints are relative to /security/permission/policies. These are inherited from BaseResource and are consistent across entity resources.
+
+- GET /list
+  - Query params: skip, limit, filter, sort, projection
+  - Returns a Collection<Policy> with paging metadata; respects X-Realm.
+
+- GET /id/{id} and GET /id?id=...
+  - Fetch a single Policy by id.
+
+- GET /refName/{refName} and GET /refName?refName=...
+  - Fetch a single Policy by refName.
+
+- GET /count?filter=...
+  - Returns a CounterResponse with total matching entities.
+
+- GET /schema
+  - Returns JSON Schema for Policy.
+
+- POST /
+  - Create or upsert a Policy (if id is present and matches an existing entity in the selected realm, it is updated).
+
+- PUT /set?id=...&pairs=field:value
+  - Targeted field updates by id. pairs is a repeated query parameter specifying field/value pairs.
+
+- PUT /bulk/setByQuery?filter=...&pairs=...
+  - Bulk updates by query. Note: ignoreRules=true is not supported on this endpoint.
+
+- PUT /bulk/setByIds
+  - Bulk updates by list of ids posted in the request body.
+
+- PUT /bulk/setByRefAndDomain
+  - Bulk updates by a list of (refName, dataDomain) pairs in the request body.
+
+- DELETE /id/{id} (or /id?id=...)
+  - Delete by id.
+
+- DELETE /refName/{refName} (or /refName?refName=...)
+  - Delete by refName.
+
+- CSV import/export endpoints for bulk operations:
+  - GET /csv – export as CSV (field selection, encoding, etc.)
+  - POST /csv – import CSV into Policies
+  - POST /csv/session – analyze CSV and create an import session (preview)
+  - POST /csv/session/{sessionId}/commit – commit a previously analyzed session
+  - DELETE /csv/session/{sessionId} – cancel a session
+  - GET /csv/session/{sessionId}/rows – page through analyzed rows
+
+- Index management (admin only):
+  - POST /indexes/ensureIndexes/{realm}?collectionName=policy
+
+Headers:
+- Authorization: Bearer <token>
+- X-Realm: realm identifier (optional but recommended in multi-tenant deployments)
+
+Filtering and sorting:
+- filter uses the ANTLR-based DSL (see REST CRUD > Query Language)
+- sort uses comma-separated fields with optional +/- prefix; projection accepts a comma-separated field list
+
+=== Examples
+
+- Create or update a Policy
+
+[source,bash]
+----
+curl -X POST \
+  -H "Authorization: Bearer $JWT" \
+  -H "Content-Type: application/json" \
+  -H "X-Realm: system-com" \
+  https://host/api/security/permission/policies \
+  -d @policy.json
+----
+
+- List policies for principalId=user
+
+[source,bash]
+----
+curl -H "Authorization: Bearer $JWT" \
+     -H "X-Realm: system-com" \
+     "https://host/api/security/permission/policies/list?filter=principalId:'user'&sort=+refName&limit=50"
+----
+
+- Delete a policy by refName
+
+[source,bash]
+----
+curl -X DELETE \
+  -H "Authorization: Bearer $JWT" \
+  -H "X-Realm: system-com" \
+  "https://host/api/security/permission/policies/refName/defaultUserPolicy"
+----
+
+=== How changes affect rule bases and enforcement
+
+- Persistence vs. in-memory rules:
+  - PolicyResource updates the persistent store of policies (one policy per principalId or role with a list of rules).
+  - RuleContext is the in-memory evaluator used by repositories and resources to enforce permissions. It matches SecurityURIHeader/Body, orders rules by priority, and applies effects and filters.
+
+- Making persisted policy changes effective:
+  - On startup, migrations (see InitializeDatabase and AddAnonymousSecurityRules) typically seed default policies and/or programmatically add rules to RuleContext.
+  - When you modify policies via REST, you have two options to apply them at runtime:
+    1) Implement a reload step that reads policies from PolicyRepo and rehydrates RuleContext (e.g., RuleContext.clear(); then add rules built from current policies).
+    2) Restart the service or trigger whatever policy-loader your application uses at boot.
+  - Tip: If you maintain a background watcher or admin endpoint to refresh policies, keep it tenant/realm-aware and idempotent.
+
+- Evaluation semantics (recap):
+  - Rules are sorted by ascending priority; the first decisive rule sets the outcome. finalRule=true stops further processing.
+  - andFilterString/orFilterString contribute repository filters through RuleContext.getFilters(), constraining result sets and write scopes.
+  - principalId can be a concrete userId or a role; RuleContext considers both the principal and all associated roles.
+
+- Safe rollout:
+  - Create new policies with a higher numeric priority (lower precedence) first, test with GET /schema and dry-run queries.
+  - Use realm scoping via X-Realm to stage changes in a non-production realm.
+  - Prefer DENY with low priority numbers for critical protections.
+
+See also:
+- Permissions: Matching Algorithm, Priorities, and Multiple Matching RuleBases (sections above)
+- REST CRUD: Query Language and generic endpoint behaviors

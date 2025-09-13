@@ -9,6 +9,64 @@
 
 This documentation provides user guides and tutorials for mid-level Java developers to build SaaS applications with multi-tenancy on the Quantum framework, in a structure similar to Spring’s reference documentation. Artifacts are generated as HTML and PDF via Maven.
 
+== Quarkus Core Features and Architecture
+
+Quarkus is a Kubernetes‑native Java stack optimized for fast startup, low memory footprint, and developer productivity. Quantum builds on Quarkus to provide multi‑tenant persistence, security, and rule‑driven authorization.
+
+Key capabilities:
+- Developer joy: live reload (dev mode), unified config, test‑first ergonomics.
+- Build‑time optimizations: aggressive classpath indexing and ahead‑of‑time processing to reduce reflection and bytecode scanning at runtime.
+- Container and cloud native: seamless integration with containers, Kubernetes, health checks, metrics, and config.
+- Extension ecosystem: rich set of extensions for data, security, messaging, observability, and more.
+
+=== GraalVM Native and Polyglot
+
+- Native compilation: Quarkus applications can be compiled to native executables using GraalVM (or Mandrel). Benefits include millisecond startup times and drastically reduced RSS memory, ideal for serverless and microservice workloads.
+  - Constraints: reflection, dynamic proxies, and some dynamic classloading need explicit configuration or substitution (Quarkus largely automates this, see @RegisterForReflection below).
+- Polyglot support: GraalVM provides runtimes for multiple languages (e.g., JavaScript, Python via GraalPy, Ruby, R). Applications can embed polyglot code where appropriate using GraalVM’s polyglot APIs. Use judiciously to avoid bloating native images and to maintain clear performance boundaries.
+
+=== Arc (Quarkus CDI) and Inversion of Control
+
+Arc is Quarkus’ CDI implementation, focused on build‑time analysis and small runtime overhead. It implements the Inversion of Control pattern:
+- You declare components (beans) with scopes and qualifiers.
+- The container instantiates, wires, and manages their lifecycle.
+- Your code depends on interfaces and qualifiers rather than concrete implementations.
+
+Common scopes and their semantics:
+- @ApplicationScoped
+  - One contextual instance for the duration of the application. Arc can proxy such beans and apply interceptors. Recommended default for stateless services and repositories.
+- @Singleton
+  - Single Java instance managed by the container, but not a normal CDI context. It typically doesn’t use client proxies; some CDI features (like certain interceptor/proxy behaviors) may differ. Prefer @ApplicationScoped for CDI beans unless you specifically need @Singleton semantics.
+- @RequestScoped
+  - One instance per incoming HTTP request. Useful for per‑request context holders or lightweight state.
+- @SessionScoped (when web sessions are enabled)
+  - One instance per HTTP session. Use sparingly due to clustering/state implications.
+- @Dependent (the default if no scope is declared)
+  - No contextual lifecycle; a new instance is created at every injection point, and its lifecycle is bound to the injecting bean. Good for lightweight, stateful helpers.
+
+Recommendations:
+- Prefer @ApplicationScoped for stateless services, @RequestScoped for per‑request concerns, and @Dependent for small, short‑lived helpers.
+- Choose @Singleton only when you explicitly want a single instance without normal CDI contextual behavior.
+
+=== Bean Discovery, Qualifiers, and Programmatic Lookups
+
+- Discovery: Quarkus performs build‑time bean discovery using classpath indexing. A class becomes a bean when it has a bean‑defining annotation (e.g., a scope such as @ApplicationScoped) or is produced via a producer method/field.
+- Qualifiers: Use qualifiers (custom annotations annotated with @Qualifier) to disambiguate multiple implementations of the same interface.
+- Programmatic selection with Instance<T>:
+  - Inject Instance<SomeType> to iterate over all beans of a type or to select by qualifier at runtime.
+  - Useful for plugin architectures where you discover all provider implementations and choose one based on configuration or request context.
+  - Remember that Instance<T> is lazy; calling get()/iterator() triggers resolution.
+
+=== Reflection Configuration and Jandex Indexes
+
+- @RegisterForReflection
+  - Native images eliminate reflection metadata by default. Annotate classes that must be available to reflection at runtime (e.g., JSON serializers, frameworks performing reflective access).
+  - Quarkus extensions often auto‑register common frameworks. Use this annotation for your own types when needed, especially DTOs or model classes used by reflection‑heavy libraries.
+- Jandex indexes
+  - Quarkus builds a Jandex index of your application and dependencies at build time to analyze annotations and discover beans without scanning at runtime.
+  - This indexing underpins Arc’s fast startup and small footprint by moving classpath analysis to build time.
+  - When adding third‑party libraries that rely on reflection or dynamic discovery, ensure they either provide Jandex indexes or are properly configured for reflection in native mode.
+
 == Guides
 
 include::user-guide/overview.adoc[]
@@ -16,6 +74,7 @@ include::user-guide/tenant-models.adoc[]
 include::user-guide/modeling.adoc[]
 include::user-guide/domain-rule-context.adoc[]
 include::user-guide/rest-crud.adoc[]
+include::user-guide/migrations.adoc[]
 include::user-guide/auth.adoc[]
 include::user-guide/permissions.adoc[]
 
