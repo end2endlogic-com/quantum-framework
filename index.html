@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Framework Documentation</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-09-13T11:22:50Z</span>
+<span id="revdate">2025-09-13T13:20:56Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -632,58 +632,60 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_rule_structure_illustrative">53. Rule Structure (Illustrative)</a></li>
 <li><a href="#_matching_algorithm">54. Matching Algorithm</a></li>
 <li><a href="#_priorities">55. Priorities</a></li>
-<li><a href="#_multiple_matching_rulebases">56. Multiple Matching RuleBases</a></li>
-<li><a href="#_identity_and_role_matching">57. Identity and Role Matching</a></li>
-<li><a href="#_example_scenarios">58. Example Scenarios</a></li>
-<li><a href="#_operational_tips">59. Operational Tips</a></li>
-<li><a href="#_how_uiactions_and_defaultuiactions_are_calculated">60. How UIActions and DefaultUIActions are calculated</a></li>
-<li><a href="#_how_this_integrates_end_to_end">61. How This Integrates End-to-End</a></li>
-<li><a href="#_administering_policies_via_rest_policyresource">62. Administering Policies via REST (PolicyResource)</a>
+<li><a href="#_grant_based_vs_deny_based_rule_sets">56. Grant-based vs Deny-based Rule Sets</a></li>
+<li><a href="#_feature_flags_variants_and_target_rules">57. Feature Flags, Variants, and Target Rules</a></li>
+<li><a href="#_multiple_matching_rulebases">58. Multiple Matching RuleBases</a></li>
+<li><a href="#_identity_and_role_matching">59. Identity and Role Matching</a></li>
+<li><a href="#_example_scenarios">60. Example Scenarios</a></li>
+<li><a href="#_operational_tips">61. Operational Tips</a></li>
+<li><a href="#_how_uiactions_and_defaultuiactions_are_calculated">62. How UIActions and DefaultUIActions are calculated</a></li>
+<li><a href="#_how_this_integrates_end_to_end">63. How This Integrates End-to-End</a></li>
+<li><a href="#_administering_policies_via_rest_policyresource">64. Administering Policies via REST (PolicyResource)</a>
 <ul class="sectlevel2">
-<li><a href="#_model_shape_policy">62.1. Model shape (Policy)</a></li>
-<li><a href="#_endpoints">62.2. Endpoints</a></li>
-<li><a href="#_examples">62.3. Examples</a></li>
-<li><a href="#_how_changes_affect_rule_bases_and_enforcement">62.4. How changes affect rule bases and enforcement</a></li>
+<li><a href="#_model_shape_policy">64.1. Model shape (Policy)</a></li>
+<li><a href="#_endpoints">64.2. Endpoints</a></li>
+<li><a href="#_examples">64.3. Examples</a></li>
+<li><a href="#_how_changes_affect_rule_bases_and_enforcement">64.4. How changes affect rule bases and enforcement</a></li>
 </ul>
 </li>
-<li><a href="#_realm_override_x_realm_and_impersonation_x_impersonate">63. Realm override (X-Realm) and Impersonation (X-Impersonate)</a>
+<li><a href="#_realm_override_x_realm_and_impersonation_x_impersonate">65. Realm override (X-Realm) and Impersonation (X-Impersonate)</a>
 <ul class="sectlevel2">
-<li><a href="#_what_they_do_at_a_glance">63.1. What they do (at a glance)</a></li>
-<li><a href="#_how_the_headers_integrate_with_permission_evaluation">63.2. How the headers integrate with permission evaluation</a></li>
-<li><a href="#_required_credential_configuration_credentialuseridpassword">63.3. Required credential configuration (CredentialUserIdPassword)</a></li>
-<li><a href="#_end_to_end_behavior_from_securityfilter_reference">63.4. End-to-end behavior from SecurityFilter (reference)</a></li>
-<li><a href="#_practical_differences_and_use_cases">63.5. Practical differences and use cases</a></li>
-<li><a href="#_examples_2">63.6. Examples</a></li>
+<li><a href="#_what_they_do_at_a_glance">65.1. What they do (at a glance)</a></li>
+<li><a href="#_how_the_headers_integrate_with_permission_evaluation">65.2. How the headers integrate with permission evaluation</a></li>
+<li><a href="#_required_credential_configuration_credentialuseridpassword">65.3. Required credential configuration (CredentialUserIdPassword)</a></li>
+<li><a href="#_end_to_end_behavior_from_securityfilter_reference">65.4. End-to-end behavior from SecurityFilter (reference)</a></li>
+<li><a href="#_practical_differences_and_use_cases">65.5. Practical differences and use cases</a></li>
+<li><a href="#_examples_2">65.6. Examples</a></li>
 </ul>
 </li>
-<li><a href="#_data_domain_assignment_on_create_domaincontext_and_datadomainpolicy">64. Data domain assignment on create: DomainContext and DataDomainPolicy</a>
+<li><a href="#_data_domain_assignment_on_create_domaincontext_and_datadomainpolicy">66. Data domain assignment on create: DomainContext and DataDomainPolicy</a>
 <ul class="sectlevel2">
-<li><a href="#_the_problem_this_solves_and_why_it_matters">64.1. The problem this solves (and why it matters)</a></li>
-<li><a href="#_key_concepts_recap_domaincontext_and_datadomain">64.2. Key concepts recap: DomainContext and DataDomain</a></li>
-<li><a href="#_the_default_policy_do_nothing_and_it_works">64.3. The default policy (do nothing and it works)</a></li>
-<li><a href="#_policy_scopes_principalattached_vs_global">64.4. Policy scopes: principal‑attached vs. global</a></li>
-<li><a href="#_the_policy_map_and_matching">64.5. The policy map and matching</a></li>
-<li><a href="#_how_the_resolver_works">64.6. How the resolver works</a></li>
-<li><a href="#_when_would_you_want_a_nonglobal_policy">64.7. When would you want a non‑global policy?</a></li>
-<li><a href="#_relation_to_tenancy_models">64.8. Relation to tenancy models</a></li>
-<li><a href="#_authoring_tips">64.9. Authoring tips</a></li>
-<li><a href="#_api_pointers">64.10. API pointers</a></li>
+<li><a href="#_the_problem_this_solves_and_why_it_matters">66.1. The problem this solves (and why it matters)</a></li>
+<li><a href="#_key_concepts_recap_domaincontext_and_datadomain">66.2. Key concepts recap: DomainContext and DataDomain</a></li>
+<li><a href="#_the_default_policy_do_nothing_and_it_works">66.3. The default policy (do nothing and it works)</a></li>
+<li><a href="#_policy_scopes_principalattached_vs_global">66.4. Policy scopes: principal‑attached vs. global</a></li>
+<li><a href="#_the_policy_map_and_matching">66.5. The policy map and matching</a></li>
+<li><a href="#_how_the_resolver_works">66.6. How the resolver works</a></li>
+<li><a href="#_when_would_you_want_a_nonglobal_policy">66.7. When would you want a non‑global policy?</a></li>
+<li><a href="#_relation_to_tenancy_models">66.8. Relation to tenancy models</a></li>
+<li><a href="#_authoring_tips">66.9. Authoring tips</a></li>
+<li><a href="#_api_pointers">66.10. API pointers</a></li>
 </ul>
 </li>
-<li><a href="#_tutorials">65. Tutorials</a></li>
-<li><a href="#_what_a_supplychain_saas_needs_and_how_quantum_helps">66. What a supply‑chain SaaS needs (and how Quantum helps)</a></li>
-<li><a href="#_why_multitenancy_is_a_natural_fit_for_supply_chains">67. Why multi‑tenancy is a natural fit for supply chains</a></li>
-<li><a href="#_who_uses_the_system_organizations_and_roles">68. Who uses the system (organizations and roles)</a></li>
-<li><a href="#_identity_and_access_meet_partners_where_they_are">69. Identity and access: meet partners where they are</a></li>
-<li><a href="#_modeling_without_jargon_areas_domains_and_actions">70. Modeling without jargon: Areas, Domains, and Actions</a></li>
-<li><a href="#_policies_that_say_who_can_do_what_rule_language">71. Policies that say “who can do what” (Rule Language)</a></li>
-<li><a href="#_a_small_powerful_api_surface_list_query">72. A small, powerful API surface: List + Query</a></li>
-<li><a href="#_delegated_administration_tenantlevel_user_management">73. Delegated Administration (tenant‑level user management)</a></li>
-<li><a href="#_integrations_and_data_management">74. Integrations and data management</a></li>
-<li><a href="#_endtoend_examples_2">75. End‑to‑end examples</a></li>
-<li><a href="#_what_you_dont_have_to_build_from_scratch">76. What you don’t have to build from scratch</a></li>
-<li><a href="#_next_steps">77. Next steps</a></li>
-<li><a href="#_a_day_in_the_life_from_purchase_order_to_delivery">78. A day in the life: From Purchase Order to Delivery</a></li>
+<li><a href="#_tutorials">67. Tutorials</a></li>
+<li><a href="#_what_a_supplychain_saas_needs_and_how_quantum_helps">68. What a supply‑chain SaaS needs (and how Quantum helps)</a></li>
+<li><a href="#_why_multitenancy_is_a_natural_fit_for_supply_chains">69. Why multi‑tenancy is a natural fit for supply chains</a></li>
+<li><a href="#_who_uses_the_system_organizations_and_roles">70. Who uses the system (organizations and roles)</a></li>
+<li><a href="#_identity_and_access_meet_partners_where_they_are">71. Identity and access: meet partners where they are</a></li>
+<li><a href="#_modeling_without_jargon_areas_domains_and_actions">72. Modeling without jargon: Areas, Domains, and Actions</a></li>
+<li><a href="#_policies_that_say_who_can_do_what_rule_language">73. Policies that say “who can do what” (Rule Language)</a></li>
+<li><a href="#_a_small_powerful_api_surface_list_query">74. A small, powerful API surface: List + Query</a></li>
+<li><a href="#_delegated_administration_tenantlevel_user_management">75. Delegated Administration (tenant‑level user management)</a></li>
+<li><a href="#_integrations_and_data_management">76. Integrations and data management</a></li>
+<li><a href="#_endtoend_examples_2">77. End‑to‑end examples</a></li>
+<li><a href="#_what_you_dont_have_to_build_from_scratch">78. What you don’t have to build from scratch</a></li>
+<li><a href="#_next_steps">79. Next steps</a></li>
+<li><a href="#_a_day_in_the_life_from_purchase_order_to_delivery">80. A day in the life: From Purchase Order to Delivery</a></li>
 </ul>
 </li>
 </ul>
@@ -3300,7 +3302,166 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_multiple_matching_rulebases">56. Multiple Matching RuleBases</h2>
+<h2 id="_grant_based_vs_deny_based_rule_sets">56. Grant-based vs Deny-based Rule Sets</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Grant-based rule sets start with a default decision of DENY and then incrementally add ALLOW scenarios through explicit rules. This model is fail‑safe by default: any URL, action, or functional area that does not have a matching ALLOW rule remains inaccessible. As new endpoints or capabilities are added to the system, users will not gain access until an explicit ALLOW is authored. This is the recommended posture for security‑sensitive systems and multi‑tenant platforms.</p>
+</div>
+<div class="paragraph">
+<p>Deny-based rule sets start with a default decision of ALLOW and then add DENY scenarios to carve away disallowed cases. In this model, new functionality is exposed by default unless a DENY is added. While convenient during rapid prototyping, this posture risks accidental exposure as the surface area grows.</p>
+</div>
+<div class="paragraph">
+<p>Practical implications:
+- Change management: Grant-based requires adding ALLOWs when shipping new features; Deny-based requires remembering to add new DENYs.
+- Auditability: Grant-based policies make it easy to enumerate what is permitted; Deny-based requires proving the absence of permissive gaps.
+- Safety: In merge conflicts or partial deployments, Grant-based tends to fail closed (DENY), which is usually safer.</p>
+</div>
+<div class="paragraph">
+<p>Example defaults:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Grant-based (recommended):</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml">- <span class="string"><span class="content">name: default-deny</span></span>
+  <span class="key">priority</span>: <span class="string"><span class="content">10000</span></span>
+  <span class="key">match</span>: <span class="string"><span class="content">{}</span></span>
+  <span class="key">effect</span>: <span class="string"><span class="content">DENY</span></span></code></pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Deny-based (use with caution):</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml">- <span class="string"><span class="content">name: default-allow</span></span>
+  <span class="key">priority</span>: <span class="string"><span class="content">10000</span></span>
+  <span class="key">match</span>: <span class="string"><span class="content">{}</span></span>
+  <span class="key">effect</span>: <span class="string"><span class="content">ALLOW</span></span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Tip: Even in a deny-based set, author low‑number DENY rules for critical protections. In most production systems, prefer the grant-based model and layer specific ALLOWs for each capability.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_feature_flags_variants_and_target_rules">57. Feature Flags, Variants, and Target Rules</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Feature flags complement permission rules by controlling whether a capability is active for a given principal, cohort, or environment. Permissions answer “may this identity perform this action?”; feature flags answer “is this capability turned on, and which variant applies?” Use them together to achieve safe rollouts and fine‑grained authorization.</p>
+</div>
+<div class="paragraph">
+<p>Model reference: com.e2eq.framework.model.general.FeatureFlag with key fields:
+- enabled: master on/off
+- type: BOOLEAN or MULTIVARIATE
+- variants: list of variant keys for multivariate experiments
+- targetRules: cohort targeting rules
+- environment: e.g., dev, staging, prod
+- jsonConfiguration: arbitrary configuration for the feature (e.g., rollout %, UI copy, limits)</p>
+</div>
+<div class="paragraph">
+<p>Example: Boolean flag for a new export API with environment‑specific targeting</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">refName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">EXPORT_API</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">description</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Enable CSV export endpoint</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">enabled</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">type</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">BOOLEAN</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">environment</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">prod</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">targetRules</span><span class="delimiter">&quot;</span></span>: [
+    { <span class="key"><span class="delimiter">&quot;</span><span class="content">attribute</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">role</span><span class="delimiter">&quot;</span></span>,     <span class="key"><span class="delimiter">&quot;</span><span class="content">operator</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">equals</span><span class="delimiter">&quot;</span></span>,  <span class="key"><span class="delimiter">&quot;</span><span class="content">values</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">BETA</span><span class="delimiter">&quot;</span></span>] },
+    { <span class="key"><span class="delimiter">&quot;</span><span class="content">attribute</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">tenantId</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">operator</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">in</span><span class="delimiter">&quot;</span></span>,      <span class="key"><span class="delimiter">&quot;</span><span class="content">values</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">T100</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">T200</span><span class="delimiter">&quot;</span></span>] }
+  ],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">jsonConfiguration</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">rateLimitPerMin</span><span class="delimiter">&quot;</span></span>: <span class="integer">60</span> }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Example: Multivariate flag to roll out Search v2 to 10% of users and all members of a beta role</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">refName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">SEARCH_V2</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">description</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">New search implementation</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">enabled</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">type</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">MULTIVARIATE</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">variants</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">control</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">v2</span><span class="delimiter">&quot;</span></span>],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">environment</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">prod</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">targetRules</span><span class="delimiter">&quot;</span></span>: [
+    { <span class="key"><span class="delimiter">&quot;</span><span class="content">attribute</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">role</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">operator</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">equals</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">values</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">BETA</span><span class="delimiter">&quot;</span></span>], <span class="key"><span class="delimiter">&quot;</span><span class="content">variant</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">v2</span><span class="delimiter">&quot;</span></span> },
+    { <span class="key"><span class="delimiter">&quot;</span><span class="content">attribute</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">userId</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">operator</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">hashMod</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">values</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">10</span><span class="delimiter">&quot;</span></span>], <span class="key"><span class="delimiter">&quot;</span><span class="content">variant</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">v2</span><span class="delimiter">&quot;</span></span> }
+  ],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">jsonConfiguration</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">defaultVariant</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">control</span><span class="delimiter">&quot;</span></span> }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Notes on TargetRules:
+- attribute: a property from identity/userProfile (e.g., userId, role, tenantId, location, plan).
+- operator: equals, in, contains, startsWith, regex, or domain‑specific operators like hashMod for percentage rollouts.
+- values: comparison values; semantics depend on operator.
+- variant: when type is MULTIVARIATE, selects which variant applies when the rule matches.</p>
+</div>
+<div class="paragraph">
+<p>How feature flags complement Permission Rule Context:
+- The evaluation of a request can enrich the Rule Context (SecurityURLHeaders/Body or userProfile) with resolved feature flags and variants (e.g., userProfile.features["SEARCH_V2"] = "v2").
+- Permission rules can then require a feature to be present before ALLOWing an action:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml">- <span class="string"><span class="content">name: allow-export-when-flag-on</span></span>
+  <span class="key">priority</span>: <span class="string"><span class="content">300</span></span>
+  <span class="key">match</span>:
+    <span class="key">method</span>: <span class="string"><span class="content">[GET]</span></span>
+    <span class="key">url</span>: <span class="string"><span class="content">/api/export/**</span></span>
+    <span class="key">headers</span>:
+      <span class="key">x-functional-area</span>: <span class="string"><span class="content">[Reports]</span></span>
+    <span class="comment"># Example predicate that assumes features are surfaced in userProfile</span>
+    <span class="key">userProfile.features.EXPORT_API</span>: <span class="string"><span class="content">[true]</span></span>
+  <span class="key">rolesAny</span>: <span class="string"><span class="content">[ADMIN, REPORTER]</span></span>
+  <span class="key">effect</span>: <span class="string"><span class="content">ALLOW</span></span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Alternatively, systems may surface feature decisions via headers (e.g., X-Feature-SEARCH_V2: v2) so that SecurityURLHeaders can match directly.</p>
+</div>
+<div class="paragraph">
+<p>Business usage examples for TargetRules and their correlation to Permission Rules:
+- Progressive rollout by tenant: TargetRule tenantId in [T100, T200] → Permission adds ALLOW for endpoints guarded by that flag so only those tenants can call them during rollout.
+- Role‑based beta access: TargetRule role equals BETA → Permission requires both the BETA feature flag and standard role checks (e.g., USER/ADMIN) to ALLOW sensitive actions.
+- Plan/entitlement tiers: TargetRule plan in [Pro, Enterprise] → Permission rules enforce additional data‑domain constraints (e.g., export size limits) while the flag simply turns the feature on for eligible plans.</p>
+</div>
+<div class="paragraph">
+<p>Guidance: Feature Flags vs Permission Rules
+- Put into Feature Flags:
+  - Gradual, reversible rollouts; A/B or multivariate experiments; UI/behavior switches.
+  - Environment gates (dev/staging/prod) and cohort targeting (tenants, beta users, geography).
+  - Non‑security configuration values in jsonConfiguration (limits, thresholds, copy) that do not change who is authorized.
+- Put into Permission Rules:
+  - Durable authorization logic: roles, identities, functional area/domain/action, and DataDomain constraints.
+  - Compliance and least‑privilege decisions where fail‑closed behavior is required.
+  - Enforcement that remains valid after a feature is fully launched (even when the flag is removed).</p>
+</div>
+<div class="paragraph">
+<p>Recommendation: Use a grant‑based permission posture (default DENY) and let feature flags decide which cohorts even see or can reach new capabilities. Then author explicit ALLOW rules for those capabilities, conditioned on both role and feature presence.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_multiple_matching_rulebases">58. Multiple Matching RuleBases</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -3321,7 +3482,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_identity_and_role_matching">57. Identity and Role Matching</h2>
+<h2 id="_identity_and_role_matching">59. Identity and Role Matching</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -3342,7 +3503,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_example_scenarios">58. Example Scenarios</h2>
+<h2 id="_example_scenarios">60. Example Scenarios</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>1) Public catalog browsing
@@ -3380,7 +3541,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_operational_tips">59. Operational Tips</h2>
+<h2 id="_operational_tips">61. Operational Tips</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -3401,7 +3562,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_how_uiactions_and_defaultuiactions_are_calculated">60. How UIActions and DefaultUIActions are calculated</h2>
+<h2 id="_how_uiactions_and_defaultuiactions_are_calculated">62. How UIActions and DefaultUIActions are calculated</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>When the server returns a collection of entities (for example, userProfiles), each entity may expose two action lists:
@@ -3447,7 +3608,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_how_this_integrates_end_to_end">61. How This Integrates End-to-End</h2>
+<h2 id="_how_this_integrates_end_to_end">63. How This Integrates End-to-End</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -3465,7 +3626,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_administering_policies_via_rest_policyresource">62. Administering Policies via REST (PolicyResource)</h2>
+<h2 id="_administering_policies_via_rest_policyresource">64. Administering Policies via REST (PolicyResource)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>The PolicyResource exposes CRUD-style REST APIs for creating and managing policies (rule bases) that drive authorization decisions. Each Policy targets a principalId (either a specific userId or a role name) and contains an ordered list of Rule objects. Rules match requests using SecurityURIHeader and SecurityURIBody and then contribute an effect (ALLOW/DENY) and optional repository filters.</p>
@@ -3484,7 +3645,7 @@ Summary:
 </ul>
 </div>
 <div class="sect2">
-<h3 id="_model_shape_policy">62.1. Model shape (Policy)</h3>
+<h3 id="_model_shape_policy">64.1. Model shape (Policy)</h3>
 <div class="paragraph">
 <p>A Policy extends FullBaseModel and includes:
 - id, refName, displayName, dataDomain, archived/expired flags (inherited)
@@ -3541,7 +3702,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_endpoints">62.2. Endpoints</h3>
+<h3 id="_endpoints">64.2. Endpoints</h3>
 <div class="paragraph">
 <p>All endpoints are relative to /security/permission/policies. These are inherited from BaseResource and are consistent across entity resources.</p>
 </div>
@@ -3663,7 +3824,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_examples">62.3. Examples</h3>
+<h3 id="_examples">64.3. Examples</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -3712,7 +3873,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_changes_affect_rule_bases_and_enforcement">62.4. How changes affect rule bases and enforcement</h3>
+<h3 id="_how_changes_affect_rule_bases_and_enforcement">64.4. How changes affect rule bases and enforcement</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -3773,13 +3934,13 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_realm_override_x_realm_and_impersonation_x_impersonate">63. Realm override (X-Realm) and Impersonation (X-Impersonate)</h2>
+<h2 id="_realm_override_x_realm_and_impersonation_x_impersonate">65. Realm override (X-Realm) and Impersonation (X-Impersonate)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This section explains how to use the request headers X-Realm and X-Impersonate-* alongside permission rule bases. These headers influence which realm (database) a request operates against and, in the case of impersonation, which identity’s roles are evaluated by the rule engine.</p>
 </div>
 <div class="sect2">
-<h3 id="_what_they_do_at_a_glance">63.1. What they do (at a glance)</h3>
+<h3 id="_what_they_do_at_a_glance">65.1. What they do (at a glance)</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -3795,7 +3956,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_the_headers_integrate_with_permission_evaluation">63.2. How the headers integrate with permission evaluation</h3>
+<h3 id="_how_the_headers_integrate_with_permission_evaluation">65.2. How the headers integrate with permission evaluation</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -3823,7 +3984,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_required_credential_configuration_credentialuseridpassword">63.3. Required credential configuration (CredentialUserIdPassword)</h3>
+<h3 id="_required_credential_configuration_credentialuseridpassword">65.3. Required credential configuration (CredentialUserIdPassword)</h3>
 <div class="paragraph">
 <p>Two fields on CredentialUserIdPassword govern whether a user may use these headers:</p>
 </div>
@@ -3878,7 +4039,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_end_to_end_behavior_from_securityfilter_reference">63.4. End-to-end behavior from SecurityFilter (reference)</h3>
+<h3 id="_end_to_end_behavior_from_securityfilter_reference">65.4. End-to-end behavior from SecurityFilter (reference)</h3>
 <div class="paragraph">
 <p>The SecurityFilter constructs the PrincipalContext/ResourceContext before rule evaluation:
 - X-Realm is read and, if present, validated against the caller’s credential.realmRegEx.
@@ -3889,7 +4050,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_practical_differences_and_use_cases">63.5. Practical differences and use cases</h3>
+<h3 id="_practical_differences_and_use_cases">65.5. Practical differences and use cases</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -3932,7 +4093,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_examples_2">63.6. Examples</h3>
+<h3 id="_examples_2">65.6. Examples</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -3983,13 +4144,13 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_data_domain_assignment_on_create_domaincontext_and_datadomainpolicy">64. Data domain assignment on create: DomainContext and DataDomainPolicy</h2>
+<h2 id="_data_domain_assignment_on_create_domaincontext_and_datadomainpolicy">66. Data domain assignment on create: DomainContext and DataDomainPolicy</h2>
 <div class="sectionbody">
 <div id="_data_domain_assignment" class="paragraph">
 <p>This section explains how Quantum decides which dataDomain is stamped on newly created records, why this decision is necessary in a multi‑tenant system, what the default behavior is, and how you can override it globally or per Functional Area / Functional Domain. It also describes the DataDomainResolver interface and the default implementation provided by the framework.</p>
 </div>
 <div class="sect2">
-<h3 id="_the_problem_this_solves_and_why_it_matters">64.1. The problem this solves (and why it matters)</h3>
+<h3 id="_the_problem_this_solves_and_why_it_matters">66.1. The problem this solves (and why it matters)</h3>
 <div class="paragraph">
 <p>In a multi‑tenant platform you must ensure each new record is written to the correct data partition so later reads/updates can be scoped safely. If the dataDomain is wrong or missing, you risk leaking data across tenants or making your own data inaccessible due to mis‑scoping.</p>
 </div>
@@ -4004,7 +4165,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_key_concepts_recap_domaincontext_and_datadomain">64.2. Key concepts recap: DomainContext and DataDomain</h3>
+<h3 id="_key_concepts_recap_domaincontext_and_datadomain">66.2. Key concepts recap: DomainContext and DataDomain</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -4020,7 +4181,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_the_default_policy_do_nothing_and_it_works">64.3. The default policy (do nothing and it works)</h3>
+<h3 id="_the_default_policy_do_nothing_and_it_works">66.3. The default policy (do nothing and it works)</h3>
 <div class="paragraph">
 <p>Out of the box, Quantum preserves the existing behavior: if no policy is configured, the resolver falls back to the authenticated principal’s DataDomain. This guarantees compatibility with existing applications.</p>
 </div>
@@ -4032,7 +4193,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_policy_scopes_principalattached_vs_global">64.4. Policy scopes: principal‑attached vs. global</h3>
+<h3 id="_policy_scopes_principalattached_vs_global">66.4. Policy scopes: principal‑attached vs. global</h3>
 <div class="paragraph">
 <p>You can define overrides at two levels:
 - Principal‑attached (per credential): attach a DataDomainPolicy to a CredentialUserIdPassword. The SecurityFilter places this policy into the PrincipalContext, so it applies only to records created by that principal. This is useful for VIP service accounts or specific partners.
@@ -4043,7 +4204,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_the_policy_map_and_matching">64.5. The policy map and matching</h3>
+<h3 id="_the_policy_map_and_matching">66.5. The policy map and matching</h3>
 <div class="paragraph">
 <p>A DataDomainPolicy is a small map of rules: Map&lt;String, DataDomainPolicyEntry&gt; policyEntries, keyed by "&lt;FunctionalArea&gt;:&lt;FunctionalDomain&gt;" with support for "*" wildcards. The resolver evaluates keys in this order:</p>
 </div>
@@ -4095,7 +4256,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_the_resolver_works">64.6. How the resolver works</h3>
+<h3 id="_how_the_resolver_works">66.6. How the resolver works</h3>
 <div class="paragraph">
 <p>Interfaces and default implementation:</p>
 </div>
@@ -4131,7 +4292,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_when_would_you_want_a_nonglobal_policy">64.7. When would you want a non‑global policy?</h3>
+<h3 id="_when_would_you_want_a_nonglobal_policy">66.7. When would you want a non‑global policy?</h3>
 <div class="paragraph">
 <p>Here are a few concrete scenarios:
 - Centralized HR: All HR Employee records are written to a shared HR domain regardless of the team creating them. This supports a shared‑service HR model without duplicating HR data per tenant.
@@ -4141,7 +4302,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_relation_to_tenancy_models">64.8. Relation to tenancy models</h3>
+<h3 id="_relation_to_tenancy_models">66.8. Relation to tenancy models</h3>
 <div class="paragraph">
 <p>The policy mechanism supports both siloed and pooled tenancy:
 - Siloed tenancy: Most domains default to FROM_CREDENTIAL (each tenant writes to its own partition). Only a few shared services (e.g., HR, catalog) use FIXED to centralize data.
@@ -4152,7 +4313,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_authoring_tips">64.9. Authoring tips</h3>
+<h3 id="_authoring_tips">66.9. Authoring tips</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -4171,7 +4332,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_api_pointers">64.10. API pointers</h3>
+<h3 id="_api_pointers">66.10. API pointers</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -4192,7 +4353,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_tutorials">65. Tutorials</h2>
+<h2 id="_tutorials">67. Tutorials</h2>
 <div class="sectionbody">
 <div id="tutorial-supply-chain" class="paragraph">
 <p>:= Supply Chain Collaboration SaaS: A Business‑First Guide</p>
@@ -4203,7 +4364,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_what_a_supplychain_saas_needs_and_how_quantum_helps">66. What a supply‑chain SaaS needs (and how Quantum helps)</h2>
+<h2 id="_what_a_supplychain_saas_needs_and_how_quantum_helps">68. What a supply‑chain SaaS needs (and how Quantum helps)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Common needs when launching a collaboration platform:</p>
@@ -4255,7 +4416,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_why_multitenancy_is_a_natural_fit_for_supply_chains">67. Why multi‑tenancy is a natural fit for supply chains</h2>
+<h2 id="_why_multitenancy_is_a_natural_fit_for_supply_chains">69. Why multi‑tenancy is a natural fit for supply chains</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Supply chains are networks. Everyone shares a process, but not a database. Quantum isolates each tenant’s data by default and lets you selectively share records with partners:</p>
@@ -4279,7 +4440,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_who_uses_the_system_organizations_and_roles">68. Who uses the system (organizations and roles)</h2>
+<h2 id="_who_uses_the_system_organizations_and_roles">70. Who uses the system (organizations and roles)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Organizations (tenants)
@@ -4302,7 +4463,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_identity_and_access_meet_partners_where_they_are">69. Identity and access: meet partners where they are</h2>
+<h2 id="_identity_and_access_meet_partners_where_they_are">71. Identity and access: meet partners where they are</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Every organization may authenticate differently:
@@ -4316,7 +4477,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_modeling_without_jargon_areas_domains_and_actions">70. Modeling without jargon: Areas, Domains, and Actions</h2>
+<h2 id="_modeling_without_jargon_areas_domains_and_actions">72. Modeling without jargon: Areas, Domains, and Actions</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>To keep your platform organized, Quantum groups things into:
@@ -4332,7 +4493,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_policies_that_say_who_can_do_what_rule_language">71. Policies that say “who can do what” (Rule Language)</h2>
+<h2 id="_policies_that_say_who_can_do_what_rule_language">73. Policies that say “who can do what” (Rule Language)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Policies are simple, readable rules that match:
@@ -4351,7 +4512,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_a_small_powerful_api_surface_list_query">72. A small, powerful API surface: List + Query</h2>
+<h2 id="_a_small_powerful_api_surface_list_query">74. A small, powerful API surface: List + Query</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Instead of building a unique search endpoint for every screen, Quantum gives you:
@@ -4368,7 +4529,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_delegated_administration_tenantlevel_user_management">73. Delegated Administration (tenant‑level user management)</h2>
+<h2 id="_delegated_administration_tenantlevel_user_management">75. Delegated Administration (tenant‑level user management)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Empower each organization to run their own house while you keep platform‑wide safety:
@@ -4379,7 +4540,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_integrations_and_data_management">74. Integrations and data management</h2>
+<h2 id="_integrations_and_data_management">76. Integrations and data management</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Supply chains depend on clean, timely data. Quantum provides:
@@ -4396,7 +4557,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_endtoend_examples_2">75. End‑to‑end examples</h2>
+<h2 id="_endtoend_examples_2">77. End‑to‑end examples</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>1) Buyer–supplier collaboration on a Purchase Order
@@ -4415,7 +4576,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_what_you_dont_have_to_build_from_scratch">76. What you don’t have to build from scratch</h2>
+<h2 id="_what_you_dont_have_to_build_from_scratch">78. What you don’t have to build from scratch</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -4442,7 +4603,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_next_steps">77. Next steps</h2>
+<h2 id="_next_steps">79. Next steps</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -4466,7 +4627,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_a_day_in_the_life_from_purchase_order_to_delivery">78. A day in the life: From Purchase Order to Delivery</h2>
+<h2 id="_a_day_in_the_life_from_purchase_order_to_delivery">80. A day in the life: From Purchase Order to Delivery</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This story ties the pieces together in a realistic sequence. We follow a Purchase Order (PO) from creation to delivery, with shared visibility for suppliers and carriers, a clear state graph, and checklist-like Completion Tasks guiding the work.</p>
