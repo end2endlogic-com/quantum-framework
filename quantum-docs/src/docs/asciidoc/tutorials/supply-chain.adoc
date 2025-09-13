@@ -142,3 +142,61 @@ The framework gives you these foundations so your teams focus on business value�
 - Introduce delegated administration so partners self‑serve.
 - Use CSV imports and Completion Tasks to operationalize data stewardship.
 - Deep dive: Permissions and Rule Language (<<permissions>>), and Data domain assignment on create (<<_data_domain_assignment>>).
+
+
+== A day in the life: From Purchase Order to Delivery
+
+This story ties the pieces together in a realistic sequence. We follow a Purchase Order (PO) from creation to delivery, with shared visibility for suppliers and carriers, a clear state graph, and checklist-like Completion Tasks guiding the work.
+
+1) Purchase Order is created (by the Buyer)
+- Action: A buyer creates a PO in the Collaboration area under the PurchaseOrder domain.
+- Data placement: By default, the PO is written to the buyer’s organization (their data domain). If you prefer a shared domain for POs, configure a small policy; otherwise, the default works well.
+- Programmatic sharing: A rule shares the specific PO with the chosen Supplier (or Suppliers). The Supplier can view the PO and update the fields you allow (e.g., promised date), but cannot see private buyer-only fields.
+
+State graph (illustrative)
+- Draft → Open → SupplierAcknowledged → ReadyToShip → PartiallyShipped → FullyShipped → Received → Closed
+
+Completion Tasks (examples attached to the PO)
+- Buyer: Provide required documents (commercial terms, incoterms)
+- Supplier: Acknowledge PO (due in 24 hours)
+- Supplier: Provide ASN (advanced shipping notice) for each shipment
+- Supplier: Confirm pickup window
+- Buyer: Approve any date changes
+
+2) The Supplier prepares shipments (shared onward to Carriers)
+- Action: The Supplier creates one or more Shipments linked to the PO (and optionally to specific lines).
+- Data placement: Shipments are written to the Supplier’s domain by default (their own organization), but are shared with the Buyer so both parties see the same timeline.
+- Sharing to Carriers: When the Supplier tenders a shipment, the shipment is shared with the selected Carrier so they can update movement and milestones.
+
+Shipment state graph (illustrative)
+- Planned → Tendered → Accepted → InTransit → Delivered → ProofVerified → Closed
+
+Shipment Completion Tasks (examples)
+- Carrier: Confirm pickup
+- Carrier: Update in-transit location/ETA
+- Carrier: Upload POD (proof of delivery)
+- Supplier: Reconcile quantities shipped vs. ordered
+
+3) Status updates complete tasks and move states forward
+- When the Supplier marks “SupplierAcknowledged,” the PO’s acknowledgement task completes and the PO moves to SupplierAcknowledged.
+- When all lines are ready and at least one shipment is created, the PO advances to ReadyToShip. If some but not all lines ship, it enters PartiallyShipped; once all lines ship, it becomes FullyShipped.
+- Carrier updates (e.g., Delivered with POD uploaded) complete shipment tasks. Those completion events can also advance the PO state (e.g., all shipments Delivered → PO moves to Received). Final checks (invoices matched, discrepancies resolved) move the PO to Closed.
+
+Why this is safe and predictable
+- Roles and policies ensure each party sees only what they should: the Buyer sees everything; the Supplier sees the shared PO and its related shipments; the Carrier sees only the shipments they handle.
+- Completion Tasks remove ambiguity: everyone knows the next step and who owns it. Each task completion is audited.
+- The state graph makes lifecycle transitions explicit. Policies can require certain tasks to be completed before a state transition is allowed.
+
+4) Business visibility and reporting (List API + Query)
+- Operations view: “Purchase Orders in progress” shows all POs in Open, SupplierAcknowledged, ReadyToShip, or PartiallyShipped, including late tasks and upcoming milestones.
+- Buyer/supplier view: Both parties see the same PO status and related Shipments, with role-appropriate fields.
+- Simple reporting example (illustrative):
+  GET /collaboration/purchaseorder/list?filter=status IN ("Open","SupplierAcknowledged","ReadyToShip","PartiallyShipped")&sort=dueDate:asc&limit=50
+  - Add projections to include key fields and roll-ups (e.g., shipped vs. ordered quantities). Related Shipment info can be retrieved similarly via the List API on the Shipment domain, filtered by the PO id.
+
+What made this easy (and repeatable)
+- Multi-tenancy by default: Each org’s data is isolated; sharing is explicit and safe.
+- Policies (Rule Language): Define who can see or update which fields and when. The same rules apply to UI, API, and imports/exports.
+- Data domain assignment on create: Defaults keep data in the creator’s org; you can configure exceptions (e.g., shared directories) with a tiny policy.
+- Stateful objects + Completion Tasks: Clear states and checklists turn complex collaboration into a predictable flow.
+- List API + Query Language: One consistent way to fetch work lists, timelines, and reports without proliferating custom endpoints.
