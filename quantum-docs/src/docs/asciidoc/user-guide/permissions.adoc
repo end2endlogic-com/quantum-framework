@@ -369,3 +369,110 @@ curl -X DELETE \
 See also:
 - Permissions: Matching Algorithm, Priorities, and Multiple Matching RuleBases (sections above)
 - REST CRUD: Query Language and generic endpoint behaviors
+
+
+== Realm override (X-Realm) and Impersonation (X-Impersonate)
+
+This section explains how to use the request headers X-Realm and X-Impersonate-* alongside permission rule bases. These headers influence which realm (database) a request operates against and, in the case of impersonation, which identity’s roles are evaluated by the rule engine.
+
+=== What they do (at a glance)
+
+- X-Realm: Overrides the target realm (MongoDB database) used by repositories for this request. Your own identity and roles remain the same; only the data context (tenant/realm) changes for this call. This lets you “switch tenants” at the database level in deployments that use the one-tenant-per-database model.
+- X-Impersonate-Subject or X-Impersonate-UserId: Causes the request to run as another identity. The effective permissions become those of the impersonated identity (potentially more or less than your own). This is analogous to sudo on Unix or to “simulate a user/role” for troubleshooting.
+
+Only one of X-Impersonate-Subject or X-Impersonate-UserId may be supplied per request. Supplying both results in a 400/IllegalArgumentException.
+
+=== How the headers integrate with permission evaluation
+
+- Rule matching and effects (ALLOW/DENY) still follow the standard algorithm described earlier.
+- With X-Realm (no impersonation):
+  - The PrincipalContext.defaultRealm is set to the header value (after validation), and repositories operate in that realm.
+  - Your own roles and identity remain intact; the rule base is evaluated for your identity and roles but in the specified realm’s data context.
+- With impersonation:
+  - The PrincipalContext is rebuilt from the impersonated user’s credential. The effective roles used by the rule engine include the impersonated user’s roles; the platform also merges in the caller’s security roles from Quarkus SecurityIdentity. This means permissions can be a superset; design policy rules accordingly.
+  - The effective realm for the request is set to the impersonated user’s default realm (not the X-Realm header). If you passed X-Realm, it is still validated (see below) but not used to override the impersonated default realm in the current implementation.
+
+=== Required credential configuration (CredentialUserIdPassword)
+
+Two fields on CredentialUserIdPassword govern whether a user may use these headers:
+
+- realmRegEx (for X-Realm):
+  - A wildcard pattern ("*" matches any sequence; case-insensitive) listing the realms a user is allowed to target with X-Realm.
+  - If X-Realm is present but realmRegEx is null/blank or does not match the requested realm, the server returns 403 Forbidden.
+  - Examples:
+    - "*" → allow any realm
+    - "acme-*" → allow realms that start with acme-
+    - "dev|stage|prod" is not supported as-is; use wildcards like "dev*" and "stage*" or a combined pattern like "(dev|stage|prod)" only if you store a true regex. The current validator replaces '*' with ".*" and matches case-insensitively.
+- impersonateFilterScript (for X-Impersonate-*):
+  - A JavaScript snippet executed by the server (GraalVM) that must return a boolean. It receives three variables: username (the caller’s subject), userId (caller’s userId), and realm (the requested realm or current DB name).
+  - If the script evaluates to false, the server returns 403 Forbidden for impersonation.
+  - If the script is missing (null) and you attempt impersonation, the server rejects the request with 400/IllegalArgumentException.
+
+Example impersonation script (allow only company admins to impersonate in dev realms):
+
+[source,javascript]
+----
+// username = caller's subject, userId = caller's userId, realm = requested realm (or current)
+(username.endsWith('@acme.com') && realm.startsWith('dev-'))
+----
+
+Tip: Manage these two fields via your auth provider’s admin APIs or directly through CredentialRepo in controlled environments.
+
+=== End-to-end behavior from SecurityFilter (reference)
+
+The SecurityFilter constructs the PrincipalContext/ResourceContext before rule evaluation:
+- X-Realm is read and, if present, validated against the caller’s credential.realmRegEx.
+- If impersonation headers are present:
+  - The caller’s credential.impersonateFilterScript is executed. If it returns true, the impersonated user’s credential is loaded and used to build the PrincipalContext.
+  - The final PrincipalContext carries the impersonated user’s defaultRealm and roles (merged with the caller’s SecurityIdentity roles), and may copy area2RealmOverrides from the impersonated credential.
+- Without impersonation, the PrincipalContext is built from the caller’s credential; X-Realm, when valid, sets the defaultRealm for this request.
+
+=== Practical differences and use cases
+
+- Realm override (X-Realm):
+  - Who you are does not change; only where you act changes. Your permissions (as determined by policies attached to your identity/roles) are applied against data in the specified realm.
+  - Use cases:
+    - Multi-tenant admin tooling that needs to inspect or repair data in customer realms.
+    - Reporting or backfills where the same service is pointed at different tenant databases per request.
+- Impersonation (X-Impersonate-*):
+  - Who you are (for authorization purposes) changes. You act with the impersonated identity’s permissions; depending on your configuration, additional caller roles may be merged.
+  - Use cases:
+    - Temporary elevation to an admin identity (sudo-like) for break-glass operations.
+    - Simulate what a given role/identity can see/do for troubleshooting or customer support.
+
+Caveats:
+- Never set a permissive impersonateFilterScript in production. Keep it restrictive and auditable.
+- When using both X-Realm and impersonation in one call, be aware that the effective realm will be the impersonated user’s default realm; X-Realm is not applied in the impersonation branch in the current implementation.
+- realmRegEx must be populated for any user who needs realm override; leaving it blank effectively disables X-Realm for that user.
+
+=== Examples
+
+- List policies in a different realm using your own identity
+
+[source,bash]
+----
+curl -H "Authorization: Bearer $JWT" \
+     -H "X-Realm: acme-prod" \
+     "https://host/api/security/permission/policies/list?limit=20&sort=+refName"
+----
+
+- Simulate another user by subject while staying in their default realm
+
+[source,bash]
+----
+curl -H "Authorization: Bearer $JWT" \
+     -H "X-Impersonate-Subject: 3d8f4e7b-...-idp-subject" \
+     "https://host/api/security/permission/policies/list?limit=20"
+----
+
+- Attempt impersonation with a realm hint (validated by script; effective realm = impersonated default)
+
+[source,bash]
+----
+curl -H "Authorization: Bearer $JWT" \
+     -H "X-Realm: dev-acme" \
+     -H "X-Impersonate-UserId: tenant-admin" \
+     "https://host/api/security/permission/policies/list?limit=20"
+----
+
+Security outcomes in all cases continue to be driven by your rule bases (Policy rules) matched against the effective PrincipalContext and ResourceContext.
