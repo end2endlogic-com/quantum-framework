@@ -528,57 +528,58 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Permissions: Rule Bases, SecurityURLHeaders, and SecurityURLBody</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-09-13T13:33:35Z</span>
+<span id="revdate">2025-09-13T13:48:38Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
 <ul class="sectlevel1">
-<li><a href="#_key_concepts">1. Key Concepts</a></li>
-<li><a href="#_rule_structure_illustrative">2. Rule Structure (Illustrative)</a></li>
-<li><a href="#_matching_algorithm">3. Matching Algorithm</a></li>
-<li><a href="#_priorities">4. Priorities</a></li>
-<li><a href="#_grant_based_vs_deny_based_rule_sets">5. Grant-based vs Deny-based Rule Sets</a></li>
-<li><a href="#_feature_flags_variants_and_target_rules">6. Feature Flags, Variants, and Target Rules</a></li>
-<li><a href="#_multiple_matching_rulebases">7. Multiple Matching RuleBases</a></li>
-<li><a href="#_identity_and_role_matching">8. Identity and Role Matching</a>
+<li><a href="#_introduction_layered_enforcement_overview">1. Introduction: Layered Enforcement Overview</a></li>
+<li><a href="#_key_concepts">2. Key Concepts</a></li>
+<li><a href="#_rule_structure_illustrative">3. Rule Structure (Illustrative)</a></li>
+<li><a href="#_matching_algorithm">4. Matching Algorithm</a></li>
+<li><a href="#_priorities">5. Priorities</a></li>
+<li><a href="#_grant_based_vs_deny_based_rule_sets">6. Grant-based vs Deny-based Rule Sets</a></li>
+<li><a href="#_feature_flags_variants_and_target_rules">7. Feature Flags, Variants, and Target Rules</a></li>
+<li><a href="#_multiple_matching_rulebases">8. Multiple Matching RuleBases</a></li>
+<li><a href="#_identity_and_role_matching">9. Identity and Role Matching</a>
 <ul class="sectlevel2">
-<li><a href="#_how_roles_are_defined_for_an_identity_role_sources_and_resolution">8.1. How roles are defined for an identity (role sources and resolution)</a></li>
+<li><a href="#_how_roles_are_defined_for_an_identity_role_sources_and_resolution">9.1. How roles are defined for an identity (role sources and resolution)</a></li>
 </ul>
 </li>
-<li><a href="#_example_scenarios">9. Example Scenarios</a></li>
-<li><a href="#_operational_tips">10. Operational Tips</a></li>
-<li><a href="#_how_uiactions_and_defaultuiactions_are_calculated">11. How UIActions and DefaultUIActions are calculated</a></li>
-<li><a href="#_how_this_integrates_end_to_end">12. How This Integrates End-to-End</a></li>
-<li><a href="#_administering_policies_via_rest_policyresource">13. Administering Policies via REST (PolicyResource)</a>
+<li><a href="#_example_scenarios">10. Example Scenarios</a></li>
+<li><a href="#_operational_tips">11. Operational Tips</a></li>
+<li><a href="#_how_uiactions_and_defaultuiactions_are_calculated">12. How UIActions and DefaultUIActions are calculated</a></li>
+<li><a href="#_how_this_integrates_end_to_end">13. How This Integrates End-to-End</a></li>
+<li><a href="#_administering_policies_via_rest_policyresource">14. Administering Policies via REST (PolicyResource)</a>
 <ul class="sectlevel2">
-<li><a href="#_model_shape_policy">13.1. Model shape (Policy)</a></li>
-<li><a href="#_endpoints">13.2. Endpoints</a></li>
-<li><a href="#_examples">13.3. Examples</a></li>
-<li><a href="#_how_changes_affect_rule_bases_and_enforcement">13.4. How changes affect rule bases and enforcement</a></li>
+<li><a href="#_model_shape_policy">14.1. Model shape (Policy)</a></li>
+<li><a href="#_endpoints">14.2. Endpoints</a></li>
+<li><a href="#_examples">14.3. Examples</a></li>
+<li><a href="#_how_changes_affect_rule_bases_and_enforcement">14.4. How changes affect rule bases and enforcement</a></li>
 </ul>
 </li>
-<li><a href="#_realm_override_x_realm_and_impersonation_x_impersonate">14. Realm override (X-Realm) and Impersonation (X-Impersonate)</a>
+<li><a href="#_realm_override_x_realm_and_impersonation_x_impersonate">15. Realm override (X-Realm) and Impersonation (X-Impersonate)</a>
 <ul class="sectlevel2">
-<li><a href="#_what_they_do_at_a_glance">14.1. What they do (at a glance)</a></li>
-<li><a href="#_how_the_headers_integrate_with_permission_evaluation">14.2. How the headers integrate with permission evaluation</a></li>
-<li><a href="#_required_credential_configuration_credentialuseridpassword">14.3. Required credential configuration (CredentialUserIdPassword)</a></li>
-<li><a href="#_end_to_end_behavior_from_securityfilter_reference">14.4. End-to-end behavior from SecurityFilter (reference)</a></li>
-<li><a href="#_practical_differences_and_use_cases">14.5. Practical differences and use cases</a></li>
-<li><a href="#_examples_2">14.6. Examples</a></li>
+<li><a href="#_what_they_do_at_a_glance">15.1. What they do (at a glance)</a></li>
+<li><a href="#_how_the_headers_integrate_with_permission_evaluation">15.2. How the headers integrate with permission evaluation</a></li>
+<li><a href="#_required_credential_configuration_credentialuseridpassword">15.3. Required credential configuration (CredentialUserIdPassword)</a></li>
+<li><a href="#_end_to_end_behavior_from_securityfilter_reference">15.4. End-to-end behavior from SecurityFilter (reference)</a></li>
+<li><a href="#_practical_differences_and_use_cases">15.5. Practical differences and use cases</a></li>
+<li><a href="#_examples_2">15.6. Examples</a></li>
 </ul>
 </li>
-<li><a href="#_data_domain_assignment_on_create_domaincontext_and_datadomainpolicy">15. Data domain assignment on create: DomainContext and DataDomainPolicy</a>
+<li><a href="#_data_domain_assignment_on_create_domaincontext_and_datadomainpolicy">16. Data domain assignment on create: DomainContext and DataDomainPolicy</a>
 <ul class="sectlevel2">
-<li><a href="#_the_problem_this_solves_and_why_it_matters">15.1. The problem this solves (and why it matters)</a></li>
-<li><a href="#_key_concepts_recap_domaincontext_and_datadomain">15.2. Key concepts recap: DomainContext and DataDomain</a></li>
-<li><a href="#_the_default_policy_do_nothing_and_it_works">15.3. The default policy (do nothing and it works)</a></li>
-<li><a href="#_policy_scopes_principalattached_vs_global">15.4. Policy scopes: principal‑attached vs. global</a></li>
-<li><a href="#_the_policy_map_and_matching">15.5. The policy map and matching</a></li>
-<li><a href="#_how_the_resolver_works">15.6. How the resolver works</a></li>
-<li><a href="#_when_would_you_want_a_nonglobal_policy">15.7. When would you want a non‑global policy?</a></li>
-<li><a href="#_relation_to_tenancy_models">15.8. Relation to tenancy models</a></li>
-<li><a href="#_authoring_tips">15.9. Authoring tips</a></li>
-<li><a href="#_api_pointers">15.10. API pointers</a></li>
+<li><a href="#_the_problem_this_solves_and_why_it_matters">16.1. The problem this solves (and why it matters)</a></li>
+<li><a href="#_key_concepts_recap_domaincontext_and_datadomain">16.2. Key concepts recap: DomainContext and DataDomain</a></li>
+<li><a href="#_the_default_policy_do_nothing_and_it_works">16.3. The default policy (do nothing and it works)</a></li>
+<li><a href="#_policy_scopes_principalattached_vs_global">16.4. Policy scopes: principal‑attached vs. global</a></li>
+<li><a href="#_the_policy_map_and_matching">16.5. The policy map and matching</a></li>
+<li><a href="#_how_the_resolver_works">16.6. How the resolver works</a></li>
+<li><a href="#_when_would_you_want_a_nonglobal_policy">16.7. When would you want a non‑global policy?</a></li>
+<li><a href="#_relation_to_tenancy_models">16.8. Relation to tenancy models</a></li>
+<li><a href="#_authoring_tips">16.9. Authoring tips</a></li>
+<li><a href="#_api_pointers">16.10. API pointers</a></li>
 </ul>
 </li>
 </ul>
@@ -596,7 +597,54 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect1">
-<h2 id="_key_concepts">1. Key Concepts</h2>
+<h2 id="_introduction_layered_enforcement_overview">1. Introduction: Layered Enforcement Overview</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Quantum evaluates "can this identity do X?" through three complementary layers. Understanding them in order helps you pick the right tool for the job and combine them safely:</p>
+</div>
+<div class="paragraph">
+<p>1) REST API annotations (top layer, code-level)
+- What: JAX-RS/Jakarta Security annotations on resource methods, e.g., @RolesAllowed("ADMIN"), @PermitAll, @DenyAll, @Authenticated.
+- Purpose: Coarse-grained, immediate gates right at the endpoint. Ideal for baseline protections (e.g., only ADMIN may call /admin/**) and for non-dynamic constraints that rarely change.
+- Pros: Simple, fast, visible in code reviews.
+- Cons: Hard-coded; changing access requires a code change, build, and deploy. No data-aware scoping (e.g., cannot express tenant/domain filters).</p>
+</div>
+<div class="paragraph">
+<p>2) Feature flags (exposure and variants)
+- What: Turn capabilities on/off per environment or cohort and select variants (A/B, multivariate). See "Feature Flags, Variants, and Target Rules" below.
+- Purpose: Control who even sees or can reach a capability during rollout (by tenant, role, geography, plan), independently of authorization. Flags answer "is the feature ON and which variant?"; they do not by themselves prove the caller is authorized.
+- Pros: Reversible, environment-aware, safe rollout and experimentation.
+- Cons: Not a substitute for authorization; must be paired with roles/permission rules for enforcement.</p>
+</div>
+<div class="paragraph">
+<p>3) Permission Rules with DataDomain filtering (fine-grained, dynamic)
+- What: Declarative rule bases that match URL, method, SecurityURLHeaders, and SecurityURLBody, and decide ALLOW/DENY. ALLOWs can contribute DataDomain constraints applied by repositories. See sections "Key Concepts", "Matching Algorithm", and examples below.
+- Purpose: Express least-privilege, data-aware policies that evolve without code changes (data-driven authoring).
+- Pros: Dynamic, auditable, supports role checks plus attribute predicates and domain scoping.
+- Cons: Requires governance of rulebases and careful priority management.</p>
+</div>
+<div class="paragraph">
+<p>How roles, Functional Areas, and Functional Domains fit in
+- Roles: Used by both layers (1) and (3). Annotations directly reference roles; rules can require rolesAny/rolesAll. Effective roles are resolved by merging IdP roles with roles on the user record; see "How roles are defined for an identity" below.
+- Functional Area/Domain: Provide the vocabulary for rules and headers. Services set x-functional-area and x-functional-domain (or models expose bmFunctionalArea()/bmFunctionalDomain()); rules can match on these to target policies to business capabilities rather than raw URLs.
+- DataDomain: When rules ALLOW an action, they can attach data-scope filters (tenant/org/owner) so downstream reads/writes are constrained to the caller’s domain.</p>
+</div>
+<div class="paragraph">
+<p>Choosing the right approach
+- Use annotations for stable, coarse gates you want visible in code (e.g., admin-only endpoints, health endpoints with @PermitAll).
+- Use feature flags to manage rollout/exposure and variants across environments and cohorts.
+- Use permission rules to encode fine-grained, data-aware authorization and to evolve policy without redeploying.</p>
+</div>
+<div class="paragraph">
+<p>Compare and contrast
+- Annotation-based controls are compile-time and hard-code policy into the service; changing them requires code changes.
+- Permission Rules and the Rule Language are data-driven and user-changeable (with proper governance), enabling rapid, auditable policy changes and DataDomain scoping.
+- In practice: apply annotations as the first gate, evaluate feature flags to determine exposure/variant, then evaluate permission rules to decide ALLOW/DENY and attach scopes. This layered approach yields both safety and agility.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_key_concepts">2. Key Concepts</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -644,7 +692,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect1">
-<h2 id="_rule_structure_illustrative">2. Rule Structure (Illustrative)</h2>
+<h2 id="_rule_structure_illustrative">3. Rule Structure (Illustrative)</h2>
 <div class="sectionbody">
 <div class="listingblock">
 <div class="content">
@@ -695,7 +743,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect1">
-<h2 id="_matching_algorithm">3. Matching Algorithm</h2>
+<h2 id="_matching_algorithm">4. Matching Algorithm</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Given a request R and identity I, evaluate a set of rule bases RB as follows:</p>
@@ -779,7 +827,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect1">
-<h2 id="_priorities">4. Priorities</h2>
+<h2 id="_priorities">5. Priorities</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -809,7 +857,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect1">
-<h2 id="_grant_based_vs_deny_based_rule_sets">5. Grant-based vs Deny-based Rule Sets</h2>
+<h2 id="_grant_based_vs_deny_based_rule_sets">6. Grant-based vs Deny-based Rule Sets</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Grant-based rule sets start with a default decision of DENY and then incrementally add ALLOW scenarios through explicit rules. This model is fail‑safe by default: any URL, action, or functional area that does not have a matching ALLOW rule remains inaccessible. As new endpoints or capabilities are added to the system, users will not gain access until an explicit ALLOW is authored. This is the recommended posture for security‑sensitive systems and multi‑tenant platforms.</p>
@@ -862,7 +910,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect1">
-<h2 id="_feature_flags_variants_and_target_rules">6. Feature Flags, Variants, and Target Rules</h2>
+<h2 id="_feature_flags_variants_and_target_rules">7. Feature Flags, Variants, and Target Rules</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Feature flags complement permission rules by controlling whether a capability is active for a given principal, cohort, or environment. Permissions answer “may this identity perform this action?”; feature flags answer “is this capability turned on, and which variant applies?” Use them together to achieve safe rollouts and fine‑grained authorization.</p>
@@ -968,7 +1016,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect1">
-<h2 id="_multiple_matching_rulebases">7. Multiple Matching RuleBases</h2>
+<h2 id="_multiple_matching_rulebases">8. Multiple Matching RuleBases</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -989,7 +1037,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect1">
-<h2 id="_identity_and_role_matching">8. Identity and Role Matching</h2>
+<h2 id="_identity_and_role_matching">9. Identity and Role Matching</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -1008,7 +1056,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </ul>
 </div>
 <div class="sect2">
-<h3 id="_how_roles_are_defined_for_an_identity_role_sources_and_resolution">8.1. How roles are defined for an identity (role sources and resolution)</h3>
+<h3 id="_how_roles_are_defined_for_an_identity_role_sources_and_resolution">9.1. How roles are defined for an identity (role sources and resolution)</h3>
 <div class="paragraph">
 <p>Quantum composes the effective roles for a request by merging:
 - Roles from the identity provider (JWT/SecurityIdentity)
@@ -1072,7 +1120,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect1">
-<h2 id="_example_scenarios">9. Example Scenarios</h2>
+<h2 id="_example_scenarios">10. Example Scenarios</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>1) Public catalog browsing
@@ -1110,7 +1158,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect1">
-<h2 id="_operational_tips">10. Operational Tips</h2>
+<h2 id="_operational_tips">11. Operational Tips</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -1131,7 +1179,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect1">
-<h2 id="_how_uiactions_and_defaultuiactions_are_calculated">11. How UIActions and DefaultUIActions are calculated</h2>
+<h2 id="_how_uiactions_and_defaultuiactions_are_calculated">12. How UIActions and DefaultUIActions are calculated</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>When the server returns a collection of entities (for example, userProfiles), each entity may expose two action lists:
@@ -1177,7 +1225,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect1">
-<h2 id="_how_this_integrates_end_to_end">12. How This Integrates End-to-End</h2>
+<h2 id="_how_this_integrates_end_to_end">13. How This Integrates End-to-End</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -1195,7 +1243,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect1">
-<h2 id="_administering_policies_via_rest_policyresource">13. Administering Policies via REST (PolicyResource)</h2>
+<h2 id="_administering_policies_via_rest_policyresource">14. Administering Policies via REST (PolicyResource)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>The PolicyResource exposes CRUD-style REST APIs for creating and managing policies (rule bases) that drive authorization decisions. Each Policy targets a principalId (either a specific userId or a role name) and contains an ordered list of Rule objects. Rules match requests using SecurityURIHeader and SecurityURIBody and then contribute an effect (ALLOW/DENY) and optional repository filters.</p>
@@ -1214,7 +1262,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </ul>
 </div>
 <div class="sect2">
-<h3 id="_model_shape_policy">13.1. Model shape (Policy)</h3>
+<h3 id="_model_shape_policy">14.1. Model shape (Policy)</h3>
 <div class="paragraph">
 <p>A Policy extends FullBaseModel and includes:
 - id, refName, displayName, dataDomain, archived/expired flags (inherited)
@@ -1271,7 +1319,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect2">
-<h3 id="_endpoints">13.2. Endpoints</h3>
+<h3 id="_endpoints">14.2. Endpoints</h3>
 <div class="paragraph">
 <p>All endpoints are relative to /security/permission/policies. These are inherited from BaseResource and are consistent across entity resources.</p>
 </div>
@@ -1393,7 +1441,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect2">
-<h3 id="_examples">13.3. Examples</h3>
+<h3 id="_examples">14.3. Examples</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -1442,7 +1490,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_changes_affect_rule_bases_and_enforcement">13.4. How changes affect rule bases and enforcement</h3>
+<h3 id="_how_changes_affect_rule_bases_and_enforcement">14.4. How changes affect rule bases and enforcement</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -1503,13 +1551,13 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect1">
-<h2 id="_realm_override_x_realm_and_impersonation_x_impersonate">14. Realm override (X-Realm) and Impersonation (X-Impersonate)</h2>
+<h2 id="_realm_override_x_realm_and_impersonation_x_impersonate">15. Realm override (X-Realm) and Impersonation (X-Impersonate)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This section explains how to use the request headers X-Realm and X-Impersonate-* alongside permission rule bases. These headers influence which realm (database) a request operates against and, in the case of impersonation, which identity’s roles are evaluated by the rule engine.</p>
 </div>
 <div class="sect2">
-<h3 id="_what_they_do_at_a_glance">14.1. What they do (at a glance)</h3>
+<h3 id="_what_they_do_at_a_glance">15.1. What they do (at a glance)</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -1525,7 +1573,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_the_headers_integrate_with_permission_evaluation">14.2. How the headers integrate with permission evaluation</h3>
+<h3 id="_how_the_headers_integrate_with_permission_evaluation">15.2. How the headers integrate with permission evaluation</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -1553,7 +1601,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect2">
-<h3 id="_required_credential_configuration_credentialuseridpassword">14.3. Required credential configuration (CredentialUserIdPassword)</h3>
+<h3 id="_required_credential_configuration_credentialuseridpassword">15.3. Required credential configuration (CredentialUserIdPassword)</h3>
 <div class="paragraph">
 <p>Two fields on CredentialUserIdPassword govern whether a user may use these headers:</p>
 </div>
@@ -1608,7 +1656,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect2">
-<h3 id="_end_to_end_behavior_from_securityfilter_reference">14.4. End-to-end behavior from SecurityFilter (reference)</h3>
+<h3 id="_end_to_end_behavior_from_securityfilter_reference">15.4. End-to-end behavior from SecurityFilter (reference)</h3>
 <div class="paragraph">
 <p>The SecurityFilter constructs the PrincipalContext/ResourceContext before rule evaluation:
 - X-Realm is read and, if present, validated against the caller’s credential.realmRegEx.
@@ -1619,7 +1667,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect2">
-<h3 id="_practical_differences_and_use_cases">14.5. Practical differences and use cases</h3>
+<h3 id="_practical_differences_and_use_cases">15.5. Practical differences and use cases</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -1662,7 +1710,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect2">
-<h3 id="_examples_2">14.6. Examples</h3>
+<h3 id="_examples_2">15.6. Examples</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -1713,13 +1761,13 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect1">
-<h2 id="_data_domain_assignment_on_create_domaincontext_and_datadomainpolicy">15. Data domain assignment on create: DomainContext and DataDomainPolicy</h2>
+<h2 id="_data_domain_assignment_on_create_domaincontext_and_datadomainpolicy">16. Data domain assignment on create: DomainContext and DataDomainPolicy</h2>
 <div class="sectionbody">
 <div id="_data_domain_assignment" class="paragraph">
 <p>This section explains how Quantum decides which dataDomain is stamped on newly created records, why this decision is necessary in a multi‑tenant system, what the default behavior is, and how you can override it globally or per Functional Area / Functional Domain. It also describes the DataDomainResolver interface and the default implementation provided by the framework.</p>
 </div>
 <div class="sect2">
-<h3 id="_the_problem_this_solves_and_why_it_matters">15.1. The problem this solves (and why it matters)</h3>
+<h3 id="_the_problem_this_solves_and_why_it_matters">16.1. The problem this solves (and why it matters)</h3>
 <div class="paragraph">
 <p>In a multi‑tenant platform you must ensure each new record is written to the correct data partition so later reads/updates can be scoped safely. If the dataDomain is wrong or missing, you risk leaking data across tenants or making your own data inaccessible due to mis‑scoping.</p>
 </div>
@@ -1734,7 +1782,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect2">
-<h3 id="_key_concepts_recap_domaincontext_and_datadomain">15.2. Key concepts recap: DomainContext and DataDomain</h3>
+<h3 id="_key_concepts_recap_domaincontext_and_datadomain">16.2. Key concepts recap: DomainContext and DataDomain</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -1750,7 +1798,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect2">
-<h3 id="_the_default_policy_do_nothing_and_it_works">15.3. The default policy (do nothing and it works)</h3>
+<h3 id="_the_default_policy_do_nothing_and_it_works">16.3. The default policy (do nothing and it works)</h3>
 <div class="paragraph">
 <p>Out of the box, Quantum preserves the existing behavior: if no policy is configured, the resolver falls back to the authenticated principal’s DataDomain. This guarantees compatibility with existing applications.</p>
 </div>
@@ -1762,7 +1810,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect2">
-<h3 id="_policy_scopes_principalattached_vs_global">15.4. Policy scopes: principal‑attached vs. global</h3>
+<h3 id="_policy_scopes_principalattached_vs_global">16.4. Policy scopes: principal‑attached vs. global</h3>
 <div class="paragraph">
 <p>You can define overrides at two levels:
 - Principal‑attached (per credential): attach a DataDomainPolicy to a CredentialUserIdPassword. The SecurityFilter places this policy into the PrincipalContext, so it applies only to records created by that principal. This is useful for VIP service accounts or specific partners.
@@ -1773,7 +1821,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect2">
-<h3 id="_the_policy_map_and_matching">15.5. The policy map and matching</h3>
+<h3 id="_the_policy_map_and_matching">16.5. The policy map and matching</h3>
 <div class="paragraph">
 <p>A DataDomainPolicy is a small map of rules: Map&lt;String, DataDomainPolicyEntry&gt; policyEntries, keyed by "&lt;FunctionalArea&gt;:&lt;FunctionalDomain&gt;" with support for "*" wildcards. The resolver evaluates keys in this order:</p>
 </div>
@@ -1825,7 +1873,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_the_resolver_works">15.6. How the resolver works</h3>
+<h3 id="_how_the_resolver_works">16.6. How the resolver works</h3>
 <div class="paragraph">
 <p>Interfaces and default implementation:</p>
 </div>
@@ -1861,7 +1909,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect2">
-<h3 id="_when_would_you_want_a_nonglobal_policy">15.7. When would you want a non‑global policy?</h3>
+<h3 id="_when_would_you_want_a_nonglobal_policy">16.7. When would you want a non‑global policy?</h3>
 <div class="paragraph">
 <p>Here are a few concrete scenarios:
 - Centralized HR: All HR Employee records are written to a shared HR domain regardless of the team creating them. This supports a shared‑service HR model without duplicating HR data per tenant.
@@ -1871,7 +1919,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect2">
-<h3 id="_relation_to_tenancy_models">15.8. Relation to tenancy models</h3>
+<h3 id="_relation_to_tenancy_models">16.8. Relation to tenancy models</h3>
 <div class="paragraph">
 <p>The policy mechanism supports both siloed and pooled tenancy:
 - Siloed tenancy: Most domains default to FROM_CREDENTIAL (each tenant writes to its own partition). Only a few shared services (e.g., HR, catalog) use FIXED to centralize data.
@@ -1882,7 +1930,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect2">
-<h3 id="_authoring_tips">15.9. Authoring tips</h3>
+<h3 id="_authoring_tips">16.9. Authoring tips</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -1901,7 +1949,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect2">
-<h3 id="_api_pointers">15.10. API pointers</h3>
+<h3 id="_api_pointers">16.10. API pointers</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -1925,7 +1973,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-09-13 09:32:58 -0400
+Last updated 2025-09-13 09:47:25 -0400
 </div>
 </div>
 </body>

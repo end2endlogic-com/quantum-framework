@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Framework Documentation</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-09-13T13:33:35Z</span>
+<span id="revdate">2025-09-13T13:48:38Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -628,68 +628,69 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </li>
 <li><a href="#permissions">Permissions: Rule Bases, SecurityURLHeaders, and SecurityURLBody</a>
 <ul class="sectlevel1">
-<li><a href="#_key_concepts">52. Key Concepts</a></li>
-<li><a href="#_rule_structure_illustrative">53. Rule Structure (Illustrative)</a></li>
-<li><a href="#_matching_algorithm">54. Matching Algorithm</a></li>
-<li><a href="#_priorities">55. Priorities</a></li>
-<li><a href="#_grant_based_vs_deny_based_rule_sets">56. Grant-based vs Deny-based Rule Sets</a></li>
-<li><a href="#_feature_flags_variants_and_target_rules">57. Feature Flags, Variants, and Target Rules</a></li>
-<li><a href="#_multiple_matching_rulebases">58. Multiple Matching RuleBases</a></li>
-<li><a href="#_identity_and_role_matching">59. Identity and Role Matching</a>
+<li><a href="#_introduction_layered_enforcement_overview">52. Introduction: Layered Enforcement Overview</a></li>
+<li><a href="#_key_concepts">53. Key Concepts</a></li>
+<li><a href="#_rule_structure_illustrative">54. Rule Structure (Illustrative)</a></li>
+<li><a href="#_matching_algorithm">55. Matching Algorithm</a></li>
+<li><a href="#_priorities">56. Priorities</a></li>
+<li><a href="#_grant_based_vs_deny_based_rule_sets">57. Grant-based vs Deny-based Rule Sets</a></li>
+<li><a href="#_feature_flags_variants_and_target_rules">58. Feature Flags, Variants, and Target Rules</a></li>
+<li><a href="#_multiple_matching_rulebases">59. Multiple Matching RuleBases</a></li>
+<li><a href="#_identity_and_role_matching">60. Identity and Role Matching</a>
 <ul class="sectlevel2">
-<li><a href="#_how_roles_are_defined_for_an_identity_role_sources_and_resolution">59.1. How roles are defined for an identity (role sources and resolution)</a></li>
+<li><a href="#_how_roles_are_defined_for_an_identity_role_sources_and_resolution">60.1. How roles are defined for an identity (role sources and resolution)</a></li>
 </ul>
 </li>
-<li><a href="#_example_scenarios">60. Example Scenarios</a></li>
-<li><a href="#_operational_tips">61. Operational Tips</a></li>
-<li><a href="#_how_uiactions_and_defaultuiactions_are_calculated">62. How UIActions and DefaultUIActions are calculated</a></li>
-<li><a href="#_how_this_integrates_end_to_end">63. How This Integrates End-to-End</a></li>
-<li><a href="#_administering_policies_via_rest_policyresource">64. Administering Policies via REST (PolicyResource)</a>
+<li><a href="#_example_scenarios">61. Example Scenarios</a></li>
+<li><a href="#_operational_tips">62. Operational Tips</a></li>
+<li><a href="#_how_uiactions_and_defaultuiactions_are_calculated">63. How UIActions and DefaultUIActions are calculated</a></li>
+<li><a href="#_how_this_integrates_end_to_end">64. How This Integrates End-to-End</a></li>
+<li><a href="#_administering_policies_via_rest_policyresource">65. Administering Policies via REST (PolicyResource)</a>
 <ul class="sectlevel2">
-<li><a href="#_model_shape_policy">64.1. Model shape (Policy)</a></li>
-<li><a href="#_endpoints">64.2. Endpoints</a></li>
-<li><a href="#_examples">64.3. Examples</a></li>
-<li><a href="#_how_changes_affect_rule_bases_and_enforcement">64.4. How changes affect rule bases and enforcement</a></li>
+<li><a href="#_model_shape_policy">65.1. Model shape (Policy)</a></li>
+<li><a href="#_endpoints">65.2. Endpoints</a></li>
+<li><a href="#_examples">65.3. Examples</a></li>
+<li><a href="#_how_changes_affect_rule_bases_and_enforcement">65.4. How changes affect rule bases and enforcement</a></li>
 </ul>
 </li>
-<li><a href="#_realm_override_x_realm_and_impersonation_x_impersonate">65. Realm override (X-Realm) and Impersonation (X-Impersonate)</a>
+<li><a href="#_realm_override_x_realm_and_impersonation_x_impersonate">66. Realm override (X-Realm) and Impersonation (X-Impersonate)</a>
 <ul class="sectlevel2">
-<li><a href="#_what_they_do_at_a_glance">65.1. What they do (at a glance)</a></li>
-<li><a href="#_how_the_headers_integrate_with_permission_evaluation">65.2. How the headers integrate with permission evaluation</a></li>
-<li><a href="#_required_credential_configuration_credentialuseridpassword">65.3. Required credential configuration (CredentialUserIdPassword)</a></li>
-<li><a href="#_end_to_end_behavior_from_securityfilter_reference">65.4. End-to-end behavior from SecurityFilter (reference)</a></li>
-<li><a href="#_practical_differences_and_use_cases">65.5. Practical differences and use cases</a></li>
-<li><a href="#_examples_2">65.6. Examples</a></li>
+<li><a href="#_what_they_do_at_a_glance">66.1. What they do (at a glance)</a></li>
+<li><a href="#_how_the_headers_integrate_with_permission_evaluation">66.2. How the headers integrate with permission evaluation</a></li>
+<li><a href="#_required_credential_configuration_credentialuseridpassword">66.3. Required credential configuration (CredentialUserIdPassword)</a></li>
+<li><a href="#_end_to_end_behavior_from_securityfilter_reference">66.4. End-to-end behavior from SecurityFilter (reference)</a></li>
+<li><a href="#_practical_differences_and_use_cases">66.5. Practical differences and use cases</a></li>
+<li><a href="#_examples_2">66.6. Examples</a></li>
 </ul>
 </li>
-<li><a href="#_data_domain_assignment_on_create_domaincontext_and_datadomainpolicy">66. Data domain assignment on create: DomainContext and DataDomainPolicy</a>
+<li><a href="#_data_domain_assignment_on_create_domaincontext_and_datadomainpolicy">67. Data domain assignment on create: DomainContext and DataDomainPolicy</a>
 <ul class="sectlevel2">
-<li><a href="#_the_problem_this_solves_and_why_it_matters">66.1. The problem this solves (and why it matters)</a></li>
-<li><a href="#_key_concepts_recap_domaincontext_and_datadomain">66.2. Key concepts recap: DomainContext and DataDomain</a></li>
-<li><a href="#_the_default_policy_do_nothing_and_it_works">66.3. The default policy (do nothing and it works)</a></li>
-<li><a href="#_policy_scopes_principalattached_vs_global">66.4. Policy scopes: principal‑attached vs. global</a></li>
-<li><a href="#_the_policy_map_and_matching">66.5. The policy map and matching</a></li>
-<li><a href="#_how_the_resolver_works">66.6. How the resolver works</a></li>
-<li><a href="#_when_would_you_want_a_nonglobal_policy">66.7. When would you want a non‑global policy?</a></li>
-<li><a href="#_relation_to_tenancy_models">66.8. Relation to tenancy models</a></li>
-<li><a href="#_authoring_tips">66.9. Authoring tips</a></li>
-<li><a href="#_api_pointers">66.10. API pointers</a></li>
+<li><a href="#_the_problem_this_solves_and_why_it_matters">67.1. The problem this solves (and why it matters)</a></li>
+<li><a href="#_key_concepts_recap_domaincontext_and_datadomain">67.2. Key concepts recap: DomainContext and DataDomain</a></li>
+<li><a href="#_the_default_policy_do_nothing_and_it_works">67.3. The default policy (do nothing and it works)</a></li>
+<li><a href="#_policy_scopes_principalattached_vs_global">67.4. Policy scopes: principal‑attached vs. global</a></li>
+<li><a href="#_the_policy_map_and_matching">67.5. The policy map and matching</a></li>
+<li><a href="#_how_the_resolver_works">67.6. How the resolver works</a></li>
+<li><a href="#_when_would_you_want_a_nonglobal_policy">67.7. When would you want a non‑global policy?</a></li>
+<li><a href="#_relation_to_tenancy_models">67.8. Relation to tenancy models</a></li>
+<li><a href="#_authoring_tips">67.9. Authoring tips</a></li>
+<li><a href="#_api_pointers">67.10. API pointers</a></li>
 </ul>
 </li>
-<li><a href="#_tutorials">67. Tutorials</a></li>
-<li><a href="#_what_a_supplychain_saas_needs_and_how_quantum_helps">68. What a supply‑chain SaaS needs (and how Quantum helps)</a></li>
-<li><a href="#_why_multitenancy_is_a_natural_fit_for_supply_chains">69. Why multi‑tenancy is a natural fit for supply chains</a></li>
-<li><a href="#_who_uses_the_system_organizations_and_roles">70. Who uses the system (organizations and roles)</a></li>
-<li><a href="#_identity_and_access_meet_partners_where_they_are">71. Identity and access: meet partners where they are</a></li>
-<li><a href="#_modeling_without_jargon_areas_domains_and_actions">72. Modeling without jargon: Areas, Domains, and Actions</a></li>
-<li><a href="#_policies_that_say_who_can_do_what_rule_language">73. Policies that say “who can do what” (Rule Language)</a></li>
-<li><a href="#_a_small_powerful_api_surface_list_query">74. A small, powerful API surface: List + Query</a></li>
-<li><a href="#_delegated_administration_tenantlevel_user_management">75. Delegated Administration (tenant‑level user management)</a></li>
-<li><a href="#_integrations_and_data_management">76. Integrations and data management</a></li>
-<li><a href="#_endtoend_examples_2">77. End‑to‑end examples</a></li>
-<li><a href="#_what_you_dont_have_to_build_from_scratch">78. What you don’t have to build from scratch</a></li>
-<li><a href="#_next_steps">79. Next steps</a></li>
-<li><a href="#_a_day_in_the_life_from_purchase_order_to_delivery">80. A day in the life: From Purchase Order to Delivery</a></li>
+<li><a href="#_tutorials">68. Tutorials</a></li>
+<li><a href="#_what_a_supplychain_saas_needs_and_how_quantum_helps">69. What a supply‑chain SaaS needs (and how Quantum helps)</a></li>
+<li><a href="#_why_multitenancy_is_a_natural_fit_for_supply_chains">70. Why multi‑tenancy is a natural fit for supply chains</a></li>
+<li><a href="#_who_uses_the_system_organizations_and_roles">71. Who uses the system (organizations and roles)</a></li>
+<li><a href="#_identity_and_access_meet_partners_where_they_are">72. Identity and access: meet partners where they are</a></li>
+<li><a href="#_modeling_without_jargon_areas_domains_and_actions">73. Modeling without jargon: Areas, Domains, and Actions</a></li>
+<li><a href="#_policies_that_say_who_can_do_what_rule_language">74. Policies that say “who can do what” (Rule Language)</a></li>
+<li><a href="#_a_small_powerful_api_surface_list_query">75. A small, powerful API surface: List + Query</a></li>
+<li><a href="#_delegated_administration_tenantlevel_user_management">76. Delegated Administration (tenant‑level user management)</a></li>
+<li><a href="#_integrations_and_data_management">77. Integrations and data management</a></li>
+<li><a href="#_endtoend_examples_2">78. End‑to‑end examples</a></li>
+<li><a href="#_what_you_dont_have_to_build_from_scratch">79. What you don’t have to build from scratch</a></li>
+<li><a href="#_next_steps">80. Next steps</a></li>
+<li><a href="#_a_day_in_the_life_from_purchase_order_to_delivery">81. A day in the life: From Purchase Order to Delivery</a></li>
 </ul>
 </li>
 </ul>
@@ -3093,7 +3094,54 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_key_concepts">52. Key Concepts</h2>
+<h2 id="_introduction_layered_enforcement_overview">52. Introduction: Layered Enforcement Overview</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Quantum evaluates "can this identity do X?" through three complementary layers. Understanding them in order helps you pick the right tool for the job and combine them safely:</p>
+</div>
+<div class="paragraph">
+<p>1) REST API annotations (top layer, code-level)
+- What: JAX-RS/Jakarta Security annotations on resource methods, e.g., @RolesAllowed("ADMIN"), @PermitAll, @DenyAll, @Authenticated.
+- Purpose: Coarse-grained, immediate gates right at the endpoint. Ideal for baseline protections (e.g., only ADMIN may call /admin/**) and for non-dynamic constraints that rarely change.
+- Pros: Simple, fast, visible in code reviews.
+- Cons: Hard-coded; changing access requires a code change, build, and deploy. No data-aware scoping (e.g., cannot express tenant/domain filters).</p>
+</div>
+<div class="paragraph">
+<p>2) Feature flags (exposure and variants)
+- What: Turn capabilities on/off per environment or cohort and select variants (A/B, multivariate). See "Feature Flags, Variants, and Target Rules" below.
+- Purpose: Control who even sees or can reach a capability during rollout (by tenant, role, geography, plan), independently of authorization. Flags answer "is the feature ON and which variant?"; they do not by themselves prove the caller is authorized.
+- Pros: Reversible, environment-aware, safe rollout and experimentation.
+- Cons: Not a substitute for authorization; must be paired with roles/permission rules for enforcement.</p>
+</div>
+<div class="paragraph">
+<p>3) Permission Rules with DataDomain filtering (fine-grained, dynamic)
+- What: Declarative rule bases that match URL, method, SecurityURLHeaders, and SecurityURLBody, and decide ALLOW/DENY. ALLOWs can contribute DataDomain constraints applied by repositories. See sections "Key Concepts", "Matching Algorithm", and examples below.
+- Purpose: Express least-privilege, data-aware policies that evolve without code changes (data-driven authoring).
+- Pros: Dynamic, auditable, supports role checks plus attribute predicates and domain scoping.
+- Cons: Requires governance of rulebases and careful priority management.</p>
+</div>
+<div class="paragraph">
+<p>How roles, Functional Areas, and Functional Domains fit in
+- Roles: Used by both layers (1) and (3). Annotations directly reference roles; rules can require rolesAny/rolesAll. Effective roles are resolved by merging IdP roles with roles on the user record; see "How roles are defined for an identity" below.
+- Functional Area/Domain: Provide the vocabulary for rules and headers. Services set x-functional-area and x-functional-domain (or models expose bmFunctionalArea()/bmFunctionalDomain()); rules can match on these to target policies to business capabilities rather than raw URLs.
+- DataDomain: When rules ALLOW an action, they can attach data-scope filters (tenant/org/owner) so downstream reads/writes are constrained to the caller’s domain.</p>
+</div>
+<div class="paragraph">
+<p>Choosing the right approach
+- Use annotations for stable, coarse gates you want visible in code (e.g., admin-only endpoints, health endpoints with @PermitAll).
+- Use feature flags to manage rollout/exposure and variants across environments and cohorts.
+- Use permission rules to encode fine-grained, data-aware authorization and to evolve policy without redeploying.</p>
+</div>
+<div class="paragraph">
+<p>Compare and contrast
+- Annotation-based controls are compile-time and hard-code policy into the service; changing them requires code changes.
+- Permission Rules and the Rule Language are data-driven and user-changeable (with proper governance), enabling rapid, auditable policy changes and DataDomain scoping.
+- In practice: apply annotations as the first gate, evaluate feature flags to determine exposure/variant, then evaluate permission rules to decide ALLOW/DENY and attach scopes. This layered approach yields both safety and agility.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_key_concepts">53. Key Concepts</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -3141,7 +3189,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_rule_structure_illustrative">53. Rule Structure (Illustrative)</h2>
+<h2 id="_rule_structure_illustrative">54. Rule Structure (Illustrative)</h2>
 <div class="sectionbody">
 <div class="listingblock">
 <div class="content">
@@ -3192,7 +3240,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_matching_algorithm">54. Matching Algorithm</h2>
+<h2 id="_matching_algorithm">55. Matching Algorithm</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Given a request R and identity I, evaluate a set of rule bases RB as follows:</p>
@@ -3276,7 +3324,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_priorities">55. Priorities</h2>
+<h2 id="_priorities">56. Priorities</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -3306,7 +3354,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_grant_based_vs_deny_based_rule_sets">56. Grant-based vs Deny-based Rule Sets</h2>
+<h2 id="_grant_based_vs_deny_based_rule_sets">57. Grant-based vs Deny-based Rule Sets</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Grant-based rule sets start with a default decision of DENY and then incrementally add ALLOW scenarios through explicit rules. This model is fail‑safe by default: any URL, action, or functional area that does not have a matching ALLOW rule remains inaccessible. As new endpoints or capabilities are added to the system, users will not gain access until an explicit ALLOW is authored. This is the recommended posture for security‑sensitive systems and multi‑tenant platforms.</p>
@@ -3359,7 +3407,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_feature_flags_variants_and_target_rules">57. Feature Flags, Variants, and Target Rules</h2>
+<h2 id="_feature_flags_variants_and_target_rules">58. Feature Flags, Variants, and Target Rules</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Feature flags complement permission rules by controlling whether a capability is active for a given principal, cohort, or environment. Permissions answer “may this identity perform this action?”; feature flags answer “is this capability turned on, and which variant applies?” Use them together to achieve safe rollouts and fine‑grained authorization.</p>
@@ -3465,7 +3513,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_multiple_matching_rulebases">58. Multiple Matching RuleBases</h2>
+<h2 id="_multiple_matching_rulebases">59. Multiple Matching RuleBases</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -3486,7 +3534,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_identity_and_role_matching">59. Identity and Role Matching</h2>
+<h2 id="_identity_and_role_matching">60. Identity and Role Matching</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -3505,7 +3553,7 @@ Summary:
 </ul>
 </div>
 <div class="sect2">
-<h3 id="_how_roles_are_defined_for_an_identity_role_sources_and_resolution">59.1. How roles are defined for an identity (role sources and resolution)</h3>
+<h3 id="_how_roles_are_defined_for_an_identity_role_sources_and_resolution">60.1. How roles are defined for an identity (role sources and resolution)</h3>
 <div class="paragraph">
 <p>Quantum composes the effective roles for a request by merging:
 - Roles from the identity provider (JWT/SecurityIdentity)
@@ -3569,7 +3617,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_example_scenarios">60. Example Scenarios</h2>
+<h2 id="_example_scenarios">61. Example Scenarios</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>1) Public catalog browsing
@@ -3607,7 +3655,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_operational_tips">61. Operational Tips</h2>
+<h2 id="_operational_tips">62. Operational Tips</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -3628,7 +3676,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_how_uiactions_and_defaultuiactions_are_calculated">62. How UIActions and DefaultUIActions are calculated</h2>
+<h2 id="_how_uiactions_and_defaultuiactions_are_calculated">63. How UIActions and DefaultUIActions are calculated</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>When the server returns a collection of entities (for example, userProfiles), each entity may expose two action lists:
@@ -3674,7 +3722,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_how_this_integrates_end_to_end">63. How This Integrates End-to-End</h2>
+<h2 id="_how_this_integrates_end_to_end">64. How This Integrates End-to-End</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -3692,7 +3740,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_administering_policies_via_rest_policyresource">64. Administering Policies via REST (PolicyResource)</h2>
+<h2 id="_administering_policies_via_rest_policyresource">65. Administering Policies via REST (PolicyResource)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>The PolicyResource exposes CRUD-style REST APIs for creating and managing policies (rule bases) that drive authorization decisions. Each Policy targets a principalId (either a specific userId or a role name) and contains an ordered list of Rule objects. Rules match requests using SecurityURIHeader and SecurityURIBody and then contribute an effect (ALLOW/DENY) and optional repository filters.</p>
@@ -3711,7 +3759,7 @@ Summary:
 </ul>
 </div>
 <div class="sect2">
-<h3 id="_model_shape_policy">64.1. Model shape (Policy)</h3>
+<h3 id="_model_shape_policy">65.1. Model shape (Policy)</h3>
 <div class="paragraph">
 <p>A Policy extends FullBaseModel and includes:
 - id, refName, displayName, dataDomain, archived/expired flags (inherited)
@@ -3768,7 +3816,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_endpoints">64.2. Endpoints</h3>
+<h3 id="_endpoints">65.2. Endpoints</h3>
 <div class="paragraph">
 <p>All endpoints are relative to /security/permission/policies. These are inherited from BaseResource and are consistent across entity resources.</p>
 </div>
@@ -3890,7 +3938,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_examples">64.3. Examples</h3>
+<h3 id="_examples">65.3. Examples</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -3939,7 +3987,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_changes_affect_rule_bases_and_enforcement">64.4. How changes affect rule bases and enforcement</h3>
+<h3 id="_how_changes_affect_rule_bases_and_enforcement">65.4. How changes affect rule bases and enforcement</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -4000,13 +4048,13 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_realm_override_x_realm_and_impersonation_x_impersonate">65. Realm override (X-Realm) and Impersonation (X-Impersonate)</h2>
+<h2 id="_realm_override_x_realm_and_impersonation_x_impersonate">66. Realm override (X-Realm) and Impersonation (X-Impersonate)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This section explains how to use the request headers X-Realm and X-Impersonate-* alongside permission rule bases. These headers influence which realm (database) a request operates against and, in the case of impersonation, which identity’s roles are evaluated by the rule engine.</p>
 </div>
 <div class="sect2">
-<h3 id="_what_they_do_at_a_glance">65.1. What they do (at a glance)</h3>
+<h3 id="_what_they_do_at_a_glance">66.1. What they do (at a glance)</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -4022,7 +4070,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_the_headers_integrate_with_permission_evaluation">65.2. How the headers integrate with permission evaluation</h3>
+<h3 id="_how_the_headers_integrate_with_permission_evaluation">66.2. How the headers integrate with permission evaluation</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -4050,7 +4098,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_required_credential_configuration_credentialuseridpassword">65.3. Required credential configuration (CredentialUserIdPassword)</h3>
+<h3 id="_required_credential_configuration_credentialuseridpassword">66.3. Required credential configuration (CredentialUserIdPassword)</h3>
 <div class="paragraph">
 <p>Two fields on CredentialUserIdPassword govern whether a user may use these headers:</p>
 </div>
@@ -4105,7 +4153,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_end_to_end_behavior_from_securityfilter_reference">65.4. End-to-end behavior from SecurityFilter (reference)</h3>
+<h3 id="_end_to_end_behavior_from_securityfilter_reference">66.4. End-to-end behavior from SecurityFilter (reference)</h3>
 <div class="paragraph">
 <p>The SecurityFilter constructs the PrincipalContext/ResourceContext before rule evaluation:
 - X-Realm is read and, if present, validated against the caller’s credential.realmRegEx.
@@ -4116,7 +4164,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_practical_differences_and_use_cases">65.5. Practical differences and use cases</h3>
+<h3 id="_practical_differences_and_use_cases">66.5. Practical differences and use cases</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -4159,7 +4207,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_examples_2">65.6. Examples</h3>
+<h3 id="_examples_2">66.6. Examples</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -4210,13 +4258,13 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_data_domain_assignment_on_create_domaincontext_and_datadomainpolicy">66. Data domain assignment on create: DomainContext and DataDomainPolicy</h2>
+<h2 id="_data_domain_assignment_on_create_domaincontext_and_datadomainpolicy">67. Data domain assignment on create: DomainContext and DataDomainPolicy</h2>
 <div class="sectionbody">
 <div id="_data_domain_assignment" class="paragraph">
 <p>This section explains how Quantum decides which dataDomain is stamped on newly created records, why this decision is necessary in a multi‑tenant system, what the default behavior is, and how you can override it globally or per Functional Area / Functional Domain. It also describes the DataDomainResolver interface and the default implementation provided by the framework.</p>
 </div>
 <div class="sect2">
-<h3 id="_the_problem_this_solves_and_why_it_matters">66.1. The problem this solves (and why it matters)</h3>
+<h3 id="_the_problem_this_solves_and_why_it_matters">67.1. The problem this solves (and why it matters)</h3>
 <div class="paragraph">
 <p>In a multi‑tenant platform you must ensure each new record is written to the correct data partition so later reads/updates can be scoped safely. If the dataDomain is wrong or missing, you risk leaking data across tenants or making your own data inaccessible due to mis‑scoping.</p>
 </div>
@@ -4231,7 +4279,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_key_concepts_recap_domaincontext_and_datadomain">66.2. Key concepts recap: DomainContext and DataDomain</h3>
+<h3 id="_key_concepts_recap_domaincontext_and_datadomain">67.2. Key concepts recap: DomainContext and DataDomain</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -4247,7 +4295,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_the_default_policy_do_nothing_and_it_works">66.3. The default policy (do nothing and it works)</h3>
+<h3 id="_the_default_policy_do_nothing_and_it_works">67.3. The default policy (do nothing and it works)</h3>
 <div class="paragraph">
 <p>Out of the box, Quantum preserves the existing behavior: if no policy is configured, the resolver falls back to the authenticated principal’s DataDomain. This guarantees compatibility with existing applications.</p>
 </div>
@@ -4259,7 +4307,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_policy_scopes_principalattached_vs_global">66.4. Policy scopes: principal‑attached vs. global</h3>
+<h3 id="_policy_scopes_principalattached_vs_global">67.4. Policy scopes: principal‑attached vs. global</h3>
 <div class="paragraph">
 <p>You can define overrides at two levels:
 - Principal‑attached (per credential): attach a DataDomainPolicy to a CredentialUserIdPassword. The SecurityFilter places this policy into the PrincipalContext, so it applies only to records created by that principal. This is useful for VIP service accounts or specific partners.
@@ -4270,7 +4318,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_the_policy_map_and_matching">66.5. The policy map and matching</h3>
+<h3 id="_the_policy_map_and_matching">67.5. The policy map and matching</h3>
 <div class="paragraph">
 <p>A DataDomainPolicy is a small map of rules: Map&lt;String, DataDomainPolicyEntry&gt; policyEntries, keyed by "&lt;FunctionalArea&gt;:&lt;FunctionalDomain&gt;" with support for "*" wildcards. The resolver evaluates keys in this order:</p>
 </div>
@@ -4322,7 +4370,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_the_resolver_works">66.6. How the resolver works</h3>
+<h3 id="_how_the_resolver_works">67.6. How the resolver works</h3>
 <div class="paragraph">
 <p>Interfaces and default implementation:</p>
 </div>
@@ -4358,7 +4406,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_when_would_you_want_a_nonglobal_policy">66.7. When would you want a non‑global policy?</h3>
+<h3 id="_when_would_you_want_a_nonglobal_policy">67.7. When would you want a non‑global policy?</h3>
 <div class="paragraph">
 <p>Here are a few concrete scenarios:
 - Centralized HR: All HR Employee records are written to a shared HR domain regardless of the team creating them. This supports a shared‑service HR model without duplicating HR data per tenant.
@@ -4368,7 +4416,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_relation_to_tenancy_models">66.8. Relation to tenancy models</h3>
+<h3 id="_relation_to_tenancy_models">67.8. Relation to tenancy models</h3>
 <div class="paragraph">
 <p>The policy mechanism supports both siloed and pooled tenancy:
 - Siloed tenancy: Most domains default to FROM_CREDENTIAL (each tenant writes to its own partition). Only a few shared services (e.g., HR, catalog) use FIXED to centralize data.
@@ -4379,7 +4427,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_authoring_tips">66.9. Authoring tips</h3>
+<h3 id="_authoring_tips">67.9. Authoring tips</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -4398,7 +4446,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_api_pointers">66.10. API pointers</h3>
+<h3 id="_api_pointers">67.10. API pointers</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -4419,7 +4467,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_tutorials">67. Tutorials</h2>
+<h2 id="_tutorials">68. Tutorials</h2>
 <div class="sectionbody">
 <div id="tutorial-supply-chain" class="paragraph">
 <p>:= Supply Chain Collaboration SaaS: A Business‑First Guide</p>
@@ -4430,7 +4478,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_what_a_supplychain_saas_needs_and_how_quantum_helps">68. What a supply‑chain SaaS needs (and how Quantum helps)</h2>
+<h2 id="_what_a_supplychain_saas_needs_and_how_quantum_helps">69. What a supply‑chain SaaS needs (and how Quantum helps)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Common needs when launching a collaboration platform:</p>
@@ -4482,7 +4530,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_why_multitenancy_is_a_natural_fit_for_supply_chains">69. Why multi‑tenancy is a natural fit for supply chains</h2>
+<h2 id="_why_multitenancy_is_a_natural_fit_for_supply_chains">70. Why multi‑tenancy is a natural fit for supply chains</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Supply chains are networks. Everyone shares a process, but not a database. Quantum isolates each tenant’s data by default and lets you selectively share records with partners:</p>
@@ -4506,7 +4554,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_who_uses_the_system_organizations_and_roles">70. Who uses the system (organizations and roles)</h2>
+<h2 id="_who_uses_the_system_organizations_and_roles">71. Who uses the system (organizations and roles)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Organizations (tenants)
@@ -4529,7 +4577,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_identity_and_access_meet_partners_where_they_are">71. Identity and access: meet partners where they are</h2>
+<h2 id="_identity_and_access_meet_partners_where_they_are">72. Identity and access: meet partners where they are</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Every organization may authenticate differently:
@@ -4543,7 +4591,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_modeling_without_jargon_areas_domains_and_actions">72. Modeling without jargon: Areas, Domains, and Actions</h2>
+<h2 id="_modeling_without_jargon_areas_domains_and_actions">73. Modeling without jargon: Areas, Domains, and Actions</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>To keep your platform organized, Quantum groups things into:
@@ -4559,7 +4607,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_policies_that_say_who_can_do_what_rule_language">73. Policies that say “who can do what” (Rule Language)</h2>
+<h2 id="_policies_that_say_who_can_do_what_rule_language">74. Policies that say “who can do what” (Rule Language)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Policies are simple, readable rules that match:
@@ -4578,7 +4626,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_a_small_powerful_api_surface_list_query">74. A small, powerful API surface: List + Query</h2>
+<h2 id="_a_small_powerful_api_surface_list_query">75. A small, powerful API surface: List + Query</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Instead of building a unique search endpoint for every screen, Quantum gives you:
@@ -4595,7 +4643,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_delegated_administration_tenantlevel_user_management">75. Delegated Administration (tenant‑level user management)</h2>
+<h2 id="_delegated_administration_tenantlevel_user_management">76. Delegated Administration (tenant‑level user management)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Empower each organization to run their own house while you keep platform‑wide safety:
@@ -4606,7 +4654,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_integrations_and_data_management">76. Integrations and data management</h2>
+<h2 id="_integrations_and_data_management">77. Integrations and data management</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Supply chains depend on clean, timely data. Quantum provides:
@@ -4623,7 +4671,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_endtoend_examples_2">77. End‑to‑end examples</h2>
+<h2 id="_endtoend_examples_2">78. End‑to‑end examples</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>1) Buyer–supplier collaboration on a Purchase Order
@@ -4642,7 +4690,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_what_you_dont_have_to_build_from_scratch">78. What you don’t have to build from scratch</h2>
+<h2 id="_what_you_dont_have_to_build_from_scratch">79. What you don’t have to build from scratch</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -4669,7 +4717,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_next_steps">79. Next steps</h2>
+<h2 id="_next_steps">80. Next steps</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -4693,7 +4741,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_a_day_in_the_life_from_purchase_order_to_delivery">80. A day in the life: From Purchase Order to Delivery</h2>
+<h2 id="_a_day_in_the_life_from_purchase_order_to_delivery">81. A day in the life: From Purchase Order to Delivery</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This story ties the pieces together in a realistic sequence. We follow a Purchase Order (PO) from creation to delivery, with shared visibility for suppliers and carriers, a clear state graph, and checklist-like Completion Tasks guiding the work.</p>
