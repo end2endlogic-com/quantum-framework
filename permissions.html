@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Permissions: Rule Bases, SecurityURLHeaders, and SecurityURLBody</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-09-13T13:20:56Z</span>
+<span id="revdate">2025-09-13T13:33:35Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -540,7 +540,11 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_grant_based_vs_deny_based_rule_sets">5. Grant-based vs Deny-based Rule Sets</a></li>
 <li><a href="#_feature_flags_variants_and_target_rules">6. Feature Flags, Variants, and Target Rules</a></li>
 <li><a href="#_multiple_matching_rulebases">7. Multiple Matching RuleBases</a></li>
-<li><a href="#_identity_and_role_matching">8. Identity and Role Matching</a></li>
+<li><a href="#_identity_and_role_matching">8. Identity and Role Matching</a>
+<ul class="sectlevel2">
+<li><a href="#_how_roles_are_defined_for_an_identity_role_sources_and_resolution">8.1. How roles are defined for an identity (role sources and resolution)</a></li>
+</ul>
+</li>
 <li><a href="#_example_scenarios">9. Example Scenarios</a></li>
 <li><a href="#_operational_tips">10. Operational Tips</a></li>
 <li><a href="#_how_uiactions_and_defaultuiactions_are_calculated">11. How UIActions and DefaultUIActions are calculated</a></li>
@@ -1002,6 +1006,68 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <p>Time or plan-based conditions: userProfile can embed plan and expiration; rules may check that trials are active or features are enabled.</p>
 </li>
 </ul>
+</div>
+<div class="sect2">
+<h3 id="_how_roles_are_defined_for_an_identity_role_sources_and_resolution">8.1. How roles are defined for an identity (role sources and resolution)</h3>
+<div class="paragraph">
+<p>Quantum composes the effective roles for a request by merging:
+- Roles from the identity provider (JWT/SecurityIdentity)
+- Roles configured on the user record (CredentialUserIdPassword.roles)</p>
+</div>
+<div class="paragraph">
+<p>Source details:
+- Identity Provider (JWT): roles commonly arrive via standard claims (e.g., groups, roles, or provider-specific fields). Quarkus maps these into SecurityIdentity.getRoles(). In multi-realm setups, the realm in X-Realm can scope lookups but does not alter what the JWT asserts.
+- Quantum user record: com.e2eq.framework.model.security.CredentialUserIdPassword has a String[] roles field stored per realm. This can be administered by Quantum to grant platform- or tenant-level roles.</p>
+</div>
+<div class="paragraph">
+<p>Merge semantics (current implementation):
+- Union: the effective role set is the union of JWT roles and CredentialUserIdPassword.roles. If either source is empty, the other source defines the set.
+- Fallback: when neither source yields roles, the framework defaults to [ANONYMOUS].
+- Where implemented: SecurityFilter.determinePrincipalContext builds PrincipalContext with the merged roles.</p>
+</div>
+<div class="paragraph">
+<p>Realm considerations:
+- The user record is looked up by subject or userId in the active realm (default or X-Realm). If a realm override is provided, it is validated with CredentialUserIdPassword.realmRegEx.
+- Roles stored in a user record are realm-specific; JWT roles are whatever the IdP asserts for the token.</p>
+</div>
+<div class="paragraph">
+<p>Operating models:
+- Quantum-managed roles:
+  - IdP authenticates the user (subject, username). Authorization is primarily driven by roles stored in CredentialUserIdPassword.roles.
+  - Use when you want central, auditable role assignment within Quantum, independent of IdP groups.
+- IdP-managed roles:
+  - IdP carries authoritative roles/groups in the JWT. Keep CredentialUserIdPassword.roles minimal or empty.
+  - Use when enterprises require IdP as the source of truth for access groups.
+- Hybrid (recommended in many deployments):
+  - Effective roles = JWT roles ∪ CredentialUserIdPassword.roles.
+  - Use JWT for enterprise groups (e.g., DEPT_SALES, ORG_ADMIN) and Quantum roles for app-specific grants (e.g., REPORT_EXPORTER, BETA).
+  - This avoids IdP churn for application-local concerns while respecting org policies.</p>
+</div>
+<div class="paragraph">
+<p>Examples:
+- JWT-only:
+  - JWT.groups = [USER, REPORTER]; user record roles = []
+  - Effective roles = [USER, REPORTER]
+- Quantum-only:
+  - JWT.groups = []; user record roles = [USER, ADMIN]
+  - Effective roles = [USER, ADMIN]
+- Hybrid union:
+  - JWT.groups = [USER]; user record roles = [BETA, REPORT_EXPORTER]
+  - Effective roles = [USER, BETA, REPORT_EXPORTER]</p>
+</div>
+<div class="paragraph">
+<p>Guidance and best practices:
+- Keep role names stable and environment-agnostic; use realms/permissions to scope where needed.
+- Avoid overloading roles for feature rollout; use Feature Flags for rollout and variants, and roles for durable authorization.
+- When IdP is authoritative, ensure consistent claim mapping so SecurityIdentity.getRoles() contains the expected values; commonly via 'groups' claim in JWT.
+- Use grant-based permission rules and require the minimal set of roles (rolesAny/rolesAll) needed for each capability.</p>
+</div>
+<div class="paragraph">
+<p>Cross-references:
+- User model: com.e2eq.framework.model.security.CredentialUserIdPassword.roles
+- Context: com.e2eq.framework.model.securityrules.PrincipalContext.getRoles()
+- Filter logic: com.e2eq.framework.rest.filters.SecurityFilter.determinePrincipalContext</p>
+</div>
 </div>
 </div>
 </div>
@@ -1859,7 +1925,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-09-13 09:20:40 -0400
+Last updated 2025-09-13 09:32:58 -0400
 </div>
 </div>
 </body>
