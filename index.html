@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Framework Documentation</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-09-14T13:42:21Z</span>
+<span id="revdate">2025-09-14T13:54:45Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -3268,44 +3268,84 @@ Summary:
 <div class="paragraph">
 <p>Quantum evaluates "can this identity do X?" through three complementary layers. Understanding them in order helps you pick the right tool for the job and combine them safely:</p>
 </div>
-<div class="paragraph">
-<p>1) REST API annotations (top layer, code-level)
-- What: JAX-RS/Jakarta Security annotations on resource methods, e.g., @RolesAllowed("ADMIN"), @PermitAll, @DenyAll, @Authenticated.
-- Purpose: Coarse-grained, immediate gates right at the endpoint. Ideal for baseline protections (e.g., only ADMIN may call /admin/**) and for non-dynamic constraints that rarely change.
-- Pros: Simple, fast, visible in code reviews.
-- Cons: Hard-coded; changing access requires a code change, build, and deploy. No data-aware scoping (e.g., cannot express tenant/domain filters).</p>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>REST API annotations (top layer, code-level)</p>
+<div class="ulist">
+<ul>
+<li>
+<p>What: JAX-RS/Jakarta Security annotations on resource methods, for example, <code>@RolesAllowed("ADMIN")</code>, <code>@PermitAll</code>, <code>@DenyAll</code>, <code>@Authenticated</code>.</p>
+</li>
+<li>
+<p>Purpose: Coarse-grained, immediate gates right at the endpoint. Ideal for baseline protections (for example, only ADMIN may call <code>/admin/**</code>) and for non-dynamic constraints that rarely change.</p>
+</li>
+<li>
+<p>Pros: Simple, fast, visible in code reviews.</p>
+</li>
+<li>
+<p>Cons: Hard-coded; changing access requires a code change, build, and deploy. No data-aware scoping (for example, cannot express tenant/domain filters).</p>
+</li>
+</ul>
 </div>
-<div class="paragraph">
-<p>2) Feature flags (exposure and variants)
-- What: Turn capabilities on/off per environment or cohort and select variants (A/B, multivariate). See "Feature Flags, Variants, and Target Rules" below.
-- Purpose: Control who even sees or can reach a capability during rollout (by tenant, role, geography, plan), independently of authorization. Flags answer "is the feature ON and which variant?"; they do not by themselves prove the caller is authorized.
-- Pros: Reversible, environment-aware, safe rollout and experimentation.
-- Cons: Not a substitute for authorization; must be paired with roles/permission rules for enforcement.</p>
+</li>
+<li>
+<p>Feature flags (exposure and variants)</p>
+<div class="ulist">
+<ul>
+<li>
+<p>What: Turn capabilities on/off per environment or cohort and select variants (A/B, multivariate). See "Feature Flags, Variants, and Target Rules" below.</p>
+</li>
+<li>
+<p>Purpose: Control who even sees or can reach a capability during rollout (by tenant, role, geography, plan), independently of authorization. Flags answer "is the feature ON and which variant?"; they do not by themselves prove the caller is authorized.</p>
+</li>
+<li>
+<p>Pros: Reversible, environment-aware, safe rollout and experimentation.</p>
+</li>
+<li>
+<p>Cons: Not a substitute for authorization; must be paired with roles/permission rules for enforcement.</p>
+</li>
+</ul>
 </div>
-<div class="paragraph">
-<p>3) Permission Rules with DataDomain filtering (fine-grained, dynamic)
-- What: Declarative rule bases that match URL, method, SecurityURLHeaders, and SecurityURLBody, and decide ALLOW/DENY. ALLOWs can contribute DataDomain constraints applied by repositories. See sections "Key Concepts", "Matching Algorithm", and examples below.
-- Purpose: Express least-privilege, data-aware policies that evolve without code changes (data-driven authoring).
-- Pros: Dynamic, auditable, supports role checks plus attribute predicates and domain scoping.
-- Cons: Requires governance of rulebases and careful priority management.</p>
+</li>
+<li>
+<p>Permission Rules with DataDomain filtering (fine-grained, dynamic)</p>
+<div class="ulist">
+<ul>
+<li>
+<p>What: Declarative rule bases that match URL, method, SecurityURLHeaders, and SecurityURLBody, and decide ALLOW/DENY. ALLOWs can contribute DataDomain constraints applied by repositories. See sections "Key Concepts", "Matching Algorithm", and examples below.</p>
+</li>
+<li>
+<p>Purpose: Express least-privilege, data-aware policies that evolve without code changes (data-driven authoring).</p>
+</li>
+<li>
+<p>Pros: Dynamic, auditable, supports role checks plus attribute predicates and domain scoping.</p>
+</li>
+<li>
+<p>Cons: Requires governance of rulebases and careful priority management.</p>
+</li>
+</ul>
+</div>
+</li>
+</ol>
 </div>
 <div class="paragraph">
 <p>How roles, Functional Areas, and Functional Domains fit in
-- Roles: Used by both layers (1) and (3). Annotations directly reference roles; rules can require rolesAny/rolesAll. Effective roles are resolved by merging IdP roles with roles on the user record; see "How roles are defined for an identity" below.
-- Functional Area/Domain: Provide the vocabulary for rules and headers. Services set x-functional-area and x-functional-domain (or models expose bmFunctionalArea()/bmFunctionalDomain()); rules can match on these to target policies to business capabilities rather than raw URLs.
-- DataDomain: When rules ALLOW an action, they can attach data-scope filters (tenant/org/owner) so downstream reads/writes are constrained to the caller’s domain.</p>
+* Roles: Used by both layers (1) and (3). Annotations directly reference roles; rules can require rolesAny/rolesAll. Effective roles are resolved by merging IdP roles with roles on the user record; see "How roles are defined for an identity" below.
+* Functional Area/Domain: Provide the vocabulary for rules and headers. Services set <code>x-functional-area</code> and <code>x-functional-domain</code> (or models expose <code>bmFunctionalArea()</code>/<code>bmFunctionalDomain()</code>); rules can match on these to target policies to business capabilities rather than raw URLs.
+* DataDomain: When rules ALLOW an action, they can attach data-scope filters (tenant/org/owner) so downstream reads/writes are constrained to the caller’s domain.</p>
 </div>
 <div class="paragraph">
 <p>Choosing the right approach
-- Use annotations for stable, coarse gates you want visible in code (e.g., admin-only endpoints, health endpoints with @PermitAll).
-- Use feature flags to manage rollout/exposure and variants across environments and cohorts.
-- Use permission rules to encode fine-grained, data-aware authorization and to evolve policy without redeploying.</p>
+* Use annotations for stable, coarse gates you want visible in code (for example, admin-only endpoints, health endpoints with <code>@PermitAll</code>).
+* Use feature flags to manage rollout/exposure and variants across environments and cohorts.
+* Use permission rules to encode fine-grained, data-aware authorization and to evolve policy without redeploying.</p>
 </div>
 <div class="paragraph">
 <p>Compare and contrast
-- Annotation-based controls are compile-time and hard-code policy into the service; changing them requires code changes.
-- Permission Rules and the Rule Language are data-driven and user-changeable (with proper governance), enabling rapid, auditable policy changes and DataDomain scoping.
-- In practice: apply annotations as the first gate, evaluate feature flags to determine exposure/variant, then evaluate permission rules to decide ALLOW/DENY and attach scopes. This layered approach yields both safety and agility.</p>
+* Annotation-based controls are compile-time and hard-code policy into the service; changing them requires code changes.
+* Permission Rules and the Rule Language are data-driven and user-changeable (with proper governance), enabling rapid, auditable policy changes and DataDomain scoping.
+* In practice: apply annotations as the first gate, evaluate feature flags to determine exposure/variant, then evaluate permission rules to decide ALLOW/DENY and attach scopes. This layered approach yields both safety and agility.</p>
 </div>
 </div>
 </div>
@@ -3788,38 +3828,112 @@ Summary:
 <div class="sect1">
 <h2 id="_example_scenarios">45. Example Scenarios</h2>
 <div class="sectionbody">
-<div class="paragraph">
-<p>1) Public catalog browsing
-   - Request: GET /api/catalog/products?search=widgets
-   - Headers: x-functional-area=Catalog
-   - Identity: anonymous or role USER
-   - Rules:
-     - allow-public-reads (priority 100) ALLOW + readScope orgRefName=PUBLIC
-   - Outcome: ALLOW; repository applies DataDomain filter orgRefName=PUBLIC</p>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Public catalog browsing</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Request: GET /api/catalog/products?search=widgets</p>
+</li>
+<li>
+<p>Headers: x-functional-area=Catalog</p>
+</li>
+<li>
+<p>Identity: anonymous or role USER</p>
+</li>
+<li>
+<p>Rules:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>allow-public-reads (priority 100) ALLOW + readScope orgRefName=PUBLIC</p>
+</li>
+</ul>
 </div>
-<div class="paragraph">
-<p>2) Tenant-scoped shipment update
-   - Request: PUT /api/shipments/ABC123
-   - Headers: x-functional-area=Collaboration, x-tenant-id=T1
-   - Body: { dataDomain: { tenantId: "T1" }, &#8230;&#8203; }
-   - Identity: user in tenant T1 with roles [USER]
-   - Rules:
-     - allow-collab-update (priority 300) requires body.dataDomain.tenantId == identity.tenantId and rolesAny USER, ADMIN &#8658; ALLOW
-   - Outcome: ALLOW; Rule contributes writeScope tenantId=T1</p>
+</li>
+<li>
+<p>Outcome: ALLOW; repository applies DataDomain filter orgRefName=PUBLIC</p>
+</li>
+</ul>
 </div>
-<div class="paragraph">
-<p>3) Cross-tenant admin read with higher priority
-   - Request: GET /api/partners
-   - Identity: role ADMIN (super-admin)
-   - Rules:
-     - admin-override (priority 50) ALLOW
-     - default-tenant-read (priority 600) ALLOW with tenant filter
-   - Outcome: admin-override wins due to higher precedence (lower number), allowing broader read</p>
+</li>
+<li>
+<p>Tenant-scoped shipment update</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Request: PUT /api/shipments/ABC123</p>
+</li>
+<li>
+<p>Headers: x-functional-area=Collaboration, x-tenant-id=T1</p>
+</li>
+<li>
+<p>Body: { dataDomain: { tenantId: "T1" }, &#8230;&#8203; }</p>
+</li>
+<li>
+<p>Identity: user in tenant T1 with roles [USER]</p>
+</li>
+<li>
+<p>Rules:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>allow-collab-update (priority 300) requires body.dataDomain.tenantId == identity.tenantId and rolesAny USER, ADMIN &#8658; ALLOW</p>
+</li>
+</ul>
 </div>
-<div class="paragraph">
-<p>4) Conflicting ALLOW and DENY at same priority
-   - Two rules match with priority 200: one ALLOW, one DENY
-   - Resolution: DENY wins unless merge strategy configured to handle explicitly; recommended to avoid same-priority conflicts by policy.</p>
+</li>
+<li>
+<p>Outcome: ALLOW; Rule contributes writeScope tenantId=T1</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Cross-tenant admin read with higher priority</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Request: GET /api/partners</p>
+</li>
+<li>
+<p>Identity: role ADMIN (super-admin)</p>
+</li>
+<li>
+<p>Rules:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>admin-override (priority 50) ALLOW</p>
+</li>
+<li>
+<p>default-tenant-read (priority 600) ALLOW with tenant filter</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Outcome: admin-override wins due to higher precedence (lower number), allowing broader read</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Conflicting ALLOW and DENY at same priority</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Two rules match with priority 200: one ALLOW, one DENY</p>
+</li>
+<li>
+<p>Resolution: DENY wins unless merge strategy configured to handle explicitly; recommended to avoid same-priority conflicts by policy.</p>
+</li>
+</ul>
+</div>
+</li>
+</ol>
 </div>
 </div>
 </div>
@@ -3860,13 +3974,13 @@ Summary:
 </div>
 <div class="paragraph">
 <p>How the server computes them:
-1) Start with a default action template for the entity type (DefaultUIActions).
-2) Apply simple state-based adjustments (e.g., suppress CREATE on already-persisted instances).
-3) Evaluate the permission rules with the current identity and context:
-   - Consider roles, functional area/domain, action intent, headers/body, and any rule-contributed scopes.
-   - Resolve DataDomain constraints to ensure the identity is permitted to act within the entity’s domain.
-4) Produce UIActions as the allowed subset for that entity instance.
-5) Return both lists with each entity in collection responses.</p>
+. Start with a default action template for the entity type (DefaultUIActions).
+. Apply simple state-based adjustments (for example, suppress CREATE on already-persisted instances).
+. Evaluate the permission rules with the current identity and context:
+* Consider roles, functional area/domain, action intent, headers/body, and any rule-contributed scopes.
+* Resolve DataDomain constraints to ensure the identity is permitted to act within the entity’s domain.
+. Produce UIActions as the allowed subset for that entity instance.
+. Return both lists with each entity in collection responses.</p>
 </div>
 <div class="paragraph">
 <p>How the client should use the two lists:
@@ -4175,9 +4289,17 @@ Summary:
 <p>On startup, migrations (see InitializeDatabase and AddAnonymousSecurityRules) typically seed default policies and/or programmatically add rules to RuleContext.</p>
 </li>
 <li>
-<p>When you modify policies via REST, you have two options to apply them at runtime:
-1) Implement a reload step that reads policies from PolicyRepo and rehydrates RuleContext (e.g., RuleContext.clear(); then add rules built from current policies).
-2) Restart the service or trigger whatever policy-loader your application uses at boot.</p>
+<p>When you modify policies via REST, you have two options to apply them at runtime:</p>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Implement a reload step that reads policies from PolicyRepo and rehydrates RuleContext (for example, RuleContext.clear(); then add rules built from current policies).</p>
+</li>
+<li>
+<p>Restart the service or trigger whatever policy-loader your application uses at boot.</p>
+</li>
+</ol>
+</div>
 </li>
 <li>
 <p>Tip: If you maintain a background watcher or admin endpoint to refresh policies, keep it tenant/realm-aware and idempotent.</p>
