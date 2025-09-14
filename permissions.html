@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Permissions: Rule Bases, SecurityURLHeaders, and SecurityURLBody</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-09-14T13:54:45Z</span>
+<span id="revdate">2025-09-14T14:37:09Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -664,22 +664,52 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </ol>
 </div>
 <div class="paragraph">
-<p>How roles, Functional Areas, and Functional Domains fit in
-* Roles: Used by both layers (1) and (3). Annotations directly reference roles; rules can require rolesAny/rolesAll. Effective roles are resolved by merging IdP roles with roles on the user record; see "How roles are defined for an identity" below.
-* Functional Area/Domain: Provide the vocabulary for rules and headers. Services set <code>x-functional-area</code> and <code>x-functional-domain</code> (or models expose <code>bmFunctionalArea()</code>/<code>bmFunctionalDomain()</code>); rules can match on these to target policies to business capabilities rather than raw URLs.
-* DataDomain: When rules ALLOW an action, they can attach data-scope filters (tenant/org/owner) so downstream reads/writes are constrained to the caller’s domain.</p>
+<p>How roles, Functional Areas, and Functional Domains fit in</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Roles: Used by both layers (1) and (3). Annotations directly reference roles; rules can require rolesAny/rolesAll. Effective roles are resolved by merging IdP roles with roles on the user record; see "How roles are defined for an identity" below.</p>
+</li>
+<li>
+<p>Functional Area/Domain: Derived from the URL convention <code>/{area}/{functionalDomain}/{action}</code> as parsed by <code>SecurityFilter.determineResourceContext</code>. Author policies using these fields to target business capabilities rather than raw URLs or ad‑hoc headers.</p>
+</li>
+<li>
+<p>DataDomain: When rules ALLOW an action, they can attach data-scope filters (tenant/org/owner) so downstream reads/writes are constrained to the caller’s domain.</p>
+</li>
+</ul>
 </div>
 <div class="paragraph">
-<p>Choosing the right approach
-* Use annotations for stable, coarse gates you want visible in code (for example, admin-only endpoints, health endpoints with <code>@PermitAll</code>).
-* Use feature flags to manage rollout/exposure and variants across environments and cohorts.
-* Use permission rules to encode fine-grained, data-aware authorization and to evolve policy without redeploying.</p>
+<p>Choosing the right approach</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Use annotations for stable, coarse gates you want visible in code (for example, admin-only endpoints, health endpoints with <code>@PermitAll</code>).</p>
+</li>
+<li>
+<p>Use feature flags to manage rollout/exposure and variants across environments and cohorts.</p>
+</li>
+<li>
+<p>Use permission rules to encode fine-grained, data-aware authorization and to evolve policy without redeploying.</p>
+</li>
+</ul>
 </div>
 <div class="paragraph">
-<p>Compare and contrast
-* Annotation-based controls are compile-time and hard-code policy into the service; changing them requires code changes.
-* Permission Rules and the Rule Language are data-driven and user-changeable (with proper governance), enabling rapid, auditable policy changes and DataDomain scoping.
-* In practice: apply annotations as the first gate, evaluate feature flags to determine exposure/variant, then evaluate permission rules to decide ALLOW/DENY and attach scopes. This layered approach yields both safety and agility.</p>
+<p>Compare and contrast</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Annotation-based controls are compile-time and hard-code policy into the service; changing them requires code changes.</p>
+</li>
+<li>
+<p>Permission Rules and the Rule Language are data-driven and user-changeable (with proper governance), enabling rapid, auditable policy changes and DataDomain scoping.</p>
+</li>
+<li>
+<p>In practice: apply annotations as the first gate, evaluate feature flags to determine exposure/variant, then evaluate permission rules to decide ALLOW/DENY and attach scopes. This layered approach yields both safety and agility.</p>
+</li>
+</ul>
 </div>
 </div>
 </div>
@@ -710,7 +740,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <p>HTTP method and URL pattern</p>
 </li>
 <li>
-<p>SecurityURLHeaders: predicates over selected HTTP headers (e.g., x-functional-area, x-functional-domain, x-tenant-id)</p>
+<p>SecurityURLHeaders: predicates over selected HTTP headers (for example, <code>X-Tenant-Id</code>). Note: functional area/domain/action are derived from the URL, not headers.</p>
 </li>
 <li>
 <p>SecurityURLBody: predicates over request body fields (JSON paths) or query parameters</p>
@@ -740,9 +770,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
   <span class="key">priority</span>: <span class="string"><span class="content">100</span></span>
   <span class="key">match</span>:
     <span class="key">method</span>: <span class="string"><span class="content">[GET]</span></span>
-    <span class="key">url</span>: <span class="string"><span class="content">/api/catalog/**</span></span>
-    <span class="key">headers</span>:
-      <span class="key">x-functional-area</span>: <span class="string"><span class="content">[Catalog]</span></span>
+    <span class="key">url</span>: <span class="string"><span class="content">/Catalog/**</span></span>
     <span class="key">rolesAny</span>: <span class="string"><span class="content">[USER, ADMIN]</span></span>
   <span class="key">effect</span>: <span class="string"><span class="content">ALLOW</span></span>
   <span class="key">filters</span>:
@@ -766,7 +794,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div class="ulist">
 <ul>
 <li>
-<p>headers under match are the SecurityURLHeaders predicates.</p>
+<p>headers under match are the SecurityURLHeaders predicates. Functional area/domain/action are parsed from the URL convention <code>/{area}/{functionalDomain}/{action}</code> (see <code>SecurityFilter.determineResourceContext</code>).</p>
 </li>
 <li>
 <p>Body predicates (SecurityURLBody) can be expressed similarly as JSONPath-like constraints:</p>
@@ -906,10 +934,20 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <p>Deny-based rule sets start with a default decision of ALLOW and then add DENY scenarios to carve away disallowed cases. In this model, new functionality is exposed by default unless a DENY is added. While convenient during rapid prototyping, this posture risks accidental exposure as the surface area grows.</p>
 </div>
 <div class="paragraph">
-<p>Practical implications:
-- Change management: Grant-based requires adding ALLOWs when shipping new features; Deny-based requires remembering to add new DENYs.
-- Auditability: Grant-based policies make it easy to enumerate what is permitted; Deny-based requires proving the absence of permissive gaps.
-- Safety: In merge conflicts or partial deployments, Grant-based tends to fail closed (DENY), which is usually safer.</p>
+<p>Practical implications:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Change management: Grant-based requires adding ALLOWs when shipping new features; Deny-based requires remembering to add new DENYs.</p>
+</li>
+<li>
+<p>Auditability: Grant-based policies make it easy to enumerate what is permitted; Deny-based requires proving the absence of permissive gaps.</p>
+</li>
+<li>
+<p>Safety: In merge conflicts or partial deployments, Grant-based tends to fail closed (DENY), which is usually safer.</p>
+</li>
+</ul>
 </div>
 <div class="paragraph">
 <p>Example defaults:</p>
@@ -956,13 +994,29 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <p>Feature flags complement permission rules by controlling whether a capability is active for a given principal, cohort, or environment. Permissions answer “may this identity perform this action?”; feature flags answer “is this capability turned on, and which variant applies?” Use them together to achieve safe rollouts and fine‑grained authorization.</p>
 </div>
 <div class="paragraph">
-<p>Model reference: com.e2eq.framework.model.general.FeatureFlag with key fields:
-- enabled: master on/off
-- type: BOOLEAN or MULTIVARIATE
-- variants: list of variant keys for multivariate experiments
-- targetRules: cohort targeting rules
-- environment: e.g., dev, staging, prod
-- jsonConfiguration: arbitrary configuration for the feature (e.g., rollout %, UI copy, limits)</p>
+<p>Model reference: com.e2eq.framework.model.general.FeatureFlag with key fields:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>enabled: master on/off</p>
+</li>
+<li>
+<p>type: BOOLEAN or MULTIVARIATE</p>
+</li>
+<li>
+<p>variants: list of variant keys for multivariate experiments</p>
+</li>
+<li>
+<p>targetRules: cohort targeting rules</p>
+</li>
+<li>
+<p>environment: e.g., dev, staging, prod</p>
+</li>
+<li>
+<p>jsonConfiguration: arbitrary configuration for the feature (e.g., rollout %, UI copy, limits)</p>
+</li>
+</ul>
 </div>
 <div class="paragraph">
 <p>Example: Boolean flag for a new export API with environment‑specific targeting</p>
@@ -1004,16 +1058,36 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="paragraph">
-<p>Notes on TargetRules:
-- attribute: a property from identity/userProfile (e.g., userId, role, tenantId, location, plan).
-- operator: equals, in, contains, startsWith, regex, or domain‑specific operators like hashMod for percentage rollouts.
-- values: comparison values; semantics depend on operator.
-- variant: when type is MULTIVARIATE, selects which variant applies when the rule matches.</p>
+<p>Notes on TargetRules:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>attribute: a property from identity/userProfile (e.g., userId, role, tenantId, location, plan).</p>
+</li>
+<li>
+<p>operator: equals, in, contains, startsWith, regex, or domain‑specific operators like hashMod for percentage rollouts.</p>
+</li>
+<li>
+<p>values: comparison values; semantics depend on operator.</p>
+</li>
+<li>
+<p>variant: when type is MULTIVARIATE, selects which variant applies when the rule matches.</p>
+</li>
+</ul>
 </div>
 <div class="paragraph">
-<p>How feature flags complement Permission Rule Context:
-- The evaluation of a request can enrich the Rule Context (SecurityURLHeaders/Body or userProfile) with resolved feature flags and variants (e.g., userProfile.features["SEARCH_V2"] = "v2").
-- Permission rules can then require a feature to be present before ALLOWing an action:</p>
+<p>How feature flags complement Permission Rule Context:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>The evaluation of a request can enrich the Rule Context (SecurityURLHeaders/Body or userProfile) with resolved feature flags and variants (e.g., userProfile.features["SEARCH_V2"] = "v2").</p>
+</li>
+<li>
+<p>Permission rules can then require a feature to be present before ALLOWing an action:</p>
+</li>
+</ul>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -1021,9 +1095,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
   <span class="key">priority</span>: <span class="string"><span class="content">300</span></span>
   <span class="key">match</span>:
     <span class="key">method</span>: <span class="string"><span class="content">[GET]</span></span>
-    <span class="key">url</span>: <span class="string"><span class="content">/api/export/**</span></span>
-    <span class="key">headers</span>:
-      <span class="key">x-functional-area</span>: <span class="string"><span class="content">[Reports]</span></span>
+    <span class="key">url</span>: <span class="string"><span class="content">/Reports/Export/**</span></span>
     <span class="comment"># Example predicate that assumes features are surfaced in userProfile</span>
     <span class="key">userProfile.features.EXPORT_API</span>: <span class="string"><span class="content">[true]</span></span>
   <span class="key">rolesAny</span>: <span class="string"><span class="content">[ADMIN, REPORTER]</span></span>
@@ -1034,24 +1106,71 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <p>Alternatively, systems may surface feature decisions via headers (e.g., X-Feature-SEARCH_V2: v2) so that SecurityURLHeaders can match directly.</p>
 </div>
 <div class="paragraph">
-<p>Business usage examples for TargetRules and their correlation to Permission Rules:
-- Progressive rollout by tenant: TargetRule tenantId in [T100, T200] → Permission adds ALLOW for endpoints guarded by that flag so only those tenants can call them during rollout.
-- Role‑based beta access: TargetRule role equals BETA → Permission requires both the BETA feature flag and standard role checks (e.g., USER/ADMIN) to ALLOW sensitive actions.
-- Plan/entitlement tiers: TargetRule plan in [Pro, Enterprise] → Permission rules enforce additional data‑domain constraints (e.g., export size limits) while the flag simply turns the feature on for eligible plans.</p>
+<p>Business usage examples for TargetRules and their correlation to Permission Rules:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Progressive rollout by tenant TargetRule tenantId in [T100, T200] → Permission adds ALLOW for endpoints guarded by that flag so only those tenants can call them during rollout.</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Role‑based beta access: TargetRule role equals BETA → Permission requires both the BETA feature flag and standard role checks (e.g., USER/ADMIN) to ALLOW sensitive actions.</p>
+</li>
+<li>
+<p>Plan/entitlement tiers: TargetRule plan in [Pro, Enterprise] → Permission rules enforce additional data‑domain constraints (e.g., export size limits) while the flag simply turns the feature on for eligible plans.</p>
+</li>
+</ul>
+</div>
+</li>
+</ul>
 </div>
 <div class="paragraph">
-<p>Guidance: Feature Flags vs Permission Rules
-- Put into Feature Flags:
-  - Gradual, reversible rollouts; A/B or multivariate experiments; UI/behavior switches.
-  - Environment gates (dev/staging/prod) and cohort targeting (tenants, beta users, geography).
-  - Non‑security configuration values in jsonConfiguration (limits, thresholds, copy) that do not change who is authorized.
-- Put into Permission Rules:
-  - Durable authorization logic: roles, identities, functional area/domain/action, and DataDomain constraints.
-  - Compliance and least‑privilege decisions where fail‑closed behavior is required.
-  - Enforcement that remains valid after a feature is fully launched (even when the flag is removed).</p>
+<p>Guidance: Feature Flags vs Permission Rules</p>
 </div>
-<div class="paragraph">
-<p>Recommendation: Use a grant‑based permission posture (default DENY) and let feature flags decide which cohorts even see or can reach new capabilities. Then author explicit ALLOW rules for those capabilities, conditioned on both role and feature presence.</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Put into Feature Flags:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Gradual, reversible rollouts; A/B or multivariate experiments; UI/behavior switches.</p>
+</li>
+<li>
+<p>Environment gates (dev/staging/prod) and cohort targeting (tenants, beta users, geography).</p>
+</li>
+<li>
+<p>Non‑security configuration values in jsonConfiguration (limits, thresholds, copy) that do not change who is authorized.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Put into Permission Rules:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Durable authorization logic: roles, identities, functional area/domain/action, and DataDomain constraints.</p>
+</li>
+<li>
+<p>Compliance and least‑privilege decisions where fail‑closed behavior is required.</p>
+</li>
+<li>
+<p>Enforcement that remains valid after a feature is fully launched (even when the flag is removed).</p>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">Recommendation</dt>
+<dd>
+<p>Use a grant‑based permission posture (default DENY) and let feature flags decide which cohorts even see or can reach new capabilities. Then author explicit ALLOW rules for those capabilities, conditioned on both role and feature presence.</p>
+</dd>
+</dl>
+</div>
+</li>
+</ul>
+</div>
+</li>
+</ul>
 </div>
 </div>
 </div>
@@ -1098,63 +1217,189 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div class="sect2">
 <h3 id="_how_roles_are_defined_for_an_identity_role_sources_and_resolution">9.1. How roles are defined for an identity (role sources and resolution)</h3>
 <div class="paragraph">
-<p>Quantum composes the effective roles for a request by merging:
-- Roles from the identity provider (JWT/SecurityIdentity)
-- Roles configured on the user record (CredentialUserIdPassword.roles)</p>
+<p>Quantum composes the effective roles for a request by merging:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Roles from the identity provider (JWT/<code>SecurityIdentity</code>)</p>
+</li>
+<li>
+<p>Roles configured on the user record (<code>CredentialUserIdPassword.roles</code>)</p>
+</li>
+</ul>
 </div>
 <div class="paragraph">
-<p>Source details:
-- Identity Provider (JWT): roles commonly arrive via standard claims (e.g., groups, roles, or provider-specific fields). Quarkus maps these into SecurityIdentity.getRoles(). In multi-realm setups, the realm in X-Realm can scope lookups but does not alter what the JWT asserts.
-- Quantum user record: com.e2eq.framework.model.security.CredentialUserIdPassword has a String[] roles field stored per realm. This can be administered by Quantum to grant platform- or tenant-level roles.</p>
+<p>Source details:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Identity Provider (JWT): roles commonly arrive via standard claims (for example, <code>groups</code>, <code>roles</code>, or provider-specific fields). Quarkus maps these into <code>SecurityIdentity.getRoles()</code>. In multi-realm setups, the realm in <code>X-Realm</code> can scope lookups but does not alter what the JWT asserts.</p>
+</li>
+<li>
+<p>Quantum user record: <code>com.e2eq.framework.model.security.CredentialUserIdPassword</code> has a <code>String[] roles</code> field stored per realm. This can be administered by Quantum to grant platform- or tenant-level roles.</p>
+</li>
+</ul>
 </div>
 <div class="paragraph">
-<p>Merge semantics (current implementation):
-- Union: the effective role set is the union of JWT roles and CredentialUserIdPassword.roles. If either source is empty, the other source defines the set.
-- Fallback: when neither source yields roles, the framework defaults to [ANONYMOUS].
-- Where implemented: SecurityFilter.determinePrincipalContext builds PrincipalContext with the merged roles.</p>
+<p>Merge semantics (current implementation):</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Union: the effective role set is the union of JWT roles and <code>CredentialUserIdPassword.roles</code>. If either source is empty, the other source defines the set.</p>
+</li>
+<li>
+<p>Fallback: when neither source yields roles, the framework defaults to <code>ANONYMOUS</code>.</p>
+</li>
+<li>
+<p>Where implemented: <code>SecurityFilter.determinePrincipalContext</code> builds <code>PrincipalContext</code> with the merged roles.</p>
+</li>
+</ul>
 </div>
 <div class="paragraph">
-<p>Realm considerations:
-- The user record is looked up by subject or userId in the active realm (default or X-Realm). If a realm override is provided, it is validated with CredentialUserIdPassword.realmRegEx.
-- Roles stored in a user record are realm-specific; JWT roles are whatever the IdP asserts for the token.</p>
+<p>Realm considerations:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>The user record is looked up by subject or userId in the active realm (default or <code>X-Realm</code>). If a realm override is provided, it is validated with <code>CredentialUserIdPassword.realmRegEx</code>.</p>
+</li>
+<li>
+<p>Roles stored in a user record are realm-specific; JWT roles are whatever the IdP asserts for the token.</p>
+</li>
+</ul>
 </div>
 <div class="paragraph">
-<p>Operating models:
-- Quantum-managed roles:
-  - IdP authenticates the user (subject, username). Authorization is primarily driven by roles stored in CredentialUserIdPassword.roles.
-  - Use when you want central, auditable role assignment within Quantum, independent of IdP groups.
-- IdP-managed roles:
-  - IdP carries authoritative roles/groups in the JWT. Keep CredentialUserIdPassword.roles minimal or empty.
-  - Use when enterprises require IdP as the source of truth for access groups.
-- Hybrid (recommended in many deployments):
-  - Effective roles = JWT roles ∪ CredentialUserIdPassword.roles.
-  - Use JWT for enterprise groups (e.g., DEPT_SALES, ORG_ADMIN) and Quantum roles for app-specific grants (e.g., REPORT_EXPORTER, BETA).
-  - This avoids IdP churn for application-local concerns while respecting org policies.</p>
+<p>Operating models:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Quantum-managed roles:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>IdP authenticates the user (subject, username). Authorization is primarily driven by roles stored in <code>CredentialUserIdPassword.roles</code>.</p>
+</li>
+<li>
+<p>Use when you want central, auditable role assignment within Quantum, independent of IdP groups.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>IdP-managed roles:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>IdP carries authoritative roles/groups in the JWT. Keep <code>CredentialUserIdPassword.roles</code> minimal or empty.</p>
+</li>
+<li>
+<p>Use when enterprises require IdP as the source of truth for access groups.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Hybrid (recommended in many deployments):</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Effective roles = JWT roles ∪ <code>CredentialUserIdPassword.roles</code>.</p>
+</li>
+<li>
+<p>Use JWT for enterprise groups (for example, <code>DEPT_SALES</code>, <code>ORG_ADMIN</code>) and Quantum roles for app-specific grants (for example, <code>REPORT_EXPORTER</code>, <code>BETA</code>).</p>
+</li>
+<li>
+<p>This avoids IdP churn for application-local concerns while respecting org policies.</p>
+</li>
+</ul>
+</div>
+</li>
+</ul>
 </div>
 <div class="paragraph">
-<p>Examples:
-- JWT-only:
-  - JWT.groups = [USER, REPORTER]; user record roles = []
-  - Effective roles = [USER, REPORTER]
-- Quantum-only:
-  - JWT.groups = []; user record roles = [USER, ADMIN]
-  - Effective roles = [USER, ADMIN]
-- Hybrid union:
-  - JWT.groups = [USER]; user record roles = [BETA, REPORT_EXPORTER]
-  - Effective roles = [USER, BETA, REPORT_EXPORTER]</p>
+<p>Examples:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>JWT-only:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>JWT.groups = [USER, REPORTER]; user record roles = []</p>
+</li>
+<li>
+<p>Effective roles = [USER, REPORTER]</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Quantum-only:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>JWT.groups = []; user record roles = [USER, ADMIN]</p>
+</li>
+<li>
+<p>Effective roles = [USER, ADMIN]</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Hybrid union:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>JWT.groups = [USER]; user record roles = [BETA, REPORT_EXPORTER]</p>
+</li>
+<li>
+<p>Effective roles = [USER, BETA, REPORT_EXPORTER]</p>
+</li>
+</ul>
+</div>
+</li>
+</ul>
 </div>
 <div class="paragraph">
-<p>Guidance and best practices:
-- Keep role names stable and environment-agnostic; use realms/permissions to scope where needed.
-- Avoid overloading roles for feature rollout; use Feature Flags for rollout and variants, and roles for durable authorization.
-- When IdP is authoritative, ensure consistent claim mapping so SecurityIdentity.getRoles() contains the expected values; commonly via 'groups' claim in JWT.
-- Use grant-based permission rules and require the minimal set of roles (rolesAny/rolesAll) needed for each capability.</p>
+<p>Guidance and best practices:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Keep role names stable and environment-agnostic; use realms/permissions to scope where needed.</p>
+</li>
+<li>
+<p>Avoid overloading roles for feature rollout; use Feature Flags for rollout and variants, and roles for durable authorization.</p>
+</li>
+<li>
+<p>When IdP is authoritative, ensure consistent claim mapping so <code>SecurityIdentity.getRoles()</code> contains the expected values; commonly via <code>groups</code> claim in JWT.</p>
+</li>
+<li>
+<p>Use grant-based permission rules and require the minimal set of roles (<code>rolesAny</code>/<code>rolesAll</code>) needed for each capability.</p>
+</li>
+</ul>
 </div>
 <div class="paragraph">
-<p>Cross-references:
-- User model: com.e2eq.framework.model.security.CredentialUserIdPassword.roles
-- Context: com.e2eq.framework.model.securityrules.PrincipalContext.getRoles()
-- Filter logic: com.e2eq.framework.rest.filters.SecurityFilter.determinePrincipalContext</p>
+<p>Cross-references:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>User model: <code>com.e2eq.framework.model.security.CredentialUserIdPassword.roles</code></p>
+</li>
+<li>
+<p>Context: <code>com.e2eq.framework.model.securityrules.PrincipalContext.getRoles()</code></p>
+</li>
+<li>
+<p>Filter logic: <code>com.e2eq.framework.rest.filters.SecurityFilter.determinePrincipalContext</code></p>
+</li>
+</ul>
 </div>
 </div>
 </div>
@@ -1169,10 +1414,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div class="ulist">
 <ul>
 <li>
-<p>Request: GET /api/catalog/products?search=widgets</p>
-</li>
-<li>
-<p>Headers: x-functional-area=Catalog</p>
+<p>Request: GET /Catalog/Products/VIEW?search=widgets</p>
 </li>
 <li>
 <p>Identity: anonymous or role USER</p>
@@ -1198,10 +1440,10 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div class="ulist">
 <ul>
 <li>
-<p>Request: PUT /api/shipments/ABC123</p>
+<p>Request: PUT /Collaboration/Shipments/UPDATE</p>
 </li>
 <li>
-<p>Headers: x-functional-area=Collaboration, x-tenant-id=T1</p>
+<p>Headers: x-tenant-id=T1</p>
 </li>
 <li>
 <p>Body: { dataDomain: { tenantId: "T1" }, &#8230;&#8203; }</p>
@@ -1441,82 +1683,131 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <ul>
 <li>
 <p>GET /list</p>
-</li>
+<div class="ulist">
+<ul>
 <li>
 <p>Query params: skip, limit, filter, sort, projection</p>
 </li>
 <li>
 <p>Returns a Collection&lt;Policy&gt; with paging metadata; respects X-Realm.</p>
 </li>
+</ul>
+</div>
+</li>
 <li>
 <p>GET /id/{id} and GET /id?id=&#8230;&#8203;</p>
-</li>
+<div class="ulist">
+<ul>
 <li>
 <p>Fetch a single Policy by id.</p>
 </li>
+</ul>
+</div>
+</li>
 <li>
 <p>GET /refName/{refName} and GET /refName?refName=&#8230;&#8203;</p>
-</li>
+<div class="ulist">
+<ul>
 <li>
 <p>Fetch a single Policy by refName.</p>
 </li>
+</ul>
+</div>
+</li>
 <li>
 <p>GET /count?filter=&#8230;&#8203;</p>
-</li>
+<div class="ulist">
+<ul>
 <li>
 <p>Returns a CounterResponse with total matching entities.</p>
 </li>
+</ul>
+</div>
+</li>
 <li>
 <p>GET /schema</p>
-</li>
+<div class="ulist">
+<ul>
 <li>
 <p>Returns JSON Schema for Policy.</p>
 </li>
+</ul>
+</div>
+</li>
 <li>
 <p>POST /</p>
-</li>
+<div class="ulist">
+<ul>
 <li>
 <p>Create or upsert a Policy (if id is present and matches an existing entity in the selected realm, it is updated).</p>
 </li>
+</ul>
+</div>
+</li>
 <li>
 <p>PUT /set?id=&#8230;&#8203;&amp;pairs=field:value</p>
-</li>
+<div class="ulist">
+<ul>
 <li>
 <p>Targeted field updates by id. pairs is a repeated query parameter specifying field/value pairs.</p>
 </li>
+</ul>
+</div>
+</li>
 <li>
 <p>PUT /bulk/setByQuery?filter=&#8230;&#8203;&amp;pairs=&#8230;&#8203;</p>
-</li>
+<div class="ulist">
+<ul>
 <li>
 <p>Bulk updates by query. Note: ignoreRules=true is not supported on this endpoint.</p>
 </li>
+</ul>
+</div>
+</li>
 <li>
 <p>PUT /bulk/setByIds</p>
-</li>
+<div class="ulist">
+<ul>
 <li>
 <p>Bulk updates by list of ids posted in the request body.</p>
 </li>
+</ul>
+</div>
+</li>
 <li>
 <p>PUT /bulk/setByRefAndDomain</p>
-</li>
+<div class="ulist">
+<ul>
 <li>
 <p>Bulk updates by a list of (refName, dataDomain) pairs in the request body.</p>
 </li>
+</ul>
+</div>
+</li>
 <li>
 <p>DELETE /id/{id} (or /id?id=&#8230;&#8203;)</p>
-</li>
+<div class="ulist">
+<ul>
 <li>
 <p>Delete by id.</p>
 </li>
+</ul>
+</div>
+</li>
 <li>
 <p>DELETE /refName/{refName} (or /refName?refName=&#8230;&#8203;)</p>
-</li>
+<div class="ulist">
+<ul>
 <li>
 <p>Delete by refName.</p>
 </li>
+</ul>
+</div>
+</li>
 <li>
 <p>CSV import/export endpoints for bulk operations:</p>
-</li>
+<div class="ulist">
+<ul>
 <li>
 <p>GET /csv – export as CSV (field selection, encoding, etc.)</p>
 </li>
@@ -1535,23 +1826,46 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li>
 <p>GET /csv/session/{sessionId}/rows – page through analyzed rows</p>
 </li>
+</ul>
+</div>
+</li>
 <li>
 <p>Index management (admin only):</p>
-</li>
+<div class="ulist">
+<ul>
 <li>
 <p>POST /indexes/ensureIndexes/{realm}?collectionName=policy</p>
 </li>
 </ul>
 </div>
-<div class="paragraph">
-<p>Headers:
-- Authorization: Bearer &lt;token&gt;
-- X-Realm: realm identifier (optional but recommended in multi-tenant deployments)</p>
+</li>
+</ul>
 </div>
 <div class="paragraph">
-<p>Filtering and sorting:
-- filter uses the ANTLR-based DSL (see REST CRUD &gt; Query Language)
-- sort uses comma-separated fields with optional +/- prefix; projection accepts a comma-separated field list</p>
+<p>Headers:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Authorization: Bearer &lt;token&gt;</p>
+</li>
+<li>
+<p>X-Realm: realm identifier (optional but recommended in multi-tenant deployments)</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Filtering and sorting:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>filter uses the ANTLR-based DSL (see REST CRUD &gt; Query Language)</p>
+</li>
+<li>
+<p>sort uses comma-separated fields with optional +/- prefix; projection accepts a comma-separated field list</p>
+</li>
+</ul>
 </div>
 </div>
 <div class="sect2">
@@ -2095,7 +2409,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-09-14 09:53:46 -0400
+Last updated 2025-09-14 10:35:58 -0400
 </div>
 </div>
 </body>
