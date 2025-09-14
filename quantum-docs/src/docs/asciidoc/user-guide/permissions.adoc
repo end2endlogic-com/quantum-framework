@@ -9,54 +9,57 @@ Note: The terms SecurityURLHeaders and SecurityURLBody in this document describe
 
 Quantum evaluates "can this identity do X?" through three complementary layers. Understanding them in order helps you pick the right tool for the job and combine them safely:
 
-1) REST API annotations (top layer, code-level)
-- What: JAX-RS/Jakarta Security annotations on resource methods, e.g., @RolesAllowed("ADMIN"), @PermitAll, @DenyAll, @Authenticated.
-- Purpose: Coarse-grained, immediate gates right at the endpoint. Ideal for baseline protections (e.g., only ADMIN may call /admin/**) and for non-dynamic constraints that rarely change.
-- Pros: Simple, fast, visible in code reviews.
-- Cons: Hard-coded; changing access requires a code change, build, and deploy. No data-aware scoping (e.g., cannot express tenant/domain filters).
+. REST API annotations (top layer, code-level)
+** What: JAX-RS/Jakarta Security annotations on resource methods, for example, `@RolesAllowed("ADMIN")`, `@PermitAll`, `@DenyAll`, `@Authenticated`.
+** Purpose: Coarse-grained, immediate gates right at the endpoint. Ideal for baseline protections (for example, only ADMIN may call `/admin/**`) and for non-dynamic constraints that rarely change.
+** Pros: Simple, fast, visible in code reviews.
+** Cons: Hard-coded; changing access requires a code change, build, and deploy. No data-aware scoping (for example, cannot express tenant/domain filters).
 
-2) Feature flags (exposure and variants)
-- What: Turn capabilities on/off per environment or cohort and select variants (A/B, multivariate). See "Feature Flags, Variants, and Target Rules" below.
-- Purpose: Control who even sees or can reach a capability during rollout (by tenant, role, geography, plan), independently of authorization. Flags answer "is the feature ON and which variant?"; they do not by themselves prove the caller is authorized.
-- Pros: Reversible, environment-aware, safe rollout and experimentation.
-- Cons: Not a substitute for authorization; must be paired with roles/permission rules for enforcement.
+. Feature flags (exposure and variants)
+** What: Turn capabilities on/off per environment or cohort and select variants (A/B, multivariate). See "Feature Flags, Variants, and Target Rules" below.
+** Purpose: Control who even sees or can reach a capability during rollout (by tenant, role, geography, plan), independently of authorization. Flags answer "is the feature ON and which variant?"; they do not by themselves prove the caller is authorized.
+** Pros: Reversible, environment-aware, safe rollout and experimentation.
+** Cons: Not a substitute for authorization; must be paired with roles/permission rules for enforcement.
 
-3) Permission Rules with DataDomain filtering (fine-grained, dynamic)
-- What: Declarative rule bases that match URL, method, SecurityURLHeaders, and SecurityURLBody, and decide ALLOW/DENY. ALLOWs can contribute DataDomain constraints applied by repositories. See sections "Key Concepts", "Matching Algorithm", and examples below.
-- Purpose: Express least-privilege, data-aware policies that evolve without code changes (data-driven authoring).
-- Pros: Dynamic, auditable, supports role checks plus attribute predicates and domain scoping.
-- Cons: Requires governance of rulebases and careful priority management.
+. Permission Rules with DataDomain filtering (fine-grained, dynamic)
+** What: Declarative rule bases that match URL, method, SecurityURLHeaders, and SecurityURLBody, and decide ALLOW/DENY. ALLOWs can contribute DataDomain constraints applied by repositories. See sections "Key Concepts", "Matching Algorithm", and examples below.
+** Purpose: Express least-privilege, data-aware policies that evolve without code changes (data-driven authoring).
+** Pros: Dynamic, auditable, supports role checks plus attribute predicates and domain scoping.
+** Cons: Requires governance of rulebases and careful priority management.
 
 How roles, Functional Areas, and Functional Domains fit in
-- Roles: Used by both layers (1) and (3). Annotations directly reference roles; rules can require rolesAny/rolesAll. Effective roles are resolved by merging IdP roles with roles on the user record; see "How roles are defined for an identity" below.
-- Functional Area/Domain: Provide the vocabulary for rules and headers. Services set x-functional-area and x-functional-domain (or models expose bmFunctionalArea()/bmFunctionalDomain()); rules can match on these to target policies to business capabilities rather than raw URLs.
-- DataDomain: When rules ALLOW an action, they can attach data-scope filters (tenant/org/owner) so downstream reads/writes are constrained to the caller’s domain.
+
+* Roles: Used by both layers (1) and (3). Annotations directly reference roles; rules can require rolesAny/rolesAll. Effective roles are resolved by merging IdP roles with roles on the user record; see "How roles are defined for an identity" below.
+* Functional Area/Domain: Derived from the URL convention `/{area}/{functionalDomain}/{action}` as parsed by `SecurityFilter.determineResourceContext`. Author policies using these fields to target business capabilities rather than raw URLs or ad‑hoc headers.
+* DataDomain: When rules ALLOW an action, they can attach data-scope filters (tenant/org/owner) so downstream reads/writes are constrained to the caller’s domain.
 
 Choosing the right approach
-- Use annotations for stable, coarse gates you want visible in code (e.g., admin-only endpoints, health endpoints with @PermitAll).
-- Use feature flags to manage rollout/exposure and variants across environments and cohorts.
-- Use permission rules to encode fine-grained, data-aware authorization and to evolve policy without redeploying.
+
+* Use annotations for stable, coarse gates you want visible in code (for example, admin-only endpoints, health endpoints with `@PermitAll`).
+* Use feature flags to manage rollout/exposure and variants across environments and cohorts.
+* Use permission rules to encode fine-grained, data-aware authorization and to evolve policy without redeploying.
 
 Compare and contrast
-- Annotation-based controls are compile-time and hard-code policy into the service; changing them requires code changes.
-- Permission Rules and the Rule Language are data-driven and user-changeable (with proper governance), enabling rapid, auditable policy changes and DataDomain scoping.
-- In practice: apply annotations as the first gate, evaluate feature flags to determine exposure/variant, then evaluate permission rules to decide ALLOW/DENY and attach scopes. This layered approach yields both safety and agility.
+
+* Annotation-based controls are compile-time and hard-code policy into the service; changing them requires code changes.
+* Permission Rules and the Rule Language are data-driven and user-changeable (with proper governance), enabling rapid, auditable policy changes and DataDomain scoping.
+* In practice: apply annotations as the first gate, evaluate feature flags to determine exposure/variant, then evaluate permission rules to decide ALLOW/DENY and attach scopes. This layered approach yields both safety and agility.
 
 == Key Concepts
 
-- Identity: The authenticated principal, typically originating from JWT or another provider. It includes:
+* Identity: The authenticated principal, typically originating from JWT or another provider. It includes:
   - userId (or credentialUserIdPassword username)
   - roles (authorities/groups)
   - tenantId, orgRefName, optional realm, and other claims that contribute to DomainContext
-- userProfile: A domain representation of the user that aggregates identity, roles, and policy decorations (feature flags, plans, expiration, etc.).
-- Rule Base (Permission Rule): A declarative rule with matching criteria and an effect (ALLOW or DENY). Criteria may include:
+* userProfile: A domain representation of the user that adds human information such as first name, last name, email address, phone number and provides a linkage back to  identity, roles, and policy decorations (feature flags, plans, expiration, etc.).
+* Rule Base (Permission Rule): A declarative rule with matching criteria and an effect (ALLOW or DENY). Criteria may include:
   - HTTP method and URL pattern
-  - SecurityURLHeaders: predicates over selected HTTP headers (e.g., x-functional-area, x-functional-domain, x-tenant-id)
+  - SecurityURLHeaders: predicates over selected HTTP headers (for example, `X-Tenant-Id`). Note: functional area/domain/action are derived from the URL, not headers.
   - SecurityURLBody: predicates over request body fields (JSON paths) or query parameters
   - Required roles/attributes on identity or userProfile
   - Functional area/domain/action
   - Priority: integer used to sort rule evaluation
-- Effect: ALLOW or DENY; an ALLOW may also contribute scope filters (e.g., DataDomain constraints) to be applied downstream by repositories.
+  - Effect: ALLOW or DENY; an ALLOW may also contribute scope filters (e.g., DataDomain constraints) to be applied downstream by repositories.
 
 == Rule Structure (Illustrative)
 
@@ -66,9 +69,7 @@ Compare and contrast
   priority: 100
   match:
     method: [GET]
-    url: /api/catalog/**
-    headers:
-      x-functional-area: [Catalog]
+    url: /Catalog/**
     rolesAny: [USER, ADMIN]
   effect: ALLOW
   filters:
@@ -89,7 +90,7 @@ Compare and contrast
   effect: DENY
 ----
 
-- headers under match are the SecurityURLHeaders predicates.
+- headers under match are the SecurityURLHeaders predicates. Functional area/domain/action are parsed from the URL convention `/{area}/{functionalDomain}/{action}` (see `SecurityFilter.determineResourceContext`).
 - Body predicates (SecurityURLBody) can be expressed similarly as JSONPath-like constraints:
 
 [source,yaml]
@@ -137,6 +138,7 @@ Grant-based rule sets start with a default decision of DENY and then incremental
 Deny-based rule sets start with a default decision of ALLOW and then add DENY scenarios to carve away disallowed cases. In this model, new functionality is exposed by default unless a DENY is added. While convenient during rapid prototyping, this posture risks accidental exposure as the surface area grows.
 
 Practical implications:
+
 - Change management: Grant-based requires adding ALLOWs when shipping new features; Deny-based requires remembering to add new DENYs.
 - Auditability: Grant-based policies make it easy to enumerate what is permitted; Deny-based requires proving the absence of permissive gaps.
 - Safety: In merge conflicts or partial deployments, Grant-based tends to fail closed (DENY), which is usually safer.
@@ -170,6 +172,7 @@ Tip: Even in a deny-based set, author low‑number DENY rules for critical prote
 Feature flags complement permission rules by controlling whether a capability is active for a given principal, cohort, or environment. Permissions answer “may this identity perform this action?”; feature flags answer “is this capability turned on, and which variant applies?” Use them together to achieve safe rollouts and fine‑grained authorization.
 
 Model reference: com.e2eq.framework.model.general.FeatureFlag with key fields:
+
 - enabled: master on/off
 - type: BOOLEAN or MULTIVARIATE
 - variants: list of variant keys for multivariate experiments
@@ -215,12 +218,14 @@ Example: Multivariate flag to roll out Search v2 to 10% of users and all members
 ----
 
 Notes on TargetRules:
+
 - attribute: a property from identity/userProfile (e.g., userId, role, tenantId, location, plan).
 - operator: equals, in, contains, startsWith, regex, or domain‑specific operators like hashMod for percentage rollouts.
 - values: comparison values; semantics depend on operator.
 - variant: when type is MULTIVARIATE, selects which variant applies when the rule matches.
 
 How feature flags complement Permission Rule Context:
+
 - The evaluation of a request can enrich the Rule Context (SecurityURLHeaders/Body or userProfile) with resolved feature flags and variants (e.g., userProfile.features["SEARCH_V2"] = "v2").
 - Permission rules can then require a feature to be present before ALLOWing an action:
 
@@ -230,9 +235,7 @@ How feature flags complement Permission Rule Context:
   priority: 300
   match:
     method: [GET]
-    url: /api/export/**
-    headers:
-      x-functional-area: [Reports]
+    url: /Reports/Export/**
     # Example predicate that assumes features are surfaced in userProfile
     userProfile.features.EXPORT_API: [true]
   rolesAny: [ADMIN, REPORTER]
@@ -242,21 +245,23 @@ How feature flags complement Permission Rule Context:
 Alternatively, systems may surface feature decisions via headers (e.g., X-Feature-SEARCH_V2: v2) so that SecurityURLHeaders can match directly.
 
 Business usage examples for TargetRules and their correlation to Permission Rules:
-- Progressive rollout by tenant: TargetRule tenantId in [T100, T200] → Permission adds ALLOW for endpoints guarded by that flag so only those tenants can call them during rollout.
+
+ * Progressive rollout by tenant TargetRule tenantId in [T100, T200] → Permission adds ALLOW for endpoints guarded by that flag so only those tenants can call them during rollout.
 - Role‑based beta access: TargetRule role equals BETA → Permission requires both the BETA feature flag and standard role checks (e.g., USER/ADMIN) to ALLOW sensitive actions.
 - Plan/entitlement tiers: TargetRule plan in [Pro, Enterprise] → Permission rules enforce additional data‑domain constraints (e.g., export size limits) while the flag simply turns the feature on for eligible plans.
 
 Guidance: Feature Flags vs Permission Rules
-- Put into Feature Flags:
+
+* Put into Feature Flags:
   - Gradual, reversible rollouts; A/B or multivariate experiments; UI/behavior switches.
   - Environment gates (dev/staging/prod) and cohort targeting (tenants, beta users, geography).
   - Non‑security configuration values in jsonConfiguration (limits, thresholds, copy) that do not change who is authorized.
-- Put into Permission Rules:
+* Put into Permission Rules:
   - Durable authorization logic: roles, identities, functional area/domain/action, and DataDomain constraints.
   - Compliance and least‑privilege decisions where fail‑closed behavior is required.
   - Enforcement that remains valid after a feature is fully launched (even when the flag is removed).
 
-Recommendation: Use a grant‑based permission posture (default DENY) and let feature flags decide which cohorts even see or can reach new capabilities. Then author explicit ALLOW rules for those capabilities, conditioned on both role and feature presence.
+Recommendation:: Use a grant‑based permission posture (default DENY) and let feature flags decide which cohorts even see or can reach new capabilities. Then author explicit ALLOW rules for those capabilities, conditioned on both role and feature presence.
 
 == Multiple Matching RuleBases
 
@@ -275,86 +280,93 @@ Recommendation: Use a grant‑based permission posture (default DENY) and let fe
 === How roles are defined for an identity (role sources and resolution)
 
 Quantum composes the effective roles for a request by merging:
-- Roles from the identity provider (JWT/SecurityIdentity)
-- Roles configured on the user record (CredentialUserIdPassword.roles)
+
+* Roles from the identity provider (JWT/`SecurityIdentity`)
+* Roles configured on the user record (`CredentialUserIdPassword.roles`)
 
 Source details:
-- Identity Provider (JWT): roles commonly arrive via standard claims (e.g., groups, roles, or provider-specific fields). Quarkus maps these into SecurityIdentity.getRoles(). In multi-realm setups, the realm in X-Realm can scope lookups but does not alter what the JWT asserts.
-- Quantum user record: com.e2eq.framework.model.security.CredentialUserIdPassword has a String[] roles field stored per realm. This can be administered by Quantum to grant platform- or tenant-level roles.
+
+* Identity Provider (JWT): roles commonly arrive via standard claims (for example, `groups`, `roles`, or provider-specific fields). Quarkus maps these into `SecurityIdentity.getRoles()`. In multi-realm setups, the realm in `X-Realm` can scope lookups but does not alter what the JWT asserts.
+* Quantum user record: `com.e2eq.framework.model.security.CredentialUserIdPassword` has a `String[] roles` field stored per realm. This can be administered by Quantum to grant platform- or tenant-level roles.
 
 Merge semantics (current implementation):
-- Union: the effective role set is the union of JWT roles and CredentialUserIdPassword.roles. If either source is empty, the other source defines the set.
-- Fallback: when neither source yields roles, the framework defaults to [ANONYMOUS].
-- Where implemented: SecurityFilter.determinePrincipalContext builds PrincipalContext with the merged roles.
+
+* Union: the effective role set is the union of JWT roles and `CredentialUserIdPassword.roles`. If either source is empty, the other source defines the set.
+* Fallback: when neither source yields roles, the framework defaults to `ANONYMOUS`.
+* Where implemented: `SecurityFilter.determinePrincipalContext` builds `PrincipalContext` with the merged roles.
 
 Realm considerations:
-- The user record is looked up by subject or userId in the active realm (default or X-Realm). If a realm override is provided, it is validated with CredentialUserIdPassword.realmRegEx.
-- Roles stored in a user record are realm-specific; JWT roles are whatever the IdP asserts for the token.
+
+* The user record is looked up by subject or userId in the active realm (default or `X-Realm`). If a realm override is provided, it is validated with `CredentialUserIdPassword.realmRegEx`.
+* Roles stored in a user record are realm-specific; JWT roles are whatever the IdP asserts for the token.
 
 Operating models:
-- Quantum-managed roles:
-  - IdP authenticates the user (subject, username). Authorization is primarily driven by roles stored in CredentialUserIdPassword.roles.
-  - Use when you want central, auditable role assignment within Quantum, independent of IdP groups.
-- IdP-managed roles:
-  - IdP carries authoritative roles/groups in the JWT. Keep CredentialUserIdPassword.roles minimal or empty.
-  - Use when enterprises require IdP as the source of truth for access groups.
-- Hybrid (recommended in many deployments):
-  - Effective roles = JWT roles ∪ CredentialUserIdPassword.roles.
-  - Use JWT for enterprise groups (e.g., DEPT_SALES, ORG_ADMIN) and Quantum roles for app-specific grants (e.g., REPORT_EXPORTER, BETA).
-  - This avoids IdP churn for application-local concerns while respecting org policies.
+
+* Quantum-managed roles:
+** IdP authenticates the user (subject, username). Authorization is primarily driven by roles stored in `CredentialUserIdPassword.roles`.
+** Use when you want central, auditable role assignment within Quantum, independent of IdP groups.
+* IdP-managed roles:
+** IdP carries authoritative roles/groups in the JWT. Keep `CredentialUserIdPassword.roles` minimal or empty.
+** Use when enterprises require IdP as the source of truth for access groups.
+* Hybrid (recommended in many deployments):
+** Effective roles = JWT roles ∪ `CredentialUserIdPassword.roles`.
+** Use JWT for enterprise groups (for example, `DEPT_SALES`, `ORG_ADMIN`) and Quantum roles for app-specific grants (for example, `REPORT_EXPORTER`, `BETA`).
+** This avoids IdP churn for application-local concerns while respecting org policies.
 
 Examples:
-- JWT-only:
-  - JWT.groups = [USER, REPORTER]; user record roles = []
-  - Effective roles = [USER, REPORTER]
-- Quantum-only:
-  - JWT.groups = []; user record roles = [USER, ADMIN]
-  - Effective roles = [USER, ADMIN]
-- Hybrid union:
-  - JWT.groups = [USER]; user record roles = [BETA, REPORT_EXPORTER]
-  - Effective roles = [USER, BETA, REPORT_EXPORTER]
+
+* JWT-only:
+** JWT.groups = [USER, REPORTER]; user record roles = []
+** Effective roles = [USER, REPORTER]
+* Quantum-only:
+** JWT.groups = []; user record roles = [USER, ADMIN]
+** Effective roles = [USER, ADMIN]
+* Hybrid union:
+** JWT.groups = [USER]; user record roles = [BETA, REPORT_EXPORTER]
+** Effective roles = [USER, BETA, REPORT_EXPORTER]
 
 Guidance and best practices:
-- Keep role names stable and environment-agnostic; use realms/permissions to scope where needed.
-- Avoid overloading roles for feature rollout; use Feature Flags for rollout and variants, and roles for durable authorization.
-- When IdP is authoritative, ensure consistent claim mapping so SecurityIdentity.getRoles() contains the expected values; commonly via 'groups' claim in JWT.
-- Use grant-based permission rules and require the minimal set of roles (rolesAny/rolesAll) needed for each capability.
+
+* Keep role names stable and environment-agnostic; use realms/permissions to scope where needed.
+* Avoid overloading roles for feature rollout; use Feature Flags for rollout and variants, and roles for durable authorization.
+* When IdP is authoritative, ensure consistent claim mapping so `SecurityIdentity.getRoles()` contains the expected values; commonly via `groups` claim in JWT.
+* Use grant-based permission rules and require the minimal set of roles (`rolesAny`/`rolesAll`) needed for each capability.
 
 Cross-references:
-- User model: com.e2eq.framework.model.security.CredentialUserIdPassword.roles
-- Context: com.e2eq.framework.model.securityrules.PrincipalContext.getRoles()
-- Filter logic: com.e2eq.framework.rest.filters.SecurityFilter.determinePrincipalContext
+
+* User model: `com.e2eq.framework.model.security.CredentialUserIdPassword.roles`
+* Context: `com.e2eq.framework.model.securityrules.PrincipalContext.getRoles()`
+* Filter logic: `com.e2eq.framework.rest.filters.SecurityFilter.determinePrincipalContext`
 
 == Example Scenarios
 
-1) Public catalog browsing
-   - Request: GET /api/catalog/products?search=widgets
-   - Headers: x-functional-area=Catalog
-   - Identity: anonymous or role USER
-   - Rules:
-     - allow-public-reads (priority 100) ALLOW + readScope orgRefName=PUBLIC
-   - Outcome: ALLOW; repository applies DataDomain filter orgRefName=PUBLIC
+. Public catalog browsing
+* Request: GET /Catalog/Products/VIEW?search=widgets
+* Identity: anonymous or role USER
+* Rules:
+** allow-public-reads (priority 100) ALLOW + readScope orgRefName=PUBLIC
+* Outcome: ALLOW; repository applies DataDomain filter orgRefName=PUBLIC
 
-2) Tenant-scoped shipment update
-   - Request: PUT /api/shipments/ABC123
-   - Headers: x-functional-area=Collaboration, x-tenant-id=T1
-   - Body: { dataDomain: { tenantId: "T1" }, ... }
-   - Identity: user in tenant T1 with roles [USER]
-   - Rules:
-     - allow-collab-update (priority 300) requires body.dataDomain.tenantId == identity.tenantId and rolesAny USER, ADMIN => ALLOW
-   - Outcome: ALLOW; Rule contributes writeScope tenantId=T1
+. Tenant-scoped shipment update
+* Request: PUT /Collaboration/Shipments/UPDATE
+* Headers: x-tenant-id=T1
+* Body: { dataDomain: { tenantId: "T1" }, ... }
+* Identity: user in tenant T1 with roles [USER]
+* Rules:
+** allow-collab-update (priority 300) requires body.dataDomain.tenantId == identity.tenantId and rolesAny USER, ADMIN => ALLOW
+* Outcome: ALLOW; Rule contributes writeScope tenantId=T1
 
-3) Cross-tenant admin read with higher priority
-   - Request: GET /api/partners
-   - Identity: role ADMIN (super-admin)
-   - Rules:
-     - admin-override (priority 50) ALLOW
-     - default-tenant-read (priority 600) ALLOW with tenant filter
-   - Outcome: admin-override wins due to higher precedence (lower number), allowing broader read
+. Cross-tenant admin read with higher priority
+* Request: GET /api/partners
+* Identity: role ADMIN (super-admin)
+* Rules:
+** admin-override (priority 50) ALLOW
+** default-tenant-read (priority 600) ALLOW with tenant filter
+* Outcome: admin-override wins due to higher precedence (lower number), allowing broader read
 
-4) Conflicting ALLOW and DENY at same priority
-   - Two rules match with priority 200: one ALLOW, one DENY
-   - Resolution: DENY wins unless merge strategy configured to handle explicitly; recommended to avoid same-priority conflicts by policy.
+. Conflicting ALLOW and DENY at same priority
+* Two rules match with priority 200: one ALLOW, one DENY
+* Resolution: DENY wins unless merge strategy configured to handle explicitly; recommended to avoid same-priority conflicts by policy.
 
 == Operational Tips
 
@@ -375,13 +387,13 @@ Why they can differ per entity:
 - DataDomain membership: tenant/org/owner scoping can further restrict actions if the identity is outside the entity’s domain.
 
 How the server computes them:
-1) Start with a default action template for the entity type (DefaultUIActions).
-2) Apply simple state-based adjustments (e.g., suppress CREATE on already-persisted instances).
-3) Evaluate the permission rules with the current identity and context:
-   - Consider roles, functional area/domain, action intent, headers/body, and any rule-contributed scopes.
-   - Resolve DataDomain constraints to ensure the identity is permitted to act within the entity’s domain.
-4) Produce UIActions as the allowed subset for that entity instance.
-5) Return both lists with each entity in collection responses.
+. Start with a default action template for the entity type (DefaultUIActions).
+. Apply simple state-based adjustments (for example, suppress CREATE on already-persisted instances).
+. Evaluate the permission rules with the current identity and context:
+* Consider roles, functional area/domain, action intent, headers/body, and any rule-contributed scopes.
+* Resolve DataDomain constraints to ensure the identity is permitted to act within the entity’s domain.
+. Produce UIActions as the allowed subset for that entity instance.
+. Return both lists with each entity in collection responses.
 
 How the client should use the two lists:
 - Render the full DefaultUIActions as the visible set of possible actions (icons, buttons, menus) so the UI stays consistent.
@@ -472,44 +484,44 @@ Example payload:
 
 All endpoints are relative to /security/permission/policies. These are inherited from BaseResource and are consistent across entity resources.
 
-- GET /list
+* GET /list
   - Query params: skip, limit, filter, sort, projection
   - Returns a Collection<Policy> with paging metadata; respects X-Realm.
 
-- GET /id/{id} and GET /id?id=...
+* GET /id/{id} and GET /id?id=...
   - Fetch a single Policy by id.
 
-- GET /refName/{refName} and GET /refName?refName=...
+* GET /refName/{refName} and GET /refName?refName=...
   - Fetch a single Policy by refName.
 
-- GET /count?filter=...
+* GET /count?filter=...
   - Returns a CounterResponse with total matching entities.
 
-- GET /schema
+* GET /schema
   - Returns JSON Schema for Policy.
 
-- POST /
+* POST /
   - Create or upsert a Policy (if id is present and matches an existing entity in the selected realm, it is updated).
 
-- PUT /set?id=...&pairs=field:value
+* PUT /set?id=...&pairs=field:value
   - Targeted field updates by id. pairs is a repeated query parameter specifying field/value pairs.
 
-- PUT /bulk/setByQuery?filter=...&pairs=...
+* PUT /bulk/setByQuery?filter=...&pairs=...
   - Bulk updates by query. Note: ignoreRules=true is not supported on this endpoint.
 
-- PUT /bulk/setByIds
+* PUT /bulk/setByIds
   - Bulk updates by list of ids posted in the request body.
 
-- PUT /bulk/setByRefAndDomain
+* PUT /bulk/setByRefAndDomain
   - Bulk updates by a list of (refName, dataDomain) pairs in the request body.
 
-- DELETE /id/{id} (or /id?id=...)
+* DELETE /id/{id} (or /id?id=...)
   - Delete by id.
 
-- DELETE /refName/{refName} (or /refName?refName=...)
+* DELETE /refName/{refName} (or /refName?refName=...)
   - Delete by refName.
 
-- CSV import/export endpoints for bulk operations:
+* CSV import/export endpoints for bulk operations:
   - GET /csv – export as CSV (field selection, encoding, etc.)
   - POST /csv – import CSV into Policies
   - POST /csv/session – analyze CSV and create an import session (preview)
@@ -517,14 +529,16 @@ All endpoints are relative to /security/permission/policies. These are inherited
   - DELETE /csv/session/{sessionId} – cancel a session
   - GET /csv/session/{sessionId}/rows – page through analyzed rows
 
-- Index management (admin only):
+* Index management (admin only):
   - POST /indexes/ensureIndexes/{realm}?collectionName=policy
 
 Headers:
+
 - Authorization: Bearer <token>
 - X-Realm: realm identifier (optional but recommended in multi-tenant deployments)
 
 Filtering and sorting:
+
 - filter uses the ANTLR-based DSL (see REST CRUD > Query Language)
 - sort uses comma-separated fields with optional +/- prefix; projection accepts a comma-separated field list
 
@@ -570,8 +584,8 @@ curl -X DELETE \
 - Making persisted policy changes effective:
   - On startup, migrations (see InitializeDatabase and AddAnonymousSecurityRules) typically seed default policies and/or programmatically add rules to RuleContext.
   - When you modify policies via REST, you have two options to apply them at runtime:
-    1) Implement a reload step that reads policies from PolicyRepo and rehydrates RuleContext (e.g., RuleContext.clear(); then add rules built from current policies).
-    2) Restart the service or trigger whatever policy-loader your application uses at boot.
+    . Implement a reload step that reads policies from PolicyRepo and rehydrates RuleContext (for example, RuleContext.clear(); then add rules built from current policies).
+    . Restart the service or trigger whatever policy-loader your application uses at boot.
   - Tip: If you maintain a background watcher or admin endpoint to refresh policies, keep it tenant/realm-aware and idempotent.
 
 - Evaluation semantics (recap):
@@ -713,8 +727,8 @@ Historically, Quantum set the dataDomain of new entities to match the creator’
 These needs require a simple, deterministic way to override the default per Functional Area and/or Functional Domain.
 
 === Key concepts recap: DomainContext and DataDomain
-- DomainContext (on credentials/realms) captures the principal’s scoping defaults (realm, org/account/tenant identifiers, data segment). At request time this is materialized into a DataDomain.
-- DataDomain is what gets stamped onto persisted entities and later used by repositories to constrain queries and updates.
+ DomainContext (on credentials/realms):: captures the principal’s scoping defaults (realm, org/account/tenant identifiers, data segment). At request time this is materialized into a DataDomain.
+DataDomain:: is what gets stamped onto persisted entities and later used by repositories to constrain queries and updates.
 
 If you do nothing, new records inherit the principal’s DataDomain.
 
