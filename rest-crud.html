@@ -948,34 +948,68 @@ referenceId:^[@@5f1e9b9c8a0b0c0d1e2f3a4b, @@6a7b8c9d0e1f2a3b4c5d6e7f]</code></pr
 <p>Produces a streamed CSV download of the current resource collection.</p>
 </div>
 <div class="paragraph">
-<p>Query parameters and behavior:
-- fieldSeparator (default ",")
-  - Single character used to separate fields. Typical values: , ; \t
-- requestedColumns (default refName)
-  - Comma‑separated list of model field names to include, in output order. If omitted, BaseResource defaults to refName.
-  - Nested list extraction is supported with the [0] notation on a single nested property across all requested columns (e.g., addresses[0].city, addresses[0].zip). Indices other than [0] are rejected. If the nested list has multiple items, multiple rows are emitted per record (one per list element), preserving other column values.
-- quotingStrategy (default QUOTE_WHERE_ESSENTIAL)
-  - QUOTE_WHERE_ESSENTIAL: quote only when needed (when a value contains the separator or quoteChar).
-  - QUOTE_ALL_COLUMNS: quote every column in every row.
-- quoteChar (default ")
-  - The character used to surround quoted values.
-- decimalSeparator (default .)
-  - Reserved for decimal formatting. Note: current implementation ignores this value; decimals are rendered using the locale‑independent dot.
-- charsetEncoding (default UTF-8-without-BOM)
-  - One of: US-ASCII, UTF-8-without-BOM, UTF-8-with-BOM, UTF-16-with-BOM, UTF-16BE, UTF-16LE.
-  - “with-BOM” values write a Byte Order Mark at the beginning of the file (UTF‑8: EF BB BF; UTF‑16: FE FF).
-- filter (optional)
-  - ANTLR DSL filter applied server‑side before streaming (see Query Language section). Reduces rows and can improve performance.
-- filename (default downloaded.csv)
-  - Suggested download filename returned via Content‑Disposition header.
-- offset (default 0)
-  - Zero‑based index of the first record to stream.
-- length (default 1000, use -1 for all)
-  - Maximum number of records to stream from offset. Use -1 to stream all (be mindful of client memory/time).
-- prependHeaderRow (optional boolean, default false)
-  - When true, the first row contains column headers. Requires requestedColumns to be set (the default refName satisfies this requirement).
-- preferredColumnNames (optional list)
-  - Overrides header names positionally when prependHeaderRow=true. The list length must be ≤ requestedColumns; an empty string entry means “use default field name” for that column.</p>
+<p>Query parameters and behavior:</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">fieldSeparator (default <code>"</code>)</dt>
+<dd>
+<p>Single character used to separate fields. Typical values: <code>,</code>, <code>;</code>, <code>\t</code>.</p>
+</dd>
+<dt class="hdlist1">requestedColumns (default refName)</dt>
+<dd>
+<p>Comma‑separated list of model field names to include, in output order. If omitted, BaseResource defaults to refName. Nested list extraction is supported with the <code>[0]</code> notation on a single nested property across all requested columns (e.g., <code>addresses[0].city</code>, <code>addresses[0].zip</code>). Indices other than <code>[0]</code> are rejected. If the nested list has multiple items, multiple rows are emitted per record (one per list element), preserving other column values.</p>
+</dd>
+<dt class="hdlist1">quotingStrategy (default QUOTE_WHERE_ESSENTIAL)</dt>
+<dd>
+<div class="ulist">
+<ul>
+<li>
+<p>QUOTE_WHERE_ESSENTIAL: quote only when needed (when a value contains the separator or quoteChar).</p>
+</li>
+<li>
+<p>QUOTE_ALL_COLUMNS: quote every column in every row.</p>
+</li>
+</ul>
+</div>
+</dd>
+<dt class="hdlist1">quoteChar (default <code>"</code>)</dt>
+<dd>
+<p>The character used to surround quoted values.</p>
+</dd>
+<dt class="hdlist1">decimalSeparator (default <code>.</code>)</dt>
+<dd>
+<p>Reserved for decimal formatting. Note: current implementation ignores this value; decimals are rendered using the locale‑independent dot.</p>
+</dd>
+<dt class="hdlist1">charsetEncoding (default UTF-8-without-BOM)</dt>
+<dd>
+<p>One of: <code>US-ASCII</code>, <code>UTF-8-without-BOM</code>, <code>UTF-8-with-BOM</code>, <code>UTF-16-with-BOM</code>, <code>UTF-16BE</code>, <code>UTF-16LE</code>. “with‑BOM” values write a Byte Order Mark at the beginning of the file (UTF‑8: <code>EF BB BF</code>; UTF‑16: <code>FE FF</code>).</p>
+</dd>
+<dt class="hdlist1">filter (optional)</dt>
+<dd>
+<p>ANTLR DSL filter applied server‑side before streaming (see Query Language section). Reduces rows and can improve performance.</p>
+</dd>
+<dt class="hdlist1">filename (default downloaded.csv)</dt>
+<dd>
+<p>Suggested download filename returned via Content‑Disposition header.</p>
+</dd>
+<dt class="hdlist1">offset (default 0)</dt>
+<dd>
+<p>Zero‑based index of the first record to stream.</p>
+</dd>
+<dt class="hdlist1">length (default 1000, use <code>-1</code> for all)</dt>
+<dd>
+<p>Maximum number of records to stream from offset. Use <code>-1</code> to stream all (be mindful of client memory/time).</p>
+</dd>
+<dt class="hdlist1">prependHeaderRow (optional boolean, default false)</dt>
+<dd>
+<p>When true, the first row contains column headers. Requires requestedColumns to be set (the default refName satisfies this requirement).</p>
+</dd>
+<dt class="hdlist1">preferredColumnNames (optional list)</dt>
+<dd>
+<p>Overrides header names positionally when <code>prependHeaderRow=true</code>. The list length must be ≤ requestedColumns; an empty string entry means “use default field name” for that column.</p>
+</dd>
+</dl>
 </div>
 <div class="paragraph">
 <p>Response:
@@ -1020,19 +1054,35 @@ curl -H &quot;Authorization: Bearer $JWT&quot; \
 <p>Consumes a CSV file (multipart/form‑data) and imports records in batches. The form field name for the file is file.</p>
 </div>
 <div class="paragraph">
-<p>Query parameters and behavior:
-- fieldSeparator (default ",")
-  - Single character expected between fields.
-- quotingStrategy (default QUOTE_WHERE_ESSENTIAL)
-  - Same values as export; controls how embedded quotes are recognized.
-- quoteChar (default ")
-  - The expected quote character in the file.
-- skipHeaderRow (default true)
-  - When true, the first row is treated as a header and skipped. Mapping is positional, not by header names.
-- charsetEncoding (default UTF-8-without-BOM)
-  - The file encoding. “with-BOM” variants allow consuming a BOM at the start.
-- requestedColumns (required)
-  - Comma‑separated list of model field names in the same order as the CSV columns. This positional mapping drives parsing and validation. Nested list syntax [0] is allowed with the same constraints as export.</p>
+<p>Query parameters and behavior:</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">fieldSeparator (default <code>"</code>)</dt>
+<dd>
+<p>Single character expected between fields.</p>
+</dd>
+<dt class="hdlist1">quotingStrategy (default QUOTE_WHERE_ESSENTIAL)</dt>
+<dd>
+<p>Same values as export; controls how embedded quotes are recognized.</p>
+</dd>
+<dt class="hdlist1">quoteChar (default <code>"</code>)</dt>
+<dd>
+<p>The expected quote character in the file.</p>
+</dd>
+<dt class="hdlist1">skipHeaderRow (default true)</dt>
+<dd>
+<p>When true, the first row is treated as a header and skipped. Mapping is positional, not by header names.</p>
+</dd>
+<dt class="hdlist1">charsetEncoding (default UTF-8-without-BOM)</dt>
+<dd>
+<p>The file encoding. “with‑BOM” variants allow consuming a BOM at the start.</p>
+</dd>
+<dt class="hdlist1">requestedColumns (required)</dt>
+<dd>
+<p>Comma‑separated list of model field names in the same order as the CSV columns. This positional mapping drives parsing and validation. Nested list syntax <code>[0]</code> is allowed with the same constraints as export.</p>
+</dd>
+</dl>
 </div>
 <div class="paragraph">
 <p>Behavior:
@@ -1114,7 +1164,7 @@ curl -H &quot;Authorization: Bearer $JWT&quot; \
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-09-13 14:21:14 -0400
+Last updated 2025-09-14 09:06:14 -0400
 </div>
 </div>
 </body>

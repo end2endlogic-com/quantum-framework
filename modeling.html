@@ -542,8 +542,9 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_validation_lifecycle_and_morphia_interceptors">2. Validation Lifecycle and Morphia Interceptors</a></li>
 <li><a href="#_functional_areadomain_in_rulecontext_permission_language">3. Functional Area/Domain in RuleContext Permission Language</a></li>
 <li><a href="#_stategraphs_on_models">4. StateGraphs on Models</a></li>
-<li><a href="#_references_and_entityreference">5. References and EntityReference</a></li>
-<li><a href="#_tracking_references_with_trackreferences_and_delete_semantics">6. Tracking References with @TrackReferences and Delete Semantics</a></li>
+<li><a href="#_completiontasks_and_completiontaskgroups">5. CompletionTasks and CompletionTaskGroups</a></li>
+<li><a href="#_references_and_entityreference">6. References and EntityReference</a></li>
+<li><a href="#_tracking_references_with_trackreferences_and_delete_semantics">7. Tracking References with @TrackReferences and Delete Semantics</a></li>
 </ul>
 </div>
 </div>
@@ -970,7 +971,7 @@ quarkus.jackson.serialization-inclusion=NON_NULL</code></pre>
 <p>ResourceContext/DomainContext: When a request operates on a model, the framework derives the functional area and domain from the model type (or resource) and places them on the current context alongside the action (CREATE, UPDATE, VIEW, DELETE, ARCHIVE). RuleContext consumes these to evaluate policies.</p>
 </li>
 <li>
-<p>Permission language (headers): Rule bases can match on HTTP headers such as x-functional-area and x-functional-domain. These are often set by the resource layer or middleware to reflect the model’s bmFunctionalArea/bmFunctionalDomain for the current operation.</p>
+<p>Permission language (path-derived ResourceContext): The framework derives area and functionalDomain from REST path segments using the convention: /{area}/{functionalDomain}/{action}/&#8230;&#8203; . These are placed on the ResourceContext and consumed by RuleContext. Rule bases typically match on HTTP method and URL patterns; no special headers are required.</p>
 </li>
 <li>
 <p>Permission language (query variables): The ANTLR-based query language exposes variables that can be referenced in filters:</p>
@@ -991,18 +992,15 @@ These can be used to author reusable filters or to record audit decisions by are
 <p>Examples</p>
 </div>
 <div class="paragraph">
-<p>1) Header-based rule matching (Permissions)</p>
+<p>1) Path-derived rule matching (Permissions)</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="yaml">- <span class="string"><span class="content">name: allow-catalog-reads</span></span>
+<pre class="CodeRay highlight"><code data-lang="yaml">- <span class="string"><span class="content">name: allow-catalog-product-reads</span></span>
   <span class="key">priority</span>: <span class="string"><span class="content">300</span></span>
   <span class="key">match</span>:
     <span class="key">method</span>: <span class="string"><span class="content">[GET]</span></span>
-    <span class="key">url</span>: <span class="string"><span class="content">/api/**</span></span>
-    <span class="key">headers</span>:
-      <span class="key">x-functional-area</span>: <span class="string"><span class="content">[Catalog]</span></span>
-      <span class="key">x-functional-domain</span>: <span class="string"><span class="content">[Product, Category]</span></span>
+    <span class="key">url</span>: <span class="string"><span class="content">/Catalog/Product/**</span></span>
     <span class="key">rolesAny</span>: <span class="string"><span class="content">[USER, ADMIN]</span></span>
   <span class="key">effect</span>: <span class="string"><span class="content">ALLOW</span></span>
   <span class="key">filters</span>:
@@ -1050,7 +1048,10 @@ These can be used to author reusable filters or to record audit decisions by are
 <div class="ulist">
 <ul>
 <li>
-<p>If you create composite resources that span multiple models, set the headers (x-functional-area, x-functional-domain) explicitly for each endpoint so rules can target them precisely.</p>
+<p>Path convention: Use leading segments /{area}/{functionalDomain}/{action}/&#8230;&#8203; so the framework can derive ResourceContext reliably. Extra segments after the first three are allowed; only the first three are used to compute area, domain, and action.</p>
+</li>
+<li>
+<p>Nonconformant paths: If the path has fewer than three segments, the framework sets an anonymous/default ResourceContext. In practice, rules will typically evaluate to DENY unless there is an explicit allowance for anonymous contexts.</p>
 </li>
 <li>
 <p>See also: the Permissions section for rule-base matching and priorities, and the DomainContext/RuleContext section for end-to-end flow.</p>
@@ -1132,7 +1133,140 @@ These can be used to author reusable filters or to record audit decisions by are
 </div>
 </div>
 <div class="sect1">
-<h2 id="_references_and_entityreference">5. References and EntityReference</h2>
+<h2 id="_completiontasks_and_completiontaskgroups">5. CompletionTasks and CompletionTaskGroups</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>CompletionTasks and CompletionTaskGroups provide a simple, persistent way to track a series of work items that need to be completed, either by background processes or external systems. Use them when you need durable progress tracking across restarts and an auditable record of outcomes.</p>
+</div>
+<div class="paragraph">
+<p>Key models:
+- CompletionTask: an individual unit of work with fields like status, timestamps, and optional result/details.
+- CompletionTaskGroup: a container that represents a cohort of tasks progressing toward completion.</p>
+</div>
+<div class="paragraph">
+<p>Model overview:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="comment">// Individual task</span>
+<span class="annotation">@Entity</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">completionTask</span><span class="delimiter">&quot;</span></span>)
+<span class="directive">public</span> <span class="type">class</span> <span class="class">CompletionTask</span> <span class="directive">extends</span> BaseModel {
+  <span class="directive">public</span> <span class="type">enum</span> Status { PENDING, RUNNING, SUCCESS, FAILED }
+
+  <span class="annotation">@Reference</span>
+  CompletionTaskGroup group;   <span class="comment">// optional grouping</span>
+  <span class="predefined-type">String</span> details;              <span class="comment">// human-readable context (what/why)</span>
+  Status status;               <span class="comment">// PENDING -&gt; RUNNING -&gt; (SUCCESS|FAILED)</span>
+  <span class="predefined-type">Date</span> createdDate;            <span class="comment">// when the task was created</span>
+  <span class="predefined-type">Date</span> completedDate;          <span class="comment">// set when terminal (SUCCESS/FAILED)</span>
+  <span class="predefined-type">String</span> result;               <span class="comment">// output, message, or error summary</span>
+
+  <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> bmFunctionalArea()   { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">TASK</span><span class="delimiter">&quot;</span></span>; }
+  <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> bmFunctionalDomain() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">COMPLETION_TASK</span><span class="delimiter">&quot;</span></span>; }
+}
+
+<span class="comment">// Group of tasks</span>
+<span class="annotation">@Entity</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">completionTaskGroup</span><span class="delimiter">&quot;</span></span>)
+<span class="directive">public</span> <span class="type">class</span> <span class="class">CompletionTaskGroup</span> <span class="directive">extends</span> BaseModel {
+  <span class="directive">public</span> <span class="type">enum</span> Status { NEW, RUNNING, COMPLETE }
+
+  <span class="predefined-type">String</span> description;   <span class="comment">// e.g., &quot;Onboarding: create resources&quot;</span>
+  Status status;        <span class="comment">// reflects overall progress of the group</span>
+  <span class="predefined-type">Date</span> createdDate;     <span class="comment">// when the group was created</span>
+  <span class="predefined-type">Date</span> completedDate;   <span class="comment">// when the group finished</span>
+
+  <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> bmFunctionalArea()   { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">TASK</span><span class="delimiter">&quot;</span></span>; }
+  <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> bmFunctionalDomain() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">COMPLETION_TASK_GROUP</span><span class="delimiter">&quot;</span></span>; }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Typical lifecycle:
+- Create a CompletionTaskGroup in NEW status.
+- Create N CompletionTasks (status=PENDING) referencing the group.
+- A worker picks tasks and flips status to RUNNING, performs the work, then to SUCCESS or FAILED, setting completedDate and result.
+- Periodically update the group:
+  - If at least one task is RUNNING (and none pending), set group status to RUNNING.
+  - When all tasks are terminal (SUCCESS or FAILED), set group status to COMPLETE and completedDate.</p>
+</div>
+<div class="paragraph">
+<p>How to use for tracking a series of things that need to be completed:
+- Batch operations: When submitting a batch (e.g., provisioning 100 accounts), create one group and 100 tasks. The UI/API can poll the group to show overall progress and per-item results.
+- Multi-step workflows: Represent each step as its own task, or use one task per target resource. Groups help correlate all steps for a single business request.
+- Retry/compensation: FAILED tasks can be retried by creating new tasks or resetting status to PENDING based on your policy. Keep result populated with failure reasons.</p>
+</div>
+<div class="paragraph">
+<p>Example creation flow:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java">CompletionTaskGroup group = CompletionTaskGroup.builder()
+  .description(<span class="string"><span class="delimiter">&quot;</span><span class="content">Catalog import: 250 SKUs</span><span class="delimiter">&quot;</span></span>)
+  .status(CompletionTaskGroup.Status.NEW)
+  .createdDate(<span class="keyword">new</span> <span class="predefined-type">Date</span>())
+  .build();
+completionTaskGroupRepo.save(group);
+
+<span class="keyword">for</span> (Sku s : skus) {
+  CompletionTask t = CompletionTask.builder()
+    .group(group)
+    .details(<span class="string"><span class="delimiter">&quot;</span><span class="content">Import SKU </span><span class="delimiter">&quot;</span></span> + s.code())
+    .status(CompletionTask.Status.PENDING)
+    .createdDate(<span class="keyword">new</span> <span class="predefined-type">Date</span>())
+    .build();
+  completionTaskRepo.save(t);
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Example worker progression:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="comment">// Fetch a PENDING task and execute</span>
+CompletionTask t = completionTaskRepo.findOneByStatus(CompletionTask.Status.PENDING);
+<span class="keyword">if</span> (t != <span class="predefined-constant">null</span>) {
+  completionTaskRepo.update(t.getId(), <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTask.Status.RUNNING);
+  <span class="keyword">try</span> {
+    <span class="comment">// ... do work ...</span>
+    completionTaskRepo.update(t.getId(),
+      <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTask.Status.SUCCESS,
+      <span class="string"><span class="delimiter">&quot;</span><span class="content">completedDate</span><span class="delimiter">&quot;</span></span>, <span class="keyword">new</span> <span class="predefined-type">Date</span>(),
+      <span class="string"><span class="delimiter">&quot;</span><span class="content">result</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">OK</span><span class="delimiter">&quot;</span></span>);
+  } <span class="keyword">catch</span> (<span class="exception">Exception</span> e) {
+    completionTaskRepo.update(t.getId(),
+      <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTask.Status.FAILED,
+      <span class="string"><span class="delimiter">&quot;</span><span class="content">completedDate</span><span class="delimiter">&quot;</span></span>, <span class="keyword">new</span> <span class="predefined-type">Date</span>(),
+      <span class="string"><span class="delimiter">&quot;</span><span class="content">result</span><span class="delimiter">&quot;</span></span>, e.getMessage());
+  }
+}
+
+<span class="comment">// Periodically recompute group status</span>
+<span class="predefined-type">List</span>&lt;CompletionTask&gt; tasks = completionTaskRepo.findByGroup(group);
+<span class="type">boolean</span> allTerminal = tasks.stream().allMatch(x -&gt; x.getStatus()==SUCCESS || x.getStatus()==FAILED);
+<span class="type">boolean</span> anyRunning = tasks.stream().anyMatch(x -&gt; x.getStatus()==RUNNING);
+<span class="type">boolean</span> anyPending = tasks.stream().anyMatch(x -&gt; x.getStatus()==PENDING);
+
+<span class="keyword">if</span> (allTerminal) {
+  completionTaskGroupRepo.update(group.getId(),
+    <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTaskGroup.Status.COMPLETE,
+    <span class="string"><span class="delimiter">&quot;</span><span class="content">completedDate</span><span class="delimiter">&quot;</span></span>, <span class="keyword">new</span> <span class="predefined-type">Date</span>());
+} <span class="keyword">else</span> <span class="keyword">if</span> (anyRunning || (!anyPending &amp;&amp; !allTerminal)) {
+  completionTaskGroupRepo.update(group.getId(), <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTaskGroup.Status.RUNNING);
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Notes and best practices:
+- Keep details short but diagnostic, and store richer context in result.
+- Use DataDomain fields for multi-tenant scoping so groups/tasks are isolated per tenant/org as needed.
+- Avoid unbounded growth: archive or purge old groups once COMPLETE.
+- Consider idempotency keys in details or a custom field to prevent processing the same logical work twice.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_references_and_entityreference">6. References and EntityReference</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Morphia @Reference establishes relationships between entities:
@@ -1174,7 +1308,7 @@ These can be used to author reusable filters or to record audit decisions by are
 </div>
 </div>
 <div class="sect1">
-<h2 id="_tracking_references_with_trackreferences_and_delete_semantics">6. Tracking References with @TrackReferences and Delete Semantics</h2>
+<h2 id="_tracking_references_with_trackreferences_and_delete_semantics">7. Tracking References with @TrackReferences and Delete Semantics</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>@TrackReferences on a @Reference field tells the framework to maintain a back-reference set on the parent entity. The back-reference field is UnversionedBaseModel.references (a Set&lt;ReferenceEntry&gt;), which is calculated/maintained by the framework and should not be set by clients.</p>
@@ -1211,7 +1345,7 @@ These can be used to author reusable filters or to record audit decisions by are
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-09-13 14:22:00 -0400
+Last updated 2025-09-14 09:00:08 -0400
 </div>
 </div>
 </body>

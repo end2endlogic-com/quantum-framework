@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Framework Documentation</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-09-13T18:34:20Z</span>
+<span id="revdate">2025-09-14T13:15:12Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -567,151 +567,156 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_validation_lifecycle_and_morphia_interceptors">4. Validation Lifecycle and Morphia Interceptors</a></li>
 <li><a href="#_functional_areadomain_in_rulecontext_permission_language">5. Functional Area/Domain in RuleContext Permission Language</a></li>
 <li><a href="#_stategraphs_on_models">6. StateGraphs on Models</a></li>
-<li><a href="#_references_and_entityreference">7. References and EntityReference</a></li>
-<li><a href="#_tracking_references_with_trackreferences_and_delete_semantics">8. Tracking References with @TrackReferences and Delete Semantics</a></li>
+<li><a href="#_completiontasks_and_completiontaskgroups">7. CompletionTasks and CompletionTaskGroups</a></li>
+<li><a href="#_references_and_entityreference">8. References and EntityReference</a></li>
+<li><a href="#_tracking_references_with_trackreferences_and_delete_semantics">9. Tracking References with @TrackReferences and Delete Semantics</a></li>
 <li><a href="#domain-rule-context">DomainContext, RuleContext, and DataDomain</a>
 <ul class="sectlevel1">
-<li><a href="#_datadomain">9. DataDomain</a></li>
-<li><a href="#_domaincontext">10. DomainContext</a></li>
-<li><a href="#_rulecontext">11. RuleContext</a></li>
-<li><a href="#_end_to_end_flow">12. End-to-End Flow</a>
+<li><a href="#_datadomain">10. DataDomain</a></li>
+<li><a href="#_domaincontext">11. DomainContext</a></li>
+<li><a href="#_rulecontext">12. RuleContext</a></li>
+<li><a href="#_end_to_end_flow">13. End-to-End Flow</a>
 <ul class="sectlevel2">
-<li><a href="#rest-crud">12.1. REST: Find, Get, List, Save, Update, Delete</a>
+<li><a href="#rest-crud">13.1. REST: Find, Get, List, Save, Update, Delete</a>
 <ul class="sectlevel3">
-<li><a href="#_base_concepts">12.1.1. Base Concepts</a></li>
-<li><a href="#_example_resource">12.1.2. Example Resource</a></li>
-<li><a href="#_authorization_layers_in_rest_crud">12.1.3. Authorization Layers in REST CRUD</a></li>
-<li><a href="#_querying">12.1.4. Querying</a></li>
-<li><a href="#_responses_and_schemas">12.1.5. Responses and Schemas</a></li>
-<li><a href="#_error_handling">12.1.6. Error Handling</a></li>
-<li><a href="#_query_language_antlrbased">12.1.7. Query Language (ANTLR‑based)</a></li>
+<li><a href="#_base_concepts">13.1.1. Base Concepts</a></li>
+<li><a href="#_example_resource">13.1.2. Example Resource</a></li>
+<li><a href="#_authorization_layers_in_rest_crud">13.1.3. Authorization Layers in REST CRUD</a></li>
+<li><a href="#_querying">13.1.4. Querying</a></li>
+<li><a href="#_responses_and_schemas">13.1.5. Responses and Schemas</a></li>
+<li><a href="#_error_handling">13.1.6. Error Handling</a></li>
+<li><a href="#_query_language_antlrbased">13.1.7. Query Language (ANTLR‑based)</a></li>
 </ul>
 </li>
-<li><a href="#_simple_filters_equals">12.2. Simple filters (equals)</a></li>
-<li><a href="#_advanced_filters_grouping_and_andornot">12.3. Advanced filters: grouping and AND/OR/NOT</a></li>
-<li><a href="#_in_lists">12.4. IN lists</a></li>
-<li><a href="#_sorting">12.5. Sorting</a></li>
-<li><a href="#_projections">12.6. Projections</a></li>
-<li><a href="#_endtoend_examples">12.7. End‑to‑end examples</a></li>
+<li><a href="#_simple_filters_equals">13.2. Simple filters (equals)</a></li>
+<li><a href="#_advanced_filters_grouping_and_andornot">13.3. Advanced filters: grouping and AND/OR/NOT</a></li>
+<li><a href="#_in_lists">13.4. IN lists</a></li>
+<li><a href="#_sorting">13.5. Sorting</a></li>
+<li><a href="#_projections">13.6. Projections</a></li>
+<li><a href="#_endtoend_examples">13.7. End‑to‑end examples</a></li>
 </ul>
 </li>
-<li><a href="#_csv_export_and_import">13. CSV Export and Import</a>
+<li><a href="#_csv_export_and_import">14. CSV Export and Import</a>
 <ul class="sectlevel2">
-<li><a href="#_export_get_csv">13.1. Export: GET /csv</a></li>
-<li><a href="#_import_post_csv_multipart">13.2. Import: POST /csv (multipart)</a></li>
-<li><a href="#_import_with_preview_sessions">13.3. Import with preview sessions</a></li>
+<li><a href="#_export_get_csv">14.1. Export: GET /csv</a></li>
+<li><a href="#_import_post_csv_multipart">14.2. Import: POST /csv (multipart)</a></li>
+<li><a href="#_import_with_preview_sessions">14.3. Import with preview sessions</a></li>
 </ul>
 </li>
 </ul>
 </li>
 <li><a href="#migrations">Database Migrations and Index Management</a>
 <ul class="sectlevel1">
-<li><a href="#_overview">14. Overview</a></li>
-<li><a href="#_semantic_versioning">15. Semantic Versioning</a></li>
-<li><a href="#_configuration">16. Configuration</a></li>
-<li><a href="#_how_change_sets_are_discovered_and_executed">17. How change sets are discovered and executed</a></li>
-<li><a href="#_authoring_a_change_set">18. Authoring a change set</a></li>
-<li><a href="#_example_change_sets_in_the_framework">19. Example change sets in the framework</a></li>
-<li><a href="#_rest_apis_to_trigger_migrations_migrationresource">20. REST APIs to trigger migrations (MigrationResource)</a></li>
-<li><a href="#_perentity_index_management_baseresource">21. Per‑entity index management (BaseResource)</a></li>
-<li><a href="#_global_index_management_migrationservice">22. Global index management (MigrationService)</a></li>
-<li><a href="#_validating_versions_at_startup">23. Validating versions at startup</a></li>
-<li><a href="#_notes_and_best_practices">24. Notes and best practices</a></li>
-<li><a href="#_jwt_provider">25. JWT Provider</a></li>
-<li><a href="#_pluggable_authentication">26. Pluggable Authentication</a></li>
-<li><a href="#_creating_an_auth_plugin_using_the_custom_jwt_provider_as_a_reference">27. Creating an Auth Plugin (using the Custom JWT provider as a reference)</a></li>
-<li><a href="#_authprovider_interface_what_a_provider_must_implement">28. AuthProvider interface (what a provider must implement)</a></li>
-<li><a href="#_usermanagement_interface_operations_your_plugin_must_support">29. UserManagement interface (operations your plugin must support)</a></li>
-<li><a href="#_leveraging_baseauthprovider_in_your_plugin">30. Leveraging BaseAuthProvider in your plugin</a></li>
-<li><a href="#_implementing_your_own_provider">31. Implementing your own provider</a></li>
-<li><a href="#_credentialuseridpassword_model_and_domaincontext">32. CredentialUserIdPassword model and DomainContext</a></li>
-<li><a href="#_quarkus_oidc_out_of_the_box_and_integrating_with_common_idps">33. Quarkus OIDC out-of-the-box and integrating with common IdPs</a></li>
-<li><a href="#_authorization_via_rulecontext">34. Authorization via RuleContext</a></li>
+<li><a href="#_overview">15. Overview</a></li>
+<li><a href="#_semantic_versioning">16. Semantic Versioning</a></li>
+<li><a href="#_configuration">17. Configuration</a></li>
+<li><a href="#_how_change_sets_are_discovered_and_executed">18. How change sets are discovered and executed</a></li>
+<li><a href="#_authoring_a_change_set">19. Authoring a change set</a></li>
+<li><a href="#_example_change_sets_in_the_framework">20. Example change sets in the framework</a></li>
+<li><a href="#_rest_apis_to_trigger_migrations_migrationresource">21. REST APIs to trigger migrations (MigrationResource)</a></li>
+<li><a href="#_perentity_index_management_baseresource">22. Per‑entity index management (BaseResource)</a></li>
+<li><a href="#_global_index_management_migrationservice">23. Global index management (MigrationService)</a></li>
+<li><a href="#_validating_versions_at_startup">24. Validating versions at startup</a></li>
+<li><a href="#_notes_and_best_practices">25. Notes and best practices</a></li>
+<li><a href="#_jwt_provider">26. JWT Provider</a></li>
+<li><a href="#_pluggable_authentication">27. Pluggable Authentication</a></li>
+<li><a href="#_creating_an_auth_plugin_using_the_custom_jwt_provider_as_a_reference">28. Creating an Auth Plugin (using the Custom JWT provider as a reference)</a></li>
+<li><a href="#_authprovider_interface_what_a_provider_must_implement">29. AuthProvider interface (what a provider must implement)</a></li>
+<li><a href="#_usermanagement_interface_operations_your_plugin_must_support">30. UserManagement interface (operations your plugin must support)</a></li>
+<li><a href="#_leveraging_baseauthprovider_in_your_plugin">31. Leveraging BaseAuthProvider in your plugin</a></li>
+<li><a href="#_implementing_your_own_provider">32. Implementing your own provider</a></li>
+<li><a href="#_credentialuseridpassword_model_and_domaincontext">33. CredentialUserIdPassword model and DomainContext</a></li>
+<li><a href="#_quarkus_oidc_out_of_the_box_and_integrating_with_common_idps">34. Quarkus OIDC out-of-the-box and integrating with common IdPs</a></li>
+<li><a href="#_authorization_via_rulecontext">35. Authorization via RuleContext</a></li>
 </ul>
 </li>
 <li><a href="#permissions">Permissions: Rule Bases, SecurityURLHeaders, and SecurityURLBody</a>
 <ul class="sectlevel1">
-<li><a href="#_introduction_layered_enforcement_overview">35. Introduction: Layered Enforcement Overview</a></li>
-<li><a href="#_key_concepts">36. Key Concepts</a></li>
-<li><a href="#_rule_structure_illustrative">37. Rule Structure (Illustrative)</a></li>
-<li><a href="#_matching_algorithm">38. Matching Algorithm</a></li>
-<li><a href="#_priorities">39. Priorities</a></li>
-<li><a href="#_grant_based_vs_deny_based_rule_sets">40. Grant-based vs Deny-based Rule Sets</a></li>
-<li><a href="#_feature_flags_variants_and_target_rules">41. Feature Flags, Variants, and Target Rules</a></li>
-<li><a href="#_multiple_matching_rulebases">42. Multiple Matching RuleBases</a></li>
-<li><a href="#_identity_and_role_matching">43. Identity and Role Matching</a>
+<li><a href="#_introduction_layered_enforcement_overview">36. Introduction: Layered Enforcement Overview</a></li>
+<li><a href="#_key_concepts">37. Key Concepts</a></li>
+<li><a href="#_rule_structure_illustrative">38. Rule Structure (Illustrative)</a></li>
+<li><a href="#_matching_algorithm">39. Matching Algorithm</a></li>
+<li><a href="#_priorities">40. Priorities</a></li>
+<li><a href="#_grant_based_vs_deny_based_rule_sets">41. Grant-based vs Deny-based Rule Sets</a></li>
+<li><a href="#_feature_flags_variants_and_target_rules">42. Feature Flags, Variants, and Target Rules</a></li>
+<li><a href="#_multiple_matching_rulebases">43. Multiple Matching RuleBases</a></li>
+<li><a href="#_identity_and_role_matching">44. Identity and Role Matching</a>
 <ul class="sectlevel2">
-<li><a href="#_how_roles_are_defined_for_an_identity_role_sources_and_resolution">43.1. How roles are defined for an identity (role sources and resolution)</a></li>
+<li><a href="#_how_roles_are_defined_for_an_identity_role_sources_and_resolution">44.1. How roles are defined for an identity (role sources and resolution)</a></li>
 </ul>
 </li>
-<li><a href="#_example_scenarios">44. Example Scenarios</a></li>
-<li><a href="#_operational_tips">45. Operational Tips</a></li>
-<li><a href="#_how_uiactions_and_defaultuiactions_are_calculated">46. How UIActions and DefaultUIActions are calculated</a></li>
-<li><a href="#_how_this_integrates_end_to_end">47. How This Integrates End-to-End</a></li>
-<li><a href="#_administering_policies_via_rest_policyresource">48. Administering Policies via REST (PolicyResource)</a>
+<li><a href="#_example_scenarios">45. Example Scenarios</a></li>
+<li><a href="#_operational_tips">46. Operational Tips</a></li>
+<li><a href="#_how_uiactions_and_defaultuiactions_are_calculated">47. How UIActions and DefaultUIActions are calculated</a></li>
+<li><a href="#_how_this_integrates_end_to_end">48. How This Integrates End-to-End</a></li>
+<li><a href="#_administering_policies_via_rest_policyresource">49. Administering Policies via REST (PolicyResource)</a>
 <ul class="sectlevel2">
-<li><a href="#_model_shape_policy">48.1. Model shape (Policy)</a></li>
-<li><a href="#_endpoints">48.2. Endpoints</a></li>
-<li><a href="#_examples">48.3. Examples</a></li>
-<li><a href="#_how_changes_affect_rule_bases_and_enforcement">48.4. How changes affect rule bases and enforcement</a></li>
+<li><a href="#_model_shape_policy">49.1. Model shape (Policy)</a></li>
+<li><a href="#_endpoints">49.2. Endpoints</a></li>
+<li><a href="#_examples">49.3. Examples</a></li>
+<li><a href="#_how_changes_affect_rule_bases_and_enforcement">49.4. How changes affect rule bases and enforcement</a></li>
 </ul>
 </li>
-<li><a href="#_realm_override_x_realm_and_impersonation_x_impersonate">49. Realm override (X-Realm) and Impersonation (X-Impersonate)</a>
+<li><a href="#_realm_override_x_realm_and_impersonation_x_impersonate">50. Realm override (X-Realm) and Impersonation (X-Impersonate)</a>
 <ul class="sectlevel2">
-<li><a href="#_what_they_do_at_a_glance">49.1. What they do (at a glance)</a></li>
-<li><a href="#_how_the_headers_integrate_with_permission_evaluation">49.2. How the headers integrate with permission evaluation</a></li>
-<li><a href="#_required_credential_configuration_credentialuseridpassword">49.3. Required credential configuration (CredentialUserIdPassword)</a></li>
-<li><a href="#_end_to_end_behavior_from_securityfilter_reference">49.4. End-to-end behavior from SecurityFilter (reference)</a></li>
-<li><a href="#_practical_differences_and_use_cases">49.5. Practical differences and use cases</a></li>
-<li><a href="#_examples_2">49.6. Examples</a></li>
+<li><a href="#_what_they_do_at_a_glance">50.1. What they do (at a glance)</a></li>
+<li><a href="#_how_the_headers_integrate_with_permission_evaluation">50.2. How the headers integrate with permission evaluation</a></li>
+<li><a href="#_required_credential_configuration_credentialuseridpassword">50.3. Required credential configuration (CredentialUserIdPassword)</a></li>
+<li><a href="#_end_to_end_behavior_from_securityfilter_reference">50.4. End-to-end behavior from SecurityFilter (reference)</a></li>
+<li><a href="#_practical_differences_and_use_cases">50.5. Practical differences and use cases</a></li>
+<li><a href="#_examples_2">50.6. Examples</a></li>
 </ul>
 </li>
-<li><a href="#_data_domain_assignment_on_create_domaincontext_and_datadomainpolicy">50. Data domain assignment on create: DomainContext and DataDomainPolicy</a>
+<li><a href="#_data_domain_assignment_on_create_domaincontext_and_datadomainpolicy">51. Data domain assignment on create: DomainContext and DataDomainPolicy</a>
 <ul class="sectlevel2">
-<li><a href="#_the_problem_this_solves_and_why_it_matters">50.1. The problem this solves (and why it matters)</a></li>
-<li><a href="#_key_concepts_recap_domaincontext_and_datadomain">50.2. Key concepts recap: DomainContext and DataDomain</a></li>
-<li><a href="#_the_default_policy_do_nothing_and_it_works">50.3. The default policy (do nothing and it works)</a></li>
-<li><a href="#_policy_scopes_principalattached_vs_global">50.4. Policy scopes: principal‑attached vs. global</a></li>
-<li><a href="#_the_policy_map_and_matching">50.5. The policy map and matching</a></li>
-<li><a href="#_how_the_resolver_works">50.6. How the resolver works</a></li>
-<li><a href="#_when_would_you_want_a_nonglobal_policy">50.7. When would you want a non‑global policy?</a></li>
-<li><a href="#_relation_to_tenancy_models">50.8. Relation to tenancy models</a></li>
-<li><a href="#_authoring_tips">50.9. Authoring tips</a></li>
-<li><a href="#_api_pointers">50.10. API pointers</a></li>
+<li><a href="#_the_problem_this_solves_and_why_it_matters">51.1. The problem this solves (and why it matters)</a></li>
+<li><a href="#_key_concepts_recap_domaincontext_and_datadomain">51.2. Key concepts recap: DomainContext and DataDomain</a></li>
+<li><a href="#_the_default_policy_do_nothing_and_it_works">51.3. The default policy (do nothing and it works)</a></li>
+<li><a href="#_policy_scopes_principalattached_vs_global">51.4. Policy scopes: principal‑attached vs. global</a></li>
+<li><a href="#_the_policy_map_and_matching">51.5. The policy map and matching</a></li>
+<li><a href="#_how_the_resolver_works">51.6. How the resolver works</a></li>
+<li><a href="#_when_would_you_want_a_nonglobal_policy">51.7. When would you want a non‑global policy?</a></li>
+<li><a href="#_relation_to_tenancy_models">51.8. Relation to tenancy models</a></li>
+<li><a href="#_authoring_tips">51.9. Authoring tips</a></li>
+<li><a href="#_api_pointers">51.10. API pointers</a></li>
 </ul>
 </li>
-<li><a href="#_testing">51. Testing</a>
+<li><a href="#_testing">52. Testing</a>
 <ul class="sectlevel2">
-<li><a href="#testing">51.1. Testing in Quantum: Security Contexts, Repos, and REST APIs</a>
+<li><a href="#testing">52.1. Testing in Quantum: Security Contexts, Repos, and REST APIs</a>
 <ul class="sectlevel3">
-<li><a href="#_testing_framework">51.1.1. Testing Framework</a></li>
-<li><a href="#_prerequisites_and_glossary">51.1.2. Prerequisites and glossary</a></li>
-<li><a href="#_pattern_1_extend_baserepotest">51.1.3. Pattern 1 — Extend BaseRepoTest</a></li>
-<li><a href="#_pattern_2_try_with_resources_securitysession">51.1.4. Pattern 2 — Try-with-resources SecuritySession</a></li>
-<li><a href="#_pattern_3_scoped_call_wrapper_scopedcallscope">51.1.5. Pattern 3 — Scoped-call wrapper (ScopedCallScope)</a></li>
-<li><a href="#_pattern_4_testsecurity_annotation_quarkus">51.1.6. Pattern 4 — @TestSecurity annotation (Quarkus)</a></li>
-<li><a href="#_testing_rest_apis_vs_repository_logic">51.1.7. Testing REST APIs vs. Repository Logic</a></li>
-<li><a href="#_useful_quarkus_test_features">51.1.8. Useful Quarkus Test features</a></li>
-<li><a href="#_real_world_tips">51.1.9. Real-world tips</a></li>
-<li><a href="#_summary">51.1.10. Summary</a></li>
+<li><a href="#_testing_framework">52.1.1. Testing Framework</a></li>
+<li><a href="#_prerequisites_and_glossary">52.1.2. Prerequisites and glossary</a></li>
+<li><a href="#_pattern_1_extend_baserepotest">52.1.3. Pattern 1 — Extend BaseRepoTest</a></li>
+<li><a href="#_pattern_2_try_with_resources_securitysession">52.1.4. Pattern 2 — Try-with-resources SecuritySession</a></li>
+<li><a href="#_pattern_3_scoped_call_wrapper_scopedcallscope">52.1.5. Pattern 3 — Scoped-call wrapper (ScopedCallScope)</a></li>
+<li><a href="#_pattern_4_testsecurity_annotation_quarkus">52.1.6. Pattern 4 — @TestSecurity annotation (Quarkus)</a></li>
+<li><a href="#_testing_rest_apis_vs_repository_logic">52.1.7. Testing REST APIs vs. Repository Logic</a></li>
+<li><a href="#_useful_quarkus_test_features">52.1.8. Useful Quarkus Test features</a></li>
+<li><a href="#_real_world_tips">52.1.9. Real-world tips</a></li>
+<li><a href="#_summary">52.1.10. Summary</a></li>
 </ul>
 </li>
 </ul>
 </li>
-<li><a href="#_tutorials">52. Tutorials</a></li>
-<li><a href="#_what_a_supplychain_saas_needs_and_how_quantum_helps">53. What a supply‑chain SaaS needs (and how Quantum helps)</a></li>
-<li><a href="#_why_multitenancy_is_a_natural_fit_for_supply_chains">54. Why multi‑tenancy is a natural fit for supply chains</a></li>
-<li><a href="#_who_uses_the_system_organizations_and_roles">55. Who uses the system (organizations and roles)</a></li>
-<li><a href="#_identity_and_access_meet_partners_where_they_are">56. Identity and access: meet partners where they are</a></li>
-<li><a href="#_modeling_without_jargon_areas_domains_and_actions">57. Modeling without jargon: Areas, Domains, and Actions</a></li>
-<li><a href="#_policies_that_say_who_can_do_what_rule_language">58. Policies that say “who can do what” (Rule Language)</a></li>
-<li><a href="#_a_small_powerful_api_surface_list_query">59. A small, powerful API surface: List + Query</a></li>
-<li><a href="#_delegated_administration_tenantlevel_user_management">60. Delegated Administration (tenant‑level user management)</a></li>
-<li><a href="#_integrations_and_data_management">61. Integrations and data management</a></li>
-<li><a href="#_endtoend_examples_2">62. End‑to‑end examples</a></li>
-<li><a href="#_what_you_dont_have_to_build_from_scratch">63. What you don’t have to build from scratch</a></li>
-<li><a href="#_next_steps">64. Next steps</a></li>
-<li><a href="#_a_day_in_the_life_from_purchase_order_to_delivery">65. A day in the life: From Purchase Order to Delivery</a></li>
+<li><a href="#_tutorials">53. Tutorials</a></li>
+</ul>
+</li>
+<li><a href="#tutorial-supply-chain">Supply Chain Collaboration SaaS: A Business‑First Guide</a>
+<ul class="sectlevel1">
+<li><a href="#_what_a_supplychain_saas_needs_and_how_quantum_helps">54. What a supply‑chain SaaS needs (and how Quantum helps)</a></li>
+<li><a href="#_why_multitenancy_is_a_natural_fit_for_supply_chains">55. Why multi‑tenancy is a natural fit for supply chains</a></li>
+<li><a href="#_who_uses_the_system_organizations_and_roles">56. Who uses the system (organizations and roles)</a></li>
+<li><a href="#_identity_and_access_meet_partners_where_they_are">57. Identity and access: meet partners where they are</a></li>
+<li><a href="#_modeling_without_jargon_areas_domains_and_actions">58. Modeling without jargon: Areas, Domains, and Actions</a></li>
+<li><a href="#_policies_that_say_who_can_do_what_rule_language">59. Policies that say “who can do what” (Rule Language)</a></li>
+<li><a href="#_a_small_powerful_api_surface_list_query">60. A small, powerful API surface: List + Query</a></li>
+<li><a href="#_delegated_administration_tenantlevel_user_management">61. Delegated Administration (tenant‑level user management)</a></li>
+<li><a href="#_integrations_and_data_management">62. Integrations and data management</a></li>
+<li><a href="#_endtoend_examples_2">63. End‑to‑end examples</a></li>
+<li><a href="#_what_you_dont_have_to_build_from_scratch">64. What you don’t have to build from scratch</a></li>
+<li><a href="#_next_steps">65. Next steps</a></li>
+<li><a href="#_a_day_in_the_life_from_purchase_order_to_delivery">66. A day in the life: From Purchase Order to Delivery</a></li>
 </ul>
 </li>
 </ul>
@@ -1416,7 +1421,7 @@ quarkus.jackson.serialization-inclusion=NON_NULL</code></pre>
 <p>ResourceContext/DomainContext: When a request operates on a model, the framework derives the functional area and domain from the model type (or resource) and places them on the current context alongside the action (CREATE, UPDATE, VIEW, DELETE, ARCHIVE). RuleContext consumes these to evaluate policies.</p>
 </li>
 <li>
-<p>Permission language (headers): Rule bases can match on HTTP headers such as x-functional-area and x-functional-domain. These are often set by the resource layer or middleware to reflect the model’s bmFunctionalArea/bmFunctionalDomain for the current operation.</p>
+<p>Permission language (path-derived ResourceContext): The framework derives area and functionalDomain from REST path segments using the convention: /{area}/{functionalDomain}/{action}/&#8230;&#8203; . These are placed on the ResourceContext and consumed by RuleContext. Rule bases typically match on HTTP method and URL patterns; no special headers are required.</p>
 </li>
 <li>
 <p>Permission language (query variables): The ANTLR-based query language exposes variables that can be referenced in filters:</p>
@@ -1437,18 +1442,15 @@ These can be used to author reusable filters or to record audit decisions by are
 <p>Examples</p>
 </div>
 <div class="paragraph">
-<p>1) Header-based rule matching (Permissions)</p>
+<p>1) Path-derived rule matching (Permissions)</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="yaml">- <span class="string"><span class="content">name: allow-catalog-reads</span></span>
+<pre class="CodeRay highlight"><code data-lang="yaml">- <span class="string"><span class="content">name: allow-catalog-product-reads</span></span>
   <span class="key">priority</span>: <span class="string"><span class="content">300</span></span>
   <span class="key">match</span>:
     <span class="key">method</span>: <span class="string"><span class="content">[GET]</span></span>
-    <span class="key">url</span>: <span class="string"><span class="content">/api/**</span></span>
-    <span class="key">headers</span>:
-      <span class="key">x-functional-area</span>: <span class="string"><span class="content">[Catalog]</span></span>
-      <span class="key">x-functional-domain</span>: <span class="string"><span class="content">[Product, Category]</span></span>
+    <span class="key">url</span>: <span class="string"><span class="content">/Catalog/Product/**</span></span>
     <span class="key">rolesAny</span>: <span class="string"><span class="content">[USER, ADMIN]</span></span>
   <span class="key">effect</span>: <span class="string"><span class="content">ALLOW</span></span>
   <span class="key">filters</span>:
@@ -1496,7 +1498,10 @@ These can be used to author reusable filters or to record audit decisions by are
 <div class="ulist">
 <ul>
 <li>
-<p>If you create composite resources that span multiple models, set the headers (x-functional-area, x-functional-domain) explicitly for each endpoint so rules can target them precisely.</p>
+<p>Path convention: Use leading segments /{area}/{functionalDomain}/{action}/&#8230;&#8203; so the framework can derive ResourceContext reliably. Extra segments after the first three are allowed; only the first three are used to compute area, domain, and action.</p>
+</li>
+<li>
+<p>Nonconformant paths: If the path has fewer than three segments, the framework sets an anonymous/default ResourceContext. In practice, rules will typically evaluate to DENY unless there is an explicit allowance for anonymous contexts.</p>
 </li>
 <li>
 <p>See also: the Permissions section for rule-base matching and priorities, and the DomainContext/RuleContext section for end-to-end flow.</p>
@@ -1578,7 +1583,140 @@ These can be used to author reusable filters or to record audit decisions by are
 </div>
 </div>
 <div class="sect1">
-<h2 id="_references_and_entityreference">7. References and EntityReference</h2>
+<h2 id="_completiontasks_and_completiontaskgroups">7. CompletionTasks and CompletionTaskGroups</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>CompletionTasks and CompletionTaskGroups provide a simple, persistent way to track a series of work items that need to be completed, either by background processes or external systems. Use them when you need durable progress tracking across restarts and an auditable record of outcomes.</p>
+</div>
+<div class="paragraph">
+<p>Key models:
+- CompletionTask: an individual unit of work with fields like status, timestamps, and optional result/details.
+- CompletionTaskGroup: a container that represents a cohort of tasks progressing toward completion.</p>
+</div>
+<div class="paragraph">
+<p>Model overview:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="comment">// Individual task</span>
+<span class="annotation">@Entity</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">completionTask</span><span class="delimiter">&quot;</span></span>)
+<span class="directive">public</span> <span class="type">class</span> <span class="class">CompletionTask</span> <span class="directive">extends</span> BaseModel {
+  <span class="directive">public</span> <span class="type">enum</span> Status { PENDING, RUNNING, SUCCESS, FAILED }
+
+  <span class="annotation">@Reference</span>
+  CompletionTaskGroup group;   <span class="comment">// optional grouping</span>
+  <span class="predefined-type">String</span> details;              <span class="comment">// human-readable context (what/why)</span>
+  Status status;               <span class="comment">// PENDING -&gt; RUNNING -&gt; (SUCCESS|FAILED)</span>
+  <span class="predefined-type">Date</span> createdDate;            <span class="comment">// when the task was created</span>
+  <span class="predefined-type">Date</span> completedDate;          <span class="comment">// set when terminal (SUCCESS/FAILED)</span>
+  <span class="predefined-type">String</span> result;               <span class="comment">// output, message, or error summary</span>
+
+  <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> bmFunctionalArea()   { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">TASK</span><span class="delimiter">&quot;</span></span>; }
+  <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> bmFunctionalDomain() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">COMPLETION_TASK</span><span class="delimiter">&quot;</span></span>; }
+}
+
+<span class="comment">// Group of tasks</span>
+<span class="annotation">@Entity</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">completionTaskGroup</span><span class="delimiter">&quot;</span></span>)
+<span class="directive">public</span> <span class="type">class</span> <span class="class">CompletionTaskGroup</span> <span class="directive">extends</span> BaseModel {
+  <span class="directive">public</span> <span class="type">enum</span> Status { NEW, RUNNING, COMPLETE }
+
+  <span class="predefined-type">String</span> description;   <span class="comment">// e.g., &quot;Onboarding: create resources&quot;</span>
+  Status status;        <span class="comment">// reflects overall progress of the group</span>
+  <span class="predefined-type">Date</span> createdDate;     <span class="comment">// when the group was created</span>
+  <span class="predefined-type">Date</span> completedDate;   <span class="comment">// when the group finished</span>
+
+  <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> bmFunctionalArea()   { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">TASK</span><span class="delimiter">&quot;</span></span>; }
+  <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> bmFunctionalDomain() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">COMPLETION_TASK_GROUP</span><span class="delimiter">&quot;</span></span>; }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Typical lifecycle:
+- Create a CompletionTaskGroup in NEW status.
+- Create N CompletionTasks (status=PENDING) referencing the group.
+- A worker picks tasks and flips status to RUNNING, performs the work, then to SUCCESS or FAILED, setting completedDate and result.
+- Periodically update the group:
+  - If at least one task is RUNNING (and none pending), set group status to RUNNING.
+  - When all tasks are terminal (SUCCESS or FAILED), set group status to COMPLETE and completedDate.</p>
+</div>
+<div class="paragraph">
+<p>How to use for tracking a series of things that need to be completed:
+- Batch operations: When submitting a batch (e.g., provisioning 100 accounts), create one group and 100 tasks. The UI/API can poll the group to show overall progress and per-item results.
+- Multi-step workflows: Represent each step as its own task, or use one task per target resource. Groups help correlate all steps for a single business request.
+- Retry/compensation: FAILED tasks can be retried by creating new tasks or resetting status to PENDING based on your policy. Keep result populated with failure reasons.</p>
+</div>
+<div class="paragraph">
+<p>Example creation flow:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java">CompletionTaskGroup group = CompletionTaskGroup.builder()
+  .description(<span class="string"><span class="delimiter">&quot;</span><span class="content">Catalog import: 250 SKUs</span><span class="delimiter">&quot;</span></span>)
+  .status(CompletionTaskGroup.Status.NEW)
+  .createdDate(<span class="keyword">new</span> <span class="predefined-type">Date</span>())
+  .build();
+completionTaskGroupRepo.save(group);
+
+<span class="keyword">for</span> (Sku s : skus) {
+  CompletionTask t = CompletionTask.builder()
+    .group(group)
+    .details(<span class="string"><span class="delimiter">&quot;</span><span class="content">Import SKU </span><span class="delimiter">&quot;</span></span> + s.code())
+    .status(CompletionTask.Status.PENDING)
+    .createdDate(<span class="keyword">new</span> <span class="predefined-type">Date</span>())
+    .build();
+  completionTaskRepo.save(t);
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Example worker progression:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="comment">// Fetch a PENDING task and execute</span>
+CompletionTask t = completionTaskRepo.findOneByStatus(CompletionTask.Status.PENDING);
+<span class="keyword">if</span> (t != <span class="predefined-constant">null</span>) {
+  completionTaskRepo.update(t.getId(), <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTask.Status.RUNNING);
+  <span class="keyword">try</span> {
+    <span class="comment">// ... do work ...</span>
+    completionTaskRepo.update(t.getId(),
+      <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTask.Status.SUCCESS,
+      <span class="string"><span class="delimiter">&quot;</span><span class="content">completedDate</span><span class="delimiter">&quot;</span></span>, <span class="keyword">new</span> <span class="predefined-type">Date</span>(),
+      <span class="string"><span class="delimiter">&quot;</span><span class="content">result</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">OK</span><span class="delimiter">&quot;</span></span>);
+  } <span class="keyword">catch</span> (<span class="exception">Exception</span> e) {
+    completionTaskRepo.update(t.getId(),
+      <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTask.Status.FAILED,
+      <span class="string"><span class="delimiter">&quot;</span><span class="content">completedDate</span><span class="delimiter">&quot;</span></span>, <span class="keyword">new</span> <span class="predefined-type">Date</span>(),
+      <span class="string"><span class="delimiter">&quot;</span><span class="content">result</span><span class="delimiter">&quot;</span></span>, e.getMessage());
+  }
+}
+
+<span class="comment">// Periodically recompute group status</span>
+<span class="predefined-type">List</span>&lt;CompletionTask&gt; tasks = completionTaskRepo.findByGroup(group);
+<span class="type">boolean</span> allTerminal = tasks.stream().allMatch(x -&gt; x.getStatus()==SUCCESS || x.getStatus()==FAILED);
+<span class="type">boolean</span> anyRunning = tasks.stream().anyMatch(x -&gt; x.getStatus()==RUNNING);
+<span class="type">boolean</span> anyPending = tasks.stream().anyMatch(x -&gt; x.getStatus()==PENDING);
+
+<span class="keyword">if</span> (allTerminal) {
+  completionTaskGroupRepo.update(group.getId(),
+    <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTaskGroup.Status.COMPLETE,
+    <span class="string"><span class="delimiter">&quot;</span><span class="content">completedDate</span><span class="delimiter">&quot;</span></span>, <span class="keyword">new</span> <span class="predefined-type">Date</span>());
+} <span class="keyword">else</span> <span class="keyword">if</span> (anyRunning || (!anyPending &amp;&amp; !allTerminal)) {
+  completionTaskGroupRepo.update(group.getId(), <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTaskGroup.Status.RUNNING);
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Notes and best practices:
+- Keep details short but diagnostic, and store richer context in result.
+- Use DataDomain fields for multi-tenant scoping so groups/tasks are isolated per tenant/org as needed.
+- Avoid unbounded growth: archive or purge old groups once COMPLETE.
+- Consider idempotency keys in details or a custom field to prevent processing the same logical work twice.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_references_and_entityreference">8. References and EntityReference</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Morphia @Reference establishes relationships between entities:
@@ -1620,7 +1758,7 @@ These can be used to author reusable filters or to record audit decisions by are
 </div>
 </div>
 <div class="sect1">
-<h2 id="_tracking_references_with_trackreferences_and_delete_semantics">8. Tracking References with @TrackReferences and Delete Semantics</h2>
+<h2 id="_tracking_references_with_trackreferences_and_delete_semantics">9. Tracking References with @TrackReferences and Delete Semantics</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>@TrackReferences on a @Reference field tells the framework to maintain a back-reference set on the parent entity. The back-reference field is UnversionedBaseModel.references (a Set&lt;ReferenceEntry&gt;), which is calculated/maintained by the framework and should not be set by clients.</p>
@@ -1662,7 +1800,7 @@ These can be used to author reusable filters or to record audit decisions by are
 </div>
 </div>
 <div class="sect1">
-<h2 id="_datadomain">9. DataDomain</h2>
+<h2 id="_datadomain">10. DataDomain</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Every persisted model includes a DataDomain that describes ownership and scope, commonly including fields such as:</p>
@@ -1689,7 +1827,7 @@ These can be used to author reusable filters or to record audit decisions by are
 </div>
 </div>
 <div class="sect1">
-<h2 id="_domaincontext">10. DomainContext</h2>
+<h2 id="_domaincontext">11. DomainContext</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>DomainContext represents the current execution context for a request or operation, typically capturing:</p>
@@ -1713,7 +1851,7 @@ These can be used to author reusable filters or to record audit decisions by are
 </div>
 </div>
 <div class="sect1">
-<h2 id="_rulecontext">11. RuleContext</h2>
+<h2 id="_rulecontext">12. RuleContext</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>RuleContext encapsulates policy evaluation. It can:</p>
@@ -1734,7 +1872,7 @@ These can be used to author reusable filters or to record audit decisions by are
 </div>
 </div>
 <div class="sect1">
-<h2 id="_end_to_end_flow">12. End-to-End Flow</h2>
+<h2 id="_end_to_end_flow">13. End-to-End Flow</h2>
 <div class="sectionbody">
 <div class="olist arabic">
 <ol class="arabic">
@@ -1759,12 +1897,12 @@ These can be used to author reusable filters or to record audit decisions by are
 <p>This pattern ensures consistent enforcement across all CRUD operations, independent of the specific model or repository.</p>
 </div>
 <div class="sect2">
-<h3 id="rest-crud">12.1. REST: Find, Get, List, Save, Update, Delete</h3>
+<h3 id="rest-crud">13.1. REST: Find, Get, List, Save, Update, Delete</h3>
 <div class="paragraph">
 <p>Quantum provides consistent REST resources backed by repositories. Extend BaseResource to expose CRUD quickly and consistently.</p>
 </div>
 <div class="sect3">
-<h4 id="_base_concepts">12.1.1. Base Concepts</h4>
+<h4 id="_base_concepts">13.1.1. Base Concepts</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -1798,7 +1936,7 @@ These can be used to author reusable filters or to record audit decisions by are
 </div>
 </div>
 <div class="sect3">
-<h4 id="_example_resource">12.1.2. Example Resource</h4>
+<h4 id="_example_resource">13.1.2. Example Resource</h4>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">com.e2eq.framework.rest.resources.BaseResource</span>;
@@ -1811,7 +1949,7 @@ These can be used to author reusable filters or to record audit decisions by are
 </div>
 </div>
 <div class="sect3">
-<h4 id="_authorization_layers_in_rest_crud">12.1.3. Authorization Layers in REST CRUD</h4>
+<h4 id="_authorization_layers_in_rest_crud">13.1.3. Authorization Layers in REST CRUD</h4>
 <div class="paragraph">
 <p>Quantum combines static, identity-based checks with dynamic, domain-aware policy evaluation. In practice you will often use both:</p>
 </div>
@@ -1901,7 +2039,7 @@ These can be used to author reusable filters or to record audit decisions by are
 </div>
 </div>
 <div class="sect3">
-<h4 id="_querying">12.1.4. Querying</h4>
+<h4 id="_querying">13.1.4. Querying</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -1914,7 +2052,7 @@ These can be used to author reusable filters or to record audit decisions by are
 </div>
 </div>
 <div class="sect3">
-<h4 id="_responses_and_schemas">12.1.5. Responses and Schemas</h4>
+<h4 id="_responses_and_schemas">13.1.5. Responses and Schemas</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -1927,7 +2065,7 @@ These can be used to author reusable filters or to record audit decisions by are
 </div>
 </div>
 <div class="sect3">
-<h4 id="_error_handling">12.1.6. Error Handling</h4>
+<h4 id="_error_handling">13.1.6. Error Handling</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -1940,7 +2078,7 @@ These can be used to author reusable filters or to record audit decisions by are
 </div>
 </div>
 <div class="sect3">
-<h4 id="_query_language_antlrbased">12.1.7. Query Language (ANTLR‑based)</h4>
+<h4 id="_query_language_antlrbased">13.1.7. Query Language (ANTLR‑based)</h4>
 <div class="paragraph">
 <p>The find/list endpoints accept a filter string parsed by an ANTLR grammar (BIAPIQuery.g4). Use the filter query parameter to express predicates; combine them with logical operators and grouping. Sorting and projection are separate query parameters.</p>
 </div>
@@ -2020,7 +2158,7 @@ These can be used to author reusable filters or to record audit decisions by are
 </div>
 </div>
 <div class="sect2">
-<h3 id="_simple_filters_equals">12.2. Simple filters (equals)</h3>
+<h3 id="_simple_filters_equals">13.2. Simple filters (equals)</h3>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code># string equality
@@ -2046,7 +2184,7 @@ dataDomain.tenantId:${pTenantId}</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_advanced_filters_grouping_and_andornot">12.3. Advanced filters: grouping and AND/OR/NOT</h3>
+<h3 id="_advanced_filters_grouping_and_andornot">13.3. Advanced filters: grouping and AND/OR/NOT</h3>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code># Products that are active and (name contains widget OR gizmo), excluding discontinued
@@ -2066,7 +2204,7 @@ category:!null &amp;&amp; !!(price:&lt;##10)</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_in_lists">12.4. IN lists</h3>
+<h3 id="_in_lists">13.4. IN lists</h3>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code>status:^[&quot;OPEN&quot;,&quot;CLOSED&quot;,&quot;ON_HOLD&quot;]
@@ -2076,7 +2214,7 @@ referenceId:^[@@5f1e9b9c8a0b0c0d1e2f3a4b, @@6a7b8c9d0e1f2a3b4c5d6e7f]</code></pr
 </div>
 </div>
 <div class="sect2">
-<h3 id="_sorting">12.5. Sorting</h3>
+<h3 id="_sorting">13.5. Sorting</h3>
 <div class="paragraph">
 <p>Provide a sort query parameter (comma‑separated fields):
 - '-' prefix = descending, '+' or no prefix = ascending.</p>
@@ -2095,7 +2233,7 @@ referenceId:^[@@5f1e9b9c8a0b0c0d1e2f3a4b, @@6a7b8c9d0e1f2a3b4c5d6e7f]</code></pr
 </div>
 </div>
 <div class="sect2">
-<h3 id="_projections">12.6. Projections</h3>
+<h3 id="_projections">13.6. Projections</h3>
 <div class="paragraph">
 <p>Limit returned fields with the projection parameter (comma‑separated):
 - '+' prefix = include, '-' prefix = exclude.</p>
@@ -2111,7 +2249,7 @@ referenceId:^[@@5f1e9b9c8a0b0c0d1e2f3a4b, @@6a7b8c9d0e1f2a3b4c5d6e7f]</code></pr
 </div>
 </div>
 <div class="sect2">
-<h3 id="_endtoend_examples">12.7. End‑to‑end examples</h3>
+<h3 id="_endtoend_examples">13.7. End‑to‑end examples</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -2129,7 +2267,7 @@ referenceId:^[@@5f1e9b9c8a0b0c0d1e2f3a4b, @@6a7b8c9d0e1f2a3b4c5d6e7f]</code></pr
 </div>
 </div>
 <div class="sect1">
-<h2 id="_csv_export_and_import">13. CSV Export and Import</h2>
+<h2 id="_csv_export_and_import">14. CSV Export and Import</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>These endpoints are inherited by every resource that extends BaseResource. They are mounted under the resource’s base path. For example, PolicyResource at /security/permission/policies exposes:
@@ -2147,39 +2285,73 @@ referenceId:^[@@5f1e9b9c8a0b0c0d1e2f3a4b, @@6a7b8c9d0e1f2a3b4c5d6e7f]</code></pr
 - In multi‑realm deployments, include your X-Realm header as you do for CRUD; underlying repos resolve realm and domain context consistently.</p>
 </div>
 <div class="sect2">
-<h3 id="_export_get_csv">13.1. Export: GET /csv</h3>
+<h3 id="_export_get_csv">14.1. Export: GET /csv</h3>
 <div class="paragraph">
 <p>Produces a streamed CSV download of the current resource collection.</p>
 </div>
 <div class="paragraph">
-<p>Query parameters and behavior:
-- fieldSeparator (default ",")
-  - Single character used to separate fields. Typical values: , ; \t
-- requestedColumns (default refName)
-  - Comma‑separated list of model field names to include, in output order. If omitted, BaseResource defaults to refName.
-  - Nested list extraction is supported with the [0] notation on a single nested property across all requested columns (e.g., addresses[0].city, addresses[0].zip). Indices other than [0] are rejected. If the nested list has multiple items, multiple rows are emitted per record (one per list element), preserving other column values.
-- quotingStrategy (default QUOTE_WHERE_ESSENTIAL)
-  - QUOTE_WHERE_ESSENTIAL: quote only when needed (when a value contains the separator or quoteChar).
-  - QUOTE_ALL_COLUMNS: quote every column in every row.
-- quoteChar (default ")
-  - The character used to surround quoted values.
-- decimalSeparator (default .)
-  - Reserved for decimal formatting. Note: current implementation ignores this value; decimals are rendered using the locale‑independent dot.
-- charsetEncoding (default UTF-8-without-BOM)
-  - One of: US-ASCII, UTF-8-without-BOM, UTF-8-with-BOM, UTF-16-with-BOM, UTF-16BE, UTF-16LE.
-  - “with-BOM” values write a Byte Order Mark at the beginning of the file (UTF‑8: EF BB BF; UTF‑16: FE FF).
-- filter (optional)
-  - ANTLR DSL filter applied server‑side before streaming (see Query Language section). Reduces rows and can improve performance.
-- filename (default downloaded.csv)
-  - Suggested download filename returned via Content‑Disposition header.
-- offset (default 0)
-  - Zero‑based index of the first record to stream.
-- length (default 1000, use -1 for all)
-  - Maximum number of records to stream from offset. Use -1 to stream all (be mindful of client memory/time).
-- prependHeaderRow (optional boolean, default false)
-  - When true, the first row contains column headers. Requires requestedColumns to be set (the default refName satisfies this requirement).
-- preferredColumnNames (optional list)
-  - Overrides header names positionally when prependHeaderRow=true. The list length must be ≤ requestedColumns; an empty string entry means “use default field name” for that column.</p>
+<p>Query parameters and behavior:</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">fieldSeparator (default <code>"</code>)</dt>
+<dd>
+<p>Single character used to separate fields. Typical values: <code>,</code>, <code>;</code>, <code>\t</code>.</p>
+</dd>
+<dt class="hdlist1">requestedColumns (default refName)</dt>
+<dd>
+<p>Comma‑separated list of model field names to include, in output order. If omitted, BaseResource defaults to refName. Nested list extraction is supported with the <code>[0]</code> notation on a single nested property across all requested columns (e.g., <code>addresses[0].city</code>, <code>addresses[0].zip</code>). Indices other than <code>[0]</code> are rejected. If the nested list has multiple items, multiple rows are emitted per record (one per list element), preserving other column values.</p>
+</dd>
+<dt class="hdlist1">quotingStrategy (default QUOTE_WHERE_ESSENTIAL)</dt>
+<dd>
+<div class="ulist">
+<ul>
+<li>
+<p>QUOTE_WHERE_ESSENTIAL: quote only when needed (when a value contains the separator or quoteChar).</p>
+</li>
+<li>
+<p>QUOTE_ALL_COLUMNS: quote every column in every row.</p>
+</li>
+</ul>
+</div>
+</dd>
+<dt class="hdlist1">quoteChar (default <code>"</code>)</dt>
+<dd>
+<p>The character used to surround quoted values.</p>
+</dd>
+<dt class="hdlist1">decimalSeparator (default <code>.</code>)</dt>
+<dd>
+<p>Reserved for decimal formatting. Note: current implementation ignores this value; decimals are rendered using the locale‑independent dot.</p>
+</dd>
+<dt class="hdlist1">charsetEncoding (default UTF-8-without-BOM)</dt>
+<dd>
+<p>One of: <code>US-ASCII</code>, <code>UTF-8-without-BOM</code>, <code>UTF-8-with-BOM</code>, <code>UTF-16-with-BOM</code>, <code>UTF-16BE</code>, <code>UTF-16LE</code>. “with‑BOM” values write a Byte Order Mark at the beginning of the file (UTF‑8: <code>EF BB BF</code>; UTF‑16: <code>FE FF</code>).</p>
+</dd>
+<dt class="hdlist1">filter (optional)</dt>
+<dd>
+<p>ANTLR DSL filter applied server‑side before streaming (see Query Language section). Reduces rows and can improve performance.</p>
+</dd>
+<dt class="hdlist1">filename (default downloaded.csv)</dt>
+<dd>
+<p>Suggested download filename returned via Content‑Disposition header.</p>
+</dd>
+<dt class="hdlist1">offset (default 0)</dt>
+<dd>
+<p>Zero‑based index of the first record to stream.</p>
+</dd>
+<dt class="hdlist1">length (default 1000, use <code>-1</code> for all)</dt>
+<dd>
+<p>Maximum number of records to stream from offset. Use <code>-1</code> to stream all (be mindful of client memory/time).</p>
+</dd>
+<dt class="hdlist1">prependHeaderRow (optional boolean, default false)</dt>
+<dd>
+<p>When true, the first row contains column headers. Requires requestedColumns to be set (the default refName satisfies this requirement).</p>
+</dd>
+<dt class="hdlist1">preferredColumnNames (optional list)</dt>
+<dd>
+<p>Overrides header names positionally when <code>prependHeaderRow=true</code>. The list length must be ≤ requestedColumns; an empty string entry means “use default field name” for that column.</p>
+</dd>
+</dl>
 </div>
 <div class="paragraph">
 <p>Response:
@@ -2219,24 +2391,40 @@ curl -H &quot;Authorization: Bearer $JWT&quot; \
 </div>
 </div>
 <div class="sect2">
-<h3 id="_import_post_csv_multipart">13.2. Import: POST /csv (multipart)</h3>
+<h3 id="_import_post_csv_multipart">14.2. Import: POST /csv (multipart)</h3>
 <div class="paragraph">
 <p>Consumes a CSV file (multipart/form‑data) and imports records in batches. The form field name for the file is file.</p>
 </div>
 <div class="paragraph">
-<p>Query parameters and behavior:
-- fieldSeparator (default ",")
-  - Single character expected between fields.
-- quotingStrategy (default QUOTE_WHERE_ESSENTIAL)
-  - Same values as export; controls how embedded quotes are recognized.
-- quoteChar (default ")
-  - The expected quote character in the file.
-- skipHeaderRow (default true)
-  - When true, the first row is treated as a header and skipped. Mapping is positional, not by header names.
-- charsetEncoding (default UTF-8-without-BOM)
-  - The file encoding. “with-BOM” variants allow consuming a BOM at the start.
-- requestedColumns (required)
-  - Comma‑separated list of model field names in the same order as the CSV columns. This positional mapping drives parsing and validation. Nested list syntax [0] is allowed with the same constraints as export.</p>
+<p>Query parameters and behavior:</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">fieldSeparator (default <code>"</code>)</dt>
+<dd>
+<p>Single character expected between fields.</p>
+</dd>
+<dt class="hdlist1">quotingStrategy (default QUOTE_WHERE_ESSENTIAL)</dt>
+<dd>
+<p>Same values as export; controls how embedded quotes are recognized.</p>
+</dd>
+<dt class="hdlist1">quoteChar (default <code>"</code>)</dt>
+<dd>
+<p>The expected quote character in the file.</p>
+</dd>
+<dt class="hdlist1">skipHeaderRow (default true)</dt>
+<dd>
+<p>When true, the first row is treated as a header and skipped. Mapping is positional, not by header names.</p>
+</dd>
+<dt class="hdlist1">charsetEncoding (default UTF-8-without-BOM)</dt>
+<dd>
+<p>The file encoding. “with‑BOM” variants allow consuming a BOM at the start.</p>
+</dd>
+<dt class="hdlist1">requestedColumns (required)</dt>
+<dd>
+<p>Comma‑separated list of model field names in the same order as the CSV columns. This positional mapping drives parsing and validation. Nested list syntax <code>[0]</code> is allowed with the same constraints as export.</p>
+</dd>
+</dl>
 </div>
 <div class="paragraph">
 <p>Behavior:
@@ -2263,7 +2451,7 @@ curl -H &quot;Authorization: Bearer $JWT&quot; \
 </div>
 </div>
 <div class="sect2">
-<h3 id="_import_with_preview_sessions">13.3. Import with preview sessions</h3>
+<h3 id="_import_with_preview_sessions">14.3. Import with preview sessions</h3>
 <div class="paragraph">
 <p>Use a two‑step flow to analyze first, then commit only valid rows.</p>
 </div>
@@ -2323,7 +2511,7 @@ curl -H &quot;Authorization: Bearer $JWT&quot; \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_overview">14. Overview</h2>
+<h2 id="_overview">15. Overview</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Quantum uses a simple, versioned change‑set mechanism to evolve MongoDB schemas and seed data safely across realms (databases). Key building blocks:</p>
@@ -2347,7 +2535,7 @@ curl -H &quot;Authorization: Bearer $JWT&quot; \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_semantic_versioning">15. Semantic Versioning</h2>
+<h2 id="_semantic_versioning">16. Semantic Versioning</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Semantic Versioning (SemVer) expresses versions in the form MAJOR.MINOR.PATCH (for example, 1.4.2):</p>
@@ -2391,7 +2579,7 @@ curl -H &quot;Authorization: Bearer $JWT&quot; \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_configuration">16. Configuration</h2>
+<h2 id="_configuration">17. Configuration</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>The following MicroProfile config properties influence migrations:</p>
@@ -2415,7 +2603,7 @@ curl -H &quot;Authorization: Bearer $JWT&quot; \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_how_change_sets_are_discovered_and_executed">17. How change sets are discovered and executed</h2>
+<h2 id="_how_change_sets_are_discovered_and_executed">18. How change sets are discovered and executed</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -2442,7 +2630,7 @@ curl -H &quot;Authorization: Bearer $JWT&quot; \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_authoring_a_change_set">18. Authoring a change set</h2>
+<h2 id="_authoring_a_change_set">19. Authoring a change set</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Implement ChangeSetBean; most change sets extend ChangeSetBase.</p>
@@ -2514,7 +2702,7 @@ curl -H &quot;Authorization: Bearer $JWT&quot; \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_example_change_sets_in_the_framework">19. Example change sets in the framework</h2>
+<h2 id="_example_change_sets_in_the_framework">20. Example change sets in the framework</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Package: com.e2eq.framework.model.persistent.morphia.changesets</p>
@@ -2547,7 +2735,7 @@ curl -H &quot;Authorization: Bearer $JWT&quot; \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_rest_apis_to_trigger_migrations_migrationresource">20. REST APIs to trigger migrations (MigrationResource)</h2>
+<h2 id="_rest_apis_to_trigger_migrations_migrationresource">21. REST APIs to trigger migrations (MigrationResource)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Base path: /system/migration</p>
@@ -2625,7 +2813,7 @@ curl -N -H "Authorization: Bearer $TOKEN" <a href="http://localhost:8080/system/
 </div>
 </div>
 <div class="sect1">
-<h2 id="_perentity_index_management_baseresource">21. Per‑entity index management (BaseResource)</h2>
+<h2 id="_perentity_index_management_baseresource">22. Per‑entity index management (BaseResource)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Every entity resource that extends BaseResource&lt;T, R extends BaseMorphiaRepo&lt;T&gt;&gt; exposes a convenience endpoint to (re)create indexes for a single collection in a realm.</p>
@@ -2651,7 +2839,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_global_index_management_migrationservice">22. Global index management (MigrationService)</h2>
+<h2 id="_global_index_management_migrationservice">23. Global index management (MigrationService)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>MigrationService also exposes programmatic index utilities used by the MigrationResource endpoints:</p>
@@ -2669,7 +2857,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_validating_versions_at_startup">23. Validating versions at startup</h2>
+<h2 id="_validating_versions_at_startup">24. Validating versions at startup</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -2684,7 +2872,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_notes_and_best_practices">24. Notes and best practices</h2>
+<h2 id="_notes_and_best_practices">25. Notes and best practices</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -2715,7 +2903,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_jwt_provider">25. JWT Provider</h2>
+<h2 id="_jwt_provider">26. JWT Provider</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -2733,7 +2921,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_pluggable_authentication">26. Pluggable Authentication</h2>
+<h2 id="_pluggable_authentication">27. Pluggable Authentication</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>You can introduce alternative authentication mechanisms (e.g., API keys, SAML/OIDC front-channel tokens exchanged for back-end JWTs, HMAC signatures) by providing CDI beans that integrate with the security layer and emit the same normalized context consumed by DomainContext/RuleContext.</p>
@@ -2757,7 +2945,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_creating_an_auth_plugin_using_the_custom_jwt_provider_as_a_reference">27. Creating an Auth Plugin (using the Custom JWT provider as a reference)</h2>
+<h2 id="_creating_an_auth_plugin_using_the_custom_jwt_provider_as_a_reference">28. Creating an Auth Plugin (using the Custom JWT provider as a reference)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>An auth plugin is typically a CDI bean that:
@@ -2775,7 +2963,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_authprovider_interface_what_a_provider_must_implement">28. AuthProvider interface (what a provider must implement)</h2>
+<h2 id="_authprovider_interface_what_a_provider_must_implement">29. AuthProvider interface (what a provider must implement)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Core methods:
@@ -2799,7 +2987,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_usermanagement_interface_operations_your_plugin_must_support">29. UserManagement interface (operations your plugin must support)</h2>
+<h2 id="_usermanagement_interface_operations_your_plugin_must_support">30. UserManagement interface (operations your plugin must support)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Typical responsibilities include:
@@ -2830,7 +3018,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_leveraging_baseauthprovider_in_your_plugin">30. Leveraging BaseAuthProvider in your plugin</h2>
+<h2 id="_leveraging_baseauthprovider_in_your_plugin">31. Leveraging BaseAuthProvider in your plugin</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>When you extend BaseAuthProvider, you inherit ready-to-use capabilities that reduce boilerplate:</p>
@@ -2884,7 +3072,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_implementing_your_own_provider">31. Implementing your own provider</h2>
+<h2 id="_implementing_your_own_provider">32. Implementing your own provider</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Checklist:
@@ -2907,7 +3095,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_credentialuseridpassword_model_and_domaincontext">32. CredentialUserIdPassword model and DomainContext</h2>
+<h2 id="_credentialuseridpassword_model_and_domaincontext">33. CredentialUserIdPassword model and DomainContext</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This section explains how user credentials are represented, how those records tie to tenancy and realms, and how the server chooses the database (“realm”) for REST calls.</p>
@@ -2961,7 +3149,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_quarkus_oidc_out_of_the_box_and_integrating_with_common_idps">33. Quarkus OIDC out-of-the-box and integrating with common IdPs</h2>
+<h2 id="_quarkus_oidc_out_of_the_box_and_integrating_with_common_idps">34. Quarkus OIDC out-of-the-box and integrating with common IdPs</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Quarkus ships with first-class OpenID Connect (OIDC) support, enabling both service-to-service and browser-based logins.</p>
@@ -3039,7 +3227,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_authorization_via_rulecontext">34. Authorization via RuleContext</h2>
+<h2 id="_authorization_via_rulecontext">35. Authorization via RuleContext</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Authentication establishes identity; RuleContext enforces what the identity can do. For each action (CREATE, UPDATE, VIEW, DELETE, ARCHIVE), RuleContext can:</p>
@@ -3074,7 +3262,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_introduction_layered_enforcement_overview">35. Introduction: Layered Enforcement Overview</h2>
+<h2 id="_introduction_layered_enforcement_overview">36. Introduction: Layered Enforcement Overview</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Quantum evaluates "can this identity do X?" through three complementary layers. Understanding them in order helps you pick the right tool for the job and combine them safely:</p>
@@ -3121,7 +3309,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_key_concepts">36. Key Concepts</h2>
+<h2 id="_key_concepts">37. Key Concepts</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -3169,7 +3357,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_rule_structure_illustrative">37. Rule Structure (Illustrative)</h2>
+<h2 id="_rule_structure_illustrative">38. Rule Structure (Illustrative)</h2>
 <div class="sectionbody">
 <div class="listingblock">
 <div class="content">
@@ -3220,7 +3408,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_matching_algorithm">38. Matching Algorithm</h2>
+<h2 id="_matching_algorithm">39. Matching Algorithm</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Given a request R and identity I, evaluate a set of rule bases RB as follows:</p>
@@ -3304,7 +3492,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_priorities">39. Priorities</h2>
+<h2 id="_priorities">40. Priorities</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -3334,7 +3522,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_grant_based_vs_deny_based_rule_sets">40. Grant-based vs Deny-based Rule Sets</h2>
+<h2 id="_grant_based_vs_deny_based_rule_sets">41. Grant-based vs Deny-based Rule Sets</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Grant-based rule sets start with a default decision of DENY and then incrementally add ALLOW scenarios through explicit rules. This model is fail‑safe by default: any URL, action, or functional area that does not have a matching ALLOW rule remains inaccessible. As new endpoints or capabilities are added to the system, users will not gain access until an explicit ALLOW is authored. This is the recommended posture for security‑sensitive systems and multi‑tenant platforms.</p>
@@ -3387,7 +3575,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_feature_flags_variants_and_target_rules">41. Feature Flags, Variants, and Target Rules</h2>
+<h2 id="_feature_flags_variants_and_target_rules">42. Feature Flags, Variants, and Target Rules</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Feature flags complement permission rules by controlling whether a capability is active for a given principal, cohort, or environment. Permissions answer “may this identity perform this action?”; feature flags answer “is this capability turned on, and which variant applies?” Use them together to achieve safe rollouts and fine‑grained authorization.</p>
@@ -3493,7 +3681,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_multiple_matching_rulebases">42. Multiple Matching RuleBases</h2>
+<h2 id="_multiple_matching_rulebases">43. Multiple Matching RuleBases</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -3514,7 +3702,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_identity_and_role_matching">43. Identity and Role Matching</h2>
+<h2 id="_identity_and_role_matching">44. Identity and Role Matching</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -3533,7 +3721,7 @@ Summary:
 </ul>
 </div>
 <div class="sect2">
-<h3 id="_how_roles_are_defined_for_an_identity_role_sources_and_resolution">43.1. How roles are defined for an identity (role sources and resolution)</h3>
+<h3 id="_how_roles_are_defined_for_an_identity_role_sources_and_resolution">44.1. How roles are defined for an identity (role sources and resolution)</h3>
 <div class="paragraph">
 <p>Quantum composes the effective roles for a request by merging:
 - Roles from the identity provider (JWT/SecurityIdentity)
@@ -3597,7 +3785,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_example_scenarios">44. Example Scenarios</h2>
+<h2 id="_example_scenarios">45. Example Scenarios</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>1) Public catalog browsing
@@ -3635,7 +3823,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_operational_tips">45. Operational Tips</h2>
+<h2 id="_operational_tips">46. Operational Tips</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -3656,7 +3844,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_how_uiactions_and_defaultuiactions_are_calculated">46. How UIActions and DefaultUIActions are calculated</h2>
+<h2 id="_how_uiactions_and_defaultuiactions_are_calculated">47. How UIActions and DefaultUIActions are calculated</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>When the server returns a collection of entities (for example, userProfiles), each entity may expose two action lists:
@@ -3702,7 +3890,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_how_this_integrates_end_to_end">47. How This Integrates End-to-End</h2>
+<h2 id="_how_this_integrates_end_to_end">48. How This Integrates End-to-End</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -3720,7 +3908,7 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_administering_policies_via_rest_policyresource">48. Administering Policies via REST (PolicyResource)</h2>
+<h2 id="_administering_policies_via_rest_policyresource">49. Administering Policies via REST (PolicyResource)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>The PolicyResource exposes CRUD-style REST APIs for creating and managing policies (rule bases) that drive authorization decisions. Each Policy targets a principalId (either a specific userId or a role name) and contains an ordered list of Rule objects. Rules match requests using SecurityURIHeader and SecurityURIBody and then contribute an effect (ALLOW/DENY) and optional repository filters.</p>
@@ -3739,7 +3927,7 @@ Summary:
 </ul>
 </div>
 <div class="sect2">
-<h3 id="_model_shape_policy">48.1. Model shape (Policy)</h3>
+<h3 id="_model_shape_policy">49.1. Model shape (Policy)</h3>
 <div class="paragraph">
 <p>A Policy extends FullBaseModel and includes:
 - id, refName, displayName, dataDomain, archived/expired flags (inherited)
@@ -3796,7 +3984,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_endpoints">48.2. Endpoints</h3>
+<h3 id="_endpoints">49.2. Endpoints</h3>
 <div class="paragraph">
 <p>All endpoints are relative to /security/permission/policies. These are inherited from BaseResource and are consistent across entity resources.</p>
 </div>
@@ -3918,7 +4106,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_examples">48.3. Examples</h3>
+<h3 id="_examples">49.3. Examples</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -3967,7 +4155,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_changes_affect_rule_bases_and_enforcement">48.4. How changes affect rule bases and enforcement</h3>
+<h3 id="_how_changes_affect_rule_bases_and_enforcement">49.4. How changes affect rule bases and enforcement</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -4028,13 +4216,13 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_realm_override_x_realm_and_impersonation_x_impersonate">49. Realm override (X-Realm) and Impersonation (X-Impersonate)</h2>
+<h2 id="_realm_override_x_realm_and_impersonation_x_impersonate">50. Realm override (X-Realm) and Impersonation (X-Impersonate)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This section explains how to use the request headers X-Realm and X-Impersonate-* alongside permission rule bases. These headers influence which realm (database) a request operates against and, in the case of impersonation, which identity’s roles are evaluated by the rule engine.</p>
 </div>
 <div class="sect2">
-<h3 id="_what_they_do_at_a_glance">49.1. What they do (at a glance)</h3>
+<h3 id="_what_they_do_at_a_glance">50.1. What they do (at a glance)</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -4050,7 +4238,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_the_headers_integrate_with_permission_evaluation">49.2. How the headers integrate with permission evaluation</h3>
+<h3 id="_how_the_headers_integrate_with_permission_evaluation">50.2. How the headers integrate with permission evaluation</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -4078,7 +4266,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_required_credential_configuration_credentialuseridpassword">49.3. Required credential configuration (CredentialUserIdPassword)</h3>
+<h3 id="_required_credential_configuration_credentialuseridpassword">50.3. Required credential configuration (CredentialUserIdPassword)</h3>
 <div class="paragraph">
 <p>Two fields on CredentialUserIdPassword govern whether a user may use these headers:</p>
 </div>
@@ -4133,7 +4321,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_end_to_end_behavior_from_securityfilter_reference">49.4. End-to-end behavior from SecurityFilter (reference)</h3>
+<h3 id="_end_to_end_behavior_from_securityfilter_reference">50.4. End-to-end behavior from SecurityFilter (reference)</h3>
 <div class="paragraph">
 <p>The SecurityFilter constructs the PrincipalContext/ResourceContext before rule evaluation:
 - X-Realm is read and, if present, validated against the caller’s credential.realmRegEx.
@@ -4144,7 +4332,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_practical_differences_and_use_cases">49.5. Practical differences and use cases</h3>
+<h3 id="_practical_differences_and_use_cases">50.5. Practical differences and use cases</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -4187,7 +4375,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_examples_2">49.6. Examples</h3>
+<h3 id="_examples_2">50.6. Examples</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -4238,13 +4426,13 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_data_domain_assignment_on_create_domaincontext_and_datadomainpolicy">50. Data domain assignment on create: DomainContext and DataDomainPolicy</h2>
+<h2 id="_data_domain_assignment_on_create_domaincontext_and_datadomainpolicy">51. Data domain assignment on create: DomainContext and DataDomainPolicy</h2>
 <div class="sectionbody">
 <div id="_data_domain_assignment" class="paragraph">
 <p>This section explains how Quantum decides which dataDomain is stamped on newly created records, why this decision is necessary in a multi‑tenant system, what the default behavior is, and how you can override it globally or per Functional Area / Functional Domain. It also describes the DataDomainResolver interface and the default implementation provided by the framework.</p>
 </div>
 <div class="sect2">
-<h3 id="_the_problem_this_solves_and_why_it_matters">50.1. The problem this solves (and why it matters)</h3>
+<h3 id="_the_problem_this_solves_and_why_it_matters">51.1. The problem this solves (and why it matters)</h3>
 <div class="paragraph">
 <p>In a multi‑tenant platform you must ensure each new record is written to the correct data partition so later reads/updates can be scoped safely. If the dataDomain is wrong or missing, you risk leaking data across tenants or making your own data inaccessible due to mis‑scoping.</p>
 </div>
@@ -4259,7 +4447,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_key_concepts_recap_domaincontext_and_datadomain">50.2. Key concepts recap: DomainContext and DataDomain</h3>
+<h3 id="_key_concepts_recap_domaincontext_and_datadomain">51.2. Key concepts recap: DomainContext and DataDomain</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -4275,7 +4463,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_the_default_policy_do_nothing_and_it_works">50.3. The default policy (do nothing and it works)</h3>
+<h3 id="_the_default_policy_do_nothing_and_it_works">51.3. The default policy (do nothing and it works)</h3>
 <div class="paragraph">
 <p>Out of the box, Quantum preserves the existing behavior: if no policy is configured, the resolver falls back to the authenticated principal’s DataDomain. This guarantees compatibility with existing applications.</p>
 </div>
@@ -4287,7 +4475,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_policy_scopes_principalattached_vs_global">50.4. Policy scopes: principal‑attached vs. global</h3>
+<h3 id="_policy_scopes_principalattached_vs_global">51.4. Policy scopes: principal‑attached vs. global</h3>
 <div class="paragraph">
 <p>You can define overrides at two levels:
 - Principal‑attached (per credential): attach a DataDomainPolicy to a CredentialUserIdPassword. The SecurityFilter places this policy into the PrincipalContext, so it applies only to records created by that principal. This is useful for VIP service accounts or specific partners.
@@ -4298,7 +4486,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_the_policy_map_and_matching">50.5. The policy map and matching</h3>
+<h3 id="_the_policy_map_and_matching">51.5. The policy map and matching</h3>
 <div class="paragraph">
 <p>A DataDomainPolicy is a small map of rules: Map&lt;String, DataDomainPolicyEntry&gt; policyEntries, keyed by "&lt;FunctionalArea&gt;:&lt;FunctionalDomain&gt;" with support for "*" wildcards. The resolver evaluates keys in this order:</p>
 </div>
@@ -4350,7 +4538,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_the_resolver_works">50.6. How the resolver works</h3>
+<h3 id="_how_the_resolver_works">51.6. How the resolver works</h3>
 <div class="paragraph">
 <p>Interfaces and default implementation:</p>
 </div>
@@ -4386,7 +4574,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_when_would_you_want_a_nonglobal_policy">50.7. When would you want a non‑global policy?</h3>
+<h3 id="_when_would_you_want_a_nonglobal_policy">51.7. When would you want a non‑global policy?</h3>
 <div class="paragraph">
 <p>Here are a few concrete scenarios:
 - Centralized HR: All HR Employee records are written to a shared HR domain regardless of the team creating them. This supports a shared‑service HR model without duplicating HR data per tenant.
@@ -4396,7 +4584,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_relation_to_tenancy_models">50.8. Relation to tenancy models</h3>
+<h3 id="_relation_to_tenancy_models">51.8. Relation to tenancy models</h3>
 <div class="paragraph">
 <p>The policy mechanism supports both siloed and pooled tenancy:
 - Siloed tenancy: Most domains default to FROM_CREDENTIAL (each tenant writes to its own partition). Only a few shared services (e.g., HR, catalog) use FIXED to centralize data.
@@ -4407,7 +4595,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_authoring_tips">50.9. Authoring tips</h3>
+<h3 id="_authoring_tips">51.9. Authoring tips</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -4426,7 +4614,7 @@ Summary:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_api_pointers">50.10. API pointers</h3>
+<h3 id="_api_pointers">51.10. API pointers</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -4447,12 +4635,12 @@ Summary:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_testing">51. Testing</h2>
+<h2 id="_testing">52. Testing</h2>
 <div class="sectionbody">
 <div class="sect2">
-<h3 id="testing">51.1. Testing in Quantum: Security Contexts, Repos, and REST APIs</h3>
+<h3 id="testing">52.1. Testing in Quantum: Security Contexts, Repos, and REST APIs</h3>
 <div class="sect3">
-<h4 id="_testing_framework">51.1.1. Testing Framework</h4>
+<h4 id="_testing_framework">52.1.1. Testing Framework</h4>
 <div class="paragraph">
 <p>This guide explains how to write effective tests in the Quantum framework, with a focus on setting the security context and choosing the right Quarkus testing patterns for repository logic vs. REST APIs.</p>
 </div>
@@ -4468,7 +4656,7 @@ Summary:
 </div>
 </div>
 <div class="sect3">
-<h4 id="_prerequisites_and_glossary">51.1.2. Prerequisites and glossary</h4>
+<h4 id="_prerequisites_and_glossary">52.1.2. Prerequisites and glossary</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -4490,7 +4678,7 @@ Summary:
 </div>
 </div>
 <div class="sect3">
-<h4 id="_pattern_1_extend_baserepotest">51.1.3. Pattern 1 — Extend BaseRepoTest</h4>
+<h4 id="_pattern_1_extend_baserepotest">52.1.3. Pattern 1 — Extend BaseRepoTest</h4>
 <div class="paragraph">
 <p>For repository tests (no HTTP), the simplest approach is to extend BaseRepoTest.</p>
 </div>
@@ -4531,7 +4719,7 @@ Summary:
 </div>
 </div>
 <div class="sect3">
-<h4 id="_pattern_2_try_with_resources_securitysession">51.1.4. Pattern 2 — Try-with-resources SecuritySession</h4>
+<h4 id="_pattern_2_try_with_resources_securitysession">52.1.4. Pattern 2 — Try-with-resources SecuritySession</h4>
 <div class="paragraph">
 <p>Use SecuritySession explicitly to scope work that should run under a specific PrincipalContext and ResourceContext. This is the most explicit pattern and works in both repository and service-level tests.</p>
 </div>
@@ -4564,7 +4752,7 @@ Summary:
 </div>
 </div>
 <div class="sect3">
-<h4 id="_pattern_3_scoped_call_wrapper_scopedcallscope">51.1.5. Pattern 3 — Scoped-call wrapper (ScopedCallScope)</h4>
+<h4 id="_pattern_3_scoped_call_wrapper_scopedcallscope">52.1.5. Pattern 3 — Scoped-call wrapper (ScopedCallScope)</h4>
 <div class="paragraph">
 <p>If you prefer not to repeat try-with-resources blocks, wrap your work in a helper that creates a SecuritySession, runs your logic, and ensures cleanup. This is sometimes called a “scoped call” pattern, often referred to as a ScopedCallScope.</p>
 </div>
@@ -4613,7 +4801,7 @@ SecurityScopes.run(pContext, rContext, () -&gt; repo.save(realm, entity));</code
 </div>
 </div>
 <div class="sect3">
-<h4 id="_pattern_4_testsecurity_annotation_quarkus">51.1.6. Pattern 4 — @TestSecurity annotation (Quarkus)</h4>
+<h4 id="_pattern_4_testsecurity_annotation_quarkus">52.1.6. Pattern 4 — @TestSecurity annotation (Quarkus)</h4>
 <div class="paragraph">
 <p>For tests that run through HTTP (and in some repo tests), you can use Quarkus’ @io.quarkus.test.security.TestSecurity to set the SecurityIdentity without creating a SecuritySession.</p>
 </div>
@@ -4673,7 +4861,7 @@ SecurityScopes.run(pContext, rContext, () -&gt; repo.save(realm, entity));</code
 </div>
 </div>
 <div class="sect3">
-<h4 id="_testing_rest_apis_vs_repository_logic">51.1.7. Testing REST APIs vs. Repository Logic</h4>
+<h4 id="_testing_rest_apis_vs_repository_logic">52.1.7. Testing REST APIs vs. Repository Logic</h4>
 <div class="paragraph">
 <p>When to prefer REST (HTTP) tests:
 - End-to-end authorization: validate request filters, identity mapping, realm headers, and JWT handling.
@@ -4705,7 +4893,7 @@ SecurityScopes.run(pContext, rContext, () -&gt; repo.save(realm, entity));</code
 </div>
 </div>
 <div class="sect3">
-<h4 id="_useful_quarkus_test_features">51.1.8. Useful Quarkus Test features</h4>
+<h4 id="_useful_quarkus_test_features">52.1.8. Useful Quarkus Test features</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -4730,7 +4918,7 @@ SecurityScopes.run(pContext, rContext, () -&gt; repo.save(realm, entity));</code
 </div>
 </div>
 <div class="sect3">
-<h4 id="_real_world_tips">51.1.9. Real-world tips</h4>
+<h4 id="_real_world_tips">52.1.9. Real-world tips</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -4754,7 +4942,7 @@ void cleanup() { com.e2eq.framework.model.securityrules.SecurityContext.clear();
 </div>
 </div>
 <div class="sect3">
-<h4 id="_summary">51.1.10. Summary</h4>
+<h4 id="_summary">52.1.10. Summary</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -4776,18 +4964,21 @@ void cleanup() { com.e2eq.framework.model.securityrules.SecurityContext.clear();
 </div>
 </div>
 <div class="sect1">
-<h2 id="_tutorials">52. Tutorials</h2>
+<h2 id="_tutorials">53. Tutorials</h2>
 <div class="sectionbody">
-<div id="tutorial-supply-chain" class="paragraph">
-<p>:= Supply Chain Collaboration SaaS: A Business‑First Guide</p>
+
 </div>
+</div>
+<h1 id="tutorial-supply-chain" class="sect0">Supply Chain Collaboration SaaS: A Business‑First Guide</h1>
+<div class="openblock partintro">
+<div class="content">
 <div class="paragraph">
 <p>This guide explains, in plain language, how the Quantum framework helps you build a Supply Chain Collaboration Software‑as‑a‑Service (SaaS). We focus on real business problems—secure data sharing, multi‑party workflows, and tenant isolation—and show how the framework’s building blocks solve them without requiring you to stitch together dozens of bespoke APIs.</p>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_what_a_supplychain_saas_needs_and_how_quantum_helps">53. What a supply‑chain SaaS needs (and how Quantum helps)</h2>
+<h2 id="_what_a_supplychain_saas_needs_and_how_quantum_helps">54. What a supply‑chain SaaS needs (and how Quantum helps)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Common needs when launching a collaboration platform:</p>
@@ -4839,7 +5030,7 @@ void cleanup() { com.e2eq.framework.model.securityrules.SecurityContext.clear();
 </div>
 </div>
 <div class="sect1">
-<h2 id="_why_multitenancy_is_a_natural_fit_for_supply_chains">54. Why multi‑tenancy is a natural fit for supply chains</h2>
+<h2 id="_why_multitenancy_is_a_natural_fit_for_supply_chains">55. Why multi‑tenancy is a natural fit for supply chains</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Supply chains are networks. Everyone shares a process, but not a database. Quantum isolates each tenant’s data by default and lets you selectively share records with partners:</p>
@@ -4863,7 +5054,7 @@ void cleanup() { com.e2eq.framework.model.securityrules.SecurityContext.clear();
 </div>
 </div>
 <div class="sect1">
-<h2 id="_who_uses_the_system_organizations_and_roles">55. Who uses the system (organizations and roles)</h2>
+<h2 id="_who_uses_the_system_organizations_and_roles">56. Who uses the system (organizations and roles)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Organizations (tenants)
@@ -4886,7 +5077,7 @@ void cleanup() { com.e2eq.framework.model.securityrules.SecurityContext.clear();
 </div>
 </div>
 <div class="sect1">
-<h2 id="_identity_and_access_meet_partners_where_they_are">56. Identity and access: meet partners where they are</h2>
+<h2 id="_identity_and_access_meet_partners_where_they_are">57. Identity and access: meet partners where they are</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Every organization may authenticate differently:
@@ -4900,7 +5091,7 @@ void cleanup() { com.e2eq.framework.model.securityrules.SecurityContext.clear();
 </div>
 </div>
 <div class="sect1">
-<h2 id="_modeling_without_jargon_areas_domains_and_actions">57. Modeling without jargon: Areas, Domains, and Actions</h2>
+<h2 id="_modeling_without_jargon_areas_domains_and_actions">58. Modeling without jargon: Areas, Domains, and Actions</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>To keep your platform organized, Quantum groups things into:
@@ -4916,7 +5107,7 @@ void cleanup() { com.e2eq.framework.model.securityrules.SecurityContext.clear();
 </div>
 </div>
 <div class="sect1">
-<h2 id="_policies_that_say_who_can_do_what_rule_language">58. Policies that say “who can do what” (Rule Language)</h2>
+<h2 id="_policies_that_say_who_can_do_what_rule_language">59. Policies that say “who can do what” (Rule Language)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Policies are simple, readable rules that match:
@@ -4935,7 +5126,7 @@ void cleanup() { com.e2eq.framework.model.securityrules.SecurityContext.clear();
 </div>
 </div>
 <div class="sect1">
-<h2 id="_a_small_powerful_api_surface_list_query">59. A small, powerful API surface: List + Query</h2>
+<h2 id="_a_small_powerful_api_surface_list_query">60. A small, powerful API surface: List + Query</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Instead of building a unique search endpoint for every screen, Quantum gives you:
@@ -4952,7 +5143,7 @@ void cleanup() { com.e2eq.framework.model.securityrules.SecurityContext.clear();
 </div>
 </div>
 <div class="sect1">
-<h2 id="_delegated_administration_tenantlevel_user_management">60. Delegated Administration (tenant‑level user management)</h2>
+<h2 id="_delegated_administration_tenantlevel_user_management">61. Delegated Administration (tenant‑level user management)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Empower each organization to run their own house while you keep platform‑wide safety:
@@ -4963,7 +5154,7 @@ void cleanup() { com.e2eq.framework.model.securityrules.SecurityContext.clear();
 </div>
 </div>
 <div class="sect1">
-<h2 id="_integrations_and_data_management">61. Integrations and data management</h2>
+<h2 id="_integrations_and_data_management">62. Integrations and data management</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Supply chains depend on clean, timely data. Quantum provides:
@@ -4980,7 +5171,7 @@ void cleanup() { com.e2eq.framework.model.securityrules.SecurityContext.clear();
 </div>
 </div>
 <div class="sect1">
-<h2 id="_endtoend_examples_2">62. End‑to‑end examples</h2>
+<h2 id="_endtoend_examples_2">63. End‑to‑end examples</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>1) Buyer–supplier collaboration on a Purchase Order
@@ -4999,7 +5190,7 @@ void cleanup() { com.e2eq.framework.model.securityrules.SecurityContext.clear();
 </div>
 </div>
 <div class="sect1">
-<h2 id="_what_you_dont_have_to_build_from_scratch">63. What you don’t have to build from scratch</h2>
+<h2 id="_what_you_dont_have_to_build_from_scratch">64. What you don’t have to build from scratch</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -5026,7 +5217,7 @@ void cleanup() { com.e2eq.framework.model.securityrules.SecurityContext.clear();
 </div>
 </div>
 <div class="sect1">
-<h2 id="_next_steps">64. Next steps</h2>
+<h2 id="_next_steps">65. Next steps</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -5050,7 +5241,7 @@ void cleanup() { com.e2eq.framework.model.securityrules.SecurityContext.clear();
 </div>
 </div>
 <div class="sect1">
-<h2 id="_a_day_in_the_life_from_purchase_order_to_delivery">65. A day in the life: From Purchase Order to Delivery</h2>
+<h2 id="_a_day_in_the_life_from_purchase_order_to_delivery">66. A day in the life: From Purchase Order to Delivery</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This story ties the pieces together in a realistic sequence. We follow a Purchase Order (PO) from creation to delivery, with shared visibility for suppliers and carriers, a clear state graph, and checklist-like Completion Tasks guiding the work.</p>
