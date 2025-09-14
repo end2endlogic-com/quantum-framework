@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Framework Documentation</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-09-14T14:37:09Z</span>
+<span id="revdate">2025-09-14T14:55:13Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -3883,7 +3883,8 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 <ul>
 <li>
 <p>Identity: The authenticated principal, typically originating from JWT or another provider. It includes:</p>
-</li>
+<div class="ulist">
+<ul>
 <li>
 <p>userId (or credentialUserIdPassword username)</p>
 </li>
@@ -3893,12 +3894,16 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 <li>
 <p>tenantId, orgRefName, optional realm, and other claims that contribute to DomainContext</p>
 </li>
+</ul>
+</div>
+</li>
 <li>
-<p>userProfile: A domain representation of the user that aggregates identity, roles, and policy decorations (feature flags, plans, expiration, etc.).</p>
+<p>userProfile: A domain representation of the user that adds human information such as first name, last name, email address, phone number and provides a linkage back to  identity, roles, and policy decorations (feature flags, plans, expiration, etc.).</p>
 </li>
 <li>
 <p>Rule Base (Permission Rule): A declarative rule with matching criteria and an effect (ALLOW or DENY). Criteria may include:</p>
-</li>
+<div class="ulist">
+<ul>
 <li>
 <p>HTTP method and URL pattern</p>
 </li>
@@ -3919,6 +3924,9 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </li>
 <li>
 <p>Effect: ALLOW or DENY; an ALLOW may also contribute scope filters (e.g., DataDomain constraints) to be applied downstream by repositories.</p>
+</li>
+</ul>
+</div>
 </li>
 </ul>
 </div>
@@ -5382,15 +5390,17 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 <div class="sect2">
 <h3 id="_key_concepts_recap_domaincontext_and_datadomain">51.2. Key concepts recap: DomainContext and DataDomain</h3>
-<div class="ulist">
-<ul>
-<li>
-<p>DomainContext (on credentials/realms) captures the principal’s scoping defaults (realm, org/account/tenant identifiers, data segment). At request time this is materialized into a DataDomain.</p>
-</li>
-<li>
-<p>DataDomain is what gets stamped onto persisted entities and later used by repositories to constrain queries and updates.</p>
-</li>
-</ul>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">DomainContext (on credentials/realms)</dt>
+<dd>
+<p>captures the principal’s scoping defaults (realm, org/account/tenant identifiers, data segment). At request time this is materialized into a DataDomain.</p>
+</dd>
+<dt class="hdlist1">DataDomain</dt>
+<dd>
+<p>is what gets stamped onto persisted entities and later used by repositories to constrain queries and updates.</p>
+</dd>
+</dl>
 </div>
 <div class="paragraph">
 <p>If you do nothing, new records inherit the principal’s DataDomain.</p>
