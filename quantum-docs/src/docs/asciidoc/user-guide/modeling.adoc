@@ -1,5 +1,5 @@
 [[modeling]]
-= Modeling with Functional Areas, Domains, and Actions
+=== Modeling with Functional Areas, Domains, and Actions
 
 Quantum organizes your system around three core constructs:
 
@@ -12,7 +12,7 @@ These constructs allow:
 - Fine-grained sharing: Point specific functional areas to shared databases while others remain strictly segmented.
 - Policy composition: Apply RuleContext decisions at the level of area/domain/action.
 
-== DataDomain on Models
+==== DataDomain on Models
 
 All persisted models carry DataDomain (tenantId, orgRefName, ownerId, etc.) for rule-based filtering and cross-tenant sharing.
 
@@ -44,7 +44,7 @@ public class Product extends BaseModel {
 }
 ----
 
-== Persistence Repositories
+==== Persistence Repositories
 
 Define a repository to persist and query your model. With Morphia:
 
@@ -57,7 +57,7 @@ public interface ProductRepo extends MorphiaRepo<Product> {
 }
 ----
 
-== Exposing REST Resources
+==== Exposing REST Resources
 
 Expose consistent CRUD endpoints by extending BaseResource.
 
@@ -75,7 +75,7 @@ public class ProductResource extends BaseResource<Product, ProductRepo> {
 With this minimal setup, you get standard REST APIs guarded by RuleContext/DataDomain and enriched with UIAction metadata.
 
 
-== Lombok in Models
+==== Lombok in Models
 
 Lombok reduces boilerplate in Quantum models and supports inheritance-friendly builders.
 
@@ -104,7 +104,7 @@ Notes:
 - Prefer @SuperBuilder over @Builder when extending BaseModel/UnversionedBaseModel.
 - Keep equals/hashCode stable for collections and caches; include callSuper when needed.
 
-== Validation with Jakarta Bean Validation
+==== Validation with Jakarta Bean Validation
 
 Quantum uses Jakarta Bean Validation to enforce invariants on models at persist time (and optionally at REST boundaries).
 
@@ -122,7 +122,7 @@ Where validation runs:
   - If DataDomain is null and SecurityContext has a principal, ValidationInterceptor will default the DataDomain from the principal context.
 - Optionally at REST boundaries: You may also annotate resource DTOs/parameters with Jakarta validation; Quarkus can validate them before the method executes.
 
-== Jackson vs Jakarta Validation Annotations
+==== Jackson vs Jakarta Validation Annotations
 
 These two families of annotations serve different purposes and complement each other:
 
@@ -242,7 +242,7 @@ How these map into authorization and rules:
 
 - ResourceContext/DomainContext: When a request operates on a model, the framework derives the functional area and domain from the model type (or resource) and places them on the current context alongside the action (CREATE, UPDATE, VIEW, DELETE, ARCHIVE). RuleContext consumes these to evaluate policies.
 
-- Permission language (headers): Rule bases can match on HTTP headers such as x-functional-area and x-functional-domain. These are often set by the resource layer or middleware to reflect the model’s bmFunctionalArea/bmFunctionalDomain for the current operation.
+- Permission language (path-derived ResourceContext): The framework derives area and functionalDomain from REST path segments using the convention: /{area}/{functionalDomain}/{action}/... . These are placed on the ResourceContext and consumed by RuleContext. Rule bases typically match on HTTP method and URL patterns; no special headers are required.
 
 - Permission language (query variables): The ANTLR-based query language exposes variables that can be referenced in filters:
   - ${area} corresponds to bmFunctionalArea()
@@ -253,18 +253,15 @@ How these map into authorization and rules:
 
 Examples
 
-1) Header-based rule matching (Permissions)
+1) Path-derived rule matching (Permissions)
 
 [source,yaml]
 ----
-- name: allow-catalog-reads
+- name: allow-catalog-product-reads
   priority: 300
   match:
     method: [GET]
-    url: /api/**
-    headers:
-      x-functional-area: [Catalog]
-      x-functional-domain: [Product, Category]
+    url: /Catalog/Product/**
     rolesAny: [USER, ADMIN]
   effect: ALLOW
   filters:
@@ -297,7 +294,8 @@ Given a model like:
 
 Notes
 
-- If you create composite resources that span multiple models, set the headers (x-functional-area, x-functional-domain) explicitly for each endpoint so rules can target them precisely.
+- Path convention: Use leading segments /{area}/{functionalDomain}/{action}/... so the framework can derive ResourceContext reliably. Extra segments after the first three are allowed; only the first three are used to compute area, domain, and action.
+- Nonconformant paths: If the path has fewer than three segments, the framework sets an anonymous/default ResourceContext. In practice, rules will typically evaluate to DENY unless there is an explicit allowance for anonymous contexts.
 - See also: the Permissions section for rule-base matching and priorities, and the DomainContext/RuleContext section for end-to-end flow.
 
 
@@ -365,6 +363,129 @@ How it affects save/update:
 - On create: validateInitialStates ensures the field value is one of the configured initial states. Otherwise, InvalidStateTransitionException is thrown.
 - On update: validateStateTransitions checks each @StateGraph field’s old->new transition against the graph via StateGraphManager.validateTransition(). If invalid, save/update fails with InvalidStateTransitionException. This applies to full-entity saves and to partial updates via repo.update(...pairs) on that field.
 - Utilities: StateGraphManager.getNextPossibleStates(graphName, current) and printStateGraph(...) can aid UIs.
+
+
+== CompletionTasks and CompletionTaskGroups
+
+CompletionTasks and CompletionTaskGroups provide a simple, persistent way to track a series of work items that need to be completed, either by background processes or external systems. Use them when you need durable progress tracking across restarts and an auditable record of outcomes.
+
+Key models:
+- CompletionTask: an individual unit of work with fields like status, timestamps, and optional result/details.
+- CompletionTaskGroup: a container that represents a cohort of tasks progressing toward completion.
+
+Model overview:
+
+[source,java]
+----
+// Individual task
+@Entity("completionTask")
+public class CompletionTask extends BaseModel {
+  public enum Status { PENDING, RUNNING, SUCCESS, FAILED }
+
+  @Reference
+  CompletionTaskGroup group;   // optional grouping
+  String details;              // human-readable context (what/why)
+  Status status;               // PENDING -> RUNNING -> (SUCCESS|FAILED)
+  Date createdDate;            // when the task was created
+  Date completedDate;          // set when terminal (SUCCESS/FAILED)
+  String result;               // output, message, or error summary
+
+  @Override public String bmFunctionalArea()   { return "TASK"; }
+  @Override public String bmFunctionalDomain() { return "COMPLETION_TASK"; }
+}
+
+// Group of tasks
+@Entity("completionTaskGroup")
+public class CompletionTaskGroup extends BaseModel {
+  public enum Status { NEW, RUNNING, COMPLETE }
+
+  String description;   // e.g., "Onboarding: create resources"
+  Status status;        // reflects overall progress of the group
+  Date createdDate;     // when the group was created
+  Date completedDate;   // when the group finished
+
+  @Override public String bmFunctionalArea()   { return "TASK"; }
+  @Override public String bmFunctionalDomain() { return "COMPLETION_TASK_GROUP"; }
+}
+----
+
+Typical lifecycle:
+- Create a CompletionTaskGroup in NEW status.
+- Create N CompletionTasks (status=PENDING) referencing the group.
+- A worker picks tasks and flips status to RUNNING, performs the work, then to SUCCESS or FAILED, setting completedDate and result.
+- Periodically update the group:
+  - If at least one task is RUNNING (and none pending), set group status to RUNNING.
+  - When all tasks are terminal (SUCCESS or FAILED), set group status to COMPLETE and completedDate.
+
+How to use for tracking a series of things that need to be completed:
+- Batch operations: When submitting a batch (e.g., provisioning 100 accounts), create one group and 100 tasks. The UI/API can poll the group to show overall progress and per-item results.
+- Multi-step workflows: Represent each step as its own task, or use one task per target resource. Groups help correlate all steps for a single business request.
+- Retry/compensation: FAILED tasks can be retried by creating new tasks or resetting status to PENDING based on your policy. Keep result populated with failure reasons.
+
+Example creation flow:
+
+[source,java]
+----
+CompletionTaskGroup group = CompletionTaskGroup.builder()
+  .description("Catalog import: 250 SKUs")
+  .status(CompletionTaskGroup.Status.NEW)
+  .createdDate(new Date())
+  .build();
+completionTaskGroupRepo.save(group);
+
+for (Sku s : skus) {
+  CompletionTask t = CompletionTask.builder()
+    .group(group)
+    .details("Import SKU " + s.code())
+    .status(CompletionTask.Status.PENDING)
+    .createdDate(new Date())
+    .build();
+  completionTaskRepo.save(t);
+}
+----
+
+Example worker progression:
+
+[source,java]
+----
+// Fetch a PENDING task and execute
+CompletionTask t = completionTaskRepo.findOneByStatus(CompletionTask.Status.PENDING);
+if (t != null) {
+  completionTaskRepo.update(t.getId(), "status", CompletionTask.Status.RUNNING);
+  try {
+    // ... do work ...
+    completionTaskRepo.update(t.getId(),
+      "status", CompletionTask.Status.SUCCESS,
+      "completedDate", new Date(),
+      "result", "OK");
+  } catch (Exception e) {
+    completionTaskRepo.update(t.getId(),
+      "status", CompletionTask.Status.FAILED,
+      "completedDate", new Date(),
+      "result", e.getMessage());
+  }
+}
+
+// Periodically recompute group status
+List<CompletionTask> tasks = completionTaskRepo.findByGroup(group);
+boolean allTerminal = tasks.stream().allMatch(x -> x.getStatus()==SUCCESS || x.getStatus()==FAILED);
+boolean anyRunning = tasks.stream().anyMatch(x -> x.getStatus()==RUNNING);
+boolean anyPending = tasks.stream().anyMatch(x -> x.getStatus()==PENDING);
+
+if (allTerminal) {
+  completionTaskGroupRepo.update(group.getId(),
+    "status", CompletionTaskGroup.Status.COMPLETE,
+    "completedDate", new Date());
+} else if (anyRunning || (!anyPending && !allTerminal)) {
+  completionTaskGroupRepo.update(group.getId(), "status", CompletionTaskGroup.Status.RUNNING);
+}
+----
+
+Notes and best practices:
+- Keep details short but diagnostic, and store richer context in result.
+- Use DataDomain fields for multi-tenant scoping so groups/tasks are isolated per tenant/org as needed.
+- Avoid unbounded growth: archive or purge old groups once COMPLETE.
+- Consider idempotency keys in details or a custom field to prevent processing the same logical work twice.
 
 
 == References and EntityReference

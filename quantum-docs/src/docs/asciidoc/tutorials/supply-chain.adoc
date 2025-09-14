@@ -1,5 +1,5 @@
 [[tutorial-supply-chain]]
-:= Supply Chain Collaboration SaaS: A Business‑First Guide
+= Supply Chain Collaboration SaaS: A Business‑First Guide
 
 This guide explains, in plain language, how the Quantum framework helps you build a Supply Chain Collaboration Software‑as‑a‑Service (SaaS). We focus on real business problems—secure data sharing, multi‑party workflows, and tenant isolation—and show how the framework’s building blocks solve them without requiring you to stitch together dozens of bespoke APIs.
 
@@ -75,11 +75,11 @@ Policies are simple, readable rules that match:
 - What they’re trying to access (area, domain, action)
 - Request details (headers/body, like a shipment id or tenant)
 
-Rules then allow or deny the action and can add filters so the user only sees data they’re permitted to see. See the Permissions guide for authoring details (<<permissions>>).
+Rules then allow or deny the action and can add filters so the user only sees data they’re permitted to see. See the Permissions guide for authoring details (xref:../user-guide/permissions.adoc#permissions[]).
 
 Write‑time data placement (where a new record belongs)
 - By default, new records use the creator’s organization.
-- You can override per area/domain with a small policy—for example, keep Partner records in a shared “directory” domain while Shipments stay tenant‑local. See “Data domain assignment on create” (<<_data_domain_assignment>>).
+- You can override per area/domain with a small policy—for example, keep Partner records in a shared “directory” domain while Shipments stay tenant‑local. See “Data domain assignment on create” (xref:../user-guide/permissions.adoc#_data_domain_assignment[]).
 
 == A small, powerful API surface: List + Query
 
@@ -141,7 +141,7 @@ The framework gives you these foundations so your teams focus on business value�
 - Add small, targeted policies to enable collaboration bubbles and shared directories.
 - Introduce delegated administration so partners self‑serve.
 - Use CSV imports and Completion Tasks to operationalize data stewardship.
-- Deep dive: Permissions and Rule Language (<<permissions>>), and Data domain assignment on create (<<_data_domain_assignment>>).
+- Deep dive: Permissions and Rule Language (xref:../user-guide/permissions.adoc#permissions[]), and Data domain assignment on create (xref:../user-guide/permissions.adoc#_data_domain_assignment[]).
 
 
 == A day in the life: From Purchase Order to Delivery

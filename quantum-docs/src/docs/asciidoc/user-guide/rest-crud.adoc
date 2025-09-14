@@ -1,9 +1,9 @@
 [[rest-crud]]
-= REST: Find, Get, List, Save, Update, Delete
+=== REST: Find, Get, List, Save, Update, Delete
 
 Quantum provides consistent REST resources backed by repositories. Extend BaseResource to expose CRUD quickly and consistently.
 
-== Base Concepts
+==== Base Concepts
 
 - BaseResource<T, R extends Repo<T>> provides endpoints for:
   - find: query by criteria (filters, pagination)
@@ -15,7 +15,7 @@ Quantum provides consistent REST resources backed by repositories. Extend BaseRe
 - UIActionList: derive available actions based on current model state.
 - DataDomain filtering is applied across all operations to enforce multi-tenancy.
 
-== Example Resource
+==== Example Resource
 
 [source,java]
 ----
@@ -27,7 +27,7 @@ public class ProductResource extends BaseResource<Product, ProductRepo> {
 }
 ----
 
-== Authorization Layers in REST CRUD
+==== Authorization Layers in REST CRUD
 
 Quantum combines static, identity-based checks with dynamic, domain-aware policy evaluation. In practice you will often use both:
 
@@ -71,23 +71,23 @@ public class ProductResource extends BaseResource<Product, ProductRepo> {
 
 For detailed rule-base matching (URL, headers, body predicates, priorities), see the Permissions section.
 
-== Querying
+==== Querying
 
 - Use query parameters or a request body (depending on your API convention) to express filters.
 - RuleContext contributes tenant-aware filters and projections automatically.
 
-== Responses and Schemas
+==== Responses and Schemas
 
 - Models are returned with calculated fields (e.g., actionList) when appropriate.
 - OpenAPI annotations in your models/resources integrate with MicroProfile OpenAPI for schema docs.
 
-== Error Handling
+==== Error Handling
 
 - Validation errors (e.g., ImportRequiredField, Size) return helpful messages.
 - Rule-based denials return appropriate HTTP statuses (403/404) without leaking cross-tenant metadata.
 
 
-== Query Language (ANTLR‑based)
+==== Query Language (ANTLR‑based)
 
 The find/list endpoints accept a filter string parsed by an ANTLR grammar (BIAPIQuery.g4). Use the filter query parameter to express predicates; combine them with logical operators and grouping. Sorting and projection are separate query parameters.
 
@@ -224,33 +224,32 @@ Authorization and scoping:
 Produces a streamed CSV download of the current resource collection.
 
 Query parameters and behavior:
-- fieldSeparator (default ",")
-  - Single character used to separate fields. Typical values: , ; \t
-- requestedColumns (default refName)
-  - Comma‑separated list of model field names to include, in output order. If omitted, BaseResource defaults to refName.
-  - Nested list extraction is supported with the [0] notation on a single nested property across all requested columns (e.g., addresses[0].city, addresses[0].zip). Indices other than [0] are rejected. If the nested list has multiple items, multiple rows are emitted per record (one per list element), preserving other column values.
-- quotingStrategy (default QUOTE_WHERE_ESSENTIAL)
-  - QUOTE_WHERE_ESSENTIAL: quote only when needed (when a value contains the separator or quoteChar).
-  - QUOTE_ALL_COLUMNS: quote every column in every row.
-- quoteChar (default ")
-  - The character used to surround quoted values.
-- decimalSeparator (default .)
-  - Reserved for decimal formatting. Note: current implementation ignores this value; decimals are rendered using the locale‑independent dot.
-- charsetEncoding (default UTF-8-without-BOM)
-  - One of: US-ASCII, UTF-8-without-BOM, UTF-8-with-BOM, UTF-16-with-BOM, UTF-16BE, UTF-16LE.
-  - “with-BOM” values write a Byte Order Mark at the beginning of the file (UTF‑8: EF BB BF; UTF‑16: FE FF).
-- filter (optional)
-  - ANTLR DSL filter applied server‑side before streaming (see Query Language section). Reduces rows and can improve performance.
-- filename (default downloaded.csv)
-  - Suggested download filename returned via Content‑Disposition header.
-- offset (default 0)
-  - Zero‑based index of the first record to stream.
-- length (default 1000, use -1 for all)
-  - Maximum number of records to stream from offset. Use -1 to stream all (be mindful of client memory/time).
-- prependHeaderRow (optional boolean, default false)
-  - When true, the first row contains column headers. Requires requestedColumns to be set (the default refName satisfies this requirement).
-- preferredColumnNames (optional list)
-  - Overrides header names positionally when prependHeaderRow=true. The list length must be ≤ requestedColumns; an empty string entry means “use default field name” for that column.
+
+fieldSeparator (default `"`):: Single character used to separate fields. Typical values: `,`, `;`, `\t`.
+
+requestedColumns (default refName):: Comma‑separated list of model field names to include, in output order. If omitted, BaseResource defaults to refName. Nested list extraction is supported with the `[0]` notation on a single nested property across all requested columns (e.g., `addresses[0].city`, `addresses[0].zip`). Indices other than `[0]` are rejected. If the nested list has multiple items, multiple rows are emitted per record (one per list element), preserving other column values.
+
+quotingStrategy (default QUOTE_WHERE_ESSENTIAL)::
+- QUOTE_WHERE_ESSENTIAL: quote only when needed (when a value contains the separator or quoteChar).
+- QUOTE_ALL_COLUMNS: quote every column in every row.
+
+quoteChar (default `"`):: The character used to surround quoted values.
+
+decimalSeparator (default `.`):: Reserved for decimal formatting. Note: current implementation ignores this value; decimals are rendered using the locale‑independent dot.
+
+charsetEncoding (default UTF-8-without-BOM):: One of: `US-ASCII`, `UTF-8-without-BOM`, `UTF-8-with-BOM`, `UTF-16-with-BOM`, `UTF-16BE`, `UTF-16LE`. “with‑BOM” values write a Byte Order Mark at the beginning of the file (UTF‑8: `EF BB BF`; UTF‑16: `FE FF`).
+
+filter (optional):: ANTLR DSL filter applied server‑side before streaming (see Query Language section). Reduces rows and can improve performance.
+
+filename (default downloaded.csv):: Suggested download filename returned via Content‑Disposition header.
+
+offset (default 0):: Zero‑based index of the first record to stream.
+
+length (default 1000, use `-1` for all):: Maximum number of records to stream from offset. Use `-1` to stream all (be mindful of client memory/time).
+
+prependHeaderRow (optional boolean, default false):: When true, the first row contains column headers. Requires requestedColumns to be set (the default refName satisfies this requirement).
+
+preferredColumnNames (optional list):: Overrides header names positionally when `prependHeaderRow=true`. The list length must be ≤ requestedColumns; an empty string entry means “use default field name” for that column.
 
 Response:
 - 200 OK with Content-Type: text/csv and Content-Disposition: attachment; filename="...".
@@ -281,18 +280,18 @@ curl -H "Authorization: Bearer $JWT" \
 Consumes a CSV file (multipart/form‑data) and imports records in batches. The form field name for the file is file.
 
 Query parameters and behavior:
-- fieldSeparator (default ",")
-  - Single character expected between fields.
-- quotingStrategy (default QUOTE_WHERE_ESSENTIAL)
-  - Same values as export; controls how embedded quotes are recognized.
-- quoteChar (default ")
-  - The expected quote character in the file.
-- skipHeaderRow (default true)
-  - When true, the first row is treated as a header and skipped. Mapping is positional, not by header names.
-- charsetEncoding (default UTF-8-without-BOM)
-  - The file encoding. “with-BOM” variants allow consuming a BOM at the start.
-- requestedColumns (required)
-  - Comma‑separated list of model field names in the same order as the CSV columns. This positional mapping drives parsing and validation. Nested list syntax [0] is allowed with the same constraints as export.
+
+fieldSeparator (default `"`):: Single character expected between fields.
+
+quotingStrategy (default QUOTE_WHERE_ESSENTIAL):: Same values as export; controls how embedded quotes are recognized.
+
+quoteChar (default `"`):: The expected quote character in the file.
+
+skipHeaderRow (default true):: When true, the first row is treated as a header and skipped. Mapping is positional, not by header names.
+
+charsetEncoding (default UTF-8-without-BOM):: The file encoding. “with‑BOM” variants allow consuming a BOM at the start.
+
+requestedColumns (required):: Comma‑separated list of model field names in the same order as the CSV columns. This positional mapping drives parsing and validation. Nested list syntax `[0]` is allowed with the same constraints as export.
 
 Behavior:
 - Each row is parsed into a model instance using type‑aware processors (ints, longs, decimals, enums, etc.).
