@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Framework Documentation</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-09-14T13:15:12Z</span>
+<span id="revdate">2025-09-14T13:42:21Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -717,6 +717,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_what_you_dont_have_to_build_from_scratch">64. What you don’t have to build from scratch</a></li>
 <li><a href="#_next_steps">65. Next steps</a></li>
 <li><a href="#_a_day_in_the_life_from_purchase_order_to_delivery">66. A day in the life: From Purchase Order to Delivery</a></li>
+<li><a href="#_appendix_application_properties_reference">67. Appendix: application.properties reference</a></li>
 </ul>
 </li>
 </ul>
@@ -5311,11 +5312,341 @@ void cleanup() { com.e2eq.framework.model.securityrules.SecurityContext.clear();
 </div>
 </div>
 </div>
+<div class="sect1">
+<h2 id="_appendix_application_properties_reference">67. Appendix: application.properties reference</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>This appendix explains how configuration works in Quarkus and walks through the key entries used in this project’s application.properties, including what each configures and the behavioral implications at runtime.</p>
+</div>
+<div class="paragraph">
+<p>Where the file lives and how it’s applied:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Location: src/main/resources/application.properties in your runtime module (tests often use src/test/resources/application.properties).</p>
+</li>
+<li>
+<p>Profiles: Prefix a property with %dev., %test., or %prod. to scope it to that profile. Example: %dev.com.b2bi.jwt.duration=7200 overrides the default only in dev.</p>
+</li>
+<li>
+<p>Environment variables and defaults: Use ${ENV_VAR:default} to pull from the environment with a fallback. Example: quarkus.http.cors.origins=${QUARKUS_HTTP_CORS_ORIGINS:http://localhost:3000,…​}.</p>
+</li>
+<li>
+<p>Precedence: System properties &gt; environment variables &gt; application.properties. See Quarkus Config for full details.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Classpath indexing (Jandex):</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">quarkus.index-dependency.&lt;alias&gt;.group-id=&#8230;&#8203;, quarkus.index-dependency.&lt;alias&gt;.artifact-id=&#8230;&#8203;</dt>
+<dd>
+<p>Adds selected dependency JARs to the build-time Jandex index. Use this when third-party libraries or your own modules need their annotations discovered without runtime scanning. Examples used here: semver4j, smallrye-open-api, and quantum-models.</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p>JWT, authentication, and identity:</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">quarkus.smallrye-jwt.enabled=true</dt>
+<dd>
+<p>Enables SmallRye JWT support. Implication: Requests can be authenticated via Bearer tokens; endpoints annotated for security will validate JWTs.</p>
+</dd>
+<dt class="hdlist1">auth.provider=custom | cognito</dt>
+<dd>
+<p>Selects the authentication provider strategy used by the framework. Implication: custom delegates to the project’s JWT validation; cognito/oidc uses OIDC config below.</p>
+</dd>
+<dt class="hdlist1">quarkus.oidc.enabled=false and quarkus.keycloak.devservices.enabled=false</dt>
+<dd>
+<p>Disables OIDC and devservices for Keycloak when using custom JWT. Set to true and configure OIDC for Cognito/Keycloak use.</p>
+</dd>
+<dt class="hdlist1">mp.jwt.verify.publickey.location=publicKey.pem</dt>
+<dd>
+<p>Location of public key for signature verification when using SmallRye JWT. Make sure the resource is included in the runtime image and native resources.</p>
+</dd>
+<dt class="hdlist1">mp.jwt.verify.issuer, mp.jwt.verify.audiences</dt>
+<dd>
+<p>Validates issuer/audience claims. If mismatched, tokens are rejected with 401.</p>
+</dd>
+<dt class="hdlist1">com.b2bi.jwt.duration and %dev.com.b2bi.jwt.duration</dt>
+<dd>
+<p>Custom property controlling token lifetime; UI dialogs assume minimums (comment notes 120s). Impacts how frequently clients must refresh tokens.</p>
+</dd>
+<dt class="hdlist1">auth.jwt.secret=${JWT_SECRET:&#8230;&#8203;}</dt>
+<dd>
+<p>Secret for HMAC-signed JWTs when using custom auth. Rotate via environment variable in production.</p>
+</dd>
+<dt class="hdlist1">auth.jwt.expiration, auth.jwt.refresh-expiration</dt>
+<dd>
+<p>Access token TTL and refresh token TTL (in minutes unless otherwise noted) for the custom auth provider. Short access TTLs reduce risk; longer refresh TTLs improve UX.</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p>CORS and HTTP headers:</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">quarkus.http.cors=true</dt>
+<dd>
+<p>Enables CORS handling. Without this, browsers will block cross-origin requests in SPA scenarios.</p>
+</dd>
+<dt class="hdlist1">quarkus.http.cors.origins</dt>
+<dd>
+<p>Allowed origins. Use env var to vary by environment. Overly broad origins increase CSRF risk.</p>
+</dd>
+<dt class="hdlist1">quarkus.http.cors.headers, quarkus.http.cors.methods, quarkus.http.cors.access-control-allow-credentials</dt>
+<dd>
+<p>Allowed headers/methods and whether credentials are permitted. Set conservatively.</p>
+</dd>
+<dt class="hdlist1">quarkus.http.header.Pragma.*</dt>
+<dd>
+<p>Example of setting static response headers for given methods.</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p>MongoDB and Morphia persistence:</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">quarkus.mongodb.devservices.enabled=false</dt>
+<dd>
+<p>Disables Quarkus Dev Services for MongoDB; you must supply a connection string.</p>
+</dd>
+<dt class="hdlist1">quarkus.mongodb.connection-string=${MONGODB_CONNECTION_STRING:mongodb://localhost:27017/?retryWrites=false}</dt>
+<dd>
+<p>Primary connection string. In CI/Prod, set MONGODB_CONNECTION_STRING instead of editing the file.</p>
+</dd>
+<dt class="hdlist1">quarkus.mongodb.database=${MONGODB_DEFAULT_SCHEMA:system-com}</dt>
+<dd>
+<p>Default database when @MongoEntity does not specify one.</p>
+</dd>
+<dt class="hdlist1">quarkus.morphia.database=system-quantum-com (or system-com in other modules)</dt>
+<dd>
+<p>Database used by Morphia mappings. Ensure this aligns with the Mongo default or deliberately separate read/write databases.</p>
+</dd>
+<dt class="hdlist1">quarkus.morphia.packages=&#8230;&#8203;</dt>
+<dd>
+<p>Comma-separated packages scanned for Morphia entities and validators. Implication: Entities outside these packages won’t be mapped or indexed.</p>
+</dd>
+<dt class="hdlist1">quarkus.morphia.create-caps=true, create-indexes=true, create-validators=true</dt>
+<dd>
+<p>On startup, Morphia will create capped collections, indexes, and validators. Impacts startup time and requires privileges.</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p>Database migration (project-specific):</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">quantum.database.version, quantum.database.scope</dt>
+<dd>
+<p>Current model version and target migration scope (e.g., DEV). Used by the framework’s migration machinery to decide which change sets to apply.</p>
+</dd>
+<dt class="hdlist1">quantum.database.migration.changeset.package</dt>
+<dd>
+<p>Package containing migration classes. Ensure it matches your module layout.</p>
+</dd>
+<dt class="hdlist1">quantum.database.migration.enabled=true</dt>
+<dd>
+<p>If false, migrations are skipped. In prod, keep true to ensure schema is consistent.</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p>Realm and tenant bootstrap defaults (project-specific):</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">quantum.realmConfig.* (system*, dev*, test*, default*)</dt>
+<dd>
+<p>Defines realm/tenant IDs, default account numbers, org names, and system/test user IDs. Implication: Controls which tenant is considered the system realm, default behaviors for new tenants, and test bootstrap identities.</p>
+</dd>
+<dt class="hdlist1">quantum.anonymousUserId</dt>
+<dd>
+<p>User ID to attribute actions to when no authenticated principal is available. Use with care to avoid audit gaps.</p>
+</dd>
+<dt class="hdlist1">quantum.staticDynamicList.check-ids=true</dt>
+<dd>
+<p>Enables validation on static/dynamic list IDs used by the rules engine; invalid IDs will cause validation failures.</p>
+</dd>
+<dt class="hdlist1">quantum.defaultSystemPassword, quantum.defaultTestPassword</dt>
+<dd>
+<p>Default passwords used when seeding or in tests. Never ship production with these values active.</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p>OpenAPI and Swagger UI:</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">quarkus.swagger-ui.always-include=true and quarkus.swagger-ui.enable=true</dt>
+<dd>
+<p>Serves Swagger UI even in non-dev profiles; good for internal tools, but restrict in production if needed.</p>
+</dd>
+<dt class="hdlist1">quarkus.smallrye-openapi.security-scheme=jwt</dt>
+<dd>
+<p>Sets the default security scheme to JWT so the UI and generators expect Bearer tokens.</p>
+</dd>
+<dt class="hdlist1">mp.openapi.extensions.smallrye.security.enabled=true</dt>
+<dd>
+<p>Enables SmallRye’s vendor extensions for OpenAPI security.</p>
+</dd>
+<dt class="hdlist1">mp.openapi.extensions.smallrye.securityScheme.bearerAuth.type=HTTP</dt>
+<dd>
+<p>Declares the security scheme type used in the generated spec.</p>
+</dd>
+<dt class="hdlist1">mp.openapi.extensions.smallrye.securityScheme.bearerAuth.scheme=bearerAuth</dt>
+<dd>
+<p>Names the scheme; kept in sync with clients. Note: Some setups use "bearer" for the scheme name.</p>
+</dd>
+<dt class="hdlist1">mp.openapi.extensions.smallrye.securityScheme.bearerAuth.bearerFormat=JWT</dt>
+<dd>
+<p>Documents the token format so tools show the correct input expectations.</p>
+</dd>
+<dt class="hdlist1">quarkus.smallrye-openapi.info-*</dt>
+<dd>
+<p>Sets metadata like title, version, contact, and license. Profile overrides allow environment-specific titles.</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p>Logging:</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">quarkus.log.level=INFO, quarkus.log.console.format=&#8230;&#8203;</dt>
+<dd>
+<p>Global logging level and console layout. Adjust to DEBUG when diagnosing issues.</p>
+</dd>
+<dt class="hdlist1">quarkus.log.category."com.e2eq".level=INFO (and other categories)</dt>
+<dd>
+<p>Fine-grained log levels for specific packages. Overuse of DEBUG in production can impact performance and leak data.</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p>Native image (GraalVM/Mandrel):</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">quarkus.native.additional-build-args=&#8230;&#8203;</dt>
+<dd>
+<p>Adds flags for class initialization timing and resource/reflection configs. Required for some AWS and Jackson components to work in native mode.</p>
+</dd>
+<dt class="hdlist1">quarkus.native.add-all-charsets=true</dt>
+<dd>
+<p>Includes all charsets; simplifies i18n at the cost of image size.</p>
+</dd>
+<dt class="hdlist1">quarkus.native.builder-image=quay.io/quarkus/ubi-quarkus-mandrel-builder-image:jdk-23</dt>
+<dd>
+<p>Selects builder image for container-based native builds. Use a Java 17 image when building for JDK 17 runtimes.</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p>Email and external services:</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">postmark.api-key, postmark.default-from-email-address, postmark.default-to-email-address</dt>
+<dd>
+<p>Configures Postmark integration. Keep secrets in environment variables; set defaults for development.</p>
+</dd>
+<dt class="hdlist1">awsconfig.aws-role-arn, awsconfig.region, awsconfig.check-migration</dt>
+<dd>
+<p>AWS integration defaults used by the framework. Role ARN is used for assuming roles when accessing AWS resources.</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p>Cognito/OIDC integration:</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">aws.cognito.* (user-pool-id, client-id, region, jwks.url)</dt>
+<dd>
+<p>Defines Cognito user pool and derived JWKS URL for key discovery.</p>
+</dd>
+<dt class="hdlist1">quarkus.oidc.auth-server-url, quarkus.oidc.client-id, quarkus.oidc.token.issuer, quarkus.oidc.roles.role-claim-path</dt>
+<dd>
+<p>Enables Quarkus OIDC for Cognito, sets issuer, client ID, and which claim carries roles (cognito:groups).</p>
+</dd>
+<dt class="hdlist1">Implication when enabled</dt>
+<dd>
+<p>Requests are validated by OIDC; required roles are matched against the claim path.</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p>Jackson and rate limiting:</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">quarkus.jackson.serialization-inclusion=non-null</dt>
+<dd>
+<p>Excludes null fields from JSON serialization across the app. Impacts API payloads and clients.</p>
+</dd>
+<dt class="hdlist1">rate.limit.request.limit=300, rate.limit.refill.seconds=2</dt>
+<dd>
+<p>Custom rate-limiting defaults used by filters or interceptors. Adjust per environment to protect upstreams.</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p>Miscellaneous:</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">quarkus.console.color=true</dt>
+<dd>
+<p>Colored console output; no behavioral impact.</p>
+</dd>
+<dt class="hdlist1">quarkus.s3.devservices.enabled=false</dt>
+<dd>
+<p>Disables S3 Dev Services in dev/test. Provide real AWS creds or mock S3 as needed.</p>
+</dd>
+<dt class="hdlist1">quarkus.lambda.mock-event-server.enabled=false</dt>
+<dd>
+<p>Turns off the Lambda mock event server in dev mode when not testing Lambda handlers.</p>
+</dd>
+<dt class="hdlist1">quarkus.http.port, quarkus.package.type (commented examples)</dt>
+<dd>
+<p>Illustrate how to change HTTP port and packaging type; fast-jar is the default and recommended for REST services.</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p>Tips for safe configuration changes:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Prefer environment variables for secrets and per-environment values; keep application.properties checked in with sane defaults.</p>
+</li>
+<li>
+<p>Use profile-specific overrides (%dev, %test, %prod) to avoid accidental production settings.</p>
+</li>
+<li>
+<p>After changing persistence or migration settings, run migrations/tests locally before deploying.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
 </div>
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-09-13 14:29:27 -0400
+Last updated 2025-09-14 09:38:23 -0400
 </div>
 </div>
 </body>
