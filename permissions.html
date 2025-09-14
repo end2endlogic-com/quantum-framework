@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Permissions: Rule Bases, SecurityURLHeaders, and SecurityURLBody</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-09-14T14:55:13Z</span>
+<span id="revdate">2025-09-14T15:00:28Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -1546,45 +1546,119 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h2 id="_how_uiactions_and_defaultuiactions_are_calculated">12. How UIActions and DefaultUIActions are calculated</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>When the server returns a collection of entities (for example, userProfiles), each entity may expose two action lists:
-- DefaultUIActions: the full set of actions that conceptually apply to this type of entity (e.g., CREATE, UPDATE, VIEW, DELETE, ARCHIVE). Think of this as the “menu template” for the type.
-- UIActions: the subset of actions the current user is actually permitted to perform on that specific entity instance right now.</p>
+<p>When the server returns a collection of entities (for example, userProfiles), each entity may expose two action lists:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>DefaultUIActions: the full set of actions that conceptually apply to this type of entity (e.g., CREATE, UPDATE, VIEW, DELETE, ARCHIVE). Think of this as the “menu template” for the type.</p>
+</li>
+<li>
+<p>UIActions: the subset of actions the current user is actually permitted to perform on that specific entity instance right now.</p>
+</li>
+</ul>
 </div>
 <div class="paragraph">
-<p>Why they can differ per entity:
-- Entity attributes: state or flags (e.g., archived, soft-deleted, immutable) can remove or alter available actions at instance level.
-- Permission rule base: evaluated against the current request, identity, and context to allow or deny actions.
-- DataDomain membership: tenant/org/owner scoping can further restrict actions if the identity is outside the entity’s domain.</p>
+<p>Why they can differ per entity:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Entity attributes: state or flags (e.g., archived, soft-deleted, immutable) can remove or alter available actions at instance level.</p>
+</li>
+<li>
+<p>Permission rule base: evaluated against the current request, identity, and context to allow or deny actions.</p>
+</li>
+<li>
+<p>DataDomain membership: tenant/org/owner scoping can further restrict actions if the identity is outside the entity’s domain.</p>
+</li>
+</ul>
 </div>
 <div class="paragraph">
-<p>How the server computes them:
-. Start with a default action template for the entity type (DefaultUIActions).
-. Apply simple state-based adjustments (for example, suppress CREATE on already-persisted instances).
-. Evaluate the permission rules with the current identity and context:
-* Consider roles, functional area/domain, action intent, headers/body, and any rule-contributed scopes.
-* Resolve DataDomain constraints to ensure the identity is permitted to act within the entity’s domain.
-. Produce UIActions as the allowed subset for that entity instance.
-. Return both lists with each entity in collection responses.</p>
+<p>How the server computes them:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Start with a default action template for the entity type (DefaultUIActions).</p>
+</li>
+<li>
+<p>Apply simple state-based adjustments (for example, suppress CREATE on already-persisted instances).</p>
+</li>
+<li>
+<p>Evaluate the permission rules with the current identity and context:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Consider roles, functional area/domain, action intent, headers/body, and any rule-contributed scopes.</p>
+</li>
+<li>
+<p>Resolve DataDomain constraints to ensure the identity is permitted to act within the entity’s domain.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Produce UIActions as the allowed subset for that entity instance.</p>
+</li>
+<li>
+<p>Return both lists with each entity in collection responses.</p>
+</li>
+</ol>
 </div>
 <div class="paragraph">
-<p>How the client should use the two lists:
-- Render the full DefaultUIActions as the visible set of possible actions (icons, buttons, menus) so the UI stays consistent.
-- Enable only those actions present in UIActions; gray out or disable the remainder to signal capability but lack of current permission.
-- This approach avoids flicker and keeps affordances discoverable while remaining truthful to the user’s current authorization.</p>
+<p>How the client should use the two lists:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Render the full DefaultUIActions as the visible set of possible actions (icons, buttons, menus) so the UI stays consistent.</p>
+</li>
+<li>
+<p>Enable only those actions present in UIActions; gray out or disable the remainder to signal capability but lack of current permission.</p>
+</li>
+<li>
+<p>This approach avoids flicker and keeps affordances discoverable while remaining truthful to the user’s current authorization.</p>
+</li>
+</ul>
 </div>
 <div class="paragraph">
-<p>Example:
-- You fetch 25 userProfiles.
-- DefaultUIActions for the type = [CREATE, VIEW, UPDATE, DELETE, ARCHIVE].
-- For a specific profile A (owned by your tenant), UIActions may be [VIEW, UPDATE] based on your roles and domain.
-- For another profile B (in a different tenant), UIActions may be [VIEW] only.
-- The UI renders the same controls for both A and B, but only enables the actions present in each item’s UIActions list.</p>
+<p>Example:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>You fetch 25 userProfiles.</p>
+</li>
+<li>
+<p>DefaultUIActions for the type = [CREATE, VIEW, UPDATE, DELETE, ARCHIVE].</p>
+</li>
+<li>
+<p>For a specific profile A (owned by your tenant), UIActions may be [VIEW, UPDATE] based on your roles and domain.</p>
+</li>
+<li>
+<p>For another profile B (in a different tenant), UIActions may be [VIEW] only.</p>
+</li>
+<li>
+<p>The UI renders the same controls for both A and B, but only enables the actions present in each item’s UIActions list.</p>
+</li>
+</ul>
 </div>
 <div class="paragraph">
-<p>Operational considerations:
-- Keep action names stable and documented so front-ends can map to icons and tooltips consistently.
-- Prefer small, composable rules that evaluate action permissions explicitly by functional area/domain to avoid surprises.
-- Consider server-side caching of action evaluations for list views to reduce latency, respecting identity and scope.</p>
+<p>Operational considerations:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Keep action names stable and documented so front-ends can map to icons and tooltips consistently.</p>
+</li>
+<li>
+<p>Prefer small, composable rules that evaluate action permissions explicitly by functional area/domain to avoid surprises.</p>
+</li>
+<li>
+<p>Consider server-side caching of action evaluations for list views to reduce latency, respecting identity and scope.</p>
+</li>
+</ul>
 </div>
 </div>
 </div>
@@ -2419,7 +2493,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-09-14 10:54:34 -0400
+Last updated 2025-09-14 11:00:23 -0400
 </div>
 </div>
 </body>
