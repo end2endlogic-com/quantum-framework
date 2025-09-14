@@ -552,6 +552,20 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_import_with_preview_sessions">1.3. Import with preview sessions</a></li>
 </ul>
 </li>
+<li><a href="#auth">Authentication and Authorization</a>
+<ul class="sectlevel1">
+<li><a href="#_jwt_provider">2. JWT Provider</a></li>
+<li><a href="#_pluggable_authentication">3. Pluggable Authentication</a></li>
+<li><a href="#_creating_an_auth_plugin_using_the_custom_jwt_provider_as_a_reference">4. Creating an Auth Plugin (using the Custom JWT provider as a reference)</a></li>
+<li><a href="#_authprovider_interface_what_a_provider_must_implement">5. AuthProvider interface (what a provider must implement)</a></li>
+<li><a href="#_usermanagement_interface_operations_your_plugin_must_support">6. UserManagement interface (operations your plugin must support)</a></li>
+<li><a href="#_leveraging_baseauthprovider_in_your_plugin">7. Leveraging BaseAuthProvider in your plugin</a></li>
+<li><a href="#_implementing_your_own_provider">8. Implementing your own provider</a></li>
+<li><a href="#_credentialuseridpassword_model_and_domaincontext">9. CredentialUserIdPassword model and DomainContext</a></li>
+<li><a href="#_quarkus_oidc_out_of_the_box_and_integrating_with_common_idps">10. Quarkus OIDC out-of-the-box and integrating with common IdPs</a></li>
+<li><a href="#_authorization_via_rulecontext">11. Authorization via RuleContext</a></li>
+</ul>
+</li>
 </ul>
 </div>
 </div>
@@ -928,19 +942,45 @@ referenceId:^[@@5f1e9b9c8a0b0c0d1e2f3a4b, @@6a7b8c9d0e1f2a3b4c5d6e7f]</code></pr
 <h2 id="_csv_export_and_import">1. CSV Export and Import</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>These endpoints are inherited by every resource that extends BaseResource. They are mounted under the resource’s base path. For example, PolicyResource at /security/permission/policies exposes:
-- GET /security/permission/policies/csv
-- POST /security/permission/policies/csv
-- POST /security/permission/policies/csv/session
-- POST /security/permission/policies/csv/session/{sessionId}/commit
-- DELETE /security/permission/policies/csv/session/{sessionId}
-- GET /security/permission/policies/csv/session/{sessionId}/rows</p>
+<p>These endpoints are inherited by every resource that extends BaseResource. They are mounted under the resource’s base path. For example, PolicyResource at /security/permission/policies exposes:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>GET /security/permission/policies/csv</p>
+</li>
+<li>
+<p>POST /security/permission/policies/csv</p>
+</li>
+<li>
+<p>POST /security/permission/policies/csv/session</p>
+</li>
+<li>
+<p>POST /security/permission/policies/csv/session/{sessionId}/commit</p>
+</li>
+<li>
+<p>DELETE /security/permission/policies/csv/session/{sessionId}</p>
+</li>
+<li>
+<p>GET /security/permission/policies/csv/session/{sessionId}/rows</p>
+</li>
+</ul>
 </div>
 <div class="paragraph">
-<p>Authorization and scoping:
-- All CSV endpoints are protected by the same @RolesAllowed("user", "admin") checks as other CRUD operations.
-- RuleContext filters and DataDomain scoping apply the same way as list/find; exports stream only what the caller may see, and imports are saved under the same permissions.
-- In multi‑realm deployments, include your X-Realm header as you do for CRUD; underlying repos resolve realm and domain context consistently.</p>
+<p>Authorization and scoping:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>All CSV endpoints are protected by the same @RolesAllowed("user", "admin") checks as other CRUD operations.</p>
+</li>
+<li>
+<p>RuleContext filters and DataDomain scoping apply the same way as list/find; exports stream only what the caller may see, and imports are saved under the same permissions.</p>
+</li>
+<li>
+<p>In multi‑realm deployments, include your X-Realm header as you do for CRUD; underlying repos resolve realm and domain context consistently.</p>
+</li>
+</ul>
 </div>
 <div class="sect2">
 <h3 id="_export_get_csv">1.1. Export: GET /csv</h3>
@@ -1012,9 +1052,17 @@ referenceId:^[@@5f1e9b9c8a0b0c0d1e2f3a4b, @@6a7b8c9d0e1f2a3b4c5d6e7f]</code></pr
 </dl>
 </div>
 <div class="paragraph">
-<p>Response:
-- 200 OK with Content-Type: text/csv and Content-Disposition: attachment; filename="&#8230;&#8203;".
-- On validation/processing errors, the response status is 400/500 and the body contains a single text line describing the problem (e.g., “Incorrect information supplied: …”). Unrecognized query parameters are rejected with 400.</p>
+<p>Response:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>200 OK with Content-Type: text/csv and Content-Disposition: attachment; filename="&#8230;&#8203;".</p>
+</li>
+<li>
+<p>On validation/processing errors, the response status is 400/500 and the body contains a single text line describing the problem (e.g., “Incorrect information supplied: …”). Unrecognized query parameters are rejected with 400.</p>
+</li>
+</ul>
 </div>
 <div class="paragraph">
 <p>Examples:</p>
@@ -1085,15 +1133,35 @@ curl -H &quot;Authorization: Bearer $JWT&quot; \
 </dl>
 </div>
 <div class="paragraph">
-<p>Behavior:
-- Each row is parsed into a model instance using type‑aware processors (ints, longs, decimals, enums, etc.).
-- Bean Validation is applied; rows with violations are collected as errors and not saved; valid rows are batched and saved.
-- For each saved batch, insert vs update is determined by refName presence in the repository.
-- Response entity includes counts (importedCount, failedCount) and per‑row results when available.
-- Response headers:
-  - X-Import-Success-Count: number of rows successfully imported.
-  - X-Import-Failed-Count: number of rows that failed validation or DB write.
-  - X-Import-Message: summary message.</p>
+<p>Behavior:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Each row is parsed into a model instance using type‑aware processors (ints, longs, decimals, enums, etc.).</p>
+</li>
+<li>
+<p>Bean Validation is applied; rows with violations are collected as errors and not saved; valid rows are batched and saved.</p>
+</li>
+<li>
+<p>For each saved batch, insert vs update is determined by refName presence in the repository.</p>
+</li>
+<li>
+<p>Response entity includes counts (importedCount, failedCount) and per‑row results when available.</p>
+</li>
+<li>
+<p>Response headers:</p>
+</li>
+<li>
+<p>X-Import-Success-Count: number of rows successfully imported.</p>
+</li>
+<li>
+<p>X-Import-Failed-Count: number of rows that failed validation or DB write.</p>
+</li>
+<li>
+<p>X-Import-Message: summary message.</p>
+</li>
+</ul>
 </div>
 <div class="paragraph">
 <p>Example (direct import):</p>
@@ -1117,25 +1185,34 @@ curl -H &quot;Authorization: Bearer $JWT&quot; \
 <ul>
 <li>
 <p>POST /csv/session (multipart): analyzes the file and creates a session</p>
-</li>
+<div class="ulist">
+<ul>
 <li>
 <p>Same parameters as POST /csv (fieldSeparator, quotingStrategy, quoteChar, skipHeaderRow, charsetEncoding, requestedColumns).</p>
 </li>
 <li>
 <p>Returns a preview ImportResult including sessionId, totals (totalRows, validRows, errorRows), and row‑level findings. No data is saved yet.</p>
 </li>
+</ul>
+</div>
+</li>
 <li>
 <p>POST /csv/session/{sessionId}/commit: imports only error‑free rows from the analyzed session</p>
-</li>
+<div class="ulist">
+<ul>
 <li>
 <p>Returns CommitResult with inserted/updated counts.</p>
 </li>
 <li>
 <p>DELETE /csv/session/{sessionId}: cancels and discards session state (idempotent; always returns 204).</p>
 </li>
+</ul>
+</div>
+</li>
 <li>
 <p>GET /csv/session/{sessionId}/rows: page through analyzed rows</p>
-</li>
+<div class="ulist">
+<ul>
 <li>
 <p>Query params:</p>
 </li>
@@ -1150,13 +1227,770 @@ curl -H &quot;Authorization: Bearer $JWT&quot; \
 </li>
 </ul>
 </div>
-<div class="paragraph">
-<p>Notes and constraints:
-- requestedColumns must reference actual model fields. Unknown fields or multiple different nested properties are rejected (only one nested property across requestedColumns is allowed when using [0]).
-- Unrecognized query parameters are rejected with HTTP 400 to prevent silent misconfiguration.
-- Very large exports should prefer streaming with sensible length settings or server‑side filters to reduce memory and time.
-- Imports run under the same security rules as POST / (save). Ensure the caller has permission to create/update the target entities in the chosen realm.</p>
+</li>
+</ul>
 </div>
+<div class="paragraph">
+<p>Notes and constraints:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>requestedColumns must reference actual model fields. Unknown fields or multiple different nested properties are rejected (only one nested property across requestedColumns is allowed when using [0]).</p>
+</li>
+<li>
+<p>Unrecognized query parameters are rejected with HTTP 400 to prevent silent misconfiguration.</p>
+</li>
+<li>
+<p>Very large exports should prefer streaming with sensible length settings or server‑side filters to reduce memory and time.</p>
+</li>
+<li>
+<p>Imports run under the same security rules as POST / (save). Ensure the caller has permission to create/update the target entities in the chosen realm.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<h1 id="auth" class="sect0">Authentication and Authorization</h1>
+<div class="openblock partintro">
+<div class="content">
+<div class="paragraph">
+<p>Quantum integrates with Quarkus security while providing a pluggable approach to authentication. The repository includes a JWT provider module to get started quickly and an extension surface to replace or complement it.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_jwt_provider">2. JWT Provider</h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Module: quantum-jwt-provider</p>
+</li>
+<li>
+<p>Purpose: Validate JWTs on incoming requests, populate the security principal, and surface tenant/org/user claims that feed DomainContext.</p>
+</li>
+<li>
+<p>Configuration: Standard Quarkus/MicroProfile JWT properties plus custom claim mappings as needed for DataDomain.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_pluggable_authentication">3. Pluggable Authentication</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>You can introduce alternative authentication mechanisms (e.g., API keys, SAML/OIDC front-channel tokens exchanged for back-end JWTs, HMAC signatures) by providing CDI beans that integrate with the security layer and emit the same normalized context consumed by DomainContext/RuleContext.</p>
+</div>
+<div class="paragraph">
+<p>Typical steps:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Implement a request filter or identity provider that validates the token/credential.</p>
+</li>
+<li>
+<p>Map identity and tenant claims into a principal model (tenantId, orgRefName, userId, roles).</p>
+</li>
+<li>
+<p>Ensure BaseResource (and other entry points) can derive DomainContext from that principal.</p>
+</li>
+</ol>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_creating_an_auth_plugin_using_the_custom_jwt_provider_as_a_reference">4. Creating an Auth Plugin (using the Custom JWT provider as a reference)</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>An auth plugin is typically a CDI bean that:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Extends BaseAuthProvider to inherit user-management helpers and persistence utilities.</p>
+</li>
+<li>
+<p>Implements AuthProvider to integrate with request-time authentication flows.</p>
+</li>
+<li>
+<p>Implements UserManagement to expose CRUD-style operations for users, passwords, and roles.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>A concrete provider should:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Be annotated as a CDI bean (e.g., @ApplicationScoped).</p>
+</li>
+<li>
+<p>Provide a stable getName() identifier (e.g., "custom", "oidc", "apikey").</p>
+</li>
+<li>
+<p>Use config properties for secrets, issuers, token durations, and any external identity provider details.</p>
+</li>
+<li>
+<p>Build a Quarkus SecurityIdentity with the authenticated principal and roles.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_authprovider_interface_what_a_provider_must_implement">5. AuthProvider interface (what a provider must implement)</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Core methods:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>SecurityIdentity validateAccessToken(String token)</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Parse and validate the incoming credential (JWT, API key, signature).</p>
+</li>
+<li>
+<p>Return a SecurityIdentity with principal name and roles; throw a security exception for invalid tokens.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>String getName()</p>
+<div class="ulist">
+<ul>
+<li>
+<p>A short identifier for the provider; persisted alongside credentials and used in logs/metrics.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>LoginResponse login(String userId, String password)</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Credential-based login. Return a structured response:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>positiveResponse: includes SecurityIdentity, roles, accessToken, refreshToken, expirationTime, and realm/mongodbUrl if applicable.</p>
+</li>
+<li>
+<p>negativeResponse: includes error codes/reason/message for clients to act on (e.g., password change required).</p>
+</li>
+</ul>
+</div>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>LoginResponse refreshTokens(String refreshToken)</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Validate the refresh token, mint a new access token (and optionally a new refresh token), and return a positive response.</p>
+</li>
+</ul>
+</div>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Notes:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Login flow should check force-change-password or equivalent flags and return a negative response when user interaction is required before issuing tokens.</p>
+</li>
+<li>
+<p>validateAccessToken should only accept valid, non-expired tokens and construct SecurityIdentity consistently with role mappings used across the platform.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_usermanagement_interface_operations_your_plugin_must_support">6. UserManagement interface (operations your plugin must support)</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Typical responsibilities include:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>User lifecycle</p>
+<div class="ulist">
+<ul>
+<li>
+<p>String createUser(String userId, String password, Set&lt;String&gt; roles, DomainContext domainContext, [optional] DataDomain)</p>
+</li>
+<li>
+<p>void changePassword(String userId, String oldPassword, String newPassword, Boolean forceChangePassword)</p>
+</li>
+<li>
+<p>boolean removeUserWithUserId(String userId)</p>
+</li>
+<li>
+<p>boolean removeUserWithSubject(String subject)</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Role management</p>
+<div class="ulist">
+<ul>
+<li>
+<p>void assignRolesForUserId(String userId, Set&lt;String&gt; roles)</p>
+</li>
+<li>
+<p>void assignRolesForSubject(String subject, Set&lt;String&gt; roles)</p>
+</li>
+<li>
+<p>void removeRolesForUserId(String userId, Set&lt;String&gt; roles)</p>
+</li>
+<li>
+<p>void removeRolesForSubject(String subject, Set&lt;String&gt; roles)</p>
+</li>
+<li>
+<p>Set&lt;String&gt; getUserRolesForUserId(String userId)</p>
+</li>
+<li>
+<p>Set&lt;String&gt; getUserRolesForSubject(String subject)</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Lookups and existence checks</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Optional&lt;String&gt; getSubjectForUserId(String userId)</p>
+</li>
+<li>
+<p>Optional&lt;String&gt; getUserIdForSubject(String subject)</p>
+</li>
+<li>
+<p>boolean userIdExists(String userId)</p>
+</li>
+<li>
+<p>boolean subjectExists(String subject)</p>
+</li>
+</ul>
+</div>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Return values and exceptions:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Throw SecurityException or domain-specific exceptions for invalid states (duplicate users, bad password, unsupported hashing).</p>
+</li>
+<li>
+<p>Return Optional for lookups that may not find a result.</p>
+</li>
+<li>
+<p>For removals, return boolean to communicate whether a record was deleted.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_leveraging_baseauthprovider_in_your_plugin">7. Leveraging BaseAuthProvider in your plugin</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>When you extend BaseAuthProvider, you inherit ready-to-use capabilities that reduce boilerplate:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Impersonation controls</p>
+<div class="ulist">
+<ul>
+<li>
+<p>enableImpersonationWithUserId / enableImpersonationWithSubject</p>
+</li>
+<li>
+<p>disableImpersonationWithUserId / disableImpersonationWithSubject</p>
+</li>
+<li>
+<p>These set or clear an impersonation filter script and realm regex that downstream services can honor to act on behalf of another identity under controlled scope.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Realm override helpers</p>
+<div class="ulist">
+<ul>
+<li>
+<p>enableRealmOverrideWithUserId / enableRealmOverrideWithSubject</p>
+</li>
+<li>
+<p>disableRealmOverrideWithUserId / disableRealmOverrideWithSubject</p>
+</li>
+<li>
+<p>Useful for multi-realm/tenant scenarios, enabling scoped cross-realm behavior.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Persistence utilities</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Built-in use of the credential repository to save, update, and delete credentials.</p>
+</li>
+<li>
+<p>Consistent validation of inputs (non-null checks, non-blank checks).</p>
+</li>
+<li>
+<p>Hashing algorithm guardrails to ensure only supported algorithms are used.</p>
+</li>
+</ul>
+</div>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Best practices when deriving:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Always set the auth provider name in stored credentials so records can be traced to the correct provider.</p>
+</li>
+<li>
+<p>Reuse the role merge/remove patterns to avoid accidental role loss.</p>
+</li>
+<li>
+<p>Prefer emitting precise exceptions (e.g., NotFound for missing users, SecurityException for access violations).</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_implementing_your_own_provider">8. Implementing your own provider</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Checklist:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Class design</p>
+<div class="ulist">
+<ul>
+<li>
+<p>@ApplicationScoped bean</p>
+</li>
+<li>
+<p>extends BaseAuthProvider</p>
+</li>
+<li>
+<p>implements AuthProvider and UserManagement</p>
+</li>
+<li>
+<p>return a stable getName()</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Configuration</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Externalize secrets (signing keys), issuers, token durations, and realm details via MicroProfile Config.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>SecurityIdentity</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Consistently build identities with principal and roles; include useful attributes for auditing/telemetry.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Tokens/credentials</p>
+<div class="ulist">
+<ul>
+<li>
+<p>For JWT-like tokens, implement robust parsing, signature verification, expiration checks, and claim validation.</p>
+</li>
+<li>
+<p>For non-JWT credentials (API keys, HMAC), ensure replay protection and scope binding.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Responses and errors</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Use structured LoginResponse for both success and error paths.</p>
+</li>
+<li>
+<p>Prefer idempotent user/role operations; validate inputs and surface actionable messages.</p>
+</li>
+</ul>
+</div>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_credentialuseridpassword_model_and_domaincontext">9. CredentialUserIdPassword model and DomainContext</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>This section explains how user credentials are represented, how those records tie to tenancy and realms, and how the server chooses the database (“realm”) for REST calls.</p>
+</div>
+<div class="paragraph">
+<p>What the credential model represents</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">userId</dt>
+<dd>
+<p>The human-friendly login handle that users type. Must be unique within the applicable tenancy/realm scope.</p>
+</dd>
+<dt class="hdlist1">subject</dt>
+<dd>
+<p>A stable, system-generated identifier for the principal. Tokens and internal references favor subject over userId because subjects do not change.</p>
+</dd>
+<dt class="hdlist1">description, emailOfResponsibleParty</dt>
+<dd>
+<p>Optional metadata to describe the credential and provide an owner contact.</p>
+</dd>
+<dt class="hdlist1">domainContext</dt>
+<dd>
+<p>The tenancy and organization placement of the principal. It contains:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>tenantId: Logical tenant partition.</p>
+</li>
+<li>
+<p>orgRefName: Organization/business unit within the tenant.</p>
+</li>
+<li>
+<p>accountId: Account or billing identifier.</p>
+</li>
+<li>
+<p>defaultRealm: The default database/realm used for this identity’s operations.</p>
+</li>
+<li>
+<p>dataSegment: Optional partitioning segment for advanced sharding or data slicing.</p>
+</li>
+</ul>
+</div>
+</dd>
+<dt class="hdlist1">roles</dt>
+<dd>
+<p>The set of authorities granted (e.g., USER, ADMIN). These become groups/roles on the SecurityIdentity.</p>
+</dd>
+<dt class="hdlist1">issuer</dt>
+<dd>
+<p>An identifier for who issued the credential or tokens (useful for auditing and multi-provider setups).</p>
+</dd>
+<dt class="hdlist1">passwordHash, hashingAlgorithm</dt>
+<dd>
+<p>The stored password hash and declared algorithm. Not exposed over REST. Providers verify passwords against this.</p>
+</dd>
+<dt class="hdlist1">forceChangePassword</dt>
+<dd>
+<p>Flag that forces a password reset on next login; the login flow returns a structured negative response instead of tokens.</p>
+</dd>
+<dt class="hdlist1">lastUpdate</dt>
+<dd>
+<p>Timestamp for auditing and token invalidation strategies.</p>
+</dd>
+<dt class="hdlist1">area2RealmOverrides</dt>
+<dd>
+<p>Optional map to route specific functional areas to different realms than the default (e.g., “Reporting” → analytics-realm).</p>
+</dd>
+<dt class="hdlist1">realmRegEx</dt>
+<dd>
+<p>Optional regex to limit or override which realms this identity may act in; also used by impersonation/override flows.</p>
+</dd>
+<dt class="hdlist1">impersonateFilterScript</dt>
+<dd>
+<p>Optional script indicating the filter/scope applied during impersonation so actions are constrained.</p>
+</dd>
+<dt class="hdlist1">authProviderName</dt>
+<dd>
+<p>The name of the provider that owns this credential (e.g., “custom”, “oidc”), enabling multi-provider operations and audits.</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p>How DomainContext selects the realm for REST calls</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>For each authenticated request, the server derives or retrieves a DomainContext associated with the principal.</p>
+</li>
+<li>
+<p>The DomainContext.defaultRealm indicates which backing MongoDB database (“realm”) should be used by repositories for that request.</p>
+</li>
+<li>
+<p>If realm override features are enabled (e.g., through provider helpers or per-credential overrides), the system may route certain functional areas to alternate realms using area2RealmOverrides or validated by realmRegEx.</p>
+</li>
+<li>
+<p>The remainder of DomainContext (tenantId, orgRefName, accountId, dataSegment) is applied as scope constraints through permission rules and repository filters so reads and writes are automatically restricted to the correct tenant/org segment.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_quarkus_oidc_out_of_the_box_and_integrating_with_common_idps">10. Quarkus OIDC out-of-the-box and integrating with common IdPs</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Quarkus ships with first-class OpenID Connect (OIDC) support, enabling both service-to-service and browser-based logins.</p>
+</div>
+<div class="paragraph">
+<p>What the Quarkus OIDC extension provides</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>OIDC client and server-side adapters:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Authorization Code flow with PKCE for browser sign-in.</p>
+</li>
+<li>
+<p>Bearer token authentication for APIs (validating access tokens on incoming requests).</p>
+</li>
+<li>
+<p>Token propagation for downstream calls (forwarding or exchanging tokens).</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Token verification and claim mapping:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Validates issuer, audience, signature, expiration, and scopes.</p>
+</li>
+<li>
+<p>Maps standard claims (sub, email, groups/roles) into the security identity.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Multi-tenancy and configuration:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Supports multiple OIDC tenants via configuration, each with its own issuer, client id/secret, and flows.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Logout and session support:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Front-channel and back-channel logout hooks depending on provider capabilities.</p>
+</li>
+</ul>
+</div>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Integrating with common providers</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Works with providers like Keycloak, Auth0, Okta, Azure AD, Cognito, and enterprise IdPs exposing OIDC.</p>
+</li>
+<li>
+<p>Configure the issuer URL and client credentials. Quarkus discovers endpoints via the provider’s .well-known/openid-configuration.</p>
+</li>
+<li>
+<p>For roles/permissions, map provider groups/roles claims to your platform roles in the identity.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>OIDC vs OAuth vs OpenID (terminology and evolution)</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">OAuth 2.0</dt>
+<dd>
+<p>Authorization framework for delegated access (scopes), not authentication. Defines flows to obtain access tokens for APIs.</p>
+</dd>
+<dt class="hdlist1">OpenID (OpenID 1.x/2.0)</dt>
+<dd>
+<p>Older federated identity protocol that preceded OIDC. It has been superseded by OpenID Connect.</p>
+</dd>
+<dt class="hdlist1">OpenID Connect (OIDC)</dt>
+<dd>
+<p>An identity layer on top of OAuth 2.0. Adds standardized authentication, user info endpoints, ID tokens (JWT) with subject and profile claims, and discovery metadata. In practice, OIDC is the modern standard for SSO and user authentication; OAuth remains the authorization substrate underneath.</p>
+</dd>
+<dt class="hdlist1">Summary</dt>
+<dd>
+<div class="ulist">
+<ul>
+<li>
+<p>OpenID → historical, replaced by OIDC.</p>
+</li>
+<li>
+<p>OAuth 2.0 → authorization framework.</p>
+</li>
+<li>
+<p>OIDC → authentication (identity) layer built on OAuth 2.0.</p>
+</li>
+</ul>
+</div>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p>OIDC and SAML in relation to SSO</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">SAML (Security Assertion Markup Language)</dt>
+<dd>
+<p>XML-based federation protocol widely used in enterprises for browser SSO; uses signed XML assertions transported through browser redirects/posts.</p>
+</dd>
+<dt class="hdlist1">OIDC</dt>
+<dd>
+<p>JSON/REST-oriented, uses JWTs, and is well-suited for modern SPAs and APIs.</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p>Relationship:
+* Both enable SSO and federation across identity providers and service providers.
+* Many enterprise IdPs support both; OIDC is generally simpler for APIs and modern web stacks, while SAML is entrenched in legacy/enterprise SSO.</p>
+</div>
+<div class="paragraph">
+<p>Bridging:
+* Gateways or identity brokers can translate SAML assertions to OIDC tokens and vice versa, allowing gradual migration.</p>
+</div>
+<div class="paragraph">
+<p>Common customer IdP models and OIDC integration patterns</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Centralized IdP (single-tenant)</p>
+<div class="ulist">
+<ul>
+<li>
+<p>One organization-wide IdP issues tokens for all users.</p>
+</li>
+<li>
+<p>Configure a single OIDC tenant in Quarkus; map groups/roles to application roles.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Multi-tenant SaaS with per-tenant IdP (BYOID)</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Each customer brings their own IdP.</p>
+</li>
+<li>
+<p>Configure Quarkus OIDC multitenancy with per-tenant issuer discovery and client credentials.</p>
+</li>
+<li>
+<p>Tenant selection can be based on domain, request header, or path; the selected OIDC tenant performs login and token validation.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Brokered identity</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Use a broker that federates to multiple upstream IdPs (OIDC, SAML).</p>
+</li>
+<li>
+<p>Quarkus integrates with the broker as a single OIDC client; the broker handles IdP routing and protocol translation.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Hybrid API and web flows</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Browser apps use Authorization Code flow with sessions; APIs use bearer token authentication.</p>
+</li>
+<li>
+<p>The OIDC extension can handle both in the same application when properly configured.</p>
+</li>
+</ul>
+</div>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_authorization_via_rulecontext">11. Authorization via RuleContext</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Authentication establishes identity; RuleContext enforces what the identity can do. For each action (CREATE, UPDATE, VIEW, DELETE, ARCHIVE), RuleContext can:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Allow or deny the action</p>
+</li>
+<li>
+<p>Contribute additional filters (e.g., org scoping, functional-area specific sharing)</p>
+</li>
+<li>
+<p>Adjust UIActionList to reflect permitted next steps</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>This division of responsibilities keeps providers focused on identity while policies remain centralized in RuleContext.</p>
 </div>
 </div>
 </div>
@@ -1164,7 +1998,7 @@ curl -H &quot;Authorization: Bearer $JWT&quot; \
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-09-14 09:06:14 -0400
+Last updated 2025-09-14 17:07:44 -0400
 </div>
 </div>
 </body>
