@@ -370,6 +370,7 @@ How it affects save/update:
 CompletionTasks and CompletionTaskGroups provide a simple, persistent way to track a series of work items that need to be completed, either by background processes or external systems. Use them when you need durable progress tracking across restarts and an auditable record of outcomes.
 
 Key models:
+
 - CompletionTask: an individual unit of work with fields like status, timestamps, and optional result/details.
 - CompletionTaskGroup: a container that represents a cohort of tasks progressing toward completion.
 
@@ -410,6 +411,7 @@ public class CompletionTaskGroup extends BaseModel {
 ----
 
 Typical lifecycle:
+
 - Create a CompletionTaskGroup in NEW status.
 - Create N CompletionTasks (status=PENDING) referencing the group.
 - A worker picks tasks and flips status to RUNNING, performs the work, then to SUCCESS or FAILED, setting completedDate and result.
@@ -418,6 +420,7 @@ Typical lifecycle:
   - When all tasks are terminal (SUCCESS or FAILED), set group status to COMPLETE and completedDate.
 
 How to use for tracking a series of things that need to be completed:
+
 - Batch operations: When submitting a batch (e.g., provisioning 100 accounts), create one group and 100 tasks. The UI/API can poll the group to show overall progress and per-item results.
 - Multi-step workflows: Represent each step as its own task, or use one task per target resource. Groups help correlate all steps for a single business request.
 - Retry/compensation: FAILED tasks can be retried by creating new tasks or resetting status to PENDING based on your policy. Keep result populated with failure reasons.
@@ -482,6 +485,7 @@ if (allTerminal) {
 ----
 
 Notes and best practices:
+
 - Keep details short but diagnostic, and store richer context in result.
 - Use DataDomain fields for multi-tenant scoping so groups/tasks are isolated per tenant/org as needed.
 - Avoid unbounded growth: archive or purge old groups once COMPLETE.
@@ -515,10 +519,12 @@ EntityReference ref = shipment.createEntityReference();
 ----
 
 REST convenience:
+
 - BaseResource exposes GET /entityref to list EntityReference for a model with optional filter/sort.
 - Repositories expose getEntityReferenceListByQuery(...), and utilities exist to convert lists of EntityReference back to entities when needed.
 
 When to use which:
+
 - Use @Reference for strong persistence-level links where Morphia should maintain foreign references.
 - Use EntityReference for UI lists, foreign-key-like pointers in other documents, events/audit logs, or cross-module decoupling without DBRef behavior.
 
@@ -528,16 +534,19 @@ When to use which:
 @TrackReferences on a @Reference field tells the framework to maintain a back-reference set on the parent entity. The back-reference field is UnversionedBaseModel.references (a Set<ReferenceEntry>), which is calculated/maintained by the framework and should not be set by clients.
 
 What references contains:
+
 - Each ReferenceEntry holds: referencedId (ObjectId of the child), type (fully-qualified class name of the child’s entity), and refName (child’s stable reference name).
 - It indicates that the parent is being referenced by the given child entity. The set is used for fast checks and to enforce referential integrity.
 
 How tracking works (save/update):
+
 - ReferenceInterceptor inspects @Reference fields annotated with @TrackReferences during prePersist.
 - When a child references a parent, a ReferenceEntry for the child is added to the parent’s references set and the parent is saved to persist the back-reference.
 - For @Reference collections, entries are added for each child-parent pair.
 - If a @Reference is null but ignoreMissing=false, a save will fail with an IllegalStateException since the parent is required.
 
 How it affects delete:
+
 - During delete in MorphiaRepo.delete(...):
   - If obj.references is empty, the object can be deleted directly (after removing any references it holds to parents).
   - If obj.references is not empty, the repo checks each ReferenceEntry. If any referring parent still exists, a ReferentialIntegrityViolationException is thrown to prevent breaking relationships.
@@ -545,6 +554,7 @@ How it affects delete:
 - removeReferenceConstraint(...) ensures that, when deleting a child, its ReferenceEntry is removed from parent.references and the parent is saved, keeping back-references consistent.
 
 Practical guidance:
+
 - Annotate parent links with both @Reference and @TrackReferences when you need strong integrity guarantees and easy “who references me?” queries.
 - Use ignoreMissing=true only for optional references; you still get back-reference tracking when not null.
 - Expect HTTP delete to fail with a meaningful error if there are live references; remove or update those references first, or design cascading behavior explicitly in your domain logic.

@@ -378,15 +378,18 @@ Cross-references:
 == How UIActions and DefaultUIActions are calculated
 
 When the server returns a collection of entities (for example, userProfiles), each entity may expose two action lists:
+
 - DefaultUIActions: the full set of actions that conceptually apply to this type of entity (e.g., CREATE, UPDATE, VIEW, DELETE, ARCHIVE). Think of this as the “menu template” for the type.
 - UIActions: the subset of actions the current user is actually permitted to perform on that specific entity instance right now.
 
 Why they can differ per entity:
+
 - Entity attributes: state or flags (e.g., archived, soft-deleted, immutable) can remove or alter available actions at instance level.
 - Permission rule base: evaluated against the current request, identity, and context to allow or deny actions.
 - DataDomain membership: tenant/org/owner scoping can further restrict actions if the identity is outside the entity’s domain.
 
 How the server computes them:
+
 . Start with a default action template for the entity type (DefaultUIActions).
 . Apply simple state-based adjustments (for example, suppress CREATE on already-persisted instances).
 . Evaluate the permission rules with the current identity and context:
@@ -396,11 +399,13 @@ How the server computes them:
 . Return both lists with each entity in collection responses.
 
 How the client should use the two lists:
+
 - Render the full DefaultUIActions as the visible set of possible actions (icons, buttons, menus) so the UI stays consistent.
 - Enable only those actions present in UIActions; gray out or disable the remainder to signal capability but lack of current permission.
 - This approach avoids flicker and keeps affordances discoverable while remaining truthful to the user’s current authorization.
 
 Example:
+
 - You fetch 25 userProfiles.
 - DefaultUIActions for the type = [CREATE, VIEW, UPDATE, DELETE, ARCHIVE].
 - For a specific profile A (owned by your tenant), UIActions may be [VIEW, UPDATE] based on your roles and domain.
@@ -408,6 +413,7 @@ Example:
 - The UI renders the same controls for both A and B, but only enables the actions present in each item’s UIActions list.
 
 Operational considerations:
+
 - Keep action names stable and documented so front-ends can map to icons and tooltips consistently.
 - Prefer small, composable rules that evaluate action permissions explicitly by functional area/domain to avoid surprises.
 - Consider server-side caching of action evaluations for list views to reduce latency, respecting identity and scope.
