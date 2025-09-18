@@ -19,8 +19,8 @@ public class CreateUserRequest {
    @NotNull
    @NonNull
    String userId;
-   @NotNull
-   @NonNull
+
+   // can be optional
    String password;
 
    String displayName;

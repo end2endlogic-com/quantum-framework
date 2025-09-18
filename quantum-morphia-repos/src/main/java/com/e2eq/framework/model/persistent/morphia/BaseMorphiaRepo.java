@@ -94,6 +94,16 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
     */
    Optional<T> findById(@NotNull String id);
 
+
+
+   /**
+    * Finds an entity by its string identifier in the default/current realm.
+    * @param id the entity id; must not be null
+    * @param ignoreRules whether to ignore rules for reference name/alias resolution
+    * @return an {@link Optional} with the entity if found
+    */
+   Optional<T> findById (@NotNull String id, boolean ignoreRules);
+
    /**
     * Finds an entity by its string identifier within a specific realm.
     * @param id      the entity id; must not be null

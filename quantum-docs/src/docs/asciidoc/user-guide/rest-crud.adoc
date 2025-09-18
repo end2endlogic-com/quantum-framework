@@ -344,7 +344,7 @@ Notes and constraints:
 - Very large exports should prefer streaming with sensible length settings or server‑side filters to reduce memory and time.
 - Imports run under the same security rules as POST / (save). Ensure the caller has permission to create/update the target entities in the chosen realm.
 
-[[auth]]
+[[rest-crud-auth]]
 = Authentication and Authorization
 
 Quantum integrates with Quarkus security while providing a pluggable approach to authentication. The repository includes a JWT provider module to get started quickly and an extension surface to replace or complement it.
