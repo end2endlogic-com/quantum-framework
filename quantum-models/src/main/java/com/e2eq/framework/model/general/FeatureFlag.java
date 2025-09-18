@@ -23,9 +23,6 @@ public class FeatureFlag extends BaseModel {
    // Flag Management Interface: Attributes for creating/updating flags
    private String description;          // Optional description for context
    private boolean enabled;             // Overall flag status (on/off)
-   // Last update timestamp
-   private String createdBy;            // User who created the flag
-   private String updatedBy;            // User who last updated the flag
    // Boolean and Multivariate Flags: Support for simple and complex flags
    private FlagType type;               // Enum to indicate boolean or multivariate
    private List<String> variants;       // List of variants for multivariate flags (e.g., ["v1", "v2"])
@@ -34,6 +31,7 @@ public class FeatureFlag extends BaseModel {
    private Map<String, String> customAttributes; // Key-value pairs for custom user properties (e.g., "plan=premium")
    // Environment Support: Environment-specific configuration
    private String environment;          // Environment (e.g., "dev", "staging", "prod")
+   private String scope;  // an optional field to specify this feature flag is only relavant for  a certain scope
    private JsonNode jsonConfiguration;  // Configuration of feature in JSON format
 
    @Override

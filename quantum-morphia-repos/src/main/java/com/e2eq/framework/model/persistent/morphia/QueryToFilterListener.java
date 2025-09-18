@@ -304,7 +304,9 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
                 ctx.value.getText().length() - 1), ",");
         while (tokenizer.hasMoreTokens()) {
             String value = (variableMap != null) ? sub.replace(tokenizer.nextToken()) : tokenizer.nextToken();
-            if (((CommonToken) ctx.value.value).getType() == BIAPIQueryParser.OID) {
+            if(((CommonToken) ctx.value.value).getType() == BIAPIQueryParser.QUOTED_STRING){
+               values.add(ctx.value.value.getText());
+            }else if (((CommonToken) ctx.value.value).getType() == BIAPIQueryParser.OID) {
                 values.add(new ObjectId(value));
             } else if (((CommonToken) ctx.value.value).getType() == BIAPIQueryParser.REFERENCE) {
                     values.add(buildReference(ctx.field.getText(), value));

@@ -263,6 +263,13 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         ObjectId oid = new ObjectId(id);
         return findById(oid);
     }
+
+   @Override
+   public Optional<T> findById (@NotNull String id, boolean ignoreRules) {
+       ObjectId oid = new ObjectId(id);
+      return this.findById(morphiaDataStore.getDataStore(getSecurityContextRealmId()), oid, ignoreRules);
+   }
+
    @Override
    public Optional<T> findById(@NotNull String id, @NotNull String realmId) {
       ObjectId oid = new ObjectId(id);
@@ -639,6 +646,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
             throw new RuntimeException("Resource Context is not set in thread, check security configuration");
         }
 
+
         MorphiaCursor<T> cursor;
 
         FindOptions findOptions = buildFindOptions(skip, limit, sortFields, projectionFields);
@@ -648,6 +656,8 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
             if (!cleanQuery.isEmpty()) {
                 Filter filter = MorphiaUtils.convertToFilter(query, getPersistentClass());
                 filters.add(Filters.and(filter));
+                Log.debugf("Running with filters:%s", filters.stream().map(Filter::toString).collect(Collectors.joining(",")));
+
             }
             Filter[] filterArray = new Filter[filters.size()];
             cursor = datastore.find(getPersistentClass())
