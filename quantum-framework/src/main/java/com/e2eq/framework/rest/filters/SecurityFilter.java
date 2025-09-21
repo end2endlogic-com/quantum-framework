@@ -127,7 +127,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
             if (tokenCount > 3) {
                 if (Log.isEnabled(Logger.Level.WARN)) {
-                    Log.warnf("Path: %s has  more than 3 levels", path );
+                    Log.debugf("Path: %s has  more than 3 levels", path );
                 }
                 area = tokenizer.nextToken();
                 functionalDomain = tokenizer.nextToken();
@@ -161,7 +161,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 }
 
             } else {
-                Log.warnf("Non conformant path:%s could not set resource context as a result, expecting /area/functionalDomain/action: TokenCount:%s -- setting to an anonymous context", path, tokenCount);
+                Log.debugf("Non conformant path:%s could not set resource context as a result, expecting /area/functionalDomain/action: TokenCount:%s -- setting to an anonymous context", path, tokenCount);
                 rcontext = ResourceContext.DEFAULT_ANONYMOUS_CONTEXT;
             }
             return rcontext;
