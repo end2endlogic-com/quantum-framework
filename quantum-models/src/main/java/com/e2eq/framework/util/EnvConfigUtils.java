@@ -1,12 +1,15 @@
 package com.e2eq.framework.util;
 
+import io.quarkus.runtime.Startup;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Singleton;
 import lombok.Data;
 import lombok.Getter;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
-@ApplicationScoped
+@Singleton
 @Data
+@Startup
 public class EnvConfigUtils {
    // system context values
    @ConfigProperty(name = "quantum.anonymousUserId", defaultValue = "anonymous@system.com"  )
@@ -65,6 +68,21 @@ public class EnvConfigUtils {
    @ConfigProperty(name = "quantum.realmConfig.testTenantId", defaultValue = "test-system.com"  )
    @Getter
    protected String testTenantId;
+
+   public String getTestEmailDomainFromTenantId() {
+      // substuite the - in teh tenantId for a @ if the - exists other wise return the tenantId as the emailDomain;
+      return this.testTenantId.contains("-") ? this.testTenantId.replace("-", "@") : this.testTenantId;
+
+   }
+   public String getDefaultEmailDomainFromTenantId() {
+      return this.defaultTenantId.contains("-") ? this.defaultTenantId.replace("-", "@") : this.defaultTenantId;
+   }
+
+   public String getSystemEmailDomainFromTenantId() {
+
+      return this.systemTenantId.contains("-") ? this.systemTenantId.replace("-", "@") : this.systemTenantId;
+
+   }
 
    @Getter
    @ConfigProperty(name = "quantum.realmConfig.testRealm", defaultValue = "test-system-com"  )

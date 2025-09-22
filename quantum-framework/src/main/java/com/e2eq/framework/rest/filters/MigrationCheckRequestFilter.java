@@ -43,6 +43,7 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
             } else {
                 migrationService.checkInitialized(envConfigUtils.getDefaultRealm());
             }
+           migrationService.checkInitialized(envConfigUtils.getSystemRealm());
 
         } catch (DatabaseMigrationException e) {
             Log.warn("!! Migration check failed: " + e.getMessage());

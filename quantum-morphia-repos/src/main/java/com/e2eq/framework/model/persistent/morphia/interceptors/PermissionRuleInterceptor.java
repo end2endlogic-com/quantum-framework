@@ -36,15 +36,16 @@ public class PermissionRuleInterceptor implements EntityListener {
          if (!(SecurityContext.getResourceContext().get().getAction().equalsIgnoreCase("save") ||
                  SecurityContext.getResourceContext().get().getAction().equalsIgnoreCase("update") ||
                  SecurityContext.getResourceContext().get().getAction().equalsIgnoreCase("delete") ||
+                  SecurityContext.getResourceContext().get().getAction().equalsIgnoreCase("write") ||
                  SecurityContext.getResourceContext().get().getAction().equals("*"))) {
             if (Log.isEnabled(Logger.Level.WARN))
                //  throw new RuntimeException("Configuration error, post persist called but action expected to be save or update and is:" + SecurityContext.getResourceContext().get().getAction());
-               Log.warn("pre persist called but action expected to be save or update and is:" + SecurityContext.getResourceContext().get().getAction());
+               Log.debugf("pre persist called but action expected to be save or update and is:%s" , SecurityContext.getResourceContext().get().getAction());
 
          }
          doCheck();
       } else {
-         Log.warn("No Resource Context found there for no permission check executed for entity:" + entity.getClass().getName() + " Document:" + document.toJson());
+         Log.warnf("No Resource Context found there for no permission check executed for entity:%s" , entity.getClass().getName() + " Document:" + document.toJson());
       }
    }
 

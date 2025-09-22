@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
 import io.quarkus.logging.Log;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.Provider;
 import org.jboss.logging.Logger;
@@ -19,6 +20,9 @@ public class RunTimeExceptionMapper implements jakarta.ws.rs.ext.ExceptionMapper
 
     @Override
     public Response toResponse(RuntimeException exception) {
+
+       exception.printStackTrace();
+
         RestError error =RestError.builder().build();
         error.setStatusMessage(exception.getMessage());
         error.setStatus(Response.Status.INTERNAL_SERVER_ERROR.getStatusCode());

@@ -38,6 +38,8 @@ public class EntityReference {
 
     protected String entityType;
 
+    protected String realm;
+
     @Deprecated
     protected Long version; // the version if its optimistically locked
 

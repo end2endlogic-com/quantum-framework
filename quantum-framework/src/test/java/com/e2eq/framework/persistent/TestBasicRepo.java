@@ -84,7 +84,7 @@ public class TestBasicRepo extends BaseRepoTest{
          Optional<UserProfile> ouserProfile = userProfileRepo.getByUserId(ds,userId);
 
          if (!ouserProfile.isPresent()) {
-       userProfile =  userProfileRepo.createUser(ds,
+       userProfile =  userProfileRepo.createUser(
          userId,
          fname,
          lname,
@@ -97,7 +97,6 @@ public class TestBasicRepo extends BaseRepoTest{
          }
          session.commitTransaction();
       }
-
       return userProfile;
    }
 

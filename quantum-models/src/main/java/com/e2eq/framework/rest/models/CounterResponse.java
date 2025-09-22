@@ -12,4 +12,10 @@ import lombok.NoArgsConstructor;
 @RegisterForReflection
 public @Data class CounterResponse extends ResponseBase {
        long value;
+       Integer base; // optional, if provided indicates the base used for encodedValue
+       String encodedValue; // optional, representation of value in the given base
+
+       public CounterResponse(long value) {
+           this.value = value;
+       }
    }

@@ -1,0 +1,279 @@
+:toc: left
+:toclevels: 3
+:sectnums:
+:doctype: book
+:icons: font
+:revnumber: {project-version}
+
+= Quantum Framework Documentation
+
+This documentation provides user guides and tutorials for mid-level Java developers to build SaaS applications with multi-tenancy on the Quantum framework, in a structure similar to Spring’s reference documentation. Artifacts are generated as HTML and PDF via Maven.
+
+== Quarkus Core Features and Architecture
+
+Quarkus is a Kubernetes‑native Java stack optimized for fast startup, low memory footprint, and developer productivity. Quantum builds on Quarkus to provide multi‑tenant persistence, security, and rule‑driven authorization.
+
+Key capabilities:
+- Developer joy: live reload (dev mode), unified config, test‑first ergonomics.
+- Build‑time optimizations: aggressive classpath indexing and ahead‑of‑time processing to reduce reflection and bytecode scanning at runtime.
+- Container and cloud native: seamless integration with containers, Kubernetes, health checks, metrics, and config.
+- Extension ecosystem: rich set of extensions for data, security, messaging, observability, and more.
+
+=== GraalVM Native and Polyglot
+
+- Native compilation: Quarkus applications can be compiled to native executables using GraalVM (or Mandrel). Benefits include millisecond startup times and drastically reduced RSS memory, ideal for serverless and microservice workloads.
+  - Constraints: reflection, dynamic proxies, and some dynamic classloading need explicit configuration or substitution (Quarkus largely automates this, see @RegisterForReflection below).
+- Polyglot support: GraalVM provides runtimes for multiple languages (e.g., JavaScript, Python via GraalPy, Ruby, R). Applications can embed polyglot code where appropriate using GraalVM’s polyglot APIs. Use judiciously to avoid bloating native images and to maintain clear performance boundaries.
+
+=== Arc (Quarkus CDI) and Inversion of Control
+
+Arc is Quarkus’ CDI implementation, focused on build‑time analysis and small runtime overhead. It implements the Inversion of Control pattern:
+- You declare components (beans) with scopes and qualifiers.
+- The container instantiates, wires, and manages their lifecycle.
+- Your code depends on interfaces and qualifiers rather than concrete implementations.
+
+Common scopes and their semantics:
+- @ApplicationScoped
+  - One contextual instance for the duration of the application. Arc can proxy such beans and apply interceptors. Recommended default for stateless services and repositories.
+- @Singleton
+  - Single Java instance managed by the container, but not a normal CDI context. It typically doesn’t use client proxies; some CDI features (like certain interceptor/proxy behaviors) may differ. Prefer @ApplicationScoped for CDI beans unless you specifically need @Singleton semantics.
+- @RequestScoped
+  - One instance per incoming HTTP request. Useful for per‑request context holders or lightweight state.
+- @SessionScoped (when web sessions are enabled)
+  - One instance per HTTP session. Use sparingly due to clustering/state implications.
+- @Dependent (the default if no scope is declared)
+  - No contextual lifecycle; a new instance is created at every injection point, and its lifecycle is bound to the injecting bean. Good for lightweight, stateful helpers.
+
+Recommendations:
+- Prefer @ApplicationScoped for stateless services, @RequestScoped for per‑request concerns, and @Dependent for small, short‑lived helpers.
+- Choose @Singleton only when you explicitly want a single instance without normal CDI contextual behavior.
+
+=== Bean Discovery, Qualifiers, and Programmatic Lookups
+
+- Discovery: Quarkus performs build‑time bean discovery using classpath indexing. A class becomes a bean when it has a bean‑defining annotation (e.g., a scope such as @ApplicationScoped) or is produced via a producer method/field.
+- Qualifiers: Use qualifiers (custom annotations annotated with @Qualifier) to disambiguate multiple implementations of the same interface.
+- Programmatic selection with Instance<T>:
+  - Inject Instance<SomeType> to iterate over all beans of a type or to select by qualifier at runtime.
+  - Useful for plugin architectures where you discover all provider implementations and choose one based on configuration or request context.
+  - Remember that Instance<T> is lazy; calling get()/iterator() triggers resolution.
+
+=== Reflection Configuration and Jandex Indexes
+
+- @RegisterForReflection
+  - Native images eliminate reflection metadata by default. Annotate classes that must be available to reflection at runtime (e.g., JSON serializers, frameworks performing reflective access).
+  - Quarkus extensions often auto‑register common frameworks. Use this annotation for your own types when needed, especially DTOs or model classes used by reflection‑heavy libraries.
+- Jandex indexes
+  - Quarkus builds a Jandex index of your application and dependencies at build time to analyze annotations and discover beans without scanning at runtime.
+  - This indexing underpins Arc’s fast startup and small footprint by moving classpath analysis to build time.
+  - When adding third‑party libraries that rely on reflection or dynamic discovery, ensure they either provide Jandex indexes or are properly configured for reflection in native mode.
+
+== Guides
+
+include::user-guide/overview.adoc[]
+include::user-guide/tenant-models.adoc[]
+include::user-guide/modeling.adoc[]
+include::user-guide/domain-rule-context.adoc[]
+include::user-guide/rest-crud.adoc[]
+include::user-guide/migrations.adoc[]
+include::user-guide/auth.adoc[]
+include::user-guide/permissions.adoc[]
+
+== Testing
+
+
+include::user-guide/testing.adoc[]
+
+== Tutorials
+
+include::tutorials/supply-chain.adoc[]
+
+
+== Appendix: application.properties reference
+
+This appendix explains how configuration works in Quarkus and walks through the key entries used in this project’s application.properties, including what each configures and the behavioral implications at runtime.
+
+Where the file lives and how it’s applied:
+
+- Location: src/main/resources/application.properties in your runtime module (tests often use src/test/resources/application.properties).
+- Profiles: Prefix a property with %dev., %test., or %prod. to scope it to that profile. Example: %dev.com.b2bi.jwt.duration=7200 overrides the default only in dev.
+- Environment variables and defaults: Use ${ENV_VAR:default} to pull from the environment with a fallback. Example: quarkus.http.cors.origins=${QUARKUS_HTTP_CORS_ORIGINS:http://localhost:3000,…​}.
+- Precedence: System properties > environment variables > application.properties. See Quarkus Config for full details.
+
+Classpath indexing (Jandex):
+
+quarkus.index-dependency.<alias>.group-id=..., quarkus.index-dependency.<alias>.artifact-id=...::
+  Adds selected dependency JARs to the build-time Jandex index. Use this when third-party libraries or your own modules need their annotations discovered without runtime scanning. Examples used here: semver4j, smallrye-open-api, and quantum-models.
+
+JWT, authentication, and identity:
+
+quarkus.smallrye-jwt.enabled=true::
+  Enables SmallRye JWT support. Implication: Requests can be authenticated via Bearer tokens; endpoints annotated for security will validate JWTs.
+
+auth.provider=custom | cognito::
+  Selects the authentication provider strategy used by the framework. Implication: custom delegates to the project’s JWT validation; cognito/oidc uses OIDC config below.
+
+quarkus.oidc.enabled=false and quarkus.keycloak.devservices.enabled=false::
+  Disables OIDC and devservices for Keycloak when using custom JWT. Set to true and configure OIDC for Cognito/Keycloak use.
+
+mp.jwt.verify.publickey.location=publicKey.pem::
+  Location of public key for signature verification when using SmallRye JWT. Make sure the resource is included in the runtime image and native resources.
+
+mp.jwt.verify.issuer, mp.jwt.verify.audiences::
+  Validates issuer/audience claims. If mismatched, tokens are rejected with 401.
+
+com.b2bi.jwt.duration and %dev.com.b2bi.jwt.duration::
+  Custom property controlling token lifetime; UI dialogs assume minimums (comment notes 120s). Impacts how frequently clients must refresh tokens.
+
+auth.jwt.secret=${JWT_SECRET:...}::
+  Secret for HMAC-signed JWTs when using custom auth. Rotate via environment variable in production.
+
+auth.jwt.expiration, auth.jwt.refresh-expiration::
+  Access token TTL and refresh token TTL (in minutes unless otherwise noted) for the custom auth provider. Short access TTLs reduce risk; longer refresh TTLs improve UX.
+
+CORS and HTTP headers:
+
+quarkus.http.cors=true::
+  Enables CORS handling. Without this, browsers will block cross-origin requests in SPA scenarios.
+
+quarkus.http.cors.origins::
+  Allowed origins. Use env var to vary by environment. Overly broad origins increase CSRF risk.
+
+quarkus.http.cors.headers, quarkus.http.cors.methods, quarkus.http.cors.access-control-allow-credentials::
+  Allowed headers/methods and whether credentials are permitted. Set conservatively.
+
+quarkus.http.header.Pragma.*::
+  Example of setting static response headers for given methods.
+
+MongoDB and Morphia persistence:
+
+quarkus.mongodb.devservices.enabled=false::
+  Disables Quarkus Dev Services for MongoDB; you must supply a connection string.
+
+quarkus.mongodb.connection-string=${MONGODB_CONNECTION_STRING:mongodb://localhost:27017/?retryWrites=false}::
+  Primary connection string. In CI/Prod, set MONGODB_CONNECTION_STRING instead of editing the file.
+
+quarkus.mongodb.database=${MONGODB_DEFAULT_SCHEMA:system-com}::
+  Default database when @MongoEntity does not specify one.
+
+quarkus.morphia.database=system-quantum-com (or system-com in other modules)::
+  Database used by Morphia mappings. Ensure this aligns with the Mongo default or deliberately separate read/write databases.
+
+quarkus.morphia.packages=...::
+  Comma-separated packages scanned for Morphia entities and validators. Implication: Entities outside these packages won’t be mapped or indexed.
+
+quarkus.morphia.create-caps=true, create-indexes=true, create-validators=true::
+  On startup, Morphia will create capped collections, indexes, and validators. Impacts startup time and requires privileges.
+
+Database migration (project-specific):
+
+quantum.database.version, quantum.database.scope::
+  Current model version and target migration scope (e.g., DEV). Used by the framework’s migration machinery to decide which change sets to apply.
+
+quantum.database.migration.changeset.package::
+  Package containing migration classes. Ensure it matches your module layout.
+
+quantum.database.migration.enabled=true::
+  If false, migrations are skipped. In prod, keep true to ensure schema is consistent.
+
+Realm and tenant bootstrap defaults (project-specific):
+
+quantum.realmConfig.* (system*, dev*, test*, default*)::
+  Defines realm/tenant IDs, default account numbers, org names, and system/test user IDs. Implication: Controls which tenant is considered the system realm, default behaviors for new tenants, and test bootstrap identities.
+
+quantum.anonymousUserId::
+  User ID to attribute actions to when no authenticated principal is available. Use with care to avoid audit gaps.
+
+quantum.staticDynamicList.check-ids=true::
+  Enables validation on static/dynamic list IDs used by the rules engine; invalid IDs will cause validation failures.
+
+quantum.defaultSystemPassword, quantum.defaultTestPassword::
+  Default passwords used when seeding or in tests. Never ship production with these values active.
+
+OpenAPI and Swagger UI:
+
+quarkus.swagger-ui.always-include=true and quarkus.swagger-ui.enable=true::
+  Serves Swagger UI even in non-dev profiles; good for internal tools, but restrict in production if needed.
+
+quarkus.smallrye-openapi.security-scheme=jwt::
+  Sets the default security scheme to JWT so the UI and generators expect Bearer tokens.
+
+mp.openapi.extensions.smallrye.security.enabled=true::
+  Enables SmallRye’s vendor extensions for OpenAPI security.
+
+mp.openapi.extensions.smallrye.securityScheme.bearerAuth.type=HTTP::
+  Declares the security scheme type used in the generated spec.
+
+mp.openapi.extensions.smallrye.securityScheme.bearerAuth.scheme=bearerAuth::
+  Names the scheme; kept in sync with clients. Note: Some setups use "bearer" for the scheme name.
+
+mp.openapi.extensions.smallrye.securityScheme.bearerAuth.bearerFormat=JWT::
+  Documents the token format so tools show the correct input expectations.
+
+quarkus.smallrye-openapi.info-*::
+  Sets metadata like title, version, contact, and license. Profile overrides allow environment-specific titles.
+
+Logging:
+
+quarkus.log.level=INFO, quarkus.log.console.format=...::
+  Global logging level and console layout. Adjust to DEBUG when diagnosing issues.
+
+quarkus.log.category."com.e2eq".level=INFO (and other categories)::
+  Fine-grained log levels for specific packages. Overuse of DEBUG in production can impact performance and leak data.
+
+Native image (GraalVM/Mandrel):
+
+quarkus.native.additional-build-args=...::
+  Adds flags for class initialization timing and resource/reflection configs. Required for some AWS and Jackson components to work in native mode.
+
+quarkus.native.add-all-charsets=true::
+  Includes all charsets; simplifies i18n at the cost of image size.
+
+quarkus.native.builder-image=quay.io/quarkus/ubi-quarkus-mandrel-builder-image:jdk-23::
+  Selects builder image for container-based native builds. Use a Java 17 image when building for JDK 17 runtimes.
+
+Email and external services:
+
+postmark.api-key, postmark.default-from-email-address, postmark.default-to-email-address::
+  Configures Postmark integration. Keep secrets in environment variables; set defaults for development.
+
+awsconfig.aws-role-arn, awsconfig.region, awsconfig.check-migration::
+  AWS integration defaults used by the framework. Role ARN is used for assuming roles when accessing AWS resources.
+
+Cognito/OIDC integration:
+
+aws.cognito.* (user-pool-id, client-id, region, jwks.url)::
+  Defines Cognito user pool and derived JWKS URL for key discovery.
+
+quarkus.oidc.auth-server-url, quarkus.oidc.client-id, quarkus.oidc.token.issuer, quarkus.oidc.roles.role-claim-path::
+  Enables Quarkus OIDC for Cognito, sets issuer, client ID, and which claim carries roles (cognito:groups).
+
+Implication when enabled::
+  Requests are validated by OIDC; required roles are matched against the claim path.
+
+Jackson and rate limiting:
+
+quarkus.jackson.serialization-inclusion=non-null::
+  Excludes null fields from JSON serialization across the app. Impacts API payloads and clients.
+
+rate.limit.request.limit=300, rate.limit.refill.seconds=2::
+  Custom rate-limiting defaults used by filters or interceptors. Adjust per environment to protect upstreams.
+
+Miscellaneous:
+
+quarkus.console.color=true::
+  Colored console output; no behavioral impact.
+
+quarkus.s3.devservices.enabled=false::
+  Disables S3 Dev Services in dev/test. Provide real AWS creds or mock S3 as needed.
+
+quarkus.lambda.mock-event-server.enabled=false::
+  Turns off the Lambda mock event server in dev mode when not testing Lambda handlers.
+
+quarkus.http.port, quarkus.package.type (commented examples)::
+  Illustrate how to change HTTP port and packaging type; fast-jar is the default and recommended for REST services.
+
+Tips for safe configuration changes:
+
+- Prefer environment variables for secrets and per-environment values; keep application.properties checked in with sane defaults.
+- Use profile-specific overrides (%dev, %test, %prod) to avoid accidental production settings.
+- After changing persistence or migration settings, run migrations/tests locally before deploying.

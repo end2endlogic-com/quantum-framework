@@ -34,7 +34,16 @@ public class ContentLengthFilter implements ContainerRequestFilter, ContainerRes
             String entity = mapper.writeValueAsString(responseContext.getEntity());
             responseContext.setEntity(entity);
             responseContext.getHeaders().add(HttpHeaders.CONTENT_LENGTH, entity.getBytes().length);
-        }/* else {
+        }
+        else if (responseContext.getMediaType()!= null && "text/event-stream".equals(responseContext.getMediaType().toString())){
+           responseContext.getHeaders().putSingle("Cache-Control", "no-cache, no-transform");
+           responseContext.getHeaders().putSingle("Pragma", "no-cache");
+           responseContext.getHeaders().putSingle("Content-Type", "text/event-stream");
+           responseContext.getHeaders().putSingle("Connection", "keep-alive");
+           responseContext.getHeaders().putSingle("Transfer-Encoding", "chunked");
+        }
+
+        /* else {
             if (responseContext.getMediaType() != null && responseContext.getEntity() != null){
                 Log.warnf("ContentLengthFilter: responseContext.getEntity() is null or not JSON:  Media Type:%s Path:%s", responseContext.getMediaType().toString(), requestContext.getUriInfo().getPath() );
                 String entity = mapper.writeValueAsString(responseContext.getEntity());

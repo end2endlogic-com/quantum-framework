@@ -912,9 +912,16 @@ would skip the first 10 records and then provide the next 50.  If length is not 
 ==== Sorting
 a sorting parameter can be provided allowing for sorting either decending or acending:
 use + for acending and - for decending
+Multiple fields can be separated by commas.
 
 so for example
- //localhost/location?sort=-name;+id. would first sort by name decending and then by id ascending.
+ //localhost/location?sort=-name,+id would first sort by name decending and then by id ascending.
+
+==== Projection
+A projection parameter can be provided to include or exclude specific fields in each result.
+Provide a comma-separated list of fields; prefix with + to include or - to exclude.
+For example
+ //localhost/location?projection=+id,+name,-internalNotes will return only id and name fields while excluding internalNotes.
 
 == Conventions / Static Analysis / Coding Standards
 

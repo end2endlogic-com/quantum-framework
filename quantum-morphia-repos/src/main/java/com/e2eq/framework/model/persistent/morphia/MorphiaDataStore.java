@@ -85,7 +85,7 @@ public class MorphiaDataStore {
 
       // Optionally map the same packages as the base dataStore
       for (String pkg : baseConfig.packages()) {
-         Log.warnf("!!! Costly Call --- Mapping package: %s", pkg);
+         Log.debugf("!!! Costly Call --- Scanning class path and Mapping package: %s", pkg);
          mdatastore.getMapper().map(pkg);
       }
 

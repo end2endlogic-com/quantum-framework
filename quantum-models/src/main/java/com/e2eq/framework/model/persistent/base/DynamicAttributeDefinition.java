@@ -15,6 +15,9 @@ import java.util.List;
 @NoArgsConstructor
 @Entity
 public class DynamicAttributeDefinition {
+
+    protected String id;
+
     @NonNull
     @NotNull
     protected String name;

@@ -31,6 +31,9 @@ public class ValidationInterceptor implements EntityListener<Object> {
    @Inject
    ObjectMapper objectMapper;
 
+   @Inject
+   com.e2eq.framework.model.persistent.morphia.interceptors.ddpolicy.DataDomainResolver dataDomainResolver;
+
    public ValidationInterceptor () {
 
    }
@@ -42,25 +45,19 @@ public class ValidationInterceptor implements EntityListener<Object> {
 
    @Override
    public void prePersist (Object ent, Document document, Datastore datastore) {
-      BaseModel bm = null;
+      UnversionedBaseModel bm = null;
       boolean skipValidation = false;
 
       if (ent instanceof UnversionedBaseModel) {
-         bm = (BaseModel) ent;
+         bm = (UnversionedBaseModel) ent;
          if (!bm.isSkipValidation()) {
             if (SecurityContext.getPrincipalContext().isPresent()) {
                if (bm.getDataDomain() == null) {
-                  DataDomain dd = SecurityContext.getPrincipalDataDomain().get();
+                  DataDomain dd = dataDomainResolver.resolveForCreate(bm.bmFunctionalArea(), bm.bmFunctionalDomain());
                   if (dd == null) {
-                     throw new IllegalArgumentException(("Principal context not providing a data domain, ensure your logged in, or passing a data domain structure"));
+                     throw new IllegalStateException("Resolved data domain is null, this should not happen");
                   }
                   bm.setDataDomain(dd);
-                    /*DataDomain dd = new DataDomain();
-                    dd.setOrgRefName(SecurityContext.getPrincipalContext().get().getDataDomain().getOrgRefName());
-                    dd.setAccountNum(SecurityContext.getPrincipalContext().get().getDataDomain().getAccountNum());
-                    dd.setTenantId(SecurityContext.getPrincipalContext().get().getDataDomain().getTenantId());
-                    dd.setOwnerId(SecurityContext.getPrincipalContext().get().getUserId());
-                    dd.setDataSegment(SecurityContext.getPrincipalContext().get().getDataDomain().getDataSegment()); */
                }
             }
          } else {

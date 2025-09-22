@@ -25,6 +25,7 @@ import java.util.Optional;
 import java.util.concurrent.Executor;
 
 @Path("/system/migration")
+@RolesAllowed({ "admin" })
 public class MigrationResource {
     @Inject
     Executor managedExecutor;

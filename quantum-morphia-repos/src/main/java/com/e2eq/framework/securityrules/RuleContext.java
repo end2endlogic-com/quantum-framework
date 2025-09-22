@@ -631,11 +631,6 @@ public class RuleContext {
 
 
     public String getRealmId(PrincipalContext principalContext, ResourceContext resourceContext) {
-        //TODO: add a map override concept where by for a given principal id, and area.functionalDomain it will resolve to a certain realm
-        // for now return what ever realm the user is in.
-        // if (resourceContext != null && resourceContext.getFunctionalDomain().equals("security") && (resourceContext.getAction().equals("login") ))
-        //    return DefaultRealm;
-
         if (principalContext != null)
             return principalContext.getDefaultRealm();
         else

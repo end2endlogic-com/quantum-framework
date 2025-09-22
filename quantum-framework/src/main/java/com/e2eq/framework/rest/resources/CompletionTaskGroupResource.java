@@ -10,7 +10,7 @@ import jakarta.ws.rs.sse.Sse;
 import jakarta.ws.rs.sse.SseEventSink;
 
 @Path("/integration/completionTaskGroup")
-@RolesAllowed({"user","admin"})
+@RolesAllowed({"user", "admin"})
 public class CompletionTaskGroupResource extends BaseResource<CompletionTaskGroup, CompletionTaskGroupRepo> {
 
     public CompletionTaskGroupResource(CompletionTaskGroupRepo repo) {
