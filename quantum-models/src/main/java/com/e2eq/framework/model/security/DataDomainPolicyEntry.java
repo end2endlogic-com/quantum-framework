@@ -10,9 +10,21 @@ import java.util.List;
 @RegisterForReflection
 public @Data class DataDomainPolicyEntry {
 
+    public enum ResolutionMode {
+        FROM_CREDENTIAL,
+        FIXED
+    }
+
+    // Optional legacy fields – kept for compatibility with existing structures
     protected String functionalDomainString;
     protected String functionalActionString;
+
+    // If mode == FIXED, the first entry (if present) will be used as the fixed value
     protected List<DataDomain> dataDomains;
+
+    // Optional: future use for filtering/validation
     protected String filter;
 
+    // New: how to resolve the dataDomain for a matching rule. Defaults to FROM_CREDENTIAL
+    protected ResolutionMode resolutionMode = ResolutionMode.FROM_CREDENTIAL;
 }

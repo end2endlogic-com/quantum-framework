@@ -125,16 +125,16 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             String action;
             int tokenCount = tokenizer.countTokens();
 
-            if (tokenCount > 2) {
+            if (tokenCount > 3) {
                 if (Log.isEnabled(Logger.Level.WARN)) {
-                    Log.warn("Path: +" + path + " three or more levels");
+                    Log.debugf("Path: %s has  more than 3 levels", path );
                 }
                 area = tokenizer.nextToken();
                 functionalDomain = tokenizer.nextToken();
                 action = tokenizer.nextToken();
 
                 if (Log.isDebugEnabled()) {
-                    Log.debug("Based upon request convention assumed that the area is:" + area + " functional domain is:" + functionalDomain + " and action is:" + action);
+                    Log.debugf("Based upon request convention assumed that the area is:%s  functional domain is:%s  and action is:%s", area, functionalDomain, action);
                 }
 
                 rcontext = new ResourceContext.Builder()
@@ -146,7 +146,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 if (Log.isDebugEnabled())
                     Log.debug("Resource Context set");
 
-            } else if (tokenCount == 2) {
+            } else if (tokenCount == 3) {
                 functionalDomain = tokenizer.nextToken();
                 action = tokenizer.nextToken();
                 rcontext = new ResourceContext.Builder()
@@ -155,16 +155,13 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                         .withFunctionalDomain(functionalDomain)
                         .build();
                 SecurityContext.setResourceContext(rcontext);
-                if (Log.isEnabled(Logger.Level.WARN)) {
-                    Log.warnf( "%s:Odd request convention, not following /area/fd/fa .. so assuming the fd and area are equal: %s only two tokens for resource, assuming area as fd, fd=%s action=%s" , path, functionalDomain, functionalDomain, action);
-                }
 
                 if (Log.isDebugEnabled()) {
                     Log.debug("Resource Context set");
                 }
 
             } else {
-                Log.warn("Non conformant url:" + path + " could not set resource context as a result, expecting /area/functionalDomain/action: TokenCount:" + tokenCount);
+                Log.debugf("Non conformant path:%s could not set resource context as a result, expecting /area/functionalDomain/action: TokenCount:%s -- setting to an anonymous context", path, tokenCount);
                 rcontext = ResourceContext.DEFAULT_ANONYMOUS_CONTEXT;
             }
             return rcontext;
@@ -289,6 +286,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
             DataDomain dataDomain;
             String userId;
+            com.e2eq.framework.model.security.DataDomainPolicy principalPolicy = null;
             if (ocreds.isPresent()) {
                 CredentialUserIdPassword creds = ocreds.get();
                 // If realm override provided, validate against user's realm filter
@@ -301,6 +299,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 contextRealm = (realm == null) ? creds.getDomainContext().getDefaultRealm() : realm;
                 dataDomain = creds.getDomainContext().toDataDomain(creds.getUserId());
                 userId = creds.getUserId();
+                principalPolicy = creds.getDataDomainPolicy();
                 String[] credRoles = creds.getRoles();
                 if (credRoles != null && credRoles.length > 0) {
                     Set<String> combined = new HashSet<>(rolesSet);
@@ -321,6 +320,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                     .withScope("AUTHENTICATED")
                     .withActingOnBehalfOfUserId(actingOnBehalfOfUserId)
                     .withActingOnBehalfOfSubject(actingOnBehalfOfSubject)
+                    .withDataDomainPolicy(principalPolicy)
                     .build();
 
             if (Log.isDebugEnabled()) {
@@ -344,19 +344,23 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             }
 
             if (sub != null) {
-                Optional<CredentialUserIdPassword> ocreds = (realm == null ) ? credentialRepo.findBySubject(sub, envConfigUtils.getSystemRealm(), true) : credentialRepo.findBySubject(sub, realm, true);
+                Optional<CredentialUserIdPassword> ocreds =  credentialRepo.findBySubject(sub, envConfigUtils.getSystemRealm(), true);
                 if (!ocreds.isPresent()) {
                     String username = jwt.getClaim("username");
                     if (username != null ) {
                         // attempt to find the user by the userId
-                        ocreds = (realm == null) ? credentialRepo.findByUserId(username, envConfigUtils.getSystemRealm(), true) : credentialRepo.findByUserId(username, realm, true);
+                        ocreds = credentialRepo.findByUserId(username, envConfigUtils.getSystemRealm(), true);
                         if (ocreds.isPresent()) {
                             String text = String.format("Found user with userId %s but subject is:%s but token has subject:%s in the database, roles in credential is %s", username, ocreds.get().getSubject(), sub,  Arrays.toString(ocreds.get().getRoles()));
                             Log.warn(text);
                             throw new IllegalStateException(text);
                         }
                     } else {
-                       String text = String.format("Subject value:%s was not found in credentialUserIdPassword collection", sub);
+                       String text = String.format("Only Subject provided, no username, and subject value:%s was not found in credentialUserIdPassword collection in realm:%s", sub, envConfigUtils.getSystemRealm());
+
+                       if (realm != null )
+                          text.concat(String.format(" realm override is present with value:%s", realm));
+
                        Log.warn(text);
                        throw new IllegalStateException(text);
                     }
@@ -387,9 +391,9 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                     if (impersonate) {
                         Optional<CredentialUserIdPassword> oicreds;
                         if (impersonateSubject != null) {
-                             oicreds =(realm == null) ? credentialRepo.findBySubject(impersonateSubject, envConfigUtils.getSystemRealm(), true) : credentialRepo.findBySubject(impersonateSubject, realm, true);
+                             oicreds = credentialRepo.findBySubject(impersonateSubject, envConfigUtils.getSystemRealm(), true);
                         } else if (impersonateUserId!= null) {
-                             oicreds = (realm == null ) ? credentialRepo.findByUserId(impersonateUserId, envConfigUtils.getSystemRealm(), true) : credentialRepo.findByUserId(impersonateUserId, realm, true)  ;
+                             oicreds = credentialRepo.findByUserId(impersonateUserId, envConfigUtils.getSystemRealm(), true);
                         } else
                         {
                             throw new IllegalStateException("Logic error on server side impersonating user, neither X-Impersonate-Subject nor X-Impersonate-UserId header is present yet impersonate is true?");
@@ -416,10 +420,12 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                                       .withUserId(oicreds.get().getUserId())
                                       .withRoles(roles)
                                       .withScope("AUTHENTICATED")
+                                      .withArea2RealmOverrides(oicreds.get().getArea2RealmOverrides())
                                       .withImpersonatedBySubject(oicreds.get().getSubject())
                                       .withImpersonatedByUserId(oicreds.get().getUserId())
                                       .withActingOnBehalfOfUserId(actingOnBehalfOfUserId)
                                       .withActingOnBehalfOfSubject(actingOnBehalfOfSubject)
+                                      .withDataDomainPolicy(oicreds.get().getDataDomainPolicy())
                                       .build();
 
                         if (Log.isDebugEnabled()) {
@@ -446,6 +452,8 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                                       .withUserId(creds.getUserId())
                                       .withRoles(roles)
                                       .withScope("AUTHENTICATED")
+                                      .withArea2RealmOverrides(creds.getArea2RealmOverrides())
+                                      .withDataDomainPolicy(creds.getDataDomainPolicy())
                                       .build();
                         if (Log.isDebugEnabled()) {
                             Log.debugf("Principal Context updated with roles: %s", Arrays.toString(roles));

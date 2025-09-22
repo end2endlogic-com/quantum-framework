@@ -1,6 +1,7 @@
 package com.e2eq.framework.model.persistent.morphia;
 
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
+import com.e2eq.framework.model.auth.AuthProviderFactory;
 import com.e2eq.framework.model.persistent.InvalidStateTransitionException;
 import com.e2eq.framework.model.persistent.base.CloseableIterator;
 import com.e2eq.framework.model.persistent.base.EntityReference;
@@ -20,6 +21,7 @@ import jakarta.inject.Inject;
 import jakarta.validation.constraints.NotNull;
 import org.apache.commons.lang3.tuple.Pair;
 import org.bson.types.ObjectId;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;

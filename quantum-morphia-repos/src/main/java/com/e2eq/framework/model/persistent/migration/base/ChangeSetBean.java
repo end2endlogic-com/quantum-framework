@@ -4,6 +4,8 @@ import com.mongodb.client.MongoClient;
 import dev.morphia.transactions.MorphiaSession;
 import io.smallrye.mutiny.subscription.MultiEmitter;
 
+import java.util.Set;
+
 /**
  * Defines a unit of database migration to be executed as part of the
  * framework's change set mechanism.
@@ -19,5 +21,9 @@ public interface ChangeSetBean {
    public String getName();
    public String getDescription();
    public String getScope();
+   public boolean isOverrideDatabase();
+   public String getOverrideDatabaseName();
+   // empty set implies all databases
+   public Set<String> getApplicableDatabases();
    public void execute(MorphiaSession session, MongoClient mongoClient, MultiEmitter<? super String> emitter) throws Exception;
 }

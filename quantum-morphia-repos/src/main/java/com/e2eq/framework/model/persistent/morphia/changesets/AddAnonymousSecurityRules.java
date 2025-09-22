@@ -1,6 +1,7 @@
 package com.e2eq.framework.model.persistent.morphia.changesets;
 
 
+import com.e2eq.framework.model.persistent.migration.base.ChangeSetBase;
 import com.e2eq.framework.model.persistent.migration.base.ChangeSetBean;
 import com.e2eq.framework.model.securityrules.RuleEffect;
 import com.e2eq.framework.model.securityrules.SecurityURI;
@@ -21,7 +22,7 @@ import jakarta.inject.Inject;
 
 @Startup
 @ApplicationScoped
-public class AddAnonymousSecurityRules implements ChangeSetBean {
+public class AddAnonymousSecurityRules extends ChangeSetBase {
 
     @Inject
     PolicyRepo policyRepo;

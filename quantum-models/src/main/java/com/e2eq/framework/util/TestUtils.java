@@ -103,8 +103,8 @@ public class TestUtils {
       return DomainContext.builder()
                             .orgRefName(envConfigUtils.getSystemOrgRefName())
                             .accountId(envConfigUtils.getSystemAccountNumber())
-                            .tenantId(envConfigUtils.getTestTenantId())
-                            .defaultRealm(envConfigUtils.getTestRealm())
+                            .tenantId(envConfigUtils.getSystemTenantId())
+                            .defaultRealm(envConfigUtils.getSystemRealm())
                             .build();
 
    }

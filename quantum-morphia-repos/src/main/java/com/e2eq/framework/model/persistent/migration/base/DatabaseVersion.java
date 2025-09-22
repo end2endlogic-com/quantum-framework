@@ -7,6 +7,7 @@ import lombok.*;
 import org.semver4j.Semver;
 
 import java.util.Date;
+import java.util.List;
 
 @Entity
 @RegisterForReflection
@@ -21,8 +22,8 @@ public@Data class DatabaseVersion extends BaseModel {
    protected String currentVersionString;
    @Getter
    protected int currentVersionInt;
-
    protected Date lastUpdated;
+   protected List<String> compatibleScopes;
 
 
    public void setCurrentVersionString(String currentVersion) {

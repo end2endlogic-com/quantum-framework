@@ -198,7 +198,7 @@ public class SecurityResource {
             Log.info("me: - UserId:" + securityContext.getUserPrincipal().getName());
 
         try {
-            Optional<UserProfile> userProfileOp = userProfileRepo.getBySubject(envConfigUtils.getSystemRealm(), securityContext.getUserPrincipal().getName());
+            Optional<UserProfile> userProfileOp = userProfileRepo.getBySubject(envConfigUtils.getSystemRealm(), securityIdentity.getPrincipal().getName());
             if (userProfileOp.isPresent()) {
                 userProfileRepo.fillUIActions(userProfileOp.get());
             }
@@ -208,7 +208,7 @@ public class SecurityResource {
                 return response;
             } else {
                 RestError error = RestError.builder()
-                        .statusMessage("Could not find userId:" + securityContext.getUserPrincipal().getName() + " please register")
+                        .statusMessage("Could not find subject:" + securityContext.getUserPrincipal().getName() + "check credential database")
                         .status(Response.Status.NOT_FOUND.getStatusCode())
                         .debugMessage("User could not be found, indicating that the user has not registered in the past")
                         .build();
@@ -216,7 +216,8 @@ public class SecurityResource {
             }
         } catch (SecurityCheckException e) {
             RestSecurityError error = RestSecurityError.builder()
-                    .statusMessage("The user id is not authorized to read the user profile required for login, due to a permission configuration error")
+                    .statusMessage("The user id: %s is not authorized to read the user profile required for login, due to a permission configuration error")
+                    .debugMessage(e.getMessage())
                     .status(Response.Status.UNAUTHORIZED.getStatusCode())
                     .securityResponse(e.getResponse())
                     .build();
@@ -257,10 +258,7 @@ public class SecurityResource {
 
         try {
             AuthProvider.LoginResponse loginResponse;
-            if (realm == null)
-                 loginResponse = authProvider.login(authRequest.getUserId(), authRequest.getPassword());
-            else
-                loginResponse = authProvider.login(realm, authRequest.getUserId(), authRequest.getPassword());
+            loginResponse = authProvider.login(authRequest.getUserId(), authRequest.getPassword());
 
             if (loginResponse.authenticated()) {
                 Log.info("Login successful for userId:" + authRequest.getUserId());
@@ -476,21 +474,21 @@ public class SecurityResource {
 
     @PUT
     @RolesAllowed("admin")
-    @Path("/enableRealmOverride/{realmWhereCredentialRecordIs}")
+    @Path("/enableRealmOverride")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response enableRealmOverride(@PathParam("realmWhereCredentialRecordIs") String realmWhereCredentialRecordIs, @QueryParam("subject") String subject, @QueryParam("realmRegEx") String realmRegEx) {
-        authProviderFactory.getUserManager().enableRealmOverrideWithSubject(subject, realmWhereCredentialRecordIs, realmRegEx);
+    public Response enableRealmOverride( @QueryParam("subject") String subject, @QueryParam("realmRegEx") String realmRegEx) {
+        authProviderFactory.getUserManager().enableRealmOverrideWithSubject(subject,  realmRegEx);
         return Response.ok().build();
     }
 
     @PUT
     @RolesAllowed("admin")
-    @Path("/disableRealmOverride/{realmWhereCredentialRecordIs}")
+    @Path("/disableRealmOverride")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response disableRealmOverride(@PathParam("realmWhereCredentialRecordIs") String realmWhereCredentialRecordIs, @QueryParam("subject") String subject) {
-        authProviderFactory.getUserManager().disableRealmOverrideWithSubject(subject, realmWhereCredentialRecordIs);
+    public Response disableRealmOverride( @QueryParam("subject") String subject) {
+        authProviderFactory.getUserManager().disableRealmOverrideWithSubject(subject);
         return Response.ok().build();
     }
 
@@ -506,11 +504,11 @@ public class SecurityResource {
 
     @PUT
     @RolesAllowed("admin")
-    @Path("/disableImpersonation/withSubject/{subject}/{realmToDisableIn}")
+    @Path("/disableImpersonation/withSubject/{subject}")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response disableImpersonation(@PathParam("subject") String subject, @PathParam("realmToDisableIn") String realmToDisableIn) {
-        authProviderFactory.getUserManager().disableImpersonationWithSubject(subject, realmToDisableIn);
+    public Response disableImpersonation(@PathParam("subject") String subject) {
+        authProviderFactory.getUserManager().disableImpersonationWithSubject(subject);
         return Response.ok().build();
     }
 

@@ -1,10 +1,16 @@
 package com.e2eq.framework.util;
 
+import com.e2eq.framework.model.persistent.InvalidStateTransitionException;
+import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
+import dev.morphia.Datastore;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
+import org.apache.commons.lang3.tuple.Pair;
 import org.bson.types.ObjectId;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -48,13 +54,20 @@ public class CSVImportHelperTest {
         @Override public TestItem fillUIActions(TestItem model) { throw new UnsupportedOperationException(); }
         @Override public void ensureIndexes(String realmId, String collection) { }
         @Override public java.util.Optional<TestItem> findById(String id) { throw new UnsupportedOperationException(); }
-        @Override public java.util.Optional<TestItem> findById(String id, String realmId) { throw new UnsupportedOperationException(); }
+
+       @Override
+       public Optional<TestItem> findById (@NotNull String id, boolean ignoreRules) {return Optional.empty();}
+
+       @Override public java.util.Optional<TestItem> findById(String id, String realmId) { throw new UnsupportedOperationException(); }
         @Override public java.util.Optional<TestItem> findById(ObjectId id) { throw new UnsupportedOperationException(); }
         @Override public java.util.Optional<TestItem> findById(ObjectId id, String realmId) { throw new UnsupportedOperationException(); }
+       @Override public  java.util.Optional<TestItem> findById (@NotNull ObjectId id, String realmId, boolean ignoreRules) { throw new UnsupportedOperationException(); }
         @Override public java.util.Optional<TestItem> findById(dev.morphia.Datastore s, ObjectId id) { throw new UnsupportedOperationException(); }
+       @Override public java.util.Optional<TestItem> findById(dev.morphia.Datastore s, ObjectId id, boolean ignoreRules) { throw new UnsupportedOperationException(); }
         @Override public java.util.Optional<TestItem> findByRefName(String refId) { throw new UnsupportedOperationException(); }
         @Override public java.util.Optional<TestItem> findByRefName(String refName, String realmId) { throw new UnsupportedOperationException(); }
         @Override public java.util.Optional<TestItem> findByRefName(dev.morphia.Datastore datastore, String refName) { throw new UnsupportedOperationException(); }
+       @Override public java.util.Optional<TestItem> findByRefName(dev.morphia.Datastore datastore, String refName, boolean ignoreRules) { throw new UnsupportedOperationException(); }
         @Override public com.fasterxml.jackson.module.jsonSchema.jakarta.JsonSchema getSchema() { throw new UnsupportedOperationException(); }
         @Override public List<TestItem> getAllList() { return new ArrayList<>(store.values()); }
         @Override public List<TestItem> getAllList(String realmId) { return getAllList(); }
@@ -98,7 +111,68 @@ public class CSVImportHelperTest {
         @Override public long update(ObjectId id, org.apache.commons.lang3.tuple.Pair<String, Object>... pairs) { throw new UnsupportedOperationException(); }
         @Override public long update(dev.morphia.Datastore datastore, ObjectId id, org.apache.commons.lang3.tuple.Pair<String, Object>... pairs) { throw new UnsupportedOperationException(); }
         @Override public long update(dev.morphia.transactions.MorphiaSession session, ObjectId id, org.apache.commons.lang3.tuple.Pair<String, Object>... pairs) { throw new UnsupportedOperationException(); }
-        @Override public TestItem merge(TestItem entity) { throw new UnsupportedOperationException(); }
+
+       @Override
+       public long updateManyByQuery (@Nullable String query, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+          return BaseMorphiaRepo.super.updateManyByQuery(query, pairs);
+       }
+
+       @Override
+       public long updateManyByQuery (@NotNull String realmId, @Nullable String query, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+          return BaseMorphiaRepo.super.updateManyByQuery(realmId, query, pairs);
+       }
+
+       @Override
+       public long updateManyByQuery (@NotNull Datastore datastore, @Nullable String query, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+          return BaseMorphiaRepo.super.updateManyByQuery(datastore, query, pairs);
+       }
+
+       @Override
+       public long updateManyByQuery (@NotNull Datastore datastore, @Nullable String query, boolean ignoreRules, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+          return BaseMorphiaRepo.super.updateManyByQuery(datastore, query, ignoreRules, pairs);
+       }
+
+       @Override
+       public long updateManyByIds (@NotNull List<ObjectId> ids, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+          return BaseMorphiaRepo.super.updateManyByIds(ids, pairs);
+       }
+
+       @Override
+       public long updateManyByIds (@NotNull String realmId, @NotNull List<ObjectId> ids, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+          return BaseMorphiaRepo.super.updateManyByIds(realmId, ids, pairs);
+       }
+
+       @Override
+       public long updateManyByIds (@NotNull Datastore datastore, @NotNull List<ObjectId> ids, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+          return BaseMorphiaRepo.super.updateManyByIds(datastore, ids, pairs);
+       }
+
+       @Override
+       public long updateManyByIds (@NotNull Datastore datastore, @NotNull List<ObjectId> ids, boolean ignoreRules, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+          return BaseMorphiaRepo.super.updateManyByIds(datastore, ids, ignoreRules, pairs);
+       }
+
+       @Override
+       public long updateManyByRefAndDomain (@NotNull List<Pair<String, DataDomain>> items, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+          return BaseMorphiaRepo.super.updateManyByRefAndDomain(items, pairs);
+       }
+
+       @Override
+       public long updateManyByRefAndDomain (@NotNull String realmId, @NotNull List<Pair<String, DataDomain>> items, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+          return BaseMorphiaRepo.super.updateManyByRefAndDomain(realmId, items, pairs);
+       }
+
+       @Override
+       public long updateManyByRefAndDomain (@NotNull Datastore datastore, @NotNull List<Pair<String, DataDomain>> items, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+          return BaseMorphiaRepo.super.updateManyByRefAndDomain(datastore, items, pairs);
+       }
+
+       @Override
+       public long updateManyByRefAndDomain (@NotNull Datastore datastore, @NotNull List<Pair<String, DataDomain>> items, boolean ignoreRules, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+          return BaseMorphiaRepo.super.updateManyByRefAndDomain(datastore, items, ignoreRules, pairs);
+       }
+
+       @Override public TestItem merge(TestItem entity) { throw new UnsupportedOperationException(); }
         @Override public TestItem merge(dev.morphia.Datastore datastore, TestItem entity) { throw new UnsupportedOperationException(); }
         @Override public TestItem merge(dev.morphia.transactions.MorphiaSession session, TestItem entity) { throw new UnsupportedOperationException(); }
         @Override public List<TestItem> merge(List<TestItem> entities) { throw new UnsupportedOperationException(); }

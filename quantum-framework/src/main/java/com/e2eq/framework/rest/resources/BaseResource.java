@@ -794,6 +794,141 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
       }
    }
 
+   // --- Bulk update endpoints ---
+   @Path("bulk/setByQuery")
+   @PUT
+   @Produces(MediaType.APPLICATION_JSON)
+   @Consumes(MediaType.APPLICATION_JSON)
+   @SecurityRequirement(name = "bearerAuth")
+   @Operation(summary = "Bulk update entities by query (ANTLR DSL)")
+   @APIResponses(value = {
+           @APIResponse(responseCode = "200", description = "Success", content = @Content(mediaType = "application/json", schema = @Schema(implementation = CounterResponse.class))),
+           @APIResponse(responseCode = "400", description = "Bad Request - bad arguments", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
+   })
+   public Response updateManyByQuery(@Context HttpHeaders headers,
+                                     @QueryParam("filter") String filter,
+                                     @QueryParam("ignoreRules") @DefaultValue("false") boolean ignoreRules,
+                                     @QueryParam("pairs") Pair<String,Object>... pairs) {
+       try {
+           String realmId = headers.getHeaderString("X-Realm");
+           long modified;
+           if (realmId == null) {
+               if (!ignoreRules) {
+                   modified = repo.updateManyByQuery(filter, pairs);
+               } else {
+                   RestError error = RestError.builder()
+                           .status(Response.Status.BAD_REQUEST.getStatusCode())
+                           .statusMessage("ignoreRules=true requires X-Realm header to be specified")
+                           .build();
+                   return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+               }
+           } else {
+               if (!ignoreRules) {
+                   modified = repo.updateManyByQuery(realmId, filter, pairs);
+               } else {
+                   RestError error = RestError.builder()
+                           .status(Response.Status.BAD_REQUEST.getStatusCode())
+                           .statusMessage("ignoreRules=true is not supported in this endpoint")
+                           .build();
+                   return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+               }
+           }
+           CounterResponse response = new CounterResponse(modified);
+           response.setStatusCode(Response.Status.OK.getStatusCode());
+           response.setMessage(String.format("Updated: %d", modified));
+           return Response.ok(response).build();
+       } catch (IllegalArgumentException | ValidationException | InvalidStateTransitionException e) {
+           RestError error = RestError.builder()
+                   .status(Response.Status.BAD_REQUEST.getStatusCode())
+                   .statusMessage(e.getMessage()).build();
+           return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+       }
+   }
+
+   @Path("bulk/setByIds")
+   @PUT
+   @Produces(MediaType.APPLICATION_JSON)
+   @Consumes(MediaType.APPLICATION_JSON)
+   @SecurityRequirement(name = "bearerAuth")
+   @Operation(summary = "Bulk update entities by a list of ids")
+   @APIResponses(value = {
+           @APIResponse(responseCode = "200", description = "Success", content = @Content(mediaType = "application/json", schema = @Schema(implementation = CounterResponse.class))),
+           @APIResponse(responseCode = "400", description = "Bad Request - bad arguments", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
+   })
+   public Response updateManyByIds(@Context HttpHeaders headers,
+                                   @RequestBody(description = "List of ids to update") List<String> ids,
+                                   @QueryParam("pairs") Pair<String,Object>... pairs) {
+       try {
+           if (ids == null || ids.isEmpty()) {
+               CounterResponse response = new CounterResponse(0);
+               response.setStatusCode(Response.Status.OK.getStatusCode());
+               response.setMessage("Updated: 0");
+               return Response.ok(response).build();
+           }
+           List<ObjectId> objectIds = new ArrayList<>(ids.size());
+           for (String s : ids) objectIds.add(new ObjectId(s));
+           String realmId = headers.getHeaderString("X-Realm");
+           long modified = (realmId == null)
+                   ? repo.updateManyByIds(objectIds, pairs)
+                   : repo.updateManyByIds(realmId, objectIds, pairs);
+           CounterResponse response = new CounterResponse(modified);
+           response.setStatusCode(Response.Status.OK.getStatusCode());
+           response.setMessage(String.format("Updated: %d", modified));
+           return Response.ok(response).build();
+       } catch (IllegalArgumentException | ValidationException | InvalidStateTransitionException e) {
+           RestError error = RestError.builder()
+                   .status(Response.Status.BAD_REQUEST.getStatusCode())
+                   .statusMessage(e.getMessage()).build();
+           return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+       }
+   }
+
+   @Path("bulk/setByRefAndDomain")
+   @PUT
+   @Produces(MediaType.APPLICATION_JSON)
+   @Consumes(MediaType.APPLICATION_JSON)
+   @SecurityRequirement(name = "bearerAuth")
+   @Operation(summary = "Bulk update entities by (refName, dataDomain) pairs")
+   @APIResponses(value = {
+           @APIResponse(responseCode = "200", description = "Success", content = @Content(mediaType = "application/json", schema = @Schema(implementation = CounterResponse.class))),
+           @APIResponse(responseCode = "400", description = "Bad Request - bad arguments", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
+   })
+   public Response updateManyByRefAndDomain(@Context HttpHeaders headers,
+                                            @RequestBody(description = "List of (refName, dataDomain) pairs") List<EntityRefDomainSelector> selectors,
+                                            @QueryParam("pairs") Pair<String,Object>... pairs) {
+       try {
+           if (selectors == null || selectors.isEmpty()) {
+               CounterResponse response = new CounterResponse(0);
+               response.setStatusCode(Response.Status.OK.getStatusCode());
+               response.setMessage("Updated: 0");
+               return Response.ok(response).build();
+           }
+           List<org.apache.commons.lang3.tuple.Pair<String, DataDomain>> items = new ArrayList<>(selectors.size());
+           for (EntityRefDomainSelector s : selectors) {
+               items.add(org.apache.commons.lang3.tuple.Pair.of(s.refName, s.dataDomain));
+           }
+           String realmId = headers.getHeaderString("X-Realm");
+           long modified = (realmId == null)
+                   ? repo.updateManyByRefAndDomain(items, pairs)
+                   : repo.updateManyByRefAndDomain(realmId, items, pairs);
+           CounterResponse response = new CounterResponse(modified);
+           response.setStatusCode(Response.Status.OK.getStatusCode());
+           response.setMessage(String.format("Updated: %d", modified));
+           return Response.ok(response).build();
+       } catch (IllegalArgumentException | ValidationException | InvalidStateTransitionException e) {
+           RestError error = RestError.builder()
+                   .status(Response.Status.BAD_REQUEST.getStatusCode())
+                   .statusMessage(e.getMessage()).build();
+           return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+       }
+   }
+
+   // helper request body type
+   public static class EntityRefDomainSelector {
+       public String refName;
+       public DataDomain dataDomain;
+   }
+
    @Path("refName/{refName}")
    @DELETE
    @Produces(MediaType.APPLICATION_JSON)

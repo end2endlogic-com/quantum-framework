@@ -60,6 +60,8 @@ field.subfield.subsubfield:"deeplyNestedString"
 #-- IN Operator tests
 field:^[value1,value2,value3]
 field:^[67648ff00fb5e63655b172f9,67648ff00fb5e63655b172f6]
+field:^["value1","value2",value3]
+field:^["value1","67648ff00fb5e63655b172f6",value3]
 #field:^[@@67648ff00fb5e63655b172f9,@@67648ff00fb5e63655b172f6]
 
 field.subfield:^[subvalue1,subvalue2]
@@ -145,4 +147,3 @@ field:"*15"" LAPTOP SLEEVE-Black Twill*"
 #((field:false&&field:<#2)||(field:<=#1&&field1.blah.blah:>=4))&&(field:1||field:2015-04-04T12:12:33)
 #((field:false&&field:<#2)||(field:<=#1&&field1.blah.blah:>=4))&&(field:1||field:2015-04-04)
 #(((field:false&&field:<#2)||(field:<=#1&&field1.blah.blah:>=4))&&(field:1||field:2015-04-04))
-

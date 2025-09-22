@@ -156,6 +156,14 @@ public abstract class HierarchicalRepo<
         }
     }
 
+    public List<T> getAllChildrenByRefName(String refName) {
+        Optional<T> oHierarchyNode = findByRefName(refName);
+        if (!oHierarchyNode.isPresent()) {
+            throw new NotFoundException("Hierarchy node not found for refName: " + refName);
+        }
+        return getAllChildren(oHierarchyNode.get().getId());
+    }
+
 
     public List<T> getAllChildren(ObjectId nodeId) {
         // Start the pipeline on the hierarchy collection for this entity class

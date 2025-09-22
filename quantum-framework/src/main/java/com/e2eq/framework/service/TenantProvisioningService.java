@@ -135,10 +135,9 @@ public class TenantProvisioningService {
         // 4) Ensure initial tenant admin credentials inside the realm
         Set<String> desiredRoles = Set.of("admin", "user");
         UserManagement userManagement = authProviderFactory.getUserManager();
-        boolean userExists = userManagement.userIdExists(systemRealm, adminUserId);
+        boolean userExists = userManagement.userIdExists(adminUserId);
         if (!userExists) {
             userManagement.createUser(
-                    systemRealm,
                     adminUserId,
                     adminPassword,
                     Boolean.FALSE,

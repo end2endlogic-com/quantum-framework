@@ -1,5 +1,6 @@
 package com.e2eq.framework.model.persistent.morphia.changesets;
 
+import com.e2eq.framework.model.persistent.migration.base.ChangeSetBase;
 import com.e2eq.framework.model.persistent.migration.base.ChangeSetBean;
 import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import com.e2eq.framework.model.security.DomainContext;
@@ -18,7 +19,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 @Startup
 @ApplicationScoped
-public class AddRealms implements ChangeSetBean  {
+public class AddRealms extends ChangeSetBase {
     @Inject
     RealmRepo realmRepo;
 

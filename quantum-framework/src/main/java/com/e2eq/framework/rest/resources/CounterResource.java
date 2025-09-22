@@ -24,13 +24,27 @@ public class CounterResource extends BaseResource<Counter, CounterRepo> {
 
     @Path("/increment")
     @GET
-    public Response incrementCounter(@QueryParam(value = "counterName") String counterName) {
+    public Response incrementCounter(@QueryParam(value = "counterName") String counterName,
+                                     @QueryParam(value = "base") Integer base) {
         if (SecurityContext.getPrincipalContext().isPresent()) {
             DataDomain dd = SecurityContext.getPrincipalDataDomain().get();
-            long value = repo.getAndIncrement(counterName, dd, 1l);
-            CounterResponse response = new CounterResponse();
-            response.setValue(value);
-            return Response.ok(response).build();
+            try {
+                var cv = repo.getAndIncrementEncoded(counterName, dd, 1L, base);
+                CounterResponse response = new CounterResponse();
+                response.setValue(cv.getValue());
+                response.setBase(cv.getBase());
+                response.setEncodedValue(cv.getEncodedValue());
+                return Response.ok(response).build();
+            } catch (IllegalArgumentException e) {
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity(RestError.builder()
+                                .status(Response.Status.BAD_REQUEST.getStatusCode())
+                                .reasonCode(Response.Status.BAD_REQUEST.getStatusCode())
+                                .statusMessage(e.getMessage())
+                                .debugMessage("base=" + base)
+                                .build())
+                        .build();
+            }
         }
         else {
             RestError error = RestError.builder()
