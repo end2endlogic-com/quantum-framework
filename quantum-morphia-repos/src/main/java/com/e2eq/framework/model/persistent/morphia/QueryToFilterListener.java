@@ -34,6 +34,9 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
 
     protected Stack<Filter> filterStack = new Stack<>();
     protected Stack<Integer> opTypeStack = new Stack<>();
+    // markers to handle nested contexts like elemMatch where we need to scope compositions
+    protected Stack<Integer> opTypeMarkers = new Stack<>();
+    protected Stack<Integer> filterStackMarkers = new Stack<>();
 
     protected boolean complete = false;
 
@@ -193,12 +196,17 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
     }
 
     protected void buildComposite() {
+        buildCompositeSince(0, 0);
+    }
+
+    // Build the composite for the portion of the stacks added since the given markers
+    protected void buildCompositeSince(int startOpSize, int startFilterSize) {
         List<Filter> andFilters = new ArrayList<>();
         List<Filter> orFilters = new ArrayList<>();
         Filter[] filterArray = new Filter[0];
 
-        // Unwind the stacks
-        while (!opTypeStack.isEmpty()) {
+        // Unwind only the operators added since the marker
+        while (opTypeStack.size() > startOpSize) {
             int opType = opTypeStack.pop();
             switch (opType) {
                 case BIAPIQueryParser.AND:
@@ -323,10 +331,24 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
 
     @Override
     public void enterElemMatchExpr(BIAPIQueryParser.ElemMatchExprContext ctx) {
-        QueryToFilterListener listener = new QueryToFilterListener(variableMap, sub, modelClass);
-        ParseTreeWalker walker = new ParseTreeWalker();
-        walker.walk(listener, ctx.nested);
-        Filter f = Filters.elemMatch(ctx.field.getText(), listener.getFilter());
+        // Mark current stack depths so we can scope the nested expression processing
+        opTypeMarkers.push(opTypeStack.size());
+        filterStackMarkers.push(filterStack.size());
+    }
+
+    @Override
+    public void exitElemMatchExpr(BIAPIQueryParser.ElemMatchExprContext ctx) {
+        // Build composite for nested part only, then wrap it in elemMatch
+        int startOp = opTypeMarkers.pop();
+        int startFilter = filterStackMarkers.pop();
+        // compose inner filters added within elemMatch
+        buildCompositeSince(startOp, startFilter);
+
+        if (filterStack.size() <= startFilter) {
+            throw new IllegalStateException("elemMatch inner expression produced no filters");
+        }
+        Filter inner = filterStack.pop();
+        Filter f = Filters.elemMatch(ctx.field.getText(), inner);
         filterStack.push(f);
     }
 
