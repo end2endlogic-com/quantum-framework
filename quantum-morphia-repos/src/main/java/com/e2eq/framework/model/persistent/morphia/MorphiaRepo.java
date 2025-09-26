@@ -1796,9 +1796,13 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
                 String actionString = action.getLabel().toUpperCase().replace(" ", "_");
 
+                // Prefer annotations on model class if present
+                com.e2eq.framework.annotations.FunctionalMapping fm = model.getClass().getAnnotation(com.e2eq.framework.annotations.FunctionalMapping.class);
+                String area = (fm != null) ? fm.area() : model.bmFunctionalArea();
+                String domain = (fm != null) ? fm.domain() : model.bmFunctionalDomain();
                 ResourceContext rcontext = new ResourceContext.Builder()
-                        .withFunctionalDomain(model.bmFunctionalDomain())
-                        .withArea(model.bmFunctionalArea())
+                        .withFunctionalDomain(domain)
+                        .withArea(area)
                         .withAction(actionString)
                         .withResourceId(model.getRefName())
                         //.withRealm(securityUtils.getSystemRealm())

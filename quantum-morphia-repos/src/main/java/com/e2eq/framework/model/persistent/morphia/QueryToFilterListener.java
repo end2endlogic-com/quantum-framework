@@ -30,6 +30,7 @@ import java.util.*;
 import java.util.regex.Pattern;
 
 public class QueryToFilterListener extends BIAPIQueryBaseListener {
+    private final Map<String, Object> objectVars = new HashMap<>();
     private static final Pattern SPECIAL_REGEX_CHARS = Pattern.compile("[{}()\\[\\].+*?^$\\\\|\\-]");
 
     protected Stack<Filter> filterStack = new Stack<>();
@@ -48,7 +49,16 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
 
     public QueryToFilterListener(Map<String, String> variableMap, StringSubstitutor sub, Class<? extends UnversionedBaseModel> modelClass) {
         this.variableMap = variableMap;
-        this.sub = sub;
+        this.sub = sub != null ? sub : (variableMap != null ? new StringSubstitutor(variableMap) : null);
+        this.modelClass = modelClass;
+    }
+
+    public QueryToFilterListener(Map<String, Object> objectVars, Map<String, String> variableMap, StringSubstitutor sub, Class<? extends UnversionedBaseModel> modelClass) {
+        if (objectVars != null) {
+            this.objectVars.putAll(objectVars);
+        }
+        this.variableMap = variableMap;
+        this.sub = sub != null ? sub : (variableMap != null ? new StringSubstitutor(variableMap) : null);
         this.modelClass = modelClass;
     }
 
@@ -307,26 +317,74 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
 
     @Override
     public void enterInExpr(BIAPIQueryParser.InExprContext ctx) {
-        // convert values array to individual values
+        String field = ctx.field.getText();
+
+        String inner = ctx.value.getText(); // like "[a,b]" or "[${ids}]"
+        String innerNoBrackets = inner.substring(1, inner.length() - 1);
+
+        String trimmed = innerNoBrackets.trim();
+        boolean isSingleVar = trimmed.startsWith("${") && trimmed.endsWith("}");
+
         List<Object> values = new ArrayList<>();
-        StringTokenizer tokenizer = new StringTokenizer(ctx.value.getText().substring(1,
-                ctx.value.getText().length() - 1), ",");
-        while (tokenizer.hasMoreTokens()) {
-            String value = (variableMap != null) ? sub.replace(tokenizer.nextToken()) : tokenizer.nextToken();
-            if(((CommonToken) ctx.value.value).getType() == BIAPIQueryParser.QUOTED_STRING){
-               values.add(value);
-            }else if (((CommonToken) ctx.value.value).getType() == BIAPIQueryParser.OID) {
-                values.add(new ObjectId(value));
-            } else if (((CommonToken) ctx.value.value).getType() == BIAPIQueryParser.REFERENCE) {
-                    values.add(buildReference(ctx.field.getText(), value));
-            } else if (((CommonToken) ctx.value.value).getType() != BIAPIQueryParser.COMMA){
-                values.add(value);
+
+        if (isSingleVar && sub != null) {
+            String varName = trimmed.substring(2, trimmed.length() - 1);
+            Object v = objectVars != null ? objectVars.get(varName) : null;
+            if (v instanceof Collection<?> coll) {
+                for (Object item : coll) {
+                    values.add(coerceValue(item));
+                }
+            } else if (v != null && v.getClass().isArray()) {
+                int len = java.lang.reflect.Array.getLength(v);
+                for (int i = 0; i < len; i++) {
+                    Object item = java.lang.reflect.Array.get(v, i);
+                    values.add(coerceValue(item));
+                }
+            } else {
+                String substituted = sub.replace(trimmed);
+                if (substituted != null && !substituted.isBlank()) {
+                    for (String token : substituted.split(",")) {
+                        values.add(coerceValue(token.trim()));
+                    }
+                }
+            }
+        } else {
+            String substituted = (sub != null) ? sub.replace(innerNoBrackets) : innerNoBrackets;
+            if (substituted != null && !substituted.isBlank()) {
+                for (String raw : substituted.split(",")) {
+                    String token = raw.trim();
+                    values.add(coerceValue(token));
+                }
             }
         }
 
-        Filter f = Filters.in(ctx.field.getText(), values);
-
+        Filter f = Filters.in(field, values);
         filterStack.push(f);
+    }
+
+    private Object coerceValue(Object v) {
+        if (v == null) return null;
+        if (v instanceof ObjectId) return v;
+        if (v instanceof Number || v instanceof Boolean || v instanceof Date) return v;
+        if (v instanceof CharSequence s) {
+            String str = s.toString();
+            if (str.matches("^[a-fA-F0-9]{24}$")) {
+                try { return new ObjectId(str); } catch (Exception ignored) {}
+            }
+            if ("true".equalsIgnoreCase(str) || "false".equalsIgnoreCase(str)) {
+                return Boolean.parseBoolean(str);
+            }
+            if (str.matches("^-?\\d+$")) {
+                try { return Long.parseLong(str); } catch (NumberFormatException ignored) {}
+            }
+            if (str.matches("^-?\\d+\\.\\d+$")) {
+                try { return Double.parseDouble(str); } catch (NumberFormatException ignored) {}
+            }
+            try { return Date.from(ZonedDateTime.parse(str).toInstant()); } catch (Exception ignored) {}
+            try { return LocalDate.parse(str); } catch (Exception ignored) {}
+            return str;
+        }
+        return v;
     }
 
     @Override
@@ -365,9 +423,11 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
     protected Filter makeBasicFilter(Token field, Token op, Object value) {
         Filter filter = null;
 
-        if (variableMap != null) {
-            if (((CommonToken) value).getType() == BIAPIQueryParser.VARIABLE) {
-                value = sub.replace(((CommonToken) value).getText());
+        if (variableMap != null && value instanceof CommonToken) {
+            CommonToken ct = (CommonToken) value;
+            // Do not pre-substitute VARIABLE here; let the VARIABLE branch handle substitution + coercion
+            if (ct.getType() != BIAPIQueryParser.VARIABLE) {
+                value = sub.replace(ct.getText());
             }
         }
 
@@ -382,8 +442,10 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
                 case BIAPIQueryParser.OID:
                     value = new ObjectId(tok.getText());
                     break;
-                case BIAPIQueryParser.VARIABLE:
-                    value = tok.getText();
+                case BIAPIQueryParser.VARIABLE: {
+                    String replaced = (sub != null) ? sub.replace(tok.getText()) : tok.getText();
+                    value = coerceValue(replaced);
+                }
                     break;
                 case BIAPIQueryParser.NUMBER: {
                     String num = tok.getText();

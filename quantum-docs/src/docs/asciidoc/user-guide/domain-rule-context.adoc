@@ -41,3 +41,32 @@ RuleContext encapsulates policy evaluation. It can:
 5. The model’s UIActionList can be computed to reflect what the caller can do next.
 
 This pattern ensures consistent enforcement across all CRUD operations, independent of the specific model or repository.
+
+== Resolvers and Variables in Rule Filters
+
+RuleContext can attach FILTERs (not only ALLOW/DENY) to repository queries using rule fields and filter strings. Variables inside those filter strings are populated from:
+
+- PrincipalContext and ResourceContext standard variables: principalId, pAccountId, pTenantId, ownerId, orgRefName, resourceId, action, functionalDomain, area
+- AccessListResolver SPI implementations: per-request computed Collections (e.g., customer IDs the caller can access)
+
+Implementation highlights:
+- AccessListResolver has methods key(), supports(...), resolve(...). Resolvers are injected and invoked for each request; results are published as variables by key.
+- MorphiaUtils.VariableBundle carries both string variables and object variables (including collections) to the query listener.
+- The QueryToFilterListener supports IN clauses using a single ${var} inside brackets, expanding Collections/arrays and coercing types (ObjectId, numbers, booleans, dates).
+
+Authoring examples:
+- Constrain by principal domain:
++
+[source]
+----
+orgRefName:${orgRefName} && dataDomain.tenantId:${pTenantId}
+----
+
+- Access list resolver for customer visibility:
++
+[source]
+----
+customerId:^[${accessibleCustomerIds}]
+----
+
+For the complete query language reference, see <<query-language>>.
