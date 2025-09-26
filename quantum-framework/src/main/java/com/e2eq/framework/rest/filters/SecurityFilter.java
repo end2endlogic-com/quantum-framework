@@ -37,6 +37,9 @@ import java.util.regex.Pattern;
 //@PermissionCheck
 public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.container.ContainerResponseFilter {
 
+    @jakarta.ws.rs.core.Context
+    jakarta.ws.rs.container.ResourceInfo resourceInfo;
+
     private static final String AUTHENTICATION_SCHEME = "Bearer";
 
     @ConfigProperty(name = "auth.provider")
@@ -114,6 +117,33 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         if (!SecurityContext.getResourceContext().isPresent()) {
             ResourceContext rcontext = null;
 
+            // First, prefer annotations if available on the matched resource and method
+            try {
+                if (resourceInfo != null && resourceInfo.getResourceClass() != null) {
+                    Class<?> rc = resourceInfo.getResourceClass();
+                    java.lang.reflect.Method rm = resourceInfo.getResourceMethod();
+                    com.e2eq.framework.annotations.FunctionalMapping fm = rc.getAnnotation(com.e2eq.framework.annotations.FunctionalMapping.class);
+                    com.e2eq.framework.annotations.FunctionalAction fa = (rm != null) ? rm.getAnnotation(com.e2eq.framework.annotations.FunctionalAction.class) : null;
+                    if (fm != null) {
+                        String area = fm.area();
+                        String functionalDomain = fm.domain();
+                        String action = (fa != null) ? fa.value() : inferActionFromHttpMethod(requestContext.getMethod());
+                        rcontext = new ResourceContext.Builder()
+                                .withArea(area)
+                                .withFunctionalDomain(functionalDomain)
+                                .withAction(action)
+                                .build();
+                        SecurityContext.setResourceContext(rcontext);
+                        if (Log.isDebugEnabled()) {
+                            Log.debugf("Resource Context set from annotations: area=%s, domain=%s, action=%s", area, functionalDomain, action);
+                        }
+                        return rcontext;
+                    }
+                }
+            } catch (Exception ex) {
+                Log.debugf("Annotation-based resource context resolution failed: %s", ex.toString());
+            }
+
             /**
              Determine the resource context from the path
              */
@@ -168,6 +198,17 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         } else {
             return SecurityContext.getResourceContext().get();
         }
+    }
+
+    private String inferActionFromHttpMethod(String http) {
+        if (http == null) return "*";
+        return switch (http.toUpperCase(Locale.ROOT)) {
+            case "GET" -> "VIEW";
+            case "POST" -> "CREATE";
+            case "PUT", "PATCH" -> "UPDATE";
+            case "DELETE" -> "DELETE";
+            default -> http;
+        };
     }
 
     boolean runScript(String subject, String userId, String realm, String script) {

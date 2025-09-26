@@ -2,6 +2,9 @@ package com.e2eq.framework.security;
 
 import com.e2eq.framework.model.security.Rule;
 import com.e2eq.framework.model.security.UserProfile;
+import com.e2eq.framework.model.security.Policy;
+import com.e2eq.framework.model.persistent.morphia.PolicyRepo;
+import io.quarkus.test.security.TestSecurity;
 import com.e2eq.framework.model.securityrules.*;
 import com.e2eq.framework.persistent.BaseRepoTest;
 import com.e2eq.framework.securityrules.RuleContext;
@@ -13,6 +16,7 @@ import com.e2eq.framework.util.WildCardMatcher;
 import dev.morphia.query.filters.Filter;
 import io.quarkus.logging.Log;
 import io.quarkus.test.junit.QuarkusTest;
+import jakarta.enterprise.context.control.ActivateRequestContext;
 import jakarta.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import org.graalvm.polyglot.Context;
@@ -24,8 +28,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
-
-@Slf4j
 @QuarkusTest
 public class TestRuleContext extends BaseRepoTest {
 
@@ -34,6 +36,12 @@ public class TestRuleContext extends BaseRepoTest {
 
     @Inject
     EnvConfigUtils envConfigUtils;
+
+    @Inject
+    PolicyRepo policyRepo;
+
+    @Inject
+    RuleContext injectedRuleContext;
 
     @Test
     public void testWildCardMatcher() {
@@ -372,4 +380,127 @@ public class TestRuleContext extends BaseRepoTest {
     }
 
 
+    @Test
+    @ActivateRequestContext
+    @TestSecurity(user = "test.user@system-com", roles = {"user"})
+    public void testPolicyRepoHydration_enforcesRulesWithTestSecurity_userRole() {
+        String realm = testUtils.getTestRealm();
+
+        // Build a policy for role "user": allow view of own userProfile; deny delete in security area
+        Policy userPolicy = new Policy();
+        userPolicy.setRefName("it-user-policy");
+        userPolicy.setDisplayName("IT User Policy");
+        userPolicy.setPrincipalId("user");
+        userPolicy.setDataDomain(securityUtils.getSystemDataDomain());
+
+        // ALLOW view own profile across domains when owner matches principal
+        SecurityURIHeader allowHeader = new SecurityURIHeader.Builder()
+                .withIdentity("user").withArea("*").withFunctionalDomain("*").withAction("view").build();
+        SecurityURIBody allowBody = new SecurityURIBody.Builder()
+                .withRealm("*").withOrgRefName("*").withAccountNumber("*")
+                .withTenantId("*").withOwnerId("*").withDataSegment("*")
+                .withResourceId("*").build();
+        Rule allowOwn = new Rule.Builder()
+                .withName("user-view-own")
+                .withSecurityURI(new SecurityURI(allowHeader, allowBody))
+                .withPostconditionScript("pcontext.getUserId() == rcontext.getOwnerId()")
+                .withAndFilterString("dataDomain.ownerId:${principalId}")
+                .withEffect(RuleEffect.ALLOW)
+                .withPriority(200)
+                .withFinalRule(false)
+                .build();
+        userPolicy.getRules().add(allowOwn);
+
+        // DENY delete in security area for users
+        SecurityURIHeader denyHeader = new SecurityURIHeader.Builder()
+                .withIdentity("user").withArea("security").withFunctionalDomain("*").withAction("delete").build();
+        SecurityURIBody denyBody = new SecurityURIBody.Builder()
+                .withRealm("*").withOrgRefName("*").withAccountNumber("*")
+                .withTenantId("*").withOwnerId("*").withDataSegment("*")
+                .withResourceId("*").build();
+        Rule denyDelete = new Rule.Builder()
+                .withName("user-deny-delete-security")
+                .withSecurityURI(new SecurityURI(denyHeader, denyBody))
+                .withEffect(RuleEffect.DENY)
+                .withPriority(100)
+                .withFinalRule(true)
+                .build();
+        userPolicy.getRules().add(denyDelete);
+
+        // Persist and hydrate
+        policyRepo.save(realm, userPolicy);
+        injectedRuleContext.reloadFromRepo(realm);
+
+        // Build principal and resource contexts
+        String userId = testUtils.getTestUserId();
+        PrincipalContext pctx = new PrincipalContext.Builder()
+                .withDefaultRealm(realm)
+                .withUserId(userId)
+                .withRoles(new String[]{"user"})
+                .withDataDomain(testUtils.getTestDataDomain())
+                .withScope("AUTHENTICATED")
+                .build();
+
+        // View own userProfile should ALLOW
+        ResourceContext ownProfileView = new ResourceContext.Builder()
+                .withArea("security").withFunctionalDomain("userProfile").withAction("view")
+                .withOwnerId(userId).withResourceId("R1").build();
+        SecurityCheckResponse resp = injectedRuleContext.checkRules(pctx, ownProfileView);
+        assertEquals(RuleEffect.ALLOW, resp.getFinalEffect());
+        List<Filter> viewFilters = injectedRuleContext.getFilters(new ArrayList<>(), pctx, ownProfileView, UserProfile.class);
+        assertFalse(viewFilters.isEmpty(), "Expected filters contributed by allow rule");
+
+        // Try to delete something in security area should DENY
+        ResourceContext deleteAttempt = new ResourceContext.Builder()
+                .withArea("security").withFunctionalDomain("userProfile").withAction("delete")
+                .withOwnerId(userId).withResourceId("R2").build();
+        resp = injectedRuleContext.checkRules(pctx, deleteAttempt);
+        assertEquals(RuleEffect.DENY, resp.getFinalEffect());
+    }
+
+    @Test
+    @TestSecurity(user = "sysAdmin@system-com", roles = {"admin"})
+    @ActivateRequestContext
+    public void testPolicyRepoHydration_enforcesRulesWithTestSecurity_adminRole() {
+        String realm = testUtils.getTestRealm();
+
+        // Build a broad ALLOW for admin
+        Policy adminPolicy = new Policy();
+        adminPolicy.setRefName("it-admin-policy");
+        adminPolicy.setDisplayName("IT Admin Policy");
+        adminPolicy.setPrincipalId("admin");
+        adminPolicy.setDataDomain(securityUtils.getSystemDataDomain());
+
+        SecurityURIHeader hdr = new SecurityURIHeader.Builder()
+                .withIdentity("admin").withArea("*").withFunctionalDomain("*").withAction("*").build();
+        SecurityURIBody bdy = new SecurityURIBody.Builder()
+                .withRealm("*").withOrgRefName("*").withAccountNumber("*")
+                .withTenantId("*").withOwnerId("*").withDataSegment("*")
+                .withResourceId("*").build();
+        Rule adminAllowAll = new Rule.Builder()
+                .withName("admin-allow-all")
+                .withSecurityURI(new SecurityURI(hdr, bdy))
+                .withEffect(RuleEffect.ALLOW)
+                .withPriority(10)
+                .withFinalRule(true)
+                .build();
+        adminPolicy.getRules().add(adminAllowAll);
+
+        policyRepo.save(realm, adminPolicy);
+        injectedRuleContext.reloadFromRepo(realm);
+
+        // Build principal and a random resource context
+        PrincipalContext admin = new PrincipalContext.Builder()
+                .withDefaultRealm(realm)
+                .withUserId(testUtils.getSystemUserId())
+                .withRoles(new String[]{"admin"})
+                .withDataDomain(testUtils.getSystemDataDomain())
+                .withScope("AUTHENTICATED")
+                .build();
+        ResourceContext anyRc = new ResourceContext.Builder()
+                .withArea("sales").withFunctionalDomain("orders").withAction("update")
+                .withOwnerId(testUtils.getSystemUserId()).withResourceId("ORDER-1").build();
+        SecurityCheckResponse resp = injectedRuleContext.checkRules(admin, anyRc);
+        assertEquals(RuleEffect.ALLOW, resp.getFinalEffect());
+    }
 }

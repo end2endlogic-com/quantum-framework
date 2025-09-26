@@ -16,6 +16,7 @@ import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import jakarta.inject.Inject;
+import jakarta.enterprise.inject.Instance;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import org.apache.commons.lang3.StringUtils;
@@ -29,11 +30,17 @@ import java.util.*;
 
 @ApplicationScoped
 public class RuleContext {
+
+    @Inject
+    Instance<AccessListResolver> resolvers;
      @Inject
      SecurityUtils securityUtils;
 
      @Inject
      EnvConfigUtils envConfigUtils;
+
+     @Inject
+     com.e2eq.framework.model.persistent.morphia.PolicyRepo policyRepo;
 
     /**
      * This holds a map of rules, indexed by an "identity" where an identity may be either
@@ -67,11 +74,12 @@ public class RuleContext {
      */
     @PostConstruct
     public void ensureDefaultRules() {
-        if (rules.isEmpty()) {
-            addSystemRules();
-        } else {
-            // Look for system Rules
-            if (rulesForIdentity(securityUtils.getSystemSecurityHeader().getIdentity()).isEmpty()) {
+        try {
+            reloadFromRepo(defaultRealm);
+        } catch (Exception e) {
+            // Fallback to system rules only if repo hydration fails
+            Log.warn("Policy hydration failed during startup; using system rules only", e);
+            if (rules.isEmpty() || rulesForIdentity(securityUtils.getSystemSecurityHeader().getIdentity()).isEmpty()) {
                 addSystemRules();
             }
         }
@@ -247,6 +255,80 @@ public class RuleContext {
      */
     public void clear() {
         rules.clear();
+    }
+
+    private volatile long policyVersion = 0L;
+
+    public long getPolicyVersion() { return policyVersion; }
+
+    /**
+     * Reloads the in-memory rule base from the persistent PolicyRepo for the given realm.
+     * Keeps built-in system rules and then incorporates all rules from policies.
+     */
+    public synchronized void reloadFromRepo(@NotNull String realm) {
+        // Reset in-memory rules and add system defaults
+        clear();
+        addSystemRules();
+
+        try {
+            // Establish a minimal SecurityContext to satisfy repo filters during hydration
+            try {
+                if (com.e2eq.framework.model.securityrules.SecurityContext.getPrincipalContext().isEmpty()) {
+                    PrincipalContext pc = new PrincipalContext.Builder()
+                            .withDefaultRealm(realm)
+                            .withDataDomain(securityUtils.getSystemDataDomain())
+                            .withUserId(envConfigUtils.getSystemUserId())
+                            .withRoles(new String[]{"admin", "user"})
+                            .build();
+                    com.e2eq.framework.model.securityrules.SecurityContext.setPrincipalContext(pc);
+                }
+                if (com.e2eq.framework.model.securityrules.SecurityContext.getResourceContext().isEmpty()) {
+                    com.e2eq.framework.model.securityrules.SecurityContext.setResourceContext(ResourceContext.DEFAULT_ANONYMOUS_CONTEXT);
+                }
+            } catch (Exception ignore) {
+                // If context setup fails, repo calls may still work depending on configuration
+            }
+
+            // Fetch all policies in realm (bypass permission filters)
+            java.util.List<com.e2eq.framework.model.security.Policy> policies = policyRepo.getAllListIgnoreRules(realm);
+            if (policies != null) {
+                for (com.e2eq.framework.model.security.Policy p : policies) {
+                    if (p.getRules() == null) continue;
+                    for (Rule r : p.getRules()) {
+                        String identity = null;
+                        if (r.getSecurityURI() != null && r.getSecurityURI().getHeader() != null) {
+                            identity = r.getSecurityURI().getHeader().getIdentity();
+                        }
+                        if (identity == null || identity.isBlank()) {
+                            identity = p.getPrincipalId();
+                        }
+                        if (identity == null || identity.isBlank()) {
+                            // skip malformed entries
+                            continue;
+                        }
+                        // Build a header solely to key by identity; addRule uses identity for indexing
+                        SecurityURIHeader header = new SecurityURIHeader.Builder()
+                                .withIdentity(identity)
+                                .withArea("*")
+                                .withFunctionalDomain("*")
+                                .withAction("*")
+                                .build();
+                        addRule(header, r);
+                    }
+                }
+            }
+            // Sort each identity list by priority once for stable merge later
+            for (Map.Entry<String, List<Rule>> e : rules.entrySet()) {
+                List<Rule> list = e.getValue();
+                if (list != null && list.size() > 1) {
+                    list.sort((r1, r2) -> Integer.compare(r1.getPriority(), r2.getPriority()));
+                }
+            }
+            policyVersion = System.nanoTime();
+            Log.infof("RuleContext: loaded %d identities worth of rules from repo for realm %s", rules.size(), realm);
+        } catch (Exception ex) {
+            Log.error("Failed to load policies into RuleContext; retaining system rules only", ex);
+        }
     }
 
     /**
@@ -568,8 +650,20 @@ public class RuleContext {
 
         List<Filter> andFilters = new ArrayList<>();
         List<Filter> orFilters = new ArrayList<>();
-        Map<String, String> variables = MorphiaUtils.createStandardVariableMapFrom(pcontext, rcontext);
-        StringSubstitutor sub = new StringSubstitutor(variables);
+
+        Map<String, Object> extraObjects = new HashMap<>();
+        if (resolvers != null) {
+            for (AccessListResolver r : resolvers) {
+                try {
+                    if (r.supports(pcontext, rcontext, modelClass)) {
+                        extraObjects.put(r.key(), r.resolve(pcontext, rcontext, modelClass));
+                    }
+                } catch (Exception e) {
+                    Log.warnf(e, "AccessListResolver '%s' failed; continuing without it", r.getClass().getName());
+                }
+            }
+        }
+        MorphiaUtils.VariableBundle vars = MorphiaUtils.buildVariableBundle(pcontext, rcontext, extraObjects);
 
         for (RuleResult result : response.getMatchedRuleResults()) {
             // ignore Not Applicable rules
@@ -579,11 +673,11 @@ public class RuleContext {
 
             Rule rule = result.getRule();
             if (rule.getAndFilterString() != null && !rule.getAndFilterString().isEmpty()) {
-                andFilters.add(MorphiaUtils.convertToFilter(rule.getAndFilterString(), variables, sub, modelClass));
+                andFilters.add(MorphiaUtils.convertToFilter(rule.getAndFilterString(), vars, modelClass));
             }
 
             if (rule.getOrFilterString() != null && !rule.getOrFilterString().isEmpty()) {
-                orFilters.add(MorphiaUtils.convertToFilter(rule.getOrFilterString(), variables, sub, modelClass));
+                orFilters.add(MorphiaUtils.convertToFilter(rule.getOrFilterString(), vars, modelClass));
             }
 
             if (!andFilters.isEmpty() && !orFilters.isEmpty()) {

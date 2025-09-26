@@ -22,6 +22,16 @@ import java.util.*;
 public class MorphiaUtils {
 
 
+   public static class VariableBundle {
+      public final Map<String, String> strings;
+      public final Map<String, Object> objects;
+      public VariableBundle(Map<String, String> strings, Map<String, Object> objects) {
+         this.strings = strings;
+         this.objects = objects;
+      }
+   }
+
+
    public static class SortParameter {
       public enum SortOrderEnum {
          ASC, DESC
@@ -85,6 +95,36 @@ public class MorphiaUtils {
       variableMap.put("functionalDomain", rcontext.getFunctionalDomain());
       variableMap.put("area", rcontext.getArea());
       return variableMap;
+   }
+
+   public static VariableBundle buildVariableBundle(
+           PrincipalContext pcontext,
+           ResourceContext rcontext,
+           Map<String, Object> extraObjects
+   ) {
+      Map<String, String> s = createStandardVariableMapFrom(pcontext, rcontext);
+      Map<String, Object> o = new HashMap<>();
+      o.putAll(s);
+      if (extraObjects != null) {
+         o.putAll(extraObjects);
+         extraObjects.forEach((k, v) -> {
+            if (!s.containsKey(k)) {
+               s.put(k, v == null ? null : String.valueOf(v));
+            }
+         });
+      }
+      return new VariableBundle(s, o);
+   }
+
+   public static Filter convertToFilter(String queryString, VariableBundle vars, Class<? extends UnversionedBaseModel> modelClass) {
+      Objects.requireNonNull(modelClass, "Model class cannot be null");
+      Optional<ParseTree> otree = validateQueryString(queryString);
+      ParseTree tree = otree.orElseThrow(() -> new IllegalArgumentException("syntax error in query string"));
+      ParseTreeWalker walker = new ParseTreeWalker();
+      StringSubstitutor sub = new StringSubstitutor(vars.strings);
+      QueryToFilterListener listener = new QueryToFilterListener(vars.objects, vars.strings, sub, modelClass);
+      walker.walk(listener, tree);
+      return listener.getFilter();
    }
 
 
