@@ -5,7 +5,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="generator" content="Asciidoctor 2.0.20">
-<title>Authentication and Authorization</title>
+<title>Query Language (BIAPIQuery)</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,300italic,400,400italic,600,600italic%7CNoto+Serif:400,400italic,700,700italic%7CDroid+Sans+Mono:400,700">
 <style>
 /*! Asciidoctor default stylesheet | MIT License | https://asciidoctor.org */
@@ -433,880 +433,384 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 @media amzn-kf8{#header,#content,#footnotes,#footer{padding:0}}
 </style>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+<style>
+/*! Stylesheet for CodeRay to loosely match GitHub themes | MIT License */
+pre.CodeRay{background:#f7f7f8}
+.CodeRay .line-numbers{border-right:1px solid;opacity:.35;padding:0 .5em 0 0;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none}
+.CodeRay span.line-numbers{display:inline-block;margin-right:.75em}
+.CodeRay .line-numbers strong{color:#000}
+table.CodeRay{border-collapse:separate;border:0;margin-bottom:0;background:none}
+table.CodeRay td{vertical-align:top;line-height:inherit}
+table.CodeRay td.line-numbers{text-align:right}
+table.CodeRay td.code{padding:0 0 0 .75em}
+.CodeRay .debug{color:#fff!important;background:navy!important}
+.CodeRay .annotation{color:#007}
+.CodeRay .attribute-name{color:navy}
+.CodeRay .attribute-value{color:#700}
+.CodeRay .binary{color:#509}
+.CodeRay .comment{color:#998;font-style:italic}
+.CodeRay .char{color:#04d}
+.CodeRay .char .content{color:#04d}
+.CodeRay .char .delimiter{color:#039}
+.CodeRay .class{color:#458;font-weight:bold}
+.CodeRay .complex{color:#a08}
+.CodeRay .constant,.CodeRay .predefined-constant{color:teal}
+.CodeRay .color{color:#099}
+.CodeRay .class-variable{color:#369}
+.CodeRay .decorator{color:#b0b}
+.CodeRay .definition{color:#099}
+.CodeRay .delimiter{color:#000}
+.CodeRay .doc{color:#970}
+.CodeRay .doctype{color:#34b}
+.CodeRay .doc-string{color:#d42}
+.CodeRay .escape{color:#666}
+.CodeRay .entity{color:#800}
+.CodeRay .error{color:#808}
+.CodeRay .exception{color:inherit}
+.CodeRay .filename{color:#099}
+.CodeRay .function{color:#900;font-weight:bold}
+.CodeRay .global-variable{color:teal}
+.CodeRay .hex{color:#058}
+.CodeRay .integer,.CodeRay .float{color:#099}
+.CodeRay .include{color:#555}
+.CodeRay .inline{color:#000}
+.CodeRay .inline .inline{background:#ccc}
+.CodeRay .inline .inline .inline{background:#bbb}
+.CodeRay .inline .inline-delimiter{color:#d14}
+.CodeRay .inline-delimiter{color:#d14}
+.CodeRay .important{color:#555;font-weight:bold}
+.CodeRay .interpreted{color:#b2b}
+.CodeRay .instance-variable{color:teal}
+.CodeRay .label{color:#970}
+.CodeRay .local-variable{color:#963}
+.CodeRay .octal{color:#40e}
+.CodeRay .predefined{color:#369}
+.CodeRay .preprocessor{color:#579}
+.CodeRay .pseudo-class{color:#555}
+.CodeRay .directive{font-weight:bold}
+.CodeRay .type{font-weight:bold}
+.CodeRay .predefined-type{color:inherit}
+.CodeRay .reserved,.CodeRay .keyword{color:#000;font-weight:bold}
+.CodeRay .key{color:#808}
+.CodeRay .key .delimiter{color:#606}
+.CodeRay .key .char{color:#80f}
+.CodeRay .value{color:#088}
+.CodeRay .regexp .delimiter{color:#808}
+.CodeRay .regexp .content{color:#808}
+.CodeRay .regexp .modifier{color:#808}
+.CodeRay .regexp .char{color:#d14}
+.CodeRay .regexp .function{color:#404;font-weight:bold}
+.CodeRay .string{color:#d20}
+.CodeRay .string .string .string{background:#ffd0d0}
+.CodeRay .string .content{color:#d14}
+.CodeRay .string .char{color:#d14}
+.CodeRay .string .delimiter{color:#d14}
+.CodeRay .shell{color:#d14}
+.CodeRay .shell .delimiter{color:#d14}
+.CodeRay .symbol{color:#990073}
+.CodeRay .symbol .content{color:#a60}
+.CodeRay .symbol .delimiter{color:#630}
+.CodeRay .tag{color:teal}
+.CodeRay .tag-special{color:#d70}
+.CodeRay .variable{color:#036}
+.CodeRay .insert{background:#afa}
+.CodeRay .delete{background:#faa}
+.CodeRay .change{color:#aaf;background:#007}
+.CodeRay .head{color:#f8f;background:#505}
+.CodeRay .insert .insert{color:#080}
+.CodeRay .delete .delete{color:#800}
+.CodeRay .change .change{color:#66f}
+.CodeRay .head .head{color:#f4f}
+</style>
 </head>
-<body id="auth" class="book toc2 toc-left">
+<body class="book toc2 toc-left">
 <div id="header">
-<h1>Authentication and Authorization</h1>
-<div class="details">
-<span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-09-26T19:12:47Z</span>
-</div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
-<ul class="sectlevel1">
-<li><a href="#_jwt_provider">1. JWT Provider</a></li>
-<li><a href="#_pluggable_authentication">2. Pluggable Authentication</a></li>
-<li><a href="#_creating_an_auth_plugin_using_the_custom_jwt_provider_as_a_reference">3. Creating an Auth Plugin (using the Custom JWT provider as a reference)</a></li>
-<li><a href="#_authprovider_interface_what_a_provider_must_implement">4. AuthProvider interface (what a provider must implement)</a></li>
-<li><a href="#_usermanagement_interface_operations_your_plugin_must_support">5. UserManagement interface (operations your plugin must support)</a></li>
-<li><a href="#_leveraging_baseauthprovider_in_your_plugin">6. Leveraging BaseAuthProvider in your plugin</a></li>
-<li><a href="#_implementing_your_own_provider">7. Implementing your own provider</a></li>
-<li><a href="#_credentialuseridpassword_model_and_domaincontext">8. CredentialUserIdPassword model and DomainContext</a></li>
-<li><a href="#_quarkus_oidc_out_of_the_box_and_integrating_with_common_idps">9. Quarkus OIDC out-of-the-box and integrating with common IdPs</a></li>
-<li><a href="#_authorization_via_rulecontext">10. Authorization via RuleContext</a></li>
+<ul class="sectlevel2">
+<li><a href="#query-language">1. Query Language (BIAPIQuery)</a>
+<ul class="sectlevel3">
+<li><a href="#_summary_of_operators">1.1. Summary of Operators</a></li>
+<li><a href="#_value_types">1.2. Value Types</a></li>
+<li><a href="#_array_query_support_elemmatch">1.3. Array Query Support (elemMatch)</a></li>
+<li><a href="#_in_clause_enhancements">1.4. IN Clause Enhancements</a></li>
+<li><a href="#_variables_and_resolvers">1.5. Variables and Resolvers</a></li>
+<li><a href="#_reference_equality">1.6. Reference Equality</a></li>
+<li><a href="#_examples">1.7. Examples</a></li>
+</ul>
+</li>
 </ul>
 </div>
 </div>
 <div id="content">
-<div id="preamble">
-<div class="sectionbody">
+<div class="sect2">
+<h3 id="query-language">1. Query Language (BIAPIQuery)</h3>
 <div class="paragraph">
-<p>Quantum integrates with Quarkus security while providing a pluggable approach to authentication. The repository includes a JWT provider module to get started quickly and an extension surface to replace or complement it.</p>
+<p>This section documents the ANTLR‑based filter language used by repositories (e.g., MorphiaRepo) and the rule engine to construct MongoDB/Morphia filters.</p>
 </div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_jwt_provider">1. JWT Provider</h2>
-<div class="sectionbody">
+<div class="sect3">
+<h4 id="_summary_of_operators">1.1. Summary of Operators</h4>
 <div class="ulist">
 <ul>
 <li>
-<p>Module: quantum-jwt-provider</p>
+<p>Equals: ':'  (field:value)</p>
 </li>
 <li>
-<p>Purpose: Validate JWTs on incoming requests, populate the security principal, and surface tenant/org/user claims that feed DomainContext.</p>
+<p>Not equals: ':!'</p>
 </li>
 <li>
-<p>Configuration: Standard Quarkus/MicroProfile JWT properties plus custom claim mappings as needed for DataDomain.</p>
+<p>Less than / Greater than: ':&lt;' / ':&gt;'</p>
+</li>
+<li>
+<p>Less‑than‑or‑equal / Greater‑than‑or‑equal: ':&#8656;' / ':&gt;='</p>
+</li>
+<li>
+<p>Exists (field present): ':~'  (no value)</p>
+</li>
+<li>
+<p>In list: ':^' followed by a list [v1,v2,&#8230;&#8203;]</p>
+</li>
+<li>
+<p>Boolean literals: true / false</p>
+</li>
+<li>
+<p>Null literal: null</p>
+</li>
+<li>
+<p>Logical AND: '&amp;&amp;'</p>
+</li>
+<li>
+<p>Logical OR: '||'</p>
+</li>
+<li>
+<p>Logical NOT (on a single expression): '!!'</p>
+</li>
+<li>
+<p>Grouping: parentheses '(' and ')'</p>
 </li>
 </ul>
 </div>
 </div>
+<div class="sect3">
+<h4 id="_value_types">1.2. Value Types</h4>
+<div class="ulist">
+<ul>
+<li>
+<p>Strings: unquoted or quoted with "&#8230;&#8203;" (quotes allow spaces and punctuation)</p>
+</li>
+<li>
+<p>Whole numbers: prefix with '#' (e.g., #10)</p>
+</li>
+<li>
+<p>Decimals: prefix with '<mark>' (e.g., </mark>19.99)</p>
+</li>
+<li>
+<p>Dates: yyyy-MM-dd</p>
+</li>
+<li>
+<p>DateTime: ISO-8601 (e.g., 2024-07-28T10:15:30Z)</p>
+</li>
+<li>
+<p>ObjectId: 24‑char hex</p>
+</li>
+<li>
+<p>References: @@&lt;ObjectId&gt; resolves to a Morphia @Reference field instance</p>
+</li>
+<li>
+<p>Variables: ${&#8230;&#8203;} substituted from PrincipalContext/ResourceContext and resolver-provided variables (see Variables and Resolvers below)</p>
+</li>
+</ul>
 </div>
-<div class="sect1">
-<h2 id="_pluggable_authentication">2. Pluggable Authentication</h2>
-<div class="sectionbody">
+</div>
+<div class="sect3">
+<h4 id="_array_query_support_elemmatch">1.3. Array Query Support (elemMatch)</h4>
 <div class="paragraph">
-<p>You can introduce alternative authentication mechanisms (e.g., API keys, SAML/OIDC front-channel tokens exchanged for back-end JWTs, HMAC signatures) by providing CDI beans that integrate with the security layer and emit the same normalized context consumed by DomainContext/RuleContext.</p>
+<p>The grammar supports array filtering via elemMatch using ':=' with braces. Example:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>lineItems:= { (sku:&quot;ABC&quot; &amp;&amp; quantity:&gt; #0) || (sku:&quot;DEF&quot; &amp;&amp; backordered:true) }</code></pre>
+</div>
 </div>
 <div class="paragraph">
-<p>Typical steps:</p>
-</div>
-<div class="olist arabic">
-<ol class="arabic">
-<li>
-<p>Implement a request filter or identity provider that validates the token/credential.</p>
-</li>
-<li>
-<p>Map identity and tenant claims into a principal model (tenantId, orgRefName, userId, roles).</p>
-</li>
-<li>
-<p>Ensure BaseResource (and other entry points) can derive DomainContext from that principal.</p>
-</li>
-</ol>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_creating_an_auth_plugin_using_the_custom_jwt_provider_as_a_reference">3. Creating an Auth Plugin (using the Custom JWT provider as a reference)</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>An auth plugin is typically a CDI bean that:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Extends BaseAuthProvider to inherit user-management helpers and persistence utilities.</p>
-</li>
-<li>
-<p>Implements AuthProvider to integrate with request-time authentication flows.</p>
-</li>
-<li>
-<p>Implements UserManagement to expose CRUD-style operations for users, passwords, and roles.</p>
-</li>
-</ul>
+<p>This produces a Mongo $elemMatch on field 'lineItems' with the nested expression composed inside. You can nest multiple predicates with '&amp;&amp;' / '||' and parentheses as needed. Internally, the listener composes the inner filters and wraps them in Filters.elemMatch(&#8230;&#8203;).</p>
 </div>
 <div class="paragraph">
-<p>A concrete provider should:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Be annotated as a CDI bean (e.g., @ApplicationScoped).</p>
-</li>
-<li>
-<p>Provide a stable getName() identifier (e.g., "custom", "oidc", "apikey").</p>
-</li>
-<li>
-<p>Use config properties for secrets, issuers, token durations, and any external identity provider details.</p>
-</li>
-<li>
-<p>Build a Quarkus SecurityIdentity with the authenticated principal and roles.</p>
-</li>
-</ul>
+<p>Notes:
+- elemMatch is ideal for filtering documents that contain an array of subdocuments where at least one element satisfies the nested criteria.
+- The inner expression supports the full set of operators supported for basic expressions, including numbers, booleans, strings, dates, etc.</p>
 </div>
 </div>
-</div>
-<div class="sect1">
-<h2 id="_authprovider_interface_what_a_provider_must_implement">4. AuthProvider interface (what a provider must implement)</h2>
-<div class="sectionbody">
+<div class="sect3">
+<h4 id="_in_clause_enhancements">1.4. IN Clause Enhancements</h4>
 <div class="paragraph">
-<p>Core methods:</p>
+<p>The IN operator (':^') supports both literal lists and variable‑driven lists.</p>
+</div>
+<div class="paragraph">
+<p>1) Literal values:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>customerId:^[5f1e1a5e5e5e5e5e5e5e5e51,5f1e1a5e5e5e5e5e5e5e5e52]</code></pre>
+</div>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p>SecurityIdentity validateAccessToken(String token)</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Parse and validate the incoming credential (JWT, API key, signature).</p>
+<p>ObjectId values are detected from 24‑hex strings and converted to ObjectId.</p>
 </li>
 <li>
-<p>Return a SecurityIdentity with principal name and roles. Throw a security exception for invalid tokens.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>String getName()</p>
-<div class="ulist">
-<ul>
-<li>
-<p>A short identifier for the provider. Persisted alongside credentials and used in logs/metrics.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>LoginResponse login(String userId, String password)</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Credential-based login. Return a structured response:</p>
-</li>
-<li>
-<p>positiveResponse: includes SecurityIdentity, roles, accessToken, refreshToken, expirationTime, and realm/mongodbUrl if applicable.</p>
-</li>
-<li>
-<p>negativeResponse: includes error codes/reason/message for clients to act on (e.g., password change required).</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>LoginResponse refreshTokens(String refreshToken)</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Validate the refresh token, mint a new access token (and optionally a new refresh token), and return a positive response.</p>
-</li>
-</ul>
-</div>
+<p>Numbers, booleans, ISO datetimes, and yyyy‑MM‑dd dates are also coerced appropriately.</p>
 </li>
 </ul>
 </div>
 <div class="paragraph">
-<p>Notes:</p>
+<p>2) Variable‑driven lists via ${var} inside brackets:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>customerId:^[${accessibleCustomerIds}]</code></pre>
+</div>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p>Login flow should check force-change-password or equivalent flags and return a negative response when user interaction is required before issuing tokens.</p>
+<p>If 'accessibleCustomerIds' is published as a Collection/array via an AccessListResolver (see below), each element is type‑coerced.</p>
 </li>
 <li>
-<p>validateAccessToken should only accept valid, non-expired tokens and construct SecurityIdentity consistently with role mappings used across the platform.</p>
-</li>
-</ul>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_usermanagement_interface_operations_your_plugin_must_support">5. UserManagement interface (operations your plugin must support)</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Typical responsibilities include:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>User lifecycle</p>
-<div class="ulist">
-<ul>
-<li>
-<p>String createUser(String userId, String password, Set&lt;String&gt; roles, DomainContext domainContext, [optional] DataDomain)</p>
+<p>If it is published as a single string (e.g., CSV), it is split by comma and each value is type‑coerced.</p>
 </li>
 <li>
-<p>void changePassword(String userId, String oldPassword, String newPassword, Boolean forceChangePassword)</p>
-</li>
-<li>
-<p>boolean removeUserWithUserId(String userId)</p>
-</li>
-<li>
-<p>boolean removeUserWithSubject(String subject)</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>Role management</p>
-<div class="ulist">
-<ul>
-<li>
-<p>void assignRolesForUserId(String userId, Set&lt;String&gt; roles)</p>
-</li>
-<li>
-<p>void assignRolesForSubject(String subject, Set&lt;String&gt; roles)</p>
-</li>
-<li>
-<p>void removeRolesForUserId(String userId, Set&lt;String&gt; roles)</p>
-</li>
-<li>
-<p>void removeRolesForSubject(String subject, Set&lt;String&gt; roles)</p>
-</li>
-<li>
-<p>Set&lt;String&gt; getUserRolesForUserId(String userId)</p>
-</li>
-<li>
-<p>Set&lt;String&gt; getUserRolesForSubject(String subject)</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>Lookups and existence checks</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Optional&lt;String&gt; getSubjectForUserId(String userId)</p>
-</li>
-<li>
-<p>Optional&lt;String&gt; getUserIdForSubject(String subject)</p>
-</li>
-<li>
-<p>boolean userIdExists(String userId)</p>
-</li>
-<li>
-<p>boolean subjectExists(String subject)</p>
-</li>
-</ul>
-</div>
+<p>Empty or blank variables yield an empty list (matching none).</p>
 </li>
 </ul>
 </div>
 <div class="paragraph">
-<p>Return values and exceptions:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Throw SecurityException or domain-specific exceptions for invalid states (duplicate users, bad password, unsupported hashing).</p>
-</li>
-<li>
-<p>Return Optional for lookups that may not find a result.</p>
-</li>
-<li>
-<p>For removals, return boolean to communicate whether a record was deleted.</p>
-</li>
-</ul>
+<p>Type coercion rules used for each element:
+- 24‑hex → ObjectId
+- 'true'/'false' → boolean
+- integer → long
+- decimal → double
+- ISO datetime → java.util.Date
+- yyyy‑MM‑dd → java.time.LocalDate
+- otherwise → string</p>
 </div>
 </div>
-</div>
-<div class="sect1">
-<h2 id="_leveraging_baseauthprovider_in_your_plugin">6. Leveraging BaseAuthProvider in your plugin</h2>
-<div class="sectionbody">
+<div class="sect3">
+<h4 id="_variables_and_resolvers">1.5. Variables and Resolvers</h4>
 <div class="paragraph">
-<p>When you extend BaseAuthProvider, you inherit ready-to-use capabilities that reduce boilerplate:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Impersonation controls</p>
-<div class="ulist">
-<ul>
-<li>
-<p>enableImpersonationWithUserId / enableImpersonationWithSubject</p>
-</li>
-<li>
-<p>disableImpersonationWithUserId / disableImpersonationWithSubject</p>
-</li>
-<li>
-<p>These set or clear an impersonation filter script and realm regex that downstream services can honor to act on behalf of another identity under controlled scope.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>Realm override helpers</p>
-<div class="ulist">
-<ul>
-<li>
-<p>enableRealmOverrideWithUserId / enableRealmOverrideWithSubject</p>
-</li>
-<li>
-<p>disableRealmOverrideWithUserId / disableRealmOverrideWithSubject</p>
-</li>
-<li>
-<p>Useful for multi-realm/tenant scenarios, enabling scoped cross-realm behavior.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>Persistence utilities</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Built-in use of the credential repository to save, update, and delete credentials.</p>
-</li>
-<li>
-<p>Consistent validation of inputs (non-null checks, non-blank checks).</p>
-</li>
-<li>
-<p>Hashing algorithm guardrails to ensure only supported algorithms are used.</p>
-</li>
-</ul>
-</div>
-</li>
-</ul>
+<p>Variables in expressions are written as ${name}. The framework populates variables from:
+- PrincipalContext and ResourceContext (standard variables): principalId, pAccountId, pTenantId, ownerId, orgRefName, resourceId, action, functionalDomain, area
+- AccessListResolver implementations (custom variables): collections or values computed per request</p>
 </div>
 <div class="paragraph">
-<p>Best practices when deriving:</p>
+<p>Examples:</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p>Always set the auth provider name in stored credentials so records can be traced to the correct provider.</p>
-</li>
-<li>
-<p>Reuse the role merge/remove patterns to avoid accidental role loss.</p>
-</li>
-<li>
-<p>Prefer emitting precise exceptions (e.g., NotFound for missing users, SecurityException for access violations).</p>
+<p>Constrain by tenant and org for the current principal:</p>
 </li>
 </ul>
 </div>
+<div class="listingblock">
+<div class="content">
+<pre>functionalDomain:"order" &amp;&amp; dataDomain.tenantId:${pTenantId} &amp;&amp; dataDomain.orgRefName:${orgRefName}</pre>
 </div>
-</div>
-<div class="sect1">
-<h2 id="_implementing_your_own_provider">7. Implementing your own provider</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Checklist:</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p>Class design</p>
-<div class="ulist">
-<ul>
-<li>
-<p>@ApplicationScoped bean</p>
-</li>
-<li>
-<p>extends BaseAuthProvider</p>
-</li>
-<li>
-<p>implements AuthProvider and UserManagement</p>
-</li>
-<li>
-<p>return a stable getName()</p>
+<p>Restrict to an access‑list resolved for the caller:</p>
 </li>
 </ul>
 </div>
-</li>
-<li>
-<p>Configuration</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Externalize secrets (signing keys), issuers, token durations, and realm details via MicroProfile Config.</p>
-</li>
-</ul>
+<div class="listingblock">
+<div class="content">
+<pre>customerId:^[${accessibleCustomerIds}]</pre>
 </div>
-</li>
-<li>
-<p>SecurityIdentity</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Consistently build identities with principal and roles; include useful attributes for auditing/telemetry.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>Tokens/credentials</p>
-<div class="ulist">
-<ul>
-<li>
-<p>For JWT-like tokens, implement robust parsing, signature verification, expiration checks, and claim validation.</p>
-</li>
-<li>
-<p>For non-JWT credentials (API keys, HMAC), ensure replay protection and scope binding.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>Responses and errors</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Use structured LoginResponse for both success and error paths.</p>
-</li>
-<li>
-<p>Prefer idempotent user/role operations; validate inputs and surface actionable messages.</p>
-</li>
-</ul>
-</div>
-</li>
-</ul>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_credentialuseridpassword_model_and_domaincontext">8. CredentialUserIdPassword model and DomainContext</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>This section explains how user credentials are represented, how those records tie to tenancy and realms, and how the server chooses the database (“realm”) for REST calls.</p>
 </div>
 <div class="paragraph">
-<p>What the credential model represents</p>
+<p>Authoring tips:
+- For single values, you can use variables anywhere a literal value can appear: field:${ownerId}
+- For lists, prefer the bracket form with a single ${var} inside the brackets for best results.</p>
 </div>
-<div class="dlist">
-<dl>
-<dt class="hdlist1">userId</dt>
-<dd>
-<p>The human-friendly login handle that users type. Must be unique within the applicable tenancy/realm scope.</p>
-</dd>
-<dt class="hdlist1">subject</dt>
-<dd>
-<p>A stable, system-generated identifier for the principal. Tokens and internal references favor subject over userId because subjects do not change.</p>
-</dd>
-<dt class="hdlist1">description, emailOfResponsibleParty</dt>
-<dd>
-<p>Optional metadata to describe the credential and provide an owner contact.</p>
-</dd>
-<dt class="hdlist1">domainContext</dt>
-<dd>
-<p>The tenancy and organization placement of the principal. It contains:</p>
-<div class="ulist">
-<ul>
-<li>
-<p>tenantId: Logical tenant partition.</p>
-</li>
-<li>
-<p>orgRefName: Organization/business unit within the tenant.</p>
-</li>
-<li>
-<p>accountId: Account or billing identifier.</p>
-</li>
-<li>
-<p>defaultRealm: The default database/realm used for this identity’s operations.</p>
-</li>
-<li>
-<p>dataSegment: Optional partitioning segment for advanced sharding or data slicing.</p>
-</li>
-</ul>
 </div>
-</dd>
-<dt class="hdlist1">roles</dt>
-<dd>
-<p>The set of authorities granted (e.g., USER, ADMIN). These become groups/roles on the SecurityIdentity.</p>
-</dd>
-<dt class="hdlist1">issuer</dt>
-<dd>
-<p>An identifier for who issued the credential or tokens (useful for auditing and multi-provider setups).</p>
-</dd>
-<dt class="hdlist1">passwordHash, hashingAlgorithm</dt>
-<dd>
-<p>The stored password hash and declared algorithm. Not exposed over REST. Providers verify passwords against this.</p>
-</dd>
-<dt class="hdlist1">forceChangePassword</dt>
-<dd>
-<p>Flag that forces a password reset on next login; the login flow returns a structured negative response instead of tokens.</p>
-</dd>
-<dt class="hdlist1">lastUpdate</dt>
-<dd>
-<p>Timestamp for auditing and token invalidation strategies.</p>
-</dd>
-<dt class="hdlist1">area2RealmOverrides</dt>
-<dd>
-<p>Optional map to route specific functional areas to different realms than the default (e.g., “Reporting” → analytics-realm).</p>
-</dd>
-<dt class="hdlist1">realmRegEx</dt>
-<dd>
-<p>Optional regex to limit or override which realms this identity may act in; also used by impersonation/override flows.</p>
-</dd>
-<dt class="hdlist1">impersonateFilterScript</dt>
-<dd>
-<p>Optional script indicating the filter/scope applied during impersonation so actions are constrained.</p>
-</dd>
-<dt class="hdlist1">authProviderName</dt>
-<dd>
-<p>The name of the provider that owns this credential (e.g., “custom”, “oidc”), enabling multi-provider operations and audits.</p>
-</dd>
-</dl>
+<div class="sect3">
+<h4 id="_reference_equality">1.6. Reference Equality</h4>
+<div class="paragraph">
+<p>When comparing a @Reference field to an id, prefer the REFERENCE token using '@@' prefix:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>ownerRef:@@5f1e1a5e5e5e5e5e5e5e5e51</code></pre>
+</div>
 </div>
 <div class="paragraph">
-<p>How DomainContext selects the realm for REST calls</p>
+<p>The listener reflects on the modelClass to instantiate the referenced type and set its id accordingly.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_examples">1.7. Examples</h4>
+<div class="ulist">
+<ul>
+<li>
+<p>Simple string and number comparisons:</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>status:"OPEN" &amp;&amp; total:&gt;= ##100.00</pre>
+</div>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p>For each authenticated request, the server derives or retrieves a DomainContext associated with the principal.</p>
-</li>
-<li>
-<p>The DomainContext.defaultRealm indicates which backing MongoDB database (“realm”) should be used by repositories for that request.</p>
-</li>
-<li>
-<p>If realm override features are enabled (e.g., through provider helpers or per-credential overrides), the system may route certain functional areas to alternate realms using area2RealmOverrides or validated by realmRegEx.</p>
-</li>
-<li>
-<p>The remainder of DomainContext (tenantId, orgRefName, accountId, dataSegment) is applied as scope constraints through permission rules and repository filters so reads and writes are automatically restricted to the correct tenant/org segment.</p>
+<p>Exists and not equals:</p>
 </li>
 </ul>
 </div>
-<div class="paragraph">
-<p>Typical flow</p>
+<div class="listingblock">
+<div class="content">
+<pre>externalId:~ &amp;&amp; status:!"CANCELLED"</pre>
 </div>
-<div class="olist arabic">
-<ol class="arabic">
-<li>
-<p>Login</p>
-<div class="ulist">
-<ul>
-<li>
-<p>A user authenticates with userId/password (or other mechanism).</p>
-</li>
-<li>
-<p>On success, a token is returned alongside role information; the principal is associated with a DomainContext that includes the defaultRealm.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>Subsequent REST calls</p>
-<div class="ulist">
-<ul>
-<li>
-<p>The token is validated; the server reconstructs SecurityIdentity and DomainContext.</p>
-</li>
-<li>
-<p>Repositories choose the datastore for defaultRealm and enforce tenant/org filters using the DomainContext values.</p>
-</li>
-<li>
-<p>If the request targets a functional area with a defined override, the operation may route to a different realm for that area alone.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>UI implications</p>
-<div class="ulist">
-<ul>
-<li>
-<p>The client does not need to know which realm is selected; it simply calls the API. The server ensures the correct database is used based on DomainContext and any configured overrides.</p>
-</li>
-</ul>
-</div>
-</li>
-</ol>
-</div>
-<div class="paragraph">
-<p>Best practices</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p>Keep userId immutable once established; use subject for internal joins and token subjects.</p>
-</li>
-<li>
-<p>Always attach the correct DomainContext when creating users to avoid cross-tenant leakage.</p>
-</li>
-<li>
-<p>Use realm overrides deliberately for well-isolated areas (e.g., analytics, archiving) and document them for operators.</p>
+<p>Grouping and OR:</p>
 </li>
 </ul>
 </div>
+<div class="listingblock">
+<div class="content">
+<pre>(type:"INVOICE" &amp;&amp; total:&gt; ##0.0) || type:"QUOTE"</pre>
 </div>
-</div>
-<div class="sect1">
-<h2 id="_quarkus_oidc_out_of_the_box_and_integrating_with_common_idps">9. Quarkus OIDC out-of-the-box and integrating with common IdPs</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Quarkus ships with first-class OpenID Connect (OIDC) support, enabling both service-to-service and browser-based logins.</p>
-</div>
-<div class="paragraph">
-<p>What the Quarkus OIDC extension provides</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p>OIDC client and server-side adapters:</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Authorization Code flow with PKCE for browser sign-in.</p>
-</li>
-<li>
-<p>Bearer token authentication for APIs (validating access tokens on incoming requests).</p>
-</li>
-<li>
-<p>Token propagation for downstream calls (forwarding or exchanging tokens).</p>
+<p>Array match:</p>
 </li>
 </ul>
 </div>
-</li>
-<li>
-<p>Token verification and claim mapping:</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Validates issuer, audience, signature, expiration, and scopes.</p>
-</li>
-<li>
-<p>Maps standard claims (sub, email, groups/roles) into the security identity.</p>
-</li>
-</ul>
+<div class="listingblock">
+<div class="content">
+<pre>lines:= { sku:"ABC" &amp;&amp; quantity:&gt; #0 }</pre>
 </div>
-</li>
-<li>
-<p>Multi-tenancy and configuration:</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Supports multiple OIDC tenants via configuration, each with its own issuer, client id/secret, and flows.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>Logout and session support:</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Front-channel and back-channel logout hooks depending on provider capabilities.</p>
-</li>
-</ul>
-</div>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Integrating with common providers</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p>Works with providers like Keycloak, Auth0, Okta, Azure AD, Cognito, and enterprise IdPs exposing OIDC.</p>
-</li>
-<li>
-<p>Configure the issuer URL and client credentials. Quarkus discovers endpoints via the provider’s .well-known/openid-configuration.</p>
-</li>
-<li>
-<p>For roles/permissions, map provider groups/roles claims to your platform roles in the identity.</p>
+<p>IN with resolver list:</p>
 </li>
 </ul>
 </div>
-<div class="paragraph">
-<p>OIDC vs OAuth vs OpenID (terminology and evolution)</p>
+<div class="listingblock">
+<div class="content">
+<pre>customerId:^[${accessibleCustomerIds}]</pre>
 </div>
-<div class="dlist">
-<dl>
-<dt class="hdlist1">OAuth 2.0</dt>
-<dd>
-<div class="ulist">
-<ul>
-<li>
-<p>Authorization framework for delegated access (scopes), not authentication. Defines flows to obtain access tokens for APIs.</p>
-</li>
-</ul>
-</div>
-</dd>
-<dt class="hdlist1">OpenID (OpenID 1.x/2.0)</dt>
-<dd>
-<div class="ulist">
-<ul>
-<li>
-<p>Older federated identity protocol that preceded OIDC. It has been superseded by OpenID Connect.</p>
-</li>
-</ul>
-</div>
-</dd>
-<dt class="hdlist1">OpenID Connect (OIDC)</dt>
-<dd>
-<div class="ulist">
-<ul>
-<li>
-<p>An identity layer on top of OAuth 2.0. Adds standardized authentication, user info endpoints, ID tokens (JWT) with subject and profile claims, and discovery metadata.</p>
-</li>
-<li>
-<p>In practice, OIDC is the modern standard for SSO and user authentication; OAuth remains the authorization substrate underneath.</p>
-</li>
-</ul>
-</div>
-</dd>
-<dt class="hdlist1">Summary</dt>
-<dd>
-<div class="ulist">
-<ul>
-<li>
-<p>OpenID → historical, replaced by OIDC.</p>
-</li>
-<li>
-<p>OAuth 2.0 → authorization framework.</p>
-</li>
-<li>
-<p>OIDC → authentication (identity) layer built on OAuth 2.0.</p>
-</li>
-</ul>
-</div>
-</dd>
-</dl>
-</div>
-<div class="paragraph">
-<p>OIDC and SAML in relation to SSO
- SAML (Security Assertion Markup Language)::</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>XML-based federation protocol widely used in enterprises for browser SSO.</p>
-</li>
-<li>
-<p>Uses signed XML assertions transported through browser redirects/posts.</p>
-<div class="dlist">
-<dl>
-<dt class="hdlist1">OIDC</dt>
-</dl>
-</div>
-</li>
-<li>
-<p>JSON/REST-oriented, uses JWTs, and is well-suited for modern SPAs and APIs.</p>
-</li>
-<li>
-<p>Relationship:</p>
-</li>
-<li>
-<p>Both enable SSO and federation across identity providers and service providers.</p>
-</li>
-<li>
-<p>Many enterprise IdPs support both; OIDC is generally simpler for APIs and modern web stacks, while SAML is entrenched in legacy/enterprise SSO.</p>
-</li>
-<li>
-<p>Bridging:</p>
-</li>
-<li>
-<p>Gateways or identity brokers can translate SAML assertions to OIDC tokens and vice versa, allowing gradual migration.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Common customer IdP models and OIDC integration patterns</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Centralized IdP (single-tenant):</p>
-<div class="ulist">
-<ul>
-<li>
-<p>One organization-wide IdP issues tokens for all users.</p>
-</li>
-<li>
-<p>Configure a single OIDC tenant in Quarkus; map groups/roles to application roles.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>Multi-tenant SaaS with per-tenant IdP:</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Each customer brings their own IdP (BYOID).</p>
-</li>
-<li>
-<p>Configure Quarkus OIDC multitenancy with per-tenant issuer discovery and client credentials.</p>
-</li>
-<li>
-<p>Tenant selection can be based on domain, request header, or path; the selected OIDC tenant performs login and token validation.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>Brokered identity:</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Use a broker (e.g., a central identity layer) that federates to multiple upstream IdPs (OIDC, SAML).</p>
-</li>
-<li>
-<p>Quarkus integrates with the broker as a single OIDC client; the broker handles IdP routing and protocol translation.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>Hybrid API and web flows:</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Browser apps use Authorization Code flow with sessions; APIs use bearer token authentication.</p>
-</li>
-<li>
-<p>Quarkus OIDC extension can handle both in the same application when properly configured.</p>
-</li>
-</ul>
-</div>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Best practices</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Prefer OIDC for new integrations; use SAML through a broker if enterprise constraints require it.</p>
-</li>
-<li>
-<p>Normalize roles/claims server-side so downstream authorization (RuleContext, repositories) sees consistent group names regardless of IdP.</p>
-</li>
-<li>
-<p>Use token exchange or client credentials for service-to-service calls; do not reuse end-user tokens where not appropriate.</p>
-</li>
-<li>
-<p>For multi-tenant OIDC, secure tenant resolution logic and validate issuer/tenant binding to prevent mix-ups.</p>
-</li>
-</ul>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_authorization_via_rulecontext">10. Authorization via RuleContext</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Authentication establishes identity; RuleContext enforces what the identity can do. For each action (CREATE, UPDATE, VIEW, DELETE, ARCHIVE), RuleContext can:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Allow or deny the action</p>
-</li>
-<li>
-<p>Contribute additional filters (e.g., org scoping, functional-area specific sharing)</p>
-</li>
-<li>
-<p>Adjust UIActionList to reflect permitted next steps</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>This division of responsibilities keeps providers focused on identity while policies remain centralized in RuleContext.</p>
 </div>
 </div>
 </div>
@@ -1314,7 +818,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-09-22 09:25:37 -0500
+Last updated 2025-09-26 14:08:13 -0500
 </div>
 </div>
 </body>
