@@ -325,7 +325,7 @@ public class RuleContext {
                 }
             }
             policyVersion = System.nanoTime();
-            Log.infof("RuleContext: loaded %d identities worth of rules from repo for realm %s", rules.size(), realm);
+            Log.infof("RuleContext: loaded %d rules from repo for realm %s", rules.size(), realm);
         } catch (Exception ex) {
             Log.error("Failed to load policies into RuleContext; retaining system rules only", ex);
         }

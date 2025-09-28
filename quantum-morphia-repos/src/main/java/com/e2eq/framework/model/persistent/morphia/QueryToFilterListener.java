@@ -364,6 +364,8 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
 
     private Object coerceValue(Object v) {
         if (v == null) return null;
+        // Respect explicit StringLiteral wrapper to force raw string semantics
+        if (v instanceof StringLiteral sl) return sl.value();
         if (v instanceof ObjectId) return v;
         if (v instanceof Number || v instanceof Boolean || v instanceof Date) return v;
         if (v instanceof CharSequence s) {

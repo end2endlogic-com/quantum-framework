@@ -75,7 +75,7 @@ For detailed rule-base matching (URL, headers, body predicates, priorities), see
 
 - Use query parameters or a request body (depending on your API convention) to express filters.
 - RuleContext contributes tenant-aware filters and projections automatically.
-- See <<query-language>> for the full BIAPIQuery syntax, including array filtering with elemMatch and IN‑clause enhancements that accept resolver‑provided lists.
+- See xref:query-language.adoc#query-language[Query Language] for the full BIAPIQuery syntax, including array filtering with elemMatch and IN‑clause enhancements that accept resolver‑provided lists.
 
 ==== Responses and Schemas
 
