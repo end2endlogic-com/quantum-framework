@@ -695,6 +695,41 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 - yyyy‑MM‑dd → java.time.LocalDate
 - otherwise → string</p>
 </div>
+<div class="sect4">
+<h5 id="_forcing_string_semantics_stringliteral">Forcing string semantics (StringLiteral)</h5>
+<div class="paragraph">
+<p>Sometimes a resolver needs to return strings that look like other types (for example, a 24‑hex string that resembles an ObjectId). To avoid unintended coercion, resolvers can return <code>StringLiteral</code> values, which the engine unwraps to raw Strings without coercion.</p>
+</div>
+<div class="paragraph">
+<p>Example resolver:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@ApplicationScoped</span>
+<span class="directive">public</span> <span class="type">class</span> <span class="class">CustomerCodeResolver</span> <span class="directive">implements</span> AccessListResolver {
+    <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> key() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">accessibleCustomerCodes</span><span class="delimiter">&quot;</span></span>; }
+    <span class="annotation">@Override</span> <span class="directive">public</span> <span class="type">boolean</span> supports(PrincipalContext p, ResourceContext r, <span class="predefined-type">Class</span>&lt;? <span class="directive">extends</span> UnversionedBaseModel&gt; m) { <span class="keyword">return</span> <span class="predefined-constant">true</span>; }
+    <span class="annotation">@Override</span> <span class="directive">public</span> java.util.Collection&lt;?&gt; resolve(PrincipalContext p, ResourceContext r, <span class="predefined-type">Class</span>&lt;? <span class="directive">extends</span> UnversionedBaseModel&gt; m) {
+        <span class="keyword">return</span> java.util.List.of(
+            com.e2eq.framework.model.persistent.morphia.StringLiteral.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">5f1e1a5e5e5e5e5e5e5e5e51</span><span class="delimiter">&quot;</span></span>),
+            com.e2eq.framework.model.persistent.morphia.StringLiteral.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">CUST-42</span><span class="delimiter">&quot;</span></span>)
+        );
+    }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Rule using the variable:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>customerCode:^[${accessibleCustomerCodes}]</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Result: <code>$in</code> with <code>List&lt;String&gt;</code> values (no ObjectId/number/date coercion). For more discussion and examples, see <a href="domain-rule-context.html#domain-rule-context">String literals vs. typed values in resolver variables</a>.</p>
+</div>
+</div>
 </div>
 <div class="sect3">
 <h4 id="_variables_and_resolvers">1.5. Variables and Resolvers</h4>
@@ -818,7 +853,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-09-26 15:08:13 -0400
+Last updated 2025-09-28 00:15:35 -0400
 </div>
 </div>
 </body>

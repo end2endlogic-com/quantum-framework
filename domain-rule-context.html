@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>DomainContext, RuleContext, and DataDomain</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-09-28T04:09:57Z</span>
+<span id="revdate">2025-09-28T04:20:37Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -551,6 +551,13 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_2_how_rulecontext_uses_resolvers">11.2. 2) How RuleContext uses resolvers</a></li>
 <li><a href="#_3_author_a_rule_that_consumes_the_variable">11.3. 3) Author a rule that consumes the variable</a></li>
 <li><a href="#_4_end_to_end_behavior">11.4. 4) End-to-end behavior</a></li>
+<li><a href="#_string_literals_vs_typed_values_in_resolver_variables">11.5. String literals vs. typed values in resolver variables</a>
+<ul class="sectlevel3">
+<li><a href="#_example_a_resolver_returns_objectids_typed">11.5.1. Example A: Resolver returns ObjectIds (typed)</a></li>
+<li><a href="#_example_b_resolver_returns_string_literals_force_raw_strings">11.5.2. Example B: Resolver returns String literals (force raw strings)</a></li>
+<li><a href="#_other_types_supported">11.5.3. Other types supported</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
@@ -977,13 +984,134 @@ customerId:^[${accessibleCustomerIds}]</code></pre>
 </ul>
 </div>
 </div>
+<div class="sect2">
+<h3 id="_string_literals_vs_typed_values_in_resolver_variables">11.5. String literals vs. typed values in resolver variables</h3>
+<div class="paragraph">
+<p>When an <code>AccessListResolver</code> returns a list of values that will be used in an <code>IN</code> clause (for example, <code>field:^[${var}]</code>), the engine attempts to coerce each element to an appropriate type so Mongo/Morphia filters are typed correctly:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>24‑hex string → ObjectId</p>
+</li>
+<li>
+<p><code>true</code>/<code>false</code> → Boolean</p>
+</li>
+<li>
+<p>integer → Long</p>
+</li>
+<li>
+<p>decimal → Double</p>
+</li>
+<li>
+<p>ISO‑8601 datetime → <code>java.util.Date</code></p>
+</li>
+<li>
+<p><code>yyyy-MM-dd</code> → <code>java.time.LocalDate</code></p>
+</li>
+<li>
+<p>otherwise → String</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>This works well when your target field is an ObjectId, number, or date. However, string fields can contain values that look like other types (for example, a 24‑hex string that resembles an ObjectId). In those cases you must force "treat as plain string" so no coercion occurs.</p>
+</div>
+<div class="paragraph">
+<p>To do this, the framework provides a small wrapper type <code>StringLiteral</code>. If a resolver returns <code>StringLiteral</code> instances, the listener unwraps them to plain <code>String</code> values and skips coercion entirely.</p>
+</div>
+<div class="sect3">
+<h4 id="_example_a_resolver_returns_objectids_typed">11.5.1. Example A: Resolver returns ObjectIds (typed)</h4>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@ApplicationScoped</span>
+<span class="directive">public</span> <span class="type">class</span> <span class="class">CustomerAccessResolver</span> <span class="directive">implements</span> AccessListResolver {
+    <span class="directive">public</span> <span class="directive">static</span> <span class="directive">final</span> ObjectId ID1 = <span class="keyword">new</span> ObjectId(<span class="string"><span class="delimiter">&quot;</span><span class="content">5f1e1a5e5e5e5e5e5e5e5e51</span><span class="delimiter">&quot;</span></span>);
+    <span class="directive">public</span> <span class="directive">static</span> <span class="directive">final</span> ObjectId ID2 = <span class="keyword">new</span> ObjectId(<span class="string"><span class="delimiter">&quot;</span><span class="content">5f1e1a5e5e5e5e5e5e5e5e52</span><span class="delimiter">&quot;</span></span>);
+
+    <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> key() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">accessibleCustomerIds</span><span class="delimiter">&quot;</span></span>; }
+    <span class="annotation">@Override</span> <span class="directive">public</span> <span class="type">boolean</span> supports(PrincipalContext p, ResourceContext r, <span class="predefined-type">Class</span>&lt;? <span class="directive">extends</span> UnversionedBaseModel&gt; m) {
+        <span class="keyword">return</span> r != <span class="predefined-constant">null</span> &amp;&amp; <span class="string"><span class="delimiter">&quot;</span><span class="content">sales</span><span class="delimiter">&quot;</span></span>.equalsIgnoreCase(r.getArea()) &amp;&amp; <span class="string"><span class="delimiter">&quot;</span><span class="content">order</span><span class="delimiter">&quot;</span></span>.equalsIgnoreCase(r.getFunctionalDomain()) &amp;&amp; <span class="string"><span class="delimiter">&quot;</span><span class="content">view</span><span class="delimiter">&quot;</span></span>.equalsIgnoreCase(r.getAction());
+    }
+    <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">Collection</span>&lt;?&gt; resolve(PrincipalContext p, ResourceContext r, <span class="predefined-type">Class</span>&lt;? <span class="directive">extends</span> UnversionedBaseModel&gt; m) {
+        <span class="keyword">return</span> java.util.List.of(ID1, ID2); <span class="comment">// typed values pass through as-is</span>
+    }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Rule:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>customerId:^[${accessibleCustomerIds}]</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Result: <code>$in</code> with <code>List&lt;ObjectId&gt;</code> on <code>customerId</code>.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_example_b_resolver_returns_string_literals_force_raw_strings">11.5.2. Example B: Resolver returns String literals (force raw strings)</h4>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@ApplicationScoped</span>
+<span class="directive">public</span> <span class="type">class</span> <span class="class">CustomerCodeResolver</span> <span class="directive">implements</span> AccessListResolver {
+    <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> key() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">accessibleCustomerCodes</span><span class="delimiter">&quot;</span></span>; }
+    <span class="annotation">@Override</span> <span class="directive">public</span> <span class="type">boolean</span> supports(PrincipalContext p, ResourceContext r, <span class="predefined-type">Class</span>&lt;? <span class="directive">extends</span> UnversionedBaseModel&gt; m) {
+        <span class="keyword">return</span> r != <span class="predefined-constant">null</span> &amp;&amp; <span class="string"><span class="delimiter">&quot;</span><span class="content">sales</span><span class="delimiter">&quot;</span></span>.equalsIgnoreCase(r.getArea()) &amp;&amp; <span class="string"><span class="delimiter">&quot;</span><span class="content">order</span><span class="delimiter">&quot;</span></span>.equalsIgnoreCase(r.getFunctionalDomain()) &amp;&amp; <span class="string"><span class="delimiter">&quot;</span><span class="content">view</span><span class="delimiter">&quot;</span></span>.equalsIgnoreCase(r.getAction());
+    }
+    <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">Collection</span>&lt;?&gt; resolve(PrincipalContext p, ResourceContext r, <span class="predefined-type">Class</span>&lt;? <span class="directive">extends</span> UnversionedBaseModel&gt; m) {
+        <span class="keyword">return</span> java.util.List.of(
+            com.e2eq.framework.model.persistent.morphia.StringLiteral.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">5f1e1a5e5e5e5e5e5e5e5e51</span><span class="delimiter">&quot;</span></span>),
+            com.e2eq.framework.model.persistent.morphia.StringLiteral.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">CUST-42</span><span class="delimiter">&quot;</span></span>)
+        );
+    }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Rule:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>customerCode:^[${accessibleCustomerCodes}]</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Result: <code>$in</code> with <code>List&lt;String&gt;</code> on <code>customerCode</code> (even for hex-like strings).</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_other_types_supported">11.5.3. Other types supported</h4>
+<div class="paragraph">
+<p>Resolvers can also return numbers, booleans, and dates/datetimes. Already-typed elements (Number, Boolean, java.util.Date, java.time.LocalDate, ObjectId) are preserved. String elements are heuristically parsed into those types unless wrapped with <code>StringLiteral</code>.</p>
+</div>
+<div class="paragraph">
+<p>Authoring tips:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Prefer returning already-typed values when you know the target field type.</p>
+</li>
+<li>
+<p>Use <code>StringLiteral</code> when a value might be misinterpreted (for example, 24‑hex or numeric-looking strings).</p>
+</li>
+<li>
+<p>For CSV strings published under a variable, the engine splits by comma and applies the same per-element coercion.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
 </div>
 </div>
 </div>
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-09-27 23:28:20 -0400
+Last updated 2025-09-28 00:15:19 -0400
 </div>
 </div>
 </body>

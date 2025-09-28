@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Framework Documentation</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-09-28T04:09:57Z</span>
+<span id="revdate">2025-09-28T04:20:37Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -587,23 +587,27 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_1_implement_the_spi">20.1. 1) Implement the SPI</a></li>
 <li><a href="#_2_how_rulecontext_uses_resolvers">20.2. 2) How RuleContext uses resolvers</a></li>
 <li><a href="#_3_author_a_rule_that_consumes_the_variable">20.3. 3) Author a rule that consumes the variable</a></li>
-<li><a href="#_4_end_to_end_behavior">20.4. 4) End-to-end behavior</a>
+<li><a href="#_4_end_to_end_behavior">20.4. 4) End-to-end behavior</a></li>
+<li><a href="#_string_literals_vs_typed_values_in_resolver_variables">20.5. String literals vs. typed values in resolver variables</a>
 <ul class="sectlevel3">
-<li><a href="#_base_concepts">20.4.1. Base Concepts</a></li>
-<li><a href="#_example_resource">20.4.2. Example Resource</a></li>
-<li><a href="#_authorization_layers_in_rest_crud">20.4.3. Authorization Layers in REST CRUD</a></li>
-<li><a href="#_querying">20.4.4. Querying</a></li>
-<li><a href="#_responses_and_schemas">20.4.5. Responses and Schemas</a></li>
-<li><a href="#_error_handling">20.4.6. Error Handling</a></li>
-<li><a href="#_query_language_antlrbased">20.4.7. Query Language (ANTLR‑based)</a></li>
+<li><a href="#_example_a_resolver_returns_objectids_typed">20.5.1. Example A: Resolver returns ObjectIds (typed)</a></li>
+<li><a href="#_example_b_resolver_returns_string_literals_force_raw_strings">20.5.2. Example B: Resolver returns String literals (force raw strings)</a></li>
+<li><a href="#_other_types_supported">20.5.3. Other types supported</a></li>
+<li><a href="#_base_concepts">20.5.4. Base Concepts</a></li>
+<li><a href="#_example_resource">20.5.5. Example Resource</a></li>
+<li><a href="#_authorization_layers_in_rest_crud">20.5.6. Authorization Layers in REST CRUD</a></li>
+<li><a href="#_querying">20.5.7. Querying</a></li>
+<li><a href="#_responses_and_schemas">20.5.8. Responses and Schemas</a></li>
+<li><a href="#_error_handling">20.5.9. Error Handling</a></li>
+<li><a href="#_query_language_antlrbased">20.5.10. Query Language (ANTLR‑based)</a></li>
 </ul>
 </li>
-<li><a href="#_simple_filters_equals">20.5. Simple filters (equals)</a></li>
-<li><a href="#_advanced_filters_grouping_and_andornot">20.6. Advanced filters: grouping and AND/OR/NOT</a></li>
-<li><a href="#_in_lists">20.7. IN lists</a></li>
-<li><a href="#_sorting">20.8. Sorting</a></li>
-<li><a href="#_projections">20.9. Projections</a></li>
-<li><a href="#_endtoend_examples">20.10. End‑to‑end examples</a></li>
+<li><a href="#_simple_filters_equals">20.6. Simple filters (equals)</a></li>
+<li><a href="#_advanced_filters_grouping_and_andornot">20.7. Advanced filters: grouping and AND/OR/NOT</a></li>
+<li><a href="#_in_lists">20.8. IN lists</a></li>
+<li><a href="#_sorting">20.9. Sorting</a></li>
+<li><a href="#_projections">20.10. Projections</a></li>
+<li><a href="#_endtoend_examples">20.11. End‑to‑end examples</a></li>
 </ul>
 </li>
 <li><a href="#_csv_export_and_import">21. CSV Export and Import</a>
@@ -2332,7 +2336,127 @@ customerId:^[${accessibleCustomerIds}]</code></pre>
 <p>The repository composes filters including the rule-provided IN clause with the access list.</p>
 </li>
 <li>
-<p>Only documents whose customerId is in the caller’s resolved set are returned.
+<p>Only documents whose customerId is in the caller’s resolved set are returned.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_string_literals_vs_typed_values_in_resolver_variables">20.5. String literals vs. typed values in resolver variables</h3>
+<div class="paragraph">
+<p>When an <code>AccessListResolver</code> returns a list of values that will be used in an <code>IN</code> clause (for example, <code>field:^[${var}]</code>), the engine attempts to coerce each element to an appropriate type so Mongo/Morphia filters are typed correctly:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>24‑hex string → ObjectId</p>
+</li>
+<li>
+<p><code>true</code>/<code>false</code> → Boolean</p>
+</li>
+<li>
+<p>integer → Long</p>
+</li>
+<li>
+<p>decimal → Double</p>
+</li>
+<li>
+<p>ISO‑8601 datetime → <code>java.util.Date</code></p>
+</li>
+<li>
+<p><code>yyyy-MM-dd</code> → <code>java.time.LocalDate</code></p>
+</li>
+<li>
+<p>otherwise → String</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>This works well when your target field is an ObjectId, number, or date. However, string fields can contain values that look like other types (for example, a 24‑hex string that resembles an ObjectId). In those cases you must force "treat as plain string" so no coercion occurs.</p>
+</div>
+<div class="paragraph">
+<p>To do this, the framework provides a small wrapper type <code>StringLiteral</code>. If a resolver returns <code>StringLiteral</code> instances, the listener unwraps them to plain <code>String</code> values and skips coercion entirely.</p>
+</div>
+<div class="sect3">
+<h4 id="_example_a_resolver_returns_objectids_typed">20.5.1. Example A: Resolver returns ObjectIds (typed)</h4>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@ApplicationScoped</span>
+<span class="directive">public</span> <span class="type">class</span> <span class="class">CustomerAccessResolver</span> <span class="directive">implements</span> AccessListResolver {
+    <span class="directive">public</span> <span class="directive">static</span> <span class="directive">final</span> ObjectId ID1 = <span class="keyword">new</span> ObjectId(<span class="string"><span class="delimiter">&quot;</span><span class="content">5f1e1a5e5e5e5e5e5e5e5e51</span><span class="delimiter">&quot;</span></span>);
+    <span class="directive">public</span> <span class="directive">static</span> <span class="directive">final</span> ObjectId ID2 = <span class="keyword">new</span> ObjectId(<span class="string"><span class="delimiter">&quot;</span><span class="content">5f1e1a5e5e5e5e5e5e5e5e52</span><span class="delimiter">&quot;</span></span>);
+
+    <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> key() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">accessibleCustomerIds</span><span class="delimiter">&quot;</span></span>; }
+    <span class="annotation">@Override</span> <span class="directive">public</span> <span class="type">boolean</span> supports(PrincipalContext p, ResourceContext r, <span class="predefined-type">Class</span>&lt;? <span class="directive">extends</span> UnversionedBaseModel&gt; m) {
+        <span class="keyword">return</span> r != <span class="predefined-constant">null</span> &amp;&amp; <span class="string"><span class="delimiter">&quot;</span><span class="content">sales</span><span class="delimiter">&quot;</span></span>.equalsIgnoreCase(r.getArea()) &amp;&amp; <span class="string"><span class="delimiter">&quot;</span><span class="content">order</span><span class="delimiter">&quot;</span></span>.equalsIgnoreCase(r.getFunctionalDomain()) &amp;&amp; <span class="string"><span class="delimiter">&quot;</span><span class="content">view</span><span class="delimiter">&quot;</span></span>.equalsIgnoreCase(r.getAction());
+    }
+    <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">Collection</span>&lt;?&gt; resolve(PrincipalContext p, ResourceContext r, <span class="predefined-type">Class</span>&lt;? <span class="directive">extends</span> UnversionedBaseModel&gt; m) {
+        <span class="keyword">return</span> java.util.List.of(ID1, ID2); <span class="comment">// typed values pass through as-is</span>
+    }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Rule:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>customerId:^[${accessibleCustomerIds}]</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Result: <code>$in</code> with <code>List&lt;ObjectId&gt;</code> on <code>customerId</code>.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_example_b_resolver_returns_string_literals_force_raw_strings">20.5.2. Example B: Resolver returns String literals (force raw strings)</h4>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@ApplicationScoped</span>
+<span class="directive">public</span> <span class="type">class</span> <span class="class">CustomerCodeResolver</span> <span class="directive">implements</span> AccessListResolver {
+    <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> key() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">accessibleCustomerCodes</span><span class="delimiter">&quot;</span></span>; }
+    <span class="annotation">@Override</span> <span class="directive">public</span> <span class="type">boolean</span> supports(PrincipalContext p, ResourceContext r, <span class="predefined-type">Class</span>&lt;? <span class="directive">extends</span> UnversionedBaseModel&gt; m) {
+        <span class="keyword">return</span> r != <span class="predefined-constant">null</span> &amp;&amp; <span class="string"><span class="delimiter">&quot;</span><span class="content">sales</span><span class="delimiter">&quot;</span></span>.equalsIgnoreCase(r.getArea()) &amp;&amp; <span class="string"><span class="delimiter">&quot;</span><span class="content">order</span><span class="delimiter">&quot;</span></span>.equalsIgnoreCase(r.getFunctionalDomain()) &amp;&amp; <span class="string"><span class="delimiter">&quot;</span><span class="content">view</span><span class="delimiter">&quot;</span></span>.equalsIgnoreCase(r.getAction());
+    }
+    <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">Collection</span>&lt;?&gt; resolve(PrincipalContext p, ResourceContext r, <span class="predefined-type">Class</span>&lt;? <span class="directive">extends</span> UnversionedBaseModel&gt; m) {
+        <span class="keyword">return</span> java.util.List.of(
+            com.e2eq.framework.model.persistent.morphia.StringLiteral.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">5f1e1a5e5e5e5e5e5e5e5e51</span><span class="delimiter">&quot;</span></span>),
+            com.e2eq.framework.model.persistent.morphia.StringLiteral.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">CUST-42</span><span class="delimiter">&quot;</span></span>)
+        );
+    }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Rule:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>customerCode:^[${accessibleCustomerCodes}]</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Result: <code>$in</code> with <code>List&lt;String&gt;</code> on <code>customerCode</code> (even for hex-like strings).</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_other_types_supported">20.5.3. Other types supported</h4>
+<div class="paragraph">
+<p>Resolvers can also return numbers, booleans, and dates/datetimes. Already-typed elements (Number, Boolean, java.util.Date, java.time.LocalDate, ObjectId) are preserved. String elements are heuristically parsed into those types unless wrapped with <code>StringLiteral</code>.</p>
+</div>
+<div class="paragraph">
+<p>Authoring tips:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Prefer returning already-typed values when you know the target field type.</p>
+</li>
+<li>
+<p>Use <code>StringLiteral</code> when a value might be misinterpreted (for example, 24‑hex or numeric-looking strings).</p>
+</li>
+<li>
+<p>For CSV strings published under a variable, the engine splits by comma and applies the same per-element coercion.
 === REST: Find, Get, List, Save, Update, Delete</p>
 </li>
 </ul>
@@ -2340,8 +2464,9 @@ customerId:^[${accessibleCustomerIds}]</code></pre>
 <div class="paragraph">
 <p>Quantum provides consistent REST resources backed by repositories. Extend BaseResource to expose CRUD quickly and consistently.</p>
 </div>
+</div>
 <div class="sect3">
-<h4 id="_base_concepts">20.4.1. Base Concepts</h4>
+<h4 id="_base_concepts">20.5.4. Base Concepts</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -2375,7 +2500,7 @@ customerId:^[${accessibleCustomerIds}]</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_example_resource">20.4.2. Example Resource</h4>
+<h4 id="_example_resource">20.5.5. Example Resource</h4>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">com.e2eq.framework.rest.resources.BaseResource</span>;
@@ -2388,7 +2513,7 @@ customerId:^[${accessibleCustomerIds}]</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_authorization_layers_in_rest_crud">20.4.3. Authorization Layers in REST CRUD</h4>
+<h4 id="_authorization_layers_in_rest_crud">20.5.6. Authorization Layers in REST CRUD</h4>
 <div class="paragraph">
 <p>Quantum combines static, identity-based checks with dynamic, domain-aware policy evaluation. In practice you will often use both:</p>
 </div>
@@ -2478,7 +2603,7 @@ customerId:^[${accessibleCustomerIds}]</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_querying">20.4.4. Querying</h4>
+<h4 id="_querying">20.5.7. Querying</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -2494,7 +2619,7 @@ customerId:^[${accessibleCustomerIds}]</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_responses_and_schemas">20.4.5. Responses and Schemas</h4>
+<h4 id="_responses_and_schemas">20.5.8. Responses and Schemas</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -2507,7 +2632,7 @@ customerId:^[${accessibleCustomerIds}]</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_error_handling">20.4.6. Error Handling</h4>
+<h4 id="_error_handling">20.5.9. Error Handling</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -2520,7 +2645,7 @@ customerId:^[${accessibleCustomerIds}]</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_query_language_antlrbased">20.4.7. Query Language (ANTLR‑based)</h4>
+<h4 id="_query_language_antlrbased">20.5.10. Query Language (ANTLR‑based)</h4>
 <div class="paragraph">
 <p>The find/list endpoints accept a filter string parsed by an ANTLR grammar (BIAPIQuery.g4). Use the filter query parameter to express predicates; combine them with logical operators and grouping. Sorting and projection are separate query parameters.</p>
 </div>
@@ -2600,7 +2725,7 @@ customerId:^[${accessibleCustomerIds}]</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_simple_filters_equals">20.5. Simple filters (equals)</h3>
+<h3 id="_simple_filters_equals">20.6. Simple filters (equals)</h3>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code># string equality
@@ -2626,7 +2751,7 @@ dataDomain.tenantId:${pTenantId}</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_advanced_filters_grouping_and_andornot">20.6. Advanced filters: grouping and AND/OR/NOT</h3>
+<h3 id="_advanced_filters_grouping_and_andornot">20.7. Advanced filters: grouping and AND/OR/NOT</h3>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code># Products that are active and (name contains widget OR gizmo), excluding discontinued
@@ -2646,7 +2771,7 @@ category:!null &amp;&amp; !!(price:&lt;##10)</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_in_lists">20.7. IN lists</h3>
+<h3 id="_in_lists">20.8. IN lists</h3>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code>status:^[&quot;OPEN&quot;,&quot;CLOSED&quot;,&quot;ON_HOLD&quot;]
@@ -2656,7 +2781,7 @@ referenceId:^[@@5f1e9b9c8a0b0c0d1e2f3a4b, @@6a7b8c9d0e1f2a3b4c5d6e7f]</code></pr
 </div>
 </div>
 <div class="sect2">
-<h3 id="_sorting">20.8. Sorting</h3>
+<h3 id="_sorting">20.9. Sorting</h3>
 <div class="paragraph">
 <p>Provide a sort query parameter (comma‑separated fields):
 - '-' prefix = descending, '+' or no prefix = ascending.</p>
@@ -2675,7 +2800,7 @@ referenceId:^[@@5f1e9b9c8a0b0c0d1e2f3a4b, @@6a7b8c9d0e1f2a3b4c5d6e7f]</code></pr
 </div>
 </div>
 <div class="sect2">
-<h3 id="_projections">20.9. Projections</h3>
+<h3 id="_projections">20.10. Projections</h3>
 <div class="paragraph">
 <p>Limit returned fields with the projection parameter (comma‑separated):
 - '+' prefix = include, '-' prefix = exclude.</p>
@@ -2691,7 +2816,7 @@ referenceId:^[@@5f1e9b9c8a0b0c0d1e2f3a4b, @@6a7b8c9d0e1f2a3b4c5d6e7f]</code></pr
 </div>
 </div>
 <div class="sect2">
-<h3 id="_endtoend_examples">20.10. End‑to‑end examples</h3>
+<h3 id="_endtoend_examples">20.11. End‑to‑end examples</h3>
 <div class="ulist">
 <ul>
 <li>
