@@ -78,6 +78,36 @@ Type coercion rules used for each element:
 - yyyy‑MM‑dd → java.time.LocalDate
 - otherwise → string
 
+===== Forcing string semantics (StringLiteral)
+
+Sometimes a resolver needs to return strings that look like other types (for example, a 24‑hex string that resembles an ObjectId). To avoid unintended coercion, resolvers can return `StringLiteral` values, which the engine unwraps to raw Strings without coercion.
+
+Example resolver:
+
+[source,java]
+----
+@ApplicationScoped
+public class CustomerCodeResolver implements AccessListResolver {
+    @Override public String key() { return "accessibleCustomerCodes"; }
+    @Override public boolean supports(PrincipalContext p, ResourceContext r, Class<? extends UnversionedBaseModel> m) { return true; }
+    @Override public java.util.Collection<?> resolve(PrincipalContext p, ResourceContext r, Class<? extends UnversionedBaseModel> m) {
+        return java.util.List.of(
+            com.e2eq.framework.model.persistent.morphia.StringLiteral.of("5f1e1a5e5e5e5e5e5e5e5e51"),
+            com.e2eq.framework.model.persistent.morphia.StringLiteral.of("CUST-42")
+        );
+    }
+}
+----
+
+Rule using the variable:
+
+[source]
+----
+customerCode:^[${accessibleCustomerCodes}]
+----
+
+Result: `$in` with `List<String>` values (no ObjectId/number/date coercion). For more discussion and examples, see xref:domain-rule-context.adoc#domain-rule-context[String literals vs. typed values in resolver variables].
+
 ==== Variables and Resolvers
 
 Variables in expressions are written as ${name}. The framework populates variables from:
