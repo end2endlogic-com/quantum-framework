@@ -118,13 +118,20 @@ public class MorphiaUtils {
 
    public static Filter convertToFilter(String queryString, VariableBundle vars, Class<? extends UnversionedBaseModel> modelClass) {
       Objects.requireNonNull(modelClass, "Model class cannot be null");
-      Optional<ParseTree> otree = validateQueryString(queryString);
+      String normalized = normalizeOperators(queryString);
+      Optional<ParseTree> otree = validateQueryString(normalized);
       ParseTree tree = otree.orElseThrow(() -> new IllegalArgumentException("syntax error in query string"));
       ParseTreeWalker walker = new ParseTreeWalker();
       StringSubstitutor sub = new StringSubstitutor(vars.strings);
       QueryToFilterListener listener = new QueryToFilterListener(vars.objects, vars.strings, sub, modelClass);
       walker.walk(listener, tree);
       return listener.getFilter();
+   }
+
+   private static String normalizeOperators(String q) {
+      if (q == null) return null;
+      // For historical data/rules that used ':=[' to denote IN, normalize to ':^['
+      return q.replace(":=[", ":^[");
    }
 
 

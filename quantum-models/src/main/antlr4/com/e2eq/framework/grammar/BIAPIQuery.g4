@@ -70,7 +70,6 @@ COMMA: ',';
 WILDCARD: '*';
 //WILDCARD: '%';
 WILDCHAR:'?';
-VAR:'$';
 
 
 
@@ -94,7 +93,11 @@ NUMBER:'##'('-'?[0-9]+'.'[0-9]+)
      setText(s);
    }
    ;
-VARIABLE:'$''{'('ownerId'|'principalId'|'resourceId'|'action'|'functionalDomain'|'pTenantId'|'pAccountId'|'rTenantId'|'rAccountId'|'realm'|'area')'}';
+VARIABLE: '$''{' IDENT '}';
+
+fragment IDENT: IDENT_START IDENT_PART*;
+fragment IDENT_START: [a-zA-Z_];
+fragment IDENT_PART: [a-zA-Z0-9_];
 OID:[0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]
        [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]
        [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]
