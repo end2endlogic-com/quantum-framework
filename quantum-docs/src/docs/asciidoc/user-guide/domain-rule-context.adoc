@@ -223,3 +223,85 @@ When executed:
 - RuleContext evaluates rules for the principal and resource and gathers resolvers.
 - The repository composes filters including the rule-provided IN clause with the access list.
 - Only documents whose customerId is in the caller’s resolved set are returned.
+
+=== String literals vs. typed values in resolver variables
+
+When an `AccessListResolver` returns a list of values that will be used in an `IN` clause (for example, `field:^[${var}]`), the engine attempts to coerce each element to an appropriate type so Mongo/Morphia filters are typed correctly:
+
+- 24‑hex string → ObjectId
+- `true`/`false` → Boolean
+- integer → Long
+- decimal → Double
+- ISO‑8601 datetime → `java.util.Date`
+- `yyyy-MM-dd` → `java.time.LocalDate`
+- otherwise → String
+
+This works well when your target field is an ObjectId, number, or date. However, string fields can contain values that look like other types (for example, a 24‑hex string that resembles an ObjectId). In those cases you must force "treat as plain string" so no coercion occurs.
+
+To do this, the framework provides a small wrapper type `StringLiteral`. If a resolver returns `StringLiteral` instances, the listener unwraps them to plain `String` values and skips coercion entirely.
+
+==== Example A: Resolver returns ObjectIds (typed)
+
+[source,java]
+----
+@ApplicationScoped
+public class CustomerAccessResolver implements AccessListResolver {
+    public static final ObjectId ID1 = new ObjectId("5f1e1a5e5e5e5e5e5e5e5e51");
+    public static final ObjectId ID2 = new ObjectId("5f1e1a5e5e5e5e5e5e5e5e52");
+
+    @Override public String key() { return "accessibleCustomerIds"; }
+    @Override public boolean supports(PrincipalContext p, ResourceContext r, Class<? extends UnversionedBaseModel> m) {
+        return r != null && "sales".equalsIgnoreCase(r.getArea()) && "order".equalsIgnoreCase(r.getFunctionalDomain()) && "view".equalsIgnoreCase(r.getAction());
+    }
+    @Override public Collection<?> resolve(PrincipalContext p, ResourceContext r, Class<? extends UnversionedBaseModel> m) {
+        return java.util.List.of(ID1, ID2); // typed values pass through as-is
+    }
+}
+----
+
+Rule:
+
+[source]
+----
+customerId:^[${accessibleCustomerIds}]
+----
+
+Result: `$in` with `List<ObjectId>` on `customerId`.
+
+==== Example B: Resolver returns String literals (force raw strings)
+
+[source,java]
+----
+@ApplicationScoped
+public class CustomerCodeResolver implements AccessListResolver {
+    @Override public String key() { return "accessibleCustomerCodes"; }
+    @Override public boolean supports(PrincipalContext p, ResourceContext r, Class<? extends UnversionedBaseModel> m) {
+        return r != null && "sales".equalsIgnoreCase(r.getArea()) && "order".equalsIgnoreCase(r.getFunctionalDomain()) && "view".equalsIgnoreCase(r.getAction());
+    }
+    @Override public Collection<?> resolve(PrincipalContext p, ResourceContext r, Class<? extends UnversionedBaseModel> m) {
+        return java.util.List.of(
+            com.e2eq.framework.model.persistent.morphia.StringLiteral.of("5f1e1a5e5e5e5e5e5e5e5e51"),
+            com.e2eq.framework.model.persistent.morphia.StringLiteral.of("CUST-42")
+        );
+    }
+}
+----
+
+Rule:
+
+[source]
+----
+customerCode:^[${accessibleCustomerCodes}]
+----
+
+Result: `$in` with `List<String>` on `customerCode` (even for hex-like strings).
+
+==== Other types supported
+
+Resolvers can also return numbers, booleans, and dates/datetimes. Already-typed elements (Number, Boolean, java.util.Date, java.time.LocalDate, ObjectId) are preserved. String elements are heuristically parsed into those types unless wrapped with `StringLiteral`.
+
+Authoring tips:
+
+- Prefer returning already-typed values when you know the target field type.
+- Use `StringLiteral` when a value might be misinterpreted (for example, 24‑hex or numeric-looking strings).
+- For CSV strings published under a variable, the engine splits by comma and applies the same per-element coercion.
