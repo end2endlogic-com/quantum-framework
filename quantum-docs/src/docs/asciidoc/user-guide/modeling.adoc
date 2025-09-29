@@ -12,6 +12,75 @@ These constructs allow:
 - Fine-grained sharing: Point specific functional areas to shared databases while others remain strictly segmented.
 - Policy composition: Apply RuleContext decisions at the level of area/domain/action.
 
+==== Prefer Annotations for Functional Mapping (recommended)
+
+Starting with this version, you should use annotations to declare a model or resource's Functional Area/Domain and the Action being performed. The legacy bmFunctionalArea() and bmFunctionalDomain() methods are still supported for backward compatibility in this release, but they will be phased out soon.
+
+- Class-level mapping: use @FunctionalMapping(area = "<area>", domain = "<domain>") on your model or resource class.
+- Method-level action: use @FunctionalAction("<ACTION>") on your JAX-RS resource methods when the action is not implied by the HTTP verb.
+
+Example: model annotated with FunctionalMapping
+
+[source,java]
+----
+import dev.morphia.annotations.Entity;
+import lombok.*;
+import lombok.experimental.SuperBuilder;
+import com.e2eq.framework.model.persistent.base.BaseModel;
+import com.e2eq.framework.annotations.FunctionalMapping;
+
+@Entity
+@Data
+@NoArgsConstructor
+@SuperBuilder
+@EqualsAndHashCode(callSuper = true)
+@FunctionalMapping(area = "catalog", domain = "product")
+public class Product extends BaseModel {
+    private String sku;
+    private String name;
+    // No need to override bmFunctionalArea/bmFunctionalDomain when using @FunctionalMapping
+}
+----
+
+Example: resource method annotated with FunctionalAction
+
+[source,java]
+----
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.MediaType;
+import com.e2eq.framework.annotations.FunctionalAction;
+
+@Path("/products")
+@Produces(MediaType.APPLICATION_JSON)
+@Consumes(MediaType.APPLICATION_JSON)
+public class ProductResource {
+
+    // Action will default from HTTP verb (POST -> CREATE), but you can be explicit:
+    @POST
+    @FunctionalAction("CREATE")
+    public Product create(Product payload) { /* ... */ return payload; }
+
+    // GET will infer VIEW automatically when building the ResourceContext
+    @GET
+    @Path("/{id}")
+    public Product get(@PathParam("id") String id) { /* ... */ return new Product(); }
+}
+----
+
+How the framework uses these annotations
+
+- SecurityFilter: If the matched resource class has @FunctionalMapping, it uses area/domain from the annotation. If the method has @FunctionalAction, it uses that value; otherwise, it infers the action from the HTTP method (GET=VIEW, POST=CREATE, PUT/PATCH=UPDATE, DELETE=DELETE). If annotations are absent, it falls back to the existing path- and convention-based logic.
+- MorphiaRepo.fillUIActions: If the model class has @FunctionalMapping, its area/domain are used to resolve allowed UI actions; otherwise, it falls back to the legacy bmFunctionalArea()/bmFunctionalDomain() methods.
+- PermissionResource: When listing functional domains, it prefers @FunctionalMapping on entity classes and falls back to bmFunctionalArea()/bmFunctionalDomain() when missing.
+
+Migration notes
+
+- Preferred: add @FunctionalMapping to each model class (or resource class) and remove the bmFunctionalArea/bmFunctionalDomain overrides.
+- Transitional: you can keep the legacy methods; they will be used only if the annotation is not present.
+- Future: bmFunctionalArea and bmFunctionalDomain will be removed in a future release; plan to migrate now.
+
+See also: <<security-annotations,Security Annotations: FunctionalMapping and FunctionalAction>>
+
 ==== DataDomain on Models
 
 All persisted models carry DataDomain (tenantId, orgRefName, ownerId, etc.) for rule-based filtering and cross-tenant sharing.
