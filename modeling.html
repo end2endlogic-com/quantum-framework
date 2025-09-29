@@ -530,12 +530,13 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <ul class="sectlevel2">
 <li><a href="#modeling">1. Modeling with Functional Areas, Domains, and Actions</a>
 <ul class="sectlevel3">
-<li><a href="#_datadomain_on_models">1.1. DataDomain on Models</a></li>
-<li><a href="#_persistence_repositories">1.2. Persistence Repositories</a></li>
-<li><a href="#_exposing_rest_resources">1.3. Exposing REST Resources</a></li>
-<li><a href="#_lombok_in_models">1.4. Lombok in Models</a></li>
-<li><a href="#_validation_with_jakarta_bean_validation">1.5. Validation with Jakarta Bean Validation</a></li>
-<li><a href="#_jackson_vs_jakarta_validation_annotations">1.6. Jackson vs Jakarta Validation Annotations</a></li>
+<li><a href="#_prefer_annotations_for_functional_mapping_recommended">1.1. Prefer Annotations for Functional Mapping (recommended)</a></li>
+<li><a href="#_datadomain_on_models">1.2. DataDomain on Models</a></li>
+<li><a href="#_persistence_repositories">1.3. Persistence Repositories</a></li>
+<li><a href="#_exposing_rest_resources">1.4. Exposing REST Resources</a></li>
+<li><a href="#_lombok_in_models">1.5. Lombok in Models</a></li>
+<li><a href="#_validation_with_jakarta_bean_validation">1.6. Validation with Jakarta Bean Validation</a></li>
+<li><a href="#_jackson_vs_jakarta_validation_annotations">1.7. Jackson vs Jakarta Validation Annotations</a></li>
 </ul>
 </li>
 <li><a href="#_jackson_objectmapper_in_quarkus_and_in_quantum">1. Jackson ObjectMapper in Quarkus and in Quantum</a></li>
@@ -581,7 +582,108 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </ul>
 </div>
 <div class="sect3">
-<h4 id="_datadomain_on_models">1.1. DataDomain on Models</h4>
+<h4 id="_prefer_annotations_for_functional_mapping_recommended">1.1. Prefer Annotations for Functional Mapping (recommended)</h4>
+<div class="paragraph">
+<p>Starting with this version, you should use annotations to declare a model or resource&#8217;s Functional Area/Domain and the Action being performed. The legacy bmFunctionalArea() and bmFunctionalDomain() methods are still supported for backward compatibility in this release, but they will be phased out soon.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Class-level mapping: use @FunctionalMapping(area = "&lt;area&gt;", domain = "&lt;domain&gt;") on your model or resource class.</p>
+</li>
+<li>
+<p>Method-level action: use @FunctionalAction("&lt;ACTION&gt;") on your JAX-RS resource methods when the action is not implied by the HTTP verb.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Example: model annotated with FunctionalMapping</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">dev.morphia.annotations.Entity</span>;
+<span class="keyword">import</span> <span class="include">lombok</span>.*;
+<span class="keyword">import</span> <span class="include">lombok.experimental.SuperBuilder</span>;
+<span class="keyword">import</span> <span class="include">com.e2eq.framework.model.persistent.base.BaseModel</span>;
+<span class="keyword">import</span> <span class="include">com.e2eq.framework.annotations.FunctionalMapping</span>;
+
+<span class="annotation">@Entity</span>
+<span class="annotation">@Data</span>
+<span class="annotation">@NoArgsConstructor</span>
+<span class="annotation">@SuperBuilder</span>
+<span class="annotation">@EqualsAndHashCode</span>(callSuper = <span class="predefined-constant">true</span>)
+<span class="annotation">@FunctionalMapping</span>(area = <span class="string"><span class="delimiter">&quot;</span><span class="content">catalog</span><span class="delimiter">&quot;</span></span>, domain = <span class="string"><span class="delimiter">&quot;</span><span class="content">product</span><span class="delimiter">&quot;</span></span>)
+<span class="directive">public</span> <span class="type">class</span> <span class="class">Product</span> <span class="directive">extends</span> BaseModel {
+    <span class="directive">private</span> <span class="predefined-type">String</span> sku;
+    <span class="directive">private</span> <span class="predefined-type">String</span> name;
+    <span class="comment">// No need to override bmFunctionalArea/bmFunctionalDomain when using @FunctionalMapping</span>
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Example: resource method annotated with FunctionalAction</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">jakarta.ws.rs</span>.*;
+<span class="keyword">import</span> <span class="include">jakarta.ws.rs.core.MediaType</span>;
+<span class="keyword">import</span> <span class="include">com.e2eq.framework.annotations.FunctionalAction</span>;
+
+<span class="annotation">@Path</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">/products</span><span class="delimiter">&quot;</span></span>)
+<span class="annotation">@Produces</span>(MediaType.APPLICATION_JSON)
+<span class="annotation">@Consumes</span>(MediaType.APPLICATION_JSON)
+<span class="directive">public</span> <span class="type">class</span> <span class="class">ProductResource</span> {
+
+    <span class="comment">// Action will default from HTTP verb (POST -&gt; CREATE), but you can be explicit:</span>
+    <span class="annotation">@POST</span>
+    <span class="annotation">@FunctionalAction</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">CREATE</span><span class="delimiter">&quot;</span></span>)
+    <span class="directive">public</span> Product create(Product payload) { <span class="comment">/* ... */</span> <span class="keyword">return</span> payload; }
+
+    <span class="comment">// GET will infer VIEW automatically when building the ResourceContext</span>
+    <span class="annotation">@GET</span>
+    <span class="annotation">@Path</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">/{id}</span><span class="delimiter">&quot;</span></span>)
+    <span class="directive">public</span> Product get(<span class="annotation">@PathParam</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">id</span><span class="delimiter">&quot;</span></span>) <span class="predefined-type">String</span> id) { <span class="comment">/* ... */</span> <span class="keyword">return</span> <span class="keyword">new</span> Product(); }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>How the framework uses these annotations</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>SecurityFilter: If the matched resource class has @FunctionalMapping, it uses area/domain from the annotation. If the method has @FunctionalAction, it uses that value; otherwise, it infers the action from the HTTP method (GET=VIEW, POST=CREATE, PUT/PATCH=UPDATE, DELETE=DELETE). If annotations are absent, it falls back to the existing path- and convention-based logic.</p>
+</li>
+<li>
+<p>MorphiaRepo.fillUIActions: If the model class has @FunctionalMapping, its area/domain are used to resolve allowed UI actions; otherwise, it falls back to the legacy bmFunctionalArea()/bmFunctionalDomain() methods.</p>
+</li>
+<li>
+<p>PermissionResource: When listing functional domains, it prefers @FunctionalMapping on entity classes and falls back to bmFunctionalArea()/bmFunctionalDomain() when missing.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Migration notes</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Preferred: add @FunctionalMapping to each model class (or resource class) and remove the bmFunctionalArea/bmFunctionalDomain overrides.</p>
+</li>
+<li>
+<p>Transitional: you can keep the legacy methods; they will be used only if the annotation is not present.</p>
+</li>
+<li>
+<p>Future: bmFunctionalArea and bmFunctionalDomain will be removed in a future release; plan to migrate now.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>See also: <a href="#security-annotations">Security Annotations: FunctionalMapping and FunctionalAction</a></p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_datadomain_on_models">1.2. DataDomain on Models</h4>
 <div class="paragraph">
 <p>All persisted models carry DataDomain (tenantId, orgRefName, ownerId, etc.) for rule-based filtering and cross-tenant sharing.</p>
 </div>
@@ -616,7 +718,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect3">
-<h4 id="_persistence_repositories">1.2. Persistence Repositories</h4>
+<h4 id="_persistence_repositories">1.3. Persistence Repositories</h4>
 <div class="paragraph">
 <p>Define a repository to persist and query your model. With Morphia:</p>
 </div>
@@ -631,7 +733,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect3">
-<h4 id="_exposing_rest_resources">1.3. Exposing REST Resources</h4>
+<h4 id="_exposing_rest_resources">1.4. Exposing REST Resources</h4>
 <div class="paragraph">
 <p>Expose consistent CRUD endpoints by extending BaseResource.</p>
 </div>
@@ -651,7 +753,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect3">
-<h4 id="_lombok_in_models">1.4. Lombok in Models</h4>
+<h4 id="_lombok_in_models">1.5. Lombok in Models</h4>
 <div class="paragraph">
 <p>Lombok reduces boilerplate in Quantum models and supports inheritance-friendly builders.</p>
 </div>
@@ -696,7 +798,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect3">
-<h4 id="_validation_with_jakarta_bean_validation">1.5. Validation with Jakarta Bean Validation</h4>
+<h4 id="_validation_with_jakarta_bean_validation">1.6. Validation with Jakarta Bean Validation</h4>
 <div class="paragraph">
 <p>Quantum uses Jakarta Bean Validation to enforce invariants on models at persist time (and optionally at REST boundaries).</p>
 </div>
@@ -740,7 +842,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect3">
-<h4 id="_jackson_vs_jakarta_validation_annotations">1.6. Jackson vs Jakarta Validation Annotations</h4>
+<h4 id="_jackson_vs_jakarta_validation_annotations">1.7. Jackson vs Jakarta Validation Annotations</h4>
 <div class="paragraph">
 <p>These two families of annotations serve different purposes and complement each other:</p>
 </div>
@@ -1451,7 +1553,7 @@ CompletionTask t = completionTaskRepo.findOneByStatus(CompletionTask.Status.PEND
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-09-22 10:25:37 -0400
+Last updated 2025-09-29 11:20:38 -0400
 </div>
 </div>
 </body>
