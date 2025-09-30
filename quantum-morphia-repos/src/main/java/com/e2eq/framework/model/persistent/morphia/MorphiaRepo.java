@@ -1869,5 +1869,16 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         return collection;
     }
 
+   public Filter securityAnd(Class<? extends UnversionedBaseModel> modelClass, Filter... others) {
+      List<Filter> base = new ArrayList<>();
+      // compute permission filters for this modelClass
+      Filter[] sec = getFilterArray(base, modelClass);
+      // combine with any additional functional filters
+      Filter[] all = new Filter[sec.length + others.length];
+      System.arraycopy(sec, 0, all, 0, sec.length);
+      System.arraycopy(others, 0, all, sec.length, others.length);
+      return Filters.and(all);
+   }
+
 
 }
