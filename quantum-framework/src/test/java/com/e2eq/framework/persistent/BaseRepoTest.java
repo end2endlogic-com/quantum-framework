@@ -14,6 +14,7 @@ import jakarta.annotation.PostConstruct;
 import jakarta.inject.Inject;
 
 @QuarkusTest
+@io.quarkus.test.common.QuarkusTestResource(com.e2eq.framework.test.MongoDbInitResource.class)
 public class BaseRepoTest {
 
     @Inject

@@ -381,8 +381,8 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
     private void validateRealmAccess(CredentialUserIdPassword creds, String realm) {
         if (realm != null) {
-            List<Realm> realmsAvailable = realmRepo.getAllList();
-            List<String> realmRefNamesAvailable = realmsAvailable.stream().map(Realm::getRefName).toList();
+            List<Realm> realmsAvailable = realmRepo.getAllListIgnoreRules(envConfigUtils.getSystemRealm());
+            List<String> realmRefNamesAvailable = new java.util.ArrayList<>(realmsAvailable.stream().map(Realm::getRefName).toList());
 
             if (!realmRefNamesAvailable.contains(realm)) {
                 throw new IllegalArgumentException(String.format(
