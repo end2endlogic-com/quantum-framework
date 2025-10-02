@@ -5,7 +5,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="generator" content="Asciidoctor 2.0.20">
-<title>DomainContext, RuleContext, and DataDomain</title>
+<title>Overview: Building SaaS with Quantum</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,300italic,400,400italic,600,600italic%7CNoto+Serif:400,400italic,700,700italic%7CDroid+Sans+Mono:400,700">
 <style>
 /*! Asciidoctor default stylesheet | MIT License | https://asciidoctor.org */
@@ -433,677 +433,106 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 @media amzn-kf8{#header,#content,#footnotes,#footer{padding:0}}
 </style>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
-<style>
-/*! Stylesheet for CodeRay to loosely match GitHub themes | MIT License */
-pre.CodeRay{background:#f7f7f8}
-.CodeRay .line-numbers{border-right:1px solid;opacity:.35;padding:0 .5em 0 0;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none}
-.CodeRay span.line-numbers{display:inline-block;margin-right:.75em}
-.CodeRay .line-numbers strong{color:#000}
-table.CodeRay{border-collapse:separate;border:0;margin-bottom:0;background:none}
-table.CodeRay td{vertical-align:top;line-height:inherit}
-table.CodeRay td.line-numbers{text-align:right}
-table.CodeRay td.code{padding:0 0 0 .75em}
-.CodeRay .debug{color:#fff!important;background:navy!important}
-.CodeRay .annotation{color:#007}
-.CodeRay .attribute-name{color:navy}
-.CodeRay .attribute-value{color:#700}
-.CodeRay .binary{color:#509}
-.CodeRay .comment{color:#998;font-style:italic}
-.CodeRay .char{color:#04d}
-.CodeRay .char .content{color:#04d}
-.CodeRay .char .delimiter{color:#039}
-.CodeRay .class{color:#458;font-weight:bold}
-.CodeRay .complex{color:#a08}
-.CodeRay .constant,.CodeRay .predefined-constant{color:teal}
-.CodeRay .color{color:#099}
-.CodeRay .class-variable{color:#369}
-.CodeRay .decorator{color:#b0b}
-.CodeRay .definition{color:#099}
-.CodeRay .delimiter{color:#000}
-.CodeRay .doc{color:#970}
-.CodeRay .doctype{color:#34b}
-.CodeRay .doc-string{color:#d42}
-.CodeRay .escape{color:#666}
-.CodeRay .entity{color:#800}
-.CodeRay .error{color:#808}
-.CodeRay .exception{color:inherit}
-.CodeRay .filename{color:#099}
-.CodeRay .function{color:#900;font-weight:bold}
-.CodeRay .global-variable{color:teal}
-.CodeRay .hex{color:#058}
-.CodeRay .integer,.CodeRay .float{color:#099}
-.CodeRay .include{color:#555}
-.CodeRay .inline{color:#000}
-.CodeRay .inline .inline{background:#ccc}
-.CodeRay .inline .inline .inline{background:#bbb}
-.CodeRay .inline .inline-delimiter{color:#d14}
-.CodeRay .inline-delimiter{color:#d14}
-.CodeRay .important{color:#555;font-weight:bold}
-.CodeRay .interpreted{color:#b2b}
-.CodeRay .instance-variable{color:teal}
-.CodeRay .label{color:#970}
-.CodeRay .local-variable{color:#963}
-.CodeRay .octal{color:#40e}
-.CodeRay .predefined{color:#369}
-.CodeRay .preprocessor{color:#579}
-.CodeRay .pseudo-class{color:#555}
-.CodeRay .directive{font-weight:bold}
-.CodeRay .type{font-weight:bold}
-.CodeRay .predefined-type{color:inherit}
-.CodeRay .reserved,.CodeRay .keyword{color:#000;font-weight:bold}
-.CodeRay .key{color:#808}
-.CodeRay .key .delimiter{color:#606}
-.CodeRay .key .char{color:#80f}
-.CodeRay .value{color:#088}
-.CodeRay .regexp .delimiter{color:#808}
-.CodeRay .regexp .content{color:#808}
-.CodeRay .regexp .modifier{color:#808}
-.CodeRay .regexp .char{color:#d14}
-.CodeRay .regexp .function{color:#404;font-weight:bold}
-.CodeRay .string{color:#d20}
-.CodeRay .string .string .string{background:#ffd0d0}
-.CodeRay .string .content{color:#d14}
-.CodeRay .string .char{color:#d14}
-.CodeRay .string .delimiter{color:#d14}
-.CodeRay .shell{color:#d14}
-.CodeRay .shell .delimiter{color:#d14}
-.CodeRay .symbol{color:#990073}
-.CodeRay .symbol .content{color:#a60}
-.CodeRay .symbol .delimiter{color:#630}
-.CodeRay .tag{color:teal}
-.CodeRay .tag-special{color:#d70}
-.CodeRay .variable{color:#036}
-.CodeRay .insert{background:#afa}
-.CodeRay .delete{background:#faa}
-.CodeRay .change{color:#aaf;background:#007}
-.CodeRay .head{color:#f8f;background:#505}
-.CodeRay .insert .insert{color:#080}
-.CodeRay .delete .delete{color:#800}
-.CodeRay .change .change{color:#66f}
-.CodeRay .head .head{color:#f4f}
-</style>
 </head>
-<body id="domain-rule-context" class="book toc2 toc-left">
+<body class="book toc2 toc-left">
 <div id="header">
-<h1>DomainContext, RuleContext, and DataDomain</h1>
-<div class="details">
-<span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-10-02T03:40:09Z</span>
-</div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
-<ul class="sectlevel1">
-<li><a href="#_datadomain">1. DataDomain</a></li>
-<li><a href="#_domaincontext">2. DomainContext</a></li>
-<li><a href="#_rulecontext">3. RuleContext</a></li>
-<li><a href="#_end_to_end_flow">4. End-to-End Flow</a></li>
-<li><a href="#_resolvers_and_variables_in_rule_filters">5. Resolvers and Variables in Rule Filters</a></li>
-<li><a href="#domain-rule-context">DomainContext, RuleContext, and DataDomain</a>
-<ul class="sectlevel1">
-<li><a href="#_datadomain_2">6. DataDomain</a></li>
-<li><a href="#_domaincontext_2">7. DomainContext</a></li>
-<li><a href="#_rulecontext_2">8. RuleContext</a></li>
-<li><a href="#_end_to_end_flow_2">9. End-to-End Flow</a></li>
-<li><a href="#_resolvers_and_variables_in_rule_filters_2">10. Resolvers and Variables in Rule Filters</a></li>
-<li><a href="#_concrete_example_building_and_using_a_resolver">11. Concrete example: building and using a resolver</a>
 <ul class="sectlevel2">
-<li><a href="#_1_implement_the_spi">11.1. 1) Implement the SPI</a></li>
-<li><a href="#_2_how_rulecontext_uses_resolvers">11.2. 2) How RuleContext uses resolvers</a></li>
-<li><a href="#_3_author_a_rule_that_consumes_the_variable">11.3. 3) Author a rule that consumes the variable</a></li>
-<li><a href="#_4_end_to_end_behavior">11.4. 4) End-to-end behavior</a></li>
-<li><a href="#_string_literals_vs_typed_values_in_resolver_variables">11.5. String literals vs. typed values in resolver variables</a>
+<li><a href="#overview">1. Overview: Building SaaS with Quantum</a>
 <ul class="sectlevel3">
-<li><a href="#_example_a_resolver_returns_objectids_typed">11.5.1. Example A: Resolver returns ObjectIds (typed)</a></li>
-<li><a href="#_example_b_resolver_returns_string_literals_force_raw_strings">11.5.2. Example B: Resolver returns String literals (force raw strings)</a></li>
-<li><a href="#_other_types_supported">11.5.3. Other types supported</a></li>
-</ul>
-</li>
-</ul>
-</li>
+<li><a href="#_what_quantum_solves">1.1. What Quantum Solves</a></li>
+<li><a href="#_core_building_blocks">1.2. Core Building Blocks</a></li>
+<li><a href="#_when_to_use_quantum">1.3. When to Use Quantum</a></li>
+<li><a href="#_next_steps">1.4. Next Steps</a></li>
 </ul>
 </li>
 </ul>
 </div>
 </div>
 <div id="content">
-<div id="preamble">
-<div class="sectionbody">
-<div class="paragraph">
-<p>Quantum enforces multi-tenant isolation and sharing through contextual data carried on models and evaluated at runtime.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_datadomain">1. DataDomain</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Every persisted model includes a DataDomain that describes ownership and scope, commonly including fields such as:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>tenantId: Identifies the tenant</p>
-</li>
-<li>
-<p>orgRefName: Organization unit reference within a tenant</p>
-</li>
-<li>
-<p>ownerId: Owning user or system entity</p>
-</li>
-<li>
-<p>realm: Optional runtime override for partitioning</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>These fields enable filtering, authorization, and controlled sharing of data between tenants or org units.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_domaincontext">2. DomainContext</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>DomainContext represents the current execution context for a request or operation, typically capturing:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>current tenant/org/user identity</p>
-</li>
-<li>
-<p>functional area / functional domain</p>
-</li>
-<li>
-<p>the action being executed (e.g., CREATE, UPDATE, VIEW, DELETE, ARCHIVE)</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>It feeds downstream components (repositories, resources) to consistently apply filtering and policy decisions.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_rulecontext">3. RuleContext</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>RuleContext encapsulates policy evaluation. It can:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Enforce whether an action is allowed for a given model and DataDomain</p>
-</li>
-<li>
-<p>Produce additional filters and projections used by repositories</p>
-</li>
-<li>
-<p>Grant cross-tenant read access for specific functional areas (e.g., shared catalogs) while keeping others strictly isolated</p>
-</li>
-</ul>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_end_to_end_flow">4. End-to-End Flow</h2>
-<div class="sectionbody">
-<div class="olist arabic">
-<ol class="arabic">
-<li>
-<p>A REST request enters a BaseResource-derived endpoint.</p>
-</li>
-<li>
-<p>The resource builds a DomainContext from the security principal and request parameters.</p>
-</li>
-<li>
-<p>RuleContext evaluates permissions and returns effective filters.</p>
-</li>
-<li>
-<p>Repository applies filters (DataDomain-aware) to find/get/list/update/delete.</p>
-</li>
-<li>
-<p>The model’s UIActionList can be computed to reflect what the caller can do next.</p>
-</li>
-</ol>
-</div>
-<div class="paragraph">
-<p>This pattern ensures consistent enforcement across all CRUD operations, independent of the specific model or repository.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_resolvers_and_variables_in_rule_filters">5. Resolvers and Variables in Rule Filters</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>RuleContext can attach FILTERs (not only ALLOW/DENY) to repository queries using rule fields and filter strings. Variables inside those filter strings are populated from:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>PrincipalContext and ResourceContext standard variables: principalId, pAccountId, pTenantId, ownerId, orgRefName, resourceId, action, functionalDomain, area</p>
-</li>
-<li>
-<p>AccessListResolver SPI implementations: per-request computed Collections (e.g., customer IDs the caller can access)</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Implementation highlights:
-- AccessListResolver has methods key(), supports(&#8230;&#8203;), resolve(&#8230;&#8203;). Resolvers are injected and invoked for each request; results are published as variables by key.
-- MorphiaUtils.VariableBundle carries both string variables and object variables (including collections) to the query listener.
-- The QueryToFilterListener supports IN clauses using a single ${var} inside brackets, expanding Collections/arrays and coercing types (ObjectId, numbers, booleans, dates).</p>
-</div>
-<div class="paragraph">
-<p>Authoring examples:
-- Constrain by principal domain:</p>
-</div>
-<div class="paragraph">
-<p>+</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code>orgRefName:${orgRefName} &amp;&amp; dataDomain.tenantId:${pTenantId}</code></pre>
-</div>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Access list resolver for customer visibility:</p>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code>customerId:^[${accessibleCustomerIds}]</code></pre>
-</div>
-</div>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>For the complete query language reference, see <a href="query-language.html#query-language">Query Language</a>.</p>
-</div>
-</div>
-</div>
-<h1 id="domain-rule-context" class="sect0">DomainContext, RuleContext, and DataDomain</h1>
-<div class="openblock partintro">
-<div class="content">
-<div class="paragraph">
-<p>Quantum enforces multi-tenant isolation and sharing through contextual data carried on models and evaluated at runtime.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_datadomain_2">6. DataDomain</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Every persisted model includes a DataDomain that describes ownership and scope, commonly including fields such as:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>tenantId: Identifies the tenant</p>
-</li>
-<li>
-<p>orgRefName: Organization unit reference within a tenant</p>
-</li>
-<li>
-<p>ownerId: Owning user or system entity</p>
-</li>
-<li>
-<p>realm: Optional runtime override for partitioning</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>These fields enable filtering, authorization, and controlled sharing of data between tenants or org units.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_domaincontext_2">7. DomainContext</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>DomainContext represents the current execution context for a request or operation, typically capturing:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>current tenant/org/user identity</p>
-</li>
-<li>
-<p>functional area / functional domain</p>
-</li>
-<li>
-<p>the action being executed (e.g., CREATE, UPDATE, VIEW, DELETE, ARCHIVE)</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>It feeds downstream components (repositories, resources) to consistently apply filtering and policy decisions.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_rulecontext_2">8. RuleContext</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>RuleContext encapsulates policy evaluation. It can:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Enforce whether an action is allowed for a given model and DataDomain</p>
-</li>
-<li>
-<p>Produce additional filters and projections used by repositories</p>
-</li>
-<li>
-<p>Grant cross-tenant read access for specific functional areas (e.g., shared catalogs) while keeping others strictly isolated</p>
-</li>
-</ul>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_end_to_end_flow_2">9. End-to-End Flow</h2>
-<div class="sectionbody">
-<div class="olist arabic">
-<ol class="arabic">
-<li>
-<p>A REST request enters a BaseResource-derived endpoint.</p>
-</li>
-<li>
-<p>The resource builds a DomainContext from the security principal and request parameters.</p>
-</li>
-<li>
-<p>RuleContext evaluates permissions and returns effective filters.</p>
-</li>
-<li>
-<p>Repository applies filters (DataDomain-aware) to find/get/list/update/delete.</p>
-</li>
-<li>
-<p>The model’s UIActionList can be computed to reflect what the caller can do next.</p>
-</li>
-</ol>
-</div>
-<div class="paragraph">
-<p>This pattern ensures consistent enforcement across all CRUD operations, independent of the specific model or repository.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_resolvers_and_variables_in_rule_filters_2">10. Resolvers and Variables in Rule Filters</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>RuleContext can attach FILTERs (not only ALLOW/DENY) to repository queries using rule fields and filter strings. Variables inside those filter strings are populated from:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>PrincipalContext and ResourceContext standard variables: principalId, pAccountId, pTenantId, ownerId, orgRefName, resourceId, action, functionalDomain, area</p>
-</li>
-<li>
-<p>AccessListResolver SPI implementations: per-request computed Collections (e.g., customer IDs the caller can access)</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Implementation highlights:
-- AccessListResolver has methods key(), supports(&#8230;&#8203;), resolve(&#8230;&#8203;). Resolvers are injected and invoked for each request; results are published as variables by key.
-- MorphiaUtils.VariableBundle carries both string variables and object variables (including collections) to the query listener.
-- The QueryToFilterListener supports IN clauses using a single ${var} inside brackets, expanding Collections/arrays and coercing types (ObjectId, numbers, booleans, dates).</p>
-</div>
-<div class="paragraph">
-<p>Authoring examples:
-- Constrain by principal domain:</p>
-</div>
-<div class="paragraph">
-<p>+</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code>orgRefName:${orgRefName} &amp;&amp; dataDomain.tenantId:${pTenantId}</code></pre>
-</div>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Access list resolver for customer visibility:</p>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code>customerId:^[${accessibleCustomerIds}]</code></pre>
-</div>
-</div>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>For the complete query language reference, see <a href="query-language.html#query-language">Query Language</a>.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_concrete_example_building_and_using_a_resolver">11. Concrete example: building and using a resolver</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>This section shows how to implement a resolver that restricts access to orders by the set of customerIds the current user is allowed to see.</p>
-</div>
 <div class="sect2">
-<h3 id="_1_implement_the_spi">11.1. 1) Implement the SPI</h3>
+<h3 id="overview">1. Overview: Building SaaS with Quantum</h3>
 <div class="paragraph">
-<p>Create a CDI bean that implements AccessListResolver. It decides when it applies and returns a Collection of values. The collection can be ObjectId, String, numbers, etc.</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">com.e2eq.framework.securityrules.AccessListResolver</span>;
-<span class="keyword">import</span> <span class="include">com.e2eq.framework.model.persistent.base.UnversionedBaseModel</span>;
-<span class="keyword">import</span> <span class="include">com.e2eq.framework.model.securityrules.PrincipalContext</span>;
-<span class="keyword">import</span> <span class="include">com.e2eq.framework.model.securityrules.ResourceContext</span>;
-<span class="keyword">import</span> <span class="include">jakarta.enterprise.context.ApplicationScoped</span>;
-<span class="keyword">import</span> <span class="include">jakarta.inject.Inject</span>;
-<span class="keyword">import</span> <span class="include">org.bson.types.ObjectId</span>;
-<span class="keyword">import</span> <span class="include">java.util</span>.*;
-
-<span class="annotation">@ApplicationScoped</span>
-<span class="directive">public</span> <span class="type">class</span> <span class="class">CustomerAccessResolver</span> <span class="directive">implements</span> AccessListResolver {
-
-    <span class="annotation">@Inject</span> CustomerAccessService service; <span class="comment">// your app-specific service</span>
-
-    <span class="annotation">@Override</span>
-    <span class="directive">public</span> <span class="predefined-type">String</span> key() {
-        <span class="comment">// This becomes the variable name available to rules: ${accessibleCustomerIds}</span>
-        <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">accessibleCustomerIds</span><span class="delimiter">&quot;</span></span>;
-    }
-
-    <span class="annotation">@Override</span>
-    <span class="directive">public</span> <span class="type">boolean</span> supports(PrincipalContext pctx, ResourceContext rctx,
-                            <span class="predefined-type">Class</span>&lt;? <span class="directive">extends</span> UnversionedBaseModel&gt; modelClass) {
-        <span class="comment">// Optionally narrow by area/domain/action/model</span>
-        <span class="keyword">return</span> rctx != <span class="predefined-constant">null</span> &amp;&amp; <span class="string"><span class="delimiter">&quot;</span><span class="content">sales</span><span class="delimiter">&quot;</span></span>.equalsIgnoreCase(rctx.getArea())
-               &amp;&amp; <span class="string"><span class="delimiter">&quot;</span><span class="content">order</span><span class="delimiter">&quot;</span></span>.equalsIgnoreCase(rctx.getFunctionalDomain());
-    }
-
-    <span class="annotation">@Override</span>
-    <span class="directive">public</span> <span class="predefined-type">Collection</span>&lt;?&gt; resolve(PrincipalContext pctx, ResourceContext rctx,
-                                 <span class="predefined-type">Class</span>&lt;? <span class="directive">extends</span> UnversionedBaseModel&gt; modelClass) {
-        <span class="comment">// Return the set of customer ids for this user; could be ObjectId or String.</span>
-        <span class="comment">// Example returns strings; the query listener will coerce 24-hex to ObjectId.</span>
-        <span class="keyword">return</span> service.findCustomerIdsForUser(pctx.getUserId());
-    }
-}</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>Notes:
-- You can return List&lt;ObjectId&gt; directly if you prefer; no coercion needed then.
-- The resolver runs per request. Cache internally if the computation is expensive.</p>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_2_how_rulecontext_uses_resolvers">11.2. 2) How RuleContext uses resolvers</h3>
-<div class="paragraph">
-<p>At query time, RuleContext discovers all AccessListResolver beans and calls supports(&#8230;&#8203;). For those that apply, it invokes resolve(&#8230;&#8203;) and publishes the result into the variable bundle under the provided key(). Variables are available to the BIAPI query via ${&#8230;&#8203;}.</p>
-</div>
-<div class="paragraph">
-<p>Internally this uses MorphiaUtils.VariableBundle and QueryToFilterListener to carry both strings and typed objects/collections.</p>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_3_author_a_rule_that_consumes_the_variable">11.3. 3) Author a rule that consumes the variable</h3>
-<div class="paragraph">
-<p>Given the resolver above, a rule can attach an IN filter to constrain queries:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code>// andFilterString (example)
-customerId:^[${accessibleCustomerIds}]</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>When executed:
-- If accessibleCustomerIds is a Collection/array, each element is type-coerced (ObjectId, number, date, boolean, or string) and used in $in.
-- If accessibleCustomerIds is a comma-separated string, it is split and each token is coerced similarly.
-- An empty collection results in an empty $in (matches none), effectively denying access via filtering, not via ALLOW/DENY.</p>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_4_end_to_end_behavior">11.4. 4) End-to-end behavior</h3>
-<div class="ulist">
-<ul>
-<li>
-<p>SecurityFilter sets ResourceContext (area/domain/action) per request.</p>
-</li>
-<li>
-<p>RuleContext evaluates rules for the principal and resource and gathers resolvers.</p>
-</li>
-<li>
-<p>The repository composes filters including the rule-provided IN clause with the access list.</p>
-</li>
-<li>
-<p>Only documents whose customerId is in the caller’s resolved set are returned.</p>
-</li>
-</ul>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_string_literals_vs_typed_values_in_resolver_variables">11.5. String literals vs. typed values in resolver variables</h3>
-<div class="paragraph">
-<p>When an <code>AccessListResolver</code> returns a list of values that will be used in an <code>IN</code> clause (for example, <code>field:^[${var}]</code>), the engine attempts to coerce each element to an appropriate type so Mongo/Morphia filters are typed correctly:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>24‑hex string → ObjectId</p>
-</li>
-<li>
-<p><code>true</code>/<code>false</code> → Boolean</p>
-</li>
-<li>
-<p>integer → Long</p>
-</li>
-<li>
-<p>decimal → Double</p>
-</li>
-<li>
-<p>ISO‑8601 datetime → <code>java.util.Date</code></p>
-</li>
-<li>
-<p><code>yyyy-MM-dd</code> → <code>java.time.LocalDate</code></p>
-</li>
-<li>
-<p>otherwise → String</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>This works well when your target field is an ObjectId, number, or date. However, string fields can contain values that look like other types (for example, a 24‑hex string that resembles an ObjectId). In those cases you must force "treat as plain string" so no coercion occurs.</p>
-</div>
-<div class="paragraph">
-<p>To do this, the framework provides a small wrapper type <code>StringLiteral</code>. If a resolver returns <code>StringLiteral</code> instances, the listener unwraps them to plain <code>String</code> values and skips coercion entirely.</p>
+<p>Quantum accelerates building multi-tenant SaaS platforms by providing secure-by-default foundations that scale from prototype to production.</p>
 </div>
 <div class="sect3">
-<h4 id="_example_a_resolver_returns_objectids_typed">11.5.1. Example A: Resolver returns ObjectIds (typed)</h4>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@ApplicationScoped</span>
-<span class="directive">public</span> <span class="type">class</span> <span class="class">CustomerAccessResolver</span> <span class="directive">implements</span> AccessListResolver {
-    <span class="directive">public</span> <span class="directive">static</span> <span class="directive">final</span> ObjectId ID1 = <span class="keyword">new</span> ObjectId(<span class="string"><span class="delimiter">&quot;</span><span class="content">5f1e1a5e5e5e5e5e5e5e5e51</span><span class="delimiter">&quot;</span></span>);
-    <span class="directive">public</span> <span class="directive">static</span> <span class="directive">final</span> ObjectId ID2 = <span class="keyword">new</span> ObjectId(<span class="string"><span class="delimiter">&quot;</span><span class="content">5f1e1a5e5e5e5e5e5e5e5e52</span><span class="delimiter">&quot;</span></span>);
-
-    <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> key() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">accessibleCustomerIds</span><span class="delimiter">&quot;</span></span>; }
-    <span class="annotation">@Override</span> <span class="directive">public</span> <span class="type">boolean</span> supports(PrincipalContext p, ResourceContext r, <span class="predefined-type">Class</span>&lt;? <span class="directive">extends</span> UnversionedBaseModel&gt; m) {
-        <span class="keyword">return</span> r != <span class="predefined-constant">null</span> &amp;&amp; <span class="string"><span class="delimiter">&quot;</span><span class="content">sales</span><span class="delimiter">&quot;</span></span>.equalsIgnoreCase(r.getArea()) &amp;&amp; <span class="string"><span class="delimiter">&quot;</span><span class="content">order</span><span class="delimiter">&quot;</span></span>.equalsIgnoreCase(r.getFunctionalDomain()) &amp;&amp; <span class="string"><span class="delimiter">&quot;</span><span class="content">view</span><span class="delimiter">&quot;</span></span>.equalsIgnoreCase(r.getAction());
-    }
-    <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">Collection</span>&lt;?&gt; resolve(PrincipalContext p, ResourceContext r, <span class="predefined-type">Class</span>&lt;? <span class="directive">extends</span> UnversionedBaseModel&gt; m) {
-        <span class="keyword">return</span> java.util.List.of(ID1, ID2); <span class="comment">// typed values pass through as-is</span>
-    }
-}</code></pre>
-</div>
+<h4 id="_what_quantum_solves">1.1. What Quantum Solves</h4>
+<div class="paragraph">
+<p><strong>Multi-tenant isolation with controlled sharing</strong>
+- Each tenant&#8217;s data is isolated by default
+- Selective sharing via policy rules (e.g., shared catalogs, partner directories)
+- Flexible tenancy models: one-database-per-tenant or shared-database-with-filtering</p>
 </div>
 <div class="paragraph">
-<p>Rule:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code>customerId:^[${accessibleCustomerIds}]</code></pre>
-</div>
+<p><strong>Consistent, secure APIs</strong>
+- Single BaseResource pattern for all CRUD operations
+- Automatic DataDomain filtering ensures users see only authorized data
+- Built-in query language works across all endpoints</p>
 </div>
 <div class="paragraph">
-<p>Result: <code>$in</code> with <code>List&lt;ObjectId&gt;</code> on <code>customerId</code>.</p>
+<p><strong>Policy-driven authorization</strong>
+- Human-readable rules define "who can do what"
+- Rules contribute data filters (not just allow/deny)
+- Changes take effect without code deployment</p>
+</div>
+<div class="paragraph">
+<p><strong>Developer productivity</strong>
+- Minimal boilerplate: extend BaseModel and BaseResource
+- Live reload in development mode
+- Automatic OpenAPI documentation
+- Built-in CSV import/export for all entities</p>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_example_b_resolver_returns_string_literals_force_raw_strings">11.5.2. Example B: Resolver returns String literals (force raw strings)</h4>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@ApplicationScoped</span>
-<span class="directive">public</span> <span class="type">class</span> <span class="class">CustomerCodeResolver</span> <span class="directive">implements</span> AccessListResolver {
-    <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> key() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">accessibleCustomerCodes</span><span class="delimiter">&quot;</span></span>; }
-    <span class="annotation">@Override</span> <span class="directive">public</span> <span class="type">boolean</span> supports(PrincipalContext p, ResourceContext r, <span class="predefined-type">Class</span>&lt;? <span class="directive">extends</span> UnversionedBaseModel&gt; m) {
-        <span class="keyword">return</span> r != <span class="predefined-constant">null</span> &amp;&amp; <span class="string"><span class="delimiter">&quot;</span><span class="content">sales</span><span class="delimiter">&quot;</span></span>.equalsIgnoreCase(r.getArea()) &amp;&amp; <span class="string"><span class="delimiter">&quot;</span><span class="content">order</span><span class="delimiter">&quot;</span></span>.equalsIgnoreCase(r.getFunctionalDomain()) &amp;&amp; <span class="string"><span class="delimiter">&quot;</span><span class="content">view</span><span class="delimiter">&quot;</span></span>.equalsIgnoreCase(r.getAction());
-    }
-    <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">Collection</span>&lt;?&gt; resolve(PrincipalContext p, ResourceContext r, <span class="predefined-type">Class</span>&lt;? <span class="directive">extends</span> UnversionedBaseModel&gt; m) {
-        <span class="keyword">return</span> java.util.List.of(
-            com.e2eq.framework.model.persistent.morphia.StringLiteral.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">5f1e1a5e5e5e5e5e5e5e5e51</span><span class="delimiter">&quot;</span></span>),
-            com.e2eq.framework.model.persistent.morphia.StringLiteral.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">CUST-42</span><span class="delimiter">&quot;</span></span>)
-        );
-    }
-}</code></pre>
-</div>
+<h4 id="_core_building_blocks">1.2. Core Building Blocks</h4>
+<div class="paragraph">
+<p><strong>Models</strong>: Extend BaseModel for automatic multi-tenancy, validation, and audit trails</p>
 </div>
 <div class="paragraph">
-<p>Rule:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code>customerCode:^[${accessibleCustomerCodes}]</code></pre>
-</div>
+<p><strong>Repositories</strong>: Extend MorphiaRepo for MongoDB operations with security filtering</p>
 </div>
 <div class="paragraph">
-<p>Result: <code>$in</code> with <code>List&lt;String&gt;</code> on <code>customerCode</code> (even for hex-like strings).</p>
+<p><strong>Resources</strong>: Extend BaseResource for consistent REST APIs with minimal code</p>
+</div>
+<div class="paragraph">
+<p><strong>Security</strong>: Pluggable authentication (JWT, OIDC) with declarative permission rules</p>
+</div>
+<div class="paragraph">
+<p><strong>Query Language</strong>: Single syntax for filtering across APIs, permissions, and reports</p>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_other_types_supported">11.5.3. Other types supported</h4>
+<h4 id="_when_to_use_quantum">1.3. When to Use Quantum</h4>
 <div class="paragraph">
-<p>Resolvers can also return numbers, booleans, and dates/datetimes. Already-typed elements (Number, Boolean, java.util.Date, java.time.LocalDate, ObjectId) are preserved. String elements are heuristically parsed into those types unless wrapped with <code>StringLiteral</code>.</p>
+<p>✅ <strong>Good fit</strong>:
+- Multi-tenant B2B SaaS platforms
+- Applications requiring flexible data sharing between organizations
+- Teams wanting consistent REST APIs without boilerplate
+- Projects needing audit trails and compliance features</p>
 </div>
 <div class="paragraph">
-<p>Authoring tips:</p>
+<p>❌ <strong>Consider alternatives</strong>:
+- Single-tenant applications
+- High-frequency trading or real-time systems
+- Applications with complex, non-relational data models
+- Teams preferring GraphQL over REST</p>
 </div>
+</div>
+<div class="sect3">
+<h4 id="_next_steps">1.4. Next Steps</h4>
 <div class="ulist">
 <ul>
 <li>
-<p>Prefer returning already-typed values when you know the target field type.</p>
+<p><strong>New to Quantum?</strong> Start with <a href="getting-started.html">Getting Started</a></p>
 </li>
 <li>
-<p>Use <code>StringLiteral</code> when a value might be misinterpreted (for example, 24‑hex or numeric-looking strings).</p>
+<p><strong>Learning concepts?</strong> Read <a href="tenant-models.html">Multi-Tenancy Models</a></p>
 </li>
 <li>
-<p>For CSV strings published under a variable, the engine splits by comma and applies the same per-element coercion.</p>
+<p><strong>See it in action?</strong> Try the <a href="../tutorials/supply-chain.html">Supply Chain Tutorial</a></p>
 </li>
 </ul>
-</div>
-</div>
 </div>
 </div>
 </div>
@@ -1111,7 +540,7 @@ customerId:^[${accessibleCustomerIds}]</code></pre>
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-09-28 00:15:19 -0400
+Last updated 2025-09-30 21:06:55 -0400
 </div>
 </div>
 </body>

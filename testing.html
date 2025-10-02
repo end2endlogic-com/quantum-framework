@@ -527,9 +527,9 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div id="header">
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
-<ul class="sectlevel2">
+<ul class="sectlevel1">
 <li><a href="#testing">1. Testing in Quantum: Security Contexts, Repos, and REST APIs</a>
-<ul class="sectlevel3">
+<ul class="sectlevel2">
 <li><a href="#_testing_framework">1.1. Testing Framework</a></li>
 <li><a href="#_prerequisites_and_glossary">1.2. Prerequisites and glossary</a></li>
 <li><a href="#_pattern_1_extend_baserepotest">1.3. Pattern 1 — Extend BaseRepoTest</a></li>
@@ -546,10 +546,11 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div id="content">
+<div class="sect1">
+<h2 id="testing">1. Testing in Quantum: Security Contexts, Repos, and REST APIs</h2>
+<div class="sectionbody">
 <div class="sect2">
-<h3 id="testing">1. Testing in Quantum: Security Contexts, Repos, and REST APIs</h3>
-<div class="sect3">
-<h4 id="_testing_framework">1.1. Testing Framework</h4>
+<h3 id="_testing_framework">1.1. Testing Framework</h3>
 <div class="paragraph">
 <p>This guide explains how to write effective tests in the Quantum framework, with a focus on setting the security context and choosing the right Quarkus testing patterns for repository logic vs. REST APIs.</p>
 </div>
@@ -564,8 +565,8 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <p>In addition, it outlines how to test REST endpoints vs. repository logic and highlights useful features of the Quarkus Test Framework.</p>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_prerequisites_and_glossary">1.2. Prerequisites and glossary</h4>
+<div class="sect2">
+<h3 id="_prerequisites_and_glossary">1.2. Prerequisites and glossary</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -586,8 +587,8 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </ul>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_pattern_1_extend_baserepotest">1.3. Pattern 1 — Extend BaseRepoTest</h4>
+<div class="sect2">
+<h3 id="_pattern_1_extend_baserepotest">1.3. Pattern 1 — Extend BaseRepoTest</h3>
 <div class="paragraph">
 <p>For repository tests (no HTTP), the simplest approach is to extend BaseRepoTest.</p>
 </div>
@@ -627,8 +628,8 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 - BaseRepoTest also runs migrations once using your test principal, which avoids authorization failures during initialization.</p>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_pattern_2_try_with_resources_securitysession">1.4. Pattern 2 — Try-with-resources SecuritySession</h4>
+<div class="sect2">
+<h3 id="_pattern_2_try_with_resources_securitysession">1.4. Pattern 2 — Try-with-resources SecuritySession</h3>
 <div class="paragraph">
 <p>Use SecuritySession explicitly to scope work that should run under a specific PrincipalContext and ResourceContext. This is the most explicit pattern and works in both repository and service-level tests.</p>
 </div>
@@ -660,8 +661,8 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 - You can construct custom PrincipalContext/ResourceContext for specific scenarios (e.g., different roles or realms) and pass them to SecuritySession.</p>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_pattern_3_scoped_call_wrapper_scopedcallscope">1.5. Pattern 3 — Scoped-call wrapper (ScopedCallScope)</h4>
+<div class="sect2">
+<h3 id="_pattern_3_scoped_call_wrapper_scopedcallscope">1.5. Pattern 3 — Scoped-call wrapper (ScopedCallScope)</h3>
 <div class="paragraph">
 <p>If you prefer not to repeat try-with-resources blocks, wrap your work in a helper that creates a SecuritySession, runs your logic, and ensures cleanup. This is sometimes called a “scoped call” pattern, often referred to as a ScopedCallScope.</p>
 </div>
@@ -709,8 +710,8 @@ SecurityScopes.run(pContext, rContext, () -&gt; repo.save(realm, entity));</code
 <p>This achieves the same effect as try-with-resources but centralizes the pattern.</p>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_pattern_4_testsecurity_annotation_quarkus">1.6. Pattern 4 — @TestSecurity annotation (Quarkus)</h4>
+<div class="sect2">
+<h3 id="_pattern_4_testsecurity_annotation_quarkus">1.6. Pattern 4 — @TestSecurity annotation (Quarkus)</h3>
 <div class="paragraph">
 <p>For tests that run through HTTP (and in some repo tests), you can use Quarkus’ @io.quarkus.test.security.TestSecurity to set the SecurityIdentity without creating a SecuritySession.</p>
 </div>
@@ -769,8 +770,8 @@ SecurityScopes.run(pContext, rContext, () -&gt; repo.save(realm, entity));</code
 - For repo tests that require precise ResourceContext (area/domain/action), prefer SecuritySession; MorphiaRepo sets a generic default ResourceContext when needed.</p>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_testing_rest_apis_vs_repository_logic">1.7. Testing REST APIs vs. Repository Logic</h4>
+<div class="sect2">
+<h3 id="_testing_rest_apis_vs_repository_logic">1.7. Testing REST APIs vs. Repository Logic</h3>
 <div class="paragraph">
 <p>When to prefer REST (HTTP) tests:
 - End-to-end authorization: validate request filters, identity mapping, realm headers, and JWT handling.
@@ -801,8 +802,8 @@ SecurityScopes.run(pContext, rContext, () -&gt; repo.save(realm, entity));</code
 - Wrap calls with SecuritySession (Pattern 2) or use a scoped-call helper (Pattern 3).</p>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_useful_quarkus_test_features">1.8. Useful Quarkus Test features</h4>
+<div class="sect2">
+<h3 id="_useful_quarkus_test_features">1.8. Useful Quarkus Test features</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -826,8 +827,8 @@ SecurityScopes.run(pContext, rContext, () -&gt; repo.save(realm, entity));</code
 </ul>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_real_world_tips">1.9. Real-world tips</h4>
+<div class="sect2">
+<h3 id="_real_world_tips">1.9. Real-world tips</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -850,8 +851,8 @@ void cleanup() { com.e2eq.framework.model.securityrules.SecurityContext.clear();
 </ul>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_summary">1.10. Summary</h4>
+<div class="sect2">
+<h3 id="_summary">1.10. Summary</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -871,10 +872,11 @@ void cleanup() { com.e2eq.framework.model.securityrules.SecurityContext.clear();
 </div>
 </div>
 </div>
+</div>
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-09-22 10:25:37 -0400
+Last updated 2025-10-01 13:29:19 -0400
 </div>
 </div>
 </body>

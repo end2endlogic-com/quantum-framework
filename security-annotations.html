@@ -530,11 +530,14 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <ul class="sectlevel2">
 <li><a href="#security-annotations">1. Security Annotations: FunctionalMapping and FunctionalAction</a>
 <ul class="sectlevel3">
-<li><a href="#_functionalmapping_classlevel">1.1. @FunctionalMapping (class‑level)</a></li>
-<li><a href="#_functionalaction_methodlevel">1.2. @FunctionalAction (method‑level)</a></li>
-<li><a href="#_how_securityfilter_uses_the_annotations">1.3. How SecurityFilter uses the annotations</a></li>
-<li><a href="#_example">1.4. Example</a></li>
-<li><a href="#_writing_rules_that_target_annotated_resources">1.5. Writing Rules that target annotated resources</a></li>
+<li><a href="#_functionalmapping">1.1. @FunctionalMapping</a></li>
+<li><a href="#_functionalaction">1.2. @FunctionalAction</a></li>
+<li><a href="#_default_action_mapping">1.3. Default Action Mapping</a></li>
+<li><a href="#_how_the_framework_uses_these_annotations">1.4. How the Framework Uses These Annotations</a></li>
+<li><a href="#_migration_from_legacy_methods">1.5. Migration from Legacy Methods</a></li>
+<li><a href="#_best_practices">1.6. Best Practices</a></li>
+<li><a href="#_integration_with_permission_rules">1.7. Integration with Permission Rules</a></li>
+<li><a href="#_see_also">1.8. See Also</a></li>
 </ul>
 </li>
 </ul>
@@ -544,146 +547,300 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div class="sect2">
 <h3 id="security-annotations">1. Security Annotations: FunctionalMapping and FunctionalAction</h3>
 <div class="paragraph">
-<p>Quantum introduces two annotations to simplify declaring the functional context of REST resources and methods. The SecurityFilter reads these annotations to populate ResourceContext for downstream rule evaluation.</p>
+<p>Quantum uses annotations to declare a model or resource&#8217;s functional area, domain, and actions for security evaluation. This replaces the legacy <code>bmFunctionalArea()</code> and <code>bmFunctionalDomain()</code> methods.</p>
 </div>
 <div class="sect3">
-<h4 id="_functionalmapping_classlevel">1.1. @FunctionalMapping (class‑level)</h4>
+<h4 id="_functionalmapping">1.1. @FunctionalMapping</h4>
+<div class="paragraph">
+<p>Use <code>@FunctionalMapping</code> on model classes or resource classes to declare their business placement:</p>
+</div>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">com.e2eq.framework.annotations.FunctionalMapping</span>;
 
-<span class="annotation">@FunctionalMapping</span>(area = <span class="string"><span class="delimiter">&quot;</span><span class="content">sales</span><span class="delimiter">&quot;</span></span>, domain = <span class="string"><span class="delimiter">&quot;</span><span class="content">order</span><span class="delimiter">&quot;</span></span>)
-<span class="annotation">@Path</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">/annotated</span><span class="delimiter">&quot;</span></span>)
-<span class="directive">public</span> <span class="type">class</span> <span class="class">AnnotatedTestResource</span> {
-    <span class="comment">// ... resource endpoints ...</span>
+<span class="annotation">@Entity</span>
+<span class="annotation">@FunctionalMapping</span>(area = <span class="string"><span class="delimiter">&quot;</span><span class="content">catalog</span><span class="delimiter">&quot;</span></span>, domain = <span class="string"><span class="delimiter">&quot;</span><span class="content">product</span><span class="delimiter">&quot;</span></span>)
+<span class="directive">public</span> <span class="type">class</span> <span class="class">Product</span> <span class="directive">extends</span> BaseModel {
+    <span class="comment">// No need to override bmFunctionalArea/bmFunctionalDomain</span>
 }</code></pre>
 </div>
 </div>
-<div class="ulist">
-<ul>
-<li>
-<p>Declares the Functional Area and Functional Domain for the resource class.</p>
-</li>
-<li>
-<p>In SecurityFilter, when a request targets a method on this class, the ResourceContext area/domain are taken from this annotation.</p>
-</li>
-</ul>
-</div>
-</div>
-<div class="sect3">
-<h4 id="_functionalaction_methodlevel">1.2. @FunctionalAction (method‑level)</h4>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">com.e2eq.framework.annotations.FunctionalAction</span>;
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@Path</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">/products</span><span class="delimiter">&quot;</span></span>)
+<span class="annotation">@FunctionalMapping</span>(area = <span class="string"><span class="delimiter">&quot;</span><span class="content">catalog</span><span class="delimiter">&quot;</span></span>, domain = <span class="string"><span class="delimiter">&quot;</span><span class="content">product</span><span class="delimiter">&quot;</span></span>)
+<span class="directive">public</span> <span class="type">class</span> <span class="class">ProductResource</span> <span class="directive">extends</span> BaseResource&lt;Product, ProductRepo&gt; {
+    <span class="comment">// All methods inherit area/domain from class annotation</span>
+}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_functionalaction">1.2. @FunctionalAction</h4>
+<div class="paragraph">
+<p>Use <code>@FunctionalAction</code> on JAX-RS resource methods when the action differs from the HTTP verb default:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@Path</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">/products</span><span class="delimiter">&quot;</span></span>)
+<span class="directive">public</span> <span class="type">class</span> <span class="class">ProductResource</span> {
+
+    <span class="annotation">@POST</span>
+    <span class="annotation">@FunctionalAction</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">CREATE</span><span class="delimiter">&quot;</span></span>)  <span class="comment">// Explicit, though POST implies CREATE</span>
+    <span class="directive">public</span> Product create(Product payload) {
+        <span class="keyword">return</span> productRepo.save(payload);
+    }
+
+    <span class="annotation">@GET</span>
+    <span class="annotation">@Path</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">/{id}</span><span class="delimiter">&quot;</span></span>)
+    <span class="comment">// No annotation needed - GET implies VIEW</span>
+    <span class="directive">public</span> Product get(<span class="annotation">@PathParam</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">id</span><span class="delimiter">&quot;</span></span>) <span class="predefined-type">String</span> id) {
+        <span class="keyword">return</span> productRepo.findById(id);
+    }
+
+    <span class="annotation">@PUT</span>
+    <span class="annotation">@Path</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">/{id}/approve</span><span class="delimiter">&quot;</span></span>)
+    <span class="annotation">@FunctionalAction</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">APPROVE</span><span class="delimiter">&quot;</span></span>)  <span class="comment">// Custom action beyond standard CRUD</span>
+    <span class="directive">public</span> Product approve(<span class="annotation">@PathParam</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">id</span><span class="delimiter">&quot;</span></span>) <span class="predefined-type">String</span> id) {
+        Product p = productRepo.findById(id);
+        p.setStatus(<span class="string"><span class="delimiter">&quot;</span><span class="content">APPROVED</span><span class="delimiter">&quot;</span></span>);
+        <span class="keyword">return</span> productRepo.save(p);
+    }
+}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_default_action_mapping">1.3. Default Action Mapping</h4>
+<div class="paragraph">
+<p>When <code>@FunctionalAction</code> is not present, actions are inferred from HTTP methods:</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 50%;">
+<col style="width: 50%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">HTTP Method</th>
+<th class="tableblock halign-left valign-top">Default Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">GET</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">VIEW</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">POST</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">CREATE</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PUT</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">UPDATE</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PATCH</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">UPDATE</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">DELETE</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">DELETE</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect3">
+<h4 id="_how_the_framework_uses_these_annotations">1.4. How the Framework Uses These Annotations</h4>
+<div class="sect4">
+<h5 id="_securityfilter">SecurityFilter</h5>
+<div class="ulist">
+<ul>
+<li>
+<p>Reads <code>@FunctionalMapping</code> from the matched resource class for area/domain</p>
+</li>
+<li>
+<p>Reads <code>@FunctionalAction</code> from the method, or infers from HTTP method</p>
+</li>
+<li>
+<p>Falls back to path-based parsing if annotations are missing</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_morphiarepo_filluiactions">MorphiaRepo.fillUIActions</h5>
+<div class="ulist">
+<ul>
+<li>
+<p>Uses <code>@FunctionalMapping</code> on model classes to resolve allowed UI actions</p>
+</li>
+<li>
+<p>Falls back to legacy <code>bmFunctionalArea()/bmFunctionalDomain()</code> methods</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_permissionresource">PermissionResource</h5>
+<div class="ulist">
+<ul>
+<li>
+<p>Prefers <code>@FunctionalMapping</code> when listing functional domains</p>
+</li>
+<li>
+<p>Falls back to legacy methods when annotation is missing</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_migration_from_legacy_methods">1.5. Migration from Legacy Methods</h4>
+<div class="sect4">
+<h5 id="_current_legacy_approach">Current (Legacy) Approach</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@Entity</span>
+<span class="directive">public</span> <span class="type">class</span> <span class="class">Product</span> <span class="directive">extends</span> BaseModel {
+    <span class="annotation">@Override</span>
+    <span class="directive">public</span> <span class="predefined-type">String</span> bmFunctionalArea() {
+        <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">Catalog</span><span class="delimiter">&quot;</span></span>;
+    }
+
+    <span class="annotation">@Override</span>
+    <span class="directive">public</span> <span class="predefined-type">String</span> bmFunctionalDomain() {
+        <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">Product</span><span class="delimiter">&quot;</span></span>;
+    }
+}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_new_recommended_approach">New (Recommended) Approach</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@Entity</span>
+<span class="annotation">@FunctionalMapping</span>(area = <span class="string"><span class="delimiter">&quot;</span><span class="content">catalog</span><span class="delimiter">&quot;</span></span>, domain = <span class="string"><span class="delimiter">&quot;</span><span class="content">product</span><span class="delimiter">&quot;</span></span>)
+<span class="directive">public</span> <span class="type">class</span> <span class="class">Product</span> <span class="directive">extends</span> BaseModel {
+    <span class="comment">// Clean - no method overrides needed</span>
+}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_transitional_support">Transitional Support</h5>
+<div class="paragraph">
+<p>You can use both during migration:
+- If <code>@FunctionalMapping</code> is present, it takes precedence
+- If missing, legacy methods are used as fallback
+- Plan to remove legacy methods in future releases</p>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_best_practices">1.6. Best Practices</h4>
+<div class="sect4">
+<h5 id="_consistent_naming">Consistent Naming</h5>
+<div class="paragraph">
+<p>Use lowercase, kebab-case for areas and domains:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@FunctionalMapping</span>(area = <span class="string"><span class="delimiter">&quot;</span><span class="content">supply-chain</span><span class="delimiter">&quot;</span></span>, domain = <span class="string"><span class="delimiter">&quot;</span><span class="content">purchase-order</span><span class="delimiter">&quot;</span></span>)
+<span class="annotation">@FunctionalMapping</span>(area = <span class="string"><span class="delimiter">&quot;</span><span class="content">catalog</span><span class="delimiter">&quot;</span></span>, domain = <span class="string"><span class="delimiter">&quot;</span><span class="content">product</span><span class="delimiter">&quot;</span></span>)
+<span class="annotation">@FunctionalMapping</span>(area = <span class="string"><span class="delimiter">&quot;</span><span class="content">identity</span><span class="delimiter">&quot;</span></span>, domain = <span class="string"><span class="delimiter">&quot;</span><span class="content">user-profile</span><span class="delimiter">&quot;</span></span>)</code></pre>
+</div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_resource_vs_model_annotations">Resource vs Model Annotations</h5>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>Prefer model annotations</strong> for consistency across all usage</p>
+</li>
+<li>
+<p>Use resource annotations only when the resource handles multiple model types</p>
+</li>
+<li>
+<p>Avoid duplicating annotations on both model and resource for the same entity</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_custom_actions">Custom Actions</h5>
+<div class="paragraph">
+<p>Define custom actions for business operations beyond CRUD:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@PUT</span>
+<span class="annotation">@Path</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">/{id}/publish</span><span class="delimiter">&quot;</span></span>)
+<span class="annotation">@FunctionalAction</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">PUBLISH</span><span class="delimiter">&quot;</span></span>)
+<span class="directive">public</span> Product publish(<span class="annotation">@PathParam</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">id</span><span class="delimiter">&quot;</span></span>) <span class="predefined-type">String</span> id) { ... }
 
 <span class="annotation">@POST</span>
-<span class="annotation">@Path</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">/create</span><span class="delimiter">&quot;</span></span>)
-<span class="annotation">@FunctionalAction</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">CREATE</span><span class="delimiter">&quot;</span></span>)
-<span class="directive">public</span> Response create(...) { ... }</code></pre>
+<span class="annotation">@Path</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">/{id}/duplicate</span><span class="delimiter">&quot;</span></span>)
+<span class="annotation">@FunctionalAction</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">DUPLICATE</span><span class="delimiter">&quot;</span></span>)
+<span class="directive">public</span> Product duplicate(<span class="annotation">@PathParam</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">id</span><span class="delimiter">&quot;</span></span>) <span class="predefined-type">String</span> id) { ... }
+
+<span class="annotation">@DELETE</span>
+<span class="annotation">@Path</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">/{id}/archive</span><span class="delimiter">&quot;</span></span>)
+<span class="annotation">@FunctionalAction</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">ARCHIVE</span><span class="delimiter">&quot;</span></span>)  <span class="comment">// Soft delete vs hard DELETE</span>
+<span class="directive">public</span> <span class="type">void</span> archive(<span class="annotation">@PathParam</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">id</span><span class="delimiter">&quot;</span></span>) <span class="predefined-type">String</span> id) { ... }</code></pre>
 </div>
 </div>
-<div class="ulist">
-<ul>
-<li>
-<p>Declares the functional action for this endpoint (CREATE, VIEW, UPDATE, DELETE, etc.).</p>
-</li>
-<li>
-<p>If absent, SecurityFilter infers the action from the HTTP method:</p>
-</li>
-<li>
-<p>GET → VIEW</p>
-</li>
-<li>
-<p>POST → CREATE</p>
-</li>
-<li>
-<p>PUT/PATCH → UPDATE</p>
-</li>
-<li>
-<p>DELETE → DELETE</p>
-</li>
-</ul>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_how_securityfilter_uses_the_annotations">1.3. How SecurityFilter uses the annotations</h4>
+<h4 id="_integration_with_permission_rules">1.7. Integration with Permission Rules</h4>
 <div class="paragraph">
-<p>At request time, SecurityFilter examines the matched resource class and method:</p>
+<p>Annotations feed into permission rule matching:</p>
 </div>
-<div class="olist arabic">
-<ol class="arabic">
-<li>
-<p>If @FunctionalMapping is present on the class, it sets area/domain accordingly.</p>
-</li>
-<li>
-<p>If @FunctionalAction is present on the method, it uses that action; otherwise it infers from HTTP method.</p>
-</li>
-<li>
-<p>It then constructs and stores a ResourceContext(area, domain, action) into a thread‑local SecurityContext for use by RuleContext and repositories.</p>
-</li>
-<li>
-<p>The filter clears contexts after the response to avoid leaks across requests.</p>
-</li>
-</ol>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml">- <span class="string"><span class="content">name: allow-catalog-reads</span></span>
+  <span class="key">priority</span>: <span class="string"><span class="content">300</span></span>
+  <span class="key">match</span>:
+    <span class="key">method</span>: <span class="string"><span class="content">[GET]</span></span>
+    <span class="comment"># Matches area/domain from @FunctionalMapping</span>
+    <span class="key">functionalArea</span>: <span class="string"><span class="content">catalog</span></span>
+    <span class="key">functionalDomain</span>: <span class="string"><span class="content">product</span></span>
+  <span class="key">rolesAny</span>: <span class="string"><span class="content">[USER, ADMIN]</span></span>
+  <span class="key">effect</span>: <span class="string"><span class="content">ALLOW</span></span></code></pre>
+</div>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml">- <span class="string"><span class="content">name: admin-only-approval</span></span>
+  <span class="key">priority</span>: <span class="string"><span class="content">100</span></span>
+  <span class="key">match</span>:
+    <span class="key">method</span>: <span class="string"><span class="content">[PUT]</span></span>
+    <span class="key">functionalArea</span>: <span class="string"><span class="content">catalog</span></span>
+    <span class="key">functionalDomain</span>: <span class="string"><span class="content">product</span></span>
+    <span class="comment"># Matches @FunctionalAction(&quot;APPROVE&quot;)</span>
+    <span class="key">action</span>: <span class="string"><span class="content">APPROVE</span></span>
+  <span class="key">rolesAll</span>: <span class="string"><span class="content">[ADMIN]</span></span>
+  <span class="key">effect</span>: <span class="string"><span class="content">ALLOW</span></span></code></pre>
+</div>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_example">1.4. Example</h4>
-<div class="paragraph">
-<p>The test resource and tests illustrate expected behavior:</p>
-</div>
+<h4 id="_see_also">1.8. See Also</h4>
 <div class="ulist">
 <ul>
 <li>
-<p>GET /annotated/view</p>
+<p><a href="modeling.html#prefer-annotations-for-functional-mapping-recommended">Modeling: Functional Mapping</a></p>
 </li>
 <li>
-<p>Class annotated with @FunctionalMapping(area="sales", domain="order")</p>
+<p><a href="permissions.html">Permission Rules</a></p>
 </li>
 <li>
-<p>Method annotated with @FunctionalAction("VIEW")</p>
-</li>
-<li>
-<p>Response body from the sample shows: "sales:order:VIEW"</p>
-</li>
-<li>
-<p>POST /annotated/create</p>
-</li>
-<li>
-<p>Class annotated with @FunctionalMapping(area="sales", domain="order")</p>
-</li>
-<li>
-<p>Method NOT annotated with @FunctionalAction</p>
-</li>
-<li>
-<p>SecurityFilter infers action CREATE from HTTP method POST</p>
-</li>
-<li>
-<p>Response body shows: "sales:order:CREATE"</p>
+<p><a href="domain-rule-context.html">DomainContext and RuleContext</a></p>
 </li>
 </ul>
-</div>
-</div>
-<div class="sect3">
-<h4 id="_writing_rules_that_target_annotated_resources">1.5. Writing Rules that target annotated resources</h4>
-<div class="paragraph">
-<p>With ResourceContext reliably set, you can author rules that match on:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>area == "sales"</p>
-</li>
-<li>
-<p>functionalDomain == "order"</p>
-</li>
-<li>
-<p>action == "VIEW" | "CREATE" | "UPDATE" | "DELETE"</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Rules can then attach filters via andFilterString/orFilterString that will apply to repository queries executed within these endpoints.</p>
 </div>
 </div>
 </div>
@@ -691,7 +848,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-09-26 15:08:44 -0400
+Last updated 2025-09-30 20:58:16 -0400
 </div>
 </div>
 </body>

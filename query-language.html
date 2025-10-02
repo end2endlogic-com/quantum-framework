@@ -5,7 +5,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="generator" content="Asciidoctor 2.0.20">
-<title>Query Language (BIAPIQuery)</title>
+<title>Query Language Reference</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,300italic,400,400italic,600,600italic%7CNoto+Serif:400,400italic,700,700italic%7CDroid+Sans+Mono:400,700">
 <style>
 /*! Asciidoctor default stylesheet | MIT License | https://asciidoctor.org */
@@ -528,15 +528,16 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
 <ul class="sectlevel2">
-<li><a href="#query-language">1. Query Language (BIAPIQuery)</a>
+<li><a href="#query-language">1. Query Language Reference</a>
 <ul class="sectlevel3">
-<li><a href="#_summary_of_operators">1.1. Summary of Operators</a></li>
-<li><a href="#_value_types">1.2. Value Types</a></li>
-<li><a href="#_array_query_support_elemmatch">1.3. Array Query Support (elemMatch)</a></li>
-<li><a href="#_in_clause_enhancements">1.4. IN Clause Enhancements</a></li>
-<li><a href="#_variables_and_resolvers">1.5. Variables and Resolvers</a></li>
-<li><a href="#_reference_equality">1.6. Reference Equality</a></li>
-<li><a href="#_examples">1.7. Examples</a></li>
+<li><a href="#_basic_syntax">1.1. Basic Syntax</a></li>
+<li><a href="#_common_patterns">1.2. Common Patterns</a></li>
+<li><a href="#_advanced_examples">1.3. Advanced Examples</a></li>
+<li><a href="#_variables_in_filters">1.4. Variables in Filters</a></li>
+<li><a href="#_performance_tips">1.5. Performance Tips</a></li>
+<li><a href="#_integration_with_rest_apis">1.6. Integration with REST APIs</a></li>
+<li><a href="#_error_handling">1.7. Error Handling</a></li>
+<li><a href="#_see_also">1.8. See Also</a></li>
 </ul>
 </li>
 </ul>
@@ -544,308 +545,515 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 <div id="content">
 <div class="sect2">
-<h3 id="query-language">1. Query Language (BIAPIQuery)</h3>
+<h3 id="query-language">1. Query Language Reference</h3>
 <div class="paragraph">
-<p>This section documents the ANTLR‑based filter language used by repositories (e.g., MorphiaRepo) and the rule engine to construct MongoDB/Morphia filters.</p>
+<p>Quantum uses an ANTLR-based query language (BIAPIQuery.g4) for filtering, searching, and constraining data across all REST endpoints. This single, consistent syntax works everywhere: list APIs, permission rules, and access resolvers.</p>
 </div>
 <div class="sect3">
-<h4 id="_summary_of_operators">1.1. Summary of Operators</h4>
-<div class="ulist">
-<ul>
-<li>
-<p>Equals: ':'  (field:value)</p>
-</li>
-<li>
-<p>Not equals: ':!'</p>
-</li>
-<li>
-<p>Less than / Greater than: ':&lt;' / ':&gt;'</p>
-</li>
-<li>
-<p>Less‑than‑or‑equal / Greater‑than‑or‑equal: ':&#8656;' / ':&gt;='</p>
-</li>
-<li>
-<p>Exists (field present): ':~'  (no value)</p>
-</li>
-<li>
-<p>In list: ':^' followed by a list [v1,v2,&#8230;&#8203;]</p>
-</li>
-<li>
-<p>Boolean literals: true / false</p>
-</li>
-<li>
-<p>Null literal: null</p>
-</li>
-<li>
-<p>Logical AND: '&amp;&amp;'</p>
-</li>
-<li>
-<p>Logical OR: '||'</p>
-</li>
-<li>
-<p>Logical NOT (on a single expression): '!!'</p>
-</li>
-<li>
-<p>Grouping: parentheses '(' and ')'</p>
-</li>
-</ul>
-</div>
-</div>
-<div class="sect3">
-<h4 id="_value_types">1.2. Value Types</h4>
-<div class="ulist">
-<ul>
-<li>
-<p>Strings: unquoted or quoted with "&#8230;&#8203;" (quotes allow spaces and punctuation)</p>
-</li>
-<li>
-<p>Whole numbers: prefix with '#' (e.g., #10)</p>
-</li>
-<li>
-<p>Decimals: prefix with '<mark>' (e.g., </mark>19.99)</p>
-</li>
-<li>
-<p>Dates: yyyy-MM-dd</p>
-</li>
-<li>
-<p>DateTime: ISO-8601 (e.g., 2024-07-28T10:15:30Z)</p>
-</li>
-<li>
-<p>ObjectId: 24‑char hex</p>
-</li>
-<li>
-<p>References: @@&lt;ObjectId&gt; resolves to a Morphia @Reference field instance</p>
-</li>
-<li>
-<p>Variables: ${&#8230;&#8203;} substituted from PrincipalContext/ResourceContext and resolver-provided variables (see Variables and Resolvers below)</p>
-</li>
-</ul>
-</div>
-</div>
-<div class="sect3">
-<h4 id="_array_query_support_elemmatch">1.3. Array Query Support (elemMatch)</h4>
-<div class="paragraph">
-<p>The grammar supports array filtering via elemMatch using ':=' with braces. Example:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code>lineItems:= { (sku:&quot;ABC&quot; &amp;&amp; quantity:&gt; #0) || (sku:&quot;DEF&quot; &amp;&amp; backordered:true) }</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>This produces a Mongo $elemMatch on field 'lineItems' with the nested expression composed inside. You can nest multiple predicates with '&amp;&amp;' / '||' and parentheses as needed. Internally, the listener composes the inner filters and wraps them in Filters.elemMatch(&#8230;&#8203;).</p>
-</div>
-<div class="paragraph">
-<p>Notes:
-- elemMatch is ideal for filtering documents that contain an array of subdocuments where at least one element satisfies the nested criteria.
-- The inner expression supports the full set of operators supported for basic expressions, including numbers, booleans, strings, dates, etc.</p>
-</div>
-</div>
-<div class="sect3">
-<h4 id="_in_clause_enhancements">1.4. IN Clause Enhancements</h4>
-<div class="paragraph">
-<p>The IN operator (':^') supports both literal lists and variable‑driven lists.</p>
-</div>
-<div class="paragraph">
-<p>1) Literal values:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code>customerId:^[5f1e1a5e5e5e5e5e5e5e5e51,5f1e1a5e5e5e5e5e5e5e5e52]</code></pre>
-</div>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>ObjectId values are detected from 24‑hex strings and converted to ObjectId.</p>
-</li>
-<li>
-<p>Numbers, booleans, ISO datetimes, and yyyy‑MM‑dd dates are also coerced appropriately.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>2) Variable‑driven lists via ${var} inside brackets:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code>customerId:^[${accessibleCustomerIds}]</code></pre>
-</div>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>If 'accessibleCustomerIds' is published as a Collection/array via an AccessListResolver (see below), each element is type‑coerced.</p>
-</li>
-<li>
-<p>If it is published as a single string (e.g., CSV), it is split by comma and each value is type‑coerced.</p>
-</li>
-<li>
-<p>Empty or blank variables yield an empty list (matching none).</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Type coercion rules used for each element:
-- 24‑hex → ObjectId
-- 'true'/'false' → boolean
-- integer → long
-- decimal → double
-- ISO datetime → java.util.Date
-- yyyy‑MM‑dd → java.time.LocalDate
-- otherwise → string</p>
+<h4 id="_basic_syntax">1.1. Basic Syntax</h4>
+<div class="sect4">
+<h5 id="_operators">Operators</h5>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 16.6666%;">
+<col style="width: 33.3333%;">
+<col style="width: 50.0001%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Operator</th>
+<th class="tableblock halign-left valign-top">Symbol</th>
+<th class="tableblock halign-left valign-top">Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Equals</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>:</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>name:"Widget"</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Not equals</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>:!</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>status:!"DELETED"</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Less than</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>:&lt;</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>price:&lt;##100</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Greater than</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>:&gt;</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>quantity:&gt;#50</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Less than or equal</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>:&#8656;</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>createdDate:&#8656;2024-12-31</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Greater than or equal</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>:&gt;=</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>updatedAt:&gt;=2024-01-01T00:00:00Z</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Field exists</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>:~</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>description:~</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">In list</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>:^</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>status:^["ACTIVE","PENDING"]</code></p></td>
+</tr>
+</tbody>
+</table>
 </div>
 <div class="sect4">
-<h5 id="_forcing_string_semantics_stringliteral">Forcing string semantics (StringLiteral)</h5>
-<div class="paragraph">
-<p>Sometimes a resolver needs to return strings that look like other types (for example, a 24‑hex string that resembles an ObjectId). To avoid unintended coercion, resolvers can return <code>StringLiteral</code> values, which the engine unwraps to raw Strings without coercion.</p>
+<h5 id="_value_types">Value Types</h5>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 16.6666%;">
+<col style="width: 33.3333%;">
+<col style="width: 50.0001%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Prefix</th>
+<th class="tableblock halign-left valign-top">Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">String</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none or <code>"&#8230;&#8203;"</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>name:widget</code> or <code>name:"Super Widget"</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Number (integer)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>#</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>quantity:#42</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Number (decimal)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>##</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>price:##19.99</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Date</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>shipDate:2024-12-25</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">DateTime</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>createdAt:2024-12-25T10:30:00Z</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Boolean</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>active:true</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Null</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>description:null</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">ObjectId</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>id:507f1f77bcf86cd799439011</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Reference</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>@@</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>parentId:@@507f1f77bcf86cd799439011</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Variable</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${&#8230;&#8203;}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ownerId:${principalId}</code></p></td>
+</tr>
+</tbody>
+</table>
 </div>
-<div class="paragraph">
-<p>Example resolver:</p>
+<div class="sect4">
+<h5 id="_logical_operators">Logical Operators</h5>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 16.6666%;">
+<col style="width: 33.3333%;">
+<col style="width: 50.0001%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Operator</th>
+<th class="tableblock halign-left valign-top">Symbol</th>
+<th class="tableblock halign-left valign-top">Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">AND</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>&amp;&amp;</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>active:true &amp;&amp; price:&gt;##10</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">OR</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>||</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>status:"ACTIVE" || status:"PENDING"</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">NOT</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>!!</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>!!(price:&lt;##5)</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Grouping</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>()</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>(active:true || featured:true) &amp;&amp; price:&gt;##0</code></p></td>
+</tr>
+</tbody>
+</table>
 </div>
+</div>
+<div class="sect3">
+<h4 id="_common_patterns">1.2. Common Patterns</h4>
+<div class="sect4">
+<h5 id="_string_matching">String Matching</h5>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@ApplicationScoped</span>
-<span class="directive">public</span> <span class="type">class</span> <span class="class">CustomerCodeResolver</span> <span class="directive">implements</span> AccessListResolver {
-    <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> key() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">accessibleCustomerCodes</span><span class="delimiter">&quot;</span></span>; }
-    <span class="annotation">@Override</span> <span class="directive">public</span> <span class="type">boolean</span> supports(PrincipalContext p, ResourceContext r, <span class="predefined-type">Class</span>&lt;? <span class="directive">extends</span> UnversionedBaseModel&gt; m) { <span class="keyword">return</span> <span class="predefined-constant">true</span>; }
-    <span class="annotation">@Override</span> <span class="directive">public</span> java.util.Collection&lt;?&gt; resolve(PrincipalContext p, ResourceContext r, <span class="predefined-type">Class</span>&lt;? <span class="directive">extends</span> UnversionedBaseModel&gt; m) {
-        <span class="keyword">return</span> java.util.List.of(
-            com.e2eq.framework.model.persistent.morphia.StringLiteral.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">5f1e1a5e5e5e5e5e5e5e5e51</span><span class="delimiter">&quot;</span></span>),
-            com.e2eq.framework.model.persistent.morphia.StringLiteral.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">CUST-42</span><span class="delimiter">&quot;</span></span>)
-        );
-    }
+<pre class="CodeRay highlight"><code># Exact match
+name:&quot;Super Widget&quot;
+
+# Wildcard matching
+name:*widget*        # contains &quot;widget&quot;
+name:widget*         # starts with &quot;widget&quot;
+name:*widget         # ends with &quot;widget&quot;
+name:w?dget          # single character wildcard
+
+# Case sensitivity (depends on database collation)
+name:&quot;WIDGET&quot;        # may or may not match &quot;widget&quot;</code></pre>
+</div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_numeric_ranges">Numeric Ranges</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># Price between 10 and 100
+price:&gt;=##10 &amp;&amp; price:&lt;=##100
+
+# Quantity greater than 0
+quantity:&gt;#0
+
+# Exact count
+itemCount:#5</code></pre>
+</div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_date_and_time_queries">Date and Time Queries</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># Orders from today
+createdDate:&gt;=2024-12-25
+
+# Orders from last week
+createdDate:&gt;=2024-12-18 &amp;&amp; createdDate:&lt;2024-12-25
+
+# Specific timestamp
+updatedAt:2024-12-25T14:30:00Z
+
+# Orders modified this year
+updatedAt:&gt;=2024-01-01T00:00:00Z</code></pre>
+</div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_list_membership">List Membership</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># Status in specific values
+status:^[&quot;ACTIVE&quot;,&quot;PENDING&quot;,&quot;PROCESSING&quot;]
+
+# User IDs from a list
+ownerId:^[&quot;user1&quot;,&quot;user2&quot;,&quot;user3&quot;]
+
+# ObjectId list
+categoryId:^[@@507f1f77bcf86cd799439011, @@507f1f77bcf86cd799439012]
+
+# Mixed types (coerced automatically)
+priority:^[#1,#2,#3]</code></pre>
+</div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_null_and_existence_checks">Null and Existence Checks</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># Field has any value (not null)
+description:~
+
+# Field is null
+description:null
+
+# Field is not null
+description:!null
+
+# Field exists and is not empty string
+description:~ &amp;&amp; description:!&quot;&quot;</code></pre>
+</div>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_advanced_examples">1.3. Advanced Examples</h4>
+<div class="sect4">
+<h5 id="_complex_business_logic">Complex Business Logic</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># Active products under $50 OR featured products at any price
+(active:true &amp;&amp; price:&lt;##50) || featured:true
+
+# Orders needing attention: overdue OR high-value pending
+(dueDate:&lt;2024-12-25 &amp;&amp; status:!&quot;COMPLETED&quot;) ||
+(status:&quot;PENDING&quot; &amp;&amp; totalAmount:&gt;##1000)
+
+# Products with inventory issues
+(quantity:&lt;=#5 &amp;&amp; reorderPoint:&gt;#5) || stockStatus:&quot;OUT_OF_STOCK&quot;</code></pre>
+</div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_multi_tenant_filtering">Multi-tenant Filtering</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># User's own records
+dataDomain.ownerId:${principalId}
+
+# Organization-wide access
+dataDomain.orgRefName:${orgRefName}
+
+# Tenant-scoped with public sharing
+dataDomain.tenantId:${pTenantId} || dataDomain.orgRefName:&quot;PUBLIC&quot;</code></pre>
+</div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_audit_and_compliance">Audit and Compliance</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># Records modified by specific user
+auditInfo.lastUpdatedBy:&quot;john.doe&quot;
+
+# Changes in date range
+auditInfo.lastUpdatedDate:&gt;=2024-12-01 &amp;&amp;
+auditInfo.lastUpdatedDate:&lt;2024-12-31
+
+# Created vs modified
+auditInfo.createdDate:auditInfo.lastUpdatedDate  # never modified
+auditInfo.createdDate:!auditInfo.lastUpdatedDate # has been modified</code></pre>
+</div>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_variables_in_filters">1.4. Variables in Filters</h4>
+<div class="paragraph">
+<p>Variables are resolved from the current security context and can be used in permission rules and access resolvers.</p>
+</div>
+<div class="sect4">
+<h5 id="_standard_variables">Standard Variables</h5>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Variable</th>
+<th class="tableblock halign-left valign-top">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${principalId}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Current user&#8217;s ID</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${pTenantId}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Principal&#8217;s tenant ID</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${pAccountId}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Principal&#8217;s account ID</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${pOrgRefName}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Principal&#8217;s organization</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${realm}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Current realm/database</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${area}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Current functional area</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${functionalDomain}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Current functional domain</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${action}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Current action (CREATE, UPDATE, etc.)</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect4">
+<h5 id="_custom_variables_from_access_resolvers">Custom Variables from Access Resolvers</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="comment">// In your AccessListResolver</span>
+<span class="annotation">@Override</span>
+<span class="directive">public</span> <span class="predefined-type">String</span> key() {
+    <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">accessibleCustomerIds</span><span class="delimiter">&quot;</span></span>;  <span class="comment">// becomes ${accessibleCustomerIds}</span>
+}
+
+<span class="annotation">@Override</span>
+<span class="directive">public</span> <span class="predefined-type">Collection</span>&lt;?&gt; resolve(...) {
+    <span class="keyword">return</span> <span class="predefined-type">Arrays</span>.asList(<span class="string"><span class="delimiter">&quot;</span><span class="content">CUST001</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">CUST002</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">CUST003</span><span class="delimiter">&quot;</span></span>);
 }</code></pre>
 </div>
 </div>
-<div class="paragraph">
-<p>Rule using the variable:</p>
-</div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code>customerCode:^[${accessibleCustomerCodes}]</code></pre>
+<pre class="CodeRay highlight"><code># Use in filter
+customerId:^[${accessibleCustomerIds}]</code></pre>
 </div>
-</div>
-<div class="paragraph">
-<p>Result: <code>$in</code> with <code>List&lt;String&gt;</code> values (no ObjectId/number/date coercion). For more discussion and examples, see <a href="domain-rule-context.html#domain-rule-context">String literals vs. typed values in resolver variables</a>.</p>
 </div>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_variables_and_resolvers">1.5. Variables and Resolvers</h4>
-<div class="paragraph">
-<p>Variables in expressions are written as ${name}. The framework populates variables from:
-- PrincipalContext and ResourceContext (standard variables): principalId, pAccountId, pTenantId, ownerId, orgRefName, resourceId, action, functionalDomain, area
-- AccessListResolver implementations (custom variables): collections or values computed per request</p>
-</div>
-<div class="paragraph">
-<p>Examples:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Constrain by tenant and org for the current principal:</p>
-</li>
-</ul>
-</div>
+<h4 id="_performance_tips">1.5. Performance Tips</h4>
+<div class="sect4">
+<h5 id="_efficient_queries">Efficient Queries</h5>
 <div class="listingblock">
 <div class="content">
-<pre>functionalDomain:"order" &amp;&amp; dataDomain.tenantId:${pTenantId} &amp;&amp; dataDomain.orgRefName:${orgRefName}</pre>
+<pre class="CodeRay highlight"><code># Good: Use indexed fields first
+status:&quot;ACTIVE&quot; &amp;&amp; createdDate:&gt;=2024-01-01
+
+# Better: Combine with specific values
+status:&quot;ACTIVE&quot; &amp;&amp; ownerId:${principalId} &amp;&amp; createdDate:&gt;=2024-01-01
+
+# Avoid: Leading wildcards on large collections
+name:*widget  # can be slow on millions of records</code></pre>
 </div>
 </div>
-<div class="ulist">
-<ul>
-<li>
-<p>Restrict to an access‑list resolved for the caller:</p>
-</li>
-</ul>
 </div>
+<div class="sect4">
+<h5 id="_projection_for_large_objects">Projection for Large Objects</h5>
 <div class="listingblock">
 <div class="content">
-<pre>customerId:^[${accessibleCustomerIds}]</pre>
+<pre class="CodeRay highlight"><code># In REST calls, limit returned fields
+GET /products/list?filter=active:true&amp;projection=+id,+name,+price,-description</code></pre>
 </div>
 </div>
-<div class="paragraph">
-<p>Authoring tips:
-- For single values, you can use variables anywhere a literal value can appear: field:${ownerId}
-- For lists, prefer the bracket form with a single ${var} inside the brackets for best results.</p>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_reference_equality">1.6. Reference Equality</h4>
-<div class="paragraph">
-<p>When comparing a @Reference field to an id, prefer the REFERENCE token using '@@' prefix:</p>
-</div>
+<h4 id="_integration_with_rest_apis">1.6. Integration with REST APIs</h4>
+<div class="sect4">
+<h5 id="_list_endpoints">List Endpoints</h5>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code>ownerRef:@@5f1e1a5e5e5e5e5e5e5e5e51</code></pre>
+<pre class="CodeRay highlight"><code data-lang="bash"># Basic filtering
+GET /products/list?filter=active:true
+
+# With sorting and pagination
+GET /products/list?filter=price:&gt;##10&amp;sort=-createdDate&amp;skip=20&amp;limit=10
+
+# Complex filter with projection
+GET /orders/list?filter=(status:&quot;PENDING&quot;||status:&quot;PROCESSING&quot;)&amp;&amp;totalAmount:&gt;##100&amp;projection=+id,+status,+totalAmount,+customerName</code></pre>
 </div>
 </div>
-<div class="paragraph">
-<p>The listener reflects on the modelClass to instantiate the referenced type and set its id accordingly.</p>
+</div>
+<div class="sect4">
+<h5 id="_permission_rules">Permission Rules</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml">- <span class="string"><span class="content">name: user-own-records</span></span>
+  <span class="key">priority</span>: <span class="string"><span class="content">300</span></span>
+  <span class="key">match</span>:
+    <span class="key">method</span>: <span class="string"><span class="content">[GET]</span></span>
+    <span class="key">url</span>: <span class="string"><span class="content">/api/**</span></span>
+  <span class="key">effect</span>: <span class="string"><span class="content">ALLOW</span></span>
+  <span class="key">andFilterString</span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">dataDomain.ownerId:${principalId}</span><span class="delimiter">&quot;</span></span></code></pre>
+</div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_access_resolvers">Access Resolvers</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="comment">// Resolver returns customer IDs user can access</span>
+<span class="directive">public</span> <span class="predefined-type">Collection</span>&lt;?&gt; resolve(...) {
+    <span class="keyword">return</span> customerService.getAccessibleIds(principalId);
+}
+
+<span class="comment">// Used in permission rule</span>
+andFilterString: <span class="string"><span class="delimiter">&quot;</span><span class="content">customerId:^[${accessibleCustomerIds}]</span><span class="delimiter">&quot;</span></span></code></pre>
+</div>
+</div>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_examples">1.7. Examples</h4>
-<div class="ulist">
-<ul>
-<li>
-<p>Simple string and number comparisons:</p>
-</li>
-</ul>
+<h4 id="_error_handling">1.7. Error Handling</h4>
+<div class="paragraph">
+<p>Common syntax errors and solutions:</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre>status:"OPEN" &amp;&amp; total:&gt;= ##100.00</pre>
+<pre class="CodeRay highlight"><code># Wrong: Missing quotes for multi-word strings
+name:Super Widget
+# Right:
+name:&quot;Super Widget&quot;
+
+# Wrong: Incorrect number prefix
+price:19.99
+# Right:
+price:##19.99
+
+# Wrong: Invalid date format
+createdDate:12/25/2024
+# Right:
+createdDate:2024-12-25
+
+# Wrong: Unbalanced parentheses
+(active:true &amp;&amp; price:&gt;##10
+# Right:
+(active:true &amp;&amp; price:&gt;##10)</code></pre>
 </div>
 </div>
+</div>
+<div class="sect3">
+<h4 id="_see_also">1.8. See Also</h4>
 <div class="ulist">
 <ul>
 <li>
-<p>Exists and not equals:</p>
+<p><a href="rest-crud.html#querying">REST CRUD Querying</a></p>
 </li>
-</ul>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre>externalId:~ &amp;&amp; status:!"CANCELLED"</pre>
-</div>
-</div>
-<div class="ulist">
-<ul>
 <li>
-<p>Grouping and OR:</p>
+<p><a href="permissions.html">Permission Rules</a></p>
 </li>
-</ul>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre>(type:"INVOICE" &amp;&amp; total:&gt; ##0.0) || type:"QUOTE"</pre>
-</div>
-</div>
-<div class="ulist">
-<ul>
 <li>
-<p>Array match:</p>
+<p><a href="domain-rule-context.html">Access Resolvers</a></p>
 </li>
 </ul>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre>lines:= { sku:"ABC" &amp;&amp; quantity:&gt; #0 }</pre>
-</div>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>IN with resolver list:</p>
-</li>
-</ul>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre>customerId:^[${accessibleCustomerIds}]</pre>
-</div>
 </div>
 </div>
 </div>
@@ -853,7 +1061,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-09-28 00:15:35 -0400
+Last updated 2025-09-30 20:57:53 -0400
 </div>
 </div>
 </body>
