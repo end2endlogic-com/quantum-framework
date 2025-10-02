@@ -235,7 +235,7 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
     * @param projectedProperties  can be {@code null} but if given must follow ProjectionField syntax
     * @return list of matching entities
     */
-   List<T> getListByQuery(int skip, int limit, @Nullable String filter, List<SortField> sortFields, List<ProjectionField> projectedProperties);
+   List<T> getListByQuery(int skip, int limit, @Nullable String filter, @Nullable List<SortField> sortFields, @Nullable List<ProjectionField> projectedProperties);
 
    /**
     * Returns a list of entities for the provided query within a realm, with optional sorting and projection.
@@ -248,7 +248,7 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
     * @param projectionFields    optional projection selection
     * @return list of matching entities
     */
-   List<T> getListByQuery (String realmId, int skip, int limit, @Nullable String query, List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields);
+   List<T> getListByQuery (String realmId, int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields);
 
    /**
     * Returns a list of entities based on the given query and options using an explicit datastore.
@@ -263,7 +263,7 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
     * @param projectionFields  can be null but if given must follow ProjectionField syntax
     * @return List of entities matching the given criteria
     */
-   List<T> getListByQuery(@NotNull Datastore datastore, int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields, List<ProjectionField> projectionFields);
+   List<T> getListByQuery(@NotNull Datastore datastore, int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields);
 
    /**
     * Returns entities based on the given filters and sort fields in the default realm.

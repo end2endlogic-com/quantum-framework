@@ -1,6 +1,9 @@
 package com.e2eq.framework.model.persistent.morphia;
 
+import com.e2eq.framework.model.security.Policy;
 import com.e2eq.framework.model.security.Realm;
+import dev.morphia.Datastore;
+import dev.morphia.MorphiaDatastore;
 import dev.morphia.query.Query;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
@@ -12,6 +15,19 @@ import java.util.Optional;
 
 @ApplicationScoped
 public class RealmRepo extends MorphiaRepo<Realm> {
+
+
+   public java.util.List<Realm> getAllListIgnoreRules(String realmId) {
+      MorphiaDatastore ds = morphiaDataStore.getDataStore(realmId);
+      String dataBase = ds.getDatabase().getName();
+      String collectionName = ds.getMapper().getEntityModel(Realm.class).collectionName();
+      dev.morphia.query.MorphiaCursor<Realm> cursor = ds.find(getPersistentClass()).iterator();
+      List<Realm> result;
+      try (cursor) {
+          result = cursor.toList();
+          return result;
+      }
+   }
 
    public Optional<Realm> findByEmailDomain(String emailDomain) {
       return findByEmailDomain(emailDomain, false);

@@ -144,7 +144,7 @@ public class AddRealms extends ChangeSetBase {
                 .accountId(testAccountNumber)
                 .build();
         realm = Realm.builder()
-                .refName(testTenantId)
+                .refName(testRealm)
                 .displayName(testRealm)
                 .emailDomain(testTenantId)
                 .databaseName(testRealm)

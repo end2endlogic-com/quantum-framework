@@ -118,13 +118,13 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                 if (needRebuild) {
                    Log.debug("rebuilding identity because identityName is null or does not equal current identity");
                     String principalName = (identityName != null) ? identityName : envConfigUtils.getAnonymousUserId();
-                    java.util.Set<String> rolesSet = hasIdentity ? securityIdentity.getRoles() : java.util.Collections.emptySet();
+                    java.util.Set<String> rolesSet = securityIdentity.getRoles();
                     String[] roles = (rolesSet == null || rolesSet.isEmpty()) ? new String[0] : rolesSet.toArray(new String[rolesSet.size()]);
 
                     // Try to enrich from credentials in system/default realm
                    Log.debugf("Attempting to locate user using userId:%s", principalName);
                     java.util.Optional<com.e2eq.framework.model.security.CredentialUserIdPassword> ocreds = credentialRepo.findByUserId(principalName, envConfigUtils.getSystemRealm(), true);
-                    if (!ocreds.isPresent()) {
+                    if (ocreds.isEmpty()) {
                        // attempt to get via subject
                        ocreds = credentialRepo.findBySubject(principalName, envConfigUtils.getSystemRealm(), true);
                     }
@@ -209,7 +209,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
        if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
             filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get(), modelClass);
             if (Log.isDebugEnabled()) {
-                Log.debugf("getFilterArray for %s security context: %s using Database:%s", SecurityContext.getPrincipalContext().get().getUserId(), filters, getDatabaseName());
+                Log.debugf("getFilterArray for %s security context: %s", SecurityContext.getPrincipalContext().get().getUserId(), filters);
             }
         } else {
             throw new RuntimeException("Logic error SecurityContext should be present; this implies that an attempt to call a method was made where the user was not logged in");
@@ -526,20 +526,20 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         FindOptions findOptions = new FindOptions();
 
         if (skip > 0) {
-            findOptions = findOptions.skip(skip);
+            findOptions.skip(skip);
         }
 
         if (limit > 0) {
-            findOptions = findOptions.limit(limit);
+            findOptions.limit(limit);
         }
 
         if (sortFields != null && !sortFields.isEmpty()) {
             List<Sort> sorts = convertToSort(sortFields);
-            findOptions = findOptions.sort(sorts.toArray(new Sort[sorts.size()]));
+            findOptions.sort(sorts.toArray(new Sort[sorts.size()]));
         }
 
         if (projectionFields != null && !projectionFields.isEmpty()) {
-            findOptions = findOptions.projection().knownFields();
+            findOptions.projection().knownFields();
             findOptions = convertToProjection(findOptions, projectionFields);
         }
 

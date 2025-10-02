@@ -2,6 +2,7 @@ package com.e2eq.framework.securityrules;
 
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
+import com.e2eq.framework.model.persistent.morphia.PolicyRepo;
 import com.e2eq.framework.model.security.Rule;
 import com.e2eq.framework.model.securityrules.*;
 import com.e2eq.framework.util.EnvConfigUtils;
@@ -40,7 +41,7 @@ public class RuleContext {
      EnvConfigUtils envConfigUtils;
 
      @Inject
-     com.e2eq.framework.model.persistent.morphia.PolicyRepo policyRepo;
+     PolicyRepo policyRepo;
 
     /**
      * This holds a map of rules, indexed by an "identity" where an identity may be either
@@ -290,42 +291,44 @@ public class RuleContext {
             }
 
             // Fetch all policies in realm (bypass permission filters)
-            java.util.List<com.e2eq.framework.model.security.Policy> policies = policyRepo.getAllListIgnoreRules(realm);
-            if (policies != null) {
-                for (com.e2eq.framework.model.security.Policy p : policies) {
+           if (policyRepo != null) {
+              java.util.List<com.e2eq.framework.model.security.Policy> policies = policyRepo.getAllListIgnoreRules(realm);
+              if (policies != null) {
+                 for (com.e2eq.framework.model.security.Policy p : policies) {
                     if (p.getRules() == null) continue;
                     for (Rule r : p.getRules()) {
-                        String identity = null;
-                        if (r.getSecurityURI() != null && r.getSecurityURI().getHeader() != null) {
-                            identity = r.getSecurityURI().getHeader().getIdentity();
-                        }
-                        if (identity == null || identity.isBlank()) {
-                            identity = p.getPrincipalId();
-                        }
-                        if (identity == null || identity.isBlank()) {
-                            // skip malformed entries
-                            continue;
-                        }
-                        // Build a header solely to key by identity; addRule uses identity for indexing
-                        SecurityURIHeader header = new SecurityURIHeader.Builder()
-                                .withIdentity(identity)
-                                .withArea("*")
-                                .withFunctionalDomain("*")
-                                .withAction("*")
-                                .build();
-                        addRule(header, r);
+                       String identity = null;
+                       if (r.getSecurityURI() != null && r.getSecurityURI().getHeader() != null) {
+                          identity = r.getSecurityURI().getHeader().getIdentity();
+                       }
+                       if (identity == null || identity.isBlank()) {
+                          identity = p.getPrincipalId();
+                       }
+                       if (identity == null || identity.isBlank()) {
+                          // skip malformed entries
+                          continue;
+                       }
+                       // Build a header solely to key by identity; addRule uses identity for indexing
+                       SecurityURIHeader header = new SecurityURIHeader.Builder()
+                                                     .withIdentity(identity)
+                                                     .withArea("*")
+                                                     .withFunctionalDomain("*")
+                                                     .withAction("*")
+                                                     .build();
+                       addRule(header, r);
                     }
-                }
-            }
-            // Sort each identity list by priority once for stable merge later
-            for (Map.Entry<String, List<Rule>> e : rules.entrySet()) {
-                List<Rule> list = e.getValue();
-                if (list != null && list.size() > 1) {
+                 }
+              }
+              // Sort each identity list by priority once for stable merge later
+              for (Map.Entry<String, List<Rule>> e : rules.entrySet()) {
+                 List<Rule> list = e.getValue();
+                 if (list != null && list.size() > 1) {
                     list.sort((r1, r2) -> Integer.compare(r1.getPriority(), r2.getPriority()));
-                }
-            }
-            policyVersion = System.nanoTime();
-            Log.infof("RuleContext: loaded %d rules from repo for realm %s", rules.size(), realm);
+                 }
+              }
+              policyVersion = System.nanoTime();
+              Log.infof("RuleContext: loaded %d rules from repo for realm %s", rules.size(), realm);
+           }
         } catch (Exception ex) {
             Log.error("Failed to load policies into RuleContext; retaining system rules only", ex);
         }
