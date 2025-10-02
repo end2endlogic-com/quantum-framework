@@ -1,0 +1,47 @@
+:toc: left
+:toclevels: 3
+:sectnums:
+:doctype: book
+:icons: font
+:revnumber: {project-version}
+
+= Quantum Framework Documentation
+
+Quantum is a Quarkus-based framework for building multi-tenant SaaS platforms with MongoDB. This guide helps mid-level Java developers build secure, scalable applications with consistent REST APIs, policy-driven authorization, and flexible data sharing.
+
+== Getting Started
+
+include::user-guide/overview.adoc[]
+include::user-guide/getting-started.adoc[]
+
+== Core Concepts
+
+include::user-guide/tenant-models.adoc[]
+include::user-guide/domain-rule-context.adoc[]
+include::user-guide/modeling.adoc[]
+
+== Building APIs
+
+include::user-guide/rest-crud.adoc[]
+include::user-guide/query-language.adoc[]
+
+== Security
+
+include::user-guide/auth.adoc[]
+include::user-guide/permissions.adoc[]
+include::user-guide/security-annotations.adoc[]
+
+== Advanced Features
+
+include::user-guide/migrations.adoc[]
+include::user-guide/testing.adoc[]
+
+== Tutorials
+
+include::tutorials/supply-chain.adoc[]
+
+== Appendix
+
+include::appendix/configuration.adoc[]
+include::appendix/quarkus-foundation.adoc[]
+include::appendix/glossary.adoc[]

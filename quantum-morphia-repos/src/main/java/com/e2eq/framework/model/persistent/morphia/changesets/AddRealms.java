@@ -44,6 +44,16 @@ public class AddRealms extends ChangeSetBase {
     @ConfigProperty(name = "quantum.realmConfig.systemRealm", defaultValue = "system-com")
     String systemRealm;
 
+   @ConfigProperty(name = "quantum.realmConfig.testRealm", defaultValue = "test-quantum-com")
+    String testRealm;
+   @ConfigProperty(name = "quantum.realmConfig.testTenantId", defaultValue = "test-quantum.com")
+   String testTenantId;
+   @ConfigProperty(name = "quantum.realmConfig.testOrgRefName", defaultValue = "test-quantum.com")
+   String testOrgRefName;
+   @ConfigProperty(name = "quantum.realmConfig.testAccountNumber", defaultValue = "0000000001")
+   String testAccountNumber;
+
+
     @Override
     public String getId() {
         return "00004";
@@ -123,7 +133,26 @@ public class AddRealms extends ChangeSetBase {
 
         realmRepo.save(session, realm);
 
-        Log.info(".  Added Successfully");
-        emitter.emit(".  Added Successfully");
+        Log.info(".  Added system-com realm Successfully");
+        emitter.emit(".  Added system-com realm Successfully");
+
+        // now add the test-quantum-com realm as well
+        domainContext = DomainContext.builder()
+                .tenantId(testTenantId)
+                .orgRefName(testOrgRefName)
+                .defaultRealm(testRealm)
+                .accountId(testAccountNumber)
+                .build();
+        realm = Realm.builder()
+                .refName(testTenantId)
+                .displayName(testRealm)
+                .emailDomain(testTenantId)
+                .databaseName(testRealm)
+                .domainContext(domainContext)
+                .build();
+        realmRepo.save(session, realm);
+
+       Log.info(".  Added test-quantum-com realm Successfully");
+       emitter.emit(".  Added test-quantum-com realm Successfully");
     }
 }

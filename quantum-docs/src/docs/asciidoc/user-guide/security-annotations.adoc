@@ -1,73 +1,199 @@
 [[security-annotations]]
 === Security Annotations: FunctionalMapping and FunctionalAction
 
-Quantum introduces two annotations to simplify declaring the functional context of REST resources and methods. The SecurityFilter reads these annotations to populate ResourceContext for downstream rule evaluation.
+Quantum uses annotations to declare a model or resource's functional area, domain, and actions for security evaluation. This replaces the legacy `bmFunctionalArea()` and `bmFunctionalDomain()` methods.
 
-==== @FunctionalMapping (class‑level)
+==== @FunctionalMapping
+
+Use `@FunctionalMapping` on model classes or resource classes to declare their business placement:
 
 [source,java]
 ----
 import com.e2eq.framework.annotations.FunctionalMapping;
 
-@FunctionalMapping(area = "sales", domain = "order")
-@Path("/annotated")
-public class AnnotatedTestResource {
-    // ... resource endpoints ...
+@Entity
+@FunctionalMapping(area = "catalog", domain = "product")
+public class Product extends BaseModel {
+    // No need to override bmFunctionalArea/bmFunctionalDomain
 }
 ----
 
-- Declares the Functional Area and Functional Domain for the resource class.
-- In SecurityFilter, when a request targets a method on this class, the ResourceContext area/domain are taken from this annotation.
+[source,java]
+----
+@Path("/products")
+@FunctionalMapping(area = "catalog", domain = "product")
+public class ProductResource extends BaseResource<Product, ProductRepo> {
+    // All methods inherit area/domain from class annotation
+}
+----
 
-==== @FunctionalAction (method‑level)
+==== @FunctionalAction
+
+Use `@FunctionalAction` on JAX-RS resource methods when the action differs from the HTTP verb default:
 
 [source,java]
 ----
-import com.e2eq.framework.annotations.FunctionalAction;
+@Path("/products")
+public class ProductResource {
 
-@POST
-@Path("/create")
-@FunctionalAction("CREATE")
-public Response create(...) { ... }
+    @POST
+    @FunctionalAction("CREATE")  // Explicit, though POST implies CREATE
+    public Product create(Product payload) { 
+        return productRepo.save(payload); 
+    }
+
+    @GET
+    @Path("/{id}")
+    // No annotation needed - GET implies VIEW
+    public Product get(@PathParam("id") String id) { 
+        return productRepo.findById(id); 
+    }
+    
+    @PUT
+    @Path("/{id}/approve")
+    @FunctionalAction("APPROVE")  // Custom action beyond standard CRUD
+    public Product approve(@PathParam("id") String id) {
+        Product p = productRepo.findById(id);
+        p.setStatus("APPROVED");
+        return productRepo.save(p);
+    }
+}
 ----
 
-- Declares the functional action for this endpoint (CREATE, VIEW, UPDATE, DELETE, etc.).
-- If absent, SecurityFilter infers the action from the HTTP method:
-  - GET → VIEW
-  - POST → CREATE
-  - PUT/PATCH → UPDATE
-  - DELETE → DELETE
+==== Default Action Mapping
 
-==== How SecurityFilter uses the annotations
+When `@FunctionalAction` is not present, actions are inferred from HTTP methods:
 
-At request time, SecurityFilter examines the matched resource class and method:
+[cols="1,1"]
+|===
+|HTTP Method |Default Action
 
-1. If @FunctionalMapping is present on the class, it sets area/domain accordingly.
-2. If @FunctionalAction is present on the method, it uses that action; otherwise it infers from HTTP method.
-3. It then constructs and stores a ResourceContext(area, domain, action) into a thread‑local SecurityContext for use by RuleContext and repositories.
-4. The filter clears contexts after the response to avoid leaks across requests.
+|GET |VIEW
+|POST |CREATE  
+|PUT |UPDATE
+|PATCH |UPDATE
+|DELETE |DELETE
+|===
 
-==== Example
+==== How the Framework Uses These Annotations
 
-The test resource and tests illustrate expected behavior:
+===== SecurityFilter
+- Reads `@FunctionalMapping` from the matched resource class for area/domain
+- Reads `@FunctionalAction` from the method, or infers from HTTP method
+- Falls back to path-based parsing if annotations are missing
 
-- GET /annotated/view
-  - Class annotated with @FunctionalMapping(area="sales", domain="order")
-  - Method annotated with @FunctionalAction("VIEW")
-  - Response body from the sample shows: "sales:order:VIEW"
+===== MorphiaRepo.fillUIActions
+- Uses `@FunctionalMapping` on model classes to resolve allowed UI actions
+- Falls back to legacy `bmFunctionalArea()/bmFunctionalDomain()` methods
 
-- POST /annotated/create
-  - Class annotated with @FunctionalMapping(area="sales", domain="order")
-  - Method NOT annotated with @FunctionalAction
-  - SecurityFilter infers action CREATE from HTTP method POST
-  - Response body shows: "sales:order:CREATE"
+===== PermissionResource
+- Prefers `@FunctionalMapping` when listing functional domains
+- Falls back to legacy methods when annotation is missing
 
-==== Writing Rules that target annotated resources
+==== Migration from Legacy Methods
 
-With ResourceContext reliably set, you can author rules that match on:
+===== Current (Legacy) Approach
+[source,java]
+----
+@Entity
+public class Product extends BaseModel {
+    @Override
+    public String bmFunctionalArea() { 
+        return "Catalog"; 
+    }
 
-- area == "sales"
-- functionalDomain == "order"
-- action == "VIEW" | "CREATE" | "UPDATE" | "DELETE"
+    @Override
+    public String bmFunctionalDomain() { 
+        return "Product"; 
+    }
+}
+----
 
-Rules can then attach filters via andFilterString/orFilterString that will apply to repository queries executed within these endpoints.
+===== New (Recommended) Approach
+[source,java]
+----
+@Entity
+@FunctionalMapping(area = "catalog", domain = "product")
+public class Product extends BaseModel {
+    // Clean - no method overrides needed
+}
+----
+
+===== Transitional Support
+You can use both during migration:
+- If `@FunctionalMapping` is present, it takes precedence
+- If missing, legacy methods are used as fallback
+- Plan to remove legacy methods in future releases
+
+==== Best Practices
+
+===== Consistent Naming
+Use lowercase, kebab-case for areas and domains:
+[source,java]
+----
+@FunctionalMapping(area = "supply-chain", domain = "purchase-order")
+@FunctionalMapping(area = "catalog", domain = "product")
+@FunctionalMapping(area = "identity", domain = "user-profile")
+----
+
+===== Resource vs Model Annotations
+- **Prefer model annotations** for consistency across all usage
+- Use resource annotations only when the resource handles multiple model types
+- Avoid duplicating annotations on both model and resource for the same entity
+
+===== Custom Actions
+Define custom actions for business operations beyond CRUD:
+[source,java]
+----
+@PUT
+@Path("/{id}/publish")
+@FunctionalAction("PUBLISH")
+public Product publish(@PathParam("id") String id) { ... }
+
+@POST  
+@Path("/{id}/duplicate")
+@FunctionalAction("DUPLICATE")
+public Product duplicate(@PathParam("id") String id) { ... }
+
+@DELETE
+@Path("/{id}/archive") 
+@FunctionalAction("ARCHIVE")  // Soft delete vs hard DELETE
+public void archive(@PathParam("id") String id) { ... }
+----
+
+==== Integration with Permission Rules
+
+Annotations feed into permission rule matching:
+
+[source,yaml]
+----
+- name: allow-catalog-reads
+  priority: 300
+  match:
+    method: [GET]
+    # Matches area/domain from @FunctionalMapping
+    functionalArea: catalog
+    functionalDomain: product
+  rolesAny: [USER, ADMIN]
+  effect: ALLOW
+----
+
+[source,yaml]
+----
+- name: admin-only-approval
+  priority: 100
+  match:
+    method: [PUT]
+    functionalArea: catalog
+    functionalDomain: product
+    # Matches @FunctionalAction("APPROVE")
+    action: APPROVE
+  rolesAll: [ADMIN]
+  effect: ALLOW
+----
+
+==== See Also
+
+- xref:modeling.adoc#prefer-annotations-for-functional-mapping-recommended[Modeling: Functional Mapping]
+- xref:permissions.adoc[Permission Rules]
+- xref:domain-rule-context.adoc[DomainContext and RuleContext]

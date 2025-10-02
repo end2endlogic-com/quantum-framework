@@ -14,6 +14,7 @@ import lombok.Getter;
 
 
 import java.security.SecureRandom;
+import java.util.regex.Pattern;
 
 
 @ApplicationScoped
@@ -22,6 +23,8 @@ public class SecurityUtils {
 
    @Inject
    EnvConfigUtils envConfigUtils;
+
+
 
    private static final SecureRandom secureRandom = new SecureRandom();
 
@@ -141,7 +144,76 @@ public class SecurityUtils {
 
 
 
+   // Compute a list of allowed realm refNames for the given credential from a candidate set.
+   // If authorizedRealms present, intersect candidates with that list; else if realmRegEx present, filter by it;
+   // else, return only the default realm from the credential's domain context if included in candidates; if
+   // candidates is null, return a singleton list with the default realm.
+   public java.util.List<String> computeAllowedRealmRefNames(
+           com.e2eq.framework.model.security.CredentialUserIdPassword credential,
+           java.util.List<String> candidateRealmRefNames) {
+      java.util.Objects.requireNonNull(credential, "credential cannot be null");
 
+      // Prefer explicit list
+      var realms = credential.getAuthorizedRealms();
+      if (realms != null && !realms.isEmpty()) {
+         java.util.Set<String> allowed = new java.util.HashSet<>();
+         for (var re : realms) {
+            if (re != null && re.getRealmRefName() != null) {
+               allowed.add(re.getRealmRefName());
+            }
+         }
+         if (candidateRealmRefNames == null) {
+            return new java.util.ArrayList<>(allowed);
+         }
+         java.util.List<String> out = new java.util.ArrayList<>();
+         for (String r : candidateRealmRefNames) {
+            if (r != null && allowed.stream().anyMatch(a -> a.equalsIgnoreCase(r))) {
+               out.add(r);
+            }
+         }
+         return out;
+      }
 
+      // Fallback regex
+      String regex = credential.getRealmRegEx();
+      regex = regex.replace("*", ".*");
+      if (regex != null && !regex.isBlank()) {
+         // Convert wildcard pattern to regex
+
+         Pattern pattern = Pattern.compile(regex, Pattern.CASE_INSENSITIVE);
+         java.util.regex.Pattern p;
+         try {
+            p = java.util.regex.Pattern.compile(regex, java.util.regex.Pattern.CASE_INSENSITIVE);
+         } catch (Exception e) {
+            // invalid pattern: treat as exact string
+            p = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote(regex), java.util.regex.Pattern.CASE_INSENSITIVE);
+         }
+         if (candidateRealmRefNames == null) {
+            return java.util.Collections.emptyList();
+         }
+         java.util.List<String> out = new java.util.ArrayList<>();
+         for (String r : candidateRealmRefNames) {
+            if (r != null && p.matcher(r).matches()) {
+               out.add(r);
+            }
+         }
+         return out;
+      }
+
+      // Neither defined: default to the credential's default realm only
+      String def = credential.getDomainContext() != null ? credential.getDomainContext().getDefaultRealm() : null;
+      if (def == null) {
+         return java.util.Collections.emptyList();
+      }
+      if (candidateRealmRefNames == null) {
+         return java.util.List.of(def);
+      }
+      for (String r : candidateRealmRefNames) {
+         if (r != null && r.equalsIgnoreCase(def)) {
+            return java.util.List.of(r);
+         }
+      }
+      return java.util.Collections.emptyList();
+   }
 
 }

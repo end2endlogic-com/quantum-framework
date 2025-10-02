@@ -1,7 +1,7 @@
 [[testing]]
-=== Testing in Quantum: Security Contexts, Repos, and REST APIs
+== Testing in Quantum: Security Contexts, Repos, and REST APIs
 
-==== Testing Framework
+=== Testing Framework
 This guide explains how to write effective tests in the Quantum framework, with a focus on setting the security context and choosing the right Quarkus testing patterns for repository logic vs. REST APIs.
 
 It covers four practical patterns you can use to establish the security context in tests:
@@ -13,7 +13,7 @@ It covers four practical patterns you can use to establish the security context 
 In addition, it outlines how to test REST endpoints vs. repository logic and highlights useful features of the Quarkus Test Framework.
 
 
-==== Prerequisites and glossary
+=== Prerequisites and glossary
 - RuleContext: the in-memory rule engine configuration used by authorization checks.
 - PrincipalContext (pContext): who is performing the action (userId, roles, realms, data domain).
 - ResourceContext (rContext): what is being acted upon (area/domain, resource, action).
@@ -21,7 +21,7 @@ In addition, it outlines how to test REST endpoints vs. repository logic and hig
 - SecurityIdentity: Quarkus’ current identity (used by @TestSecurity and HTTP request security).
 
 
-==== Pattern 1 — Extend BaseRepoTest
+=== Pattern 1 — Extend BaseRepoTest
 For repository tests (no HTTP), the simplest approach is to extend BaseRepoTest.
 
 What BaseRepoTest does for you:
@@ -56,7 +56,7 @@ Notes:
 - BaseRepoTest also runs migrations once using your test principal, which avoids authorization failures during initialization.
 
 
-==== Pattern 2 — Try-with-resources SecuritySession
+=== Pattern 2 — Try-with-resources SecuritySession
 Use SecuritySession explicitly to scope work that should run under a specific PrincipalContext and ResourceContext. This is the most explicit pattern and works in both repository and service-level tests.
 
 Example:
@@ -84,7 +84,7 @@ Tips:
 - You can construct custom PrincipalContext/ResourceContext for specific scenarios (e.g., different roles or realms) and pass them to SecuritySession.
 
 
-==== Pattern 3 — Scoped-call wrapper (ScopedCallScope)
+=== Pattern 3 — Scoped-call wrapper (ScopedCallScope)
 If you prefer not to repeat try-with-resources blocks, wrap your work in a helper that creates a SecuritySession, runs your logic, and ensures cleanup. This is sometimes called a “scoped call” pattern, often referred to as a ScopedCallScope.
 
 Example helper (placed in test sources):
@@ -126,7 +126,7 @@ SecurityScopes.run(pContext, rContext, () -> repo.save(realm, entity));
 This achieves the same effect as try-with-resources but centralizes the pattern.
 
 
-==== Pattern 4 — @TestSecurity annotation (Quarkus)
+=== Pattern 4 — @TestSecurity annotation (Quarkus)
 For tests that run through HTTP (and in some repo tests), you can use Quarkus’ @io.quarkus.test.security.TestSecurity to set the SecurityIdentity without creating a SecuritySession.
 
 Quantum integrates with this in two places:
@@ -178,7 +178,7 @@ Notes:
 - For repo tests that require precise ResourceContext (area/domain/action), prefer SecuritySession; MorphiaRepo sets a generic default ResourceContext when needed.
 
 
-==== Testing REST APIs vs. Repository Logic
+=== Testing REST APIs vs. Repository Logic
 
 When to prefer REST (HTTP) tests:
 - End-to-end authorization: validate request filters, identity mapping, realm headers, and JWT handling.
@@ -206,7 +206,7 @@ How to test repository logic:
 - Wrap calls with SecuritySession (Pattern 2) or use a scoped-call helper (Pattern 3).
 
 
-==== Useful Quarkus Test features
+=== Useful Quarkus Test features
 - @QuarkusTest: boots the app for integration tests with CDI, config, and persistence.
 - RestAssured: fluent HTTP client baked into Quarkus tests; supports JSON assertions and extraction.
 - @TestSecurity: set SecurityIdentity (user, roles) for tests.
@@ -215,7 +215,7 @@ How to test repository logic:
 - @TestHTTPEndpoint and @TestHTTPResource: convenient endpoint URI injection.
 
 
-==== Real-world tips
+=== Real-world tips
 - Clearing thread locals: If you manipulate SecurityContext directly in advanced tests, clear it in @AfterEach to avoid cross-test leakage:
   [source,java]
   ----
@@ -227,7 +227,7 @@ How to test repository logic:
 - Logging: enable DEBUG for com.e2eq to inspect rule evaluation and identity resolution during tests.
 
 
-==== Summary
+=== Summary
 - Use BaseRepoTest for repository tests and migrations, and wrap work in SecuritySession.
 - For less ceremony, create a simple scoped-call helper to run code under a SecuritySession.
 - For REST/API tests and quick identity setup, use @TestSecurity, realm headers, and RestAssured.
