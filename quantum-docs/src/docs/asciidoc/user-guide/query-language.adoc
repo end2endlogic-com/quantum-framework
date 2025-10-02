@@ -1,176 +1,324 @@
 [[query-language]]
-=== Query Language (BIAPIQuery)
+=== Query Language Reference
 
-This section documents the ANTLR‑based filter language used by repositories (e.g., MorphiaRepo) and the rule engine to construct MongoDB/Morphia filters.
+Quantum uses an ANTLR-based query language (BIAPIQuery.g4) for filtering, searching, and constraining data across all REST endpoints. This single, consistent syntax works everywhere: list APIs, permission rules, and access resolvers.
 
-==== Summary of Operators
+==== Basic Syntax
 
-- Equals: ':'  (field:value)
-- Not equals: ':!'
-- Less than / Greater than: ':<' / ':>'
-- Less‑than‑or‑equal / Greater‑than‑or‑equal: ':<=' / ':>='
-- Exists (field present): ':~'  (no value)
-- In list: ':^' followed by a list [v1,v2,...]
-- Boolean literals: true / false
-- Null literal: null
-- Logical AND: '&&'
-- Logical OR: '||'
-- Logical NOT (on a single expression): '!!'
-- Grouping: parentheses '(' and ')'
+===== Operators
 
-==== Value Types
+[cols="1,2,3"]
+|===
+|Operator |Symbol |Example
 
-- Strings: unquoted or quoted with "..." (quotes allow spaces and punctuation)
-- Whole numbers: prefix with '#' (e.g., #10)
-- Decimals: prefix with '##' (e.g., ##19.99)
-- Dates: yyyy-MM-dd
-- DateTime: ISO-8601 (e.g., 2024-07-28T10:15:30Z)
-- ObjectId: 24‑char hex
-- References: @@<ObjectId> resolves to a Morphia @Reference field instance
-- Variables: ${...} substituted from PrincipalContext/ResourceContext and resolver-provided variables (see Variables and Resolvers below)
+|Equals |`:` |`name:"Widget"`
+|Not equals |`:!` |`status:!"DELETED"`
+|Less than |`:<` |`price:<##100`
+|Greater than |`:>` |`quantity:>#50`
+|Less than or equal |`:<=` |`createdDate:<=2024-12-31`
+|Greater than or equal |`:>=` |`updatedAt:>=2024-01-01T00:00:00Z`
+|Field exists |`:~` |`description:~`
+|In list |`:^` |`status:^["ACTIVE","PENDING"]`
+|===
 
-==== Array Query Support (elemMatch)
+===== Value Types
 
-The grammar supports array filtering via elemMatch using ':=' with braces. Example:
+[cols="1,2,3"]
+|===
+|Type |Prefix |Example
 
-[source]
-----
-lineItems:= { (sku:"ABC" && quantity:> #0) || (sku:"DEF" && backordered:true) }
-----
+|String |none or `"..."` |`name:widget` or `name:"Super Widget"`
+|Number (integer) |`#` |`quantity:#42`
+|Number (decimal) |`##` |`price:##19.99`
+|Date |none |`shipDate:2024-12-25`
+|DateTime |none |`createdAt:2024-12-25T10:30:00Z`
+|Boolean |none |`active:true`
+|Null |none |`description:null`
+|ObjectId |none |`id:507f1f77bcf86cd799439011`
+|Reference |`@@` |`parentId:@@507f1f77bcf86cd799439011`
+|Variable |`${...}` |`ownerId:${principalId}`
+|===
 
-This produces a Mongo $elemMatch on field 'lineItems' with the nested expression composed inside. You can nest multiple predicates with '&&' / '||' and parentheses as needed. Internally, the listener composes the inner filters and wraps them in Filters.elemMatch(...).
+===== Logical Operators
 
-Notes:
-- elemMatch is ideal for filtering documents that contain an array of subdocuments where at least one element satisfies the nested criteria.
-- The inner expression supports the full set of operators supported for basic expressions, including numbers, booleans, strings, dates, etc.
+[cols="1,2,3"]
+|===
+|Operator |Symbol |Example
 
-==== IN Clause Enhancements
+|AND |`&&` |`active:true && price:>##10`
+|OR |`\|\|` |`status:"ACTIVE" \|\| status:"PENDING"`
+|NOT |`!!` |`!!(price:<##5)`
+|Grouping |`()` |`(active:true \|\| featured:true) && price:>##0`
+|===
 
-The IN operator (':^') supports both literal lists and variable‑driven lists.
+==== Common Patterns
 
-1) Literal values:
-
-[source]
-----
-customerId:^[5f1e1a5e5e5e5e5e5e5e5e51,5f1e1a5e5e5e5e5e5e5e5e52]
-----
-
-- ObjectId values are detected from 24‑hex strings and converted to ObjectId.
-- Numbers, booleans, ISO datetimes, and yyyy‑MM‑dd dates are also coerced appropriately.
-
-2) Variable‑driven lists via ${var} inside brackets:
+===== String Matching
 
 [source]
 ----
-customerId:^[${accessibleCustomerIds}]
+# Exact match
+name:"Super Widget"
+
+# Wildcard matching
+name:*widget*        # contains "widget"
+name:widget*         # starts with "widget"  
+name:*widget         # ends with "widget"
+name:w?dget          # single character wildcard
+
+# Case sensitivity (depends on database collation)
+name:"WIDGET"        # may or may not match "widget"
 ----
 
-- If 'accessibleCustomerIds' is published as a Collection/array via an AccessListResolver (see below), each element is type‑coerced.
-- If it is published as a single string (e.g., CSV), it is split by comma and each value is type‑coerced.
-- Empty or blank variables yield an empty list (matching none).
+===== Numeric Ranges
 
-Type coercion rules used for each element:
-- 24‑hex → ObjectId
-- 'true'/'false' → boolean
-- integer → long
-- decimal → double
-- ISO datetime → java.util.Date
-- yyyy‑MM‑dd → java.time.LocalDate
-- otherwise → string
+[source]
+----
+# Price between 10 and 100
+price:>=##10 && price:<=##100
 
-===== Forcing string semantics (StringLiteral)
+# Quantity greater than 0
+quantity:>#0
 
-Sometimes a resolver needs to return strings that look like other types (for example, a 24‑hex string that resembles an ObjectId). To avoid unintended coercion, resolvers can return `StringLiteral` values, which the engine unwraps to raw Strings without coercion.
+# Exact count
+itemCount:#5
+----
 
-Example resolver:
+===== Date and Time Queries
+
+[source]
+----
+# Orders from today
+createdDate:>=2024-12-25
+
+# Orders from last week
+createdDate:>=2024-12-18 && createdDate:<2024-12-25
+
+# Specific timestamp
+updatedAt:2024-12-25T14:30:00Z
+
+# Orders modified this year
+updatedAt:>=2024-01-01T00:00:00Z
+----
+
+===== List Membership
+
+[source]
+----
+# Status in specific values
+status:^["ACTIVE","PENDING","PROCESSING"]
+
+# User IDs from a list
+ownerId:^["user1","user2","user3"]
+
+# ObjectId list
+categoryId:^[@@507f1f77bcf86cd799439011, @@507f1f77bcf86cd799439012]
+
+# Mixed types (coerced automatically)
+priority:^[#1,#2,#3]
+----
+
+===== Null and Existence Checks
+
+[source]
+----
+# Field has any value (not null)
+description:~
+
+# Field is null
+description:null
+
+# Field is not null
+description:!null
+
+# Field exists and is not empty string
+description:~ && description:!""
+----
+
+==== Advanced Examples
+
+===== Complex Business Logic
+
+[source]
+----
+# Active products under $50 OR featured products at any price
+(active:true && price:<##50) || featured:true
+
+# Orders needing attention: overdue OR high-value pending
+(dueDate:<2024-12-25 && status:!"COMPLETED") || 
+(status:"PENDING" && totalAmount:>##1000)
+
+# Products with inventory issues
+(quantity:<=#5 && reorderPoint:>#5) || stockStatus:"OUT_OF_STOCK"
+----
+
+===== Multi-tenant Filtering
+
+[source]
+----
+# User's own records
+dataDomain.ownerId:${principalId}
+
+# Organization-wide access
+dataDomain.orgRefName:${orgRefName}
+
+# Tenant-scoped with public sharing
+dataDomain.tenantId:${pTenantId} || dataDomain.orgRefName:"PUBLIC"
+----
+
+===== Audit and Compliance
+
+[source]
+----
+# Records modified by specific user
+auditInfo.lastUpdatedBy:"john.doe"
+
+# Changes in date range
+auditInfo.lastUpdatedDate:>=2024-12-01 && 
+auditInfo.lastUpdatedDate:<2024-12-31
+
+# Created vs modified
+auditInfo.createdDate:auditInfo.lastUpdatedDate  # never modified
+auditInfo.createdDate:!auditInfo.lastUpdatedDate # has been modified
+----
+
+==== Variables in Filters
+
+Variables are resolved from the current security context and can be used in permission rules and access resolvers.
+
+===== Standard Variables
+
+[cols="1,3"]
+|===
+|Variable |Description
+
+|`${principalId}` |Current user's ID
+|`${pTenantId}` |Principal's tenant ID  
+|`${pAccountId}` |Principal's account ID
+|`${pOrgRefName}` |Principal's organization
+|`${realm}` |Current realm/database
+|`${area}` |Current functional area
+|`${functionalDomain}` |Current functional domain
+|`${action}` |Current action (CREATE, UPDATE, etc.)
+|===
+
+===== Custom Variables from Access Resolvers
 
 [source,java]
 ----
-@ApplicationScoped
-public class CustomerCodeResolver implements AccessListResolver {
-    @Override public String key() { return "accessibleCustomerCodes"; }
-    @Override public boolean supports(PrincipalContext p, ResourceContext r, Class<? extends UnversionedBaseModel> m) { return true; }
-    @Override public java.util.Collection<?> resolve(PrincipalContext p, ResourceContext r, Class<? extends UnversionedBaseModel> m) {
-        return java.util.List.of(
-            com.e2eq.framework.model.persistent.morphia.StringLiteral.of("5f1e1a5e5e5e5e5e5e5e5e51"),
-            com.e2eq.framework.model.persistent.morphia.StringLiteral.of("CUST-42")
-        );
-    }
+// In your AccessListResolver
+@Override
+public String key() {
+    return "accessibleCustomerIds";  // becomes ${accessibleCustomerIds}
+}
+
+@Override  
+public Collection<?> resolve(...) {
+    return Arrays.asList("CUST001", "CUST002", "CUST003");
 }
 ----
 
-Rule using the variable:
-
 [source]
 ----
-customerCode:^[${accessibleCustomerCodes}]
-----
-
-Result: `$in` with `List<String>` values (no ObjectId/number/date coercion). For more discussion and examples, see xref:domain-rule-context.adoc#domain-rule-context[String literals vs. typed values in resolver variables].
-
-==== Variables and Resolvers
-
-Variables in expressions are written as ${name}. The framework populates variables from:
-- PrincipalContext and ResourceContext (standard variables): principalId, pAccountId, pTenantId, ownerId, orgRefName, resourceId, action, functionalDomain, area
-- AccessListResolver implementations (custom variables): collections or values computed per request
-
-Examples:
-
-- Constrain by tenant and org for the current principal:
-[source]
-----
-functionalDomain:"order" && dataDomain.tenantId:${pTenantId} && dataDomain.orgRefName:${orgRefName}
-----
-
-- Restrict to an access‑list resolved for the caller:
-[source]
-----
+# Use in filter
 customerId:^[${accessibleCustomerIds}]
 ----
 
-Authoring tips:
-- For single values, you can use variables anywhere a literal value can appear: field:${ownerId}
-- For lists, prefer the bracket form with a single ${var} inside the brackets for best results.
+==== Performance Tips
 
-==== Reference Equality
-
-When comparing a @Reference field to an id, prefer the REFERENCE token using '@@' prefix:
+===== Efficient Queries
 
 [source]
 ----
-ownerRef:@@5f1e1a5e5e5e5e5e5e5e5e51
+# Good: Use indexed fields first
+status:"ACTIVE" && createdDate:>=2024-01-01
+
+# Better: Combine with specific values
+status:"ACTIVE" && ownerId:${principalId} && createdDate:>=2024-01-01
+
+# Avoid: Leading wildcards on large collections
+name:*widget  # can be slow on millions of records
 ----
 
-The listener reflects on the modelClass to instantiate the referenced type and set its id accordingly.
+===== Projection for Large Objects
 
-==== Examples
-
-- Simple string and number comparisons:
 [source]
 ----
-status:"OPEN" && total:>= ##100.00
+# In REST calls, limit returned fields
+GET /products/list?filter=active:true&projection=+id,+name,+price,-description
 ----
 
-- Exists and not equals:
-[source]
+==== Integration with REST APIs
+
+===== List Endpoints
+
+[source,bash]
 ----
-externalId:~ && status:!"CANCELLED"
+# Basic filtering
+GET /products/list?filter=active:true
+
+# With sorting and pagination  
+GET /products/list?filter=price:>##10&sort=-createdDate&skip=20&limit=10
+
+# Complex filter with projection
+GET /orders/list?filter=(status:"PENDING"||status:"PROCESSING")&&totalAmount:>##100&projection=+id,+status,+totalAmount,+customerName
 ----
 
-- Grouping and OR:
-[source]
+===== Permission Rules
+
+[source,yaml]
 ----
-(type:"INVOICE" && total:> ##0.0) || type:"QUOTE"
+- name: user-own-records
+  priority: 300
+  match:
+    method: [GET]
+    url: /api/**
+  effect: ALLOW
+  andFilterString: "dataDomain.ownerId:${principalId}"
 ----
 
-- Array match:
-[source]
+===== Access Resolvers
+
+[source,java]
 ----
-lines:= { sku:"ABC" && quantity:> #0 }
+// Resolver returns customer IDs user can access
+public Collection<?> resolve(...) {
+    return customerService.getAccessibleIds(principalId);
+}
+
+// Used in permission rule
+andFilterString: "customerId:^[${accessibleCustomerIds}]"
 ----
 
-- IN with resolver list:
+==== Error Handling
+
+Common syntax errors and solutions:
+
 [source]
 ----
-customerId:^[${accessibleCustomerIds}]
+# Wrong: Missing quotes for multi-word strings
+name:Super Widget
+# Right:
+name:"Super Widget"
+
+# Wrong: Incorrect number prefix
+price:19.99
+# Right:
+price:##19.99
+
+# Wrong: Invalid date format
+createdDate:12/25/2024
+# Right:
+createdDate:2024-12-25
+
+# Wrong: Unbalanced parentheses
+(active:true && price:>##10
+# Right:
+(active:true && price:>##10)
 ----
+
+==== See Also
+
+- xref:rest-crud.adoc#querying[REST CRUD Querying]
+- xref:permissions.adoc[Permission Rules]
+- xref:domain-rule-context.adoc[Access Resolvers]

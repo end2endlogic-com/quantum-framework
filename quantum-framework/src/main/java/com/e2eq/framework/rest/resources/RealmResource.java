@@ -19,6 +19,9 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
+
+import com.e2eq.framework.util.SecurityUtils;
 
 
 @Path("/security/realm")
@@ -27,6 +30,9 @@ import java.util.Optional;
 public class RealmResource extends BaseResource<Realm, BaseMorphiaRepo<Realm>> {
    @Inject
    CredentialRepo credentialRepo;
+
+   @Inject
+   SecurityUtils securityUtils;
 
    protected RealmResource (RealmRepo repo) {
       super(repo);
@@ -110,6 +116,51 @@ public class RealmResource extends BaseResource<Realm, BaseMorphiaRepo<Realm>> {
       }
 
       return Response.ok(realms).build();
+   }
+
+   @Path("accessible")
+   @GET
+   @Produces({ "application/json"})
+   @Consumes({"application/json"})
+   @RolesAllowed({"user", "admin"})
+   public Response accessible(@QueryParam("userId") String userId, @QueryParam("subjectId") String subjectId) {
+      if ((userId == null || userId.isBlank()) && (subjectId == null || subjectId.isBlank())) {
+         RestError error = RestError.builder()
+                 .status(Response.Status.BAD_REQUEST.getStatusCode())
+                 .statusMessage("Either userId or subjectId must be provided").build();
+         return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+      }
+      if (userId != null && !userId.isBlank() && subjectId != null && !subjectId.isBlank()) {
+         RestError error = RestError.builder()
+                 .status(Response.Status.BAD_REQUEST.getStatusCode())
+                 .statusMessage("Specify only one of userId or subjectId, not both").build();
+         return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+      }
+
+      Optional<CredentialUserIdPassword> ocred;
+      if (subjectId != null && !subjectId.isBlank()) {
+         ocred = credentialRepo.findBySubject(subjectId, credentialRepo.getDatabaseName(), true);
+      } else {
+         ocred = credentialRepo.findByUserId(userId, credentialRepo.getDatabaseName(), true);
+      }
+
+      if (ocred.isEmpty()) {
+         RestError error = RestError.builder()
+                 .status(Response.Status.NOT_FOUND.getStatusCode())
+                 .statusMessage("Credential not found for provided identifier").build();
+         return Response.status(Response.Status.NOT_FOUND).entity(error).build();
+      }
+
+      CredentialUserIdPassword cred = ocred.get();
+      // Load all realms and compute allowed set
+      List<Realm> all = repo.getAllList();
+      List<String> candidateRefNames = all.stream().map(Realm::getRefName).collect(Collectors.toList());
+      List<String> allowedRefNames = securityUtils.computeAllowedRealmRefNames(cred, candidateRefNames);
+      List<Realm> allowedRealms = all.stream()
+              .filter(r -> allowedRefNames.stream().anyMatch(a -> a.equalsIgnoreCase(r.getRefName())))
+              .collect(Collectors.toList());
+
+      return Response.ok(allowedRealms).build();
    }
 
 }

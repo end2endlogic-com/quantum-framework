@@ -1,0 +1,59 @@
+[[overview]]
+=== Overview: Building SaaS with Quantum
+
+Quantum accelerates building multi-tenant SaaS platforms by providing secure-by-default foundations that scale from prototype to production.
+
+==== What Quantum Solves
+
+**Multi-tenant isolation with controlled sharing**
+- Each tenant's data is isolated by default
+- Selective sharing via policy rules (e.g., shared catalogs, partner directories)
+- Flexible tenancy models: one-database-per-tenant or shared-database-with-filtering
+
+**Consistent, secure APIs**
+- Single BaseResource pattern for all CRUD operations
+- Automatic DataDomain filtering ensures users see only authorized data
+- Built-in query language works across all endpoints
+
+**Policy-driven authorization**
+- Human-readable rules define "who can do what"
+- Rules contribute data filters (not just allow/deny)
+- Changes take effect without code deployment
+
+**Developer productivity**
+- Minimal boilerplate: extend BaseModel and BaseResource
+- Live reload in development mode
+- Automatic OpenAPI documentation
+- Built-in CSV import/export for all entities
+
+==== Core Building Blocks
+
+**Models**: Extend BaseModel for automatic multi-tenancy, validation, and audit trails
+
+**Repositories**: Extend MorphiaRepo for MongoDB operations with security filtering
+
+**Resources**: Extend BaseResource for consistent REST APIs with minimal code
+
+**Security**: Pluggable authentication (JWT, OIDC) with declarative permission rules
+
+**Query Language**: Single syntax for filtering across APIs, permissions, and reports
+
+==== When to Use Quantum
+
+✅ **Good fit**:
+- Multi-tenant B2B SaaS platforms
+- Applications requiring flexible data sharing between organizations
+- Teams wanting consistent REST APIs without boilerplate
+- Projects needing audit trails and compliance features
+
+❌ **Consider alternatives**:
+- Single-tenant applications
+- High-frequency trading or real-time systems
+- Applications with complex, non-relational data models
+- Teams preferring GraphQL over REST
+
+==== Next Steps
+
+- **New to Quantum?** Start with xref:getting-started.adoc[Getting Started]
+- **Learning concepts?** Read xref:tenant-models.adoc[Multi-Tenancy Models]
+- **See it in action?** Try the xref:../tutorials/supply-chain.adoc[Supply Chain Tutorial]

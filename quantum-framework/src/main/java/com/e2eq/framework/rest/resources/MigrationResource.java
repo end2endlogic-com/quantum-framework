@@ -80,6 +80,45 @@ public class MigrationResource {
     }
 
     @POST
+    @Path("/indexes/drop/{realm}/{collection}")
+    @RolesAllowed("admin")
+    @Produces(MediaType.APPLICATION_JSON)
+    public void dropIndex(@Context HttpHeaders headers, @PathParam( "realm") String realm, @PathParam( "collection") String collection) {
+        migrationService.dropIndexOnCollection(realm, collection);
+    }
+
+    @POST
+    @Path("/changeSet/execute/{realm}/{beanRefName}")
+    @RolesAllowed("admin")
+    @Produces(MediaType.SERVER_SENT_EVENTS)
+    public void executeChangeSet(@Context HttpHeaders headers, @PathParam("realm") String realm, @PathParam( "beanRefName") String beanRefName, SseEventSink eventSink, Sse sse) {
+       if (!identity.isAnonymous() && identity.hasRole("admin")) {
+
+          Multi.createFrom().publisher(runChangeBeanTask(beanRefName, realm))
+             .emitOn(managedExecutor)
+             .subscribe().with(
+                message -> {
+                   if (!eventSink.isClosed()) {
+                      eventSink.send(sse.newEvent(message));
+                   }
+                },
+                failure -> {
+                   if (!eventSink.isClosed()) {
+                      eventSink.send(sse.newEvent("Error: " + failure.getMessage()));
+                      eventSink.close();
+                   }
+                },
+                () -> {
+                   if (!eventSink.isClosed()) {
+                      eventSink.send(sse.newEvent("Task completed"));
+                      eventSink.close();
+                   }
+                }
+             );
+       }
+    }
+
+    @POST
     @Path("/initialize/{realm}")
     @Produces(MediaType.SERVER_SENT_EVENTS)
     public void initializeDatabase( @PathParam("realm") String realm, SseEventSink eventSink, Sse sse) {
@@ -179,6 +218,28 @@ public class MigrationResource {
                }finally {
                    securityUtils.clearSecurityContext();
                }
+
+                emitter.complete();
+            } catch (Throwable e) {
+                emitter.fail(e);
+            }
+        });
+    }
+
+    private Multi<String> runChangeBeanTask(String beanRefName, String realm) {
+
+        Objects.requireNonNull(beanRefName);
+        return Multi.createFrom().emitter(emitter -> {
+            try {
+                String[] roles = {"admin", "user"};
+                ruleContext.ensureDefaultRules();
+                securityUtils.setSecurityContext();
+                try {
+                    Log.infof("----Running changeSet for bean:%s---- ", beanRefName);
+                    migrationService.runChangeSetBean(beanRefName, realm, emitter);
+                }finally {
+                    securityUtils.clearSecurityContext();
+                }
 
                 emitter.complete();
             } catch (Throwable e) {

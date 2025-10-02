@@ -19,6 +19,7 @@ import jakarta.enterprise.context.spi.CreationalContext;
 import jakarta.enterprise.inject.spi.Bean;
 import jakarta.enterprise.inject.spi.BeanManager;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.NotFoundException;
 import lombok.Data;
 import org.bson.Document;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -282,6 +283,33 @@ public class MigrationService {
             databaseVersion = databaseVersionRepo.save(ds, databaseVersion);
          }
       }
+   }
+
+   public void runChangeSetBean(String changeSetName, String realm, MultiEmitter<? super String> emitter) throws Exception {
+
+      List<ChangeSetBean> changeSets = getAllChangeSetBeans();
+      Optional<ChangeSetBean> changeSetBeanOptional = changeSets.stream().filter(changeSetBean -> changeSetBean.getName().equals(changeSetName)).findFirst();
+      if (!changeSetBeanOptional.isPresent()) {
+         throw new NotFoundException(String.format("Change Set Bean:%s not found", changeSetName));
+      }
+      ChangeSetBean changeSetBean = changeSetBeanOptional.get();
+
+      // get a lock first:
+      DistributedLock lock = getMigrationLock(realm);
+      log(String.format("-- Got Migration Lock Executing change sets on database / realm:%s --", realm), emitter);
+      lock.runLocked(() -> {
+         MorphiaSession ds = morphiaDataStore.getDataStore(realm).startSession();
+         log(String.format("        Executing Change Set: %s in realm %s", changeSetBean.getName(), realm), emitter);
+         emitter.emit(String.format("        Executing Change Set: %s in realm %s", changeSetBean.getName(), realm));
+         try {
+            changeSetBean.execute(ds, mongoClient, emitter);
+         } catch (Exception e) {
+            throw new RuntimeException(e);
+         }
+         log(String.format("        Executed Change Set: %s in realm %s", changeSetBean.getName(), realm), emitter);
+         emitter.emit(String.format("        Executed Change Set: %s in realm %s", changeSetBean.getName(), realm));
+         updateChangeLog(ds, realm, changeSetBean, emitter);
+      });
    }
 
    public void runAllUnRunMigrations (String realm, MultiEmitter<? super String> emitter) {

@@ -103,7 +103,10 @@ public class CredentialUserIdPassword extends BaseModel {
    protected String impersonateFilterScript;
    @ToString.Exclude
    protected List<String> impersonateFilterScriptParams;
-   protected List<String> authorizedRealms;
+
+   protected List<ImpersonateEntry> authorizedImpersonateIds;
+
+   protected List<RealmEntry> authorizedRealms;
    //@Regex
    @ToString.Exclude
    protected String realmRegEx; // if the authorizedRealms is not found or null, then this is used if defined
