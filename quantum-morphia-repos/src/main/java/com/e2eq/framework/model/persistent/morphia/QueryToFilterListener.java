@@ -358,8 +358,27 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
             }
         }
 
-        Filter f = Filters.in(field, values);
+        Filter f;
+        String opText = ctx.op.getText();
+        if (":^".equals(opText)) {
+            f = Filters.in(field, values);
+        } else if (":!^".equals(opText)) {
+            f = Filters.nin(field, values);
+        } else {
+            throw new IllegalArgumentException("Operator not recognized: " + ctx.op.getText());
+        }
         filterStack.push(f);
+    }
+
+    @Override
+    public void exitNotExpr(BIAPIQueryParser.NotExprContext ctx) {
+        if (filterStack.isEmpty()) {
+            throw new IllegalStateException("NOT expression found but filter stack is empty");
+        }
+        Filter inner = filterStack.pop();
+        // Using $nor to negate the inner expression (works for general expressions)
+        Filter negated = Filters.nor(inner);
+        filterStack.push(negated);
     }
 
     private Object coerceValue(Object v) {

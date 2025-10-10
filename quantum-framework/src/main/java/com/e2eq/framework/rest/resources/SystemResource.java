@@ -7,11 +7,14 @@ import com.e2eq.framework.model.security.FunctionalDomain;
 import com.e2eq.framework.rest.models.ComponentVersion;
 import com.e2eq.framework.rest.models.DeployedVersion;
 import com.e2eq.framework.util.SecurityUtils;
+import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.type.CollectionType;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 
 import dev.morphia.MorphiaDatastore;
+
+import io.quarkus.logging.Log;
 import jakarta.annotation.security.PermitAll;
 import jakarta.enterprise.inject.Default;
 
@@ -21,6 +24,8 @@ import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.DefaultValue;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -31,8 +36,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import dev.morphia.mapping.codec.pojo.EntityModel;
+import org.bson.codecs.configuration.CodecConfigurationException;
+import org.bson.types.ObjectId;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.semver4j.Semver;
+
+import com.e2eq.framework.util.JSONUtils;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonMappingException;
+import com.mongodb.client.MongoCollection;
+import org.bson.Document;
 
 @Path("/system")
 @Tag(name = "System", description = "System operations")
@@ -115,4 +128,5 @@ public class SystemResource {
 
         return Response.ok().build();
     }
+
 }

@@ -31,7 +31,6 @@ import java.io.*;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 
 @Provider
@@ -381,7 +380,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
     private void validateRealmAccess(CredentialUserIdPassword creds, String realm) {
         if (realm != null) {
-            List<Realm> realmsAvailable = realmRepo.getAllListIgnoreRules(envConfigUtils.getSystemRealm());
+            List<Realm> realmsAvailable = realmRepo.getAllListWithIgnoreRules(envConfigUtils.getSystemRealm());
             List<String> realmRefNamesAvailable = new java.util.ArrayList<>(realmsAvailable.stream().map(Realm::getRefName).toList());
 
             if (!realmRefNamesAvailable.contains(realm)) {

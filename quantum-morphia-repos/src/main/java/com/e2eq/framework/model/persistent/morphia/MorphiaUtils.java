@@ -130,7 +130,8 @@ public class MorphiaUtils {
 
    private static String normalizeOperators(String q) {
       if (q == null) return null;
-      // For historical data/rules that used ':=[' to denote IN, normalize to ':^['
+      // Legacy normalization: historically ':=[' was used for IN. Normalize to the current ':^[' form.
+      // Keep this for backward compatibility with stored rules; all other operators are now handled by the grammar.
       return q.replace(":=[", ":^[");
    }
 

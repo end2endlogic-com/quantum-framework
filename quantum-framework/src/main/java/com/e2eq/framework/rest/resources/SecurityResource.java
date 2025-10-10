@@ -208,7 +208,7 @@ public class SecurityResource {
                 return response;
             } else {
                 RestError error = RestError.builder()
-                        .statusMessage("Could not find subject:" + securityContext.getUserPrincipal().getName() + "check credential database")
+                        .statusMessage("Could not find subject:" + securityContext.getUserPrincipal().getName() + "check userProfile database")
                         .status(Response.Status.NOT_FOUND.getStatusCode())
                         .debugMessage("User could not be found, indicating that the user has not registered in the past")
                         .build();

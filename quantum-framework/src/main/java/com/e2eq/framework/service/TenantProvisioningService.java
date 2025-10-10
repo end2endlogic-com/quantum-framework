@@ -1,5 +1,6 @@
 package com.e2eq.framework.service;
 
+import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.migration.base.MigrationService;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.RealmRepo;
@@ -84,6 +85,13 @@ public class TenantProvisioningService {
                 .defaultRealm(realmId)
                 .build();
 
+       DataDomain dataDomain = DataDomain.builder()
+                       .orgRefName(dc.getOrgRefName())
+                       .accountNum(dc.getAccountId())
+                       .tenantId(dc.getTenantId())
+                       .ownerId(adminUserId)
+                       .build();
+
         // Desired Realm representation
         Realm desiredRealm = Realm.builder()
                 .refName(realmId)
@@ -91,6 +99,7 @@ public class TenantProvisioningService {
                 .emailDomain(tenantEmailDomain)
                 .databaseName(realmId)
                 .domainContext(dc)
+                .dataDomain(dataDomain)
                 .defaultAdminUserId(adminUserId)
                 .build();
 
@@ -137,6 +146,7 @@ public class TenantProvisioningService {
         UserManagement userManagement = authProviderFactory.getUserManager();
         boolean userExists = userManagement.userIdExists(adminUserId);
         if (!userExists) {
+           Log.warnf("Creating initial admin user %s with password provided, however since we are creating it the subject passed in %s will be ignored",adminUserId, adminSubject);
             userManagement.createUser(
                     adminUserId,
                     adminPassword,
