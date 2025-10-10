@@ -2,10 +2,15 @@ package com.e2eq.framework.rest.filters;
 
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.persistent.morphia.UserGroupRepo;
+import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import com.e2eq.framework.model.security.Realm;
+import com.e2eq.framework.model.security.UserGroup;
+import com.e2eq.framework.model.security.UserProfile;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
+import com.e2eq.framework.rest.models.Role;
 import com.e2eq.framework.securityrules.RuleContext;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
@@ -60,6 +65,12 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
     @Inject
     CredentialRepo credentialRepo;
+
+    @Inject
+    UserProfileRepo userProfileRepo;
+
+    @Inject
+    UserGroupRepo userGroupRepo;
 
     @Inject
     ObjectMapper mapper;
@@ -367,14 +378,32 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     }
 
     private String[] resolveEffectiveRoles(SecurityIdentity identity, CredentialUserIdPassword credential) {
-        Set<String> rolesSet = identity != null ? identity.getRoles() : new HashSet<>();
-
-        if (credential != null && credential.getRoles() != null && credential.getRoles().length > 0) {
-            Set<String> combined = new HashSet<>(rolesSet);
-            combined.addAll(Arrays.asList(credential.getRoles()));
-            return combined.toArray(new String[0]);
+        Set<String> rolesSet =  new HashSet<>();
+        if (identity != null) {
+           // ensure there are no null or empty strings in the roles array
+           for (String role : identity.getRoles()) {
+               if (role != null && !role.isEmpty()) {
+                   rolesSet.add(role);
+               }
+           }
         }
 
+        // get the set of roles from the credential if provided
+        if (credential != null && credential.getRoles() != null && credential.getRoles().length > 0) {
+            rolesSet.addAll(Arrays.asList(credential.getRoles()));
+        }
+
+       // look at the userProfile associated with the credential.  If so find what user groups the userProfile is a part of
+       // and union all the roles together to get the effective role
+        if (credential != null) {
+            Optional<UserProfile> userProfile = userProfileRepo.getBySubject(credential.getSubject());
+            if (userProfile.isPresent()) {
+                List<UserGroup> userGroups = userGroupRepo.findByUserProfileRef(userProfile.get().createEntityReference());
+                if (!userGroups.isEmpty()) {
+                    userGroups.forEach(userGroup -> rolesSet.addAll(userGroup.getRoles().stream().map(Role::toString).toList()));
+                }
+            }
+        }
         return rolesSet.isEmpty() ? new String[]{"ANONYMOUS"} : rolesSet.toArray(new String[0]);
     }
 
