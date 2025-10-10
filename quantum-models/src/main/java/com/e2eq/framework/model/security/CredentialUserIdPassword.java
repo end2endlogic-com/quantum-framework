@@ -112,6 +112,18 @@ public class CredentialUserIdPassword extends BaseModel {
    protected String realmRegEx; // if the authorizedRealms is not found or null, then this is used if defined
    protected String authProviderName; // the provider this record belongs to.
 
+   @Override
+   public void validate () {
+      super.validate();
+      if (roles != null) {
+         // check that roles array does not include null or empty strings
+         for (String role : roles) {
+            if (role == null || role.isEmpty()) {
+               throw new IllegalArgumentException("roles array must not contain null or empty strings");
+            }
+         }
+      }
+   }
 
    @Override
    public String bmFunctionalArea () {
