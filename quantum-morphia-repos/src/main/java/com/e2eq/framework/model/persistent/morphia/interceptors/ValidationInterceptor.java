@@ -20,8 +20,11 @@ import jakarta.inject.Inject;
 import jakarta.validation.*;
 
 import java.lang.annotation.Annotation;
+import java.lang.reflect.Field;
 import java.util.HashSet;
 import java.util.Set;
+import org.apache.commons.lang3.reflect.FieldUtils;
+
 
 @ApplicationScoped
 public class ValidationInterceptor implements EntityListener<Object> {
@@ -43,6 +46,41 @@ public class ValidationInterceptor implements EntityListener<Object> {
       return false;
    }
 
+   private Field getFieldFromHierarchy(Class<?> clazz, String fieldName)  throws NoSuchFieldException {
+      Field f = FieldUtils.getField(clazz, fieldName, true); // true => force access and search superclasses
+      if (f == null) {
+         throw new NoSuchFieldException("Field '" + fieldName + "' not found in class hierarchy of " + clazz.getName());
+      }
+      return f;
+   }
+
+
+
+   @Override
+   public void postLoad (Object ent, Document document, Datastore datastore) {
+      if (ent instanceof UnversionedBaseModel) {
+         // iterate through the document and validate find fields that are in the document but not in the entity as a property
+         for (String fieldName : document.keySet()) {
+               if (fieldName.equals("_id")) continue;
+               if (fieldName.equals("_t")) continue;
+
+               Object fieldValue = document.get(fieldName);
+               if (fieldValue!= null) {
+                  try {
+                     getFieldFromHierarchy(ent.getClass(), fieldName).getType();
+                  } catch (NoSuchFieldException e) {
+                     UnversionedBaseModel bm = (UnversionedBaseModel) ent;
+                    Log.warnf("Field %s not found in entity %s with id:%s but found in monggodb datastore:%s", fieldName, ent.getClass().getName(), ((UnversionedBaseModel) ent).getId(), datastore.getDatabase().getName());
+                    if (bm.getUnmappedProperties() == null ) {
+                       bm.setUnmappedProperties(new java.util.HashMap<>());
+                    }
+                    bm.getUnmappedProperties().put(fieldName, fieldValue);
+                  }
+               }
+         }
+      }
+   }
+
    @Override
    public void prePersist (Object ent, Document document, Datastore datastore) {
       UnversionedBaseModel bm = null;
@@ -50,6 +88,9 @@ public class ValidationInterceptor implements EntityListener<Object> {
 
       if (ent instanceof UnversionedBaseModel) {
          bm = (UnversionedBaseModel) ent;
+         if (bm.getUnmappedProperties() != null ) {
+            bm.setUnmappedProperties(null);
+         }
          if (!bm.isSkipValidation()) {
             if (SecurityContext.getPrincipalContext().isPresent()) {
                if (bm.getDataDomain() == null) {

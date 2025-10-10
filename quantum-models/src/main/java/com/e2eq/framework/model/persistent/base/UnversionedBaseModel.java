@@ -12,17 +12,17 @@ import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.annotation.security.PermitAll;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
-import lombok.Builder;
-import lombok.Data;
-import lombok.EqualsAndHashCode;
-import lombok.NoArgsConstructor;
+import lombok.*;
 import lombok.experimental.SuperBuilder;
 import org.apache.commons.text.WordUtils;
+import org.bson.codecs.pojo.annotations.BsonExtraElements;
+import org.bson.codecs.pojo.annotations.BsonIgnore;
 import org.bson.types.ObjectId;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static dev.morphia.mapping.IndexType.DESC;
@@ -123,6 +123,21 @@ public abstract  class UnversionedBaseModel {
       this should be sent back on save if the record was read in the past. if the type is annotated with SignatureRequired
      */
     protected Signatures signatures;
+
+    // Any extra keys from the BSON document end up here:
+
+    @Schema(description = "Additional properties that are not mapped to any field in the java class but existed in Mongodb")
+    @BsonExtraElements
+  //  @Getter(AccessLevel.NONE)          // don't generate Lombok getter
+  //  @Setter                            // keep setter so the codec can populate during decode
+    protected java.util.Map<String,Object> unmappedProperties;
+
+   // Read-only (for Mongo write): ignore on encode
+  // @BsonIgnore
+  // public java.util.Map<String,Object> getUnmappedProperties() {
+  //    return unmappedProperties;
+  // }
+  // }
 
     @Transient
     @JsonIgnore

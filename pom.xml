@@ -67,7 +67,6 @@
         <module>quantum-morphia-repos</module>
         <module>quantum-jwt-provider</module>
         <module>quantum-framework</module>
-        <module>quantum-docs</module>
     </modules>
 
 
@@ -237,6 +236,14 @@
     <profiles>
         <profile>
             <id>oss-release</id>
+            <modules>
+                <module>quantum-util</module>
+                <module>quantum-models</module>
+                <module>quantum-morphia-repos</module>
+                <module>quantum-jwt-provider</module>
+                <module>quantum-framework</module>
+                <module>quantum-docs</module>
+            </modules>
             <build>
                 <plugins>
                     <plugin>

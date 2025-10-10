@@ -3,17 +3,24 @@ package com.e2eq.framework.model.persistent.migration.base;
 import com.coditory.sherlock.DistributedLock;
 import com.coditory.sherlock.Sherlock;
 import com.coditory.sherlock.mongo.MongoSherlock;
+import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.ChangeSetRecordRepo;
 import com.e2eq.framework.model.persistent.morphia.DatabaseVersionRepo;
 
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
 import com.e2eq.framework.exceptions.DatabaseMigrationException;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
+import com.e2eq.framework.util.SecurityUtils;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import dev.morphia.Datastore;
+import dev.morphia.mapping.codec.pojo.EntityModel;
 import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.logging.Log;
+import io.quarkus.runtime.Startup;
+import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.subscription.MultiEmitter;
+import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.context.spi.CreationalContext;
 import jakarta.enterprise.inject.spi.Bean;
@@ -33,6 +40,7 @@ import java.util.ArrayList;
 
 
 @ApplicationScoped
+@Startup
 public class MigrationService {
 
    @ConfigProperty(name = "quantum.database.version")
@@ -57,6 +65,9 @@ public class MigrationService {
    DatabaseVersionRepo databaseVersionRepo;
 
    @Inject
+   SecurityUtils securityUtils;
+
+   @Inject
    BeanManager beanManager;
 
    @Inject
@@ -67,6 +78,42 @@ public class MigrationService {
 
    @Inject
    MorphiaDataStore morphiaDataStore;
+
+   @PostConstruct
+   public void ensureSystemRealmInitialized () {
+      Log.infof(">> ### Checking if system realm %s is initialized ###", systemRealm);
+      // using the mongoClient check if the system realm exists
+      // if not, create it
+      // if it does, check if the database version is correct
+      // if not, throw an exception
+      // if it does, return
+      List<String> databaseNames = mongoClient.listDatabaseNames().into(new ArrayList<>());
+      if (!databaseNames.contains(systemRealm)) {
+         Log.warnf("    ### System realm %s does not exist, creating it", systemRealm);
+         Multi<String> multi = Multi.createFrom().emitter(emitter -> {
+            SecurityCallScope.runWithContexts(securityUtils.getSystemPrincipalContext(),
+               securityUtils.getSystemSecurityResourceContext(), () -> {
+               runAllUnRunMigrations(systemRealm, emitter);
+            });
+         });
+         multi.subscribe().with(
+            item -> System.out.println(">: " + item),
+            failure -> failure.printStackTrace(),
+            () -> System.out.println(">: Done")
+         );
+
+      } else {
+         Log.infof("###  System realm %s exists, checking if it is initialized", systemRealm);
+         try {
+            checkInitialized(systemRealm);
+         } catch (DatabaseMigrationException e) {
+            Log.warnf("    ### System realm %s is not initialized, initializing it", systemRealm);
+            Multi.createFrom().emitter(emitter -> {
+               runAllUnRunMigrations(systemRealm, emitter);
+            });
+         }
+      }
+   }
 
 
    public void checkInitialized (String realm) {
@@ -81,9 +128,9 @@ public class MigrationService {
          throw new DatabaseMigrationException(realm, currentVersion.getCurrentVersionString(), targetDatabaseVersion);
       } else if (currentSemVersion.compareTo(requiredSemVersion) > 0) {
          Log.warnf("Database %s version is higher than required. Current version: %s, required version: %s", realm, currentVersion.getCurrentVersionString(), targetDatabaseVersion);
+      } else {
+         Log.infof("Database %s version is up to date. Current version: %s, required version: %s", realm, currentVersion.getCurrentVersionString(), targetDatabaseVersion);
       }
-
-
    }
 
    public void dropIndexOnCollection (String realm, String collectionName) {
@@ -93,6 +140,15 @@ public class MigrationService {
    public void applyIndexes (String realmId) {
       Objects.requireNonNull(realmId, "RealmId cannot be null");
       morphiaDataStore.getDataStore(realmId).applyIndexes();
+   }
+
+   public void applyIndexes (String realmId, String collection) {
+      Objects.requireNonNull(realmId, "RealmId cannot be null");
+      Optional<EntityModel> em = morphiaDataStore.getDataStore(realmId).getMapper().getMappedEntities().stream().filter(entity -> entity.collectionName().equals(collection)).findFirst();
+      if (!em.isPresent()) {
+         throw new NotFoundException(String.format("Collection %s not found in realm %s", collection, realmId));
+      }
+      morphiaDataStore.getDataStore(realmId).ensureIndexes(em.get().getType());
    }
 
    public void dropAllIndexes (String realmId) {

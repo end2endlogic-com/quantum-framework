@@ -7,7 +7,7 @@ allowedExpr:   inExpr |  basicExpr |  nullExpr | existsExpr | booleanExpr | notE
 exprOp: op=(AND | OR);
 existsExpr: field=STRING op=EXISTS;
 booleanExpr: field=STRING op=(EQ | NEQ) value=(TRUE | FALSE);
-inExpr : field=STRING op=IN value=valueListExpr;
+inExpr : field=STRING op=(IN|NIN) value=valueListExpr;
 valueListExpr:
     lp=LBRKT
     value=(STRING | QUOTED_STRING | VARIABLE | OID | REFERENCE) (COMMA value=(STRING | QUOTED_STRING | VARIABLE | OID | REFERENCE))*
@@ -46,6 +46,7 @@ LTE: ':<=';
 GTE: ':>=';
 EXISTS: ':~';
 IN: ':^';
+NIN: ':!^';
 NULL: 'null';
 
 

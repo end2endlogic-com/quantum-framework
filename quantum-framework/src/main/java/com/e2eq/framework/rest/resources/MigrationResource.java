@@ -25,276 +25,287 @@ import java.util.Optional;
 import java.util.concurrent.Executor;
 
 @Path("/system/migration")
-@RolesAllowed({ "admin" })
+@RolesAllowed({"admin"})
 public class MigrationResource {
-    @Inject
-    Executor managedExecutor;
+   @Inject
+   Executor managedExecutor;
 
-    @ConfigProperty(name = "quantum.database.migration.enabled", defaultValue = "true")
-    boolean enabled;
+   @ConfigProperty(name = "quantum.database.migration.enabled", defaultValue = "true")
+   boolean enabled;
 
-    @Inject
-    MigrationService migrationService;
+   @Inject
+   MigrationService migrationService;
 
-    @Inject
-    EnvConfigUtils envConfigUtils;
+   @Inject
+   EnvConfigUtils envConfigUtils;
 
-    @Inject
-    SecurityUtils securityUtils;
+   @Inject
+   SecurityUtils securityUtils;
 
-    @Inject
-    RuleContext ruleContext;
+   @Inject
+   RuleContext ruleContext;
 
-    @Inject
-    DatabaseVersionRepo databaseVersionRepo;
+   @Inject
+   DatabaseVersionRepo databaseVersionRepo;
 
-    @Inject
-    SecurityIdentity identity;
+   @Inject
+   SecurityIdentity identity;
 
-    @GET
-    @Path("/dbversion/{realm}")
-    @Produces(MediaType.APPLICATION_JSON)
-    @PermitAll
-    public DatabaseVersion getDatabaseVersion(@PathParam("realm") String realm) {
-        Optional<DatabaseVersion> oversion = databaseVersionRepo.findCurrentVersion(realm);
-        if (oversion.isPresent()) {
-            return oversion.get();
-        } else
-        throw new NotFoundException(String.format( "realm:%s not found", realm));
-    }
+   @GET
+   @Path("/dbversion/{realm}")
+   @Produces(MediaType.APPLICATION_JSON)
+   @PermitAll
+   public DatabaseVersion getDatabaseVersion (@PathParam("realm") String realm) {
+      Optional<DatabaseVersion> oversion = databaseVersionRepo.findCurrentVersion(realm);
+      if (oversion.isPresent()) {
+         return oversion.get();
+      } else
+         throw new NotFoundException(String.format("realm:%s not found", realm));
+   }
 
-    @POST
-    @Path("/indexes/applyIndexes/{realm}")
-    @RolesAllowed("admin")
-    @Produces(MediaType.APPLICATION_JSON)
-    public void applyIndexes(@Context HttpHeaders headers, @PathParam( "realm") String realm) {
-            migrationService.applyIndexes(realm);
-    }
+   @POST
+   @Path("/indexes/applyIndexes/{realm}")
+   @RolesAllowed("admin")
+   @Produces(MediaType.APPLICATION_JSON)
+   public void applyIndexes (@Context HttpHeaders headers, @PathParam("realm") String realm) {
+      migrationService.applyIndexes(realm);
+   }
 
-    @POST
-    @Path("/indexes/dropAllIndexes/{realm}")
-    @RolesAllowed("admin")
-    @Produces(MediaType.APPLICATION_JSON)
-    public void dropIndexes(@Context HttpHeaders headers, @PathParam( "realm") String realm) {
-        migrationService.dropAllIndexes(realm);
-    }
+   @POST
+   @Path("/indexes/applyIndexes/{realm}/{collection}")
+   @RolesAllowed("admin")
+   @Produces(MediaType.APPLICATION_JSON)
+   public void applyIndexesOnCollection (@Context HttpHeaders headers, @PathParam("realm") String realm, @PathParam(
+      "collection") String collection) {
+      migrationService.applyIndexes(realm, collection);
+   }
 
-    @POST
-    @Path("/indexes/drop/{realm}/{collection}")
-    @RolesAllowed("admin")
-    @Produces(MediaType.APPLICATION_JSON)
-    public void dropIndex(@Context HttpHeaders headers, @PathParam( "realm") String realm, @PathParam( "collection") String collection) {
-        migrationService.dropIndexOnCollection(realm, collection);
-    }
+   @POST
+   @Path("/indexes/dropAllIndexes/{realm}")
+   @RolesAllowed("admin")
+   @Produces(MediaType.APPLICATION_JSON)
+   public void dropIndexes (@Context HttpHeaders headers, @PathParam("realm") String realm) {
+      migrationService.dropAllIndexes(realm);
+   }
 
-    @POST
-    @Path("/changeSet/execute/{realm}/{beanRefName}")
-    @RolesAllowed("admin")
-    @Produces(MediaType.SERVER_SENT_EVENTS)
-    public void executeChangeSet(@Context HttpHeaders headers, @PathParam("realm") String realm, @PathParam( "beanRefName") String beanRefName, SseEventSink eventSink, Sse sse) {
-       if (!identity.isAnonymous() && identity.hasRole("admin")) {
+   @POST
+   @Path("/indexes/drop/{realm}/{collection}")
+   @RolesAllowed("admin")
+   @Produces(MediaType.APPLICATION_JSON)
+   public void dropIndex (@Context HttpHeaders headers, @PathParam("realm") String realm,
+                          @PathParam("collection") String collection) {
+      migrationService.dropIndexOnCollection(realm, collection);
+   }
 
-          Multi.createFrom().publisher(runChangeBeanTask(beanRefName, realm))
-             .emitOn(managedExecutor)
-             .subscribe().with(
-                message -> {
-                   if (!eventSink.isClosed()) {
-                      eventSink.send(sse.newEvent(message));
-                   }
-                },
-                failure -> {
-                   if (!eventSink.isClosed()) {
-                      eventSink.send(sse.newEvent("Error: " + failure.getMessage()));
-                      eventSink.close();
-                   }
-                },
-                () -> {
-                   if (!eventSink.isClosed()) {
-                      eventSink.send(sse.newEvent("Task completed"));
-                      eventSink.close();
-                   }
-                }
-             );
-       }
-    }
+   @POST
+   @Path("/changeSet/execute/{realm}/{beanRefName}")
+   @RolesAllowed("admin")
+   @Produces(MediaType.SERVER_SENT_EVENTS)
+   public void executeChangeSet (@Context HttpHeaders headers, @PathParam("realm") String realm, @PathParam(
+      "beanRefName") String beanRefName, SseEventSink eventSink, Sse sse) {
+      if (!identity.isAnonymous() && identity.hasRole("admin")) {
 
-    @POST
-    @Path("/initialize/{realm}")
-    @Produces(MediaType.SERVER_SENT_EVENTS)
-    public void initializeDatabase( @PathParam("realm") String realm, SseEventSink eventSink, Sse sse) {
-
-        if (!identity.isAnonymous() && identity.hasRole("admin")) {
-
-            Multi.createFrom().publisher(initializeDatabaseTask(realm))
-               .emitOn(managedExecutor)
-               .subscribe().with(
-                  message -> {
-                      if (!eventSink.isClosed()) {
-                          eventSink.send(sse.newEvent(message));
-                      }
-                  },
-                  failure -> {
-                      if (!eventSink.isClosed()) {
-                          eventSink.send(sse.newEvent("Error: " + failure.getMessage()));
-                          eventSink.close();
-                      }
-                  },
-                  () -> {
-                      if (!eventSink.isClosed()) {
-                          eventSink.send(sse.newEvent("Task completed"));
-                          eventSink.close();
-                      }
-                  }
-               );
-        }
-    }
-
-    @GET
-    @Path("/start")
-    @RolesAllowed("admin")
-    @Produces(MediaType.SERVER_SENT_EVENTS)
-    public void startTask(SseEventSink eventSink, Sse sse) {
-        Multi.createFrom().publisher(runMigrateAllTask())
-                .emitOn(managedExecutor)
-                .subscribe().with(
-                        message -> {
-                            if (!eventSink.isClosed()) {
-                                eventSink.send(sse.newEvent(message));
-                            }
-                        },
-                        failure -> {
-                            if (!eventSink.isClosed()) {
-                                eventSink.send(sse.newEvent("Error: " + failure.getMessage()));
-                                eventSink.close();
-                            }
-                        },
-                        () -> {
-                            if (!eventSink.isClosed()) {
-                                eventSink.send(sse.newEvent("Task completed"));
-                                eventSink.close();
-                            }
-                        }
-                );
-    }
-
-    @GET
-    @Path("/start/{realm}")
-    @RolesAllowed("admin")
-    @Produces(MediaType.SERVER_SENT_EVENTS)
-    public void startSpecificTask(@PathParam("realm") String realm, SseEventSink eventSink, Sse sse) {
-        Multi.createFrom().publisher(runMigrateSpecificTask(realm))
-           .emitOn(managedExecutor)
-           .subscribe().with(
-              message -> {
+         Multi.createFrom().publisher(runChangeBeanTask(beanRefName, realm))
+            .emitOn(managedExecutor)
+            .subscribe().with(
+               message -> {
                   if (!eventSink.isClosed()) {
-                      eventSink.send(sse.newEvent(message));
+                     eventSink.send(sse.newEvent(message));
                   }
-              },
-              failure -> {
+               },
+               failure -> {
                   if (!eventSink.isClosed()) {
-                      eventSink.send(sse.newEvent("Error: " + failure.getMessage()));
-                      eventSink.close();
+                     eventSink.send(sse.newEvent("Error: " + failure.getMessage()));
+                     eventSink.close();
                   }
-              },
-              () -> {
+               },
+               () -> {
                   if (!eventSink.isClosed()) {
-                      eventSink.send(sse.newEvent("Task completed"));
-                      eventSink.close();
+                     eventSink.send(sse.newEvent("Task completed"));
+                     eventSink.close();
                   }
-              }
-           );
-    }
-
-    private Multi<String> initializeDatabaseTask(String realm) {
-        Objects.requireNonNull(realm);
-        return Multi.createFrom().emitter(emitter -> {
-           try {
-               String[] roles = {"admin", "user"};
-               ruleContext.ensureDefaultRules();
-               securityUtils.setSecurityContext();
-               try {
-                   Log.infof("----Running migrations for system realm:%s---- ", realm);
-                   migrationService.runAllUnRunMigrations(realm, emitter);
-               }finally {
-                   securityUtils.clearSecurityContext();
                }
+            );
+      }
+   }
 
-                emitter.complete();
-            } catch (Throwable e) {
-                emitter.fail(e);
+   @POST
+   @Path("/initialize/{realm}")
+   @Produces(MediaType.SERVER_SENT_EVENTS)
+   public void initializeDatabase (@PathParam("realm") String realm, SseEventSink eventSink, Sse sse) {
+
+      if (!identity.isAnonymous() && identity.hasRole("admin")) {
+
+         Multi.createFrom().publisher(initializeDatabaseTask(realm))
+            .emitOn(managedExecutor)
+            .subscribe().with(
+               message -> {
+                  if (!eventSink.isClosed()) {
+                     eventSink.send(sse.newEvent(message));
+                  }
+               },
+               failure -> {
+                  if (!eventSink.isClosed()) {
+                     eventSink.send(sse.newEvent("Error: " + failure.getMessage()));
+                     eventSink.close();
+                  }
+               },
+               () -> {
+                  if (!eventSink.isClosed()) {
+                     eventSink.send(sse.newEvent("Task completed"));
+                     eventSink.close();
+                  }
+               }
+            );
+      }
+   }
+
+   @GET
+   @Path("/start")
+   @RolesAllowed("admin")
+   @Produces(MediaType.SERVER_SENT_EVENTS)
+   public void startTask (SseEventSink eventSink, Sse sse) {
+      Multi.createFrom().publisher(runMigrateAllTask())
+         .emitOn(managedExecutor)
+         .subscribe().with(
+            message -> {
+               if (!eventSink.isClosed()) {
+                  eventSink.send(sse.newEvent(message));
+               }
+            },
+            failure -> {
+               if (!eventSink.isClosed()) {
+                  eventSink.send(sse.newEvent("Error: " + failure.getMessage()));
+                  eventSink.close();
+               }
+            },
+            () -> {
+               if (!eventSink.isClosed()) {
+                  eventSink.send(sse.newEvent("Task completed"));
+                  eventSink.close();
+               }
             }
-        });
-    }
+         );
+   }
 
-    private Multi<String> runChangeBeanTask(String beanRefName, String realm) {
+   @GET
+   @Path("/start/{realm}")
+   @RolesAllowed("admin")
+   @Produces(MediaType.SERVER_SENT_EVENTS)
+   public void startSpecificTask (@PathParam("realm") String realm, SseEventSink eventSink, Sse sse) {
+      Multi.createFrom().publisher(runMigrateSpecificTask(realm))
+         .emitOn(managedExecutor)
+         .subscribe().with(
+            message -> {
+               if (!eventSink.isClosed()) {
+                  eventSink.send(sse.newEvent(message));
+               }
+            },
+            failure -> {
+               if (!eventSink.isClosed()) {
+                  eventSink.send(sse.newEvent("Error: " + failure.getMessage()));
+                  eventSink.close();
+               }
+            },
+            () -> {
+               if (!eventSink.isClosed()) {
+                  eventSink.send(sse.newEvent("Task completed"));
+                  eventSink.close();
+               }
+            }
+         );
+   }
 
-        Objects.requireNonNull(beanRefName);
-        return Multi.createFrom().emitter(emitter -> {
+   private Multi<String> initializeDatabaseTask (String realm) {
+      Objects.requireNonNull(realm);
+      return Multi.createFrom().emitter(emitter -> {
+         try {
+            String[] roles = {"admin", "user"};
+            ruleContext.ensureDefaultRules();
+            securityUtils.setSecurityContext();
             try {
-                String[] roles = {"admin", "user"};
-                ruleContext.ensureDefaultRules();
-                securityUtils.setSecurityContext();
-                try {
-                    Log.infof("----Running changeSet for bean:%s---- ", beanRefName);
-                    migrationService.runChangeSetBean(beanRefName, realm, emitter);
-                }finally {
-                    securityUtils.clearSecurityContext();
-                }
-
-                emitter.complete();
-            } catch (Throwable e) {
-                emitter.fail(e);
+               Log.infof("----Running migrations for system realm:%s---- ", realm);
+               migrationService.runAllUnRunMigrations(realm, emitter);
+            } finally {
+               securityUtils.clearSecurityContext();
             }
-        });
-    }
 
-    private Multi<String> runMigrateAllTask() {
-        return Multi.createFrom().emitter(emitter -> {
+            emitter.complete();
+         } catch (Throwable e) {
+            emitter.fail(e);
+         }
+      });
+   }
+
+   private Multi<String> runChangeBeanTask (String beanRefName, String realm) {
+
+      Objects.requireNonNull(beanRefName);
+      return Multi.createFrom().emitter(emitter -> {
+         try {
+            String[] roles = {"admin", "user"};
+            ruleContext.ensureDefaultRules();
+            securityUtils.setSecurityContext();
             try {
-
-                Log.warn("-----!!!  RUNNING ALL MIGRATION TASKS !!!!-----");
-                String[] roles = {"admin", "user"};
-                ruleContext.ensureDefaultRules();
-                securityUtils.setSecurityContext();
-                try {
-                    Log.info("----Running migrations for test realm:---- " + envConfigUtils.getTestRealm());
-                    migrationService.runAllUnRunMigrations(envConfigUtils.getTestRealm(), emitter);
-                    Log.info("----Running migrations for system realm:---- " + envConfigUtils.getSystemRealm());
-                    migrationService.runAllUnRunMigrations(envConfigUtils.getSystemRealm(), emitter);
-                    if (!envConfigUtils.getSystemRealm().equals(envConfigUtils.getDefaultRealm())) {
-                        Log.info("----Running migrations for Default realm:---- " + envConfigUtils.getDefaultRealm());
-                        migrationService.runAllUnRunMigrations(envConfigUtils.getDefaultRealm(), emitter);
-                    }
-                } finally {
-                    securityUtils.clearSecurityContext();
-                }
-
-                emitter.complete();
-            } catch (Throwable e) {
-                emitter.fail(e);
+               Log.infof("----Running changeSet for bean:%s---- ", beanRefName);
+               migrationService.runChangeSetBean(beanRefName, realm, emitter);
+            } finally {
+               securityUtils.clearSecurityContext();
             }
-        });
-    }
 
-    private Multi<String> runMigrateSpecificTask(String realm) {
-        return Multi.createFrom().emitter(emitter -> {
+            emitter.complete();
+         } catch (Throwable e) {
+            emitter.fail(e);
+         }
+      });
+   }
+
+   private Multi<String> runMigrateAllTask () {
+      return Multi.createFrom().emitter(emitter -> {
+         try {
+
+            Log.warn("-----!!!  RUNNING ALL MIGRATION TASKS !!!!-----");
+            String[] roles = {"admin", "user"};
+            ruleContext.ensureDefaultRules();
+            securityUtils.setSecurityContext();
             try {
-
-                Log.warn("-----!!!  Migrations ENABLED !!!!-----");
-                String[] roles = {"admin", "user"};
-                ruleContext.ensureDefaultRules();
-                securityUtils.setSecurityContext();
-                try {
-                    Log.info("----Running migrations for realm:---- " + realm);
-                    migrationService.runAllUnRunMigrations(realm, emitter);
-                } finally {
-                    securityUtils.clearSecurityContext();
-                }
-
-                emitter.complete();
-            } catch (Throwable e) {
-                emitter.fail(e);
+               Log.info("----Running migrations for test realm:---- " + envConfigUtils.getTestRealm());
+               migrationService.runAllUnRunMigrations(envConfigUtils.getTestRealm(), emitter);
+               Log.info("----Running migrations for system realm:---- " + envConfigUtils.getSystemRealm());
+               migrationService.runAllUnRunMigrations(envConfigUtils.getSystemRealm(), emitter);
+               if (!envConfigUtils.getSystemRealm().equals(envConfigUtils.getDefaultRealm())) {
+                  Log.info("----Running migrations for Default realm:---- " + envConfigUtils.getDefaultRealm());
+                  migrationService.runAllUnRunMigrations(envConfigUtils.getDefaultRealm(), emitter);
+               }
+            } finally {
+               securityUtils.clearSecurityContext();
             }
-        });
-    }
+
+            emitter.complete();
+         } catch (Throwable e) {
+            emitter.fail(e);
+         }
+      });
+   }
+
+   private Multi<String> runMigrateSpecificTask (String realm) {
+      return Multi.createFrom().emitter(emitter -> {
+         try {
+
+            Log.warn("-----!!!  Migrations ENABLED !!!!-----");
+            String[] roles = {"admin", "user"};
+            ruleContext.ensureDefaultRules();
+            securityUtils.setSecurityContext();
+            try {
+               Log.info("----Running migrations for realm:---- " + realm);
+               migrationService.runAllUnRunMigrations(realm, emitter);
+            } finally {
+               securityUtils.clearSecurityContext();
+            }
+
+            emitter.complete();
+         } catch (Throwable e) {
+            emitter.fail(e);
+         }
+      });
+   }
 }
