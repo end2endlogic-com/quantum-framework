@@ -246,7 +246,7 @@ public final class SeedLoader {
         private SeedResolution(Map<String, List<SeedPackDescriptor>> byName) {
             this.byName = new HashMap<>();
             byName.forEach((name, descriptors) -> this.byName.put(name, descriptors.stream()
-                    .sorted(Comparator.comparing(d -> new Semver(d.getManifest().getVersion(), Semver.SemverType.NPM)))
+                    .sorted(Comparator.comparing(d -> Semver.parse(d.getManifest().getVersion())))
                     .toList()));
         }
 
@@ -257,7 +257,7 @@ public final class SeedLoader {
             }
             for (int i = descriptors.size() - 1; i >= 0; i--) {
                 SeedPackDescriptor descriptor = descriptors.get(i);
-                Semver version = new Semver(descriptor.getManifest().getVersion(), Semver.SemverType.NPM);
+                Semver version = Semver.parse(descriptor.getManifest().getVersion());
                 if (ref.matches(version)) {
                     return descriptor;
                 }
@@ -269,7 +269,7 @@ public final class SeedLoader {
             return byName.values().stream()
                     .flatMap(List::stream)
                     .filter(descriptor -> descriptor.getManifest().findArchetype(archetype).isPresent())
-                    .max(Comparator.comparing(d -> new Semver(d.getManifest().getVersion(), Semver.SemverType.NPM)));
+                    .max(Comparator.comparing(d -> Semver.parse(d.getManifest().getVersion())));
         }
     }
 

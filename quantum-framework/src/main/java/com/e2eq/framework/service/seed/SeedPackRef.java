@@ -13,7 +13,7 @@ public final class SeedPackRef {
     private final String name;
     private final String specification;
     private final MatchType matchType;
-    private final Semver exactVersion;
+    private final String exactVersion;
 
     private enum MatchType {
         ANY,
@@ -21,7 +21,7 @@ public final class SeedPackRef {
         RANGE
     }
 
-    private SeedPackRef(String name, String specification, MatchType matchType, Semver exactVersion) {
+    private SeedPackRef(String name, String specification, MatchType matchType, String exactVersion) {
         this.name = Objects.requireNonNull(name, "name");
         this.specification = specification;
         this.matchType = Objects.requireNonNull(matchType, "matchType");
@@ -40,7 +40,7 @@ public final class SeedPackRef {
         Objects.requireNonNull(version, "version");
         return switch (matchType) {
             case ANY -> true;
-            case EXACT -> version.equals(exactVersion);
+            case EXACT -> version.compareTo(Semver.parse(exactVersion)) == 0;
             case RANGE -> version.satisfies(specification);
         };
     }
@@ -50,10 +50,11 @@ public final class SeedPackRef {
     }
 
     public static SeedPackRef exact(String name, String version) {
+        Objects.requireNonNull(version, "version");
         return new SeedPackRef(name,
-                Objects.requireNonNull(version, "version"),
+                version,
                 MatchType.EXACT,
-                new Semver(version, Semver.SemverType.NPM));
+                version);
     }
 
     public static SeedPackRef range(String name, String range) {
@@ -87,7 +88,7 @@ public final class SeedPackRef {
 
     private static boolean isExactVersion(String candidate) {
         try {
-            new Semver(candidate, Semver.SemverType.NPM);
+            Semver.parse(candidate);
             return !candidate.contains(" ");
         } catch (SemverException ex) {
             return false;
@@ -98,7 +99,7 @@ public final class SeedPackRef {
     public String toString() {
         return switch (matchType) {
             case ANY -> name;
-            case EXACT -> name + "@=" + exactVersion.getValue();
+            case EXACT -> name + "@=" + exactVersion;
             case RANGE -> name + "@" + specification;
         };
     }
