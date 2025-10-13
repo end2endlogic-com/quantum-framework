@@ -38,7 +38,7 @@ import static dev.morphia.mapping.IndexType.DESC;
                   )
 })
 @RegisterForReflection
-@EqualsAndHashCode
+@EqualsAndHashCode(exclude={"realm"})
 @SuperBuilder
 @Data
 @NoArgsConstructor
