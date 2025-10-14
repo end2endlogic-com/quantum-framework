@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Framework Documentation</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-10-13T02:54:09Z</span>
+<span id="revdate">2025-10-14T18:04:21Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -4307,6 +4307,11 @@ curl -H &quot;Authorization: Bearer $JWT&quot; \
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>:^</code></p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>status:^["ACTIVE","PENDING"]</code></p></td>
 </tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Not in list</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>:!^</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>status:!^["DELETED","ARCHIVED"]</code></p></td>
+</tr>
 </tbody>
 </table>
 </div>
@@ -4476,17 +4481,29 @@ updatedAt:&gt;=2024-01-01T00:00:00Z</code></pre>
 <h5 id="_list_membership">List Membership</h5>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code># Status in specific values
+<pre class="CodeRay highlight"><code># Status in specific values (IN)
 status:^[&quot;ACTIVE&quot;,&quot;PENDING&quot;,&quot;PROCESSING&quot;]
 
-# User IDs from a list
+# Exclude statuses (NOT IN)
+status:!^[&quot;DELETED&quot;,&quot;ARCHIVED&quot;]
+
+# User IDs from a list (IN)
 ownerId:^[&quot;user1&quot;,&quot;user2&quot;,&quot;user3&quot;]
 
-# ObjectId list
+# Exclude specific users (NOT IN)
+ownerId:!^[&quot;user1&quot;,&quot;user2&quot;]
+
+# ObjectId list (IN)
 categoryId:^[@@507f1f77bcf86cd799439011, @@507f1f77bcf86cd799439012]
 
+# ObjectId list (NOT IN)
+categoryId:!^[@@507f1f77bcf86cd799439011, @@507f1f77bcf86cd799439012]
+
 # Mixed types (coerced automatically)
-priority:^[#1,#2,#3]</code></pre>
+priority:^[#1,#2,#3]
+
+# Using variables (CSV expansion supported by access resolvers)
+customerId:!^[${accessibleCustomerIds}]</code></pre>
 </div>
 </div>
 </div>
