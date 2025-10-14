@@ -3,6 +3,32 @@
 Quantum 1.2 introduces a seed-pack subsystem that lets applications publish versioned baseline
 content without hard-coding values in `ChangeSet` beans or maintaining a separate "seed" tenant.
 
+== Introduction
+
+=== The problem
+In multi-tenant SaaS platforms, every new tenant must start with a known-good baseline of data: code lists, roles, default settings, reference values, and sometimes product- or region-specific content. Traditionally this baseline is scattered across ad‑hoc SQL/Mongo scripts, hand-written bootstrap code, or a "template" tenant that is copied forward. These approaches are hard to version, review, test, and repeat reliably across environments.
+
+Compounding the issue, tenants evolve over time. As modules are upgraded, their baseline content must be updated too. Without a disciplined mechanism, teams risk drift between environments and tenants, brittle migrations, and non-idempotent provisioning that causes duplicates or corruption.
+
+=== Why this needs to be solved
+- Operational consistency: Provisioning should be predictable, repeatable, and safe to re-run.
+- Developer velocity: Changes to baseline data should be reviewed like code and travel with the module that owns them.
+- Compliance and audit: You need to know exactly which version of seed content was applied to which tenant and when.
+- Composability: Different product editions or SKUs need different combinations of baseline content without forked scripts.
+
+=== How seed packs solve it
+Seed packs provide a declarative, versioned, and composable way to describe tenant baseline data:
+- A manifest (manifest.yaml) declares datasets, natural keys, transforms, required indexes, and optional includes/archetypes.
+- Datasets point to JSON/NDJSON files that are upserted using natural-key filters, making runs idempotent.
+- Transforms inject tenant/realm identifiers and can rewrite references deterministically.
+- Includes compose other packs with exact versions or semantic version ranges, enabling dependency management.
+- Archetypes bundle a named set of packs to represent product tiers or verticals.
+- A registry records checksums per dataset so unchanged data is skipped on subsequent runs.
+
+Together, these features make seeding safe, observable, and maintainable across development, test, and production.
+
+The next section expands on why seed packs are beneficial and how to use them effectively.
+
 == Why seed packs?
 
 * **Versioned + reviewable**: seed packs are plain files (YAML + JSON/NDJSON) that live next to your
@@ -104,3 +130,127 @@ in any manifest.
   re-applied without collisions.
 * Use archetypes to model product tiers and optional modules: `TenantProvisioningService` can decide
   which archetype(s) to apply based on SKU.
+
+
+== Primary scenarios
+
+. Initial tenant provisioning
+* Apply one or more seed packs to bootstrap a brand-new tenant (realm) with baseline code lists, roles, and default settings.
+* Use SeedPackRef.of("pack-name") or SeedPackRef.range("pack-name", "^1.4") to control versions.
+
+. Updating a module to a new version
+* Publish a new seed pack version (e.g., logistics-core 1.5.0) with incremental dataset changes.
+* Re-run loader.apply(...) for the same tenant; unchanged datasets are skipped via _seed_registry, modified datasets are re-applied.
+
+. Idempotent re-apply during deployments
+* Safe to invoke on every startup/migration. Upserts are driven by naturalKey and upsert: true.
+* Keep natural keys stable; derive surrogate IDs deterministically in a transform if needed.
+
+. Selecting product tiers with archetypes
+* Define archetypes in a manifest to bundle multiple seed packs under a named edition.
+* Call loader.applyArchetype("FulfillmentPlus", ctx) to materialize the predefined stack for a tenant.
+
+. Composing packs with includes
+* Use includes to depend on base packs (e.g., accounting-base@^1.1) and extend with your own datasets.
+* Includes support exact (=1.2.3) and range (e.g., ^1.4, ~2) selectors via SeedPackRef.parse("name@spec").
+
+. Partial refresh of specific datasets
+* You can split large packs into multiple datasets and re-apply only the packs you want by passing a smaller list to loader.apply(...).
+
+. Testing seed packs
+* Add an integration test similar to SeedLoaderIntegrationTest that seeds into an ephemeral MongoDB and asserts collection state and _seed_registry entries.
+
+== Explicit examples
+
+=== Example 1: Minimal manifest and NDJSON
+[source,yaml]
+----
+seedPack: demo-seed
+version: 1.0.0
+
+datasets:
+  - collection: codeLists
+    file: datasets/codeLists.ndjson
+    naturalKey: [ code ]
+    upsert: true
+    requiredIndexes:
+      - name: uk_codeLists_code
+        unique: true
+        keys:
+          code: 1
+    transforms:
+      - type: tenantSubstitution
+        config:
+          tenantField: tenantId
+          orgField: orgRefName
+          accountField: accountId
+          ownerField: ownerId
+          realmField: realmId
+----
+
+Example NDJSON (datasets/codeLists.ndjson):
+[source,json]
+----
+{"code": "NEW", "label": "New"}
+{"code": "CLOSED", "label": "Closed"}
+----
+
+=== Example 2: Applying packs in code
+[source,java]
+----
+SeedLoader loader = SeedLoader.builder()
+        .addSeedSource(new FileSeedSource("local", Paths.get("seed-packs")))
+        .seedRepository(new MongoSeedRepository(mongoClient))
+        .seedRegistry(new MongoSeedRegistry(mongoClient))
+        .build();
+
+SeedContext ctx = SeedContext.builder("my-realm")
+        .tenantId("tenant-123")
+        .orgRefName("tenant-123")
+        .accountId("acct-123")
+        .ownerId("owner-123")
+        .build();
+
+loader.apply(List.of(
+        SeedPackRef.of("demo-seed"),
+        SeedPackRef.range("logistics-core", "^1.4")
+), ctx);
+----
+
+=== Example 3: Using an archetype
+[source,yaml]
+----
+archetypes:
+  - name: FulfillmentPlus
+    includes:
+      - logistics-core@^1.4
+      - shipping-defaults@~2
+----
+
+Apply programmatically:
+[source,java]
+----
+loader.applyArchetype("FulfillmentPlus", ctx);
+----
+
+=== Example 4: Exact version and includes in a manifest
+[source,yaml]
+----
+seedPack: shipping-defaults
+version: 2.3.0
+includes:
+  - accounting-base@=1.1.2
+  - logistics-core@^1.5
+
+datasets:
+  - collection: shippingMethods
+    file: datasets/methods.json
+    naturalKey: [ code ]
+----
+
+== Troubleshooting
+
+- Manifest parsing errors: Confirm manifest.yaml keys match SeedPackManifest fields; boolean flags like upsert and unique must be proper booleans.
+- Duplicate key or unique index violations: Check naturalKey and requiredIndexes; ensure transforms don’t change key fields inconsistently.
+- Nothing changes on re-run: The _seed_registry may have recorded the same checksum; bump version or change dataset content.
+- File resolution issues: Ensure FileSeedSource base path points to the correct seed-packs directory and file names match.

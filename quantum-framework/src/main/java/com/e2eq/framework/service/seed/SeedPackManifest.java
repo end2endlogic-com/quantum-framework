@@ -8,6 +8,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import io.quarkus.runtime.annotations.RegisterForReflection;
+import lombok.*;
 import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.Constructor;
@@ -16,24 +18,21 @@ import org.yaml.snakeyaml.error.YAMLException;
 /**
  * Represents the declarative manifest that describes a seed pack.
  */
+@Data
+@EqualsAndHashCode
+@ToString
+@RegisterForReflection
 public final class SeedPackManifest {
 
     private static final String DEFAULT_MANIFEST = "manifest.yaml";
-
     private String seedPack;
+
     private String version;
     private List<Dataset> datasets;
     private List<String> includes;
     private List<Archetype> archetypes;
     private transient String sourceDescription;
 
-    public String getSeedPack() {
-        return seedPack;
-    }
-
-    public String getVersion() {
-        return version;
-    }
 
     public List<Dataset> getDatasets() {
         return datasets == null ? List.of() : Collections.unmodifiableList(datasets);
@@ -101,6 +100,9 @@ public final class SeedPackManifest {
         }
     }
 
+
+    @Data
+    @EqualsAndHashCode
     public static final class Dataset {
         private String collection;
         private String file;
@@ -109,20 +111,21 @@ public final class SeedPackManifest {
         private List<Index> requiredIndexes;
         private List<Transform> transforms;
 
-        public String getCollection() {
-            return collection;
-        }
-
-        public String getFile() {
-            return file;
-        }
 
         public List<String> getNaturalKey() {
             return naturalKey == null ? List.of() : Collections.unmodifiableList(naturalKey);
         }
 
+        public Boolean getUpsert() {
+            return upsert;
+        }
+
         public boolean isUpsert() {
             return upsert == null || upsert;
+        }
+
+        public void setUpsert(boolean upsert) {
+            this.upsert = upsert;
         }
 
         public List<Index> getRequiredIndexes() {
@@ -153,23 +156,31 @@ public final class SeedPackManifest {
     }
 
     public static final class Index {
+        @Setter
         private Map<String, Integer> keys;
+        @Setter
         private Boolean unique;
+        @Getter
+        @Setter
         private String name;
 
         public Map<String, Integer> getKeys() {
             return keys == null ? Map.of() : Collections.unmodifiableMap(keys);
         }
 
+        public Boolean getUnique() {
+            return unique;
+        }
+
         public boolean isUnique() {
             return unique != null && unique;
         }
 
-        public String getName() {
-            return name;
+        public void setUnique(boolean unique) {
+            this.unique = unique;
         }
 
-        void validate(String collection, String source) {
+       void validate(String collection, String source) {
             if (keys == null || keys.isEmpty()) {
                 throw new IllegalStateException("Index keys are required for collection " + collection + " in manifest " + source);
             }
@@ -177,7 +188,9 @@ public final class SeedPackManifest {
     }
 
     public static final class Transform {
+        @Setter
         private String type;
+        @Setter
         private Map<String, Object> config;
 
         public String getType() {
@@ -195,13 +208,12 @@ public final class SeedPackManifest {
         }
     }
 
+    @Data
+    @EqualsAndHashCode
+    @ToString
     public static final class Archetype {
         private String name;
         private List<String> includes;
-
-        public String getName() {
-            return name;
-        }
 
         public List<SeedPackRef> getIncludeRefs() {
             if (includes == null || includes.isEmpty()) {
