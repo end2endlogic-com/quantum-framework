@@ -1,0 +1,174 @@
+// Tutorial-based guide for Quantum Framework
+:toclevels: 3
+:sectnums:
+
+= Quantum Tutorial: Build a Multi-tenant SaaS with Quantum
+
+This tutorial takes you end-to-end through building a small SaaS application on the Quantum framework.
+It pulls in the core concepts and how-to content from the main index in a progressive, hands-on flow so you can learn by doing.
+
+Audience: Mid-level Java developers building multi-tenant SaaS on Quarkus and MongoDB.
+Prerequisites: JDK 17+, Maven, Docker (for local MongoDB), and basic familiarity with Quarkus.
+Artifacts: The docs can be built as HTML/PDF via Maven; the code snippets compile against the Quantum modules published in this repo.
+
+What you'll build: A small, tenant-aware service with domain models, REST CRUD, flexible queries, security, migrations, and seed packs for baseline data.
+
+Each section starts with:
+- Problem: What we are solving
+- Why for SaaS: Why this matters in multi-tenant systems
+- How Quantum helps: Concepts and features that address the problem
+- Walkthrough: Code and configuration that build on prior sections
+
+Throughout, we reuse and expand the same example to reinforce learning. The reference guide links back to these sections for deeper context.
+
+[[sec-setup]]
+== 1. Project setup
+
+Problem: Getting a runnable project scaffolded with Quantum and Quarkus.
+
+Why for SaaS: Consistent project structure and dependencies are critical to scale teams and environments.
+
+How Quantum helps: Provides opinionated dependencies, conventions, and ready-made modules for multi-tenancy, security, persistence, and seeding.
+
+Walkthrough: Follow the steps below to create and run your first service.
+
+include::../user-guide/getting-started.adoc[]
+
+[[sec-overview]]
+== 2. Platform overview
+
+Problem: Understanding the moving parts and how they fit together.
+
+Why for SaaS: You’ll be composing features (tenancy, security, APIs, data) across many modules and services.
+
+How Quantum helps: A cohesive model with clear boundaries and integration points.
+
+Walkthrough: Read the overview and keep it handy as you progress.
+
+include::../user-guide/overview.adoc[]
+
+[[sec-modeling]]
+== 3. Domain modeling fundamentals
+
+Problem: Modeling your domain effectively for persistence and API exposure.
+
+Why for SaaS: Cross-tenant scale and isolation drive modeling choices (IDs, natural keys, versioning, ownership).
+
+How Quantum helps: Provides base models, annotations, and repository patterns to model tenant-safe entities.
+
+Walkthrough: Build a minimal domain model and persist it.
+
+include::../user-guide/modeling.adoc[]
+
+[[sec-tenant-models]]
+== 4. Multi-tenant model and realm separation
+
+Problem: Isolating data per tenant while enabling selective sharing.
+
+Why for SaaS: Security, compliance, and data residency require strong segregation and auditability.
+
+How Quantum helps: Realm/tenant identifiers, context propagation, transforms, and repository filters.
+
+Walkthrough: Configure realms and mark your models for tenancy.
+
+include::../user-guide/tenant-models.adoc[]
+
+[[sec-domain-rule-context]]
+== 5. Domain rule context
+
+Problem: Applying business rules based on user, org, account, and tenant context.
+
+Why for SaaS: Entitlements and behavior vary by tenant, role, and plan.
+
+How Quantum helps: Built-in domain rule context to consistently pass identity and policy inputs.
+
+Walkthrough: Inject and use the context in services and repositories.
+
+include::../user-guide/domain-rule-context.adoc[]
+
+[[sec-rest-crud]]
+== 6. Building RESTful CRUD APIs
+
+Problem: Exposing standardized CRUD endpoints with minimal boilerplate.
+
+Why for SaaS: Consistency across services reduces cognitive load and accelerates delivery.
+
+How Quantum helps: Resource scaffolding, conventions, and helpers for common CRUD.
+
+Walkthrough: Create controllers/resources for your model and wire persistence.
+
+include::../user-guide/rest-crud.adoc[]
+
+[[sec-query-language]]
+== 7. Query language and filtering
+
+Problem: Powerful, safe, and consistent querying across collections.
+
+Why for SaaS: Tenants need flexible reporting and filtration without bespoke endpoints.
+
+How Quantum helps: A uniform query language layer with server-side enforcement.
+
+Walkthrough: Add query endpoints and test filters/security.
+
+include::../user-guide/query-language.adoc[]
+
+[[sec-security]]
+== 8. Authentication, permissions, and annotations
+
+Problem: Securely authenticating users and enforcing fine-grained authorization.
+
+Why for SaaS: Multi-tenant apps must ensure tenant isolation and principle-of-least-privilege.
+
+How Quantum helps: JWT integration, permissions model, and security annotations.
+
+Walkthrough: Protect your APIs and add role/permission checks.
+
+include::../user-guide/auth.adoc[]
+include::../user-guide/permissions.adoc[]
+include::../user-guide/security-annotations.adoc[]
+
+[[sec-seed-packs]]
+== 9. Seed packs: Declarative tenant seeding
+
+Problem: Provisioning repeatable, versioned baseline data for tenants.
+
+Why for SaaS: Every tenant must start with known-good defaults; upgrades must be idempotent and auditable.
+
+How Quantum helps: Seed packs with manifests, datasets, transforms, includes, archetypes, and a registry.
+
+Walkthrough: Create a seed pack, apply it programmatically, and verify idempotency.
+
+// Keep the comprehensive guide for deep dive; the tutorial references it
+include::../user-guide/seed-packs.adoc[]
+
+[[sec-migrations]]
+== 10. Migrations
+
+Problem: Evolving schemas and data safely across environments.
+
+Why for SaaS: Continuous delivery means frequent, incremental change with strict uptime and audit needs.
+
+How Quantum helps: Opinionated patterns and hooks for applying safe migrations.
+
+Walkthrough: Add and run a simple migration.
+
+include::../user-guide/migrations.adoc[]
+
+[[sec-testing]]
+== 11. Testing
+
+Problem: Validating behavior quickly and reliably, including tenant-specific behavior.
+
+Why for SaaS: Isolation, entitlements, and data variance require strong test coverage.
+
+How Quantum helps: Test utilities, runtime hooks, and integration testing guidance.
+
+Walkthrough: Write integration tests for APIs and seed packs.
+
+include::../user-guide/testing.adoc[]
+
+[[sec-next-steps]]
+== 12. Next steps
+
+- Explore the Supply Chain sample tutorial for an end-to-end scenario.
+- Use the Reference Guide to quickly jump to deeper explanations of any topic above.
