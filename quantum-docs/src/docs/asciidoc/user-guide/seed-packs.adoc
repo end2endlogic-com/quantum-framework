@@ -1,0 +1,106 @@
+= Seed packs and declarative tenant seeding
+
+Quantum 1.2 introduces a seed-pack subsystem that lets applications publish versioned baseline
+content without hard-coding values in `ChangeSet` beans or maintaining a separate "seed" tenant.
+
+== Why seed packs?
+
+* **Versioned + reviewable**: seed packs are plain files (YAML + JSON/NDJSON) that live next to your
+  module code. Pull requests show exactly which records changed.
+* **Composable**: packs can depend on other packs and expose named _archetypes_ for different product
+  editions or verticals.
+* **Pluggable sources**: load packs from the filesystem, object storage, or even a curated seed
+  database by providing a custom `SeedSource`.
+* **Tenant-aware**: transforms inject tenant identifiers and remap references before persisting.
+* **Idempotent**: a `SeedRegistry` tracks checksums per dataset so provisioning can be re-run safely.
+
+== High-level flow
+
+. `SeedLoader` discovers manifests via the configured `SeedSource` implementations (for example the
+  provided `FileSeedSource`).
+. A manifest (`manifest.yaml`) declares datasets, required indexes, transforms, optional includes, and
+  archetypes.
+. During provisioning a migration invokes `SeedLoader.apply(...)` with the packs (or archetype) that
+  should be materialised for the tenant.
+. Records are parsed, transformed, and upserted through a `SeedRepository` implementation. The
+  default `MongoSeedRepository` writes to the tenant realm using natural-key filters.
+. The `SeedRegistry` (backed by `_seed_registry` via `MongoSeedRegistry`) records the checksum so
+  unchanged datasets are skipped on later runs.
+
+== Manifest quick reference
+
+[source,yaml]
+----
+seedPack: logistics-core
+version: 1.4.2
+includes:
+  - accounting-base@^1.1
+
+datasets:
+  - collection: codeLists
+    file: datasets/codelists.ndjson
+    naturalKey: [codeListName, code]
+    upsert: true
+    requiredIndexes:
+      - name: uk_codeLists_name_code
+        unique: true
+        keys:
+          codeListName: 1
+          code: 1
+    transforms:
+      - type: tenantSubstitution
+        config:
+          tenantField: tenantId
+          orgField: orgId
+          ownerField: ownerId
+          realmField: realmId
+
+archetypes:
+  - name: FulfillmentPlus
+    includes:
+      - logistics-core@^1.4
+      - shipping-defaults@~2
+----
+
+== Programmatic usage
+
+[source,java]
+----
+SeedLoader loader = SeedLoader.builder()
+        .addSeedSource(new FileSeedSource("local", Paths.get("seed-packs")))
+        .seedRepository(new MongoSeedRepository(mongoClient))
+        .seedRegistry(new MongoSeedRegistry(mongoClient))
+        .build();
+
+SeedContext ctx = SeedContext.builder(realmId)
+        .tenantId(tenantId)
+        .orgRefName(orgRef)
+        .accountId(accountId)
+        .ownerId(ownerId)
+        .build();
+
+loader.apply(List.of(
+        SeedPackRef.range("logistics-core", "^1.4"),
+        SeedPackRef.of("oms-defaults")
+), ctx);
+----
+
+Callers can also use `loader.applyArchetype("FulfillmentPlus", ctx)` to resolve an archetype defined
+in any manifest.
+
+== Extensibility hooks
+
+* Implement `SeedSource` to load manifests from custom storage (S3, Git, curated seed DB…).
+* Register additional `SeedTransformFactory` instances with the builder to support bespoke
+  transformations (for example JMESPath projections or deterministic ObjectId mapping).
+* Swap in a different `SeedRepository`/`SeedRegistry` to write to alternative datastores or change the
+  idempotency policy.
+
+== Operational tips
+
+* Validate manifests in CI by running the loader against a disposable database.
+* Keep seed pack versions aligned with module versions so upgrade paths are clear.
+* Derive any ObjectIds deterministically from natural keys inside a transform so data can be
+  re-applied without collisions.
+* Use archetypes to model product tiers and optional modules: `TenantProvisioningService` can decide
+  which archetype(s) to apply based on SKU.
