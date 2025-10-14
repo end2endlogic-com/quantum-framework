@@ -1,0 +1,47 @@
+// Quantum Reference Guide (links-first, deep dives via tutorial anchors)
+:toclevels: 2
+
+= Quantum Reference Guide
+
+This reference is a topic-based index that links to the in-depth tutorial sections.
+Use it to jump directly to a subject and then explore details in context.
+
+== Platform
+
+- Overview: xref:../tutorials/quantum-tutorial.adoc#sec-overview[Platform overview]
+- Project setup: xref:../tutorials/quantum-tutorial.adoc#sec-setup[Project setup]
+
+== Modeling and Tenancy
+
+- Domain modeling: xref:../tutorials/quantum-tutorial.adoc#sec-modeling[Domain modeling fundamentals]
+- Tenant models and realms: xref:../tutorials/quantum-tutorial.adoc#sec-tenant-models[Multi-tenant model and realm separation]
+- Domain rule context: xref:../tutorials/quantum-tutorial.adoc#sec-domain-rule-context[Domain rule context]
+
+== APIs and Queries
+
+- REST CRUD: xref:../tutorials/quantum-tutorial.adoc#sec-rest-crud[Building RESTful CRUD APIs]
+- Query language: xref:../tutorials/quantum-tutorial.adoc#sec-query-language[Query language and filtering]
+
+== Security
+
+- Authentication: xref:../tutorials/quantum-tutorial.adoc#sec-security[Authentication, permissions, and annotations]
+- Permissions: xref:../tutorials/quantum-tutorial.adoc#sec-security[Permissions]
+- Security annotations: xref:../tutorials/quantum-tutorial.adoc#sec-security[Security annotations]
+
+== Data Seeding
+
+- Seed packs (tutorial): xref:../tutorials/quantum-tutorial.adoc#sec-seed-packs[Seed packs: Declarative tenant seeding]
+- Seed packs (deep dive document): xref:./seed-packs.adoc[Seed packs and declarative tenant seeding]
+
+== Operations
+
+- Migrations: xref:../tutorials/quantum-tutorial.adoc#sec-migrations[Migrations]
+- Testing: xref:../tutorials/quantum-tutorial.adoc#sec-testing[Testing]
+
+== Samples
+
+- Supply Chain tutorial: xref:../tutorials/supply-chain.adoc[Supply Chain]
+
+== Appendix
+
+For configuration, Quarkus integration details, and glossary, see the Appendix in the main index.
