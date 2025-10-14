@@ -1,0 +1,21 @@
+seedPack: demo-seed
+version: 1.0.0
+datasets:
+  - collection: codeLists
+    file: datasets/codeLists.ndjson
+    naturalKey: [codeListName, code]
+    upsert: true
+    requiredIndexes:
+      - name: uk_codeLists_name_code
+        unique: true
+        keys:
+          codeListName: 1
+          code: 1
+    transforms:
+      - type: tenantSubstitution
+        config:
+          tenantField: tenantId
+          orgField: orgRefName
+          ownerField: ownerId
+          accountField: accountId
+          realmField: realmId
