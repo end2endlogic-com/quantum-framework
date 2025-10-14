@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Seed packs and declarative tenant seeding</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-10-14T21:03:56Z</span>
+<span id="revdate">2025-10-14T22:19:16Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -569,8 +569,10 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_example_b_cross_pack_archetype_in_a_dedicated_editions_pack">14.2. Example B: Cross-pack archetype in a dedicated "editions" pack</a></li>
 <li><a href="#_resolution_and_ordering_details">14.3. Resolution and ordering details</a></li>
 <li><a href="#_interaction_with_applyseedpackschangeset">14.4. Interaction with ApplySeedPacksChangeSet</a></li>
+<li><a href="#_tenant_provisioning_with_archetypes">14.5. Tenant provisioning with archetypes</a></li>
 </ul>
 </li>
+<li><a href="#_rest_api_for_seed_packs">15. REST API for seed packs</a></li>
 </ul>
 </div>
 </div>
@@ -1488,13 +1490,148 @@ loader.applyArchetype(<span class="string"><span class="delimiter">&quot;</span>
 </ul>
 </div>
 </div>
+<div class="sect2">
+<h3 id="_tenant_provisioning_with_archetypes">14.5. Tenant provisioning with archetypes</h3>
+<div class="paragraph">
+<p>The tenant provisioning API accepts an optional list of archetype names and will apply the corresponding seed packs during onboarding.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Endpoint: POST /admin/tenants</p>
+</li>
+<li>
+<p>Request body fields (subset):</p>
+</li>
+<li>
+<p>tenantEmailDomain, orgRefName, accountId, adminUserId, adminUsername, adminPassword</p>
+</li>
+<li>
+<p>archetypes: optional array of strings (archetype names)</p>
+</li>
+<li>
+<p>Behavior:</p>
+</li>
+<li>
+<p>After running migrations and creating the admin user, each archetype is resolved across all manifests and applied using the same SeedLoader used elsewhere.</p>
+</li>
+<li>
+<p>If an archetype name is unknown, the request fails with 409/500 depending on context.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Example request:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">tenantEmailDomain</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">demo-archetype.example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">orgRefName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">demo-archetype.example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">accountId</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">9999999999</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">adminUserId</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">admin@demo-archetype.example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">adminUsername</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">admin@demo-archetype.example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">adminPassword</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">secret</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">archetypes</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">DemoArchetype</span><span class="delimiter">&quot;</span></span>]
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>On success, the new realm (demo-archetype-example) will have the datasets from the selected archetypes applied and recorded in the _seed_registry.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_rest_api_for_seed_packs">15. REST API for seed packs</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The framework exposes admin-only endpoints to inspect and apply seed packs per realm (tenant DB). These are disabled to non-admin users via role checks.</p>
+</div>
+<div class="paragraph">
+<p>Base path: /admin/seeds</p>
+</div>
+<div class="paragraph">
+<p>Endpoints:
+- GET /admin/seeds/pending/{realm}
+  - Lists pending seed packs for the realm. A pack is pending if any dataset checksum differs from the last applied or was never applied.
+  - Optional query parameter: filter=pack1,pack2 to restrict by pack name.
+  - Response example:</p>
+</div>
+<div class="paragraph">
+<p>+</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">[
+  {
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">seedId</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">demo-seed@1.0.0</span><span class="delimiter">&quot;</span></span>,
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">seedPack</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">demo-seed</span><span class="delimiter">&quot;</span></span>,
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">version</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">1.0.0</span><span class="delimiter">&quot;</span></span>,
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">datasets</span><span class="delimiter">&quot;</span></span>: [
+      {<span class="key"><span class="delimiter">&quot;</span><span class="content">collection</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">codeLists</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">file</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">datasets/codelists.ndjson</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">checksum</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">...</span><span class="delimiter">&quot;</span></span>}
+    ]
+  }
+]</code></pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>POST /admin/seeds/apply/{realm}</p>
+</li>
+<li>
+<p>Applies the latest version of all discovered packs (or only those matching filter).</p>
+</li>
+<li>
+<p>Query parameter: filter=pack1,pack2</p>
+</li>
+<li>
+<p>Response example:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{<span class="key"><span class="delimiter">&quot;</span><span class="content">applied</span><span class="delimiter">&quot;</span></span>:[<span class="string"><span class="delimiter">&quot;</span><span class="content">demo-seed</span><span class="delimiter">&quot;</span></span>]}</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>POST /admin/seeds/{realm}/{seedPack}/apply</p>
+</li>
+<li>
+<p>Applies the latest version of a single pack by name. Idempotent: unchanged datasets are skipped.</p>
+</li>
+<li>
+<p>Response example:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{<span class="key"><span class="delimiter">&quot;</span><span class="content">applied</span><span class="delimiter">&quot;</span></span>:[<span class="string"><span class="delimiter">&quot;</span><span class="content">demo-seed</span><span class="delimiter">&quot;</span></span>]}</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>GET /admin/seeds/history/{realm}</p>
+</li>
+<li>
+<p>Returns the per-dataset seeding history as recorded in the <code>_seed_registry</code> collection.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Authentication and roles:
+- All endpoints require role admin. In integration tests you can use @TestSecurity(user="admin", roles={"admin").</p>
+</div>
+<div class="paragraph">
+<p>Configuration:
+- quantum.seed.root: filesystem path to the root folder where seed packs are discovered. In tests this defaults to src/test/resources/seed-packs.
+- quantum.seed.apply.filter: optional comma-separated list of pack names to limit automatic application by changeset.</p>
+</div>
 </div>
 </div>
 </div>
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-10-14 16:26:36 -0400
+Last updated 2025-10-14 17:45:59 -0400
 </div>
 </div>
 </body>

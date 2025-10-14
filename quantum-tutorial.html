@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Tutorial: Build a Multi-tenant SaaS with Quantum</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-10-14T21:03:56Z</span>
+<span id="revdate">2025-10-14T22:19:16Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -803,40 +803,42 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_example_b_cross_pack_archetype_in_a_dedicated_editions_pack">78.2. Example B: Cross-pack archetype in a dedicated "editions" pack</a></li>
 <li><a href="#_resolution_and_ordering_details">78.3. Resolution and ordering details</a></li>
 <li><a href="#_interaction_with_applyseedpackschangeset">78.4. Interaction with ApplySeedPacksChangeSet</a></li>
+<li><a href="#_tenant_provisioning_with_archetypes">78.5. Tenant provisioning with archetypes</a></li>
 </ul>
 </li>
-<li><a href="#sec-migrations">79. 10. Migrations</a></li>
+<li><a href="#_rest_api_for_seed_packs">79. REST API for seed packs</a></li>
+<li><a href="#sec-migrations">80. 10. Migrations</a></li>
 </ul>
 </li>
 <li><a href="#migrations">Database Migrations and Index Management</a>
 <ul class="sectlevel1">
-<li><a href="#_overview">80. Overview</a></li>
-<li><a href="#_semantic_versioning">81. Semantic Versioning</a></li>
-<li><a href="#_configuration_2">82. Configuration</a></li>
-<li><a href="#_how_change_sets_are_discovered_and_executed">83. How change sets are discovered and executed</a></li>
-<li><a href="#_authoring_a_change_set">84. Authoring a change set</a></li>
-<li><a href="#_example_change_sets_in_the_framework">85. Example change sets in the framework</a></li>
-<li><a href="#_rest_apis_to_trigger_migrations_migrationresource">86. REST APIs to trigger migrations (MigrationResource)</a></li>
-<li><a href="#_perentity_index_management_baseresource">87. Per‑entity index management (BaseResource)</a></li>
-<li><a href="#_global_index_management_migrationservice">88. Global index management (MigrationService)</a></li>
-<li><a href="#_validating_versions_at_startup">89. Validating versions at startup</a></li>
-<li><a href="#_notes_and_best_practices">90. Notes and best practices</a></li>
-<li><a href="#sec-testing">91. 11. Testing</a></li>
-<li><a href="#testing">92. Testing in Quantum: Security Contexts, Repos, and REST APIs</a>
+<li><a href="#_overview">81. Overview</a></li>
+<li><a href="#_semantic_versioning">82. Semantic Versioning</a></li>
+<li><a href="#_configuration_2">83. Configuration</a></li>
+<li><a href="#_how_change_sets_are_discovered_and_executed">84. How change sets are discovered and executed</a></li>
+<li><a href="#_authoring_a_change_set">85. Authoring a change set</a></li>
+<li><a href="#_example_change_sets_in_the_framework">86. Example change sets in the framework</a></li>
+<li><a href="#_rest_apis_to_trigger_migrations_migrationresource">87. REST APIs to trigger migrations (MigrationResource)</a></li>
+<li><a href="#_perentity_index_management_baseresource">88. Per‑entity index management (BaseResource)</a></li>
+<li><a href="#_global_index_management_migrationservice">89. Global index management (MigrationService)</a></li>
+<li><a href="#_validating_versions_at_startup">90. Validating versions at startup</a></li>
+<li><a href="#_notes_and_best_practices">91. Notes and best practices</a></li>
+<li><a href="#sec-testing">92. 11. Testing</a></li>
+<li><a href="#testing">93. Testing in Quantum: Security Contexts, Repos, and REST APIs</a>
 <ul class="sectlevel2">
-<li><a href="#_testing_framework">92.1. Testing Framework</a></li>
-<li><a href="#_prerequisites_and_glossary">92.2. Prerequisites and glossary</a></li>
-<li><a href="#_pattern_1_extend_baserepotest">92.3. Pattern 1 — Extend BaseRepoTest</a></li>
-<li><a href="#_pattern_2_try_with_resources_securitysession">92.4. Pattern 2 — Try-with-resources SecuritySession</a></li>
-<li><a href="#_pattern_3_scoped_call_wrapper_scopedcallscope">92.5. Pattern 3 — Scoped-call wrapper (ScopedCallScope)</a></li>
-<li><a href="#_pattern_4_testsecurity_annotation_quarkus">92.6. Pattern 4 — @TestSecurity annotation (Quarkus)</a></li>
-<li><a href="#_testing_rest_apis_vs_repository_logic">92.7. Testing REST APIs vs. Repository Logic</a></li>
-<li><a href="#_useful_quarkus_test_features">92.8. Useful Quarkus Test features</a></li>
-<li><a href="#_real_world_tips">92.9. Real-world tips</a></li>
-<li><a href="#_summary">92.10. Summary</a></li>
+<li><a href="#_testing_framework">93.1. Testing Framework</a></li>
+<li><a href="#_prerequisites_and_glossary">93.2. Prerequisites and glossary</a></li>
+<li><a href="#_pattern_1_extend_baserepotest">93.3. Pattern 1 — Extend BaseRepoTest</a></li>
+<li><a href="#_pattern_2_try_with_resources_securitysession">93.4. Pattern 2 — Try-with-resources SecuritySession</a></li>
+<li><a href="#_pattern_3_scoped_call_wrapper_scopedcallscope">93.5. Pattern 3 — Scoped-call wrapper (ScopedCallScope)</a></li>
+<li><a href="#_pattern_4_testsecurity_annotation_quarkus">93.6. Pattern 4 — @TestSecurity annotation (Quarkus)</a></li>
+<li><a href="#_testing_rest_apis_vs_repository_logic">93.7. Testing REST APIs vs. Repository Logic</a></li>
+<li><a href="#_useful_quarkus_test_features">93.8. Useful Quarkus Test features</a></li>
+<li><a href="#_real_world_tips">93.9. Real-world tips</a></li>
+<li><a href="#_summary">93.10. Summary</a></li>
 </ul>
 </li>
-<li><a href="#sec-next-steps">93. 12. Next steps</a></li>
+<li><a href="#sec-next-steps">94. 12. Next steps</a></li>
 </ul>
 </li>
 </ul>
@@ -8926,10 +8928,145 @@ loader.applyArchetype(<span class="string"><span class="delimiter">&quot;</span>
 </ul>
 </div>
 </div>
+<div class="sect2">
+<h3 id="_tenant_provisioning_with_archetypes">78.5. Tenant provisioning with archetypes</h3>
+<div class="paragraph">
+<p>The tenant provisioning API accepts an optional list of archetype names and will apply the corresponding seed packs during onboarding.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Endpoint: POST /admin/tenants</p>
+</li>
+<li>
+<p>Request body fields (subset):</p>
+</li>
+<li>
+<p>tenantEmailDomain, orgRefName, accountId, adminUserId, adminUsername, adminPassword</p>
+</li>
+<li>
+<p>archetypes: optional array of strings (archetype names)</p>
+</li>
+<li>
+<p>Behavior:</p>
+</li>
+<li>
+<p>After running migrations and creating the admin user, each archetype is resolved across all manifests and applied using the same SeedLoader used elsewhere.</p>
+</li>
+<li>
+<p>If an archetype name is unknown, the request fails with 409/500 depending on context.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Example request:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">tenantEmailDomain</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">demo-archetype.example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">orgRefName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">demo-archetype.example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">accountId</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">9999999999</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">adminUserId</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">admin@demo-archetype.example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">adminUsername</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">admin@demo-archetype.example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">adminPassword</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">secret</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">archetypes</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">DemoArchetype</span><span class="delimiter">&quot;</span></span>]
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>On success, the new realm (demo-archetype-example) will have the datasets from the selected archetypes applied and recorded in the _seed_registry.</p>
+</div>
+</div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="sec-migrations">79. 10. Migrations</h2>
+<h2 id="_rest_api_for_seed_packs">79. REST API for seed packs</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The framework exposes admin-only endpoints to inspect and apply seed packs per realm (tenant DB). These are disabled to non-admin users via role checks.</p>
+</div>
+<div class="paragraph">
+<p>Base path: /admin/seeds</p>
+</div>
+<div class="paragraph">
+<p>Endpoints:
+- GET /admin/seeds/pending/{realm}
+  - Lists pending seed packs for the realm. A pack is pending if any dataset checksum differs from the last applied or was never applied.
+  - Optional query parameter: filter=pack1,pack2 to restrict by pack name.
+  - Response example:</p>
+</div>
+<div class="paragraph">
+<p>+</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">[
+  {
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">seedId</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">demo-seed@1.0.0</span><span class="delimiter">&quot;</span></span>,
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">seedPack</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">demo-seed</span><span class="delimiter">&quot;</span></span>,
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">version</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">1.0.0</span><span class="delimiter">&quot;</span></span>,
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">datasets</span><span class="delimiter">&quot;</span></span>: [
+      {<span class="key"><span class="delimiter">&quot;</span><span class="content">collection</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">codeLists</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">file</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">datasets/codelists.ndjson</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">checksum</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">...</span><span class="delimiter">&quot;</span></span>}
+    ]
+  }
+]</code></pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>POST /admin/seeds/apply/{realm}</p>
+</li>
+<li>
+<p>Applies the latest version of all discovered packs (or only those matching filter).</p>
+</li>
+<li>
+<p>Query parameter: filter=pack1,pack2</p>
+</li>
+<li>
+<p>Response example:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{<span class="key"><span class="delimiter">&quot;</span><span class="content">applied</span><span class="delimiter">&quot;</span></span>:[<span class="string"><span class="delimiter">&quot;</span><span class="content">demo-seed</span><span class="delimiter">&quot;</span></span>]}</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>POST /admin/seeds/{realm}/{seedPack}/apply</p>
+</li>
+<li>
+<p>Applies the latest version of a single pack by name. Idempotent: unchanged datasets are skipped.</p>
+</li>
+<li>
+<p>Response example:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{<span class="key"><span class="delimiter">&quot;</span><span class="content">applied</span><span class="delimiter">&quot;</span></span>:[<span class="string"><span class="delimiter">&quot;</span><span class="content">demo-seed</span><span class="delimiter">&quot;</span></span>]}</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>GET /admin/seeds/history/{realm}</p>
+</li>
+<li>
+<p>Returns the per-dataset seeding history as recorded in the <code>_seed_registry</code> collection.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Authentication and roles:
+- All endpoints require role admin. In integration tests you can use @TestSecurity(user="admin", roles={"admin").</p>
+</div>
+<div class="paragraph">
+<p>Configuration:
+- quantum.seed.root: filesystem path to the root folder where seed packs are discovered. In tests this defaults to src/test/resources/seed-packs.
+- quantum.seed.apply.filter: optional comma-separated list of pack names to limit automatic application by changeset.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="sec-migrations">80. 10. Migrations</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Problem: Evolving schemas and data safely across environments.</p>
@@ -8954,7 +9091,7 @@ loader.applyArchetype(<span class="string"><span class="delimiter">&quot;</span>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_overview">80. Overview</h2>
+<h2 id="_overview">81. Overview</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Quantum uses a simple, versioned change‑set mechanism to evolve MongoDB schemas and seed data safely across realms (databases). Key building blocks:</p>
@@ -8978,7 +9115,7 @@ loader.applyArchetype(<span class="string"><span class="delimiter">&quot;</span>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_semantic_versioning">81. Semantic Versioning</h2>
+<h2 id="_semantic_versioning">82. Semantic Versioning</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Semantic Versioning (SemVer) expresses versions in the form MAJOR.MINOR.PATCH (for example, 1.4.2):</p>
@@ -9022,7 +9159,7 @@ loader.applyArchetype(<span class="string"><span class="delimiter">&quot;</span>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_configuration_2">82. Configuration</h2>
+<h2 id="_configuration_2">83. Configuration</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>The following MicroProfile config properties influence migrations:</p>
@@ -9046,7 +9183,7 @@ loader.applyArchetype(<span class="string"><span class="delimiter">&quot;</span>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_how_change_sets_are_discovered_and_executed">83. How change sets are discovered and executed</h2>
+<h2 id="_how_change_sets_are_discovered_and_executed">84. How change sets are discovered and executed</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -9073,7 +9210,7 @@ loader.applyArchetype(<span class="string"><span class="delimiter">&quot;</span>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_authoring_a_change_set">84. Authoring a change set</h2>
+<h2 id="_authoring_a_change_set">85. Authoring a change set</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Implement ChangeSetBean; most change sets extend ChangeSetBase.</p>
@@ -9145,7 +9282,7 @@ loader.applyArchetype(<span class="string"><span class="delimiter">&quot;</span>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_example_change_sets_in_the_framework">85. Example change sets in the framework</h2>
+<h2 id="_example_change_sets_in_the_framework">86. Example change sets in the framework</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Package: com.e2eq.framework.model.persistent.morphia.changesets</p>
@@ -9178,7 +9315,7 @@ loader.applyArchetype(<span class="string"><span class="delimiter">&quot;</span>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_rest_apis_to_trigger_migrations_migrationresource">86. REST APIs to trigger migrations (MigrationResource)</h2>
+<h2 id="_rest_apis_to_trigger_migrations_migrationresource">87. REST APIs to trigger migrations (MigrationResource)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Base path: /system/migration</p>
@@ -9256,7 +9393,7 @@ curl -N -H "Authorization: Bearer $TOKEN" <a href="http://localhost:8080/system/
 </div>
 </div>
 <div class="sect1">
-<h2 id="_perentity_index_management_baseresource">87. Per‑entity index management (BaseResource)</h2>
+<h2 id="_perentity_index_management_baseresource">88. Per‑entity index management (BaseResource)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Every entity resource that extends BaseResource&lt;T, R extends BaseMorphiaRepo&lt;T&gt;&gt; exposes a convenience endpoint to (re)create indexes for a single collection in a realm.</p>
@@ -9282,7 +9419,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_global_index_management_migrationservice">88. Global index management (MigrationService)</h2>
+<h2 id="_global_index_management_migrationservice">89. Global index management (MigrationService)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>MigrationService also exposes programmatic index utilities used by the MigrationResource endpoints:</p>
@@ -9300,7 +9437,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_validating_versions_at_startup">89. Validating versions at startup</h2>
+<h2 id="_validating_versions_at_startup">90. Validating versions at startup</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -9315,7 +9452,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_notes_and_best_practices">90. Notes and best practices</h2>
+<h2 id="_notes_and_best_practices">91. Notes and best practices</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -9342,7 +9479,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect1">
-<h2 id="sec-testing">91. 11. Testing</h2>
+<h2 id="sec-testing">92. 11. Testing</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Problem: Validating behavior quickly and reliably, including tenant-specific behavior.</p>
@@ -9359,10 +9496,10 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect1">
-<h2 id="testing">92. Testing in Quantum: Security Contexts, Repos, and REST APIs</h2>
+<h2 id="testing">93. Testing in Quantum: Security Contexts, Repos, and REST APIs</h2>
 <div class="sectionbody">
 <div class="sect2">
-<h3 id="_testing_framework">92.1. Testing Framework</h3>
+<h3 id="_testing_framework">93.1. Testing Framework</h3>
 <div class="paragraph">
 <p>This guide explains how to write effective tests in the Quantum framework, with a focus on setting the security context and choosing the right Quarkus testing patterns for repository logic vs. REST APIs.</p>
 </div>
@@ -9378,7 +9515,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect2">
-<h3 id="_prerequisites_and_glossary">92.2. Prerequisites and glossary</h3>
+<h3 id="_prerequisites_and_glossary">93.2. Prerequisites and glossary</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -9400,7 +9537,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect2">
-<h3 id="_pattern_1_extend_baserepotest">92.3. Pattern 1 — Extend BaseRepoTest</h3>
+<h3 id="_pattern_1_extend_baserepotest">93.3. Pattern 1 — Extend BaseRepoTest</h3>
 <div class="paragraph">
 <p>For repository tests (no HTTP), the simplest approach is to extend BaseRepoTest.</p>
 </div>
@@ -9441,7 +9578,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect2">
-<h3 id="_pattern_2_try_with_resources_securitysession">92.4. Pattern 2 — Try-with-resources SecuritySession</h3>
+<h3 id="_pattern_2_try_with_resources_securitysession">93.4. Pattern 2 — Try-with-resources SecuritySession</h3>
 <div class="paragraph">
 <p>Use SecuritySession explicitly to scope work that should run under a specific PrincipalContext and ResourceContext. This is the most explicit pattern and works in both repository and service-level tests.</p>
 </div>
@@ -9474,7 +9611,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect2">
-<h3 id="_pattern_3_scoped_call_wrapper_scopedcallscope">92.5. Pattern 3 — Scoped-call wrapper (ScopedCallScope)</h3>
+<h3 id="_pattern_3_scoped_call_wrapper_scopedcallscope">93.5. Pattern 3 — Scoped-call wrapper (ScopedCallScope)</h3>
 <div class="paragraph">
 <p>If you prefer not to repeat try-with-resources blocks, wrap your work in a helper that creates a SecuritySession, runs your logic, and ensures cleanup. This is sometimes called a “scoped call” pattern, often referred to as a ScopedCallScope.</p>
 </div>
@@ -9523,7 +9660,7 @@ SecurityScopes.run(pContext, rContext, () -&gt; repo.save(realm, entity));</code
 </div>
 </div>
 <div class="sect2">
-<h3 id="_pattern_4_testsecurity_annotation_quarkus">92.6. Pattern 4 — @TestSecurity annotation (Quarkus)</h3>
+<h3 id="_pattern_4_testsecurity_annotation_quarkus">93.6. Pattern 4 — @TestSecurity annotation (Quarkus)</h3>
 <div class="paragraph">
 <p>For tests that run through HTTP (and in some repo tests), you can use Quarkus’ @io.quarkus.test.security.TestSecurity to set the SecurityIdentity without creating a SecuritySession.</p>
 </div>
@@ -9583,7 +9720,7 @@ SecurityScopes.run(pContext, rContext, () -&gt; repo.save(realm, entity));</code
 </div>
 </div>
 <div class="sect2">
-<h3 id="_testing_rest_apis_vs_repository_logic">92.7. Testing REST APIs vs. Repository Logic</h3>
+<h3 id="_testing_rest_apis_vs_repository_logic">93.7. Testing REST APIs vs. Repository Logic</h3>
 <div class="paragraph">
 <p>When to prefer REST (HTTP) tests:
 - End-to-end authorization: validate request filters, identity mapping, realm headers, and JWT handling.
@@ -9615,7 +9752,7 @@ SecurityScopes.run(pContext, rContext, () -&gt; repo.save(realm, entity));</code
 </div>
 </div>
 <div class="sect2">
-<h3 id="_useful_quarkus_test_features">92.8. Useful Quarkus Test features</h3>
+<h3 id="_useful_quarkus_test_features">93.8. Useful Quarkus Test features</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -9640,7 +9777,7 @@ SecurityScopes.run(pContext, rContext, () -&gt; repo.save(realm, entity));</code
 </div>
 </div>
 <div class="sect2">
-<h3 id="_real_world_tips">92.9. Real-world tips</h3>
+<h3 id="_real_world_tips">93.9. Real-world tips</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -9664,7 +9801,7 @@ void cleanup() { com.e2eq.framework.model.securityrules.SecurityContext.clear();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_summary">92.10. Summary</h3>
+<h3 id="_summary">93.10. Summary</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -9685,7 +9822,7 @@ void cleanup() { com.e2eq.framework.model.securityrules.SecurityContext.clear();
 </div>
 </div>
 <div class="sect1">
-<h2 id="sec-next-steps">93. 12. Next steps</h2>
+<h2 id="sec-next-steps">94. 12. Next steps</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
