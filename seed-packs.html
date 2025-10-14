@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Seed packs and declarative tenant seeding</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-10-14T19:22:54Z</span>
+<span id="revdate">2025-10-14T21:03:56Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -556,6 +556,21 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </ul>
 </li>
 <li><a href="#_troubleshooting">10. Troubleshooting</a></li>
+<li><a href="#_how_applyseedpackschangeset_discovers_and_executes_packs">11. How ApplySeedPacksChangeSet discovers and executes packs</a></li>
+<li><a href="#_transforms_in_depth">12. Transforms in depth</a>
+<ul class="sectlevel2">
+<li><a href="#_creating_your_own_transforms_example_dropiftransform">12.1. Creating your own transforms (example: DropIfTransform)</a></li>
+</ul>
+</li>
+<li><a href="#_test_walkthrough_seedloaderintegrationtest">13. Test walkthrough: SeedLoaderIntegrationTest</a></li>
+<li><a href="#_archetypes_explained">14. Archetypes explained</a>
+<ul class="sectlevel2">
+<li><a href="#_example_a_define_and_apply_an_archetype_in_the_same_pack">14.1. Example A: Define and apply an archetype in the same pack</a></li>
+<li><a href="#_example_b_cross_pack_archetype_in_a_dedicated_editions_pack">14.2. Example B: Cross-pack archetype in a dedicated "editions" pack</a></li>
+<li><a href="#_resolution_and_ordering_details">14.3. Resolution and ordering details</a></li>
+<li><a href="#_interaction_with_applyseedpackschangeset">14.4. Interaction with ApplySeedPacksChangeSet</a></li>
+</ul>
+</li>
 </ul>
 </div>
 </div>
@@ -1004,11 +1019,482 @@ loader.apply(<span class="predefined-type">List</span>.of(
 </div>
 </div>
 </div>
+<div class="sect1">
+<h2 id="_how_applyseedpackschangeset_discovers_and_executes_packs">11. How ApplySeedPacksChangeSet discovers and executes packs</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The framework provides a built-in migration change set named "Apply Seed Packs" that automatically finds and applies seed packs to each realm during migrations.</p>
+</div>
+<div class="paragraph">
+<p>Key points:
+- Discovery: <code>ApplySeedPacksChangeSet</code> constructs a <code>SeedLoader</code> with a <code>FileSeedSource</code> pointing at the configured seed root. Set <code>quantum.seed.root</code> (for tests we default to <code>src/test/resources/seed-packs</code>). The source walks the directory tree and locates every <code>manifest.yaml</code> file.
+- Selection: For each discovered seed pack name, the change set selects the latest semantic version and builds <code>SeedPackRef.exact(name, version)</code> for application.
+- Execution: The change set builds a <code>SeedContext</code> for the current Morphia session&#8217;s database (realm) and calls <code>loader.apply(refs, context)</code>. Indexes declared in the manifest are created before data is upserted.
+- Idempotency: The <code>MongoSeedRegistry</code> stores a checksum per dataset in the realm&#8217;s <code>_seed_registry</code> collection. If the checksum matches on a later run, the dataset is skipped.
+- Automatic re-run on changes: <code>ApplySeedPacksChangeSet.getChangeSetVersion()</code> computes a fingerprint over all discovered manifests and dataset files. If any manifest or dataset content changes, the fingerprint changes; <code>MigrationService</code> sees a new change set version and re-executes the change set. This gives "rerun on content change" semantics without bumping a manual version.</p>
+</div>
+<div class="paragraph">
+<p>Configuration snippet:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="properties"># test profile uses a local seed root
+quantum.seed.root=src/test/resources/seed-packs
+# ensure change set package includes the seed change set
+quantum.database.migration.changeset.package=&quot;com.e2eq.framework.model.persistent.morphia.changesets&quot;</code></pre>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_transforms_in_depth">12. Transforms in depth</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Transforms are small, composable functions that shape each dataset record just before it is written to the database. They let you keep dataset files generic and inject environment/tenant specifics or perform repeatable rewrites at apply time.</p>
+</div>
+<div class="paragraph">
+<p>What a transform gets and returns:
+- Input: the current record (a Map), the SeedContext, and the Dataset definition
+- Output: the next record (Map) to be passed to the rest of the pipeline; return null or an empty map to drop the record</p>
+</div>
+<div class="paragraph">
+<p>Where transforms are declared (manifest):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml"><span class="key">datasets</span>:
+  - <span class="string"><span class="content">collection: codeLists</span></span>
+    <span class="key">file</span>: <span class="string"><span class="content">datasets/codeLists.ndjson</span></span>
+    <span class="key">naturalKey</span>: <span class="string"><span class="content">[ codeListName, code ]</span></span>
+    <span class="key">upsert</span>: <span class="string"><span class="content">true</span></span>
+    <span class="key">transforms</span>:
+      - <span class="string"><span class="content">type: tenantSubstitution</span></span>
+        <span class="key">config</span>:
+          <span class="key">tenantField</span>: <span class="string"><span class="content">tenantId</span></span>
+          <span class="key">orgField</span>: <span class="string"><span class="content">orgRefName</span></span>
+          <span class="key">ownerField</span>: <span class="string"><span class="content">ownerId</span></span>
+          <span class="key">accountField</span>: <span class="string"><span class="content">accountId</span></span>
+          <span class="key">realmField</span>: <span class="string"><span class="content">realmId</span></span>
+      <span class="comment"># Additional transforms can be added here and will execute in order</span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Execution semantics:
+- Ordering: transforms are executed top-to-bottom for each record
+- Short-circuit: if any transform returns null or an empty map, the record is skipped and no write occurs
+- Overwrite rules: a transform can set or overwrite fields on the record; when upsert=true, the final transformed record replaces the existing one matched by naturalKey
+- Interaction with naturalKey and indexes: transforms run before naturalKey validation and index creation; do not remove fields listed in naturalKey, otherwise an error will be thrown during write</p>
+</div>
+<div class="paragraph">
+<p>Built-in transform types:
+- tenantSubstitution: Injects identifiers from SeedContext into configured fields. Config keys in the manifest:
+  - tenantField: field in the record to receive tenantId (if present in context)
+  - orgField: field to receive orgRefName (if present)
+  - ownerField: field to receive ownerId (if present)
+  - accountField: field to receive accountId (if present)
+  - realmField: field to receive realmId (always set to the current realm)</p>
+</div>
+<div class="paragraph">
+<p>Notes and guarantees:
+- Optional values missing from SeedContext are simply omitted; existing record values are preserved unless you target the same field
+- Transforms operate on in-memory maps and cannot perform I/O by default; keep them deterministic so re-runs are idempotent
+- Compose multiple transforms when needed (for example: first tenantSubstitution, then a custom id computation)
+- To add new transform types, implement SeedTransformFactory and register it during SeedLoader.builder() with registerTransformFactory("myType", new MyFactory()); then declare - type: myType in the manifest</p>
+</div>
+<div class="paragraph">
+<p>When to use transforms (and why):
+- Injecting tenant/realm identity: keep datasets source-controlled and generic; inject tenant IDs at apply time (tenantSubstitution)
+- Deterministic IDs: derive _id or other surrogate keys from naturalKey so upserts remain stable across environments
+- Normalization and defaults: add missing fields, convert formats, enforce enums before write
+- Reference remapping: translate human-readable codes in the dataset into datastore-specific identifiers (ObjectIds, UUIDs) in a repeatable way</p>
+</div>
+<div class="paragraph">
+<p>Practical examples</p>
+</div>
+<div class="paragraph">
+<p>1) Tenant identity injection (built-in)
+Manifest snippet:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml"><span class="key">transforms</span>:
+  - <span class="string"><span class="content">type: tenantSubstitution</span></span>
+    <span class="key">config</span>:
+      <span class="key">tenantField</span>: <span class="string"><span class="content">tenantId</span></span>
+      <span class="key">orgField</span>: <span class="string"><span class="content">orgRefName</span></span>
+      <span class="key">ownerField</span>: <span class="string"><span class="content">ownerId</span></span>
+      <span class="key">accountField</span>: <span class="string"><span class="content">accountId</span></span>
+      <span class="key">realmField</span>: <span class="string"><span class="content">realmId</span></span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Why: keep codeLists.ndjson portable across tenants; provisioning injects the right IDs based on SeedContext.</p>
+</div>
+<div class="paragraph">
+<p>2) Deterministic _id from natural key (custom)
+- Goal: ensure stable MongoDB _id across re-applies and environments, derived from codeListName+code
+- Approach: implement a custom transform that computes a SHA-1/MD5 hash (or any deterministic function) and sets _id</p>
+</div>
+<div class="paragraph">
+<p>Java registration:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java">SeedLoader loader = SeedLoader.builder()
+    .addSeedSource(<span class="keyword">new</span> FileSeedSource(<span class="string"><span class="delimiter">&quot;</span><span class="content">local</span><span class="delimiter">&quot;</span></span>, Paths.get(<span class="string"><span class="delimiter">&quot;</span><span class="content">seed-packs</span><span class="delimiter">&quot;</span></span>)))
+    .seedRepository(<span class="keyword">new</span> MongoSeedRepository(mongoClient))
+    .seedRegistry(<span class="keyword">new</span> MongoSeedRegistry(mongoClient))
+    .registerTransformFactory(<span class="string"><span class="delimiter">&quot;</span><span class="content">deterministicId</span><span class="delimiter">&quot;</span></span>, <span class="keyword">new</span> DeterministicIdTransform.Factory())
+    .build();</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Manifest usage:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml"><span class="key">transforms</span>:
+  - <span class="string"><span class="content">type: tenantSubstitution</span></span>
+  - <span class="string"><span class="content">type: deterministicId</span></span>
+    <span class="key">config</span>:
+      <span class="key">sourceFields</span>: <span class="string"><span class="content">[ codeListName, code ]</span></span>
+      <span class="key">targetField</span>: <span class="string"><span class="content">_id</span></span>
+      <span class="key">algorithm</span>: <span class="string"><span class="content">sha1</span></span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Why: makes upserts resilient and allows cross-environment joins by a stable key.</p>
+</div>
+<div class="paragraph">
+<p>3) Foreign key remapping by code (custom)
+- Goal: dataset uses human-readable statusCode; transform maps it to a canonical statusId
+- Approach: custom transform with an in-memory map or deterministic derivation</p>
+</div>
+<div class="paragraph">
+<p>Manifest usage:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml"><span class="key">transforms</span>:
+  - <span class="string"><span class="content">type: mapCode</span></span>
+    <span class="key">config</span>:
+      <span class="key">field</span>: <span class="string"><span class="content">statusCode</span></span>
+      <span class="key">target</span>: <span class="string"><span class="content">statusId</span></span>
+      <span class="key">mapping</span>:
+        <span class="key">NEW</span>: <span class="string"><span class="content">100</span></span>
+        <span class="key">CLOSED</span>: <span class="string"><span class="content">900</span></span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Why: keeps datasets human-friendly while persisting efficient identifiers.</p>
+</div>
+<div class="paragraph">
+<p>4) Defaulting and sanitization (custom)
+- Goal: ensure missing fields get defaults and strings are trimmed/lowercased
+- Approach: simple custom transform that fills defaults and cleans values</p>
+</div>
+<div class="paragraph">
+<p>Manifest usage:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml"><span class="key">transforms</span>:
+  - <span class="string"><span class="content">type: defaults</span></span>
+    <span class="key">config</span>:
+      <span class="key">defaults</span>:
+        <span class="key">isActive</span>: <span class="string"><span class="content">true</span></span>
+        <span class="key">locale</span>: <span class="string"><span class="content">en_US</span></span>
+  - <span class="string"><span class="content">type: sanitize</span></span>
+    <span class="key">config</span>:
+      <span class="key">trim</span>: <span class="string"><span class="content">[ label ]</span></span>
+      <span class="key">lowercase</span>: <span class="string"><span class="content">[ email ]</span></span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Why: enforces consistency without editing large datasets.</p>
+</div>
+<div class="paragraph">
+<p>Testing transforms:
+- Add integration tests that seed into an ephemeral DB and assert both record shape and _seed_registry entries
+- For custom transforms, add focused unit tests for edge cases (missing fields, nulls, unexpected types)</p>
+</div>
+<div class="sect2">
+<h3 id="_creating_your_own_transforms_example_dropiftransform">12.1. Creating your own transforms (example: DropIfTransform)</h3>
+<div class="paragraph">
+<p>Custom transforms let you implement project-specific shaping logic. You implement two small interfaces and register the type on the SeedLoader builder. Below we walk through a simple "drop the record if a field equals a value" transform used in tests, called DropIfTransform.</p>
+</div>
+<div class="paragraph">
+<p>Overview of the SPI:
+- SeedTransform: executes per-record and can return a new map (continue) or null/empty (drop this record).
+- SeedTransformFactory: builds a SeedTransform instance from the manifest&#8217;s Transform definition (provides access to type and config map).</p>
+</div>
+<div class="paragraph">
+<p>Minimal interfaces (simplified for clarity):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="directive">public</span> <span class="type">interface</span> <span class="class">SeedTransform</span> {
+    <span class="predefined-type">Map</span>&lt;<span class="predefined-type">String</span>, <span class="predefined-type">Object</span>&gt; apply(<span class="predefined-type">Map</span>&lt;<span class="predefined-type">String</span>, <span class="predefined-type">Object</span>&gt; record,
+                              SeedContext context,
+                              SeedPackManifest.Dataset dataset);
+}
+
+<span class="directive">public</span> <span class="type">interface</span> <span class="class">SeedTransformFactory</span> {
+    SeedTransform create(SeedPackManifest.Transform transformDefinition);
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Implementation: DropIfTransform
+- Behavior: if record[field] equals a configured value, return null to short-circuit the pipeline and skip writing the record; otherwise, pass the record through unchanged.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">package</span> <span class="namespace">com.example.seed.transforms</span>;
+
+<span class="keyword">import</span> <span class="include">com.e2eq.framework.service.seed</span>.*;
+<span class="keyword">import</span> <span class="include">java.util.Map</span>;
+<span class="keyword">import</span> <span class="include">java.util.Objects</span>;
+
+<span class="directive">public</span> <span class="directive">final</span> <span class="type">class</span> <span class="class">DropIfTransform</span> <span class="directive">implements</span> SeedTransform {
+  <span class="directive">private</span> <span class="directive">final</span> <span class="predefined-type">String</span> field;
+  <span class="directive">private</span> <span class="directive">final</span> <span class="predefined-type">String</span> equalsValue;
+
+  <span class="directive">public</span> DropIfTransform(<span class="predefined-type">String</span> field, <span class="predefined-type">String</span> equalsValue) {
+    <span class="local-variable">this</span>.field = field;
+    <span class="local-variable">this</span>.equalsValue = equalsValue;
+  }
+
+  <span class="annotation">@Override</span>
+  <span class="directive">public</span> <span class="predefined-type">Map</span>&lt;<span class="predefined-type">String</span>, <span class="predefined-type">Object</span>&gt; apply(<span class="predefined-type">Map</span>&lt;<span class="predefined-type">String</span>, <span class="predefined-type">Object</span>&gt; record, SeedContext context, SeedPackManifest.Dataset dataset) {
+    <span class="predefined-type">Object</span> v = record.get(field);
+    <span class="keyword">if</span> (Objects.equals(Objects.toString(v, <span class="predefined-constant">null</span>), equalsValue)) {
+      <span class="keyword">return</span> <span class="predefined-constant">null</span>; <span class="comment">// short-circuit: drop this record</span>
+    }
+    <span class="keyword">return</span> record;
+  }
+
+  <span class="directive">public</span> <span class="directive">static</span> <span class="directive">final</span> <span class="type">class</span> <span class="class">Factory</span> <span class="directive">implements</span> SeedTransformFactory {
+    <span class="annotation">@Override</span>
+    <span class="directive">public</span> SeedTransform create(SeedPackManifest.Transform transformDefinition) {
+      <span class="predefined-type">Map</span>&lt;<span class="predefined-type">String</span>, <span class="predefined-type">Object</span>&gt; cfg = transformDefinition.getConfig();
+      <span class="predefined-type">String</span> field = Objects.toString(cfg.get(<span class="string"><span class="delimiter">&quot;</span><span class="content">field</span><span class="delimiter">&quot;</span></span>), <span class="predefined-constant">null</span>);
+      <span class="predefined-type">String</span> eq = Objects.toString(cfg.get(<span class="string"><span class="delimiter">&quot;</span><span class="content">equals</span><span class="delimiter">&quot;</span></span>), <span class="predefined-constant">null</span>);
+      <span class="keyword">return</span> <span class="keyword">new</span> DropIfTransform(field, eq);
+    }
+  }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Registration on the SeedLoader builder:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java">SeedLoader loader = SeedLoader.builder()
+    .addSeedSource(<span class="keyword">new</span> FileSeedSource(<span class="string"><span class="delimiter">&quot;</span><span class="content">local</span><span class="delimiter">&quot;</span></span>, Paths.get(<span class="string"><span class="delimiter">&quot;</span><span class="content">seed-packs</span><span class="delimiter">&quot;</span></span>)))
+    .seedRepository(<span class="keyword">new</span> MongoSeedRepository(mongoClient))
+    .seedRegistry(<span class="keyword">new</span> MongoSeedRegistry(mongoClient))
+    .registerTransformFactory(<span class="string"><span class="delimiter">&quot;</span><span class="content">dropIf</span><span class="delimiter">&quot;</span></span>, <span class="keyword">new</span> DropIfTransform.Factory())
+    .build();</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Manifest usage:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml"><span class="key">datasets</span>:
+  - <span class="string"><span class="content">collection: codeLists</span></span>
+    <span class="key">file</span>: <span class="string"><span class="content">datasets/codeLists.ndjson</span></span>
+    <span class="key">naturalKey</span>: <span class="string"><span class="content">[ code ]</span></span>
+    <span class="key">upsert</span>: <span class="string"><span class="content">true</span></span>
+    <span class="key">transforms</span>:
+      - <span class="string"><span class="content">type: dropIf</span></span>
+        <span class="key">config</span>:
+          <span class="key">field</span>: <span class="string"><span class="content">status</span></span>
+          <span class="key">equals</span>: <span class="string"><span class="content">CLOSED</span></span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Notes and tips:
+- Validation: your factory should validate required config keys and fail fast with a clear error if missing/invalid.
+- Determinism: keep transforms pure and deterministic (no I/O) so seeding remains idempotent.
+- Short-circuit: returning null or an empty map drops the record; otherwise, the next transform in the list will receive the (possibly mutated) map.
+- Composition: you can chain several transforms; for example, first dropIf, then tenantSubstitution, then a custom deterministicId.
+- Packaging: test-only transforms can live under test sources; production transforms should be in main sources and registered where you construct the SeedLoader (for example, in a ChangeSet or a provisioning service).</p>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_test_walkthrough_seedloaderintegrationtest">13. Test walkthrough: SeedLoaderIntegrationTest</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The <code>SeedLoaderIntegrationTest</code> demonstrates end-to-end seeding using the demo seed pack at <code>src/test/resources/seed-packs/demo-seed</code>.</p>
+</div>
+<div class="paragraph">
+<p>What the test does:
+- Creates a <code>SeedLoader</code> backed by <code>FileSeedSource</code>, <code>MongoSeedRepository</code>, and <code>MongoSeedRegistry</code>.
+- Builds a <code>SeedContext</code> populated with tenant/realm details to exercise the <code>tenantSubstitution</code> transform.
+- Applies the pack reference <code>SeedPackRef.of("demo-seed")</code>, which resolves the latest version of that pack (1.0.0 in tests).
+- Asserts that 2 records were inserted into the <code>codeLists</code> collection and that the <code>tenantSubstitution</code> fields were populated from the context.
+- Verifies an entry was written to <code>_seed_registry</code> with the dataset checksum and <code>records: 2</code>.
+- Re-applies the same pack and asserts the record count remains 2, demonstrating idempotency (thanks to upsert + registry checksum).</p>
+</div>
+<div class="paragraph">
+<p>Why these design choices:
+- NDJSON for datasets: allows streaming large datasets and simple line-by-line diffs in code review; arrays are also supported for smaller payloads.
+- Natural-key upsert: manifests declare <code>naturalKey</code> to form the filter for <code>replaceOne(&#8230;&#8203;, upsert=true)</code> ensuring idempotent writes and predictable overwrites.
+- Transform pipeline: keeps dataset files free of environment-specific values; all tenant/realm specifics are injected consistently at apply time.
+- Registry-based skip: checksums per dataset avoid unnecessary writes when content hasn&#8217;t changed—fast, safe re-runs during deployments.
+- Semantic-version selection: when multiple versions of a pack are available, the latest semver is used unless an exact version is requested.</p>
+</div>
+<div class="paragraph">
+<p>Alternatives considered:
+- Store seed state in an external table keyed only by version. Rejected in favor of per-dataset checksums to detect content drift without bumping versions.
+- Hardcode seeding logic inside ad-hoc migrations. Rejected for lack of composability and poor reviewability.
+- Use inserts only (no upsert). Rejected due to lack of idempotence and difficulty correcting baseline data.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_archetypes_explained">14. Archetypes explained</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Archetypes are named compositions of seed packs that model a product edition, SKU, or vertical stack. Instead of listing several packs every time you provision a tenant, you define an archetype once in a manifest and then apply it by name.</p>
+</div>
+<div class="paragraph">
+<p>What an archetype is in this context:
+- It lives inside a seed pack manifest under archetypes:.
+- It contains a list of includes (same syntax as top-level includes) referring to packs and version ranges.
+- When applied, the loader resolves those pack refs plus the hosting pack itself (the manifest that defines the archetype) so that local datasets are included as part of the archetype.
+- Resolution uses semantic version rules and deduplicates by pack name, respecting dependency order and preventing cycles.</p>
+</div>
+<div class="paragraph">
+<p>When to use archetypes:
+- To represent product tiers (e.g., Community, Pro, Enterprise) that bundle different combinations of base packs and optional modules.
+- To group verticalized defaults (e.g., Logistics-Fulfillment, Healthcare-Core) without forcing consumers to know every underlying pack.</p>
+</div>
+<div class="sect2">
+<h3 id="_example_a_define_and_apply_an_archetype_in_the_same_pack">14.1. Example A: Define and apply an archetype in the same pack</h3>
+<div class="paragraph">
+<p>Manifest (logistics-core/manifest.yaml):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml"><span class="key">seedPack</span>: <span class="string"><span class="content">logistics-core</span></span>
+<span class="key">version</span>: <span class="string"><span class="content">1.4.2</span></span>
+
+<span class="key">includes</span>:
+  - <span class="string"><span class="content">accounting-base@^1.1</span></span>
+
+<span class="key">datasets</span>:
+  - <span class="string"><span class="content">collection: codeLists</span></span>
+    <span class="key">file</span>: <span class="string"><span class="content">datasets/codelists.ndjson</span></span>
+    <span class="key">naturalKey</span>: <span class="string"><span class="content">[ codeListName, code ]</span></span>
+    <span class="key">upsert</span>: <span class="string"><span class="content">true</span></span>
+
+<span class="key">archetypes</span>:
+  - <span class="string"><span class="content">name: FulfillmentPlus</span></span>
+    <span class="key">includes</span>:
+      - <span class="string"><span class="content">logistics-core@^1.4</span></span>     <span class="comment"># self + constraints</span>
+      - <span class="string"><span class="content">shipping-defaults@~2</span></span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Applying it in code:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java">SeedLoader loader = SeedLoader.builder()
+        .addSeedSource(<span class="keyword">new</span> FileSeedSource(<span class="string"><span class="delimiter">&quot;</span><span class="content">local</span><span class="delimiter">&quot;</span></span>, Paths.get(<span class="string"><span class="delimiter">&quot;</span><span class="content">seed-packs</span><span class="delimiter">&quot;</span></span>)))
+        .seedRepository(<span class="keyword">new</span> MongoSeedRepository(mongoClient))
+        .seedRegistry(<span class="keyword">new</span> MongoSeedRegistry(mongoClient))
+        .build();
+
+SeedContext ctx = SeedContext.builder(<span class="string"><span class="delimiter">&quot;</span><span class="content">my-realm</span><span class="delimiter">&quot;</span></span>).build();
+loader.applyArchetype(<span class="string"><span class="delimiter">&quot;</span><span class="content">FulfillmentPlus</span><span class="delimiter">&quot;</span></span>, ctx);</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Notes:
+- applyArchetype looks up the latest manifest that defines an archetype named "FulfillmentPlus" across all discovered packs, resolves the include refs, and then applies the union.
+- If multiple manifests define the same archetype name, the latest semver manifest wins.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_example_b_cross_pack_archetype_in_a_dedicated_editions_pack">14.2. Example B: Cross-pack archetype in a dedicated "editions" pack</h3>
+<div class="paragraph">
+<p>You can centralize product definitions into a thin pack that only defines archetypes and forward-references other packs:</p>
+</div>
+<div class="paragraph">
+<p>Manifest (product-editions/manifest.yaml):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml"><span class="key">seedPack</span>: <span class="string"><span class="content">product-editions</span></span>
+<span class="key">version</span>: <span class="string"><span class="content">1.0.0</span></span>
+
+<span class="key">archetypes</span>:
+  - <span class="string"><span class="content">name: Enterprise</span></span>
+    <span class="key">includes</span>:
+      - <span class="string"><span class="content">logistics-core@^1.5</span></span>
+      - <span class="string"><span class="content">shipping-defaults@~2</span></span>
+      - <span class="string"><span class="content">analytics-starter@^0.9</span></span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Apply in code:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java">loader.applyArchetype(<span class="string"><span class="delimiter">&quot;</span><span class="content">Enterprise</span><span class="delimiter">&quot;</span></span>, ctx);</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This keeps edition composition decoupled from individual module packs.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_resolution_and_ordering_details">14.3. Resolution and ordering details</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Version matching: Each include can be exact (=1.2.3), a semver range (e.g., ^1.5, ~2), or omitted (latest). See SeedPackRef.parse("name@spec").</p>
+</li>
+<li>
+<p>Deduplication: If multiple includes select the same pack name (possibly different versions), the highest version that satisfies all constraints is chosen; duplicates are applied only once.</p>
+</li>
+<li>
+<p>Dependency order: Includes are recursively resolved depth-first, while the loader guards against cycles and applies datasets in a stable order per resolved pack.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_interaction_with_applyseedpackschangeset">14.4. Interaction with ApplySeedPacksChangeSet</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>The Apply Seed Packs change set scans the seed root and applies the latest version of every discovered pack to the realm. It does not automatically choose an archetype.</p>
+</li>
+<li>
+<p>Use applyArchetype programmatically (e.g., from a TenantProvisioningService) when you want to provision only the packs that belong to a specific edition.</p>
+</li>
+<li>
+<p>You can combine approaches: let migrations ensure baseline packs are present for all tenants; then, on tenant onboarding, call applyArchetype(&#8230;&#8203;) to add edition-specific content.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
 </div>
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-10-14 11:42:05 -0400
+Last updated 2025-10-14 16:26:36 -0400
 </div>
 </div>
 </body>
