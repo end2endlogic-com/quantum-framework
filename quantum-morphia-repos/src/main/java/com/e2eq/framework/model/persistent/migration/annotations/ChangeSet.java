@@ -15,6 +15,12 @@ public @interface ChangeSet {
    String id();
 
    /**
+    Optional changeSet version. Increment this when evolving the same changeSet over time.
+    Defaults to 1 for backward compatibility.
+    */
+   int version() default 1;
+
+   /**
     The version of the database that this change set knows how to convert from
     @return
     */

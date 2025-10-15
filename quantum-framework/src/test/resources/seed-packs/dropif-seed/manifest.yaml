@@ -1,0 +1,13 @@
+seedPack: dropif-seed
+version: 1.0.0
+
+datasets:
+  - collection: items
+    file: datasets/items.json
+    naturalKey: [ code ]
+    upsert: true
+    transforms:
+      - type: dropIf
+        config:
+          field: status
+          equals: DISABLED

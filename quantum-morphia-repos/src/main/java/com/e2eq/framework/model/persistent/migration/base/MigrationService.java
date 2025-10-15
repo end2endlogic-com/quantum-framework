@@ -297,12 +297,12 @@ public class MigrationService {
          if (toVersion.isGreaterThanOrEqualTo(currentVersion)) {
             log(String.format("ToVersion:%s, is greater than or equal to current version:%s", toVersion.getVersion(), currentVersion.getVersion()), emitter);
 
-            Optional<ChangeSetRecord> record = changesetRecordRepo.findByRefName(datastore, chb.getName(), true);
-            if (!record.isPresent()) {
-               log(String.format(">> Executing Change Set: %s in realm %s", chb.getName(), datastore.getDatabase().getName()), emitter);
+            Optional<ChangeSetRecord> record = changesetRecordRepo.findLatestByChangeSetName(datastore, chb.getName());
+            if (!record.isPresent() || record.get().getChangeSetVersion() < chb.getChangeSetVersion()) {
+               log(String.format(">> Executing Change Set: %s (v%d) in realm %s", chb.getName(), chb.getChangeSetVersion(), datastore.getDatabase().getName()), emitter);
                pendingChangeSetBeans.add(chb);
             } else {
-               log(String.format(">> All ready executed change set: %s in realm %s on %tc ", chb.getName(), datastore.getDatabase().getName(), record.get().getLastExecutedDate()), emitter);
+               log(String.format(">> Already executed change set: %s (latest applied v%d) in realm %s on %tc ", chb.getName(), record.get().getChangeSetVersion(), datastore.getDatabase().getName(), record.get().getLastExecutedDate()), emitter);
             }
          } else {
             log(String.format(">> Ignoring Change Set:%s  because it is not for the current database version:%s", chb.getName(), currentSemDatabaseVersion), emitter);
@@ -317,8 +317,32 @@ public class MigrationService {
 
 
    public void updateChangeLog (MorphiaSession ds, String realm, ChangeSetBean changeSetBean, MultiEmitter<? super String> emitter) {
-      ChangeSetRecord record = newChangeSetRecord(realm, changeSetBean);
+      // Upsert ChangeSetRecord by changeSetName to avoid duplicate-key on older deployments with a unique index on name only
+      Optional<ChangeSetRecord> existing = changesetRecordRepo.findLatestByChangeSetName(ds, changeSetBean.getName());
+      ChangeSetRecord record;
+      if (existing.isPresent()) {
+         record = existing.get();
+      } else {
+         record = new ChangeSetRecord();
+      }
+      // Populate/overwrite all fields
+      record.setRealm(realm);
+      record.setRefName(changeSetBean.getName());
+      record.setAuthor(changeSetBean.getAuthor());
+      record.setChangeSetName(changeSetBean.getName());
+      record.setDescription(changeSetBean.getDescription());
+      record.setPriority(changeSetBean.getPriority());
+      record.setDbFromVersion(changeSetBean.getDbFromVersion());
+      record.setDbFromVersionInt(changeSetBean.getDbFromVersionInt());
+      record.setDbToVersion(changeSetBean.getDbToVersion());
+      record.setDbToVersionInt(changeSetBean.getDbToVersionInt());
+      record.setChangeSetVersion(changeSetBean.getChangeSetVersion());
+      record.setLastExecutedDate(new Date());
+      record.setScope(changeSetBean.getScope());
+      record.setSuccessful(true);
+
       changesetRecordRepo.save(ds, record);
+
       DatabaseVersion databaseVersion;
       Optional<DatabaseVersion> oversion = databaseVersionRepo.findCurrentVersion(ds);
       if (!oversion.isPresent()) {
@@ -326,16 +350,12 @@ public class MigrationService {
          emitter.emit(String.format("        No database databaseVersion found in the database for realm: %s, assuming 1.0.0", realm));
          databaseVersion = new DatabaseVersion();
          databaseVersion.setRefName(realm);
-         databaseVersion.setCurrentVersionString(record.dbToVersion);
-         //databaseVersion.setCurrentSemVersion(new Semver(record.dbToVersion));
-         //databaseVersion.setCurrentVersionInt(record.dbToVersionInt);
+         databaseVersion.setCurrentVersionString(record.getDbToVersion());
          databaseVersion = databaseVersionRepo.save(ds, databaseVersion);
       } else {
          databaseVersion = oversion.get();
-         if (databaseVersion.getCurrentSemVersion().isLowerThan(record.dbToVersion)) {
-            databaseVersion.setCurrentVersionString(record.dbToVersion);
-            // databaseVersion.setCurrentSemVersion(new Semver(record.dbToVersion));
-            // databaseVersion.setCurrentVersionInt(record.dbToVersionInt);
+         if (databaseVersion.getCurrentSemVersion().isLowerThan(record.getDbToVersion())) {
+            databaseVersion.setCurrentVersionString(record.getDbToVersion());
             databaseVersion = databaseVersionRepo.save(ds, databaseVersion);
          }
       }
@@ -386,8 +406,8 @@ public class MigrationService {
             changeSetList.forEach(changeSetBean -> {
                log(String.format("    checking for previous execution of Change Set: %s, in database %s", changeSetBean.getName(), realm ), emitter);
                // first check if this change set has run already or not
-               Optional<ChangeSetRecord> changeSetRec = changesetRecordRepo.findByRefName(morphiaDataStore.getDataStore(realm), changeSetBean.getName());
-               if (!changeSetRec.isPresent()) {
+               Optional<ChangeSetRecord> changeSetRec = changesetRecordRepo.findLatestByChangeSetName(morphiaDataStore.getDataStore(realm), changeSetBean.getName());
+               if (!changeSetRec.isPresent() || changeSetRec.get().getChangeSetVersion() < changeSetBean.getChangeSetVersion()) {
 
                   if ((changeSetBean.getApplicableDatabases() == null) ||
                          (changeSetBean.getApplicableDatabases() != null && !changeSetBean.getApplicableDatabases().contains(realm))
@@ -471,6 +491,7 @@ public class MigrationService {
         record.setDbFromVersionInt(changeSetBean.getDbFromVersionInt());
         record.setDbToVersion(changeSetBean.getDbToVersion());
         record.setDbToVersionInt(changeSetBean.getDbToVersionInt());
+        record.setChangeSetVersion(changeSetBean.getChangeSetVersion());
         record.setLastExecutedDate(new Date());
         record.setScope(changeSetBean.getScope());
         record.setSuccessful(true);

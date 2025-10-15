@@ -9,12 +9,16 @@ import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.model.auth.AuthProviderFactory;
 import com.e2eq.framework.model.auth.UserManagement;
+import com.e2eq.framework.service.seed.*;
 import com.e2eq.framework.util.EnvConfigUtils;
+import com.mongodb.client.MongoClient;
 import io.quarkus.logging.Log;
 import io.smallrye.mutiny.subscription.MultiEmitter;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -34,6 +38,13 @@ public class TenantProvisioningService {
     @Inject AuthProviderFactory authProviderFactory;
     @Inject EnvConfigUtils envConfigUtils;
     @Inject CredentialRepo credentialRepo;
+
+    @Inject MongoClient mongoClient;
+
+    @ConfigProperty(name = "quantum.seed.root", defaultValue = "")
+    Optional<String> seedRootConfig;
+
+    private static final String DEFAULT_TEST_SEED_ROOT = "src/test/resources/seed-packs";
 
     public static class ProvisionResult {
         public String realmId;
@@ -60,6 +71,20 @@ public class TenantProvisioningService {
                                            String adminUserId,
                                            String adminSubject,
                                            String adminPassword) {
+        return provisionTenant(tenantEmailDomain, orgRefName, accountId, adminUserId, adminSubject, adminPassword, java.util.List.of());
+    }
+
+    /**
+     * Provisions a new tenant and applies the specified seed archetypes.
+     * @param archetypes list of archetype names to apply after migrations
+     */
+    public ProvisionResult provisionTenant(String tenantEmailDomain,
+                                           String orgRefName,
+                                           String accountId,
+                                           String adminUserId,
+                                           String adminSubject,
+                                           String adminPassword,
+                                           List<String> archetypes) {
         Objects.requireNonNull(tenantEmailDomain, "tenantEmailDomain cannot be null");
         Objects.requireNonNull(orgRefName, "orgRefName cannot be null");
         Objects.requireNonNull(accountId, "accountId cannot be null");
@@ -173,11 +198,38 @@ public class TenantProvisioningService {
             result.addWarning("Admin user already exists; no user changes were made.");
         }
 
-        // 5) Idempotent: Apply indexes and verify
+        // 5) Apply requested seed archetypes (optional)
+        if (archetypes != null && !archetypes.isEmpty()) {
+            SeedLoader loader = SeedLoader.builder()
+                    .addSeedSource(new FileSeedSource("files", resolveSeedRoot()))
+                    .seedRepository(new MongoSeedRepository(mongoClient))
+                    .seedRegistry(new MongoSeedRegistry(mongoClient))
+                    .build();
+            SeedContext ctx = SeedContext.builder(realmId)
+                    .tenantId(dc.getTenantId())
+                    .orgRefName(dc.getOrgRefName())
+                    .accountId(dc.getAccountId())
+                    .ownerId(adminUserId)
+                    .build();
+            for (String archetype : archetypes) {
+                String at = archetype == null ? null : archetype.trim();
+                if (at == null || at.isEmpty()) continue;
+                Log.infof("Applying seed archetype '%s' to realm %s", at, realmId);
+                loader.applyArchetype(at, ctx); // will throw if not found
+            }
+        }
+
+        // 6) Idempotent: Apply indexes and verify
         migrationService.applyIndexes(realmId);
         migrationService.checkInitialized(realmId);
 
         return result;
     }
 
+    private Path resolveSeedRoot() {
+        if (seedRootConfig.isPresent() && !seedRootConfig.get().isBlank()) {
+            return Path.of(seedRootConfig.get());
+        }
+        return Path.of(DEFAULT_TEST_SEED_ROOT);
+    }
 }

@@ -81,6 +81,52 @@ Write‑time data placement (where a new record belongs)
 - By default, new records use the creator’s organization.
 - You can override per area/domain with a small policy—for example, keep Partner records in a shared “directory” domain while Shipments stay tenant‑local. See “Data domain assignment on create” (xref:../user-guide/permissions.adoc#_data_domain_assignment[]).
 
+== Domain contexts and domain policies (placing and sharing data)
+
+In supply chains, the same entity often lives in different business contexts (e.g., a Shipment inside a Supplier’s operations vs. the Buyer’s view). Domain contexts let you keep data where it naturally belongs while still collaborating safely:
+
+- Keep most data tenant‑local: Each organization owns its operational truth (orders, shipments, tasks).
+- Create shared contexts deliberately: Use a shared “Directory” context for master data like Partners and Facilities so everyone references the same records.
+- Policy‑driven sharing: Collaboration bubbles share just the relevant records (a specific PO, shipment, or appointment) with the right partners. Policies ensure each party only sees the fields and actions appropriate to them.
+- Regional and compliance contexts: Pin data to a geography (e.g., EU) when regulations require it; policies keep reads and writes aligned.
+
+Business impact
+- Lower friction: Organize data the way teams actually work (local operations + shared directories).
+- Safer collaboration: Sharing is explicit and explainable—no surprise data leaks.
+- Compliance by construction: Residency and scoping rules are enforced by policy, not by custom code.
+
+== Bootstrap tenants with Seed Packs (zero‑touch baseline data)
+
+Onboarding partners is a bottleneck in many SaaS rollouts. Seed packs provide a fast, repeatable way to initialize each tenant with the right starting data and settings.
+
+What seed packs give you
+- Versioned, reviewable baseline: Curate CSV/JSON datasets and settings (code lists, roles, sample workflows) under version control.
+- Archetypes for editions: Bundle multiple packs into a named edition (e.g., “Logistics Core” vs. “Supplier Lite”) to match your product tiers.
+- Safe, idempotent updates: Re‑apply packs any time; only changes are applied. You can inspect what’s pending before you apply.
+- Admin APIs and startup automation: New tenants can be provisioned with the right archetype automatically; admins can check pending updates and apply them when ready.
+
+Why this matters to a supply‑chain SaaS
+- Faster go‑live: New buyers, suppliers, and carriers start with consistent roles, code lists, and sample workflows.
+- Less manual setup: Reduce back‑and‑forth with partners; eliminate error‑prone spreadsheets and one‑off scripts.
+- Controlled change: Roll out new catalogs or policy tweaks as a versioned pack; apply to selected tenants when they opt in.
+
+Learn more: xref:../user-guide/seed-packs.adoc[Seed packs and declarative tenant seeding].
+
+== Security policies: practical protections and proofs
+
+Security isn’t just login. The framework’s policy layer turns business rules into enforceable, auditable protections across UI, APIs, and imports/exports.
+
+What’s protected
+- Least privilege by role: Planners, Operators, and Analysts only get the actions and fields they need.
+- Field‑level and record‑level controls: Share a shipment with a carrier without exposing private buyer notes or margins.
+- Tamper‑evident changes: Important state transitions and task completions are tracked and explainable.
+- Delegated administration: Each organization manages its users and roles; platform admins retain oversight with audit trails.
+
+Why it’s better than ad‑hoc controls
+- One policy engine, everywhere: The same rules guard screens, APIs, and bulk operations—reducing gaps and regressions.
+- Explainable decisions: When an action is denied or filtered, admins can see why.
+- Easier audits: Policies and seed packs create a repeatable, documented configuration per tenant.
+
 == A small, powerful API surface: List + Query
 
 Instead of building a unique search endpoint for every screen, Quantum gives you:
@@ -134,6 +180,15 @@ Example uses
 - Patterns for long‑running, stateful business processes and task completion
 
 The framework gives you these foundations so your teams focus on business value—on‑time deliveries, lower cost, happier customers.
+
+== Other helpful capabilities you get out of the box
+
+- Pending seed visibility: Admins can see which seed packs have updates pending for a tenant before applying them, reducing surprise changes.
+- Version selection and rollback strategy: The platform automatically selects the latest compatible seed pack version; because packs are versioned and reviewable, you can test in a sandbox realm before rolling out.
+- Archetypes (editions): Model product tiers by composing packs; useful for offering lighter supplier/carrier editions versus full buyer editions.
+- Explainable access decisions: When access is denied or results are filtered, admins can inspect the reasoning—useful during partner onboarding and audits.
+- Idempotent imports/exports: Bulk data operations can be retried safely, which is critical when partners exchange large files over unreliable networks.
+- Observability hooks: Standardized endpoints and logs make it easier to monitor SLAs (e.g., late tasks, delayed updates) without custom plumbing.
 
 == Next steps
 

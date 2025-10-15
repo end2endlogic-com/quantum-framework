@@ -17,6 +17,7 @@ import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -156,11 +157,14 @@ public class RealmResource extends BaseResource<Realm, BaseMorphiaRepo<Realm>> {
       List<Realm> all = repo.getAllList();
       List<String> candidateRefNames = all.stream().map(Realm::getRefName).collect(Collectors.toList());
       List<String> allowedRefNames = securityUtils.computeAllowedRealmRefNames(cred, candidateRefNames);
-      List<Realm> allowedRealms = all.stream()
-              .filter(r -> allowedRefNames.stream().anyMatch(a -> a.equalsIgnoreCase(r.getRefName())))
-              .collect(Collectors.toList());
-
-      return Response.ok(allowedRealms).build();
+      if (!allowedRefNames.isEmpty()) {
+         List<Realm> allowedRealms = all.stream()
+                                        .filter(r -> allowedRefNames.stream().anyMatch(a -> a.equalsIgnoreCase(r.getRefName())))
+                                        .collect(Collectors.toList());
+         return Response.ok(allowedRealms).build();
+      } else {
+         return Response.ok(Collections.emptyList()).build();
+      }
    }
 
 }

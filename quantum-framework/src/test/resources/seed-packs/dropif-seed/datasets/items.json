@@ -1,0 +1,5 @@
+[
+  {"code":"A","label":"Alpha","status":"ENABLED"},
+  {"code":"B","label":"Beta","status":"DISABLED"},
+  {"code":"C","label":"Gamma","status":"ENABLED"}
+]

@@ -1,0 +1,8 @@
+seedPack: multi-version
+version: 1.0.0
+
+datasets:
+  - collection: verifications
+    file: datasets/v.json
+    naturalKey: [ code ]
+    upsert: true
