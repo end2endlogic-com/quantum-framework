@@ -38,13 +38,16 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
     // markers to handle nested contexts like elemMatch where we need to scope compositions
     protected Stack<Integer> opTypeMarkers = new Stack<>();
     protected Stack<Integer> filterStackMarkers = new Stack<>();
+    protected int queryDepth = 0;
+    protected Stack<Integer> queryOpTypeMarkers = new Stack<>();
+    protected Stack<Integer> queryFilterMarkers = new Stack<>();
 
     protected boolean complete = false;
 
     Map<String, String> variableMap = null;
     StringSubstitutor sub = null;
 
-    Class<? extends UnversionedBaseModel> modelClass=null;
+    Class<? extends UnversionedBaseModel> modelClass = null;
 
 
     public QueryToFilterListener(Map<String, String> variableMap, StringSubstitutor sub, Class<? extends UnversionedBaseModel> modelClass) {
@@ -175,13 +178,33 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
 
     @Override
     public void enterQuery(BIAPIQueryParser.QueryContext ctx) {
-        complete = false;
+        if (queryDepth == 0) {
+            complete = false;     // only for the top-level query
+        }
+        queryDepth++;
+
+        // mark the CURRENT stack sizes so we can compose only this query's subtree
+        queryOpTypeMarkers.push(opTypeStack.size());
+        queryFilterMarkers.push(filterStack.size());
     }
 
     @Override
     public void exitQuery(BIAPIQueryParser.QueryContext ctx) {
-        buildComposite();
-        checkDone();
+        // compose only what was added during THIS query()
+        int startOp = queryOpTypeMarkers.pop();
+        int startFilter = queryFilterMarkers.pop();
+
+        // clamp (defensive)
+        if (startOp > opTypeStack.size()) startOp = opTypeStack.size();
+        if (startFilter > filterStack.size()) startFilter = filterStack.size();
+
+        buildCompositeSince(startOp, startFilter);
+
+        queryDepth--;
+        if (queryDepth == 0) {
+            // only at the very end of the top-level query
+            checkDone();
+        }
     }
 
     protected void checkDone() {
@@ -195,9 +218,9 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         }
 
         if (Log.isDebugEnabled() && !filterStack.isEmpty()) {
-            Log.debugf("-- Additional Filters based upon rules:%d--",filterStack.size());
+            Log.debugf("-- Additional Filters based upon rules:%d--", filterStack.size());
             for (Filter f : filterStack) {
-                Log.debugf("    Name:%s Field:%s Value:%s", f.getName(), f.getField(), (f.getValue() == null)? "NULL" : f.getValue().toString());
+                Log.debugf("    Name:%s Field:%s Value:%s", f.getName(), f.getField(), (f.getValue() == null) ? "NULL" : f.getValue().toString());
             }
             Log.debug("--------");
         }
@@ -211,61 +234,87 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
 
     // Build the composite for the portion of the stacks added since the given markers
     protected void buildCompositeSince(int startOpSize, int startFilterSize) {
+        // Clamp against current sizes; earlier compositions may have shrunk the stacks
+        if (startOpSize > opTypeStack.size()) startOpSize = opTypeStack.size();
+        if (startFilterSize > filterStack.size()) startFilterSize = filterStack.size();
+
         List<Filter> andFilters = new ArrayList<>();
         List<Filter> orFilters = new ArrayList<>();
-        Filter[] filterArray = new Filter[0];
+        final Filter[] filterArray = new Filter[0];
 
-        // Unwind only the operators added since the marker
+        // Only pop filters that were pushed after startFilterSize
+        int finalStartFilterSize = startFilterSize;
+        java.util.function.Supplier<Filter> popNewSince = () -> {
+            if (filterStack.size() <= finalStartFilterSize) {
+                throw new IllegalStateException("No filters added since marker to pop");
+            }
+            return filterStack.pop();
+        };
+
+        // Unwind only operators added since the marker
         while (opTypeStack.size() > startOpSize) {
             int opType = opTypeStack.pop();
             switch (opType) {
-                case BIAPIQueryParser.AND:
-                    andFilters.add(filterStack.pop());
+                case BIAPIQueryParser.AND: {
+                    andFilters.add(popNewSince.get());
                     break;
-                case BIAPIQueryParser.OR:
+                }
+                case BIAPIQueryParser.OR: {
                     if (!andFilters.isEmpty()) {
-                        andFilters.add(filterStack.pop());
+                        andFilters.add(popNewSince.get());
                         orFilters.add(Filters.and(andFilters.toArray(filterArray)));
                         andFilters = new ArrayList<>();
                     } else {
-                        orFilters.add(filterStack.pop());
+                        orFilters.add(popNewSince.get());
                     }
                     break;
-                case BIAPIQueryParser.LPAREN:
+                }
+                case BIAPIQueryParser.LPAREN: {
+                    // close the group for the subsection
                     if (andFilters.isEmpty()) {
-                        andFilters.add(filterStack.pop());
+                        andFilters.add(popNewSince.get());
                         orFilters.add(Filters.and(andFilters.toArray(filterArray)));
                         andFilters = new ArrayList<>();
                     } else {
-                        orFilters.add(filterStack.pop());
+                        orFilters.add(popNewSince.get());
                     }
+
+                    // push the grouped composite back
                     if (orFilters.size() == 1) {
                         filterStack.push(orFilters.get(0));
                     } else if (orFilters.size() > 1) {
                         filterStack.push(Filters.or(orFilters.toArray(filterArray)));
                     } else {
-                        throw new IllegalStateException("OrCriteria is empty expected to be not empty?");
+                        throw new IllegalStateException("OrCriteria is empty inside LPAREN group");
                     }
+
+                    // Reset for next segment within this scoped build
                     orFilters = new ArrayList<>();
                     break;
+                }
                 default:
                     throw new IllegalArgumentException("Unsupported operation:" + opType);
-
             }
         }
+
+        // Finish whatever remains since the marker
         if (!andFilters.isEmpty()) {
-            andFilters.add(filterStack.pop());
+            andFilters.add(popNewSince.get());
             orFilters.add(Filters.and(andFilters.toArray(filterArray)));
         } else {
-            if (!filterStack.empty())
-                orFilters.add(filterStack.pop());
-            else
-                Log.warn("!! Filter stack is empty, expected at least one filter, possible problem with grammar");
+            if (filterStack.size() > startFilterSize) {
+                orFilters.add(popNewSince.get());
+            } else {
+                Log.warn("No new filters since marker to compose");
+            }
         }
-        if (orFilters.size() == 1) {
-            filterStack.push(orFilters.get(0));
-        } else if (orFilters.size() > 1) {
-            filterStack.push(Filters.or(orFilters.toArray(filterArray)));
+
+        if (!orFilters.isEmpty()) {
+            if (orFilters.size() == 1) {
+                filterStack.push(orFilters.get(0));
+            } else {
+                filterStack.push(Filters.or(orFilters.toArray(filterArray)));
+            }
         }
     }
 
@@ -286,7 +335,9 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
 
     @Override
     public void exitExprGroup(BIAPIQueryParser.ExprGroupContext ctx) {
-        buildComposite();
+        // IMPORTANT: Do not compose here.
+        // Grouping is finalized by buildCompositeSince(...) when unwinding.
+        // (We already pushed LPAREN in enterExprGroup.)
     }
 
 
@@ -315,11 +366,21 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         }
     }
 
+    private static boolean isQuoted(String s) {
+        return s.length() >= 2 &&
+                ((s.startsWith("\"") && s.endsWith("\"")) ||
+                        (s.startsWith("'") && s.endsWith("'")));
+    }
+
+    private static String unquote(String s) {
+        return isQuoted(s) ? s.substring(1, s.length() - 1) : s;
+    }
+
     @Override
     public void enterInExpr(BIAPIQueryParser.InExprContext ctx) {
         String field = ctx.field.getText();
 
-        String inner = ctx.value.getText(); // like "[a,b]" or "[${ids}]"
+        String inner = ctx.value.getText(); // "[...]" or "[${ids}]"
         String innerNoBrackets = inner.substring(1, inner.length() - 1);
 
         String trimmed = innerNoBrackets.trim();
@@ -329,22 +390,36 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
 
         if (isSingleVar && sub != null) {
             String varName = trimmed.substring(2, trimmed.length() - 1);
-            Object v = objectVars != null ? objectVars.get(varName) : null;
+            Object v = objectVars.get(varName);
+
             if (v instanceof Collection<?> coll) {
                 for (Object item : coll) {
-                    values.add(coerceValue(item));
+                    if (item instanceof CharSequence s && isQuoted(s.toString())) {
+                        values.add(unquote(s.toString())); // ← keep as String
+                    } else {
+                        values.add(coerceValue(field, item));      // ← normal coercion
+                    }
                 }
             } else if (v != null && v.getClass().isArray()) {
                 int len = java.lang.reflect.Array.getLength(v);
                 for (int i = 0; i < len; i++) {
                     Object item = java.lang.reflect.Array.get(v, i);
-                    values.add(coerceValue(item));
+                    if (item instanceof CharSequence s && isQuoted(s.toString())) {
+                        values.add(unquote(s.toString()));
+                    } else {
+                        values.add(coerceValue(field, item));
+                    }
                 }
             } else {
                 String substituted = sub.replace(trimmed);
                 if (substituted != null && !substituted.isBlank()) {
-                    for (String token : substituted.split(",")) {
-                        values.add(coerceValue(token.trim()));
+                    for (String raw : substituted.split(",")) {
+                        String token = raw.trim();
+                        if (isQuoted(token)) {
+                            values.add(unquote(token));     // ← keep as String
+                        } else {
+                            values.add(coerceValue(field, token)); // ← allow numeric/bool/date/OID
+                        }
                     }
                 }
             }
@@ -353,20 +428,19 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
             if (substituted != null && !substituted.isBlank()) {
                 for (String raw : substituted.split(",")) {
                     String token = raw.trim();
-                    values.add(coerceValue(token));
+                    if (isQuoted(token)) {
+                        values.add(unquote(token));         // ← keep as String
+                    } else {
+                        values.add(coerceValue(field, token));     // ← allow coercion
+                    }
                 }
             }
         }
-
-        Filter f;
-        String opText = ctx.op.getText();
-        if (":^".equals(opText)) {
-            f = Filters.in(field, values);
-        } else if (":!^".equals(opText)) {
-            f = Filters.nin(field, values);
-        } else {
-            throw new IllegalArgumentException("Operator not recognized: " + ctx.op.getText());
-        }
+        Filter f = switch (ctx.op.getText()) {
+            case ":^" -> Filters.in(field, values);
+            case ":!^" -> Filters.nin(field, values);
+            default -> throw new IllegalArgumentException("Operator not recognized: " + ctx.op.getText());
+        };
         filterStack.push(f);
     }
 
@@ -381,7 +455,17 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         filterStack.push(negated);
     }
 
-    private Object coerceValue(Object v) {
+    // Add a field-aware overload
+    private Object coerceValue(String field, Object v) {
+        if (v == null) return null;
+        // Force refName to string
+        if ("refName".equals(field)) {
+            return (v instanceof CharSequence cs) ? cs.toString() : String.valueOf(v);
+        }
+        return coerceValueAuto(v); // your existing coerceValue(...) renamed
+    }
+
+    private Object coerceValueAuto(Object v) {
         if (v == null) return null;
         // Respect explicit StringLiteral wrapper to force raw string semantics
         if (v instanceof StringLiteral sl) return sl.value();
@@ -390,19 +474,34 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         if (v instanceof CharSequence s) {
             String str = s.toString();
             if (str.matches("^[a-fA-F0-9]{24}$")) {
-                try { return new ObjectId(str); } catch (Exception ignored) {}
+                try {
+                    return new ObjectId(str);
+                } catch (Exception ignored) {
+                }
             }
             if ("true".equalsIgnoreCase(str) || "false".equalsIgnoreCase(str)) {
                 return Boolean.parseBoolean(str);
             }
             if (str.matches("^-?\\d+$")) {
-                try { return Long.parseLong(str); } catch (NumberFormatException ignored) {}
+                try {
+                    return Long.parseLong(str);
+                } catch (NumberFormatException ignored) {
+                }
             }
             if (str.matches("^-?\\d+\\.\\d+$")) {
-                try { return Double.parseDouble(str); } catch (NumberFormatException ignored) {}
+                try {
+                    return Double.parseDouble(str);
+                } catch (NumberFormatException ignored) {
+                }
             }
-            try { return Date.from(ZonedDateTime.parse(str).toInstant()); } catch (Exception ignored) {}
-            try { return LocalDate.parse(str); } catch (Exception ignored) {}
+            try {
+                return Date.from(ZonedDateTime.parse(str).toInstant());
+            } catch (Exception ignored) {
+            }
+            try {
+                return LocalDate.parse(str);
+            } catch (Exception ignored) {
+            }
             return str;
         }
         return v;
@@ -410,25 +509,36 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
 
     @Override
     public void enterElemMatchExpr(BIAPIQueryParser.ElemMatchExprContext ctx) {
-        // Mark current stack depths so we can scope the nested expression processing
-        opTypeMarkers.push(opTypeStack.size());
+        // remember where elemMatch starts so we can detect what the nested query pushed
         filterStackMarkers.push(filterStack.size());
     }
 
     @Override
     public void exitElemMatchExpr(BIAPIQueryParser.ElemMatchExprContext ctx) {
-        // Build composite for nested part only, then wrap it in elemMatch
-        int startOp = opTypeMarkers.pop();
         int startFilter = filterStackMarkers.pop();
-        // compose inner filters added within elemMatch
-        buildCompositeSince(startOp, startFilter);
 
-        if (filterStack.size() <= startFilter) {
+        // how many new filters did the nested query() leave on the stack?
+        int newCount = filterStack.size() - startFilter;
+
+        if (newCount <= 0) {
+            Log.errorf("elemMatch produced no inner filters. field=%s startFilter=%d stackSize=%d",
+                    ctx.field.getText(), startFilter, filterStack.size());
             throw new IllegalStateException("elemMatch inner expression produced no filters");
         }
-        Filter inner = filterStack.pop();
-        Filter f = Filters.elemMatch(ctx.field.getText(), inner);
-        filterStack.push(f);
+
+        Filter inner;
+        if (newCount == 1) {
+            inner = filterStack.pop();
+        } else {
+            // multiple leaves but no inner ops? AND them by default
+            List<Filter> inners = new ArrayList<>(newCount);
+            while (filterStack.size() > startFilter) {
+                inners.add(0, filterStack.pop());
+            }
+            inner = Filters.and(inners.toArray(new Filter[0]));
+        }
+
+        filterStack.push(Filters.elemMatch(ctx.field.getText(), inner));
     }
 
     @Override
@@ -458,16 +568,16 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
                     value = tok.getText();
                     break;
                 case BIAPIQueryParser.QUOTED_STRING:
-                    value = tok.getText();
+                    value = unquote(tok.getText());
                     break;
                 case BIAPIQueryParser.OID:
                     value = new ObjectId(tok.getText());
                     break;
                 case BIAPIQueryParser.VARIABLE: {
                     String replaced = (sub != null) ? sub.replace(tok.getText()) : tok.getText();
-                    value = coerceValue(replaced);
+                    value = coerceValue(field.getText(), replaced);
                 }
-                    break;
+                break;
                 case BIAPIQueryParser.NUMBER: {
                     String num = tok.getText();
                     value = Double.parseDouble(num);
@@ -478,7 +588,7 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
                     value = Long.parseLong(num);
                 }
                 break;
-                case BIAPIQueryParser.DATE:{
+                case BIAPIQueryParser.DATE: {
                     String dateString = tok.getText();
                     DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
                     LocalDate date;

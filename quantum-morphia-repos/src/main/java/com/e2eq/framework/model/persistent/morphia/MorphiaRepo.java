@@ -56,7 +56,7 @@ import static dev.morphia.query.Sort.descending;
  *
  * @param <T> The model class this repo will use.
  */
-public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements BaseMorphiaRepo<T> {
+public abstract class MorphiaRepo<T extends UnversionedBaseModel> implements BaseMorphiaRepo<T> {
 
     @Inject
     protected MorphiaDataStore morphiaDataStore;
@@ -76,10 +76,11 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     @Inject
     protected com.e2eq.framework.util.SecurityUtils securityUtils;
 
-   @ConfigProperty(name = "quantum.realmConfig.defaultRealm"  )
-   protected String defaultRealm;
+    @ConfigProperty(name = "quantum.realmConfig.defaultRealm")
+    protected String defaultRealm;
 
-   private TypeToken<T> paramClazz = new TypeToken<>(getClass()) {};
+    private TypeToken<T> paramClazz = new TypeToken<>(getClass()) {
+    };
 
     @Inject
     protected MessageTemplateLocator messageTemplateLocator;
@@ -88,100 +89,100 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     StateGraphManager stateGraphManager;
 
     private void ensureSecurityContextFromIdentity() {
-                String currentIdentity = null;
+        String currentIdentity = null;
 
-                // check to see if we have a security context principal set.
-                var tlPctxOpt = com.e2eq.framework.model.securityrules.SecurityContext.getPrincipalContext();
-                if (tlPctxOpt.isPresent()) {
-                   Log.debugf("ensureSecurityContextFromIdentity: security context present, identity:%s", tlPctxOpt.get().getUserId());
-                    currentIdentity = tlPctxOpt.get().getUserId();
-                }
-
-                // do we have an existing securityIdentity in place that is not anonymous?
-                boolean hasIdentity = (securityIdentity != null && !securityIdentity.isAnonymous());
-                if (hasIdentity) {
-                   Log.debugf("non anonymous identity:%s", securityIdentity.getPrincipal().getName());
-                }
-                String identityName = null;
-                if (hasIdentity && securityIdentity.getPrincipal() != null) {
-                    identityName = securityIdentity.getPrincipal().getName();
-                }
-
-                boolean needRebuild = false;
-                if (tlPctxOpt.isEmpty()) {
-                    needRebuild = hasIdentity; // build if we have identity and no PrincipleContext
-                } else if (hasIdentity && identityName != null && !identityName.equals(currentIdentity)) {
-                    // Mismatch between TL and current SecurityIdentity: rebuild from current identity
-                    needRebuild = true;
-                }
-
-                if (needRebuild) {
-                   Log.debug("rebuilding identity because identityName is null or does not equal current identity");
-                    String principalName = (identityName != null) ? identityName : envConfigUtils.getAnonymousUserId();
-                    java.util.Set<String> rolesSet = securityIdentity.getRoles();
-                    String[] roles = (rolesSet == null || rolesSet.isEmpty()) ? new String[0] : rolesSet.toArray(new String[rolesSet.size()]);
-
-                    // Try to enrich from credentials in system/default realm
-                   Log.debugf("Attempting to locate user using userId:%s", principalName);
-                    java.util.Optional<com.e2eq.framework.model.security.CredentialUserIdPassword> ocreds = credentialRepo.findByUserId(principalName, envConfigUtils.getSystemRealm(), true);
-                    if (ocreds.isEmpty()) {
-                       // attempt to get via subject
-                       ocreds = credentialRepo.findBySubject(principalName, envConfigUtils.getSystemRealm(), true);
-                    }
-
-                    com.e2eq.framework.model.persistent.base.DataDomain dataDomain;
-                    String userId;
-                    String contextRealm;
-                    Map<String, String> area2RealmOverrides=null;
-                    if (ocreds.isPresent()) {
-                        var creds = ocreds.get();
-                        dataDomain = creds.getDomainContext().toDataDomain(creds.getUserId());
-                        userId = creds.getUserId();
-                        contextRealm = creds.getDomainContext().getDefaultRealm();
-                        String[] credRoles = creds.getRoles();
-                        if (credRoles != null && credRoles.length > 0) {
-                            java.util.Set<String> combined = new java.util.HashSet<>(rolesSet);
-                            combined.addAll(java.util.Arrays.asList(credRoles));
-                            roles = combined.toArray(new String[0]);
-                            area2RealmOverrides = creds.getArea2RealmOverrides();
-                        }
-                    } else {
-                        //dataDomain = securityUtils.getSystemDataDomain();
-                        //userId = principalName;
-                        //contextRealm = envConfigUtils.getSystemRealm();
-                        throw new IllegalStateException("Unable to locate credentials for userId:" + principalName);
-                    }
-
-                    var pcontext = new com.e2eq.framework.model.securityrules.PrincipalContext.Builder()
-                            .withDefaultRealm(contextRealm)
-                            .withDataDomain(dataDomain)
-                            .withUserId(userId)
-                            .withRoles(roles)
-                            .withArea2RealmOverrides(area2RealmOverrides)
-                            .withScope("AUTHENTICATED")
-                            .build();
-
-                    com.e2eq.framework.model.securityrules.SecurityContext.setPrincipalContext(pcontext);
-
-                    if (com.e2eq.framework.model.securityrules.SecurityContext.getResourceContext().isEmpty()) {
-                        // set a safe default resource context to enable rule evaluation in tests
-                        com.e2eq.framework.model.securityrules.SecurityContext.setResourceContext(
-                                com.e2eq.framework.model.securityrules.ResourceContext.DEFAULT_ANONYMOUS_CONTEXT
-                        );
-                    }
-                    if (io.quarkus.logging.Log.isDebugEnabled()) {
-                        io.quarkus.logging.Log.debugf("[MorphiaRepo] Principal Context %s from SecurityIdentity for user %s, roles=%s",
-                                (tlPctxOpt.isEmpty() ? "built" : "rebuilt"), userId, java.util.Arrays.toString(roles));
-                    }
-                }
-
+        // check to see if we have a security context principal set.
+        var tlPctxOpt = com.e2eq.framework.model.securityrules.SecurityContext.getPrincipalContext();
+        if (tlPctxOpt.isPresent()) {
+            Log.debugf("ensureSecurityContextFromIdentity: security context present, identity:%s", tlPctxOpt.get().getUserId());
+            currentIdentity = tlPctxOpt.get().getUserId();
         }
 
-        public String getSecurityContextRealmId() {
-           if (!SecurityContext.getResourceContext().isPresent() || !SecurityContext.getPrincipalContext().isPresent()) {
-              // Ensure contexts can be derived from SecurityIdentity when not explicitly set
-              ensureSecurityContextFromIdentity();
-           }
+        // do we have an existing securityIdentity in place that is not anonymous?
+        boolean hasIdentity = (securityIdentity != null && !securityIdentity.isAnonymous());
+        if (hasIdentity) {
+            Log.debugf("non anonymous identity:%s", securityIdentity.getPrincipal().getName());
+        }
+        String identityName = null;
+        if (hasIdentity && securityIdentity.getPrincipal() != null) {
+            identityName = securityIdentity.getPrincipal().getName();
+        }
+
+        boolean needRebuild = false;
+        if (tlPctxOpt.isEmpty()) {
+            needRebuild = hasIdentity; // build if we have identity and no PrincipleContext
+        } else if (hasIdentity && identityName != null && !identityName.equals(currentIdentity)) {
+            // Mismatch between TL and current SecurityIdentity: rebuild from current identity
+            needRebuild = true;
+        }
+
+        if (needRebuild) {
+            Log.debug("rebuilding identity because identityName is null or does not equal current identity");
+            String principalName = (identityName != null) ? identityName : envConfigUtils.getAnonymousUserId();
+            java.util.Set<String> rolesSet = securityIdentity.getRoles();
+            String[] roles = (rolesSet == null || rolesSet.isEmpty()) ? new String[0] : rolesSet.toArray(new String[rolesSet.size()]);
+
+            // Try to enrich from credentials in system/default realm
+            Log.debugf("Attempting to locate user using userId:%s", principalName);
+            java.util.Optional<com.e2eq.framework.model.security.CredentialUserIdPassword> ocreds = credentialRepo.findByUserId(principalName, envConfigUtils.getSystemRealm(), true);
+            if (ocreds.isEmpty()) {
+                // attempt to get via subject
+                ocreds = credentialRepo.findBySubject(principalName, envConfigUtils.getSystemRealm(), true);
+            }
+
+            com.e2eq.framework.model.persistent.base.DataDomain dataDomain;
+            String userId;
+            String contextRealm;
+            Map<String, String> area2RealmOverrides = null;
+            if (ocreds.isPresent()) {
+                var creds = ocreds.get();
+                dataDomain = creds.getDomainContext().toDataDomain(creds.getUserId());
+                userId = creds.getUserId();
+                contextRealm = creds.getDomainContext().getDefaultRealm();
+                String[] credRoles = creds.getRoles();
+                if (credRoles != null && credRoles.length > 0) {
+                    java.util.Set<String> combined = new java.util.HashSet<>(rolesSet);
+                    combined.addAll(java.util.Arrays.asList(credRoles));
+                    roles = combined.toArray(new String[0]);
+                    area2RealmOverrides = creds.getArea2RealmOverrides();
+                }
+            } else {
+                //dataDomain = securityUtils.getSystemDataDomain();
+                //userId = principalName;
+                //contextRealm = envConfigUtils.getSystemRealm();
+                throw new IllegalStateException("Unable to locate credentials for userId:" + principalName);
+            }
+
+            var pcontext = new com.e2eq.framework.model.securityrules.PrincipalContext.Builder()
+                    .withDefaultRealm(contextRealm)
+                    .withDataDomain(dataDomain)
+                    .withUserId(userId)
+                    .withRoles(roles)
+                    .withArea2RealmOverrides(area2RealmOverrides)
+                    .withScope("AUTHENTICATED")
+                    .build();
+
+            com.e2eq.framework.model.securityrules.SecurityContext.setPrincipalContext(pcontext);
+
+            if (com.e2eq.framework.model.securityrules.SecurityContext.getResourceContext().isEmpty()) {
+                // set a safe default resource context to enable rule evaluation in tests
+                com.e2eq.framework.model.securityrules.SecurityContext.setResourceContext(
+                        com.e2eq.framework.model.securityrules.ResourceContext.DEFAULT_ANONYMOUS_CONTEXT
+                );
+            }
+            if (io.quarkus.logging.Log.isDebugEnabled()) {
+                io.quarkus.logging.Log.debugf("[MorphiaRepo] Principal Context %s from SecurityIdentity for user %s, roles=%s",
+                        (tlPctxOpt.isEmpty() ? "built" : "rebuilt"), userId, java.util.Arrays.toString(roles));
+            }
+        }
+
+    }
+
+    public String getSecurityContextRealmId() {
+        if (!SecurityContext.getResourceContext().isPresent() || !SecurityContext.getPrincipalContext().isPresent()) {
+            // Ensure contexts can be derived from SecurityIdentity when not explicitly set
+            ensureSecurityContextFromIdentity();
+        }
         String realmId = defaultRealm;
 
         if (SecurityContext.getPrincipalContext().isPresent() && SecurityContext.getResourceContext().isPresent()) {
@@ -197,16 +198,16 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
     @Override
-    public String getDatabaseName () {
-       return morphiaDataStore.getDataStore(getSecurityContextRealmId()).getDatabase().getName();
+    public String getDatabaseName() {
+        return morphiaDataStore.getDataStore(getSecurityContextRealmId()).getDatabase().getName();
     }
 
     public Filter[] getFilterArray(@NotNull List<Filter> filters, Class<? extends UnversionedBaseModel> modelClass) {
-       if (!SecurityContext.getResourceContext().isPresent() || !SecurityContext.getPrincipalContext().isPresent()) {
-          // Ensure context exists for repo calls executed under @TestSecurity (no SecuritySession)
-          ensureSecurityContextFromIdentity();
-       }
-       if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
+        if (!SecurityContext.getResourceContext().isPresent() || !SecurityContext.getPrincipalContext().isPresent()) {
+            // Ensure context exists for repo calls executed under @TestSecurity (no SecuritySession)
+            ensureSecurityContextFromIdentity();
+        }
+        if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
             filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get(), modelClass);
             if (Log.isDebugEnabled()) {
                 Log.debugf("getFilterArray for %s security context: %s", SecurityContext.getPrincipalContext().get().getUserId(), filters);
@@ -226,14 +227,14 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
     @Override
-    public void ensureIndexes (String realmId, String collection) {
-      Objects.requireNonNull(realmId, "RealmId cannot be null");
-      Objects.requireNonNull(collection, "Collection cannot be null");
-      morphiaDataStore.getDataStore(realmId).ensureIndexes(getPersistentClass());
-   }
+    public void ensureIndexes(String realmId, String collection) {
+        Objects.requireNonNull(realmId, "RealmId cannot be null");
+        Objects.requireNonNull(collection, "Collection cannot be null");
+        morphiaDataStore.getDataStore(realmId).ensureIndexes(getPersistentClass());
+    }
 
 
-      protected List<String> getDefaultUIActionsFromFD(@NotNull String fdRefName) {
+    protected List<String> getDefaultUIActionsFromFD(@NotNull String fdRefName) {
         return getDefaultUIActionsFromFD(morphiaDataStore.getDataStore(getSecurityContextRealmId()), fdRefName);
     }
 
@@ -256,25 +257,23 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
 
-
-
     @Override
     public Optional<T> findById(@NotNull String id) {
         ObjectId oid = new ObjectId(id);
         return findById(oid);
     }
 
-   @Override
-   public Optional<T> findById (@NotNull String id, boolean ignoreRules) {
-       ObjectId oid = new ObjectId(id);
-      return this.findById(morphiaDataStore.getDataStore(getSecurityContextRealmId()), oid, ignoreRules);
-   }
+    @Override
+    public Optional<T> findById(@NotNull String id, boolean ignoreRules) {
+        ObjectId oid = new ObjectId(id);
+        return this.findById(morphiaDataStore.getDataStore(getSecurityContextRealmId()), oid, ignoreRules);
+    }
 
-   @Override
-   public Optional<T> findById(@NotNull String id, @NotNull String realmId) {
-      ObjectId oid = new ObjectId(id);
-      return findById(oid, realmId);
-   }
+    @Override
+    public Optional<T> findById(@NotNull String id, @NotNull String realmId) {
+        ObjectId oid = new ObjectId(id);
+        return findById(oid, realmId);
+    }
 
 
     @Override
@@ -282,32 +281,32 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         return findById(morphiaDataStore.getDataStore(getSecurityContextRealmId()), id);
     }
 
-   @Override
-   public Optional<T> findById (@NotNull ObjectId id, String realmId) {
-      return findById(morphiaDataStore.getDataStore(realmId), id, false);
-   }
+    @Override
+    public Optional<T> findById(@NotNull ObjectId id, String realmId) {
+        return findById(morphiaDataStore.getDataStore(realmId), id, false);
+    }
 
-   @Override
-   public Optional<T> findById (@NotNull ObjectId id, String realmId, boolean ignoreRules) {
-       return findById(morphiaDataStore.getDataStore(realmId), id, ignoreRules);
-   }
+    @Override
+    public Optional<T> findById(@NotNull ObjectId id, String realmId, boolean ignoreRules) {
+        return findById(morphiaDataStore.getDataStore(realmId), id, ignoreRules);
+    }
 
-   @Override
-   public Optional<T> findById(@NotNull Datastore datastore, @NotNull ObjectId id) {
-      return findById(datastore, id, false);
-   }
+    @Override
+    public Optional<T> findById(@NotNull Datastore datastore, @NotNull ObjectId id) {
+        return findById(datastore, id, false);
+    }
 
     @Override
     public Optional<T> findById(@NotNull Datastore datastore, @NotNull ObjectId id, boolean ignoreRules) {
         List<Filter> filters = new ArrayList<>();
         filters.add(Filters.eq("_id", id));
         // Add filters based upon rule and resourceContext;
-       Filter[] qfilters = new Filter[1];
-       if (!ignoreRules) {
-          qfilters = getFilterArray(filters, getPersistentClass());
-       } else {
-          qfilters = filters.toArray(qfilters);
-       }
+        Filter[] qfilters = new Filter[1];
+        if (!ignoreRules) {
+            qfilters = getFilterArray(filters, getPersistentClass());
+        } else {
+            qfilters = filters.toArray(qfilters);
+        }
 
         Query<T> query = datastore.find(getPersistentClass()).filter(qfilters);
         T obj = query.first();
@@ -328,15 +327,15 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
 
-   @Override
-   public Optional<T> findByRefName (@NotNull String refName, String realmId) {
-      return findByRefName(morphiaDataStore.getDataStore(realmId), refName);
-   }
+    @Override
+    public Optional<T> findByRefName(@NotNull String refName, String realmId) {
+        return findByRefName(morphiaDataStore.getDataStore(realmId), refName);
+    }
 
-   @Override
-   public Optional<T> findByRefName(@NotNull Datastore datastore, @NotNull String refName) {
-      return findByRefName(datastore, refName, false);
-   }
+    @Override
+    public Optional<T> findByRefName(@NotNull Datastore datastore, @NotNull String refName) {
+        return findByRefName(datastore, refName, false);
+    }
 
 
     @Override
@@ -346,12 +345,13 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         List<Filter> filters = new ArrayList<>();
         filters.add(Filters.eq("refName", refName));
         // Add filters based upon rule and resourceContext;
-       Filter[] qfilters = new Filter[1];;
-       if (!ignoreRules) {
-          qfilters = getFilterArray(filters, getPersistentClass());
-       } else {
-          qfilters = filters.toArray(qfilters);
-       }
+        Filter[] qfilters = new Filter[1];
+        ;
+        if (!ignoreRules) {
+            qfilters = getFilterArray(filters, getPersistentClass());
+        } else {
+            qfilters = filters.toArray(qfilters);
+        }
 
         Query<T> query = datastore.find(getPersistentClass()).filter(qfilters);
         T obj = query.first();
@@ -368,10 +368,9 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
 
-
     @Override
     public JsonSchema getSchema() {
-       throw new NotImplementedException("Not implemented");
+        throw new NotImplementedException("Not implemented");
     }
 
     @Override
@@ -380,13 +379,13 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
     @Override
-    public List<T> getAllList (String realmId) {
-      return this.getAllList(morphiaDataStore.getDataStore(realmId));
-   }
+    public List<T> getAllList(String realmId) {
+        return this.getAllList(morphiaDataStore.getDataStore(realmId));
+    }
 
     @Override
     public List<T> getAllList(Datastore datastore) {
-        return this.getList(datastore,0, 0,  null, null);
+        return this.getList(datastore, 0, 0, null, null);
     }
 
     @Override
@@ -402,12 +401,12 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public List<EntityReference> getEntityReferenceListByQuery(String realmId, int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields) {
-        return this.getEntityReferenceListByQuery(morphiaDataStore.getDataStore(realmId),skip, limit, query, sortFields);
+        return this.getEntityReferenceListByQuery(morphiaDataStore.getDataStore(realmId), skip, limit, query, sortFields);
     }
 
     @Override
     public List<EntityReference> getEntityReferenceListByQuery(Datastore datastore, int skip, int limit, @Nullable String query, List<SortField> sortFields) {
-        if (skip < 0 ) {
+        if (skip < 0) {
             throw new IllegalArgumentException("skip and or limit can not be negative");
         }
 
@@ -422,9 +421,9 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
         MorphiaCursor<T> cursor;
         List<ProjectionField> projectionFields = new ArrayList<>();
-        projectionFields.add(new ProjectionField( "refName", ProjectionField.ProjectionType.INCLUDE));
-        projectionFields.add(new ProjectionField( "id", ProjectionField.ProjectionType.INCLUDE));
-        projectionFields.add(new ProjectionField( "displayName", ProjectionField.ProjectionType.INCLUDE));
+        projectionFields.add(new ProjectionField("refName", ProjectionField.ProjectionType.INCLUDE));
+        projectionFields.add(new ProjectionField("id", ProjectionField.ProjectionType.INCLUDE));
+        projectionFields.add(new ProjectionField("displayName", ProjectionField.ProjectionType.INCLUDE));
 
         FindOptions findOptions = buildFindOptions(skip, limit, sortFields, projectionFields);
 
@@ -472,6 +471,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
         return list;
     }
+
     @Override
     public List<T> getListFromReferences(List<EntityReference> references) {
         return getListFromReferences(morphiaDataStore.getDataStore(getSecurityContextRealmId()), references);
@@ -481,6 +481,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     public List<T> getListFromReferences(String realmId, List<EntityReference> references) {
         return getListFromReferences(morphiaDataStore.getDataStore(realmId), references);
     }
+
     @Override
     public List<T> getListFromReferences(Datastore datastore, List<EntityReference> references) {
         // Create a list of refNames
@@ -632,8 +633,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public List<T> getListByQuery(@NotNull Datastore datastore, int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields) {
-
-        if (skip < 0 ) {
+        if (skip < 0) {
             throw new IllegalArgumentException("skip and or limit can not be negative");
         }
 
@@ -648,16 +648,12 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
 
         MorphiaCursor<T> cursor;
-
         FindOptions findOptions = buildFindOptions(skip, limit, sortFields, projectionFields);
-
         if (query != null && !query.isEmpty()) {
             String cleanQuery = query.trim();
             if (!cleanQuery.isEmpty()) {
                 Filter filter = MorphiaUtils.convertToFilter(query, getPersistentClass());
                 filters.add(Filters.and(filter));
-                Log.debugf("Running with filters:%s", filters.stream().map(Filter::toString).collect(Collectors.joining(",")));
-
             }
             Filter[] filterArray = new Filter[filters.size()];
             cursor = datastore.find(getPersistentClass())
@@ -673,7 +669,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         List<T> list = new ArrayList<>();
         List<String> actions = null;
         boolean gotActions = false;
-       String realm = datastore.getDatabase().getName();
+        String realm = datastore.getDatabase().getName();
         try (cursor) {
             for (T model : cursor.toList()) {
 
@@ -702,10 +698,10 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         return getStreamByQuery(morphiaDataStore.getDataStore(getSecurityContextRealmId()), skip, limit, query, sortFields, projectionFields);
     }
 
-   @Override
-   public List<T> getListByQuery (String realmId, int skip, int limit, @Nullable String query, List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields) {
-      return getListByQuery(morphiaDataStore.getDataStore(realmId), skip, limit, query, sortFields, projectionFields);
-   }
+    @Override
+    public List<T> getListByQuery(String realmId, int skip, int limit, @Nullable String query, List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields) {
+        return getListByQuery(morphiaDataStore.getDataStore(realmId), skip, limit, query, sortFields, projectionFields);
+    }
 
     @Override
     public List<T> getListByQuery(int skip, int limit, @Nullable String query, List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields) {
@@ -717,15 +713,15 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         return getList(morphiaDataStore.getDataStore(getSecurityContextRealmId()), skip, limit, filters, sortFields);
     }
 
-   @Override
-   public List<T> getList (String realmId, int skip, int limit, @Nullable List<Filter> filters, @Nullable List<SortField> sortFields) {
-      return getList(morphiaDataStore.getDataStore(realmId), skip, limit, filters, sortFields);
-   }
+    @Override
+    public List<T> getList(String realmId, int skip, int limit, @Nullable List<Filter> filters, @Nullable List<SortField> sortFields) {
+        return getList(morphiaDataStore.getDataStore(realmId), skip, limit, filters, sortFields);
+    }
 
     @Override
     public List<T> getList(Datastore datastore, int skip, int limit, @Nullable List<Filter> filters, @Nullable List<SortField> sortFields) {
 
-        if (skip < 0 ) {
+        if (skip < 0) {
             throw new IllegalArgumentException("skip can not be negative");
         }
 
@@ -747,7 +743,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         List<T> list = new ArrayList<>();
         List<String> actions = null;
         boolean gotActions = false;
-       String realm = datastore.getDatabase().getName();
+        String realm = datastore.getDatabase().getName();
         try (cursor) {
             for (T model : cursor.toList()) {
 
@@ -772,19 +768,18 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
 
+    @Override
+    public List<T> getListFromIds(@NotNull(value = "List of objectids can not be null") List<ObjectId> ids) {
+        return getListFromIds(getSecurityContextRealmId(), ids);
+    }
 
-   @Override
-   public List<T> getListFromIds ( @NotNull(value = "List of objectids can not be null") List<ObjectId> ids) {
-      return getListFromIds(getSecurityContextRealmId(),ids);
-   }
-
-   @Override
-    public List<T> getListFromIds(@NotNull(value = "RealmId can not be null") String realmId,@NotNull(value="List of objectids can not be null") @NotEmpty (message = "list of ids can not be empty") List<ObjectId> ids) {
+    @Override
+    public List<T> getListFromIds(@NotNull(value = "RealmId can not be null") String realmId, @NotNull(value = "List of objectids can not be null") @NotEmpty(message = "list of ids can not be empty") List<ObjectId> ids) {
         return getListFromIds(morphiaDataStore.getDataStore(realmId), ids);
     }
 
     @Override
-    public List<T> getListFromIds(Datastore datastore, @NotNull(value="List of objectids can not be null") @NotEmpty(message = "list of ids can not be empty") List<ObjectId> ids) {
+    public List<T> getListFromIds(Datastore datastore, @NotNull(value = "List of objectids can not be null") @NotEmpty(message = "list of ids can not be empty") List<ObjectId> ids) {
         // get a list using an in clause based upon the ids passed in
         List<Filter> filters = new ArrayList<>();
 
@@ -807,7 +802,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
         List<String> actions = null;
         boolean gotActions = false;
-       String realm = datastore.getDatabase().getName();
+        String realm = datastore.getDatabase().getName();
         for (T model : list) {
             if (!gotActions) {
                 actions = this.getDefaultUIActionsFromFD(model.bmFunctionalDomain());
@@ -827,13 +822,13 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
 
-   @Override
-   public List<T> getListFromRefNames ( List<String> refNames) {
-      return getListFromRefNames(getSecurityContextRealmId(), refNames);
-   }
+    @Override
+    public List<T> getListFromRefNames(List<String> refNames) {
+        return getListFromRefNames(getSecurityContextRealmId(), refNames);
+    }
 
-   @Override
-    public List<T> getListFromRefNames(String realmId,List<String> refNames) {
+    @Override
+    public List<T> getListFromRefNames(String realmId, List<String> refNames) {
         return getListFromRefNames(morphiaDataStore.getDataStore(realmId), refNames);
     }
 
@@ -851,7 +846,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         filters.add(Filters.in("refName", refNames));
 
         FindOptions findOptions = new FindOptions();
-       String realm= getSecurityContextRealmId();
+        String realm = getSecurityContextRealmId();
 
         Filter[] filterArray = new Filter[filters.size()];
         Query<T> query = morphiaDataStore.getDataStore(realm).find(getPersistentClass())
@@ -881,13 +876,13 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
 
-   @Override
-   public long getCount ( @Nullable String filter) {
-      return getCount(getSecurityContextRealmId(), filter);
-   }
+    @Override
+    public long getCount(@Nullable String filter) {
+        return getCount(getSecurityContextRealmId(), filter);
+    }
 
-   @Override
-    public long getCount(@NotNull(value="realmId can not be null") String realmId, @Nullable String query) {
+    @Override
+    public long getCount(@NotNull(value = "realmId can not be null") String realmId, @Nullable String query) {
         return getCount(morphiaDataStore.getDataStore(realmId), query);
     }
 
@@ -933,7 +928,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         }
 
         if (model.getRefName() == null || model.getRefName().trim().isEmpty()) {
-            model.setRefName (model.getId().toString());
+            model.setRefName(model.getId().toString());
         }
 
         if (model.getDisplayName() == null) {
@@ -941,89 +936,89 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         }
     }
 
-   protected void validateStateTransitions(Datastore datastore, @Valid T value) throws InvalidStateTransitionException, IllegalAccessException {
-      // If the entity has an ID, it's an update; fetch the existing entity
-      if (!value.isSkipValidation() && value.getId() != null ){
-         Optional<T> existingEntityOpt = findById(datastore, value.getId());
-         if (existingEntityOpt.isPresent()) {
-            T existingEntity = existingEntityOpt.get();
-            validateStateFields(value, existingEntity);
-         } else {
-            throw new IllegalStateException("Entity with ID " + value.getId() + " not found for update");
-         }
-      } else if (!value.isSkipValidation()) {
-         // For new entities, validate that initial states are valid
-         validateInitialStates(value);
-      }
-   }
-
-   private void validateStateFields(T newEntity, T existingEntity) throws IllegalAccessException, InvalidStateTransitionException {
-      if (!existingEntity.isSkipValidation() &&
-             existingEntity.getClass().getAnnotation(Stateful.class) !=null)
-         for (Field field : getAllFields(newEntity.getClass())) {
-            StateGraph stateGraph = field.getAnnotation(StateGraph.class);
-            if (stateGraph != null) {
-               field.setAccessible(true);
-               String newState = (String) field.get(newEntity);
-               String currentState = (String) field.get(existingEntity);
-               if (newState != null) {
-                  stateGraphManager.validateTransition(
-                     stateGraph.graphName(),
-                     currentState != null ? currentState : "",
-                     newState
-                  );
-               }
+    protected void validateStateTransitions(Datastore datastore, @Valid T value) throws InvalidStateTransitionException, IllegalAccessException {
+        // If the entity has an ID, it's an update; fetch the existing entity
+        if (!value.isSkipValidation() && value.getId() != null) {
+            Optional<T> existingEntityOpt = findById(datastore, value.getId());
+            if (existingEntityOpt.isPresent()) {
+                T existingEntity = existingEntityOpt.get();
+                validateStateFields(value, existingEntity);
+            } else {
+                throw new IllegalStateException("Entity with ID " + value.getId() + " not found for update");
             }
-         }
-   }
+        } else if (!value.isSkipValidation()) {
+            // For new entities, validate that initial states are valid
+            validateInitialStates(value);
+        }
+    }
 
-   private void validateInitialStates(T entity) throws IllegalAccessException, InvalidStateTransitionException {
-       // check if the entity type is annotated with Stateful annotation
-       if (entity.getClass().getAnnotation(Stateful.class) !=null)
-          for (Field field : getAllFields(entity.getClass())) {
-            StateGraph stateGraph = field.getAnnotation(StateGraph.class);
-            if (stateGraph != null) {
-               field.setAccessible(true);
-               String newState = (String) field.get(entity);
-               if (newState != null) {
-                  // Check if the state exists in the graph
-                  StringState graph = stateGraphManager.getStateGraphs().get(stateGraph.graphName());
-                  if (graph == null) {
-                     throw new InvalidStateTransitionException(
-                        String.format("State graph %s not configured", stateGraph.graphName()));
-                  }
-                  if (!graph.getStates().containsKey(newState)) {
-                     // create a string of all known initial states
-                     String knownInitialStates = graph.getStates().values().stream()
-                         .filter(StateNode::isInitialState)
-                         .map(StateNode::getState)
-                         .collect(Collectors.joining(", "));
-                     throw new InvalidStateTransitionException(
-                        String.format("Invalid initial state:%s for graph %s. Known initial states:%s",  newState, stateGraph.graphName(), knownInitialStates));
-                  }
-               }
+    private void validateStateFields(T newEntity, T existingEntity) throws IllegalAccessException, InvalidStateTransitionException {
+        if (!existingEntity.isSkipValidation() &&
+                existingEntity.getClass().getAnnotation(Stateful.class) != null)
+            for (Field field : getAllFields(newEntity.getClass())) {
+                StateGraph stateGraph = field.getAnnotation(StateGraph.class);
+                if (stateGraph != null) {
+                    field.setAccessible(true);
+                    String newState = (String) field.get(newEntity);
+                    String currentState = (String) field.get(existingEntity);
+                    if (newState != null) {
+                        stateGraphManager.validateTransition(
+                                stateGraph.graphName(),
+                                currentState != null ? currentState : "",
+                                newState
+                        );
+                    }
+                }
             }
-         }
-   }
+    }
 
-   private List<Field> getAllFields(Class<?> clazz) {
-      List<Field> fields = new ArrayList<>();
-      while (clazz != null && clazz != Object.class) {
-         fields.addAll(Arrays.asList(clazz.getDeclaredFields()));
-         clazz = clazz.getSuperclass();
-      }
-      return fields;
-   }
+    private void validateInitialStates(T entity) throws IllegalAccessException, InvalidStateTransitionException {
+        // check if the entity type is annotated with Stateful annotation
+        if (entity.getClass().getAnnotation(Stateful.class) != null)
+            for (Field field : getAllFields(entity.getClass())) {
+                StateGraph stateGraph = field.getAnnotation(StateGraph.class);
+                if (stateGraph != null) {
+                    field.setAccessible(true);
+                    String newState = (String) field.get(entity);
+                    if (newState != null) {
+                        // Check if the state exists in the graph
+                        StringState graph = stateGraphManager.getStateGraphs().get(stateGraph.graphName());
+                        if (graph == null) {
+                            throw new InvalidStateTransitionException(
+                                    String.format("State graph %s not configured", stateGraph.graphName()));
+                        }
+                        if (!graph.getStates().containsKey(newState)) {
+                            // create a string of all known initial states
+                            String knownInitialStates = graph.getStates().values().stream()
+                                    .filter(StateNode::isInitialState)
+                                    .map(StateNode::getState)
+                                    .collect(Collectors.joining(", "));
+                            throw new InvalidStateTransitionException(
+                                    String.format("Invalid initial state:%s for graph %s. Known initial states:%s", newState, stateGraph.graphName(), knownInitialStates));
+                        }
+                    }
+                }
+            }
+    }
+
+    private List<Field> getAllFields(Class<?> clazz) {
+        List<Field> fields = new ArrayList<>();
+        while (clazz != null && clazz != Object.class) {
+            fields.addAll(Arrays.asList(clazz.getDeclaredFields()));
+            clazz = clazz.getSuperclass();
+        }
+        return fields;
+    }
 
     public T save(@NotNull MorphiaSession session, @Valid T value) {
-        if (value.getClass().getAnnotation(Stateful.class)!= null) {
-           try {
-              validateStateTransitions(session, value);
-           } catch (InvalidStateTransitionException | IllegalAccessException e) {
-              throw new RuntimeException("State transition validation failed", e);
-           }
+        if (value.getClass().getAnnotation(Stateful.class) != null) {
+            try {
+                validateStateTransitions(session, value);
+            } catch (InvalidStateTransitionException | IllegalAccessException e) {
+                throw new RuntimeException("State transition validation failed", e);
+            }
         }
-       setDefaultValues(value);
+        setDefaultValues(value);
         value.validate();
         return session.save(value);
     }
@@ -1036,67 +1031,68 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public List<T> save(List<T> entities) {
-        return save(morphiaDataStore.getDataStore(getSecurityContextRealmId()),entities);
+        return save(morphiaDataStore.getDataStore(getSecurityContextRealmId()), entities);
     }
 
     @Override
     public List<T> save(@NotNull Datastore datastore, List<T> entities) {
-       entities.forEach(entity -> {
-          if (entity.getClass().getAnnotation(Stateful.class)!= null) {
-             try {
-                validateStateTransitions(datastore, entity);
-             } catch (InvalidStateTransitionException | IllegalAccessException e) {
-                throw new RuntimeException("State transition validation failed for entity: " + entity.getRefName(), e);
-             }
-          }
-          setDefaultValues(entity);
-          entity.validate();
-       });
-       return datastore.save(entities);
+        entities.forEach(entity -> {
+            if (entity.getClass().getAnnotation(Stateful.class) != null) {
+                try {
+                    validateStateTransitions(datastore, entity);
+                } catch (InvalidStateTransitionException | IllegalAccessException e) {
+                    throw new RuntimeException("State transition validation failed for entity: " + entity.getRefName(), e);
+                }
+            }
+            setDefaultValues(entity);
+            entity.validate();
+        });
+        return datastore.save(entities);
     }
 
     @Override
     public List<T> save(@NotNull MorphiaSession session, List<T> entities) {
 
-       entities.forEach(entity -> {
-          if (entity.getClass().getAnnotation(Stateful.class)!= null) {
-             try {
-                validateStateTransitions(session, entity);
-             } catch (InvalidStateTransitionException | IllegalAccessException e) {
-                throw new RuntimeException("State transition validation failed for entity: " + entity.getRefName(), e);
-             }
-          }
-          setDefaultValues(entity);
-          entity.validate();
-       });
+        entities.forEach(entity -> {
+            if (entity.getClass().getAnnotation(Stateful.class) != null) {
+                try {
+                    validateStateTransitions(session, entity);
+                } catch (InvalidStateTransitionException | IllegalAccessException e) {
+                    throw new RuntimeException("State transition validation failed for entity: " + entity.getRefName(), e);
+                }
+            }
+            setDefaultValues(entity);
+            entity.validate();
+        });
 
-       return session.save(entities);
+        return session.save(entities);
     }
 
 
     @Override
     public T save(@NotNull Datastore datastore, @Valid T value) {
-       if (value.getClass().getAnnotation(Stateful.class)!= null) {
-          try {
-             validateStateTransitions(datastore, value);
-          } catch (InvalidStateTransitionException | IllegalAccessException e) {
-             throw new RuntimeException("State transition validation failed", e);
-          }
-       }
-       setDefaultValues(value);
-       value.validate();
-       return datastore.save(value);
+        if (value.getClass().getAnnotation(Stateful.class) != null) {
+            try {
+                validateStateTransitions(datastore, value);
+            } catch (InvalidStateTransitionException | IllegalAccessException e) {
+                throw new RuntimeException("State transition validation failed", e);
+            }
+        }
+        setDefaultValues(value);
+        value.validate();
+        return datastore.save(value);
     }
 
-   @Override
-   public T save(@NotNull String realmId, @Valid T value) {
-      return save(morphiaDataStore.getDataStore(realmId), value);
-   }
+    @Override
+    public T save(@NotNull String realmId, @Valid T value) {
+        return save(morphiaDataStore.getDataStore(realmId), value);
+    }
 
 
     /**
      * Remove references in classes from this object by looking for any referenced BaseModel instances
-     * @param obj - the object that may reference other classes
+     *
+     * @param obj     - the object that may reference other classes
      * @param session - the session we are participating in i.e the transaction
      */
     public void removeReferenceConstraint(T obj, MorphiaSession session) {
@@ -1105,7 +1101,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
         for (PropertyModel mappedField : mappedClass.getProperties()) {
             if (mappedField.isReference() && mappedField.hasAnnotation(TrackReferences.class)) {
-                if (mappedField.getAccessor().get(obj)!= null && BaseModel.class.isAssignableFrom(mappedField.getAccessor().get(obj).getClass())) {
+                if (mappedField.getAccessor().get(obj) != null && BaseModel.class.isAssignableFrom(mappedField.getAccessor().get(obj).getClass())) {
                     BaseModel baseModel = (mappedField.getAccessor().get(obj) != null) ? (BaseModel) mappedField.getAccessor().get(obj) : null;
                     if (baseModel != null) {
                         if (!baseModel.getReferences().contains(obj)) {
@@ -1115,26 +1111,26 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                     }
                 } else
                     // if this is a collection of the class that is the same as us ( obj ) then see if its non null and if its annotated to track references
-                if (mappedField.getAccessor().get(obj)!=null &&
-                        java.util.Collection.class.isAssignableFrom(mappedField.getAccessor().get(obj).getClass()) &&
-                  mappedField.hasAnnotation(TrackReferences.class)) {
-                    {
-                        // if so we need for each item in the collection we  remove the reference to this class
-                        java.util.Collection<BaseModel> baseModels = (java.util.Collection<BaseModel>) mappedField.getAccessor().get(obj);
-                        if (baseModels != null) {
-                            for (BaseModel baseModel : baseModels) {
-                                ReferenceEntry entry = new ReferenceEntry(obj.getId(), obj.getClass().getTypeName(),
-                                        obj.getRefName());
-                                if (baseModel.getReferences().contains(entry)) {
-                                    if (!baseModel.getReferences().remove(entry)) {
-                                        Log.warn("Reference entry not found in baseModel: " + entry.toString());
+                    if (mappedField.getAccessor().get(obj) != null &&
+                            java.util.Collection.class.isAssignableFrom(mappedField.getAccessor().get(obj).getClass()) &&
+                            mappedField.hasAnnotation(TrackReferences.class)) {
+                        {
+                            // if so we need for each item in the collection we  remove the reference to this class
+                            java.util.Collection<BaseModel> baseModels = (java.util.Collection<BaseModel>) mappedField.getAccessor().get(obj);
+                            if (baseModels != null) {
+                                for (BaseModel baseModel : baseModels) {
+                                    ReferenceEntry entry = new ReferenceEntry(obj.getId(), obj.getClass().getTypeName(),
+                                            obj.getRefName());
+                                    if (baseModel.getReferences().contains(entry)) {
+                                        if (!baseModel.getReferences().remove(entry)) {
+                                            Log.warn("Reference entry not found in baseModel: " + entry.toString());
+                                        }
+                                        session.save(baseModel);
                                     }
-                                    session.save(baseModel);
                                 }
                             }
                         }
                     }
-                }
             }
         }
     }
@@ -1145,19 +1141,19 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
     @Override
-    public long delete(String realmId,T obj) throws ReferentialIntegrityViolationException{
+    public long delete(String realmId, T obj) throws ReferentialIntegrityViolationException {
         Objects.requireNonNull(obj, "Null argument passed to delete, api requires a non-null object");
         Objects.requireNonNull(obj.getId(), "Null argument passed to delete, api requires a non-null object id");
-      return delete(realmId, obj.getId());
+        return delete(realmId, obj.getId());
     }
 
     @Override
-    public long delete( @NotNull( value ="ObjectId is required to be non null") ObjectId id) throws ReferentialIntegrityViolationException {
-       return delete(getSecurityContextRealmId(), id);
+    public long delete(@NotNull(value = "ObjectId is required to be non null") ObjectId id) throws ReferentialIntegrityViolationException {
+        return delete(getSecurityContextRealmId(), id);
     }
 
     @Override
-    public long delete (@NotNull String realmId, @NotNull ObjectId id) throws ReferentialIntegrityViolationException {
+    public long delete(@NotNull String realmId, @NotNull ObjectId id) throws ReferentialIntegrityViolationException {
         Objects.requireNonNull(id, "Null argument passed to delete, api requires a non-null object");
 
         // find the object to delete
@@ -1234,35 +1230,35 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
     @Override
-    public long delete(@NotNull(value ="the datastore must not be null" ) Datastore datastore, T aobj) throws ReferentialIntegrityViolationException{
-        long rc=0;
-          try (MorphiaSession s = datastore.startSession()) {
-              s.startTransaction();
-              try {
-                  rc=delete(s, aobj);
-                  s.commitTransaction();
-              } catch ( ReferentialIntegrityViolationException e) {
-                  s.abortTransaction();
-                  throw e;
-              }
+    public long delete(@NotNull(value = "the datastore must not be null") Datastore datastore, T aobj) throws ReferentialIntegrityViolationException {
+        long rc = 0;
+        try (MorphiaSession s = datastore.startSession()) {
+            s.startTransaction();
+            try {
+                rc = delete(s, aobj);
+                s.commitTransaction();
+            } catch (ReferentialIntegrityViolationException e) {
+                s.abortTransaction();
+                throw e;
+            }
             return rc;
         }
     }
 
     @Override
-    public long delete(@NotNull MorphiaSession session, T aobj) throws ReferentialIntegrityViolationException{
+    public long delete(@NotNull MorphiaSession session, T aobj) throws ReferentialIntegrityViolationException {
         Objects.requireNonNull(aobj, "Null argument passed to delete, api requires a non-null object");
         Objects.requireNonNull(aobj.getId(), "Null argument passed to delete, api requires a non-null id");
-        Optional<T> oobj = this.findById(session,aobj.getId());
+        Optional<T> oobj = this.findById(session, aobj.getId());
         if (!oobj.isPresent()) {
             return 0;
         }
         T obj = oobj.get();
         DeleteResult result;
         if (obj.getReferences() == null || obj.getReferences().isEmpty()) {
-                removeReferenceConstraint(obj, session);
-                result = session.delete(obj);
-                return result.getDeletedCount();
+            removeReferenceConstraint(obj, session);
+            result = session.delete(obj);
+            return result.getDeletedCount();
         } else {
             Set<ReferenceEntry> entriesToRemove = new HashSet<>();
             // Iterate through references in this class and ensure that there are
@@ -1299,19 +1295,19 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
     @Override
-    public long updateActiveStatus (@PathParam("id") ObjectId id, boolean active) {
-       return updateActiveStatus(morphiaDataStore.getDataStore(getSecurityContextRealmId()),id, active);
-   }
+    public long updateActiveStatus(@PathParam("id") ObjectId id, boolean active) {
+        return updateActiveStatus(morphiaDataStore.getDataStore(getSecurityContextRealmId()), id, active);
+    }
 
-   @Override
-   public long updateActiveStatus (Datastore datastore, @PathParam("id") ObjectId id, boolean active) {
-      UpdateOperator updateOp = UpdateOperators.set("active", active );
-      UpdateResult update;
-      update = datastore.find(getPersistentClass()).filter(Filters.eq("_id", id))
-                     .update(updateOp);
+    @Override
+    public long updateActiveStatus(Datastore datastore, @PathParam("id") ObjectId id, boolean active) {
+        UpdateOperator updateOp = UpdateOperators.set("active", active);
+        UpdateResult update;
+        update = datastore.find(getPersistentClass()).filter(Filters.eq("_id", id))
+                .update(updateOp);
 
-     return update.getModifiedCount();
-   }
+        return update.getModifiedCount();
+    }
 
 
     @Override
@@ -1321,23 +1317,23 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         return update(oid, pairs);
     }
 
-   @Override
-   public long update (String realmId, @NotNull String id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
-      return update(morphiaDataStore.getDataStore(realmId), id, pairs);
-   }
-
-   @Override
-   public long update ( @NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
-       return update(morphiaDataStore.getDataStore(getSecurityContextRealmId()), id, pairs);
-   }
-
-
     @Override
-    public long update (String realmId, @NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+    public long update(String realmId, @NotNull String id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
         return update(morphiaDataStore.getDataStore(realmId), id, pairs);
     }
 
-    private Field getFieldFromHierarchy(Class<?> clazz, String fieldName)  throws NoSuchFieldException {
+    @Override
+    public long update(@NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+        return update(morphiaDataStore.getDataStore(getSecurityContextRealmId()), id, pairs);
+    }
+
+
+    @Override
+    public long update(String realmId, @NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+        return update(morphiaDataStore.getDataStore(realmId), id, pairs);
+    }
+
+    private Field getFieldFromHierarchy(Class<?> clazz, String fieldName) throws NoSuchFieldException {
         Class<?> currentClass = clazz;
         while (currentClass != null) {
             try {
@@ -1359,9 +1355,9 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
             // check that the pair key corresponds to a field in the persistent class that is an enum
             Field field = null;
             try {
-                field = getFieldFromHierarchy(getPersistentClass(),pair.getKey());
+                field = getFieldFromHierarchy(getPersistentClass(), pair.getKey());
                 Reference ref = field.getAnnotation(Reference.class);
-                if (ref!= null) {
+                if (ref != null) {
                     //TODO fix this case where there is an update to a reference field
                     Log.warn("Update to class that contains references");
                     throw new NotSupportedException("Field:" + field + " is a managed reference, and not updatable via put.  Use Post");
@@ -1404,106 +1400,105 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public long update(Datastore datastore, @NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
-       List<UpdateOperator> updateOperators = new ArrayList<>();
-       List<String> reservedFields = List.of("refName", "id", "version", "references", "auditInfo", "persistentEvents");
+        List<UpdateOperator> updateOperators = new ArrayList<>();
+        List<String> reservedFields = List.of("refName", "id", "version", "references", "auditInfo", "persistentEvents");
 
-       // Fetch the current entity to validate state transitions
-       Optional<T> currentEntityOpt = findById(datastore, id);
-       if (!currentEntityOpt.isPresent()) {
-          return 0;
-       }
-       T currentEntity = currentEntityOpt.get();
+        // Fetch the current entity to validate state transitions
+        Optional<T> currentEntityOpt = findById(datastore, id);
+        if (!currentEntityOpt.isPresent()) {
+            return 0;
+        }
+        T currentEntity = currentEntityOpt.get();
 
-       for (Pair<String, Object> pair : pairs) {
-          if (reservedFields.contains(pair.getKey())) {
-             throw new IllegalArgumentException("Field:" + pair.getKey() + " is a reserved field and can't be updated");
-          }
+        for (Pair<String, Object> pair : pairs) {
+            if (reservedFields.contains(pair.getKey())) {
+                throw new IllegalArgumentException("Field:" + pair.getKey() + " is a reserved field and can't be updated");
+            }
 
-          Field field;
-          try {
-             field = getFieldFromHierarchy(getPersistentClass(), pair.getKey());
+            Field field;
+            try {
+                field = getFieldFromHierarchy(getPersistentClass(), pair.getKey());
 
-             // Check for StateGraph annotation
-             StateGraph stateGraph = field.getAnnotation(StateGraph.class);
-             if (stateGraph != null && pair.getValue() instanceof String) {
-                field.setAccessible(true);
-                String currentState = (String) field.get(currentEntity);
-                stateGraphManager.validateTransition(
-                   stateGraph.graphName(),
-                   currentState != null ? currentState : "",
-                   (String) pair.getValue()
-                );
-             }
-
-             // Existing validation checks
-             Reference ref = field.getAnnotation(Reference.class);
-             if (ref != null) {
-                throw new NotSupportedException("Field:" + field + " is a managed reference, and not updatable via put. Use Post");
-             }
-
-             if (field.getType().isEnum()) {
-                if (!Arrays.stream(field.getType().getEnumConstants())
-                        .anyMatch(e -> e.toString().equals(pair.getValue().toString()))) {
-                   throw new IllegalArgumentException(
-                      "Invalid value for enum field " + pair.getKey() + " can't set value:" + pair.getValue());
+                // Check for StateGraph annotation
+                StateGraph stateGraph = field.getAnnotation(StateGraph.class);
+                if (stateGraph != null && pair.getValue() instanceof String) {
+                    field.setAccessible(true);
+                    String currentState = (String) field.get(currentEntity);
+                    stateGraphManager.validateTransition(
+                            stateGraph.graphName(),
+                            currentState != null ? currentState : "",
+                            (String) pair.getValue()
+                    );
                 }
-             }
 
-             if (field.getAnnotation(NotNull.class) != null && pair.getValue() == null) {
-                throw new IllegalArgumentException(
-                   "Field " + pair.getKey() + " is not nullable, but null value provided");
-             }
+                // Existing validation checks
+                Reference ref = field.getAnnotation(Reference.class);
+                if (ref != null) {
+                    throw new NotSupportedException("Field:" + field + " is a managed reference, and not updatable via put. Use Post");
+                }
 
-             if (!field.getType().isAssignableFrom(pair.getValue().getClass())) {
-                throw new IllegalArgumentException(
-                   "Invalid value for field " + pair.getKey() +
-                      " can't set value:" + pair.getValue() +
-                      " expected type: " + field.getType().toString() +
-                      " but got: " + pair.getValue().getClass().getSimpleName());
-             }
+                if (field.getType().isEnum()) {
+                    if (!Arrays.stream(field.getType().getEnumConstants())
+                            .anyMatch(e -> e.toString().equals(pair.getValue().toString()))) {
+                        throw new IllegalArgumentException(
+                                "Invalid value for enum field " + pair.getKey() + " can't set value:" + pair.getValue());
+                    }
+                }
 
-             updateOperators.add(UpdateOperators.set(pair.getKey(), pair.getValue()));
-          } catch (NoSuchFieldException | IllegalAccessException e) {
-             throw new RuntimeException(e);
-          }
-       }
+                if (field.getAnnotation(NotNull.class) != null && pair.getValue() == null) {
+                    throw new IllegalArgumentException(
+                            "Field " + pair.getKey() + " is not nullable, but null value provided");
+                }
 
-       if (updateOperators.isEmpty()) {
-          throw new IllegalArgumentException("No update pairs provided, or a parsing of the update pairs failed");
-       }
+                if (!field.getType().isAssignableFrom(pair.getValue().getClass())) {
+                    throw new IllegalArgumentException(
+                            "Invalid value for field " + pair.getKey() +
+                                    " can't set value:" + pair.getValue() +
+                                    " expected type: " + field.getType().toString() +
+                                    " but got: " + pair.getValue().getClass().getSimpleName());
+                }
 
-       if (BaseModel.class.isAssignableFrom(getPersistentClass())) {
-          updateOperators.add(UpdateOperators.inc("version", 1));
-       }
+                updateOperators.add(UpdateOperators.set(pair.getKey(), pair.getValue()));
+            } catch (NoSuchFieldException | IllegalAccessException e) {
+                throw new RuntimeException(e);
+            }
+        }
 
-       updateOperators.add(UpdateOperators.set("auditInfo.lastUpdateTs", new Date()));
-       updateOperators.add(UpdateOperators.set("auditInfo.lastUpdateIdentity", securityIdentity.getPrincipal().getName()));
+        if (updateOperators.isEmpty()) {
+            throw new IllegalArgumentException("No update pairs provided, or a parsing of the update pairs failed");
+        }
 
-       UpdateResult update;
-       if (updateOperators.size() == 1) {
-          update = datastore.find(getPersistentClass()).filter(Filters.eq("_id", id))
-                      .update(updateOperators.get(0));
-       } else {
-          UpdateOperator[] ops = updateOperators.toArray(new UpdateOperator[0]);
-          update = datastore.find(getPersistentClass()).filter(Filters.eq("_id", id))
-                      .update(ops[0], Arrays.copyOfRange(ops, 1, ops.length));
-       }
+        if (BaseModel.class.isAssignableFrom(getPersistentClass())) {
+            updateOperators.add(UpdateOperators.inc("version", 1));
+        }
 
-       return update.getModifiedCount();
+        updateOperators.add(UpdateOperators.set("auditInfo.lastUpdateTs", new Date()));
+        updateOperators.add(UpdateOperators.set("auditInfo.lastUpdateIdentity", securityIdentity.getPrincipal().getName()));
+
+        UpdateResult update;
+        if (updateOperators.size() == 1) {
+            update = datastore.find(getPersistentClass()).filter(Filters.eq("_id", id))
+                    .update(updateOperators.get(0));
+        } else {
+            UpdateOperator[] ops = updateOperators.toArray(new UpdateOperator[0]);
+            update = datastore.find(getPersistentClass()).filter(Filters.eq("_id", id))
+                    .update(ops[0], Arrays.copyOfRange(ops, 1, ops.length));
+        }
+
+        return update.getModifiedCount();
     }
 
 
-
-   @Override
+    @Override
     public long update(MorphiaSession session, @NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) {
         List<UpdateOperator> updateOperators = new ArrayList<>();
         for (Pair<String, Object> pair : pairs) {
             // check that the pair key corresponds to a field in the persistent class that is an enum
             Field field = null;
             try {
-                field = getFieldFromHierarchy(getPersistentClass(),pair.getKey());
+                field = getFieldFromHierarchy(getPersistentClass(), pair.getKey());
                 Reference ref = field.getAnnotation(Reference.class);
-                if (ref!= null) {
+                if (ref != null) {
                     throw new NotSupportedException("Field:" + field + " is a managed reference, and not updatable via put.  Use Post");
                 }
 
@@ -1727,31 +1722,31 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
     @Override
-    public T merge(@NotNull T entity){
+    public T merge(@NotNull T entity) {
         return merge(morphiaDataStore.getDataStore(getSecurityContextRealmId()), entity);
     }
 
     @Override
     public T merge(Datastore datastore, @NotNull T entity) {
-       if (entity.getClass().getAnnotation(Stateful.class) != null) {
-          try {
-             validateStateTransitions(datastore, entity);
-          } catch (InvalidStateTransitionException | IllegalAccessException e) {
-             throw new RuntimeException("State transition validation failed", e);
-          }
-       }
+        if (entity.getClass().getAnnotation(Stateful.class) != null) {
+            try {
+                validateStateTransitions(datastore, entity);
+            } catch (InvalidStateTransitionException | IllegalAccessException e) {
+                throw new RuntimeException("State transition validation failed", e);
+            }
+        }
         return datastore.merge(entity);
     }
 
     @Override
     public T merge(MorphiaSession session, @NotNull T entity) {
-       if (entity.getClass().getAnnotation(Stateful.class) != null) {
-          try {
-             validateStateTransitions(session, entity);
-          } catch (InvalidStateTransitionException | IllegalAccessException e) {
-             throw new RuntimeException("State transition validation failed", e);
-          }
-       }
+        if (entity.getClass().getAnnotation(Stateful.class) != null) {
+            try {
+                validateStateTransitions(session, entity);
+            } catch (InvalidStateTransitionException | IllegalAccessException e) {
+                throw new RuntimeException("State transition validation failed", e);
+            }
+        }
         return session.merge(entity);
     }
 
@@ -1767,15 +1762,15 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public List<T> merge(MorphiaSession session, List<T> entities) {
-       entities.forEach(entity -> {
-          if (entity.getClass().getAnnotation(Stateful.class) != null) {
-             try {
-                validateStateTransitions(session, entity);
-             } catch (InvalidStateTransitionException | IllegalAccessException e) {
-                throw new RuntimeException("State transition validation failed for entity: " + entity.getRefName(), e);
-             }
-          }
-       });
+        entities.forEach(entity -> {
+            if (entity.getClass().getAnnotation(Stateful.class) != null) {
+                try {
+                    validateStateTransitions(session, entity);
+                } catch (InvalidStateTransitionException | IllegalAccessException e) {
+                    throw new RuntimeException("State transition validation failed for entity: " + entity.getRefName(), e);
+                }
+            }
+        });
         return session.merge(entities);
     }
 
@@ -1869,16 +1864,16 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         return collection;
     }
 
-   public Filter securityAnd(Class<? extends UnversionedBaseModel> modelClass, Filter... others) {
-      List<Filter> base = new ArrayList<>();
-      // compute permission filters for this modelClass
-      Filter[] sec = getFilterArray(base, modelClass);
-      // combine with any additional functional filters
-      Filter[] all = new Filter[sec.length + others.length];
-      System.arraycopy(sec, 0, all, 0, sec.length);
-      System.arraycopy(others, 0, all, sec.length, others.length);
-      return Filters.and(all);
-   }
+    public Filter securityAnd(Class<? extends UnversionedBaseModel> modelClass, Filter... others) {
+        List<Filter> base = new ArrayList<>();
+        // compute permission filters for this modelClass
+        Filter[] sec = getFilterArray(base, modelClass);
+        // combine with any additional functional filters
+        Filter[] all = new Filter[sec.length + others.length];
+        System.arraycopy(sec, 0, all, 0, sec.length);
+        System.arraycopy(others, 0, all, sec.length, others.length);
+        return Filters.and(all);
+    }
 
 
 }
