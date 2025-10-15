@@ -139,20 +139,23 @@ public final class SeedPackManifest {
         }
 
         void validate(String source) {
-            if (collection == null || collection.isBlank()) {
-                throw new IllegalStateException("Dataset collection is required in manifest " + source);
+            // collection may be omitted when modelClass is specified; otherwise it's required
+            if ((collection == null || collection.isBlank()) && (modelClass == null || modelClass.isBlank())) {
+                throw new IllegalStateException("Dataset collection is required in manifest " + source + " when modelClass is not specified");
             }
+            String datasetId = (collection != null && !collection.isBlank()) ? collection :
+                    (modelClass != null && !modelClass.isBlank() ? modelClass : "<unknown>");
             if (file == null || file.isBlank()) {
-                throw new IllegalStateException("Dataset file is required for collection " + collection + " in manifest " + source);
+                throw new IllegalStateException("Dataset file is required for " + datasetId + " in manifest " + source);
             }
             if (naturalKey == null || naturalKey.isEmpty()) {
-                throw new IllegalStateException("Dataset naturalKey is required for collection " + collection + " in manifest " + source);
+                throw new IllegalStateException("Dataset naturalKey is required for " + datasetId + " in manifest " + source);
             }
             if (requiredIndexes != null) {
-                requiredIndexes.forEach(index -> index.validate(collection, source));
+                requiredIndexes.forEach(index -> index.validate(datasetId, source));
             }
             if (transforms != null) {
-                transforms.forEach(transform -> transform.validate(collection, source));
+                transforms.forEach(transform -> transform.validate(datasetId, source));
             }
         }
     }

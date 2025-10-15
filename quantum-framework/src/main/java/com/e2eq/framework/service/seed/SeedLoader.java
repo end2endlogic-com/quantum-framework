@@ -115,6 +115,8 @@ public final class SeedLoader {
             return;
         }
         for (Dataset dataset : datasets) {
+            // Ensure collection is set; when modelClass is provided, derive collection name from @Entity or class simple name
+            deriveCollectionIfMissing(dataset);
             Log.infov("Applying seed dataset {0}/{1} into realm {2}", descriptor.getManifest().getSeedPack(), dataset.getCollection(), context.getRealmId());
             DatasetPayload payload = readDataset(descriptor, dataset);
             if (!seedRegistry.shouldApply(context, descriptor.getManifest(), dataset, payload.checksum())) {
@@ -204,6 +206,45 @@ public final class SeedLoader {
             return HexFormat.of().formatHex(digest.digest(bytes));
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 not available", e);
+        }
+    }
+
+    // Derive collection from modelClass annotation if missing
+    private void deriveCollectionIfMissing(SeedPackManifest.Dataset dataset) {
+        String coll = dataset.getCollection();
+        if (coll != null && !coll.isBlank()) {
+            return;
+        }
+        String mc = null;
+        try {
+            var getter = SeedPackManifest.Dataset.class.getDeclaredMethod("getModelClass");
+            Object val = getter.invoke(dataset);
+            mc = (val instanceof String s) ? s : null;
+        } catch (Exception ignore) {
+        }
+        if (mc == null || mc.isBlank()) {
+            return;
+        }
+        try {
+            Class<?> cls = Class.forName(mc);
+            // Try Morphia @Entity annotation
+            try {
+                dev.morphia.annotations.Entity ann = cls.getAnnotation(dev.morphia.annotations.Entity.class);
+                if (ann != null) {
+                    String name = ann.value();
+                    if (name != null && !name.isBlank()) {
+                        dataset.setCollection(name);
+                        return;
+                    }
+                }
+            } catch (Throwable ignored) {
+                // Morphia not on classpath or annotation not present
+            }
+            dataset.setCollection(cls.getSimpleName());
+        } catch (ClassNotFoundException e) {
+            // Fallback to last segment of FQN as a best-effort
+            String simple = mc.contains(".") ? mc.substring(mc.lastIndexOf('.') + 1) : mc;
+            dataset.setCollection(simple);
         }
     }
 
