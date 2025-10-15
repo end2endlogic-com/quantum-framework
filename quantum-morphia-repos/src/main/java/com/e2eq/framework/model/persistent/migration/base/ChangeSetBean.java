@@ -12,6 +12,11 @@ import java.util.Set;
  */
 public interface ChangeSetBean {
    public String getId();
+   /**
+    * Optional semantic version of the changeSet definition itself.
+    * Default implementation returns 1 for backward compatibility.
+    */
+   public default int getChangeSetVersion() { return 1; }
    public int getDbFromVersionInt();
    public int getDbToVersionInt();
    public String getDbFromVersion();

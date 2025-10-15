@@ -1,0 +1,13 @@
+seedPack: transform-seed
+version: 1.0.0
+
+datasets:
+  - collection: codeLists
+    file: datasets/codeLists.ndjson
+    naturalKey: [ code ]
+    upsert: true
+    transforms:
+      - type: tenantSubstitution
+        config:
+          tenantField: tenantId
+          overwrite: false

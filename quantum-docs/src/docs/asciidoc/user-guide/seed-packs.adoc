@@ -254,3 +254,464 @@ datasets:
 - Duplicate key or unique index violations: Check naturalKey and requiredIndexes; ensure transforms don’t change key fields inconsistently.
 - Nothing changes on re-run: The _seed_registry may have recorded the same checksum; bump version or change dataset content.
 - File resolution issues: Ensure FileSeedSource base path points to the correct seed-packs directory and file names match.
+
+
+== How seeds are applied automatically at startup
+
+The framework now applies seed packs via a dedicated SeedStartupRunner, independent of schema migrations. This runner discovers and applies the latest version of each seed pack for important realms (system/default/test) on application startup.
+
+Key points:
+- Discovery: SeedStartupRunner constructs a `SeedLoader` with a `FileSeedSource` pointing at the configured seed root. Set `quantum.seed.root` (for tests we default to `src/test/resources/seed-packs`). The source walks the directory tree and locates every `manifest.yaml` file.
+- Selection: For each discovered seed pack name, the runner selects the latest semantic version and builds `SeedPackRef.exact(name, version)` for application.
+- Execution: The runner builds a `SeedContext` for the target realm and calls `loader.apply(refs, context)`. Indexes declared in the manifest are created before data is upserted.
+- Idempotency + repeatable: The `MongoSeedRegistry` stores a checksum per dataset in the realm's `_seed_registry` collection. If the checksum matches on a later run, the dataset is skipped; if it changes, the dataset is re-applied.
+- Concurrency safety: The runner uses a Sherlock distributed lock per realm to prevent concurrent execution across nodes.
+
+Configuration snippet:
+
+[source,properties]
+----
+# test profile uses a local seed root
+quantum.seed.root=src/test/resources/seed-packs
+# control seed runner behavior
+quantum.seeds.enabled=true
+quantum.seeds.apply.on-startup=true
+----
+
+== Transforms in depth
+
+Transforms are small, composable functions that shape each dataset record just before it is written to the database. They let you keep dataset files generic and inject environment/tenant specifics or perform repeatable rewrites at apply time.
+
+What a transform gets and returns:
+- Input: the current record (a Map), the SeedContext, and the Dataset definition
+- Output: the next record (Map) to be passed to the rest of the pipeline; return null or an empty map to drop the record
+
+Where transforms are declared (manifest):
+[source,yaml]
+----
+datasets:
+  - collection: codeLists
+    file: datasets/codeLists.ndjson
+    naturalKey: [ codeListName, code ]
+    upsert: true
+    transforms:
+      - type: tenantSubstitution
+        config:
+          tenantField: tenantId
+          orgField: orgRefName
+          ownerField: ownerId
+          accountField: accountId
+          realmField: realmId
+      # Additional transforms can be added here and will execute in order
+----
+
+Execution semantics:
+- Ordering: transforms are executed top-to-bottom for each record
+- Short-circuit: if any transform returns null or an empty map, the record is skipped and no write occurs
+- Overwrite rules: a transform can set or overwrite fields on the record; when upsert=true, the final transformed record replaces the existing one matched by naturalKey
+- Interaction with naturalKey and indexes: transforms run before naturalKey validation and index creation; do not remove fields listed in naturalKey, otherwise an error will be thrown during write
+
+Built-in transform types:
+- tenantSubstitution: Injects identifiers from SeedContext into configured fields. Config keys in the manifest:
+  - tenantField: field in the record to receive tenantId (if present in context)
+  - orgField: field to receive orgRefName (if present)
+  - ownerField: field to receive ownerId (if present)
+  - accountField: field to receive accountId (if present)
+  - realmField: field to receive realmId (always set to the current realm)
+
+Notes and guarantees:
+- Optional values missing from SeedContext are simply omitted; existing record values are preserved unless you target the same field
+- Transforms operate on in-memory maps and cannot perform I/O by default; keep them deterministic so re-runs are idempotent
+- Compose multiple transforms when needed (for example: first tenantSubstitution, then a custom id computation)
+- To add new transform types, implement SeedTransformFactory and register it during SeedLoader.builder() with registerTransformFactory("myType", new MyFactory()); then declare - type: myType in the manifest
+
+When to use transforms (and why):
+- Injecting tenant/realm identity: keep datasets source-controlled and generic; inject tenant IDs at apply time (tenantSubstitution)
+- Deterministic IDs: derive _id or other surrogate keys from naturalKey so upserts remain stable across environments
+- Normalization and defaults: add missing fields, convert formats, enforce enums before write
+- Reference remapping: translate human-readable codes in the dataset into datastore-specific identifiers (ObjectIds, UUIDs) in a repeatable way
+
+Practical examples
+
+1) Tenant identity injection (built-in)
+Manifest snippet:
+[source,yaml]
+----
+transforms:
+  - type: tenantSubstitution
+    config:
+      tenantField: tenantId
+      orgField: orgRefName
+      ownerField: ownerId
+      accountField: accountId
+      realmField: realmId
+----
+Why: keep codeLists.ndjson portable across tenants; provisioning injects the right IDs based on SeedContext.
+
+2) Deterministic _id from natural key (custom)
+- Goal: ensure stable MongoDB _id across re-applies and environments, derived from codeListName+code
+- Approach: implement a custom transform that computes a SHA-1/MD5 hash (or any deterministic function) and sets _id
+
+Java registration:
+[source,java]
+----
+SeedLoader loader = SeedLoader.builder()
+    .addSeedSource(new FileSeedSource("local", Paths.get("seed-packs")))
+    .seedRepository(new MongoSeedRepository(mongoClient))
+    .seedRegistry(new MongoSeedRegistry(mongoClient))
+    .registerTransformFactory("deterministicId", new DeterministicIdTransform.Factory())
+    .build();
+----
+Manifest usage:
+[source,yaml]
+----
+transforms:
+  - type: tenantSubstitution
+  - type: deterministicId
+    config:
+      sourceFields: [ codeListName, code ]
+      targetField: _id
+      algorithm: sha1
+----
+Why: makes upserts resilient and allows cross-environment joins by a stable key.
+
+3) Foreign key remapping by code (custom)
+- Goal: dataset uses human-readable statusCode; transform maps it to a canonical statusId
+- Approach: custom transform with an in-memory map or deterministic derivation
+
+Manifest usage:
+[source,yaml]
+----
+transforms:
+  - type: mapCode
+    config:
+      field: statusCode
+      target: statusId
+      mapping:
+        NEW: 100
+        CLOSED: 900
+----
+Why: keeps datasets human-friendly while persisting efficient identifiers.
+
+4) Defaulting and sanitization (custom)
+- Goal: ensure missing fields get defaults and strings are trimmed/lowercased
+- Approach: simple custom transform that fills defaults and cleans values
+
+Manifest usage:
+[source,yaml]
+----
+transforms:
+  - type: defaults
+    config:
+      defaults:
+        isActive: true
+        locale: en_US
+  - type: sanitize
+    config:
+      trim: [ label ]
+      lowercase: [ email ]
+----
+Why: enforces consistency without editing large datasets.
+
+Testing transforms:
+- Add integration tests that seed into an ephemeral DB and assert both record shape and _seed_registry entries
+- For custom transforms, add focused unit tests for edge cases (missing fields, nulls, unexpected types)
+
+=== Creating your own transforms (example: DropIfTransform)
+
+Custom transforms let you implement project-specific shaping logic. You implement two small interfaces and register the type on the SeedLoader builder. Below we walk through a simple "drop the record if a field equals a value" transform used in tests, called DropIfTransform.
+
+Overview of the SPI:
+- SeedTransform: executes per-record and can return a new map (continue) or null/empty (drop this record).
+- SeedTransformFactory: builds a SeedTransform instance from the manifest's Transform definition (provides access to type and config map).
+
+Minimal interfaces (simplified for clarity):
+[source,java]
+----
+public interface SeedTransform {
+    Map<String, Object> apply(Map<String, Object> record,
+                              SeedContext context,
+                              SeedPackManifest.Dataset dataset);
+}
+
+public interface SeedTransformFactory {
+    SeedTransform create(SeedPackManifest.Transform transformDefinition);
+}
+----
+
+Implementation: DropIfTransform
+- Behavior: if record[field] equals a configured value, return null to short-circuit the pipeline and skip writing the record; otherwise, pass the record through unchanged.
+
+[source,java]
+----
+package com.example.seed.transforms;
+
+import com.e2eq.framework.service.seed.*;
+import java.util.Map;
+import java.util.Objects;
+
+public final class DropIfTransform implements SeedTransform {
+  private final String field;
+  private final String equalsValue;
+
+  public DropIfTransform(String field, String equalsValue) {
+    this.field = field;
+    this.equalsValue = equalsValue;
+  }
+
+  @Override
+  public Map<String, Object> apply(Map<String, Object> record, SeedContext context, SeedPackManifest.Dataset dataset) {
+    Object v = record.get(field);
+    if (Objects.equals(Objects.toString(v, null), equalsValue)) {
+      return null; // short-circuit: drop this record
+    }
+    return record;
+  }
+
+  public static final class Factory implements SeedTransformFactory {
+    @Override
+    public SeedTransform create(SeedPackManifest.Transform transformDefinition) {
+      Map<String, Object> cfg = transformDefinition.getConfig();
+      String field = Objects.toString(cfg.get("field"), null);
+      String eq = Objects.toString(cfg.get("equals"), null);
+      return new DropIfTransform(field, eq);
+    }
+  }
+}
+----
+
+Registration on the SeedLoader builder:
+[source,java]
+----
+SeedLoader loader = SeedLoader.builder()
+    .addSeedSource(new FileSeedSource("local", Paths.get("seed-packs")))
+    .seedRepository(new MongoSeedRepository(mongoClient))
+    .seedRegistry(new MongoSeedRegistry(mongoClient))
+    .registerTransformFactory("dropIf", new DropIfTransform.Factory())
+    .build();
+----
+
+Manifest usage:
+[source,yaml]
+----
+datasets:
+  - collection: codeLists
+    file: datasets/codeLists.ndjson
+    naturalKey: [ code ]
+    upsert: true
+    transforms:
+      - type: dropIf
+        config:
+          field: status
+          equals: CLOSED
+----
+
+Notes and tips:
+- Validation: your factory should validate required config keys and fail fast with a clear error if missing/invalid.
+- Determinism: keep transforms pure and deterministic (no I/O) so seeding remains idempotent.
+- Short-circuit: returning null or an empty map drops the record; otherwise, the next transform in the list will receive the (possibly mutated) map.
+- Composition: you can chain several transforms; for example, first dropIf, then tenantSubstitution, then a custom deterministicId.
+- Packaging: test-only transforms can live under test sources; production transforms should be in main sources and registered where you construct the SeedLoader (for example, in a ChangeSet or a provisioning service).
+
+== Test walkthrough: SeedLoaderIntegrationTest
+
+The `SeedLoaderIntegrationTest` demonstrates end-to-end seeding using the demo seed pack at `src/test/resources/seed-packs/demo-seed`.
+
+What the test does:
+- Creates a `SeedLoader` backed by `FileSeedSource`, `MongoSeedRepository`, and `MongoSeedRegistry`.
+- Builds a `SeedContext` populated with tenant/realm details to exercise the `tenantSubstitution` transform.
+- Applies the pack reference `SeedPackRef.of("demo-seed")`, which resolves the latest version of that pack (1.0.0 in tests).
+- Asserts that 2 records were inserted into the `codeLists` collection and that the `tenantSubstitution` fields were populated from the context.
+- Verifies an entry was written to `_seed_registry` with the dataset checksum and `records: 2`.
+- Re-applies the same pack and asserts the record count remains 2, demonstrating idempotency (thanks to upsert + registry checksum).
+
+Why these design choices:
+- NDJSON for datasets: allows streaming large datasets and simple line-by-line diffs in code review; arrays are also supported for smaller payloads.
+- Natural-key upsert: manifests declare `naturalKey` to form the filter for `replaceOne(..., upsert=true)` ensuring idempotent writes and predictable overwrites.
+- Transform pipeline: keeps dataset files free of environment-specific values; all tenant/realm specifics are injected consistently at apply time.
+- Registry-based skip: checksums per dataset avoid unnecessary writes when content hasn't changed—fast, safe re-runs during deployments.
+- Semantic-version selection: when multiple versions of a pack are available, the latest semver is used unless an exact version is requested.
+
+Alternatives considered:
+- Store seed state in an external table keyed only by version. Rejected in favor of per-dataset checksums to detect content drift without bumping versions.
+- Hardcode seeding logic inside ad-hoc migrations. Rejected for lack of composability and poor reviewability.
+- Use inserts only (no upsert). Rejected due to lack of idempotence and difficulty correcting baseline data.
+
+
+
+== Archetypes explained
+
+Archetypes are named compositions of seed packs that model a product edition, SKU, or vertical stack. Instead of listing several packs every time you provision a tenant, you define an archetype once in a manifest and then apply it by name.
+
+What an archetype is in this context:
+- It lives inside a seed pack manifest under archetypes:.
+- It contains a list of includes (same syntax as top-level includes) referring to packs and version ranges.
+- When applied, the loader resolves those pack refs plus the hosting pack itself (the manifest that defines the archetype) so that local datasets are included as part of the archetype.
+- Resolution uses semantic version rules and deduplicates by pack name, respecting dependency order and preventing cycles.
+
+When to use archetypes:
+- To represent product tiers (e.g., Community, Pro, Enterprise) that bundle different combinations of base packs and optional modules.
+- To group verticalized defaults (e.g., Logistics-Fulfillment, Healthcare-Core) without forcing consumers to know every underlying pack.
+
+=== Example A: Define and apply an archetype in the same pack
+
+Manifest (logistics-core/manifest.yaml):
+[source,yaml]
+----
+seedPack: logistics-core
+version: 1.4.2
+
+includes:
+  - accounting-base@^1.1
+
+datasets:
+  - collection: codeLists
+    file: datasets/codelists.ndjson
+    naturalKey: [ codeListName, code ]
+    upsert: true
+
+archetypes:
+  - name: FulfillmentPlus
+    includes:
+      - logistics-core@^1.4     # self + constraints
+      - shipping-defaults@~2
+----
+
+Applying it in code:
+[source,java]
+----
+SeedLoader loader = SeedLoader.builder()
+        .addSeedSource(new FileSeedSource("local", Paths.get("seed-packs")))
+        .seedRepository(new MongoSeedRepository(mongoClient))
+        .seedRegistry(new MongoSeedRegistry(mongoClient))
+        .build();
+
+SeedContext ctx = SeedContext.builder("my-realm").build();
+loader.applyArchetype("FulfillmentPlus", ctx);
+----
+
+Notes:
+- applyArchetype looks up the latest manifest that defines an archetype named "FulfillmentPlus" across all discovered packs, resolves the include refs, and then applies the union.
+- If multiple manifests define the same archetype name, the latest semver manifest wins.
+
+=== Example B: Cross-pack archetype in a dedicated "editions" pack
+
+You can centralize product definitions into a thin pack that only defines archetypes and forward-references other packs:
+
+Manifest (product-editions/manifest.yaml):
+[source,yaml]
+----
+seedPack: product-editions
+version: 1.0.0
+
+archetypes:
+  - name: Enterprise
+    includes:
+      - logistics-core@^1.5
+      - shipping-defaults@~2
+      - analytics-starter@^0.9
+----
+
+Apply in code:
+[source,java]
+----
+loader.applyArchetype("Enterprise", ctx);
+----
+
+This keeps edition composition decoupled from individual module packs.
+
+=== Resolution and ordering details
+
+- Version matching: Each include can be exact (=1.2.3), a semver range (e.g., ^1.5, ~2), or omitted (latest). See SeedPackRef.parse("name@spec").
+- Deduplication: If multiple includes select the same pack name (possibly different versions), the highest version that satisfies all constraints is chosen; duplicates are applied only once.
+- Dependency order: Includes are recursively resolved depth-first, while the loader guards against cycles and applies datasets in a stable order per resolved pack.
+
+=== Interaction with ApplySeedPacksChangeSet
+
+- The Apply Seed Packs change set scans the seed root and applies the latest version of every discovered pack to the realm. It does not automatically choose an archetype.
+- Use applyArchetype programmatically (e.g., from a TenantProvisioningService) when you want to provision only the packs that belong to a specific edition.
+- You can combine approaches: let migrations ensure baseline packs are present for all tenants; then, on tenant onboarding, call applyArchetype(...) to add edition-specific content.
+
+=== Tenant provisioning with archetypes
+
+The tenant provisioning API accepts an optional list of archetype names and will apply the corresponding seed packs during onboarding.
+
+- Endpoint: POST /admin/tenants
+- Request body fields (subset):
+  - tenantEmailDomain, orgRefName, accountId, adminUserId, adminUsername, adminPassword
+  - archetypes: optional array of strings (archetype names)
+- Behavior:
+  - After running migrations and creating the admin user, each archetype is resolved across all manifests and applied using the same SeedLoader used elsewhere.
+  - If an archetype name is unknown, the request fails with 409/500 depending on context.
+
+Example request:
+[source,json]
+----
+{
+  "tenantEmailDomain": "demo-archetype.example",
+  "orgRefName": "demo-archetype.example",
+  "accountId": "9999999999",
+  "adminUserId": "admin@demo-archetype.example",
+  "adminUsername": "admin@demo-archetype.example",
+  "adminPassword": "secret",
+  "archetypes": ["DemoArchetype"]
+}
+----
+
+On success, the new realm (demo-archetype-example) will have the datasets from the selected archetypes applied and recorded in the _seed_registry.
+
+
+== REST API for seed packs
+
+The framework exposes admin-only endpoints to inspect and apply seed packs per realm (tenant DB). These are disabled to non-admin users via role checks.
+
+Base path: /admin/seeds
+
+Endpoints:
+- GET /admin/seeds/pending/{realm}
+  - Lists pending seed packs for the realm. A pack is pending if any dataset checksum differs from the last applied or was never applied.
+  - Optional query parameter: filter=pack1,pack2 to restrict by pack name.
+  - Response example:
++
+[source,json]
+----
+[
+  {
+    "seedId": "demo-seed@1.0.0",
+    "seedPack": "demo-seed",
+    "version": "1.0.0",
+    "datasets": [
+      {"collection": "codeLists", "file": "datasets/codelists.ndjson", "checksum": "..."}
+    ]
+  }
+]
+----
+
+- POST /admin/seeds/apply/{realm}
+  - Applies the latest version of all discovered packs (or only those matching filter).
+  - Query parameter: filter=pack1,pack2
+  - Response example:
++
+[source,json]
+----
+{"applied":["demo-seed"]}
+----
+
+- POST /admin/seeds/{realm}/{seedPack}/apply
+  - Applies the latest version of a single pack by name. Idempotent: unchanged datasets are skipped.
+  - Response example:
++
+[source,json]
+----
+{"applied":["demo-seed"]}
+----
+
+- GET /admin/seeds/history/{realm}
+  - Returns the per-dataset seeding history as recorded in the `_seed_registry` collection.
+
+Authentication and roles:
+- All endpoints require role admin. In integration tests you can use @TestSecurity(user="admin", roles={"admin").
+
+Configuration:
+- quantum.seed.root: filesystem path to the root folder where seed packs are discovered. In tests this defaults to src/test/resources/seed-packs.
+- quantum.seed.apply.filter: optional comma-separated list of pack names to limit automatic application by changeset.

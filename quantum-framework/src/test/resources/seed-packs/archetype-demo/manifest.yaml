@@ -1,0 +1,6 @@
+seedPack: archetype-demo
+version: 1.0.0
+archetypes:
+  - name: DemoArchetype
+    includes:
+      - demo-seed

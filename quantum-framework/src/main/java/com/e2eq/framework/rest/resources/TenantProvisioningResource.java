@@ -13,6 +13,8 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
+import java.util.List;
+
 /**
  * Minimal REST endpoint to provision a new tenant. Intended for admin use.
  */
@@ -29,6 +31,7 @@ public class TenantProvisioningResource {
         @NotBlank public String adminUserId;       // e.g., admin@acme.com
         @NotBlank public String adminUsername;     // e.g., "Acme Admin"
         @NotBlank public String adminPassword;     // plaintext; hashed in service
+        public List<String> archetypes;            // optional list of archetype names
     }
 
     public static class ProvisionTenantResponse {
@@ -50,13 +53,15 @@ public class TenantProvisioningResource {
     @RolesAllowed({"admin"})
     public Response provision(ProvisionTenantRequest req) {
         try {
+            List<String> archetypes = req.archetypes == null ? java.util.List.of() : req.archetypes;
             TenantProvisioningService.ProvisionResult r = provisioningService.provisionTenant(
                     req.tenantEmailDomain,
                     req.orgRefName,
                     req.accountId,
                     req.adminUserId,
                     req.adminUsername, // subject ?
-                    req.adminPassword
+                    req.adminPassword,
+                    archetypes
             );
             int status = (r.realmCreated || r.userCreated) ? Response.Status.CREATED.getStatusCode() : Response.Status.OK.getStatusCode();
             return Response.status(status).entity(new ProvisionTenantResponse(r)).build();

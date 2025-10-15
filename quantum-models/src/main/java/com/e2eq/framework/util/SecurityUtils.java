@@ -176,28 +176,33 @@ public class SecurityUtils {
 
       // Fallback regex
       String regex = credential.getRealmRegEx();
-      regex = regex.replace("*", ".*");
-      if (regex != null && !regex.isBlank()) {
-         // Convert wildcard pattern to regex
-
-         Pattern pattern = Pattern.compile(regex, Pattern.CASE_INSENSITIVE);
-         java.util.regex.Pattern p;
-         try {
-            p = java.util.regex.Pattern.compile(regex, java.util.regex.Pattern.CASE_INSENSITIVE);
-         } catch (Exception e) {
-            // invalid pattern: treat as exact string
-            p = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote(regex), java.util.regex.Pattern.CASE_INSENSITIVE);
+      if (regex!= null &&!regex.isEmpty()) {
+         regex = regex.replace("*", ".*");
+         if (regex != null && !regex.isBlank()) {
+            // Convert wildcard pattern to regex
+            Pattern pattern = Pattern.compile(regex, Pattern.CASE_INSENSITIVE);
+            java.util.regex.Pattern p;
+            try {
+               p = java.util.regex.Pattern.compile(regex, java.util.regex.Pattern.CASE_INSENSITIVE);
+            } catch (Exception e) {
+               // invalid pattern: treat as exact string
+               p = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote(regex), java.util.regex.Pattern.CASE_INSENSITIVE);
+            }
+            if (candidateRealmRefNames == null) {
+               return java.util.Collections.emptyList();
+            }
+            java.util.List<String> out = new java.util.ArrayList<>();
+            for (String r : candidateRealmRefNames) {
+               if (r != null && p.matcher(r).matches()) {
+                  out.add(r);
+               }
+            }
+            return out;
          }
-         if (candidateRealmRefNames == null) {
+         else {
+            // Empty regex: treat as no match
             return java.util.Collections.emptyList();
          }
-         java.util.List<String> out = new java.util.ArrayList<>();
-         for (String r : candidateRealmRefNames) {
-            if (r != null && p.matcher(r).matches()) {
-               out.add(r);
-            }
-         }
-         return out;
       }
 
       // Neither defined: default to the credential's default realm only

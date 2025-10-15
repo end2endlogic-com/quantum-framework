@@ -12,8 +12,8 @@ import java.util.Date;
 
 @Indexes({
       @Index(
-         fields= @Field("changeSetName"),
-         options=@IndexOptions(unique=true, name="unique-changeset-name")
+         fields= {@Field("changeSetName"), @Field("changeSetVersion")},
+         options=@IndexOptions(unique=true, name="unique-changeset-name-version")
       )
 })
 @Entity
@@ -37,6 +37,10 @@ public class ChangeSetRecord extends BaseModel {
 
    @NotNull
    protected String changeSetName;
+   /**
+    * Version of the changeSet definition applied.
+    */
+   protected int changeSetVersion = 1;
    @NotNull
    protected String author;
    protected String description;
