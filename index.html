@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Framework Documentation</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-10-15T01:34:17Z</span>
+<span id="revdate">2025-10-15T01:53:19Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -8251,7 +8251,7 @@ unchanged datasets are skipped on later runs.</p>
       - <span class="string"><span class="content">type: tenantSubstitution</span></span>
         <span class="key">config</span>:
           <span class="key">tenantField</span>: <span class="string"><span class="content">tenantId</span></span>
-          <span class="key">orgField</span>: <span class="string"><span class="content">orgId</span></span>
+          <span class="key">orgField</span>: <span class="string"><span class="content">orgRefName</span></span>
           <span class="key">ownerField</span>: <span class="string"><span class="content">ownerId</span></span>
           <span class="key">realmField</span>: <span class="string"><span class="content">realmId</span></span>
 
@@ -8610,7 +8610,7 @@ quantum.seeds.apply.on-startup=true</code></pre>
           <span class="key">tenantField</span>: <span class="string"><span class="content">tenantId</span></span>
           <span class="key">orgField</span>: <span class="string"><span class="content">orgRefName</span></span>
           <span class="key">ownerField</span>: <span class="string"><span class="content">ownerId</span></span>
-          <span class="key">accountField</span>: <span class="string"><span class="content">accountId</span></span>
+          <span class="key">accountField</span>: <span class="string"><span class="content">accountNum</span></span>
           <span class="key">realmField</span>: <span class="string"><span class="content">realmId</span></span>
       <span class="comment"># Additional transforms can be added here and will execute in order</span></code></pre>
 </div>
@@ -8624,12 +8624,12 @@ quantum.seeds.apply.on-startup=true</code></pre>
 </div>
 <div class="paragraph">
 <p>Built-in transform types:
-- tenantSubstitution: Injects identifiers from SeedContext into configured fields. Config keys in the manifest:
-  - tenantField: field in the record to receive tenantId (if present in context)
-  - orgField: field to receive orgRefName (if present)
-  - ownerField: field to receive ownerId (if present)
-  - accountField: field to receive accountId (if present)
-  - realmField: field to receive realmId (always set to the current realm)</p>
+- tenantSubstitution: Injects identifiers from SeedContext into the record&#8217;s dataDomain.* fields (tenant/org/owner/account) and sets realmId at the record root. Config keys in the manifest (defaults target dataDomain.*):
+  - tenantField: key inside dataDomain to receive tenantId (default: tenantId)
+  - orgField: key inside dataDomain to receive orgRefName (default: orgRefName)
+  - ownerField: key inside dataDomain to receive ownerId (default: ownerId)
+  - accountField: key inside dataDomain to receive account number (default: accountNum)
+  - realmField: root-level field to receive realmId (default: realmId)</p>
 </div>
 <div class="paragraph">
 <p>Notes and guarantees:
