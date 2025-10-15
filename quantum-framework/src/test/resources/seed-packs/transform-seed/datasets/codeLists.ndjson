@@ -1,2 +1,2 @@
-{"code":"NEW","label":"New","tenantId":"preset"}
+{"code":"NEW","label":"New","dataDomain":{"tenantId":"preset"}}
 {"code":"CLOSED","label":"Closed"}

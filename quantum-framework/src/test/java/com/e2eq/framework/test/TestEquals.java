@@ -27,8 +27,5 @@ public class TestEquals {
       Optional<ParentModel> t4 = parentRepo.findById(t3.getId().toHexString(), true);
       assertTrue(t4.isPresent());
       Assertions.assertEquals(t3, t4.get());
-
-
-
    }
 }

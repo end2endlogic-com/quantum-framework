@@ -61,7 +61,9 @@ public class SeedTransformsIntegrationTest {
         List<Document> clDocs = codeLists.find().sort(Sorts.ascending("code")).into(new ArrayList<>());
         assertEquals(2, clDocs.size(), "Expected 2 codeLists records");
         Document newDoc = clDocs.stream().filter(d -> "NEW".equals(d.getString("code"))).findFirst().orElseThrow();
-        assertEquals("preset", newDoc.getString("tenantId"), "overwrite=false should preserve preset value");
+        Document dd = (Document) newDoc.get("dataDomain");
+        assertNotNull(dd, "dataDomain should be present");
+        assertEquals("preset", dd.getString("tenantId"), "overwrite=false should preserve preset value inside dataDomain");
 
         // Verify dropif-seed applied only 2 of 3 items (skipped status=DISABLED)
         MongoCollection<Document> items = mongoClient.getDatabase(REALM).getCollection("items");

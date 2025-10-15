@@ -50,7 +50,7 @@ class SeedLoaderIntegrationTest {
 
         loader.apply(List.of(SeedPackRef.of("demo-seed")), context);
 
-        MongoCollection<Document> collection = mongoClient.getDatabase(REALM).getCollection("codeLists");
+        MongoCollection<Document> collection = mongoClient.getDatabase(REALM).getCollection("codeLists-demo");
         List<Document> documents = collection.find().sort(Sorts.ascending("code")).into(new ArrayList<>());
         assertEquals(2, documents.size());
 
@@ -59,10 +59,12 @@ class SeedLoaderIntegrationTest {
                 .findFirst()
                 .orElseThrow();
         assertEquals("New", newStatus.getString("label"));
-        assertEquals("tenant-123", newStatus.getString("tenantId"));
-        assertEquals("tenant-123", newStatus.getString("orgRefName"));
-        assertEquals("acct-123", newStatus.getString("accountId"));
-        assertEquals("owner-123", newStatus.getString("ownerId"));
+        Document dd2 = (Document) newStatus.get("dataDomain");
+        assertNotNull(dd2);
+        assertEquals("tenant-123", dd2.getString("tenantId"));
+        assertEquals("tenant-123", dd2.getString("orgRefName"));
+        assertEquals("acct-123", dd2.getString("accountNum"));
+        assertEquals("owner-123", dd2.getString("ownerId"));
         assertEquals(REALM, newStatus.getString("realmId"));
 
         Document registry = mongoClient.getDatabase(REALM)
@@ -70,7 +72,7 @@ class SeedLoaderIntegrationTest {
                 .find(Filters.and(
                         Filters.eq("seedPack", "demo-seed"),
                         Filters.eq("version", "1.0.0"),
-                        Filters.eq("dataset", "codeLists")))
+                        Filters.eq("dataset", "codeLists-demo")))
                 .first();
         assertNotNull(registry);
         assertEquals(2, registry.getInteger("records"));

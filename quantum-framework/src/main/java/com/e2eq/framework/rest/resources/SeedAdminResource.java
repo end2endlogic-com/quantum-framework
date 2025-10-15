@@ -1,6 +1,13 @@
 package com.e2eq.framework.rest.resources;
 
-import com.e2eq.framework.service.seed.*;
+import com.e2eq.framework.service.seed.FileSeedSource;
+import com.e2eq.framework.service.seed.MongoSeedRegistry;
+import com.e2eq.framework.service.seed.SeedContext;
+import com.e2eq.framework.service.seed.SeedLoader;
+import com.e2eq.framework.service.seed.SeedPackDescriptor;
+import com.e2eq.framework.service.seed.SeedPackManifest;
+import com.e2eq.framework.service.seed.SeedPackRef;
+import com.e2eq.framework.service.seed.MorphiaSeedRepository;
 import com.mongodb.client.MongoClient;
 import io.quarkus.logging.Log;
 import jakarta.annotation.security.RolesAllowed;
@@ -31,6 +38,9 @@ public class SeedAdminResource {
 
     @Inject
     MongoClient mongoClient;
+
+    @Inject
+    MorphiaSeedRepository morphiaSeedRepository;
 
     @ConfigProperty(name = "quantum.seed.root", defaultValue = "")
     Optional<String> seedRootConfig;
@@ -102,7 +112,7 @@ public class SeedAdminResource {
         java.nio.file.Path root = resolveSeedRoot();
         SeedLoader loader = SeedLoader.builder()
                 .addSeedSource(new FileSeedSource("files", root))
-                .seedRepository(new MongoSeedRepository(mongoClient))
+                .seedRepository(morphiaSeedRepository)
                 .seedRegistry(new MongoSeedRegistry(mongoClient))
                 .build();
         SeedContext context = SeedContext.builder(realm).build();
@@ -136,7 +146,7 @@ public class SeedAdminResource {
         java.nio.file.Path root = resolveSeedRoot();
         SeedLoader loader = SeedLoader.builder()
                 .addSeedSource(new FileSeedSource("files", root))
-                .seedRepository(new MongoSeedRepository(mongoClient))
+                .seedRepository(morphiaSeedRepository)
                 .seedRegistry(new MongoSeedRegistry(mongoClient))
                 .build();
         SeedContext context = SeedContext.builder(realm).build();

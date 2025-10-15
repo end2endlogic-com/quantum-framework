@@ -110,6 +110,8 @@ public final class SeedPackManifest {
         private Boolean upsert;
         private List<Index> requiredIndexes;
         private List<Transform> transforms;
+        // Optional: fully qualified class name of the UnversionedBaseModel to persist via Morphia
+        private String modelClass;
 
 
         public List<String> getNaturalKey() {
