@@ -44,6 +44,7 @@ public class MorphiaSeedRepository implements SeedRepository {
     @Override
     public void ensureIndexes(SeedContext context, SeedPackManifest.Dataset dataset, SeedPackManifest.Index index) {
         Optional<BaseMorphiaRepo<? extends UnversionedBaseModel>> repoOpt = resolveRepo(dataset);
+        ensureCollectionSet(dataset, repoOpt);
         if (repoOpt.isPresent()) {
             try {
                 // Let Morphia ensure mapped indexes for the model in the target realm
@@ -63,6 +64,7 @@ public class MorphiaSeedRepository implements SeedRepository {
     @SuppressWarnings({"unchecked", "rawtypes"})
     public void upsertRecord(SeedContext context, SeedPackManifest.Dataset dataset, Map<String, Object> record) {
         Optional<BaseMorphiaRepo<? extends UnversionedBaseModel>> repoOpt = resolveRepo(dataset);
+        ensureCollectionSet(dataset, repoOpt);
         if (repoOpt.isEmpty()) {
             // Backward compatibility
             fallback().upsertRecord(context, dataset, record);
@@ -219,6 +221,40 @@ public class MorphiaSeedRepository implements SeedRepository {
             throw new IllegalStateException("No Morphia repository bean found for model class: " + modelClassName);
         } catch (ClassNotFoundException e) {
             throw new IllegalStateException("Model class not found: " + modelClassName, e);
+        }
+    }
+
+    private void ensureCollectionSet(SeedPackManifest.Dataset dataset,
+                                     Optional<BaseMorphiaRepo<? extends UnversionedBaseModel>> repoOpt) {
+        if (dataset.getCollection() != null && !dataset.getCollection().isBlank()) {
+            return;
+        }
+        try {
+            if (repoOpt.isPresent()) {
+                Class<? extends UnversionedBaseModel> cls = repoOpt.get().getPersistentClass();
+                try {
+                    dev.morphia.annotations.Entity ann = cls.getAnnotation(dev.morphia.annotations.Entity.class);
+                    if (ann != null && ann.value() != null && !ann.value().isBlank()) {
+                        dataset.setCollection(ann.value());
+                        return;
+                    }
+                } catch (Throwable ignore) {
+                }
+                dataset.setCollection(cls.getSimpleName());
+                return;
+            }
+        } catch (Exception ignore) {
+        }
+        // Fallback: attempt reading modelClass and use simple name
+        try {
+            var getter = SeedPackManifest.Dataset.class.getDeclaredMethod("getModelClass");
+            Object val = getter.invoke(dataset);
+            String mc = (val instanceof String s) ? s : null;
+            if (mc != null && !mc.isBlank()) {
+                Class<?> cls2 = Class.forName(mc);
+                dataset.setCollection(cls2.getSimpleName());
+            }
+        } catch (Exception ignored) {
         }
     }
 }

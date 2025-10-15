@@ -720,6 +720,12 @@ Configuration:
 
 == Using MorphiaSeedRepository (Morphia-backed seeding)
 
+Note about collection vs modelClass:
+- You can now omit collection in a dataset when you specify modelClass. The framework will derive the collection name from the Morphia mapping of the model class.
+- Derivation rules: if the model class has @Entity with a non-empty value, that value is used as the collection name; otherwise the simple Java class name is used.
+- This derived name is used consistently for logging, in the _seed_registry entries, and for the Mongo fallback path.
+- Backwards compatibility: specifying collection is still supported, and will override the derived name.
+
 In addition to the default Mongo-based persistence, you can instruct the seeding pipeline to persist
 a dataset via a Morphia repository mapped to a concrete UnversionedBaseModel. This enables:
 - Automatic class discriminator fields (for example, Morphia’s _t) and proper collection mapping.
