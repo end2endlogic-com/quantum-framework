@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Seed packs and declarative tenant seeding</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-10-15T12:50:58Z</span>
+<span id="revdate">2025-10-15T15:35:03Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -1633,6 +1633,13 @@ loader.applyArchetype(<span class="string"><span class="delimiter">&quot;</span>
 <h2 id="_using_morphiaseedrepository_morphia_backed_seeding">16. Using MorphiaSeedRepository (Morphia-backed seeding)</h2>
 <div class="sectionbody">
 <div class="paragraph">
+<p>Note about collection vs modelClass:
+- You can now omit collection in a dataset when you specify modelClass. The framework will derive the collection name from the Morphia mapping of the model class.
+- Derivation rules: if the model class has @Entity with a non-empty value, that value is used as the collection name; otherwise the simple Java class name is used.
+- This derived name is used consistently for logging, in the _seed_registry entries, and for the Mongo fallback path.
+- Backwards compatibility: specifying collection is still supported, and will override the derived name.</p>
+</div>
+<div class="paragraph">
 <p>In addition to the default Mongo-based persistence, you can instruct the seeding pipeline to persist
 a dataset via a Morphia repository mapped to a concrete UnversionedBaseModel. This enables:
 - Automatic class discriminator fields (for example, Morphia’s _t) and proper collection mapping.
@@ -1696,7 +1703,7 @@ a dataset via a Morphia repository mapped to a concrete UnversionedBaseModel. Th
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-10-15 08:27:18 -0400
+Last updated 2025-10-15 10:50:07 -0400
 </div>
 </div>
 </body>

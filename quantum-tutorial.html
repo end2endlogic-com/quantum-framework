@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Tutorial: Build a Multi-tenant SaaS with Quantum</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-10-15T12:50:58Z</span>
+<span id="revdate">2025-10-15T15:35:03Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -9070,6 +9070,13 @@ loader.applyArchetype(<span class="string"><span class="delimiter">&quot;</span>
 <div class="sect1">
 <h2 id="_using_morphiaseedrepository_morphia_backed_seeding">80. Using MorphiaSeedRepository (Morphia-backed seeding)</h2>
 <div class="sectionbody">
+<div class="paragraph">
+<p>Note about collection vs modelClass:
+- You can now omit collection in a dataset when you specify modelClass. The framework will derive the collection name from the Morphia mapping of the model class.
+- Derivation rules: if the model class has @Entity with a non-empty value, that value is used as the collection name; otherwise the simple Java class name is used.
+- This derived name is used consistently for logging, in the _seed_registry entries, and for the Mongo fallback path.
+- Backwards compatibility: specifying collection is still supported, and will override the derived name.</p>
+</div>
 <div class="paragraph">
 <p>In addition to the default Mongo-based persistence, you can instruct the seeding pipeline to persist
 a dataset via a Morphia repository mapped to a concrete UnversionedBaseModel. This enables:
