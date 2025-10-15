@@ -8,7 +8,11 @@ import com.e2eq.framework.service.seed.SeedPackManifest.Dataset;
 import com.e2eq.framework.service.seed.SeedPackManifest.Transform;
 
 /**
- * Injects tenant scoped values (tenantId, orgRefName, ownerId, accountId, realmId) into each record.
+ * Injects tenant scoped values (tenantId, orgRefName, ownerId, accountNum, realmId) into each record.
+ *
+ * For UnversionedBaseModel-based entities, tenant/org/owner/account are written into the nested
+ * "dataDomain" object on the record. The realmId is written at the record root under the configured
+ * realmField (default: "realmId").
  */
 public final class TenantSubstitutionTransform implements SeedTransform {
 
@@ -36,10 +40,16 @@ public final class TenantSubstitutionTransform implements SeedTransform {
     @Override
     public Map<String, Object> apply(Map<String, Object> record, SeedContext context, Dataset dataset) {
         Map<String, Object> mutated = new LinkedHashMap<>(record);
-        context.getTenantId().ifPresent(value -> maybePut(mutated, tenantField, value));
-        context.getOrgRefName().ifPresent(value -> maybePut(mutated, orgField, value));
-        context.getOwnerId().ifPresent(value -> maybePut(mutated, ownerField, value));
-        context.getAccountId().ifPresent(value -> maybePut(mutated, accountField, value));
+
+        // Ensure nested dataDomain map exists where tenant/org/owner/account live
+        final Map<String, Object> dataDomain = ensureDataDomain(mutated);
+
+        context.getTenantId().ifPresent(value -> maybePut(dataDomain, tenantField, value));
+        context.getOrgRefName().ifPresent(value -> maybePut(dataDomain, orgField, value));
+        context.getOwnerId().ifPresent(value -> maybePut(dataDomain, ownerField, value));
+        context.getAccountId().ifPresent(value -> maybePut(dataDomain, accountField, value));
+
+        // realmId is not part of DataDomain; keep it at the root
         maybePut(mutated, realmField, context.getRealmId());
         return mutated;
     }
@@ -54,12 +64,23 @@ public final class TenantSubstitutionTransform implements SeedTransform {
         map.put(key, value);
     }
 
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> ensureDataDomain(Map<String, Object> root) {
+        Object existing = root.get("dataDomain");
+        if (existing instanceof Map) {
+            return (Map<String, Object>) existing;
+        }
+        Map<String, Object> dd = new LinkedHashMap<>();
+        root.put("dataDomain", dd);
+        return dd;
+    }
+
     public static TenantSubstitutionTransform from(Transform transform) {
         Map<String, Object> config = transform.getConfig();
         String tenantField = asString(config.getOrDefault("tenantField", "tenantId"));
         String orgField = asString(config.getOrDefault("orgField", "orgRefName"));
         String ownerField = asString(config.getOrDefault("ownerField", "ownerId"));
-        String accountField = asString(config.getOrDefault("accountField", "accountId"));
+        String accountField = asString(config.getOrDefault("accountField", "accountNum"));
         String realmField = asString(config.getOrDefault("realmField", "realmId"));
         boolean overwrite = Boolean.parseBoolean(String.valueOf(config.getOrDefault("overwrite", Boolean.TRUE)));
         return new TenantSubstitutionTransform(tenantField, orgField, ownerField, accountField, realmField, overwrite);

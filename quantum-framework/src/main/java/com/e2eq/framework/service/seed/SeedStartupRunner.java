@@ -27,22 +27,28 @@ import com.e2eq.framework.util.EnvConfigUtils;
 @ApplicationScoped
 public class SeedStartupRunner {
 
-    private static final String DEFAULT_TEST_SEED_ROOT = "src/test/resources/seed-packs";
+    private static final String DEFAULT_SEED_ROOT = "src/main/resources/seed-packs";
 
     @Inject
     MongoClient mongoClient;
 
     @Inject
+    MorphiaSeedRepository morphiaSeedRepository;
+
+    @Inject
     EnvConfigUtils envConfigUtils;
 
-    @ConfigProperty(name = "quantum.seeds.enabled", defaultValue = "true")
+    @ConfigProperty(name = "quantum.seed-pack.enabled", defaultValue = "true")
     boolean enabled;
 
-    @ConfigProperty(name = "quantum.seed.root", defaultValue = "")
+    @ConfigProperty(name = "quantum.seed-pack.root", defaultValue = "src/main/resources/seed-packs")
     Optional<String> seedRootConfig;
 
-    @ConfigProperty(name = "quantum.seeds.apply.on-startup", defaultValue = "true")
+    @ConfigProperty(name = "quantum.seed-pack.apply.on-startup", defaultValue = "true")
     boolean applyOnStartup;
+
+    @ConfigProperty(name = "quantum.seed.apply.filter")
+    Optional<String> seedFilterCsv;
 
     @PostConstruct
     void onStart() {
@@ -73,12 +79,92 @@ public class SeedStartupRunner {
         try {
             Path root = resolveSeedRoot();
             FileSeedSource source = new FileSeedSource("files", root);
-            SeedContext context = SeedContext.builder(realm).build();
+
+            // Derive tenantId from realm (replace the last '-' with '.') and resolve admin userId
+            String tenantId = realmToTenantId(realm);
+            String adminUserId = String.format("admin@%s", tenantId);
+
+            // Lookup admin user profile in the target realm to obtain its dataDomain without requiring SecurityContext
+            org.bson.Document adminDoc = null;
+            try {
+                var db = mongoClient.getDatabase(realm);
+                var upColl = db.getCollection("userProfile");
+                adminDoc = upColl.find(new org.bson.Document("email", adminUserId)).first();
+            } catch (Exception e) {
+                Log.warnf("SeedStartupRunner: error looking up admin user in realm %s: %s", realm, e.getMessage());
+            }
+            if (adminDoc == null) {
+                Log.warnf("SeedStartupRunner: admin user %s not found in realm %s. Seeding will proceed with realm-only context; tenant substitutions may be blank.", adminUserId, realm);
+            }
+
+            // Build SeedContext with values from admin's dataDomain when available
+            SeedContext.Builder ctxBuilder = SeedContext.builder(realm);
+            org.bson.Document adminDDDoc = (adminDoc != null) ? (org.bson.Document) adminDoc.get("dataDomain") : null;
+            com.e2eq.framework.model.persistent.base.DataDomain adminDD = null;
+            String resolvedOwnerId = null;
+            if (adminDDDoc != null) {
+                try {
+                    adminDD = new com.e2eq.framework.model.persistent.base.DataDomain(
+                            adminDDDoc.getString("orgRefName"),
+                            adminDDDoc.getString("accountNum"),
+                            adminDDDoc.getString("tenantId"),
+                            adminDDDoc.getInteger("dataSegment") != null ? adminDDDoc.getInteger("dataSegment") : 0,
+                            adminDDDoc.getString("ownerId")
+                    );
+                    resolvedOwnerId = adminDoc.getString("userId");
+                } catch (Exception ex) {
+                    Log.warnf("SeedStartupRunner: failed to materialize admin dataDomain in realm %s: %s", realm, ex.getMessage());
+                    adminDD = null;
+                }
+            }
+            if (adminDD != null) {
+                ctxBuilder
+                        .tenantId(adminDD.getTenantId())
+                        .orgRefName(adminDD.getOrgRefName())
+                        .accountId(adminDD.getAccountNum())
+                        .ownerId(adminDD.getOwnerId());
+            }
+            SeedContext context = ctxBuilder.build();
+
+            // Establish a temporary SecurityContext based on the admin user so repo-layer substitutions resolve correctly
+            com.e2eq.framework.model.securityrules.PrincipalContext principalContext = null;
+            com.e2eq.framework.model.securityrules.ResourceContext resourceContext = null;
+            if (adminDD != null) {
+                String pcUserId = (resolvedOwnerId != null && !resolvedOwnerId.isBlank()) ? resolvedOwnerId : adminUserId;
+                principalContext = new com.e2eq.framework.model.securityrules.PrincipalContext.Builder()
+                        .withDefaultRealm(realm)
+                        .withDataDomain(adminDD)
+                        .withUserId(pcUserId)
+                        .withRoles(new String[]{"ADMIN"})
+                        .withScope("systemGenerated")
+                        .build();
+                resourceContext = new com.e2eq.framework.model.securityrules.ResourceContext.Builder()
+                        .withRealm(realm)
+                        .withArea("SEED")
+                        .withFunctionalDomain("SEED")
+                        .withAction("APPLY")
+                        .build();
+                com.e2eq.framework.model.securityrules.SecurityContext.setPrincipalContext(principalContext);
+                com.e2eq.framework.model.securityrules.SecurityContext.setResourceContext(resourceContext);
+            }
+
             // Discover packs and select latest per name
             List<SeedPackDescriptor> descriptors = source.loadSeedPacks(context);
+            Log.infof("SeedStartupRunner: scanned seed root %s for realm %s and found %d manifest(s)", root.toAbsolutePath(), realm, descriptors.size());
             if (descriptors.isEmpty()) {
                 Log.infof("SeedStartupRunner: no seed packs found under %s for realm %s", root.toAbsolutePath(), realm);
                 return;
+            }
+            // Optional: filter by allowed seed pack names from configuration (csv)
+            if (seedFilterCsv.isPresent() && !seedFilterCsv.get().isBlank()) {
+                java.util.Set<String> allowed = new java.util.LinkedHashSet<>();
+                for (String part : seedFilterCsv.get().split(",")) {
+                    String name = part.trim();
+                    if (!name.isEmpty()) allowed.add(name);
+                }
+                if (!allowed.isEmpty()) {
+                    descriptors.removeIf(d -> !allowed.contains(d.getManifest().getSeedPack()));
+                }
             }
             Map<String, SeedPackDescriptor> latestByName = new LinkedHashMap<>();
             for (SeedPackDescriptor d : descriptors) {
@@ -88,7 +174,7 @@ public class SeedStartupRunner {
             // Apply via SeedLoader. MongoSeedRegistry ensures idempotency/skip per dataset checksum.
             SeedLoader loader = SeedLoader.builder()
                     .addSeedSource(source)
-                    .seedRepository(new MongoSeedRepository(mongoClient))
+                    .seedRepository(morphiaSeedRepository)
                     .seedRegistry(new MongoSeedRegistry(mongoClient))
                     .build();
             List<SeedPackRef> refs = new ArrayList<>();
@@ -100,15 +186,32 @@ public class SeedStartupRunner {
             Log.infof("SeedStartupRunner: applying %d seed pack(s) to realm %s from %s", refs.size(), realm, root.toAbsolutePath());
             loader.apply(refs, context);
         } finally {
+            // Always clear any thread-local security contexts we may have set
+            try { com.e2eq.framework.model.securityrules.SecurityContext.clear(); } catch (Exception ignored) {}
             lock.release();
         }
     }
 
+    private static String realmToTenantId(String realm) {
+        if (realm == null || realm.isBlank()) return realm;
+        int idx = realm.lastIndexOf('-');
+        if (idx < 0) return realm; // fallback
+        return realm.substring(0, idx) + "." + realm.substring(idx + 1);
+    }
+
     private Path resolveSeedRoot() {
-        if (seedRootConfig.isPresent() && !seedRootConfig.get().isBlank()) {
-            return Path.of(seedRootConfig.get());
+        String configured = seedRootConfig.orElse(DEFAULT_SEED_ROOT);
+        Path primary = Path.of(configured);
+        if (java.nio.file.Files.exists(primary)) {
+            return primary;
         }
-        return Path.of(DEFAULT_TEST_SEED_ROOT);
+        // Try module-relative fallback when running from monorepo root
+        Path fallback = Path.of("quantum-framework").resolve(configured);
+        if (java.nio.file.Files.exists(fallback)) {
+            return fallback;
+        }
+        // As a last resort, return the primary path (will likely lead to no seeds found)
+        return primary;
     }
 
     private static int compareSemver(String a, String b) {

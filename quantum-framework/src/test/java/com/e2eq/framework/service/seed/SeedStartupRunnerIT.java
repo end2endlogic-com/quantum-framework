@@ -32,12 +32,17 @@ public class SeedStartupRunnerIT {
     @Inject
     EnvConfigUtils envConfigUtils;
 
+    @Inject
+    SeedStartupRunner seedStartupRunner;
+
     @Test
     void seedsAreAppliedOnStartupToTestRealm() {
+        // Ensure runner is executed within this test to avoid lifecycle ordering issues
+        seedStartupRunner.onStart();
         String testRealm = envConfigUtils.getTestRealm();
 
         // Validate seed data (from demo-seed test pack) exists in the test realm
-        MongoCollection<Document> collection = mongoClient.getDatabase(testRealm).getCollection("codeLists");
+        MongoCollection<Document> collection = mongoClient.getDatabase(testRealm).getCollection("codeLists-demo");
         List<Document> documents = collection.find().sort(Sorts.ascending("code")).into(new ArrayList<>());
         assertTrue(documents.size() >= 2, "Expected demo seed to apply at least 2 codeLists records on startup");
 
@@ -47,15 +52,24 @@ public class SeedStartupRunnerIT {
                 .orElse(null);
         assertNotNull(newStatus, "Expected to find codeLists record with code NEW");
 
+        // Verify dataDomain fields populated via admin security context
+        Document dd = (Document) newStatus.get("dataDomain");
+        assertNotNull(dd, "dataDomain should be present on seeded record");
+        assertNotNull(dd.getString("tenantId"), "tenantId should be set from admin profile");
+        assertNotNull(dd.getString("orgRefName"), "orgRefName should be set from admin profile");
+        assertNotNull(dd.getString("accountNum"), "accountNum should be set from admin profile");
+        assertNotNull(dd.getString("ownerId"), "ownerId should be set from admin profile");
+        assertEquals(testRealm, newStatus.getString("realmId"), "realmId should be set to current realm");
+
         // Verify registry recorded application
         Document registry = mongoClient.getDatabase(testRealm)
                 .getCollection("_seed_registry")
                 .find(Filters.and(
                         Filters.eq("seedPack", "demo-seed"),
                         Filters.eq("version", "1.0.0"),
-                        Filters.eq("dataset", "codeLists")))
+                        Filters.eq("dataset", "codeLists-demo")))
                 .first();
-        assertNotNull(registry, "Expected _seed_registry entry for demo-seed/codeLists in test realm");
+        assertNotNull(registry, "Expected _seed_registry entry for demo-seed/codeLists-demo in test realm");
         assertTrue(registry.getInteger("records") >= 2, "Expected registry to record at least 2 applied records");
 
         // Idempotency sanity: ensure no duplicates beyond expected two for demo-seed baseline

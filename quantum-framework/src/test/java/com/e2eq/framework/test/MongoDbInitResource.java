@@ -156,6 +156,69 @@ public class MongoDbInitResource implements QuarkusTestResourceLifecycleManager 
         String defAccount = getCfg("quantum.realmConfig.defaultAccountNumber", "9999999999");
         String defAdmin = getCfg("quantum.realmConfig.defaultUserId", "test@mycompanyxyz.com");
         upsertRealm(sysDb, defaultRealm, emailDomainFromTenantId(defTenantId), defOrgRefName, defAccount, defTenantId, defAdmin);
+
+        // Ensure a test admin credential + user profile exists in the TEST realm, so SeedStartupRunner can resolve context
+        ensureAdminUserExists(testRealm,
+                getCfg("quantum.realmConfig.testTenantId", "test-quantum.com"),
+                getCfg("quantum.realmConfig.testOrgRefName", "test-system.com"),
+                getCfg("quantum.realmConfig.testAccountNumber", "0000000000"));
+    }
+
+    private void ensureAdminUserExists(String realmDbName, String tenantId, String orgRefName, String accountNum) throws JsonProcessingException {
+        String adminUserId = "admin@" + tenantId;
+        MongoDatabase testDb = mongoClient.getDatabase(realmDbName);
+        // Collections
+        var credColl = testDb.getCollection("credentialUserIdPassword");
+        var upColl = testDb.getCollection("userProfile");
+
+        // Check if credential exists
+        Document cred = credColl.find(new Document("userId", adminUserId)).first();
+        String credRefName = "cred-" + adminUserId;
+        if (cred == null) {
+            Document domainContext = new Document()
+                    .append("tenantId", tenantId)
+                    .append("orgRefName", orgRefName)
+                    .append("defaultRealm", realmDbName)
+                    .append("accountId", accountNum);
+            cred = new Document()
+                    .append("_t", "CredentialUserIdPassword")
+                    .append("refName", credRefName)
+                    .append("displayName", adminUserId)
+                    .append("userId", adminUserId)
+                    .append("subject", "sub-" + adminUserId)
+                    .append("domainContext", domainContext)
+                    .append("roles", java.util.List.of("ADMIN"))
+                    .append("lastUpdate", new java.util.Date());
+            credColl.insertOne(cred);
+            Log.infof("Inserted test admin credential for %s in realm %s", adminUserId, realmDbName);
+        }
+
+        // Check if user profile exists
+        Document up = upColl.find(new Document("email", adminUserId)).first();
+        if (up == null) {
+            Document entityRef = new Document()
+                    .append("entityRefName", credRefName)
+                    .append("entityType", "CredentialUserIdPassword")
+                    .append("entityDisplayName", adminUserId)
+                    .append("realm", realmDbName);
+            Document dataDomain = new Document()
+                    .append("orgRefName", orgRefName)
+                    .append("accountNum", accountNum)
+                    .append("tenantId", tenantId)
+                    .append("dataSegment", 0)
+                    .append("ownerId", adminUserId);
+
+            up = new Document()
+                    .append("_t", "UserProfile")
+                    .append("refName", adminUserId)
+                    .append("displayName", adminUserId)
+                    .append("credentialUserIdPasswordRef", entityRef)
+                    .append("email", adminUserId)
+                    .append("userId", adminUserId)
+                    .append("dataDomain", dataDomain);
+            upColl.insertOne(up);
+            Log.infof("Inserted test admin user profile for %s in realm %s", adminUserId, realmDbName);
+        }
     }
 
     private void upsertRealm(MongoDatabase systemDb, String realmName, String emailDomain, String orgRefName, String accountId, String tenantId, String adminUserId) throws JsonProcessingException {

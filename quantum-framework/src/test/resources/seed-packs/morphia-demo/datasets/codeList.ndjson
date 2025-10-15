@@ -1,0 +1,2 @@
+{"category":"COLORS","key":"RED","description":"Color red","valueType":"STRING","values":["R"],"refName":"COLORS:RED"}
+{"category":"STATUS","key":"NEW","description":"New item","valueType":"STRING","values":["N"],"refName":"STATUS:NEW"}
