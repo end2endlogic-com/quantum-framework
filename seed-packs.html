@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Seed packs and declarative tenant seeding</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-10-14T22:47:24Z</span>
+<span id="revdate">2025-10-15T01:34:17Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -556,7 +556,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </ul>
 </li>
 <li><a href="#_troubleshooting">10. Troubleshooting</a></li>
-<li><a href="#_how_applyseedpackschangeset_discovers_and_executes_packs">11. How ApplySeedPacksChangeSet discovers and executes packs</a></li>
+<li><a href="#_how_seeds_are_applied_automatically_at_startup">11. How seeds are applied automatically at startup</a></li>
 <li><a href="#_transforms_in_depth">12. Transforms in depth</a>
 <ul class="sectlevel2">
 <li><a href="#_creating_your_own_transforms_example_dropiftransform">12.1. Creating your own transforms (example: DropIfTransform)</a></li>
@@ -1022,18 +1022,18 @@ loader.apply(<span class="predefined-type">List</span>.of(
 </div>
 </div>
 <div class="sect1">
-<h2 id="_how_applyseedpackschangeset_discovers_and_executes_packs">11. How ApplySeedPacksChangeSet discovers and executes packs</h2>
+<h2 id="_how_seeds_are_applied_automatically_at_startup">11. How seeds are applied automatically at startup</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>The framework provides a built-in migration change set named "Apply Seed Packs" that automatically finds and applies seed packs to each realm during migrations.</p>
+<p>The framework now applies seed packs via a dedicated SeedStartupRunner, independent of schema migrations. This runner discovers and applies the latest version of each seed pack for important realms (system/default/test) on application startup.</p>
 </div>
 <div class="paragraph">
 <p>Key points:
-- Discovery: <code>ApplySeedPacksChangeSet</code> constructs a <code>SeedLoader</code> with a <code>FileSeedSource</code> pointing at the configured seed root. Set <code>quantum.seed.root</code> (for tests we default to <code>src/test/resources/seed-packs</code>). The source walks the directory tree and locates every <code>manifest.yaml</code> file.
-- Selection: For each discovered seed pack name, the change set selects the latest semantic version and builds <code>SeedPackRef.exact(name, version)</code> for application.
-- Execution: The change set builds a <code>SeedContext</code> for the current Morphia session&#8217;s database (realm) and calls <code>loader.apply(refs, context)</code>. Indexes declared in the manifest are created before data is upserted.
-- Idempotency: The <code>MongoSeedRegistry</code> stores a checksum per dataset in the realm&#8217;s <code>_seed_registry</code> collection. If the checksum matches on a later run, the dataset is skipped.
-- Automatic re-run on changes: <code>ApplySeedPacksChangeSet.getChangeSetVersion()</code> computes a fingerprint over all discovered manifests and dataset files. If any manifest or dataset content changes, the fingerprint changes; <code>MigrationService</code> sees a new change set version and re-executes the change set. This gives "rerun on content change" semantics without bumping a manual version.</p>
+- Discovery: SeedStartupRunner constructs a <code>SeedLoader</code> with a <code>FileSeedSource</code> pointing at the configured seed root. Set <code>quantum.seed.root</code> (for tests we default to <code>src/test/resources/seed-packs</code>). The source walks the directory tree and locates every <code>manifest.yaml</code> file.
+- Selection: For each discovered seed pack name, the runner selects the latest semantic version and builds <code>SeedPackRef.exact(name, version)</code> for application.
+- Execution: The runner builds a <code>SeedContext</code> for the target realm and calls <code>loader.apply(refs, context)</code>. Indexes declared in the manifest are created before data is upserted.
+- Idempotency + repeatable: The <code>MongoSeedRegistry</code> stores a checksum per dataset in the realm&#8217;s <code>_seed_registry</code> collection. If the checksum matches on a later run, the dataset is skipped; if it changes, the dataset is re-applied.
+- Concurrency safety: The runner uses a Sherlock distributed lock per realm to prevent concurrent execution across nodes.</p>
 </div>
 <div class="paragraph">
 <p>Configuration snippet:</p>
@@ -1042,8 +1042,9 @@ loader.apply(<span class="predefined-type">List</span>.of(
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="properties"># test profile uses a local seed root
 quantum.seed.root=src/test/resources/seed-packs
-# ensure change set package includes the seed change set
-quantum.database.migration.changeset.package=&quot;com.e2eq.framework.model.persistent.morphia.changesets&quot;</code></pre>
+# control seed runner behavior
+quantum.seeds.enabled=true
+quantum.seeds.apply.on-startup=true</code></pre>
 </div>
 </div>
 </div>
@@ -1631,7 +1632,7 @@ loader.applyArchetype(<span class="string"><span class="delimiter">&quot;</span>
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-10-14 17:45:59 -0400
+Last updated 2025-10-14 21:28:59 -0400
 </div>
 </div>
 </body>

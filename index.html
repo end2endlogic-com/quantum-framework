@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Framework Documentation</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-10-14T22:47:24Z</span>
+<span id="revdate">2025-10-15T01:34:17Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -796,7 +796,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </ul>
 </li>
 <li><a href="#_troubleshooting">75. Troubleshooting</a></li>
-<li><a href="#_how_applyseedpackschangeset_discovers_and_executes_packs">76. How ApplySeedPacksChangeSet discovers and executes packs</a></li>
+<li><a href="#_how_seeds_are_applied_automatically_at_startup">76. How seeds are applied automatically at startup</a></li>
 <li><a href="#_transforms_in_depth">77. Transforms in depth</a>
 <ul class="sectlevel2">
 <li><a href="#_creating_your_own_transforms_example_dropiftransform">77.1. Creating your own transforms (example: DropIfTransform)</a></li>
@@ -869,37 +869,41 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_identity_and_access_meet_partners_where_they_are">109. Identity and access: meet partners where they are</a></li>
 <li><a href="#_modeling_without_jargon_areas_domains_and_actions">110. Modeling without jargon: Areas, Domains, and Actions</a></li>
 <li><a href="#_policies_that_say_who_can_do_what_rule_language">111. Policies that say “who can do what” (Rule Language)</a></li>
-<li><a href="#_a_small_powerful_api_surface_list_query">112. A small, powerful API surface: List + Query</a></li>
-<li><a href="#_delegated_administration_tenantlevel_user_management">113. Delegated Administration (tenant‑level user management)</a></li>
-<li><a href="#_integrations_and_data_management">114. Integrations and data management</a></li>
-<li><a href="#_endtoend_examples_2">115. End‑to‑end examples</a></li>
-<li><a href="#_what_you_dont_have_to_build_from_scratch">116. What you don’t have to build from scratch</a></li>
-<li><a href="#_next_steps_2">117. Next steps</a></li>
-<li><a href="#_a_day_in_the_life_from_purchase_order_to_delivery">118. A day in the life: From Purchase Order to Delivery</a></li>
-<li><a href="#_appendix_2">119. Appendix</a>
+<li><a href="#_domain_contexts_and_domain_policies_placing_and_sharing_data">112. Domain contexts and domain policies (placing and sharing data)</a></li>
+<li><a href="#_bootstrap_tenants_with_seed_packs_zerotouch_baseline_data">113. Bootstrap tenants with Seed Packs (zero‑touch baseline data)</a></li>
+<li><a href="#_security_policies_practical_protections_and_proofs">114. Security policies: practical protections and proofs</a></li>
+<li><a href="#_a_small_powerful_api_surface_list_query">115. A small, powerful API surface: List + Query</a></li>
+<li><a href="#_delegated_administration_tenantlevel_user_management">116. Delegated Administration (tenant‑level user management)</a></li>
+<li><a href="#_integrations_and_data_management">117. Integrations and data management</a></li>
+<li><a href="#_endtoend_examples_2">118. End‑to‑end examples</a></li>
+<li><a href="#_what_you_dont_have_to_build_from_scratch">119. What you don’t have to build from scratch</a></li>
+<li><a href="#_other_helpful_capabilities_you_get_out_of_the_box">120. Other helpful capabilities you get out of the box</a></li>
+<li><a href="#_next_steps_2">121. Next steps</a></li>
+<li><a href="#_a_day_in_the_life_from_purchase_order_to_delivery">122. A day in the life: From Purchase Order to Delivery</a></li>
+<li><a href="#_appendix_2">123. Appendix</a>
 <ul class="sectlevel2">
-<li><a href="#configuration">119.1. Configuration Reference</a>
+<li><a href="#configuration">123.1. Configuration Reference</a>
 <ul class="sectlevel3">
-<li><a href="#_configuration_basics">119.1.1. Configuration Basics</a></li>
-<li><a href="#_database_configuration">119.1.2. Database Configuration</a></li>
-<li><a href="#_authentication_configuration">119.1.3. Authentication Configuration</a></li>
-<li><a href="#_quantum_framework_configuration">119.1.4. Quantum Framework Configuration</a></li>
-<li><a href="#_see_also_3">119.1.5. See Also</a></li>
-<li><a href="#_key_quarkus_capabilities">119.1.6. Key Quarkus Capabilities</a></li>
-<li><a href="#_arc_quarkus_cdi">119.1.7. Arc (Quarkus CDI)</a></li>
-<li><a href="#_native_compilation_with_graalvm">119.1.8. Native Compilation with GraalVM</a></li>
-<li><a href="#_extension_ecosystem">119.1.9. Extension Ecosystem</a></li>
-<li><a href="#_quantums_quarkus_integration">119.1.10. Quantum&#8217;s Quarkus Integration</a></li>
-<li><a href="#_getting_started_with_quarkus">119.1.11. Getting Started with Quarkus</a></li>
-<li><a href="#_see_also_4">119.1.12. See Also</a></li>
-<li><a href="#_core_concepts">119.1.13. Core Concepts</a></li>
-<li><a href="#_multi_tenancy">119.1.14. Multi-Tenancy</a></li>
-<li><a href="#_security_2">119.1.15. Security</a></li>
-<li><a href="#_data_and_persistence">119.1.16. Data and Persistence</a></li>
-<li><a href="#_rest_and_apis">119.1.17. REST and APIs</a></li>
-<li><a href="#_framework_components">119.1.18. Framework Components</a></li>
-<li><a href="#_annotations">119.1.19. Annotations</a></li>
-<li><a href="#_external_integrations">119.1.20. External Integrations</a></li>
+<li><a href="#_configuration_basics">123.1.1. Configuration Basics</a></li>
+<li><a href="#_database_configuration">123.1.2. Database Configuration</a></li>
+<li><a href="#_authentication_configuration">123.1.3. Authentication Configuration</a></li>
+<li><a href="#_quantum_framework_configuration">123.1.4. Quantum Framework Configuration</a></li>
+<li><a href="#_see_also_3">123.1.5. See Also</a></li>
+<li><a href="#_key_quarkus_capabilities">123.1.6. Key Quarkus Capabilities</a></li>
+<li><a href="#_arc_quarkus_cdi">123.1.7. Arc (Quarkus CDI)</a></li>
+<li><a href="#_native_compilation_with_graalvm">123.1.8. Native Compilation with GraalVM</a></li>
+<li><a href="#_extension_ecosystem">123.1.9. Extension Ecosystem</a></li>
+<li><a href="#_quantums_quarkus_integration">123.1.10. Quantum&#8217;s Quarkus Integration</a></li>
+<li><a href="#_getting_started_with_quarkus">123.1.11. Getting Started with Quarkus</a></li>
+<li><a href="#_see_also_4">123.1.12. See Also</a></li>
+<li><a href="#_core_concepts">123.1.13. Core Concepts</a></li>
+<li><a href="#_multi_tenancy">123.1.14. Multi-Tenancy</a></li>
+<li><a href="#_security_2">123.1.15. Security</a></li>
+<li><a href="#_data_and_persistence">123.1.16. Data and Persistence</a></li>
+<li><a href="#_rest_and_apis">123.1.17. REST and APIs</a></li>
+<li><a href="#_framework_components">123.1.18. Framework Components</a></li>
+<li><a href="#_annotations">123.1.19. Annotations</a></li>
+<li><a href="#_external_integrations">123.1.20. External Integrations</a></li>
 </ul>
 </li>
 </ul>
@@ -8552,18 +8556,18 @@ loader.apply(<span class="predefined-type">List</span>.of(
 </div>
 </div>
 <div class="sect1">
-<h2 id="_how_applyseedpackschangeset_discovers_and_executes_packs">76. How ApplySeedPacksChangeSet discovers and executes packs</h2>
+<h2 id="_how_seeds_are_applied_automatically_at_startup">76. How seeds are applied automatically at startup</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>The framework provides a built-in migration change set named "Apply Seed Packs" that automatically finds and applies seed packs to each realm during migrations.</p>
+<p>The framework now applies seed packs via a dedicated SeedStartupRunner, independent of schema migrations. This runner discovers and applies the latest version of each seed pack for important realms (system/default/test) on application startup.</p>
 </div>
 <div class="paragraph">
 <p>Key points:
-- Discovery: <code>ApplySeedPacksChangeSet</code> constructs a <code>SeedLoader</code> with a <code>FileSeedSource</code> pointing at the configured seed root. Set <code>quantum.seed.root</code> (for tests we default to <code>src/test/resources/seed-packs</code>). The source walks the directory tree and locates every <code>manifest.yaml</code> file.
-- Selection: For each discovered seed pack name, the change set selects the latest semantic version and builds <code>SeedPackRef.exact(name, version)</code> for application.
-- Execution: The change set builds a <code>SeedContext</code> for the current Morphia session&#8217;s database (realm) and calls <code>loader.apply(refs, context)</code>. Indexes declared in the manifest are created before data is upserted.
-- Idempotency: The <code>MongoSeedRegistry</code> stores a checksum per dataset in the realm&#8217;s <code>_seed_registry</code> collection. If the checksum matches on a later run, the dataset is skipped.
-- Automatic re-run on changes: <code>ApplySeedPacksChangeSet.getChangeSetVersion()</code> computes a fingerprint over all discovered manifests and dataset files. If any manifest or dataset content changes, the fingerprint changes; <code>MigrationService</code> sees a new change set version and re-executes the change set. This gives "rerun on content change" semantics without bumping a manual version.</p>
+- Discovery: SeedStartupRunner constructs a <code>SeedLoader</code> with a <code>FileSeedSource</code> pointing at the configured seed root. Set <code>quantum.seed.root</code> (for tests we default to <code>src/test/resources/seed-packs</code>). The source walks the directory tree and locates every <code>manifest.yaml</code> file.
+- Selection: For each discovered seed pack name, the runner selects the latest semantic version and builds <code>SeedPackRef.exact(name, version)</code> for application.
+- Execution: The runner builds a <code>SeedContext</code> for the target realm and calls <code>loader.apply(refs, context)</code>. Indexes declared in the manifest are created before data is upserted.
+- Idempotency + repeatable: The <code>MongoSeedRegistry</code> stores a checksum per dataset in the realm&#8217;s <code>_seed_registry</code> collection. If the checksum matches on a later run, the dataset is skipped; if it changes, the dataset is re-applied.
+- Concurrency safety: The runner uses a Sherlock distributed lock per realm to prevent concurrent execution across nodes.</p>
 </div>
 <div class="paragraph">
 <p>Configuration snippet:</p>
@@ -8572,8 +8576,9 @@ loader.apply(<span class="predefined-type">List</span>.of(
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="properties"># test profile uses a local seed root
 quantum.seed.root=src/test/resources/seed-packs
-# ensure change set package includes the seed change set
-quantum.database.migration.changeset.package=&quot;com.e2eq.framework.model.persistent.morphia.changesets&quot;</code></pre>
+# control seed runner behavior
+quantum.seeds.enabled=true
+quantum.seeds.apply.on-startup=true</code></pre>
 </div>
 </div>
 </div>
@@ -10222,7 +10227,82 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_a_small_powerful_api_surface_list_query">112. A small, powerful API surface: List + Query</h2>
+<h2 id="_domain_contexts_and_domain_policies_placing_and_sharing_data">112. Domain contexts and domain policies (placing and sharing data)</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>In supply chains, the same entity often lives in different business contexts (e.g., a Shipment inside a Supplier’s operations vs. the Buyer’s view). Domain contexts let you keep data where it naturally belongs while still collaborating safely:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Keep most data tenant‑local: Each organization owns its operational truth (orders, shipments, tasks).</p>
+</li>
+<li>
+<p>Create shared contexts deliberately: Use a shared “Directory” context for master data like Partners and Facilities so everyone references the same records.</p>
+</li>
+<li>
+<p>Policy‑driven sharing: Collaboration bubbles share just the relevant records (a specific PO, shipment, or appointment) with the right partners. Policies ensure each party only sees the fields and actions appropriate to them.</p>
+</li>
+<li>
+<p>Regional and compliance contexts: Pin data to a geography (e.g., EU) when regulations require it; policies keep reads and writes aligned.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Business impact
+- Lower friction: Organize data the way teams actually work (local operations + shared directories).
+- Safer collaboration: Sharing is explicit and explainable—no surprise data leaks.
+- Compliance by construction: Residency and scoping rules are enforced by policy, not by custom code.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_bootstrap_tenants_with_seed_packs_zerotouch_baseline_data">113. Bootstrap tenants with Seed Packs (zero‑touch baseline data)</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Onboarding partners is a bottleneck in many SaaS rollouts. Seed packs provide a fast, repeatable way to initialize each tenant with the right starting data and settings.</p>
+</div>
+<div class="paragraph">
+<p>What seed packs give you
+- Versioned, reviewable baseline: Curate CSV/JSON datasets and settings (code lists, roles, sample workflows) under version control.
+- Archetypes for editions: Bundle multiple packs into a named edition (e.g., “Logistics Core” vs. “Supplier Lite”) to match your product tiers.
+- Safe, idempotent updates: Re‑apply packs any time; only changes are applied. You can inspect what’s pending before you apply.
+- Admin APIs and startup automation: New tenants can be provisioned with the right archetype automatically; admins can check pending updates and apply them when ready.</p>
+</div>
+<div class="paragraph">
+<p>Why this matters to a supply‑chain SaaS
+- Faster go‑live: New buyers, suppliers, and carriers start with consistent roles, code lists, and sample workflows.
+- Less manual setup: Reduce back‑and‑forth with partners; eliminate error‑prone spreadsheets and one‑off scripts.
+- Controlled change: Roll out new catalogs or policy tweaks as a versioned pack; apply to selected tenants when they opt in.</p>
+</div>
+<div class="paragraph">
+<p>Learn more: <a href="../user-guide/seed-packs.html">Seed packs and declarative tenant seeding</a>.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_security_policies_practical_protections_and_proofs">114. Security policies: practical protections and proofs</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Security isn’t just login. The framework’s policy layer turns business rules into enforceable, auditable protections across UI, APIs, and imports/exports.</p>
+</div>
+<div class="paragraph">
+<p>What’s protected
+- Least privilege by role: Planners, Operators, and Analysts only get the actions and fields they need.
+- Field‑level and record‑level controls: Share a shipment with a carrier without exposing private buyer notes or margins.
+- Tamper‑evident changes: Important state transitions and task completions are tracked and explainable.
+- Delegated administration: Each organization manages its users and roles; platform admins retain oversight with audit trails.</p>
+</div>
+<div class="paragraph">
+<p>Why it’s better than ad‑hoc controls
+- One policy engine, everywhere: The same rules guard screens, APIs, and bulk operations—reducing gaps and regressions.
+- Explainable decisions: When an action is denied or filtered, admins can see why.
+- Easier audits: Policies and seed packs create a repeatable, documented configuration per tenant.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_a_small_powerful_api_surface_list_query">115. A small, powerful API surface: List + Query</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Instead of building a unique search endpoint for every screen, Quantum gives you:
@@ -10239,7 +10319,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_delegated_administration_tenantlevel_user_management">113. Delegated Administration (tenant‑level user management)</h2>
+<h2 id="_delegated_administration_tenantlevel_user_management">116. Delegated Administration (tenant‑level user management)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Empower each organization to run their own house while you keep platform‑wide safety:
@@ -10250,7 +10330,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_integrations_and_data_management">114. Integrations and data management</h2>
+<h2 id="_integrations_and_data_management">117. Integrations and data management</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Supply chains depend on clean, timely data. Quantum provides:
@@ -10267,7 +10347,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_endtoend_examples_2">115. End‑to‑end examples</h2>
+<h2 id="_endtoend_examples_2">118. End‑to‑end examples</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>1) Buyer–supplier collaboration on a Purchase Order
@@ -10286,7 +10366,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_what_you_dont_have_to_build_from_scratch">116. What you don’t have to build from scratch</h2>
+<h2 id="_what_you_dont_have_to_build_from_scratch">119. What you don’t have to build from scratch</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -10313,7 +10393,34 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_next_steps_2">117. Next steps</h2>
+<h2 id="_other_helpful_capabilities_you_get_out_of_the_box">120. Other helpful capabilities you get out of the box</h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Pending seed visibility: Admins can see which seed packs have updates pending for a tenant before applying them, reducing surprise changes.</p>
+</li>
+<li>
+<p>Version selection and rollback strategy: The platform automatically selects the latest compatible seed pack version; because packs are versioned and reviewable, you can test in a sandbox realm before rolling out.</p>
+</li>
+<li>
+<p>Archetypes (editions): Model product tiers by composing packs; useful for offering lighter supplier/carrier editions versus full buyer editions.</p>
+</li>
+<li>
+<p>Explainable access decisions: When access is denied or results are filtered, admins can inspect the reasoning—useful during partner onboarding and audits.</p>
+</li>
+<li>
+<p>Idempotent imports/exports: Bulk data operations can be retried safely, which is critical when partners exchange large files over unreliable networks.</p>
+</li>
+<li>
+<p>Observability hooks: Standardized endpoints and logs make it easier to monitor SLAs (e.g., late tasks, delayed updates) without custom plumbing.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_next_steps_2">121. Next steps</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -10337,7 +10444,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_a_day_in_the_life_from_purchase_order_to_delivery">118. A day in the life: From Purchase Order to Delivery</h2>
+<h2 id="_a_day_in_the_life_from_purchase_order_to_delivery">122. A day in the life: From Purchase Order to Delivery</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This story ties the pieces together in a realistic sequence. We follow a Purchase Order (PO) from creation to delivery, with shared visibility for suppliers and carriers, a clear state graph, and checklist-like Completion Tasks guiding the work.</p>
@@ -10408,15 +10515,15 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_appendix_2">119. Appendix</h2>
+<h2 id="_appendix_2">123. Appendix</h2>
 <div class="sectionbody">
 <div class="sect2">
-<h3 id="configuration">119.1. Configuration Reference</h3>
+<h3 id="configuration">123.1. Configuration Reference</h3>
 <div class="paragraph">
 <p>This appendix explains key configuration properties used in Quantum applications, organized by functional area.</p>
 </div>
 <div class="sect3">
-<h4 id="_configuration_basics">119.1.1. Configuration Basics</h4>
+<h4 id="_configuration_basics">123.1.1. Configuration Basics</h4>
 <div class="sect4">
 <h5 id="_file_locations">File Locations</h5>
 <div class="ulist">
@@ -10456,7 +10563,7 @@ auth.jwt.secret=${JWT_SECRET:change-me-in-production}</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_database_configuration">119.1.2. Database Configuration</h4>
+<h4 id="_database_configuration">123.1.2. Database Configuration</h4>
 <div class="sect4">
 <h5 id="_mongodb_connection">MongoDB Connection</h5>
 <div class="listingblock">
@@ -10490,7 +10597,7 @@ quarkus.morphia.create-validators=true</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_authentication_configuration">119.1.3. Authentication Configuration</h4>
+<h4 id="_authentication_configuration">123.1.3. Authentication Configuration</h4>
 <div class="sect4">
 <h5 id="_jwt_provider_3">JWT Provider</h5>
 <div class="listingblock">
@@ -10529,7 +10636,7 @@ quarkus.oidc.roles.role-claim-path=groups</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_quantum_framework_configuration">119.1.4. Quantum Framework Configuration</h4>
+<h4 id="_quantum_framework_configuration">123.1.4. Quantum Framework Configuration</h4>
 <div class="sect4">
 <h5 id="_database_migration">Database Migration</h5>
 <div class="listingblock">
@@ -10564,7 +10671,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_see_also_3">119.1.5. See Also</h4>
+<h4 id="_see_also_3">123.1.5. See Also</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -10581,7 +10688,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_key_quarkus_capabilities">119.1.6. Key Quarkus Capabilities</h4>
+<h4 id="_key_quarkus_capabilities">123.1.6. Key Quarkus Capabilities</h4>
 <div class="sect4">
 <h5 id="_developer_experience">Developer Experience</h5>
 <div class="ulist">
@@ -10638,7 +10745,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_arc_quarkus_cdi">119.1.7. Arc (Quarkus CDI)</h4>
+<h4 id="_arc_quarkus_cdi">123.1.7. Arc (Quarkus CDI)</h4>
 <div class="paragraph">
 <p>Arc is Quarkus' CDI implementation, focused on build-time analysis and small runtime overhead.</p>
 </div>
@@ -10708,7 +10815,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_native_compilation_with_graalvm">119.1.8. Native Compilation with GraalVM</h4>
+<h4 id="_native_compilation_with_graalvm">123.1.8. Native Compilation with GraalVM</h4>
 <div class="sect4">
 <h5 id="_benefits">Benefits</h5>
 <div class="ulist">
@@ -10758,7 +10865,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_extension_ecosystem">119.1.9. Extension Ecosystem</h4>
+<h4 id="_extension_ecosystem">123.1.9. Extension Ecosystem</h4>
 <div class="paragraph">
 <p>Quarkus provides extensions for:
 - <strong>Data</strong>: MongoDB, PostgreSQL, Redis, Elasticsearch
@@ -10769,7 +10876,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_quantums_quarkus_integration">119.1.10. Quantum&#8217;s Quarkus Integration</h4>
+<h4 id="_quantums_quarkus_integration">123.1.10. Quantum&#8217;s Quarkus Integration</h4>
 <div class="paragraph">
 <p>Quantum leverages Quarkus for:
 - <strong>CDI</strong>: Dependency injection for repositories and services
@@ -10781,7 +10888,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_getting_started_with_quarkus">119.1.11. Getting Started with Quarkus</h4>
+<h4 id="_getting_started_with_quarkus">123.1.11. Getting Started with Quarkus</h4>
 <div class="sect4">
 <h5 id="_create_project">Create Project</h5>
 <div class="listingblock">
@@ -10812,7 +10919,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_see_also_4">119.1.12. See Also</h4>
+<h4 id="_see_also_4">123.1.12. See Also</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -10829,7 +10936,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_core_concepts">119.1.13. Core Concepts</h4>
+<h4 id="_core_concepts">123.1.13. Core Concepts</h4>
 <div class="dlist">
 <dl>
 <dt class="hdlist1"><strong>BaseModel</strong></dt>
@@ -10860,7 +10967,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_multi_tenancy">119.1.14. Multi-Tenancy</h4>
+<h4 id="_multi_tenancy">123.1.14. Multi-Tenancy</h4>
 <div class="dlist">
 <dl>
 <dt class="hdlist1"><strong>Tenant</strong></dt>
@@ -10883,7 +10990,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_security_2">119.1.15. Security</h4>
+<h4 id="_security_2">123.1.15. Security</h4>
 <div class="dlist">
 <dl>
 <dt class="hdlist1"><strong>Principal</strong></dt>
@@ -10906,7 +11013,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_data_and_persistence">119.1.16. Data and Persistence</h4>
+<h4 id="_data_and_persistence">123.1.16. Data and Persistence</h4>
 <div class="dlist">
 <dl>
 <dt class="hdlist1"><strong>MorphiaRepo</strong></dt>
@@ -10929,7 +11036,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_rest_and_apis">119.1.17. REST and APIs</h4>
+<h4 id="_rest_and_apis">123.1.17. REST and APIs</h4>
 <div class="dlist">
 <dl>
 <dt class="hdlist1"><strong>BaseResource</strong></dt>
@@ -10952,7 +11059,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_framework_components">119.1.18. Framework Components</h4>
+<h4 id="_framework_components">123.1.18. Framework Components</h4>
 <div class="dlist">
 <dl>
 <dt class="hdlist1"><strong>ValidationInterceptor</strong></dt>
@@ -10975,7 +11082,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_annotations">119.1.19. Annotations</h4>
+<h4 id="_annotations">123.1.19. Annotations</h4>
 <div class="dlist">
 <dl>
 <dt class="hdlist1"><strong>@FunctionalMapping</strong></dt>
@@ -10998,7 +11105,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_external_integrations">119.1.20. External Integrations</h4>
+<h4 id="_external_integrations">123.1.20. External Integrations</h4>
 <div class="dlist">
 <dl>
 <dt class="hdlist1"><strong>JWT Provider</strong></dt>
@@ -11027,7 +11134,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-10-14 12:29:05 -0400
+Last updated 2025-10-14 21:28:59 -0400
 </div>
 </div>
 </body>

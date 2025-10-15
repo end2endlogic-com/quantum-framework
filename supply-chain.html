@@ -439,7 +439,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <h1>Supply Chain Collaboration SaaS: A Business‑First Guide</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-10-14T22:47:24Z</span>
+<span id="revdate">2025-10-15T01:34:17Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -450,13 +450,17 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_identity_and_access_meet_partners_where_they_are">4. Identity and access: meet partners where they are</a></li>
 <li><a href="#_modeling_without_jargon_areas_domains_and_actions">5. Modeling without jargon: Areas, Domains, and Actions</a></li>
 <li><a href="#_policies_that_say_who_can_do_what_rule_language">6. Policies that say “who can do what” (Rule Language)</a></li>
-<li><a href="#_a_small_powerful_api_surface_list_query">7. A small, powerful API surface: List + Query</a></li>
-<li><a href="#_delegated_administration_tenantlevel_user_management">8. Delegated Administration (tenant‑level user management)</a></li>
-<li><a href="#_integrations_and_data_management">9. Integrations and data management</a></li>
-<li><a href="#_endtoend_examples">10. End‑to‑end examples</a></li>
-<li><a href="#_what_you_dont_have_to_build_from_scratch">11. What you don’t have to build from scratch</a></li>
-<li><a href="#_next_steps">12. Next steps</a></li>
-<li><a href="#_a_day_in_the_life_from_purchase_order_to_delivery">13. A day in the life: From Purchase Order to Delivery</a></li>
+<li><a href="#_domain_contexts_and_domain_policies_placing_and_sharing_data">7. Domain contexts and domain policies (placing and sharing data)</a></li>
+<li><a href="#_bootstrap_tenants_with_seed_packs_zerotouch_baseline_data">8. Bootstrap tenants with Seed Packs (zero‑touch baseline data)</a></li>
+<li><a href="#_security_policies_practical_protections_and_proofs">9. Security policies: practical protections and proofs</a></li>
+<li><a href="#_a_small_powerful_api_surface_list_query">10. A small, powerful API surface: List + Query</a></li>
+<li><a href="#_delegated_administration_tenantlevel_user_management">11. Delegated Administration (tenant‑level user management)</a></li>
+<li><a href="#_integrations_and_data_management">12. Integrations and data management</a></li>
+<li><a href="#_endtoend_examples">13. End‑to‑end examples</a></li>
+<li><a href="#_what_you_dont_have_to_build_from_scratch">14. What you don’t have to build from scratch</a></li>
+<li><a href="#_other_helpful_capabilities_you_get_out_of_the_box">15. Other helpful capabilities you get out of the box</a></li>
+<li><a href="#_next_steps">16. Next steps</a></li>
+<li><a href="#_a_day_in_the_life_from_purchase_order_to_delivery">17. A day in the life: From Purchase Order to Delivery</a></li>
 </ul>
 </div>
 </div>
@@ -617,7 +621,82 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </div>
 </div>
 <div class="sect1">
-<h2 id="_a_small_powerful_api_surface_list_query">7. A small, powerful API surface: List + Query</h2>
+<h2 id="_domain_contexts_and_domain_policies_placing_and_sharing_data">7. Domain contexts and domain policies (placing and sharing data)</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>In supply chains, the same entity often lives in different business contexts (e.g., a Shipment inside a Supplier’s operations vs. the Buyer’s view). Domain contexts let you keep data where it naturally belongs while still collaborating safely:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Keep most data tenant‑local: Each organization owns its operational truth (orders, shipments, tasks).</p>
+</li>
+<li>
+<p>Create shared contexts deliberately: Use a shared “Directory” context for master data like Partners and Facilities so everyone references the same records.</p>
+</li>
+<li>
+<p>Policy‑driven sharing: Collaboration bubbles share just the relevant records (a specific PO, shipment, or appointment) with the right partners. Policies ensure each party only sees the fields and actions appropriate to them.</p>
+</li>
+<li>
+<p>Regional and compliance contexts: Pin data to a geography (e.g., EU) when regulations require it; policies keep reads and writes aligned.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Business impact
+- Lower friction: Organize data the way teams actually work (local operations + shared directories).
+- Safer collaboration: Sharing is explicit and explainable—no surprise data leaks.
+- Compliance by construction: Residency and scoping rules are enforced by policy, not by custom code.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_bootstrap_tenants_with_seed_packs_zerotouch_baseline_data">8. Bootstrap tenants with Seed Packs (zero‑touch baseline data)</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Onboarding partners is a bottleneck in many SaaS rollouts. Seed packs provide a fast, repeatable way to initialize each tenant with the right starting data and settings.</p>
+</div>
+<div class="paragraph">
+<p>What seed packs give you
+- Versioned, reviewable baseline: Curate CSV/JSON datasets and settings (code lists, roles, sample workflows) under version control.
+- Archetypes for editions: Bundle multiple packs into a named edition (e.g., “Logistics Core” vs. “Supplier Lite”) to match your product tiers.
+- Safe, idempotent updates: Re‑apply packs any time; only changes are applied. You can inspect what’s pending before you apply.
+- Admin APIs and startup automation: New tenants can be provisioned with the right archetype automatically; admins can check pending updates and apply them when ready.</p>
+</div>
+<div class="paragraph">
+<p>Why this matters to a supply‑chain SaaS
+- Faster go‑live: New buyers, suppliers, and carriers start with consistent roles, code lists, and sample workflows.
+- Less manual setup: Reduce back‑and‑forth with partners; eliminate error‑prone spreadsheets and one‑off scripts.
+- Controlled change: Roll out new catalogs or policy tweaks as a versioned pack; apply to selected tenants when they opt in.</p>
+</div>
+<div class="paragraph">
+<p>Learn more: <a href="../user-guide/seed-packs.html">Seed packs and declarative tenant seeding</a>.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_security_policies_practical_protections_and_proofs">9. Security policies: practical protections and proofs</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Security isn’t just login. The framework’s policy layer turns business rules into enforceable, auditable protections across UI, APIs, and imports/exports.</p>
+</div>
+<div class="paragraph">
+<p>What’s protected
+- Least privilege by role: Planners, Operators, and Analysts only get the actions and fields they need.
+- Field‑level and record‑level controls: Share a shipment with a carrier without exposing private buyer notes or margins.
+- Tamper‑evident changes: Important state transitions and task completions are tracked and explainable.
+- Delegated administration: Each organization manages its users and roles; platform admins retain oversight with audit trails.</p>
+</div>
+<div class="paragraph">
+<p>Why it’s better than ad‑hoc controls
+- One policy engine, everywhere: The same rules guard screens, APIs, and bulk operations—reducing gaps and regressions.
+- Explainable decisions: When an action is denied or filtered, admins can see why.
+- Easier audits: Policies and seed packs create a repeatable, documented configuration per tenant.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_a_small_powerful_api_surface_list_query">10. A small, powerful API surface: List + Query</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Instead of building a unique search endpoint for every screen, Quantum gives you:
@@ -634,7 +713,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </div>
 </div>
 <div class="sect1">
-<h2 id="_delegated_administration_tenantlevel_user_management">8. Delegated Administration (tenant‑level user management)</h2>
+<h2 id="_delegated_administration_tenantlevel_user_management">11. Delegated Administration (tenant‑level user management)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Empower each organization to run their own house while you keep platform‑wide safety:
@@ -645,7 +724,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </div>
 </div>
 <div class="sect1">
-<h2 id="_integrations_and_data_management">9. Integrations and data management</h2>
+<h2 id="_integrations_and_data_management">12. Integrations and data management</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Supply chains depend on clean, timely data. Quantum provides:
@@ -662,7 +741,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </div>
 </div>
 <div class="sect1">
-<h2 id="_endtoend_examples">10. End‑to‑end examples</h2>
+<h2 id="_endtoend_examples">13. End‑to‑end examples</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>1) Buyer–supplier collaboration on a Purchase Order
@@ -681,7 +760,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </div>
 </div>
 <div class="sect1">
-<h2 id="_what_you_dont_have_to_build_from_scratch">11. What you don’t have to build from scratch</h2>
+<h2 id="_what_you_dont_have_to_build_from_scratch">14. What you don’t have to build from scratch</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -708,7 +787,34 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </div>
 </div>
 <div class="sect1">
-<h2 id="_next_steps">12. Next steps</h2>
+<h2 id="_other_helpful_capabilities_you_get_out_of_the_box">15. Other helpful capabilities you get out of the box</h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Pending seed visibility: Admins can see which seed packs have updates pending for a tenant before applying them, reducing surprise changes.</p>
+</li>
+<li>
+<p>Version selection and rollback strategy: The platform automatically selects the latest compatible seed pack version; because packs are versioned and reviewable, you can test in a sandbox realm before rolling out.</p>
+</li>
+<li>
+<p>Archetypes (editions): Model product tiers by composing packs; useful for offering lighter supplier/carrier editions versus full buyer editions.</p>
+</li>
+<li>
+<p>Explainable access decisions: When access is denied or results are filtered, admins can inspect the reasoning—useful during partner onboarding and audits.</p>
+</li>
+<li>
+<p>Idempotent imports/exports: Bulk data operations can be retried safely, which is critical when partners exchange large files over unreliable networks.</p>
+</li>
+<li>
+<p>Observability hooks: Standardized endpoints and logs make it easier to monitor SLAs (e.g., late tasks, delayed updates) without custom plumbing.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_next_steps">16. Next steps</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -732,7 +838,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </div>
 </div>
 <div class="sect1">
-<h2 id="_a_day_in_the_life_from_purchase_order_to_delivery">13. A day in the life: From Purchase Order to Delivery</h2>
+<h2 id="_a_day_in_the_life_from_purchase_order_to_delivery">17. A day in the life: From Purchase Order to Delivery</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This story ties the pieces together in a realistic sequence. We follow a Purchase Order (PO) from creation to delivery, with shared visibility for suppliers and carriers, a clear state graph, and checklist-like Completion Tasks guiding the work.</p>
@@ -806,7 +912,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-09-22 10:25:37 -0400
+Last updated 2025-10-14 21:28:59 -0400
 </div>
 </div>
 </body>
