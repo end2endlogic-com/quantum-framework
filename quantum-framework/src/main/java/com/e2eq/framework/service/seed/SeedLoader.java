@@ -75,6 +75,14 @@ public final class SeedLoader {
     private void apply(List<SeedPackRef> packRefs, SeedContext context, SeedResolution resolution) {
         Objects.requireNonNull(packRefs, "packRefs");
         Objects.requireNonNull(context, "context");
+
+        Log.infof("Seed context realm {0}, applying {1} seed pack(s)", context.getRealmId(), packRefs.size());
+        Log.infof("Seedcontext.tenantId: %s, orgRefName: %s, accountId: %s, ownerId: %s",
+           context.getTenantId().isPresent() ? context.getTenantId().get() : "null",
+           context.getOrgRefName().isPresent()?  context.getOrgRefName().get(): "null",
+           context.getAccountId().isPresent() ?  context.getAccountId().get() : "null",
+           context.getOwnerId().isPresent() ?  context.getOwnerId().get() : "null");
+
         if (packRefs.isEmpty()) {
             Log.infov("No seed packs requested for realm {0}", context.getRealmId());
             return;
