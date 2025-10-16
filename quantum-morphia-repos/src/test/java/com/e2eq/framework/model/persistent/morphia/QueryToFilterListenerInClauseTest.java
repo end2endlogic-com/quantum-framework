@@ -71,4 +71,82 @@ public class QueryToFilterListenerInClauseTest {
         assertTrue(s.contains("5f1e1a5e5e5e5e5e5e5e5e51"));
         assertTrue(s.contains("5f1e1a5e5e5e5e5e5e5e5e52"));
     }
+
+    @Test
+    public void inList_preservesQuotedNumericString() {
+        String q = "code:^[\"0123\"]"; // quoted -> must stay a string "0123"
+        Filter f = MorphiaUtils.convertToFilter(q, DummyModel.class);
+        assertEquals("$in", f.getName());
+        assertEquals("code", f.getField());
+        Object v = f.getValue();
+        assertTrue(v instanceof List, "Value should be a List");
+        List<?> list = (List<?>) v;
+        assertEquals(1, list.size());
+        assertTrue(list.get(0) instanceof String, "Quoted numeric should stay String");
+        assertEquals("0123", list.get(0));
+    }
+
+    @Test
+    public void inList_unquotedNumeric_becomesNumber() {
+        String q = "code:^[0123]"; // unquoted -> coerced to number 123L
+        Filter f = MorphiaUtils.convertToFilter(q, DummyModel.class);
+        assertEquals("$in", f.getName());
+        assertEquals("code", f.getField());
+        Object v = f.getValue();
+        assertTrue(v instanceof List);
+        List<?> list = (List<?>) v;
+        assertEquals(1, list.size());
+        assertTrue(list.get(0) instanceof Number, "Unquoted numeric should become Number");
+        assertEquals(123L, ((Number) list.get(0)).longValue());
+    }
+
+    @Test
+    public void inList_mixedQuotedAndUnquoted() {
+        String q = "code:^[\"012\",3,\"004\",5]";
+        Filter f = MorphiaUtils.convertToFilter(q, DummyModel.class);
+        assertEquals("$in", f.getName());
+        assertEquals("code", f.getField());
+        Object v = f.getValue();
+        assertTrue(v instanceof List);
+        List<?> list = (List<?>) v;
+        assertEquals(4, list.size());
+        assertTrue(list.get(0) instanceof String);
+        assertEquals("012", list.get(0));
+        assertTrue(list.get(1) instanceof Number);
+        assertEquals(3L, ((Number) list.get(1)).longValue());
+        assertTrue(list.get(2) instanceof String);
+        assertEquals("004", list.get(2));
+        assertTrue(list.get(3) instanceof Number);
+        assertEquals(5L, ((Number) list.get(3)).longValue());
+    }
+
+    @Test
+    public void inList_variableOnly_mixedScalarsCollection() {
+        String q = "code:^[${ids}]";
+        Map<String, Object> extra = new HashMap<>();
+        // Mixed scalars in object vars: numeric-looking strings will coerce to numbers; others remain strings
+        extra.put("ids", Arrays.asList("012", 3L, "004", 5L, "X7"));
+        MorphiaUtils.VariableBundle vars = MorphiaUtils.buildVariableBundle(principal(), resource(), extra);
+
+        Filter f = MorphiaUtils.convertToFilter(q, vars, DummyModel.class);
+        assertEquals("$in", f.getName());
+        assertEquals("code", f.getField());
+        Object v = f.getValue();
+        assertTrue(v instanceof List);
+        List<?> list = (List<?>) v;
+        assertEquals(5, list.size());
+        // "012" -> 12L because collection values are coerced as scalars
+        assertTrue(list.get(0) instanceof Number);
+        assertEquals(12L, ((Number) list.get(0)).longValue());
+        assertTrue(list.get(1) instanceof Number);
+        assertEquals(3L, ((Number) list.get(1)).longValue());
+        // "004" -> 4L for same reason
+        assertTrue(list.get(2) instanceof Number);
+        assertEquals(4L, ((Number) list.get(2)).longValue());
+        assertTrue(list.get(3) instanceof Number);
+        assertEquals(5L, ((Number) list.get(3)).longValue());
+        // Non-numeric string remains string
+        assertTrue(list.get(4) instanceof String);
+        assertEquals("X7", list.get(4));
+    }
 }

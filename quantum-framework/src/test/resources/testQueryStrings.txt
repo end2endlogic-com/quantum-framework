@@ -64,6 +64,12 @@ field:^["value1","value2",value3]
 field:^["value1","67648ff00fb5e63655b172f6",value3]
 #field:^[@@67648ff00fb5e63655b172f9,@@67648ff00fb5e63655b172f6]
 
+#-- Not IN Operation tests
+field:!^[value1,value2,value3]
+field:!^[67648ff00fb5e63655b172f9,67648ff00fb5e63655b172f6]
+field:!^["value1","value2",value3]
+field:!^["value1","67648ff00fb5e63655b172f6",value3]
+
 field.subfield:^[subvalue1,subvalue2]
 field.subfield:^[67648ff00fb5e63655b172f9,67648ff00fb5e63655b172f6]
 field.subfield.subsubfield:^[deepvalue1,deepvalue2]
@@ -71,6 +77,8 @@ field.subfield.subsubfield:^[deepvalue1,deepvalue2]
 
 #-- ElemMatch operator tests
 arrayField:{subField:1&&otherSub:2}
+arrayField:{subField:<#12}
+arrayField:{(subField:<#12)||(subField:>#15)}
 
 #-- Combination of Operators
 (field:1&&field2:2)||field3:3

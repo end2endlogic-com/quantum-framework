@@ -173,15 +173,23 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
     }
 
 
+    // Track nested query depth (top-level = 1)
+    private int queryDepth = 0;
+
     @Override
     public void enterQuery(BIAPIQueryParser.QueryContext ctx) {
+        queryDepth++;
         complete = false;
     }
 
     @Override
     public void exitQuery(BIAPIQueryParser.QueryContext ctx) {
-        buildComposite();
-        checkDone();
+        // Only finalize at top-level
+        queryDepth--;
+        if (queryDepth == 0) {
+            buildComposite();
+            checkDone();
+        }
     }
 
     protected void checkDone() {
@@ -211,62 +219,122 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
 
     // Build the composite for the portion of the stacks added since the given markers
     protected void buildCompositeSince(int startOpSize, int startFilterSize) {
-        List<Filter> andFilters = new ArrayList<>();
-        List<Filter> orFilters = new ArrayList<>();
-        Filter[] filterArray = new Filter[0];
+       List<Filter> andFilters = new ArrayList<>();
+       List<Filter> orFilters = new ArrayList<>();
+       if (Log.isDebugEnabled()) {
+           Log.debug("buildCompositeSince: startOp=" + startOpSize + ", startFilter=" + startFilterSize + ", opDepthBefore=" + opTypeStack.size() + ", filterDepthBefore=" + filterStack.size());
+       }
 
-        // Unwind only the operators added since the marker
-        while (opTypeStack.size() > startOpSize) {
-            int opType = opTypeStack.pop();
-            switch (opType) {
-                case BIAPIQueryParser.AND:
-                    andFilters.add(filterStack.pop());
-                    break;
-                case BIAPIQueryParser.OR:
-                    if (!andFilters.isEmpty()) {
-                        andFilters.add(filterStack.pop());
-                        orFilters.add(Filters.and(andFilters.toArray(filterArray)));
-                        andFilters = new ArrayList<>();
-                    } else {
-                        orFilters.add(filterStack.pop());
-                    }
-                    break;
-                case BIAPIQueryParser.LPAREN:
-                    if (andFilters.isEmpty()) {
-                        andFilters.add(filterStack.pop());
-                        orFilters.add(Filters.and(andFilters.toArray(filterArray)));
-                        andFilters = new ArrayList<>();
-                    } else {
-                        orFilters.add(filterStack.pop());
-                    }
-                    if (orFilters.size() == 1) {
-                        filterStack.push(orFilters.get(0));
-                    } else if (orFilters.size() > 1) {
-                        filterStack.push(Filters.or(orFilters.toArray(filterArray)));
-                    } else {
-                        throw new IllegalStateException("OrCriteria is empty expected to be not empty?");
-                    }
-                    orFilters = new ArrayList<>();
-                    break;
-                default:
-                    throw new IllegalArgumentException("Unsupported operation:" + opType);
+       // Unwind only operators added since the marker
+       while (opTypeStack.size() > startOpSize) {
+          int opType = opTypeStack.pop();
+          switch (opType) {
+             case BIAPIQueryParser.AND: {
+                if (filterStack.size() <= startFilterSize) {
+                   throw new IllegalStateException("AND expects a filter pushed in inner scope, but none found");
+                }
+                // consume right-hand side for AND
+                andFilters.add(filterStack.pop());
+                break;
+             }
+             case BIAPIQueryParser.OR: {
+                if (filterStack.size() <= startFilterSize) {
+                   throw new IllegalStateException("OR expects a filter pushed in inner scope, but none found");
+                }
+                if (!andFilters.isEmpty()) {
+                   // Finish the pending AND (right side already popped above)
+                   andFilters.add(filterStack.pop()); // left side
+                   orFilters.add(Filters.and(andFilters.toArray(Filter[]::new)));
+                   andFilters = new ArrayList<>();
+                } else {
+                   // Right-hand side of the OR
+                   orFilters.add(filterStack.pop());
+                }
+                break;
+             }
+             case BIAPIQueryParser.LPAREN: {
+                // Close the group using only inner-scope filters
+                if (filterStack.size() <= startFilterSize) {
+                   throw new IllegalStateException("Group close found no inner filters");
+                }
+                if (andFilters.isEmpty()) {
+                   orFilters.add(filterStack.pop());
+                } else {
+                   andFilters.add(filterStack.pop());
+                   orFilters.add(Filters.and(andFilters.toArray(Filter[]::new)));
+                   andFilters = new ArrayList<>();
+                }
 
-            }
-        }
-        if (!andFilters.isEmpty()) {
-            andFilters.add(filterStack.pop());
-            orFilters.add(Filters.and(andFilters.toArray(filterArray)));
-        } else {
-            if (!filterStack.empty())
-                orFilters.add(filterStack.pop());
-            else
-                Log.warn("!! Filter stack is empty, expected at least one filter, possible problem with grammar");
-        }
-        if (orFilters.size() == 1) {
-            filterStack.push(orFilters.get(0));
-        } else if (orFilters.size() > 1) {
-            filterStack.push(Filters.or(orFilters.toArray(filterArray)));
-        }
+                // Push combined group back
+                if (orFilters.size() == 1) {
+                   filterStack.push(orFilters.get(0));
+                } else if (orFilters.size() > 1) {
+                   filterStack.push(Filters.or(orFilters.toArray(Filter[]::new)));
+                } else {
+                   throw new IllegalStateException("OrCriteria is empty; expected at least one filter in group");
+                }
+                orFilters = new ArrayList<>();
+                break;
+             }
+             default:
+                throw new IllegalArgumentException("Unsupported operation:" + opType);
+          }
+       }
+
+       // After unwinding the inner ops, consolidate the remaining inner leaves
+       int innerCount = filterStack.size() - startFilterSize;
+
+       // 1) If a pending AND exists at the boundary, finalize it first.
+       if (!andFilters.isEmpty()) {
+          if (innerCount <= 0) {
+             throw new IllegalStateException("AND composition has no right-hand filter in inner scope");
+          }
+          andFilters.add(filterStack.pop()); // left-hand
+          Filter andCombined = Filters.and(andFilters.toArray(Filter[]::new));
+
+          if (!orFilters.isEmpty()) {
+             orFilters.add(andCombined);
+             filterStack.push(Filters.or(orFilters.toArray(Filter[]::new)));
+          } else {
+             filterStack.push(andCombined);
+          }
+          return;
+       }
+
+       // 2) If we have collected OR parts, fold the remaining inner-scope left side into OR.
+       if (!orFilters.isEmpty()) {
+          Filter leftCombined = null;
+          if (innerCount > 1) {
+             List<Filter> leftList = new ArrayList<>();
+             for (int i = 0; i < innerCount; i++) {
+                leftList.add(0, filterStack.pop()); // preserve order
+             }
+             leftCombined = Filters.and(leftList.toArray(Filter[]::new));
+          } else if (innerCount == 1) {
+             leftCombined = filterStack.pop();
+          }
+          if (leftCombined != null) {
+             // The left side should be first logically, but order doesn't affect semantics
+             orFilters.add(leftCombined);
+          }
+          filterStack.push(Filters.or(orFilters.toArray(Filter[]::new)));
+          return;
+       }
+
+       // 3) No pending AND/OR at all; consolidate remaining inner leaves.
+       if (innerCount == 1) {
+          // Single inner filter already on stack.
+          return;
+       } else if (innerCount > 1) {
+          List<Filter> tmp = new ArrayList<>();
+          for (int i = 0; i < innerCount; i++) {
+             tmp.add(0, filterStack.pop()); // preserve order
+          }
+          filterStack.push(Filters.and(tmp.toArray(Filter[]::new)));
+       } else {
+          // innerCount == 0 — do not steal from outer scope; let caller decide what to do
+          // (exitElemMatchExpr will detect and throw a precise error message)
+       }
     }
 
     @Override
@@ -315,60 +383,115 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         }
     }
 
-    @Override
-    public void enterInExpr(BIAPIQueryParser.InExprContext ctx) {
-        String field = ctx.field.getText();
+   @Override
+   public void enterInExpr(BIAPIQueryParser.InExprContext ctx) {
+      String field = ctx.field.getText();
 
-        String inner = ctx.value.getText(); // like "[a,b]" or "[${ids}]"
-        String innerNoBrackets = inner.substring(1, inner.length() - 1);
+      List<Object> values = new ArrayList<>();
 
-        String trimmed = innerNoBrackets.trim();
-        boolean isSingleVar = trimmed.startsWith("${") && trimmed.endsWith("}");
+      // Handle the special single-variable form: [${ids}]
+      BIAPIQueryParser.ValueListExprContext list = ctx.value;
+      boolean singleVarOnly = false;
+      if (list != null && list.children != null) {
+         long varCount = list.children.stream()
+                            .filter(c -> c instanceof org.antlr.v4.runtime.tree.TerminalNode tn &&
+                                            tn.getSymbol().getType() == BIAPIQueryParser.VARIABLE)
+                            .count();
+         long valueCount = list.children.stream()
+                              .filter(c -> c instanceof org.antlr.v4.runtime.tree.TerminalNode tn &&
+                                              switch (tn.getSymbol().getType()) {
+                                                 case BIAPIQueryParser.STRING,
+                                                      BIAPIQueryParser.QUOTED_STRING,
+                                                      BIAPIQueryParser.VARIABLE,
+                                                      BIAPIQueryParser.OID,
+                                                      BIAPIQueryParser.REFERENCE -> true;
+                                                 default -> false;
+                                              })
+                              .count();
+         singleVarOnly = (varCount == 1 && valueCount == 1);
+      }
 
-        List<Object> values = new ArrayList<>();
+      if (singleVarOnly && sub != null) {
+         // Expand the single variable into values
+         org.antlr.v4.runtime.tree.TerminalNode varNode = list.children.stream()
+                                                             .filter(c -> c instanceof org.antlr.v4.runtime.tree.TerminalNode tn &&
+                                                                             tn.getSymbol().getType() == BIAPIQueryParser.VARIABLE)
+                                                             .map(c -> (org.antlr.v4.runtime.tree.TerminalNode) c)
+                                                             .findFirst().orElse(null);
+         String varTokenText = varNode != null ? varNode.getText() : null; // like "${ids}"
+         String varName = varTokenText != null ? varTokenText.substring(2, varTokenText.length() - 1) : null;
 
-        if (isSingleVar && sub != null) {
-            String varName = trimmed.substring(2, trimmed.length() - 1);
-            Object v = objectVars != null ? objectVars.get(varName) : null;
-            if (v instanceof Collection<?> coll) {
-                for (Object item : coll) {
-                    values.add(coerceValue(item));
-                }
-            } else if (v != null && v.getClass().isArray()) {
-                int len = java.lang.reflect.Array.getLength(v);
-                for (int i = 0; i < len; i++) {
-                    Object item = java.lang.reflect.Array.get(v, i);
-                    values.add(coerceValue(item));
-                }
-            } else {
-                String substituted = sub.replace(trimmed);
-                if (substituted != null && !substituted.isBlank()) {
-                    for (String token : substituted.split(",")) {
-                        values.add(coerceValue(token.trim()));
-                    }
-                }
+         Object v = (varName != null && objectVars != null) ? objectVars.get(varName) : null;
+         if (v instanceof Collection<?> coll) {
+            for (Object item : coll) {
+               values.add(coerceValue(item));
             }
-        } else {
-            String substituted = (sub != null) ? sub.replace(innerNoBrackets) : innerNoBrackets;
+         } else if (v != null && v.getClass().isArray()) {
+            int len = java.lang.reflect.Array.getLength(v);
+            for (int i = 0; i < len; i++) {
+               values.add(coerceValue(java.lang.reflect.Array.get(v, i)));
+            }
+         } else {
+            String substituted = sub.replace(varTokenText); // may yield comma-separated scalars
             if (substituted != null && !substituted.isBlank()) {
-                for (String raw : substituted.split(",")) {
-                    String token = raw.trim();
-                    values.add(coerceValue(token));
-                }
+               for (String part : substituted.split(",")) {
+                  values.add(coerceValue(part.trim()));
+               }
             }
-        }
+         }
+      } else {
+         // Type-aware collection of each literal in the list
+         for (var child : list.children) {
+            if (!(child instanceof org.antlr.v4.runtime.tree.TerminalNode tn)) continue;
+            int t = tn.getSymbol().getType();
+            switch (t) {
+               case BIAPIQueryParser.QUOTED_STRING: {
+                  // Preserve as string regardless of numeric-looking content
+                  values.add(coerceValue(new StringLiteral(tn.getText())));
+                  break;
+               }
+               case BIAPIQueryParser.STRING: {
+                  // Allow coercion (numbers, booleans, dates, ObjectId, etc.)
+                  values.add(coerceValue(tn.getText()));
+                  break;
+               }
+               case BIAPIQueryParser.OID: {
+                  values.add(new ObjectId(tn.getText()));
+                  break;
+               }
+               case BIAPIQueryParser.REFERENCE: {
+                  values.add(buildReference(field, tn.getText()));
+                  break;
+               }
+               case BIAPIQueryParser.VARIABLE: {
+                  String replaced = (sub != null) ? sub.replace(tn.getText()) : tn.getText();
+                  // Note: this branch treats variable expansion as scalar(s) to be coerced
+                  // If callers need exact string semantics, they should quote the variable in the query: ["${var}"]
+                  if (replaced != null && !replaced.isBlank()) {
+                     for (String part : replaced.split(",")) {
+                        values.add(coerceValue(part.trim()));
+                     }
+                  }
+                  break;
+               }
+               default:
+                  // Ignore commas and brackets; any other token types are unexpected
+                  break;
+            }
+         }
+      }
 
-        Filter f;
-        String opText = ctx.op.getText();
-        if (":^".equals(opText)) {
-            f = Filters.in(field, values);
-        } else if (":!^".equals(opText)) {
-            f = Filters.nin(field, values);
-        } else {
-            throw new IllegalArgumentException("Operator not recognized: " + ctx.op.getText());
-        }
-        filterStack.push(f);
-    }
+      Filter f;
+      String opText = ctx.op.getText();
+      if (":^".equals(opText)) {
+         f = Filters.in(field, values);
+      } else if (":!^".equals(opText)) {
+         f = Filters.nin(field, values);
+      } else {
+         throw new IllegalArgumentException("Operator not recognized: " + ctx.op.getText());
+      }
+      filterStack.push(f);
+   }
 
     @Override
     public void exitNotExpr(BIAPIQueryParser.NotExprContext ctx) {
@@ -411,6 +534,9 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
     @Override
     public void enterElemMatchExpr(BIAPIQueryParser.ElemMatchExprContext ctx) {
         // Mark current stack depths so we can scope the nested expression processing
+        if (Log.isDebugEnabled()) {
+            Log.debug("enterElemMatch: field=" + ctx.field.getText() + ", opDepth=" + opTypeStack.size() + ", filterDepth=" + filterStack.size());
+        }
         opTypeMarkers.push(opTypeStack.size());
         filterStackMarkers.push(filterStack.size());
     }
@@ -420,15 +546,23 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         // Build composite for nested part only, then wrap it in elemMatch
         int startOp = opTypeMarkers.pop();
         int startFilter = filterStackMarkers.pop();
+        if (Log.isDebugEnabled()) {
+            Log.debug("exitElemMatch: field=" + ctx.field.getText() + ", startOp=" + startOp + ", startFilter=" + startFilter + ", opDepthBeforeBuild=" + opTypeStack.size() + ", filterDepthBeforeBuild=" + filterStack.size());
+        }
         // compose inner filters added within elemMatch
         buildCompositeSince(startOp, startFilter);
-
+        if (Log.isDebugEnabled()) {
+            Log.debug("exitElemMatch: after build, filterDepth=" + filterStack.size());
+        }
         if (filterStack.size() <= startFilter) {
             throw new IllegalStateException("elemMatch inner expression produced no filters");
         }
         Filter inner = filterStack.pop();
         Filter f = Filters.elemMatch(ctx.field.getText(), inner);
         filterStack.push(f);
+        if (Log.isDebugEnabled()) {
+            Log.debug("exitElemMatch: pushed elemMatch, filterDepthNow=" + filterStack.size());
+        }
     }
 
     @Override
