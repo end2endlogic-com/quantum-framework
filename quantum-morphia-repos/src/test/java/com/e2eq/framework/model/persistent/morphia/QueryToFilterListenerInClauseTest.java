@@ -118,7 +118,7 @@ public class QueryToFilterListenerInClauseTest {
 
     @Test
     public void equality_unquoted_number_is_string_for_refName() {
-        String q = "refName = 9987567";
+        String q = "refName:9987567";
         Filter f = MorphiaUtils.convertToFilter(q, DummyModel.class);
 
         assertEquals("$eq", f.getName());
