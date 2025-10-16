@@ -3,6 +3,8 @@ package com.e2eq.framework.service.seed;
 import com.coditory.sherlock.DistributedLock;
 import com.coditory.sherlock.Sherlock;
 import com.coditory.sherlock.mongo.MongoSherlock;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
+import com.e2eq.framework.util.SecurityUtils;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import io.quarkus.logging.Log;
@@ -37,6 +39,9 @@ public class SeedStartupRunner {
 
     @Inject
     EnvConfigUtils envConfigUtils;
+
+    @Inject
+    SecurityUtils securityUtils;
 
     @ConfigProperty(name = "quantum.seed-pack.enabled", defaultValue = "true")
     boolean enabled;
@@ -113,7 +118,7 @@ public class SeedStartupRunner {
                     );
                     resolvedOwnerId = adminDoc.getString("userId");
                 } catch (Exception ex) {
-                    Log.warnf("SeedStartupRunner: failed to materialize admin dataDomain in realm %s: %s", realm, ex.getMessage());
+                    Log.warnf("SeedStartupRunner: failed to materialize admin dataDomain in realm %s: exception msg: %s", realm, ex.getMessage());
                     adminDD = null;
                 }
             }
@@ -135,7 +140,7 @@ public class SeedStartupRunner {
                         .withDefaultRealm(realm)
                         .withDataDomain(adminDD)
                         .withUserId(pcUserId)
-                        .withRoles(new String[]{"ADMIN"})
+                        .withRoles(new String[]{"admin"})
                         .withScope("systemGenerated")
                         .build();
                 resourceContext = new com.e2eq.framework.model.securityrules.ResourceContext.Builder()
@@ -144,8 +149,18 @@ public class SeedStartupRunner {
                         .withFunctionalDomain("SEED")
                         .withAction("APPLY")
                         .build();
-                com.e2eq.framework.model.securityrules.SecurityContext.setPrincipalContext(principalContext);
-                com.e2eq.framework.model.securityrules.SecurityContext.setResourceContext(resourceContext);
+          //      com.e2eq.framework.model.securityrules.SecurityContext.setPrincipalContext(principalContext);
+          //      com.e2eq.framework.model.securityrules.SecurityContext.setResourceContext(resourceContext);
+            } else {
+                Log.warnf("SeedStartupRunner: failed to establish SecurityContext for admin user %s in realm %s attempting to use system@system.com", adminUserId, realm);
+                principalContext = securityUtils.getSystemPrincipalContext();
+                resourceContext = securityUtils.getSystemSecurityResourceContext();
+               ctxBuilder
+                  .tenantId(envConfigUtils.getSystemTenantId())
+                  .orgRefName(envConfigUtils.getSystemOrgRefName())
+                  .accountId(envConfigUtils.getSystemAccountNumber())
+                  .ownerId(envConfigUtils.getSystemUserId())
+                  .build();
             }
 
             // Discover packs and select latest per name
@@ -184,7 +199,9 @@ public class SeedStartupRunner {
                 return;
             }
             Log.infof("SeedStartupRunner: applying %d seed pack(s) to realm %s from %s", refs.size(), realm, root.toAbsolutePath());
-            loader.apply(refs, context);
+            SecurityCallScope.runWithContexts(principalContext, resourceContext, () -> {
+              loader.apply(refs, context);
+              });
         } finally {
             // Always clear any thread-local security contexts we may have set
             try { com.e2eq.framework.model.securityrules.SecurityContext.clear(); } catch (Exception ignored) {}
