@@ -9,7 +9,7 @@ package com.e2eq.framework.model.persistent.morphia;
 public final class StringLiteral {
     private final String value;
 
-    private StringLiteral(String value) {
+    public StringLiteral(String value) {
         this.value = value;
     }
 
