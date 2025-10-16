@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Tutorial: Build a Multi-tenant SaaS with Quantum</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-10-16T14:15:32Z</span>
+<span id="revdate">2025-10-16T18:24:42Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -679,6 +679,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_integration_with_rest_apis">36.1.6. Integration with REST APIs</a></li>
 <li><a href="#_error_handling_2">36.1.7. Error Handling</a></li>
 <li><a href="#_see_also">36.1.8. See Also</a></li>
+<li><a href="#_execution_engines_and_listeners">36.1.9. Execution engines and listeners</a></li>
 </ul>
 </li>
 </ul>
@@ -4921,6 +4922,236 @@ createdDate:2024-12-25
 <p><a href="domain-rule-context.html">Access Resolvers</a></p>
 </li>
 </ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_execution_engines_and_listeners">36.1.9. Execution engines and listeners</h4>
+<div class="paragraph">
+<p>The BIAPI query syntax is parsed once (via ANTLR) and can be executed by different "listeners" depending on the use case. Quantum ships with two primary implementations that share the same grammar and semantics:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Morphia listener: converts a query into Mongo/Morphia Filters for database-side execution</p>
+</li>
+<li>
+<p>In-memory listener: converts a query into a Java Predicate over JSON data for Quarkus/GraalVM-friendly in-memory execution</p>
+</li>
+</ul>
+</div>
+<div class="sect4">
+<h5 id="_morphia_querytofilterlistener">Morphia: QueryToFilterListener</h5>
+<div class="paragraph">
+<p>Use this when you want the database to perform the filtering. The listener walks the parse tree and produces a dev.morphia.query.filters.Filter which you can apply to Morphia queries. This is ideal for repository APIs and any endpoint where you want to leverage MongoDB indexes and avoid loading large data sets into memory.</p>
+</div>
+<div class="paragraph">
+<p>Key characteristics:
+- Output type: Morphia Filter
+- Execution: database-side (MongoDB)
+- Semantics: identical to grammar (comparisons, IN/NIN, exists, null, regex with wildcards, elemMatch, boolean &amp;&amp;/||/!!)
+- Variable expansion: supports ${vars} and single-variable IN list expansion (e.g., [${ids}] can expand to a collection/array or a comma-separated string)</p>
+</div>
+<div class="paragraph">
+<p>Example:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">com.e2eq.framework.grammar</span>.*;
+<span class="keyword">import</span> <span class="include">com.e2eq.framework.model.persistent.morphia.QueryToFilterListener</span>;
+<span class="keyword">import</span> <span class="include">dev.morphia.query.filters.Filter</span>;
+<span class="keyword">import</span> <span class="include">dev.morphia.query.filters.Filters</span>;
+<span class="keyword">import</span> <span class="include">org.antlr.v4.runtime</span>.*;
+<span class="keyword">import</span> <span class="include">org.antlr.v4.runtime.tree.ParseTreeWalker</span>;
+<span class="keyword">import</span> <span class="include">org.apache.commons.text.StringSubstitutor</span>;
+
+<span class="predefined-type">String</span> query = <span class="string"><span class="delimiter">&quot;</span><span class="content">(status:Assigned||status:Pending)&amp;&amp;displayName:*Route*</span><span class="delimiter">&quot;</span></span>;
+<span class="type">var</span> vars = java.util.Map.&lt;<span class="predefined-type">String</span>,<span class="predefined-type">String</span>&gt;of();
+
+<span class="comment">// Parse</span>
+CharStream cs = CharStreams.fromString(query);
+BIAPIQueryLexer lexer = <span class="keyword">new</span> BIAPIQueryLexer(cs);
+CommonTokenStream tokens = <span class="keyword">new</span> CommonTokenStream(lexer);
+BIAPIQueryParser parser = <span class="keyword">new</span> BIAPIQueryParser(tokens);
+BIAPIQueryParser.QueryContext tree = parser.query();
+
+<span class="comment">// Build Morphia filter</span>
+QueryToFilterListener listener = <span class="keyword">new</span> QueryToFilterListener(vars, <span class="keyword">new</span> StringSubstitutor(vars), <span class="comment">/* modelClass */</span> <span class="predefined-constant">null</span>);
+ParseTreeWalker.DEFAULT.walk(listener, tree);
+<span class="predefined-type">Filter</span> morphiaFilter = listener.getFilter();
+
+<span class="comment">// Use with Morphia query (example)</span>
+<span class="comment">// datastore.find(MyEntity.class).filter(morphiaFilter).iterator().toList();</span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>A few query examples (taken from testQueryStrings.txt):</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Equality: field:"quotedString"</p>
+</li>
+<li>
+<p>Comparisons: field:&gt;##12.56, field:&#8656;#123</p>
+</li>
+<li>
+<p>IN/NIN: field:^[value1,value2], field:!^[value1,value2]</p>
+</li>
+<li>
+<p>Exists/Null: field:~, field:null</p>
+</li>
+<li>
+<p>elemMatch: arrayField:{(subField:&lt;#12)||(subField:&gt;#15)}</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_in_memory_jsonnode_querytopredicatejsonlistener">In-memory (JsonNode): QueryToPredicateJsonListener</h5>
+<div class="paragraph">
+<p>Use this when you need to evaluate queries in memory without reflection on POJOs. This implementation compiles a query into a java.util.function.Predicate over a Jackson JsonNode. It is Quarkus/GraalVM friendly, useful for:
+- Unit tests where you want to validate query behavior without a database
+- Post-filtering or pre-filtering of already-fetched data
+- Evaluating access rules or business logic against transient objects</p>
+</div>
+<div class="paragraph">
+<p>Key characteristics:
+- Output type: Predicate&lt;JsonNode&gt;
+- Execution: in-memory
+- No runtime reflection: operates on JsonNode
+- Semantics and variable expansion match the Morphia listener</p>
+</div>
+<div class="paragraph">
+<p>Convenience helpers exist in QueryPredicates:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">com.e2eq.framework.query.QueryPredicates</span>;
+<span class="keyword">import</span> <span class="include">com.fasterxml.jackson.databind.JsonNode</span>;
+<span class="keyword">import</span> <span class="include">java.util.function.Predicate</span>;
+<span class="keyword">import</span> <span class="include">java.util.Map</span>;
+
+<span class="predefined-type">String</span> query = <span class="string"><span class="delimiter">&quot;</span><span class="content">(status:Assigned||status:Pending)&amp;&amp;displayName:*Route*</span><span class="delimiter">&quot;</span></span>;
+<span class="predefined-type">Predicate</span>&lt;JsonNode&gt; p = QueryPredicates.compilePredicate(query, <span class="predefined-type">Map</span>.of(), <span class="predefined-type">Map</span>.of());
+
+<span class="comment">// Example data as a POJO or Map -&gt; convert to JsonNode</span>
+record Ticket(<span class="predefined-type">String</span> status, <span class="predefined-type">String</span> displayName) {}
+Ticket ticket = <span class="keyword">new</span> Ticket(<span class="string"><span class="delimiter">&quot;</span><span class="content">Assigned</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">Route Exception in Route:To[http://com.xxx/update]</span><span class="delimiter">&quot;</span></span>);
+JsonNode node = QueryPredicates.toJsonNode(ticket);
+
+<span class="type">boolean</span> include = p.test(node); <span class="comment">// true</span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Additional examples</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Equality and comparisons</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>var vars = Map.&lt;String,String&gt;of();
+var objVars = Map.&lt;String,Object&gt;of();
+Predicate&lt;JsonNode&gt; eq = QueryPredicates.compilePredicate("quantity:#42", vars, objVars);
+Predicate&lt;JsonNode&gt; gt = QueryPredicates.compilePredicate("price:&gt;##19.99", vars, objVars);
+
+JsonNode product = QueryPredicates.toJsonNode(Map.of("quantity", 42, "price", 25.00));
+assert eq.test(product);
+assert gt.test(product);</pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>IN / NIN with variable expansion</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>var vars = Map.of("principalId", "66d1f1ab452b94674bbd934a");
+Predicate&lt;JsonNode&gt; in = QueryPredicates.compilePredicate("ownerId:^[${principalId},value2]", vars, Map.of());
+JsonNode doc = QueryPredicates.toJsonNode(Map.of("ownerId", "66d1f1ab452b94674bbd934a"));
+assert in.test(doc);</pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>elemMatch over arrays of objects</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>String q = "items:{(sku:abc||qty:&gt;#10)&amp;&amp;price:&lt;=##9.99}";
+Predicate&lt;JsonNode&gt; em = QueryPredicates.compilePredicate(q, Map.of(), Map.of());
+JsonNode order = QueryPredicates.toJsonNode(Map.of(
+  "items", java.util.List.of(
+     Map.of("sku","abc","qty", 5,  "price", 9.99),
+     Map.of("sku","xyz","qty", 12, "price", 8.50)
+)));
+// Matches: first item by sku OR second item by qty with price cap
+assert em.test(order);</pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Regex with wildcards</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>Predicate&lt;JsonNode&gt; rx = QueryPredicates.compilePredicate("displayName:*Route*", Map.of(), Map.of());
+JsonNode ticket = QueryPredicates.toJsonNode(Map.of("displayName", "Route Exception in Route:To[...]"));
+assert rx.test(ticket);</pre>
+</div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_choosing_the_right_listener">Choosing the right listener</h5>
+<div class="ulist">
+<ul>
+<li>
+<p>Use Morphia (QueryToFilterListener) when:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>You are filtering MongoDB collections and want the DB to do the work (indexing, pagination, scalability)</p>
+</li>
+<li>
+<p>You need server-side performance and minimal memory footprint</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Use In-memory (QueryToPredicateJsonListener) when:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>You run in Quarkus native image and want to avoid reflection on POJOs</p>
+</li>
+<li>
+<p>You are writing unit tests or applying rules to transient/aggregated data</p>
+</li>
+<li>
+<p>You need to evaluate a query over already materialized objects without another database round-trip</p>
+</li>
+</ul>
+</div>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Both listeners aim to maintain parity with the grammar. If you observe mismatches, please file an issue with the query string, the evaluated data sample, and the expected vs actual results.</p>
+</div>
 </div>
 </div>
 </div>
