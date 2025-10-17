@@ -335,3 +335,152 @@ createdDate:2024-12-25
 - xref:rest-crud.adoc#querying[REST CRUD Querying]
 - xref:permissions.adoc[Permission Rules]
 - xref:domain-rule-context.adoc[Access Resolvers]
+
+
+==== Execution engines and listeners
+
+The BIAPI query syntax is parsed once (via ANTLR) and can be executed by different "listeners" depending on the use case. Quantum ships with two primary implementations that share the same grammar and semantics:
+
+- Morphia listener: converts a query into Mongo/Morphia Filters for database-side execution
+- In-memory listener: converts a query into a Java Predicate over JSON data for Quarkus/GraalVM-friendly in-memory execution
+
+===== Morphia: QueryToFilterListener
+
+Use this when you want the database to perform the filtering. The listener walks the parse tree and produces a dev.morphia.query.filters.Filter which you can apply to Morphia queries. This is ideal for repository APIs and any endpoint where you want to leverage MongoDB indexes and avoid loading large data sets into memory.
+
+Key characteristics:
+- Output type: Morphia Filter
+- Execution: database-side (MongoDB)
+- Semantics: identical to grammar (comparisons, IN/NIN, exists, null, regex with wildcards, elemMatch, boolean &&/||/!!)
+- Variable expansion: supports ${vars} and single-variable IN list expansion (e.g., [${ids}] can expand to a collection/array or a comma-separated string)
+
+Example:
+
+[source,java]
+----
+import com.e2eq.framework.grammar.*;
+import com.e2eq.framework.model.persistent.morphia.QueryToFilterListener;
+import dev.morphia.query.filters.Filter;
+import dev.morphia.query.filters.Filters;
+import org.antlr.v4.runtime.*;
+import org.antlr.v4.runtime.tree.ParseTreeWalker;
+import org.apache.commons.text.StringSubstitutor;
+
+String query = "(status:Assigned||status:Pending)&&displayName:*Route*";
+var vars = java.util.Map.<String,String>of();
+
+// Parse
+CharStream cs = CharStreams.fromString(query);
+BIAPIQueryLexer lexer = new BIAPIQueryLexer(cs);
+CommonTokenStream tokens = new CommonTokenStream(lexer);
+BIAPIQueryParser parser = new BIAPIQueryParser(tokens);
+BIAPIQueryParser.QueryContext tree = parser.query();
+
+// Build Morphia filter
+QueryToFilterListener listener = new QueryToFilterListener(vars, new StringSubstitutor(vars), /* modelClass */ null);
+ParseTreeWalker.DEFAULT.walk(listener, tree);
+Filter morphiaFilter = listener.getFilter();
+
+// Use with Morphia query (example)
+// datastore.find(MyEntity.class).filter(morphiaFilter).iterator().toList();
+----
+
+A few query examples (taken from testQueryStrings.txt):
+
+- Equality: field:"quotedString"
+- Comparisons: field:>##12.56, field:<=#123
+- IN/NIN: field:^[value1,value2], field:!^[value1,value2]
+- Exists/Null: field:~, field:null
+- elemMatch: arrayField:{(subField:<#12)||(subField:>#15)}
+
+===== In-memory (JsonNode): QueryToPredicateJsonListener
+
+Use this when you need to evaluate queries in memory without reflection on POJOs. This implementation compiles a query into a java.util.function.Predicate over a Jackson JsonNode. It is Quarkus/GraalVM friendly, useful for:
+- Unit tests where you want to validate query behavior without a database
+- Post-filtering or pre-filtering of already-fetched data
+- Evaluating access rules or business logic against transient objects
+
+Key characteristics:
+- Output type: Predicate<JsonNode>
+- Execution: in-memory
+- No runtime reflection: operates on JsonNode
+- Semantics and variable expansion match the Morphia listener
+
+Convenience helpers exist in QueryPredicates:
+
+[source,java]
+----
+import com.e2eq.framework.query.QueryPredicates;
+import com.fasterxml.jackson.databind.JsonNode;
+import java.util.function.Predicate;
+import java.util.Map;
+
+String query = "(status:Assigned||status:Pending)&&displayName:*Route*";
+Predicate<JsonNode> p = QueryPredicates.compilePredicate(query, Map.of(), Map.of());
+
+// Example data as a POJO or Map -> convert to JsonNode
+record Ticket(String status, String displayName) {}
+Ticket ticket = new Ticket("Assigned", "Route Exception in Route:To[http://com.xxx/update]");
+JsonNode node = QueryPredicates.toJsonNode(ticket);
+
+boolean include = p.test(node); // true
+----
+
+Additional examples
+
+- Equality and comparisons
+[source,java]
+----
+var vars = Map.<String,String>of();
+var objVars = Map.<String,Object>of();
+Predicate<JsonNode> eq = QueryPredicates.compilePredicate("quantity:#42", vars, objVars);
+Predicate<JsonNode> gt = QueryPredicates.compilePredicate("price:>##19.99", vars, objVars);
+
+JsonNode product = QueryPredicates.toJsonNode(Map.of("quantity", 42, "price", 25.00));
+assert eq.test(product);
+assert gt.test(product);
+----
+
+- IN / NIN with variable expansion
+[source,java]
+----
+var vars = Map.of("principalId", "66d1f1ab452b94674bbd934a");
+Predicate<JsonNode> in = QueryPredicates.compilePredicate("ownerId:^[${principalId},value2]", vars, Map.of());
+JsonNode doc = QueryPredicates.toJsonNode(Map.of("ownerId", "66d1f1ab452b94674bbd934a"));
+assert in.test(doc);
+----
+
+- elemMatch over arrays of objects
+[source,java]
+----
+String q = "items:{(sku:abc||qty:>#10)&&price:<=##9.99}";
+Predicate<JsonNode> em = QueryPredicates.compilePredicate(q, Map.of(), Map.of());
+JsonNode order = QueryPredicates.toJsonNode(Map.of(
+  "items", java.util.List.of(
+     Map.of("sku","abc","qty", 5,  "price", 9.99),
+     Map.of("sku","xyz","qty", 12, "price", 8.50)
+)));
+// Matches: first item by sku OR second item by qty with price cap
+assert em.test(order);
+----
+
+- Regex with wildcards
+[source,java]
+----
+Predicate<JsonNode> rx = QueryPredicates.compilePredicate("displayName:*Route*", Map.of(), Map.of());
+JsonNode ticket = QueryPredicates.toJsonNode(Map.of("displayName", "Route Exception in Route:To[...]"));
+assert rx.test(ticket);
+----
+
+===== Choosing the right listener
+
+- Use Morphia (QueryToFilterListener) when:
+  * You are filtering MongoDB collections and want the DB to do the work (indexing, pagination, scalability)
+  * You need server-side performance and minimal memory footprint
+
+- Use In-memory (QueryToPredicateJsonListener) when:
+  * You run in Quarkus native image and want to avoid reflection on POJOs
+  * You are writing unit tests or applying rules to transient/aggregated data
+  * You need to evaluate a query over already materialized objects without another database round-trip
+
+Both listeners aim to maintain parity with the grammar. If you observe mismatches, please file an issue with the query string, the evaluated data sample, and the expected vs actual results.
