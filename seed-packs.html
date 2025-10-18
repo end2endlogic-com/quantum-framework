@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Seed packs and declarative tenant seeding</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-10-16T18:24:42Z</span>
+<span id="revdate">2025-10-18T00:23:42Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -574,6 +574,17 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </li>
 <li><a href="#_rest_api_for_seed_packs">15. REST API for seed packs</a></li>
 <li><a href="#_using_morphiaseedrepository_morphia_backed_seeding">16. Using MorphiaSeedRepository (Morphia-backed seeding)</a></li>
+<li><a href="#_dataset_urls_and_routing_file_and_s3">17. Dataset URLs and routing (file:// and s3://)</a></li>
+<li><a href="#_s3_seed_source_optional_module">18. S3 Seed Source (optional module)</a>
+<ul class="sectlevel2">
+<li><a href="#_when_to_use_s3_vs_filesystem">18.1. When to use S3 vs. filesystem</a></li>
+<li><a href="#_s3_layout_conventions">18.2. S3 layout conventions</a></li>
+<li><a href="#_configuration_and_credentials">18.3. Configuration and credentials</a></li>
+<li><a href="#_usage_examples">18.4. Usage examples</a></li>
+<li><a href="#_defining_datasets_in_the_manifest_s3">18.5. Defining datasets in the manifest (S3)</a></li>
+<li><a href="#_troubleshooting_2">18.6. Troubleshooting</a></li>
+</ul>
+</li>
 </ul>
 </div>
 </div>
@@ -1699,11 +1710,321 @@ a dataset via a Morphia repository mapped to a concrete UnversionedBaseModel. Th
 </div>
 </div>
 </div>
+<div class="sect1">
+<h2 id="_dataset_urls_and_routing_file_and_s3">17. Dataset URLs and routing (file:// and s3://)</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Starting with Quantum 1.2.2, dataset files in a manifest can be specified either as:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Relative paths (backward compatible): resolved relative to the manifest’s own location as provided by its SeedSource (filesystem or S3).</p>
+</li>
+<li>
+<p>Absolute URLs with a scheme that identifies the source: currently supported schemes are file:// and s3://. The loader automatically routes these URLs to the appropriate SeedSource at runtime.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Notes:
+- If the dataset value contains "://", it is treated as a URL and routed by scheme. Otherwise it is treated as a relative path.
+- Using URLs allows you to mix sources inside a single manifest (e.g., some datasets from the local filesystem and others from S3).
+- This is extensible; additional schemes can be supported by adding optional modules in the future.</p>
+</div>
+<div class="paragraph">
+<p>Examples:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml"><span class="key">seedPack</span>: <span class="string"><span class="content">mixed-demo</span></span>
+<span class="key">version</span>: <span class="string"><span class="content">0.1.0</span></span>
+
+<span class="key">datasets</span>:
+  <span class="comment"># Relative path (resolved relative to the manifest location)</span>
+  - <span class="string"><span class="content">collection: localDefaults</span></span>
+    <span class="key">file</span>: <span class="string"><span class="content">datasets/defaults.ndjson</span></span>
+    <span class="key">naturalKey</span>: <span class="string"><span class="content">[ key ]</span></span>
+    <span class="key">upsert</span>: <span class="string"><span class="content">true</span></span>
+
+  <span class="comment"># Absolute filesystem URL</span>
+  - <span class="string"><span class="content">collection: roles</span></span>
+    <span class="key">file</span>: <span class="string"><span class="content">file:///opt/app/seed-packs/roles.ndjson</span></span>
+    <span class="key">naturalKey</span>: <span class="string"><span class="content">[ code ]</span></span>
+    <span class="key">upsert</span>: <span class="string"><span class="content">true</span></span>
+
+  <span class="comment"># Absolute S3 URL</span>
+  - <span class="string"><span class="content">collection: carriers</span></span>
+    <span class="key">file</span>: <span class="string"><span class="content">s3://my-seeds/mixed-demo/0.1.0/carriers.ndjson</span></span>
+    <span class="key">naturalKey</span>: <span class="string"><span class="content">[ code ]</span></span>
+    <span class="key">upsert</span>: <span class="string"><span class="content">true</span></span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Routing behavior:
+- Relative path: delegated to the SeedSource that loaded the manifest (unchanged behavior).
+- file:// URL: handled by FileSeedSource.
+- s3:// URL: handled by S3SeedSource (requires the optional quantum-seed-s3 module on the classpath).</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_s3_seed_source_optional_module">18. S3 Seed Source (optional module)</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The framework provides an optional SeedSource backed by Amazon S3, packaged in a separate module so you can include it only when needed:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Module: <code>quantum-seed-s3</code></p>
+</li>
+<li>
+<p>Class: <code>com.end2endlogic.quantum.seed.s3.S3SeedSource</code></p>
+</li>
+<li>
+<p>Purpose: Discover seed pack manifests and datasets stored in S3; optionally assume an IAM role via STS if cross‑account access is required.</p>
+</li>
+</ul>
+</div>
+<div class="sect2">
+<h3 id="_when_to_use_s3_vs_filesystem">18.1. When to use S3 vs. filesystem</h3>
+<div class="paragraph">
+<p>Use S3 when any of the following apply:
+- You want a single canonical location for seed content shared across services and environments.
+- You need to distribute seed packs across many runtimes (containers, serverless) without baking files into images.
+- You want to leverage S3 features: versioning, object immutability, access logging, and cross‑account sharing.
+- CI/CD pipelines or content teams publish seed packs independently from application deployments.</p>
+</div>
+<div class="paragraph">
+<p>Filesystem may be simpler when:
+- Developing locally with small packs that live inside your project.
+- You prefer packs bundled within the application JAR/image and don’t need central distribution.</p>
+</div>
+<div class="paragraph">
+<p>Advantages of S3 over filesystem:
+- Centralized distribution and caching via S3/CloudFront.
+- Cross‑account access with STS AssumeRole.
+- Object versioning and retention policies for auditability.
+- Decouples seed content delivery from app build artifacts.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_s3_layout_conventions">18.2. S3 layout conventions</h3>
+<div class="paragraph">
+<p>S3SeedSource expects the same on-disk structure as FileSeedSource, just hosted under a bucket + optional prefix. Each seed pack version is a folder containing a manifest file and any referenced datasets. For example:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>s3://my-seeds/seed-packs/customer/1.0.0/manifest.yaml</p>
+</li>
+<li>
+<p>s3://my-seeds/seed-packs/customer/1.0.0/customers.ndjson</p>
+</li>
+<li>
+<p>s3://my-seeds/seed-packs/logistics-core/1.4.2/manifest.yaml</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Notes:
+- The manifest file name defaults to <code>manifest.yaml</code> but can be overridden.
+- Dataset file paths in the manifest are resolved relative to the manifest’s key (folder).</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_configuration_and_credentials">18.3. Configuration and credentials</h3>
+<div class="paragraph">
+<p>Constructor parameters for S3SeedSource:
+- id: Human-friendly source id (e.g., "s3-main").
+- bucket: S3 bucket name.
+- prefix: Optional prefix under which seed packs live (e.g., "seed-packs/"). May be empty.
+- manifestFileName: Optional. Defaults to "manifest.yaml".
+- region: Optional AWS region. If omitted, AWS SDK v2 region resolution applies.
+- roleArn: Optional ARN of a role to assume via STS. If omitted/blank, the default credentials chain is used.
+- roleSessionName: Optional session name when assuming a role. Defaults to "quantum-seed".
+- externalId: Optional ExternalId for AssumeRole if the target role trust policy requires it.
+- roleDuration: Optional session duration for AssumeRole; defaults to 30 minutes.</p>
+</div>
+<div class="paragraph">
+<p>Credential modes:
+- Default credentials chain (no roleArn): The AWS SDK v2 uses environment variables, profile, ECS/EC2/Lambda task role, etc.
+- AssumeRole (roleArn provided): The source uses STS to assume the specified role before calling S3.</p>
+</div>
+<div class="paragraph">
+<p>IAM considerations:
+- The credentials (base or assumed) must allow <code>s3:ListBucket</code> on the bucket (scoped to the prefix) and <code>s3:GetObject</code> for objects under the prefix.
+- For cross‑account usage, grant the calling account sts:AssumeRole on the target role, and in the role’s policy grant the S3 permissions above.</p>
+</div>
+<div class="paragraph">
+<p>Minimal target role policy example:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">Version</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">2012-10-17</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">Statement</span><span class="delimiter">&quot;</span></span>: [
+    {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">Effect</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Allow</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">Action</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">s3:ListBucket</span><span class="delimiter">&quot;</span></span>],
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">Resource</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">arn:aws:s3:::my-seeds</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">Condition</span><span class="delimiter">&quot;</span></span>: {<span class="key"><span class="delimiter">&quot;</span><span class="content">StringLike</span><span class="delimiter">&quot;</span></span>: {<span class="key"><span class="delimiter">&quot;</span><span class="content">s3:prefix</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">seed-packs/*</span><span class="delimiter">&quot;</span></span>]}}
+    },
+    {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">Effect</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Allow</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">Action</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">s3:GetObject</span><span class="delimiter">&quot;</span></span>],
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">Resource</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">arn:aws:s3:::my-seeds/seed-packs/*</span><span class="delimiter">&quot;</span></span>
+    }
+  ]
+}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_usage_examples">18.4. Usage examples</h3>
+<div class="paragraph">
+<p>Create a loader that discovers packs from S3 with the runtime IAM role or local credentials:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">com.e2eq.framework.service.seed</span>.*;
+<span class="keyword">import</span> <span class="include">com.end2endlogic.quantum.seed.s3.S3SeedSource</span>;
+<span class="keyword">import</span> <span class="include">software.amazon.awssdk.regions.Region</span>;
+
+SeedLoader loader = SeedLoader.builder()
+    .addSeedSource(<span class="keyword">new</span> S3SeedSource(
+        <span class="string"><span class="delimiter">&quot;</span><span class="content">s3-main</span><span class="delimiter">&quot;</span></span>,
+        <span class="string"><span class="delimiter">&quot;</span><span class="content">my-seeds</span><span class="delimiter">&quot;</span></span>,
+        <span class="string"><span class="delimiter">&quot;</span><span class="content">seed-packs/</span><span class="delimiter">&quot;</span></span>,
+        <span class="string"><span class="delimiter">&quot;</span><span class="content">manifest.yaml</span><span class="delimiter">&quot;</span></span>,
+        <span class="predefined-type">Region</span>.US_EAST_1,
+        <span class="predefined-constant">null</span>, <span class="comment">// roleArn null =&gt; use default creds / runtime role</span>
+        <span class="predefined-constant">null</span>,
+        <span class="predefined-constant">null</span>,
+        <span class="predefined-constant">null</span>))
+    .seedRepository(<span class="keyword">new</span> MongoSeedRepository(mongoClient))
+    .seedRegistry(<span class="keyword">new</span> MongoSeedRegistry(mongoClient))
+    .build();</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Assuming a cross‑account role:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java">SeedLoader loader = SeedLoader.builder()
+    .addSeedSource(<span class="keyword">new</span> S3SeedSource(
+        <span class="string"><span class="delimiter">&quot;</span><span class="content">s3-cross-account</span><span class="delimiter">&quot;</span></span>,
+        <span class="string"><span class="delimiter">&quot;</span><span class="content">partner-seeds</span><span class="delimiter">&quot;</span></span>,
+        <span class="string"><span class="delimiter">&quot;</span><span class="content">prod/</span><span class="delimiter">&quot;</span></span>,
+        <span class="string"><span class="delimiter">&quot;</span><span class="content">manifest.yaml</span><span class="delimiter">&quot;</span></span>,
+        <span class="predefined-type">Region</span>.US_WEST_2,
+        <span class="string"><span class="delimiter">&quot;</span><span class="content">arn:aws:iam::123456789012:role/SeedReadOnly</span><span class="delimiter">&quot;</span></span>,
+        <span class="string"><span class="delimiter">&quot;</span><span class="content">quantum-seed-session</span><span class="delimiter">&quot;</span></span>,
+        <span class="string"><span class="delimiter">&quot;</span><span class="content">external-id-abc123</span><span class="delimiter">&quot;</span></span>,
+        java.time.Duration.ofMinutes(<span class="integer">45</span>)))
+    .seedRepository(<span class="keyword">new</span> MongoSeedRepository(mongoClient))
+    .seedRegistry(<span class="keyword">new</span> MongoSeedRegistry(mongoClient))
+    .build();</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Using the builder helper:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">com.end2endlogic.quantum.seed.s3.S3SeedSourceBuilder</span>;
+
+S3SeedSource s3 = <span class="keyword">new</span> S3SeedSourceBuilder()
+    .id(<span class="string"><span class="delimiter">&quot;</span><span class="content">s3-main</span><span class="delimiter">&quot;</span></span>)
+    .bucket(<span class="string"><span class="delimiter">&quot;</span><span class="content">my-seeds</span><span class="delimiter">&quot;</span></span>)
+    .prefix(<span class="string"><span class="delimiter">&quot;</span><span class="content">seed-packs/</span><span class="delimiter">&quot;</span></span>)
+    .region(<span class="predefined-type">Region</span>.US_EAST_1)
+    .build();</code></pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_defining_datasets_in_the_manifest_s3">18.5. Defining datasets in the manifest (S3)</h3>
+<div class="paragraph">
+<p>Manifests can reference S3 in two ways:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Relative paths (backward compatible): when a manifest itself is loaded from S3, dataset files are resolved relative to the manifest’s S3 key (folder), just like the filesystem source.</p>
+</li>
+<li>
+<p>Absolute URLs: you can specify s3://bucket/key URLs directly in any manifest. These are routed to S3 regardless of where the manifest was discovered from.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Example S3 manifest and dataset layout:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="text">s3://my-seeds/seed-packs/customer/1.0.0/manifest.yaml
+s3://my-seeds/seed-packs/customer/1.0.0/customers.ndjson
+s3://my-seeds/seed-packs/customer/1.0.0/roles.json</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Manifest file (manifest.yaml):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml"><span class="key">seedPack</span>: <span class="string"><span class="content">customer</span></span>
+<span class="key">version</span>: <span class="string"><span class="content">1.0.0</span></span>
+
+<span class="key">datasets</span>:
+  - <span class="string"><span class="content">collection: customers</span></span>
+    <span class="key">file</span>: <span class="string"><span class="content">customers.ndjson</span></span>     <span class="comment"># resolved relative to the manifest’s folder in S3</span>
+    <span class="key">naturalKey</span>: <span class="string"><span class="content">[ accountNumber ]</span></span>
+    <span class="key">upsert</span>: <span class="string"><span class="content">true</span></span>
+
+  - <span class="string"><span class="content">collection: roles</span></span>
+    <span class="key">file</span>: <span class="string"><span class="content">roles.json</span></span>           <span class="comment"># also relative to the manifest’s folder</span>
+    <span class="key">naturalKey</span>: <span class="string"><span class="content">[ code ]</span></span>
+    <span class="key">upsert</span>: <span class="string"><span class="content">true</span></span>
+
+<span class="key">archetypes</span>:
+  - <span class="string"><span class="content">name: CustomerBase</span></span>
+    <span class="key">includes</span>:
+      - <span class="string"><span class="content">customer@=1.0.0</span></span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>No additional configuration is required in the manifest to indicate S3; the SeedSource you configure at runtime determines where manifests are discovered and how dataset paths are resolved.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_troubleshooting_2">18.6. Troubleshooting</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Access denied: Verify credentials or the assumed role’s permissions for ListBucket/GetObject on the bucket/prefix.</p>
+</li>
+<li>
+<p>Region mismatch: Provide an explicit region if your runtime’s default region doesn’t match the bucket’s region.</p>
+</li>
+<li>
+<p>Object not found: Confirm the prefix and that the manifest file name matches (default is manifest.yaml).</p>
+</li>
+<li>
+<p>Slow discovery: Use a tighter prefix to avoid scanning a large bucket namespace; consider S3 inventory or object tagging strategies if your repository grows significantly.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
 </div>
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-10-15 10:50:07 -0400
+Last updated 2025-10-17 20:23:05 -0400
 </div>
 </div>
 </body>

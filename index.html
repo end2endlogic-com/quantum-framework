@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Framework Documentation</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-10-16T18:24:42Z</span>
+<span id="revdate">2025-10-18T00:23:42Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -815,97 +815,108 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </li>
 <li><a href="#_rest_api_for_seed_packs">80. REST API for seed packs</a></li>
 <li><a href="#_using_morphiaseedrepository_morphia_backed_seeding">81. Using MorphiaSeedRepository (Morphia-backed seeding)</a></li>
-<li><a href="#sec-migrations">82. 10. Migrations</a></li>
+<li><a href="#_dataset_urls_and_routing_file_and_s3">82. Dataset URLs and routing (file:// and s3://)</a></li>
+<li><a href="#_s3_seed_source_optional_module">83. S3 Seed Source (optional module)</a>
+<ul class="sectlevel2">
+<li><a href="#_when_to_use_s3_vs_filesystem">83.1. When to use S3 vs. filesystem</a></li>
+<li><a href="#_s3_layout_conventions">83.2. S3 layout conventions</a></li>
+<li><a href="#_configuration_and_credentials">83.3. Configuration and credentials</a></li>
+<li><a href="#_usage_examples">83.4. Usage examples</a></li>
+<li><a href="#_defining_datasets_in_the_manifest_s3">83.5. Defining datasets in the manifest (S3)</a></li>
+<li><a href="#_troubleshooting_2">83.6. Troubleshooting</a></li>
+</ul>
+</li>
+<li><a href="#sec-migrations">84. 10. Migrations</a></li>
 </ul>
 </li>
 <li><a href="#migrations">Database Migrations and Index Management</a>
 <ul class="sectlevel1">
-<li><a href="#_overview">83. Overview</a></li>
-<li><a href="#_semantic_versioning">84. Semantic Versioning</a></li>
-<li><a href="#_configuration_2">85. Configuration</a></li>
-<li><a href="#_how_change_sets_are_discovered_and_executed">86. How change sets are discovered and executed</a></li>
-<li><a href="#_authoring_a_change_set">87. Authoring a change set</a></li>
-<li><a href="#_example_change_sets_in_the_framework">88. Example change sets in the framework</a></li>
-<li><a href="#_rest_apis_to_trigger_migrations_migrationresource">89. REST APIs to trigger migrations (MigrationResource)</a></li>
-<li><a href="#_perentity_index_management_baseresource">90. Per‑entity index management (BaseResource)</a></li>
-<li><a href="#_global_index_management_migrationservice">91. Global index management (MigrationService)</a></li>
-<li><a href="#_validating_versions_at_startup">92. Validating versions at startup</a></li>
-<li><a href="#_notes_and_best_practices">93. Notes and best practices</a></li>
-<li><a href="#sec-testing">94. 11. Testing</a></li>
-<li><a href="#testing">95. Testing in Quantum: Security Contexts, Repos, and REST APIs</a>
+<li><a href="#_overview">85. Overview</a></li>
+<li><a href="#_semantic_versioning">86. Semantic Versioning</a></li>
+<li><a href="#_configuration_2">87. Configuration</a></li>
+<li><a href="#_how_change_sets_are_discovered_and_executed">88. How change sets are discovered and executed</a></li>
+<li><a href="#_authoring_a_change_set">89. Authoring a change set</a></li>
+<li><a href="#_example_change_sets_in_the_framework">90. Example change sets in the framework</a></li>
+<li><a href="#_rest_apis_to_trigger_migrations_migrationresource">91. REST APIs to trigger migrations (MigrationResource)</a></li>
+<li><a href="#_perentity_index_management_baseresource">92. Per‑entity index management (BaseResource)</a></li>
+<li><a href="#_global_index_management_migrationservice">93. Global index management (MigrationService)</a></li>
+<li><a href="#_validating_versions_at_startup">94. Validating versions at startup</a></li>
+<li><a href="#_notes_and_best_practices">95. Notes and best practices</a></li>
+<li><a href="#sec-testing">96. 11. Testing</a></li>
+<li><a href="#testing">97. Testing in Quantum: Security Contexts, Repos, and REST APIs</a>
 <ul class="sectlevel2">
-<li><a href="#_testing_framework">95.1. Testing Framework</a></li>
-<li><a href="#_prerequisites_and_glossary">95.2. Prerequisites and glossary</a></li>
-<li><a href="#_pattern_1_extend_baserepotest">95.3. Pattern 1 — Extend BaseRepoTest</a></li>
-<li><a href="#_pattern_2_try_with_resources_securitysession">95.4. Pattern 2 — Try-with-resources SecuritySession</a></li>
-<li><a href="#_pattern_3_scoped_call_wrapper_scopedcallscope">95.5. Pattern 3 — Scoped-call wrapper (ScopedCallScope)</a></li>
-<li><a href="#_pattern_4_testsecurity_annotation_quarkus">95.6. Pattern 4 — @TestSecurity annotation (Quarkus)</a></li>
-<li><a href="#_testing_rest_apis_vs_repository_logic">95.7. Testing REST APIs vs. Repository Logic</a></li>
-<li><a href="#_useful_quarkus_test_features">95.8. Useful Quarkus Test features</a></li>
-<li><a href="#_real_world_tips">95.9. Real-world tips</a></li>
-<li><a href="#_summary">95.10. Summary</a></li>
+<li><a href="#_testing_framework">97.1. Testing Framework</a></li>
+<li><a href="#_prerequisites_and_glossary">97.2. Prerequisites and glossary</a></li>
+<li><a href="#_pattern_1_extend_baserepotest">97.3. Pattern 1 — Extend BaseRepoTest</a></li>
+<li><a href="#_pattern_2_try_with_resources_securitysession">97.4. Pattern 2 — Try-with-resources SecuritySession</a></li>
+<li><a href="#_pattern_3_scoped_call_wrapper_scopedcallscope">97.5. Pattern 3 — Scoped-call wrapper (ScopedCallScope)</a></li>
+<li><a href="#_pattern_4_testsecurity_annotation_quarkus">97.6. Pattern 4 — @TestSecurity annotation (Quarkus)</a></li>
+<li><a href="#_testing_rest_apis_vs_repository_logic">97.7. Testing REST APIs vs. Repository Logic</a></li>
+<li><a href="#_useful_quarkus_test_features">97.8. Useful Quarkus Test features</a></li>
+<li><a href="#_real_world_tips">97.9. Real-world tips</a></li>
+<li><a href="#_summary">97.10. Summary</a></li>
 </ul>
 </li>
-<li><a href="#sec-next-steps">96. 12. Next steps</a></li>
-<li><a href="#reference-guide">97. Reference Guide</a></li>
+<li><a href="#sec-next-steps">98. 12. Next steps</a></li>
+<li><a href="#reference-guide">99. Reference Guide</a></li>
 </ul>
 </li>
 <li><a href="#_quantum_reference_guide">Quantum Reference Guide</a>
 <ul class="sectlevel1">
-<li><a href="#_platform">98. Platform</a></li>
-<li><a href="#_modeling_and_tenancy">99. Modeling and Tenancy</a></li>
-<li><a href="#_apis_and_queries">100. APIs and Queries</a></li>
-<li><a href="#_security">101. Security</a></li>
-<li><a href="#_data_seeding">102. Data Seeding</a></li>
-<li><a href="#_operations">103. Operations</a></li>
-<li><a href="#_samples">104. Samples</a></li>
-<li><a href="#_appendix">105. Appendix</a></li>
-<li><a href="#_samples_2">106. Samples</a></li>
+<li><a href="#_platform">100. Platform</a></li>
+<li><a href="#_modeling_and_tenancy">101. Modeling and Tenancy</a></li>
+<li><a href="#_apis_and_queries">102. APIs and Queries</a></li>
+<li><a href="#_security">103. Security</a></li>
+<li><a href="#_data_seeding">104. Data Seeding</a></li>
+<li><a href="#_operations">105. Operations</a></li>
+<li><a href="#_samples">106. Samples</a></li>
+<li><a href="#_appendix">107. Appendix</a></li>
+<li><a href="#_samples_2">108. Samples</a></li>
 </ul>
 </li>
 <li><a href="#tutorial-supply-chain">Supply Chain Collaboration SaaS: A Business‑First Guide</a>
 <ul class="sectlevel1">
-<li><a href="#_what_a_supplychain_saas_needs_and_how_quantum_helps">107. What a supply‑chain SaaS needs (and how Quantum helps)</a></li>
-<li><a href="#_why_multitenancy_is_a_natural_fit_for_supply_chains">108. Why multi‑tenancy is a natural fit for supply chains</a></li>
-<li><a href="#_who_uses_the_system_organizations_and_roles">109. Who uses the system (organizations and roles)</a></li>
-<li><a href="#_identity_and_access_meet_partners_where_they_are">110. Identity and access: meet partners where they are</a></li>
-<li><a href="#_modeling_without_jargon_areas_domains_and_actions">111. Modeling without jargon: Areas, Domains, and Actions</a></li>
-<li><a href="#_policies_that_say_who_can_do_what_rule_language">112. Policies that say “who can do what” (Rule Language)</a></li>
-<li><a href="#_domain_contexts_and_domain_policies_placing_and_sharing_data">113. Domain contexts and domain policies (placing and sharing data)</a></li>
-<li><a href="#_bootstrap_tenants_with_seed_packs_zerotouch_baseline_data">114. Bootstrap tenants with Seed Packs (zero‑touch baseline data)</a></li>
-<li><a href="#_security_policies_practical_protections_and_proofs">115. Security policies: practical protections and proofs</a></li>
-<li><a href="#_a_small_powerful_api_surface_list_query">116. A small, powerful API surface: List + Query</a></li>
-<li><a href="#_delegated_administration_tenantlevel_user_management">117. Delegated Administration (tenant‑level user management)</a></li>
-<li><a href="#_integrations_and_data_management">118. Integrations and data management</a></li>
-<li><a href="#_endtoend_examples_2">119. End‑to‑end examples</a></li>
-<li><a href="#_what_you_dont_have_to_build_from_scratch">120. What you don’t have to build from scratch</a></li>
-<li><a href="#_other_helpful_capabilities_you_get_out_of_the_box">121. Other helpful capabilities you get out of the box</a></li>
-<li><a href="#_next_steps_2">122. Next steps</a></li>
-<li><a href="#_a_day_in_the_life_from_purchase_order_to_delivery">123. A day in the life: From Purchase Order to Delivery</a></li>
-<li><a href="#_appendix_2">124. Appendix</a>
+<li><a href="#_what_a_supplychain_saas_needs_and_how_quantum_helps">109. What a supply‑chain SaaS needs (and how Quantum helps)</a></li>
+<li><a href="#_why_multitenancy_is_a_natural_fit_for_supply_chains">110. Why multi‑tenancy is a natural fit for supply chains</a></li>
+<li><a href="#_who_uses_the_system_organizations_and_roles">111. Who uses the system (organizations and roles)</a></li>
+<li><a href="#_identity_and_access_meet_partners_where_they_are">112. Identity and access: meet partners where they are</a></li>
+<li><a href="#_modeling_without_jargon_areas_domains_and_actions">113. Modeling without jargon: Areas, Domains, and Actions</a></li>
+<li><a href="#_policies_that_say_who_can_do_what_rule_language">114. Policies that say “who can do what” (Rule Language)</a></li>
+<li><a href="#_domain_contexts_and_domain_policies_placing_and_sharing_data">115. Domain contexts and domain policies (placing and sharing data)</a></li>
+<li><a href="#_bootstrap_tenants_with_seed_packs_zerotouch_baseline_data">116. Bootstrap tenants with Seed Packs (zero‑touch baseline data)</a></li>
+<li><a href="#_security_policies_practical_protections_and_proofs">117. Security policies: practical protections and proofs</a></li>
+<li><a href="#_a_small_powerful_api_surface_list_query">118. A small, powerful API surface: List + Query</a></li>
+<li><a href="#_delegated_administration_tenantlevel_user_management">119. Delegated Administration (tenant‑level user management)</a></li>
+<li><a href="#_integrations_and_data_management">120. Integrations and data management</a></li>
+<li><a href="#_endtoend_examples_2">121. End‑to‑end examples</a></li>
+<li><a href="#_what_you_dont_have_to_build_from_scratch">122. What you don’t have to build from scratch</a></li>
+<li><a href="#_other_helpful_capabilities_you_get_out_of_the_box">123. Other helpful capabilities you get out of the box</a></li>
+<li><a href="#_next_steps_2">124. Next steps</a></li>
+<li><a href="#_a_day_in_the_life_from_purchase_order_to_delivery">125. A day in the life: From Purchase Order to Delivery</a></li>
+<li><a href="#_appendix_2">126. Appendix</a>
 <ul class="sectlevel2">
-<li><a href="#configuration">124.1. Configuration Reference</a>
+<li><a href="#configuration">126.1. Configuration Reference</a>
 <ul class="sectlevel3">
-<li><a href="#_configuration_basics">124.1.1. Configuration Basics</a></li>
-<li><a href="#_database_configuration">124.1.2. Database Configuration</a></li>
-<li><a href="#_authentication_configuration">124.1.3. Authentication Configuration</a></li>
-<li><a href="#_quantum_framework_configuration">124.1.4. Quantum Framework Configuration</a></li>
-<li><a href="#_see_also_3">124.1.5. See Also</a></li>
-<li><a href="#_key_quarkus_capabilities">124.1.6. Key Quarkus Capabilities</a></li>
-<li><a href="#_arc_quarkus_cdi">124.1.7. Arc (Quarkus CDI)</a></li>
-<li><a href="#_native_compilation_with_graalvm">124.1.8. Native Compilation with GraalVM</a></li>
-<li><a href="#_extension_ecosystem">124.1.9. Extension Ecosystem</a></li>
-<li><a href="#_quantums_quarkus_integration">124.1.10. Quantum&#8217;s Quarkus Integration</a></li>
-<li><a href="#_getting_started_with_quarkus">124.1.11. Getting Started with Quarkus</a></li>
-<li><a href="#_see_also_4">124.1.12. See Also</a></li>
-<li><a href="#_core_concepts">124.1.13. Core Concepts</a></li>
-<li><a href="#_multi_tenancy">124.1.14. Multi-Tenancy</a></li>
-<li><a href="#_security_2">124.1.15. Security</a></li>
-<li><a href="#_data_and_persistence">124.1.16. Data and Persistence</a></li>
-<li><a href="#_rest_and_apis">124.1.17. REST and APIs</a></li>
-<li><a href="#_framework_components">124.1.18. Framework Components</a></li>
-<li><a href="#_annotations">124.1.19. Annotations</a></li>
-<li><a href="#_external_integrations">124.1.20. External Integrations</a></li>
+<li><a href="#_configuration_basics">126.1.1. Configuration Basics</a></li>
+<li><a href="#_database_configuration">126.1.2. Database Configuration</a></li>
+<li><a href="#_authentication_configuration">126.1.3. Authentication Configuration</a></li>
+<li><a href="#_quantum_framework_configuration">126.1.4. Quantum Framework Configuration</a></li>
+<li><a href="#_see_also_3">126.1.5. See Also</a></li>
+<li><a href="#_key_quarkus_capabilities">126.1.6. Key Quarkus Capabilities</a></li>
+<li><a href="#_arc_quarkus_cdi">126.1.7. Arc (Quarkus CDI)</a></li>
+<li><a href="#_native_compilation_with_graalvm">126.1.8. Native Compilation with GraalVM</a></li>
+<li><a href="#_extension_ecosystem">126.1.9. Extension Ecosystem</a></li>
+<li><a href="#_quantums_quarkus_integration">126.1.10. Quantum&#8217;s Quarkus Integration</a></li>
+<li><a href="#_getting_started_with_quarkus">126.1.11. Getting Started with Quarkus</a></li>
+<li><a href="#_see_also_4">126.1.12. See Also</a></li>
+<li><a href="#_core_concepts">126.1.13. Core Concepts</a></li>
+<li><a href="#_multi_tenancy">126.1.14. Multi-Tenancy</a></li>
+<li><a href="#_security_2">126.1.15. Security</a></li>
+<li><a href="#_data_and_persistence">126.1.16. Data and Persistence</a></li>
+<li><a href="#_rest_and_apis">126.1.17. REST and APIs</a></li>
+<li><a href="#_framework_components">126.1.18. Framework Components</a></li>
+<li><a href="#_annotations">126.1.19. Annotations</a></li>
+<li><a href="#_external_integrations">126.1.20. External Integrations</a></li>
 </ul>
 </li>
 </ul>
@@ -9465,7 +9476,317 @@ a dataset via a Morphia repository mapped to a concrete UnversionedBaseModel. Th
 </div>
 </div>
 <div class="sect1">
-<h2 id="sec-migrations">82. 10. Migrations</h2>
+<h2 id="_dataset_urls_and_routing_file_and_s3">82. Dataset URLs and routing (file:// and s3://)</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Starting with Quantum 1.2.2, dataset files in a manifest can be specified either as:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Relative paths (backward compatible): resolved relative to the manifest’s own location as provided by its SeedSource (filesystem or S3).</p>
+</li>
+<li>
+<p>Absolute URLs with a scheme that identifies the source: currently supported schemes are file:// and s3://. The loader automatically routes these URLs to the appropriate SeedSource at runtime.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Notes:
+- If the dataset value contains "://", it is treated as a URL and routed by scheme. Otherwise it is treated as a relative path.
+- Using URLs allows you to mix sources inside a single manifest (e.g., some datasets from the local filesystem and others from S3).
+- This is extensible; additional schemes can be supported by adding optional modules in the future.</p>
+</div>
+<div class="paragraph">
+<p>Examples:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml"><span class="key">seedPack</span>: <span class="string"><span class="content">mixed-demo</span></span>
+<span class="key">version</span>: <span class="string"><span class="content">0.1.0</span></span>
+
+<span class="key">datasets</span>:
+  <span class="comment"># Relative path (resolved relative to the manifest location)</span>
+  - <span class="string"><span class="content">collection: localDefaults</span></span>
+    <span class="key">file</span>: <span class="string"><span class="content">datasets/defaults.ndjson</span></span>
+    <span class="key">naturalKey</span>: <span class="string"><span class="content">[ key ]</span></span>
+    <span class="key">upsert</span>: <span class="string"><span class="content">true</span></span>
+
+  <span class="comment"># Absolute filesystem URL</span>
+  - <span class="string"><span class="content">collection: roles</span></span>
+    <span class="key">file</span>: <span class="string"><span class="content">file:///opt/app/seed-packs/roles.ndjson</span></span>
+    <span class="key">naturalKey</span>: <span class="string"><span class="content">[ code ]</span></span>
+    <span class="key">upsert</span>: <span class="string"><span class="content">true</span></span>
+
+  <span class="comment"># Absolute S3 URL</span>
+  - <span class="string"><span class="content">collection: carriers</span></span>
+    <span class="key">file</span>: <span class="string"><span class="content">s3://my-seeds/mixed-demo/0.1.0/carriers.ndjson</span></span>
+    <span class="key">naturalKey</span>: <span class="string"><span class="content">[ code ]</span></span>
+    <span class="key">upsert</span>: <span class="string"><span class="content">true</span></span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Routing behavior:
+- Relative path: delegated to the SeedSource that loaded the manifest (unchanged behavior).
+- file:// URL: handled by FileSeedSource.
+- s3:// URL: handled by S3SeedSource (requires the optional quantum-seed-s3 module on the classpath).</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_s3_seed_source_optional_module">83. S3 Seed Source (optional module)</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The framework provides an optional SeedSource backed by Amazon S3, packaged in a separate module so you can include it only when needed:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Module: <code>quantum-seed-s3</code></p>
+</li>
+<li>
+<p>Class: <code>com.end2endlogic.quantum.seed.s3.S3SeedSource</code></p>
+</li>
+<li>
+<p>Purpose: Discover seed pack manifests and datasets stored in S3; optionally assume an IAM role via STS if cross‑account access is required.</p>
+</li>
+</ul>
+</div>
+<div class="sect2">
+<h3 id="_when_to_use_s3_vs_filesystem">83.1. When to use S3 vs. filesystem</h3>
+<div class="paragraph">
+<p>Use S3 when any of the following apply:
+- You want a single canonical location for seed content shared across services and environments.
+- You need to distribute seed packs across many runtimes (containers, serverless) without baking files into images.
+- You want to leverage S3 features: versioning, object immutability, access logging, and cross‑account sharing.
+- CI/CD pipelines or content teams publish seed packs independently from application deployments.</p>
+</div>
+<div class="paragraph">
+<p>Filesystem may be simpler when:
+- Developing locally with small packs that live inside your project.
+- You prefer packs bundled within the application JAR/image and don’t need central distribution.</p>
+</div>
+<div class="paragraph">
+<p>Advantages of S3 over filesystem:
+- Centralized distribution and caching via S3/CloudFront.
+- Cross‑account access with STS AssumeRole.
+- Object versioning and retention policies for auditability.
+- Decouples seed content delivery from app build artifacts.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_s3_layout_conventions">83.2. S3 layout conventions</h3>
+<div class="paragraph">
+<p>S3SeedSource expects the same on-disk structure as FileSeedSource, just hosted under a bucket + optional prefix. Each seed pack version is a folder containing a manifest file and any referenced datasets. For example:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>s3://my-seeds/seed-packs/customer/1.0.0/manifest.yaml</p>
+</li>
+<li>
+<p>s3://my-seeds/seed-packs/customer/1.0.0/customers.ndjson</p>
+</li>
+<li>
+<p>s3://my-seeds/seed-packs/logistics-core/1.4.2/manifest.yaml</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Notes:
+- The manifest file name defaults to <code>manifest.yaml</code> but can be overridden.
+- Dataset file paths in the manifest are resolved relative to the manifest’s key (folder).</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_configuration_and_credentials">83.3. Configuration and credentials</h3>
+<div class="paragraph">
+<p>Constructor parameters for S3SeedSource:
+- id: Human-friendly source id (e.g., "s3-main").
+- bucket: S3 bucket name.
+- prefix: Optional prefix under which seed packs live (e.g., "seed-packs/"). May be empty.
+- manifestFileName: Optional. Defaults to "manifest.yaml".
+- region: Optional AWS region. If omitted, AWS SDK v2 region resolution applies.
+- roleArn: Optional ARN of a role to assume via STS. If omitted/blank, the default credentials chain is used.
+- roleSessionName: Optional session name when assuming a role. Defaults to "quantum-seed".
+- externalId: Optional ExternalId for AssumeRole if the target role trust policy requires it.
+- roleDuration: Optional session duration for AssumeRole; defaults to 30 minutes.</p>
+</div>
+<div class="paragraph">
+<p>Credential modes:
+- Default credentials chain (no roleArn): The AWS SDK v2 uses environment variables, profile, ECS/EC2/Lambda task role, etc.
+- AssumeRole (roleArn provided): The source uses STS to assume the specified role before calling S3.</p>
+</div>
+<div class="paragraph">
+<p>IAM considerations:
+- The credentials (base or assumed) must allow <code>s3:ListBucket</code> on the bucket (scoped to the prefix) and <code>s3:GetObject</code> for objects under the prefix.
+- For cross‑account usage, grant the calling account sts:AssumeRole on the target role, and in the role’s policy grant the S3 permissions above.</p>
+</div>
+<div class="paragraph">
+<p>Minimal target role policy example:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">Version</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">2012-10-17</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">Statement</span><span class="delimiter">&quot;</span></span>: [
+    {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">Effect</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Allow</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">Action</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">s3:ListBucket</span><span class="delimiter">&quot;</span></span>],
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">Resource</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">arn:aws:s3:::my-seeds</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">Condition</span><span class="delimiter">&quot;</span></span>: {<span class="key"><span class="delimiter">&quot;</span><span class="content">StringLike</span><span class="delimiter">&quot;</span></span>: {<span class="key"><span class="delimiter">&quot;</span><span class="content">s3:prefix</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">seed-packs/*</span><span class="delimiter">&quot;</span></span>]}}
+    },
+    {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">Effect</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Allow</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">Action</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">s3:GetObject</span><span class="delimiter">&quot;</span></span>],
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">Resource</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">arn:aws:s3:::my-seeds/seed-packs/*</span><span class="delimiter">&quot;</span></span>
+    }
+  ]
+}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_usage_examples">83.4. Usage examples</h3>
+<div class="paragraph">
+<p>Create a loader that discovers packs from S3 with the runtime IAM role or local credentials:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">com.e2eq.framework.service.seed</span>.*;
+<span class="keyword">import</span> <span class="include">com.end2endlogic.quantum.seed.s3.S3SeedSource</span>;
+<span class="keyword">import</span> <span class="include">software.amazon.awssdk.regions.Region</span>;
+
+SeedLoader loader = SeedLoader.builder()
+    .addSeedSource(<span class="keyword">new</span> S3SeedSource(
+        <span class="string"><span class="delimiter">&quot;</span><span class="content">s3-main</span><span class="delimiter">&quot;</span></span>,
+        <span class="string"><span class="delimiter">&quot;</span><span class="content">my-seeds</span><span class="delimiter">&quot;</span></span>,
+        <span class="string"><span class="delimiter">&quot;</span><span class="content">seed-packs/</span><span class="delimiter">&quot;</span></span>,
+        <span class="string"><span class="delimiter">&quot;</span><span class="content">manifest.yaml</span><span class="delimiter">&quot;</span></span>,
+        <span class="predefined-type">Region</span>.US_EAST_1,
+        <span class="predefined-constant">null</span>, <span class="comment">// roleArn null =&gt; use default creds / runtime role</span>
+        <span class="predefined-constant">null</span>,
+        <span class="predefined-constant">null</span>,
+        <span class="predefined-constant">null</span>))
+    .seedRepository(<span class="keyword">new</span> MongoSeedRepository(mongoClient))
+    .seedRegistry(<span class="keyword">new</span> MongoSeedRegistry(mongoClient))
+    .build();</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Assuming a cross‑account role:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java">SeedLoader loader = SeedLoader.builder()
+    .addSeedSource(<span class="keyword">new</span> S3SeedSource(
+        <span class="string"><span class="delimiter">&quot;</span><span class="content">s3-cross-account</span><span class="delimiter">&quot;</span></span>,
+        <span class="string"><span class="delimiter">&quot;</span><span class="content">partner-seeds</span><span class="delimiter">&quot;</span></span>,
+        <span class="string"><span class="delimiter">&quot;</span><span class="content">prod/</span><span class="delimiter">&quot;</span></span>,
+        <span class="string"><span class="delimiter">&quot;</span><span class="content">manifest.yaml</span><span class="delimiter">&quot;</span></span>,
+        <span class="predefined-type">Region</span>.US_WEST_2,
+        <span class="string"><span class="delimiter">&quot;</span><span class="content">arn:aws:iam::123456789012:role/SeedReadOnly</span><span class="delimiter">&quot;</span></span>,
+        <span class="string"><span class="delimiter">&quot;</span><span class="content">quantum-seed-session</span><span class="delimiter">&quot;</span></span>,
+        <span class="string"><span class="delimiter">&quot;</span><span class="content">external-id-abc123</span><span class="delimiter">&quot;</span></span>,
+        java.time.Duration.ofMinutes(<span class="integer">45</span>)))
+    .seedRepository(<span class="keyword">new</span> MongoSeedRepository(mongoClient))
+    .seedRegistry(<span class="keyword">new</span> MongoSeedRegistry(mongoClient))
+    .build();</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Using the builder helper:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">com.end2endlogic.quantum.seed.s3.S3SeedSourceBuilder</span>;
+
+S3SeedSource s3 = <span class="keyword">new</span> S3SeedSourceBuilder()
+    .id(<span class="string"><span class="delimiter">&quot;</span><span class="content">s3-main</span><span class="delimiter">&quot;</span></span>)
+    .bucket(<span class="string"><span class="delimiter">&quot;</span><span class="content">my-seeds</span><span class="delimiter">&quot;</span></span>)
+    .prefix(<span class="string"><span class="delimiter">&quot;</span><span class="content">seed-packs/</span><span class="delimiter">&quot;</span></span>)
+    .region(<span class="predefined-type">Region</span>.US_EAST_1)
+    .build();</code></pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_defining_datasets_in_the_manifest_s3">83.5. Defining datasets in the manifest (S3)</h3>
+<div class="paragraph">
+<p>Manifests can reference S3 in two ways:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Relative paths (backward compatible): when a manifest itself is loaded from S3, dataset files are resolved relative to the manifest’s S3 key (folder), just like the filesystem source.</p>
+</li>
+<li>
+<p>Absolute URLs: you can specify s3://bucket/key URLs directly in any manifest. These are routed to S3 regardless of where the manifest was discovered from.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Example S3 manifest and dataset layout:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="text">s3://my-seeds/seed-packs/customer/1.0.0/manifest.yaml
+s3://my-seeds/seed-packs/customer/1.0.0/customers.ndjson
+s3://my-seeds/seed-packs/customer/1.0.0/roles.json</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Manifest file (manifest.yaml):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml"><span class="key">seedPack</span>: <span class="string"><span class="content">customer</span></span>
+<span class="key">version</span>: <span class="string"><span class="content">1.0.0</span></span>
+
+<span class="key">datasets</span>:
+  - <span class="string"><span class="content">collection: customers</span></span>
+    <span class="key">file</span>: <span class="string"><span class="content">customers.ndjson</span></span>     <span class="comment"># resolved relative to the manifest’s folder in S3</span>
+    <span class="key">naturalKey</span>: <span class="string"><span class="content">[ accountNumber ]</span></span>
+    <span class="key">upsert</span>: <span class="string"><span class="content">true</span></span>
+
+  - <span class="string"><span class="content">collection: roles</span></span>
+    <span class="key">file</span>: <span class="string"><span class="content">roles.json</span></span>           <span class="comment"># also relative to the manifest’s folder</span>
+    <span class="key">naturalKey</span>: <span class="string"><span class="content">[ code ]</span></span>
+    <span class="key">upsert</span>: <span class="string"><span class="content">true</span></span>
+
+<span class="key">archetypes</span>:
+  - <span class="string"><span class="content">name: CustomerBase</span></span>
+    <span class="key">includes</span>:
+      - <span class="string"><span class="content">customer@=1.0.0</span></span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>No additional configuration is required in the manifest to indicate S3; the SeedSource you configure at runtime determines where manifests are discovered and how dataset paths are resolved.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_troubleshooting_2">83.6. Troubleshooting</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Access denied: Verify credentials or the assumed role’s permissions for ListBucket/GetObject on the bucket/prefix.</p>
+</li>
+<li>
+<p>Region mismatch: Provide an explicit region if your runtime’s default region doesn’t match the bucket’s region.</p>
+</li>
+<li>
+<p>Object not found: Confirm the prefix and that the manifest file name matches (default is manifest.yaml).</p>
+</li>
+<li>
+<p>Slow discovery: Use a tighter prefix to avoid scanning a large bucket namespace; consider S3 inventory or object tagging strategies if your repository grows significantly.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="sec-migrations">84. 10. Migrations</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Problem: Evolving schemas and data safely across environments.</p>
@@ -9490,7 +9811,7 @@ a dataset via a Morphia repository mapped to a concrete UnversionedBaseModel. Th
 </div>
 </div>
 <div class="sect1">
-<h2 id="_overview">83. Overview</h2>
+<h2 id="_overview">85. Overview</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Quantum uses a simple, versioned change‑set mechanism to evolve MongoDB schemas and seed data safely across realms (databases). Key building blocks:</p>
@@ -9514,7 +9835,7 @@ a dataset via a Morphia repository mapped to a concrete UnversionedBaseModel. Th
 </div>
 </div>
 <div class="sect1">
-<h2 id="_semantic_versioning">84. Semantic Versioning</h2>
+<h2 id="_semantic_versioning">86. Semantic Versioning</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Semantic Versioning (SemVer) expresses versions in the form MAJOR.MINOR.PATCH (for example, 1.4.2):</p>
@@ -9558,7 +9879,7 @@ a dataset via a Morphia repository mapped to a concrete UnversionedBaseModel. Th
 </div>
 </div>
 <div class="sect1">
-<h2 id="_configuration_2">85. Configuration</h2>
+<h2 id="_configuration_2">87. Configuration</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>The following MicroProfile config properties influence migrations:</p>
@@ -9582,7 +9903,7 @@ a dataset via a Morphia repository mapped to a concrete UnversionedBaseModel. Th
 </div>
 </div>
 <div class="sect1">
-<h2 id="_how_change_sets_are_discovered_and_executed">86. How change sets are discovered and executed</h2>
+<h2 id="_how_change_sets_are_discovered_and_executed">88. How change sets are discovered and executed</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -9609,7 +9930,7 @@ a dataset via a Morphia repository mapped to a concrete UnversionedBaseModel. Th
 </div>
 </div>
 <div class="sect1">
-<h2 id="_authoring_a_change_set">87. Authoring a change set</h2>
+<h2 id="_authoring_a_change_set">89. Authoring a change set</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Implement ChangeSetBean; most change sets extend ChangeSetBase.</p>
@@ -9681,7 +10002,7 @@ a dataset via a Morphia repository mapped to a concrete UnversionedBaseModel. Th
 </div>
 </div>
 <div class="sect1">
-<h2 id="_example_change_sets_in_the_framework">88. Example change sets in the framework</h2>
+<h2 id="_example_change_sets_in_the_framework">90. Example change sets in the framework</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Package: com.e2eq.framework.model.persistent.morphia.changesets</p>
@@ -9714,7 +10035,7 @@ a dataset via a Morphia repository mapped to a concrete UnversionedBaseModel. Th
 </div>
 </div>
 <div class="sect1">
-<h2 id="_rest_apis_to_trigger_migrations_migrationresource">89. REST APIs to trigger migrations (MigrationResource)</h2>
+<h2 id="_rest_apis_to_trigger_migrations_migrationresource">91. REST APIs to trigger migrations (MigrationResource)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Base path: /system/migration</p>
@@ -9792,7 +10113,7 @@ curl -N -H "Authorization: Bearer $TOKEN" <a href="http://localhost:8080/system/
 </div>
 </div>
 <div class="sect1">
-<h2 id="_perentity_index_management_baseresource">90. Per‑entity index management (BaseResource)</h2>
+<h2 id="_perentity_index_management_baseresource">92. Per‑entity index management (BaseResource)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Every entity resource that extends BaseResource&lt;T, R extends BaseMorphiaRepo&lt;T&gt;&gt; exposes a convenience endpoint to (re)create indexes for a single collection in a realm.</p>
@@ -9818,7 +10139,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_global_index_management_migrationservice">91. Global index management (MigrationService)</h2>
+<h2 id="_global_index_management_migrationservice">93. Global index management (MigrationService)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>MigrationService also exposes programmatic index utilities used by the MigrationResource endpoints:</p>
@@ -9836,7 +10157,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_validating_versions_at_startup">92. Validating versions at startup</h2>
+<h2 id="_validating_versions_at_startup">94. Validating versions at startup</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -9851,7 +10172,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_notes_and_best_practices">93. Notes and best practices</h2>
+<h2 id="_notes_and_best_practices">95. Notes and best practices</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -9878,7 +10199,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect1">
-<h2 id="sec-testing">94. 11. Testing</h2>
+<h2 id="sec-testing">96. 11. Testing</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Problem: Validating behavior quickly and reliably, including tenant-specific behavior.</p>
@@ -9895,10 +10216,10 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect1">
-<h2 id="testing">95. Testing in Quantum: Security Contexts, Repos, and REST APIs</h2>
+<h2 id="testing">97. Testing in Quantum: Security Contexts, Repos, and REST APIs</h2>
 <div class="sectionbody">
 <div class="sect2">
-<h3 id="_testing_framework">95.1. Testing Framework</h3>
+<h3 id="_testing_framework">97.1. Testing Framework</h3>
 <div class="paragraph">
 <p>This guide explains how to write effective tests in the Quantum framework, with a focus on setting the security context and choosing the right Quarkus testing patterns for repository logic vs. REST APIs.</p>
 </div>
@@ -9914,7 +10235,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect2">
-<h3 id="_prerequisites_and_glossary">95.2. Prerequisites and glossary</h3>
+<h3 id="_prerequisites_and_glossary">97.2. Prerequisites and glossary</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -9936,7 +10257,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect2">
-<h3 id="_pattern_1_extend_baserepotest">95.3. Pattern 1 — Extend BaseRepoTest</h3>
+<h3 id="_pattern_1_extend_baserepotest">97.3. Pattern 1 — Extend BaseRepoTest</h3>
 <div class="paragraph">
 <p>For repository tests (no HTTP), the simplest approach is to extend BaseRepoTest.</p>
 </div>
@@ -9977,7 +10298,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect2">
-<h3 id="_pattern_2_try_with_resources_securitysession">95.4. Pattern 2 — Try-with-resources SecuritySession</h3>
+<h3 id="_pattern_2_try_with_resources_securitysession">97.4. Pattern 2 — Try-with-resources SecuritySession</h3>
 <div class="paragraph">
 <p>Use SecuritySession explicitly to scope work that should run under a specific PrincipalContext and ResourceContext. This is the most explicit pattern and works in both repository and service-level tests.</p>
 </div>
@@ -10010,7 +10331,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect2">
-<h3 id="_pattern_3_scoped_call_wrapper_scopedcallscope">95.5. Pattern 3 — Scoped-call wrapper (ScopedCallScope)</h3>
+<h3 id="_pattern_3_scoped_call_wrapper_scopedcallscope">97.5. Pattern 3 — Scoped-call wrapper (ScopedCallScope)</h3>
 <div class="paragraph">
 <p>If you prefer not to repeat try-with-resources blocks, wrap your work in a helper that creates a SecuritySession, runs your logic, and ensures cleanup. This is sometimes called a “scoped call” pattern, often referred to as a ScopedCallScope.</p>
 </div>
@@ -10059,7 +10380,7 @@ SecurityScopes.run(pContext, rContext, () -&gt; repo.save(realm, entity));</code
 </div>
 </div>
 <div class="sect2">
-<h3 id="_pattern_4_testsecurity_annotation_quarkus">95.6. Pattern 4 — @TestSecurity annotation (Quarkus)</h3>
+<h3 id="_pattern_4_testsecurity_annotation_quarkus">97.6. Pattern 4 — @TestSecurity annotation (Quarkus)</h3>
 <div class="paragraph">
 <p>For tests that run through HTTP (and in some repo tests), you can use Quarkus’ @io.quarkus.test.security.TestSecurity to set the SecurityIdentity without creating a SecuritySession.</p>
 </div>
@@ -10119,7 +10440,7 @@ SecurityScopes.run(pContext, rContext, () -&gt; repo.save(realm, entity));</code
 </div>
 </div>
 <div class="sect2">
-<h3 id="_testing_rest_apis_vs_repository_logic">95.7. Testing REST APIs vs. Repository Logic</h3>
+<h3 id="_testing_rest_apis_vs_repository_logic">97.7. Testing REST APIs vs. Repository Logic</h3>
 <div class="paragraph">
 <p>When to prefer REST (HTTP) tests:
 - End-to-end authorization: validate request filters, identity mapping, realm headers, and JWT handling.
@@ -10151,7 +10472,7 @@ SecurityScopes.run(pContext, rContext, () -&gt; repo.save(realm, entity));</code
 </div>
 </div>
 <div class="sect2">
-<h3 id="_useful_quarkus_test_features">95.8. Useful Quarkus Test features</h3>
+<h3 id="_useful_quarkus_test_features">97.8. Useful Quarkus Test features</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -10176,7 +10497,7 @@ SecurityScopes.run(pContext, rContext, () -&gt; repo.save(realm, entity));</code
 </div>
 </div>
 <div class="sect2">
-<h3 id="_real_world_tips">95.9. Real-world tips</h3>
+<h3 id="_real_world_tips">97.9. Real-world tips</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -10200,7 +10521,7 @@ void cleanup() { com.e2eq.framework.model.securityrules.SecurityContext.clear();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_summary">95.10. Summary</h3>
+<h3 id="_summary">97.10. Summary</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -10221,7 +10542,7 @@ void cleanup() { com.e2eq.framework.model.securityrules.SecurityContext.clear();
 </div>
 </div>
 <div class="sect1">
-<h2 id="sec-next-steps">96. 12. Next steps</h2>
+<h2 id="sec-next-steps">98. 12. Next steps</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -10236,7 +10557,7 @@ void cleanup() { com.e2eq.framework.model.securityrules.SecurityContext.clear();
 </div>
 </div>
 <div class="sect1">
-<h2 id="reference-guide">97. Reference Guide</h2>
+<h2 id="reference-guide">99. Reference Guide</h2>
 <div class="sectionbody">
 
 </div>
@@ -10251,7 +10572,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_platform">98. Platform</h2>
+<h2 id="_platform">100. Platform</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -10266,7 +10587,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_modeling_and_tenancy">99. Modeling and Tenancy</h2>
+<h2 id="_modeling_and_tenancy">101. Modeling and Tenancy</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -10284,7 +10605,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_apis_and_queries">100. APIs and Queries</h2>
+<h2 id="_apis_and_queries">102. APIs and Queries</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -10299,7 +10620,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_security">101. Security</h2>
+<h2 id="_security">103. Security</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -10317,7 +10638,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_data_seeding">102. Data Seeding</h2>
+<h2 id="_data_seeding">104. Data Seeding</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -10332,7 +10653,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_operations">103. Operations</h2>
+<h2 id="_operations">105. Operations</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -10347,7 +10668,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_samples">104. Samples</h2>
+<h2 id="_samples">106. Samples</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -10359,7 +10680,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_appendix">105. Appendix</h2>
+<h2 id="_appendix">107. Appendix</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>For configuration, Quarkus integration details, and glossary, see the Appendix in the main index.</p>
@@ -10367,7 +10688,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_samples_2">106. Samples</h2>
+<h2 id="_samples_2">108. Samples</h2>
 <div class="sectionbody">
 
 </div>
@@ -10381,7 +10702,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_what_a_supplychain_saas_needs_and_how_quantum_helps">107. What a supply‑chain SaaS needs (and how Quantum helps)</h2>
+<h2 id="_what_a_supplychain_saas_needs_and_how_quantum_helps">109. What a supply‑chain SaaS needs (and how Quantum helps)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Common needs when launching a collaboration platform:</p>
@@ -10433,7 +10754,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_why_multitenancy_is_a_natural_fit_for_supply_chains">108. Why multi‑tenancy is a natural fit for supply chains</h2>
+<h2 id="_why_multitenancy_is_a_natural_fit_for_supply_chains">110. Why multi‑tenancy is a natural fit for supply chains</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Supply chains are networks. Everyone shares a process, but not a database. Quantum isolates each tenant’s data by default and lets you selectively share records with partners:</p>
@@ -10457,7 +10778,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_who_uses_the_system_organizations_and_roles">109. Who uses the system (organizations and roles)</h2>
+<h2 id="_who_uses_the_system_organizations_and_roles">111. Who uses the system (organizations and roles)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Organizations (tenants)
@@ -10480,7 +10801,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_identity_and_access_meet_partners_where_they_are">110. Identity and access: meet partners where they are</h2>
+<h2 id="_identity_and_access_meet_partners_where_they_are">112. Identity and access: meet partners where they are</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Every organization may authenticate differently:
@@ -10494,7 +10815,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_modeling_without_jargon_areas_domains_and_actions">111. Modeling without jargon: Areas, Domains, and Actions</h2>
+<h2 id="_modeling_without_jargon_areas_domains_and_actions">113. Modeling without jargon: Areas, Domains, and Actions</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>To keep your platform organized, Quantum groups things into:
@@ -10510,7 +10831,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_policies_that_say_who_can_do_what_rule_language">112. Policies that say “who can do what” (Rule Language)</h2>
+<h2 id="_policies_that_say_who_can_do_what_rule_language">114. Policies that say “who can do what” (Rule Language)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Policies are simple, readable rules that match:
@@ -10529,7 +10850,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_domain_contexts_and_domain_policies_placing_and_sharing_data">113. Domain contexts and domain policies (placing and sharing data)</h2>
+<h2 id="_domain_contexts_and_domain_policies_placing_and_sharing_data">115. Domain contexts and domain policies (placing and sharing data)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>In supply chains, the same entity often lives in different business contexts (e.g., a Shipment inside a Supplier’s operations vs. the Buyer’s view). Domain contexts let you keep data where it naturally belongs while still collaborating safely:</p>
@@ -10559,7 +10880,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_bootstrap_tenants_with_seed_packs_zerotouch_baseline_data">114. Bootstrap tenants with Seed Packs (zero‑touch baseline data)</h2>
+<h2 id="_bootstrap_tenants_with_seed_packs_zerotouch_baseline_data">116. Bootstrap tenants with Seed Packs (zero‑touch baseline data)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Onboarding partners is a bottleneck in many SaaS rollouts. Seed packs provide a fast, repeatable way to initialize each tenant with the right starting data and settings.</p>
@@ -10583,7 +10904,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_security_policies_practical_protections_and_proofs">115. Security policies: practical protections and proofs</h2>
+<h2 id="_security_policies_practical_protections_and_proofs">117. Security policies: practical protections and proofs</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Security isn’t just login. The framework’s policy layer turns business rules into enforceable, auditable protections across UI, APIs, and imports/exports.</p>
@@ -10604,7 +10925,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_a_small_powerful_api_surface_list_query">116. A small, powerful API surface: List + Query</h2>
+<h2 id="_a_small_powerful_api_surface_list_query">118. A small, powerful API surface: List + Query</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Instead of building a unique search endpoint for every screen, Quantum gives you:
@@ -10621,7 +10942,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_delegated_administration_tenantlevel_user_management">117. Delegated Administration (tenant‑level user management)</h2>
+<h2 id="_delegated_administration_tenantlevel_user_management">119. Delegated Administration (tenant‑level user management)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Empower each organization to run their own house while you keep platform‑wide safety:
@@ -10632,7 +10953,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_integrations_and_data_management">118. Integrations and data management</h2>
+<h2 id="_integrations_and_data_management">120. Integrations and data management</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Supply chains depend on clean, timely data. Quantum provides:
@@ -10649,7 +10970,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_endtoend_examples_2">119. End‑to‑end examples</h2>
+<h2 id="_endtoend_examples_2">121. End‑to‑end examples</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>1) Buyer–supplier collaboration on a Purchase Order
@@ -10668,7 +10989,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_what_you_dont_have_to_build_from_scratch">120. What you don’t have to build from scratch</h2>
+<h2 id="_what_you_dont_have_to_build_from_scratch">122. What you don’t have to build from scratch</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -10695,7 +11016,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_other_helpful_capabilities_you_get_out_of_the_box">121. Other helpful capabilities you get out of the box</h2>
+<h2 id="_other_helpful_capabilities_you_get_out_of_the_box">123. Other helpful capabilities you get out of the box</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -10722,7 +11043,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_next_steps_2">122. Next steps</h2>
+<h2 id="_next_steps_2">124. Next steps</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -10746,7 +11067,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_a_day_in_the_life_from_purchase_order_to_delivery">123. A day in the life: From Purchase Order to Delivery</h2>
+<h2 id="_a_day_in_the_life_from_purchase_order_to_delivery">125. A day in the life: From Purchase Order to Delivery</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This story ties the pieces together in a realistic sequence. We follow a Purchase Order (PO) from creation to delivery, with shared visibility for suppliers and carriers, a clear state graph, and checklist-like Completion Tasks guiding the work.</p>
@@ -10817,15 +11138,15 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_appendix_2">124. Appendix</h2>
+<h2 id="_appendix_2">126. Appendix</h2>
 <div class="sectionbody">
 <div class="sect2">
-<h3 id="configuration">124.1. Configuration Reference</h3>
+<h3 id="configuration">126.1. Configuration Reference</h3>
 <div class="paragraph">
 <p>This appendix explains key configuration properties used in Quantum applications, organized by functional area.</p>
 </div>
 <div class="sect3">
-<h4 id="_configuration_basics">124.1.1. Configuration Basics</h4>
+<h4 id="_configuration_basics">126.1.1. Configuration Basics</h4>
 <div class="sect4">
 <h5 id="_file_locations">File Locations</h5>
 <div class="ulist">
@@ -10865,7 +11186,7 @@ auth.jwt.secret=${JWT_SECRET:change-me-in-production}</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_database_configuration">124.1.2. Database Configuration</h4>
+<h4 id="_database_configuration">126.1.2. Database Configuration</h4>
 <div class="sect4">
 <h5 id="_mongodb_connection">MongoDB Connection</h5>
 <div class="listingblock">
@@ -10899,7 +11220,7 @@ quarkus.morphia.create-validators=true</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_authentication_configuration">124.1.3. Authentication Configuration</h4>
+<h4 id="_authentication_configuration">126.1.3. Authentication Configuration</h4>
 <div class="sect4">
 <h5 id="_jwt_provider_3">JWT Provider</h5>
 <div class="listingblock">
@@ -10938,7 +11259,7 @@ quarkus.oidc.roles.role-claim-path=groups</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_quantum_framework_configuration">124.1.4. Quantum Framework Configuration</h4>
+<h4 id="_quantum_framework_configuration">126.1.4. Quantum Framework Configuration</h4>
 <div class="sect4">
 <h5 id="_database_migration">Database Migration</h5>
 <div class="listingblock">
@@ -10973,7 +11294,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_see_also_3">124.1.5. See Also</h4>
+<h4 id="_see_also_3">126.1.5. See Also</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -10990,7 +11311,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_key_quarkus_capabilities">124.1.6. Key Quarkus Capabilities</h4>
+<h4 id="_key_quarkus_capabilities">126.1.6. Key Quarkus Capabilities</h4>
 <div class="sect4">
 <h5 id="_developer_experience">Developer Experience</h5>
 <div class="ulist">
@@ -11047,7 +11368,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_arc_quarkus_cdi">124.1.7. Arc (Quarkus CDI)</h4>
+<h4 id="_arc_quarkus_cdi">126.1.7. Arc (Quarkus CDI)</h4>
 <div class="paragraph">
 <p>Arc is Quarkus' CDI implementation, focused on build-time analysis and small runtime overhead.</p>
 </div>
@@ -11117,7 +11438,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_native_compilation_with_graalvm">124.1.8. Native Compilation with GraalVM</h4>
+<h4 id="_native_compilation_with_graalvm">126.1.8. Native Compilation with GraalVM</h4>
 <div class="sect4">
 <h5 id="_benefits">Benefits</h5>
 <div class="ulist">
@@ -11167,7 +11488,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_extension_ecosystem">124.1.9. Extension Ecosystem</h4>
+<h4 id="_extension_ecosystem">126.1.9. Extension Ecosystem</h4>
 <div class="paragraph">
 <p>Quarkus provides extensions for:
 - <strong>Data</strong>: MongoDB, PostgreSQL, Redis, Elasticsearch
@@ -11178,7 +11499,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_quantums_quarkus_integration">124.1.10. Quantum&#8217;s Quarkus Integration</h4>
+<h4 id="_quantums_quarkus_integration">126.1.10. Quantum&#8217;s Quarkus Integration</h4>
 <div class="paragraph">
 <p>Quantum leverages Quarkus for:
 - <strong>CDI</strong>: Dependency injection for repositories and services
@@ -11190,7 +11511,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_getting_started_with_quarkus">124.1.11. Getting Started with Quarkus</h4>
+<h4 id="_getting_started_with_quarkus">126.1.11. Getting Started with Quarkus</h4>
 <div class="sect4">
 <h5 id="_create_project">Create Project</h5>
 <div class="listingblock">
@@ -11221,7 +11542,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_see_also_4">124.1.12. See Also</h4>
+<h4 id="_see_also_4">126.1.12. See Also</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -11238,7 +11559,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_core_concepts">124.1.13. Core Concepts</h4>
+<h4 id="_core_concepts">126.1.13. Core Concepts</h4>
 <div class="dlist">
 <dl>
 <dt class="hdlist1"><strong>BaseModel</strong></dt>
@@ -11269,7 +11590,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_multi_tenancy">124.1.14. Multi-Tenancy</h4>
+<h4 id="_multi_tenancy">126.1.14. Multi-Tenancy</h4>
 <div class="dlist">
 <dl>
 <dt class="hdlist1"><strong>Tenant</strong></dt>
@@ -11292,7 +11613,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_security_2">124.1.15. Security</h4>
+<h4 id="_security_2">126.1.15. Security</h4>
 <div class="dlist">
 <dl>
 <dt class="hdlist1"><strong>Principal</strong></dt>
@@ -11315,7 +11636,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_data_and_persistence">124.1.16. Data and Persistence</h4>
+<h4 id="_data_and_persistence">126.1.16. Data and Persistence</h4>
 <div class="dlist">
 <dl>
 <dt class="hdlist1"><strong>MorphiaRepo</strong></dt>
@@ -11338,7 +11659,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_rest_and_apis">124.1.17. REST and APIs</h4>
+<h4 id="_rest_and_apis">126.1.17. REST and APIs</h4>
 <div class="dlist">
 <dl>
 <dt class="hdlist1"><strong>BaseResource</strong></dt>
@@ -11361,7 +11682,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_framework_components">124.1.18. Framework Components</h4>
+<h4 id="_framework_components">126.1.18. Framework Components</h4>
 <div class="dlist">
 <dl>
 <dt class="hdlist1"><strong>ValidationInterceptor</strong></dt>
@@ -11384,7 +11705,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_annotations">124.1.19. Annotations</h4>
+<h4 id="_annotations">126.1.19. Annotations</h4>
 <div class="dlist">
 <dl>
 <dt class="hdlist1"><strong>@FunctionalMapping</strong></dt>
@@ -11407,7 +11728,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_external_integrations">124.1.20. External Integrations</h4>
+<h4 id="_external_integrations">126.1.20. External Integrations</h4>
 <div class="dlist">
 <dl>
 <dt class="hdlist1"><strong>JWT Provider</strong></dt>
