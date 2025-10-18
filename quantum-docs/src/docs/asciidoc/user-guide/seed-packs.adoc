@@ -776,3 +776,233 @@ See also:
 - Test source: quantum-framework/src/test/java/com/e2eq/framework/service/seed/MorphiaSeedRepositoryIntegrationTest.java
 - Manifest and dataset: quantum-framework/src/test/resources/seed-packs/morphia-demo
 - Admin APIs: /admin/seeds to list pending, apply packs, and inspect history per realm.
+
+
+
+== Dataset URLs and routing (file:// and s3://)
+
+Starting with Quantum 1.2.2, dataset files in a manifest can be specified either as:
+
+- Relative paths (backward compatible): resolved relative to the manifest’s own location as provided by its SeedSource (filesystem or S3).
+- Absolute URLs with a scheme that identifies the source: currently supported schemes are file:// and s3://. The loader automatically routes these URLs to the appropriate SeedSource at runtime.
+
+Notes:
+- If the dataset value contains "://", it is treated as a URL and routed by scheme. Otherwise it is treated as a relative path.
+- Using URLs allows you to mix sources inside a single manifest (e.g., some datasets from the local filesystem and others from S3).
+- This is extensible; additional schemes can be supported by adding optional modules in the future.
+
+Examples:
+
+[source,yaml]
+----
+seedPack: mixed-demo
+version: 0.1.0
+
+datasets:
+  # Relative path (resolved relative to the manifest location)
+  - collection: localDefaults
+    file: datasets/defaults.ndjson
+    naturalKey: [ key ]
+    upsert: true
+
+  # Absolute filesystem URL
+  - collection: roles
+    file: file:///opt/app/seed-packs/roles.ndjson
+    naturalKey: [ code ]
+    upsert: true
+
+  # Absolute S3 URL
+  - collection: carriers
+    file: s3://my-seeds/mixed-demo/0.1.0/carriers.ndjson
+    naturalKey: [ code ]
+    upsert: true
+----
+
+Routing behavior:
+- Relative path: delegated to the SeedSource that loaded the manifest (unchanged behavior).
+- file:// URL: handled by FileSeedSource.
+- s3:// URL: handled by S3SeedSource (requires the optional quantum-seed-s3 module on the classpath).
+
+== S3 Seed Source (optional module)
+
+The framework provides an optional SeedSource backed by Amazon S3, packaged in a separate module so you can include it only when needed:
+
+- Module: `quantum-seed-s3`
+- Class: `com.end2endlogic.quantum.seed.s3.S3SeedSource`
+- Purpose: Discover seed pack manifests and datasets stored in S3; optionally assume an IAM role via STS if cross‑account access is required.
+
+=== When to use S3 vs. filesystem
+
+Use S3 when any of the following apply:
+- You want a single canonical location for seed content shared across services and environments.
+- You need to distribute seed packs across many runtimes (containers, serverless) without baking files into images.
+- You want to leverage S3 features: versioning, object immutability, access logging, and cross‑account sharing.
+- CI/CD pipelines or content teams publish seed packs independently from application deployments.
+
+Filesystem may be simpler when:
+- Developing locally with small packs that live inside your project.
+- You prefer packs bundled within the application JAR/image and don’t need central distribution.
+
+Advantages of S3 over filesystem:
+- Centralized distribution and caching via S3/CloudFront.
+- Cross‑account access with STS AssumeRole.
+- Object versioning and retention policies for auditability.
+- Decouples seed content delivery from app build artifacts.
+
+=== S3 layout conventions
+
+S3SeedSource expects the same on-disk structure as FileSeedSource, just hosted under a bucket + optional prefix. Each seed pack version is a folder containing a manifest file and any referenced datasets. For example:
+
+- s3://my-seeds/seed-packs/customer/1.0.0/manifest.yaml
+- s3://my-seeds/seed-packs/customer/1.0.0/customers.ndjson
+- s3://my-seeds/seed-packs/logistics-core/1.4.2/manifest.yaml
+
+Notes:
+- The manifest file name defaults to `manifest.yaml` but can be overridden.
+- Dataset file paths in the manifest are resolved relative to the manifest’s key (folder).
+
+=== Configuration and credentials
+
+Constructor parameters for S3SeedSource:
+- id: Human-friendly source id (e.g., "s3-main").
+- bucket: S3 bucket name.
+- prefix: Optional prefix under which seed packs live (e.g., "seed-packs/"). May be empty.
+- manifestFileName: Optional. Defaults to "manifest.yaml".
+- region: Optional AWS region. If omitted, AWS SDK v2 region resolution applies.
+- roleArn: Optional ARN of a role to assume via STS. If omitted/blank, the default credentials chain is used.
+- roleSessionName: Optional session name when assuming a role. Defaults to "quantum-seed".
+- externalId: Optional ExternalId for AssumeRole if the target role trust policy requires it.
+- roleDuration: Optional session duration for AssumeRole; defaults to 30 minutes.
+
+Credential modes:
+- Default credentials chain (no roleArn): The AWS SDK v2 uses environment variables, profile, ECS/EC2/Lambda task role, etc.
+- AssumeRole (roleArn provided): The source uses STS to assume the specified role before calling S3.
+
+IAM considerations:
+- The credentials (base or assumed) must allow `s3:ListBucket` on the bucket (scoped to the prefix) and `s3:GetObject` for objects under the prefix.
+- For cross‑account usage, grant the calling account sts:AssumeRole on the target role, and in the role’s policy grant the S3 permissions above.
+
+Minimal target role policy example:
+[source,json]
+----
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": "arn:aws:s3:::my-seeds",
+      "Condition": {"StringLike": {"s3:prefix": ["seed-packs/*"]}}
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["s3:GetObject"],
+      "Resource": "arn:aws:s3:::my-seeds/seed-packs/*"
+    }
+  ]
+}
+----
+
+=== Usage examples
+
+Create a loader that discovers packs from S3 with the runtime IAM role or local credentials:
+[source,java]
+----
+import com.e2eq.framework.service.seed.*;
+import com.end2endlogic.quantum.seed.s3.S3SeedSource;
+import software.amazon.awssdk.regions.Region;
+
+SeedLoader loader = SeedLoader.builder()
+    .addSeedSource(new S3SeedSource(
+        "s3-main",
+        "my-seeds",
+        "seed-packs/",
+        "manifest.yaml",
+        Region.US_EAST_1,
+        null, // roleArn null => use default creds / runtime role
+        null,
+        null,
+        null))
+    .seedRepository(new MongoSeedRepository(mongoClient))
+    .seedRegistry(new MongoSeedRegistry(mongoClient))
+    .build();
+----
+
+Assuming a cross‑account role:
+[source,java]
+----
+SeedLoader loader = SeedLoader.builder()
+    .addSeedSource(new S3SeedSource(
+        "s3-cross-account",
+        "partner-seeds",
+        "prod/",
+        "manifest.yaml",
+        Region.US_WEST_2,
+        "arn:aws:iam::123456789012:role/SeedReadOnly",
+        "quantum-seed-session",
+        "external-id-abc123",
+        java.time.Duration.ofMinutes(45)))
+    .seedRepository(new MongoSeedRepository(mongoClient))
+    .seedRegistry(new MongoSeedRegistry(mongoClient))
+    .build();
+----
+
+Using the builder helper:
+[source,java]
+----
+import com.end2endlogic.quantum.seed.s3.S3SeedSourceBuilder;
+
+S3SeedSource s3 = new S3SeedSourceBuilder()
+    .id("s3-main")
+    .bucket("my-seeds")
+    .prefix("seed-packs/")
+    .region(Region.US_EAST_1)
+    .build();
+----
+
+=== Defining datasets in the manifest (S3)
+
+Manifests can reference S3 in two ways:
+
+- Relative paths (backward compatible): when a manifest itself is loaded from S3, dataset files are resolved relative to the manifest’s S3 key (folder), just like the filesystem source.
+- Absolute URLs: you can specify s3://bucket/key URLs directly in any manifest. These are routed to S3 regardless of where the manifest was discovered from.
+
+Example S3 manifest and dataset layout:
+[source,text]
+----
+s3://my-seeds/seed-packs/customer/1.0.0/manifest.yaml
+s3://my-seeds/seed-packs/customer/1.0.0/customers.ndjson
+s3://my-seeds/seed-packs/customer/1.0.0/roles.json
+----
+
+Manifest file (manifest.yaml):
+[source,yaml]
+----
+seedPack: customer
+version: 1.0.0
+
+datasets:
+  - collection: customers
+    file: customers.ndjson     # resolved relative to the manifest’s folder in S3
+    naturalKey: [ accountNumber ]
+    upsert: true
+
+  - collection: roles
+    file: roles.json           # also relative to the manifest’s folder
+    naturalKey: [ code ]
+    upsert: true
+
+archetypes:
+  - name: CustomerBase
+    includes:
+      - customer@=1.0.0
+----
+
+No additional configuration is required in the manifest to indicate S3; the SeedSource you configure at runtime determines where manifests are discovered and how dataset paths are resolved.
+
+=== Troubleshooting
+
+- Access denied: Verify credentials or the assumed role’s permissions for ListBucket/GetObject on the bucket/prefix.
+- Region mismatch: Provide an explicit region if your runtime’s default region doesn’t match the bucket’s region.
+- Object not found: Confirm the prefix and that the manifest file name matches (default is manifest.yaml).
+- Slow discovery: Use a tighter prefix to avoid scanning a large bucket namespace; consider S3 inventory or object tagging strategies if your repository grows significantly.

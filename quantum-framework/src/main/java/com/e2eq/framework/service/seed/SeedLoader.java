@@ -43,6 +43,7 @@ public final class SeedLoader {
     private final SeedRegistry seedRegistry;
     private final Map<String, SeedTransformFactory> transformFactories;
     private final ObjectMapper objectMapper;
+    private final SeedResourceRouter resourceRouter;
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
     private SeedLoader(Builder builder) {
@@ -51,6 +52,7 @@ public final class SeedLoader {
         this.seedRegistry = Objects.requireNonNull(builder.seedRegistry, "seedRegistry");
         this.transformFactories = Map.copyOf(builder.transformFactories);
         this.objectMapper = builder.objectMapper;
+        this.resourceRouter = new SeedResourceRouter(this.seedSources);
     }
 
     public static Builder builder() {
@@ -169,7 +171,7 @@ public final class SeedLoader {
     }
 
     private DatasetPayload readDataset(SeedPackDescriptor descriptor, Dataset dataset) {
-        try (InputStream in = descriptor.getSource().openDataset(descriptor, dataset.getFile())) {
+        try (InputStream in = resourceRouter.open(descriptor, dataset.getFile())) {
             byte[] bytes = in.readAllBytes();
             String checksum = checksum(bytes);
             List<Map<String, Object>> records = parseDataset(bytes, dataset);
