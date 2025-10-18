@@ -12,7 +12,7 @@ import java.util.stream.Stream;
 /**
  * Loads seed packs from a directory structure on the filesystem or classpath.
  */
-public final class FileSeedSource implements SeedSource {
+public final class FileSeedSource implements SeedSource, SchemeAware {
 
     private final String id;
     private final Path root;
@@ -65,6 +65,21 @@ public final class FileSeedSource implements SeedSource {
             throw new IOException("Dataset path " + datasetPath + " is outside seed source root " + root);
         }
         return Files.newInputStream(datasetPath);
+    }
+
+    // SchemeAware implementation
+    @Override
+    public boolean supportsScheme(String scheme) {
+        return "file".equalsIgnoreCase(scheme);
+    }
+
+    @Override
+    public InputStream openUri(java.net.URI uri, SeedPackDescriptor context) throws IOException {
+        if (!supportsScheme(uri.getScheme())) {
+            throw new IOException("Unsupported scheme for FileSeedSource: " + uri.getScheme());
+        }
+        java.nio.file.Path path = java.nio.file.Path.of(uri);
+        return java.nio.file.Files.newInputStream(path);
     }
 
     private static final class SeedSourceIOException extends RuntimeException {

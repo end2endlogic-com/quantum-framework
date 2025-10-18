@@ -19,11 +19,15 @@ import java.util.List;
  * Small CLI utility to convert a YAML array of security Rules into JSONL (one JSON object per line).
  *
  * Usage:
- *   java com.e2eq.tools.RulesYamlToJsonl <input.yaml> <output.jsonl>
+ * <pre>
+ *   java com.e2eq.tools.RulesYamlToJsonl &lt;input.yaml&gt; &lt;output.jsonl&gt;
+ * </pre>
  *
  * Example (from repo root, using the existing test YAML):
- *   - input:  quantum-framework/src/test/resources/securityRules.yaml
- *   - output: target/securityRules.jsonl
+ * <ul>
+ *   <li>input: quantum-framework/src/test/resources/securityRules.yaml</li>
+ *   <li>output: target/securityRules.jsonl</li>
+ * </ul>
  */
 public final class RulesYamlToJsonl {
 

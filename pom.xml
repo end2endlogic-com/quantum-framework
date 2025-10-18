@@ -67,6 +67,7 @@
         <module>quantum-morphia-repos</module>
         <module>quantum-jwt-provider</module>
         <module>quantum-framework</module>
+        <module>quantum-seed-s3</module>
     </modules>
 
 
