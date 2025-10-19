@@ -527,56 +527,64 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div id="header">
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
-<ul class="sectlevel2">
+<ul class="sectlevel1">
 <li><a href="#rest-crud">1. REST: Find, Get, List, Save, Update, Delete</a>
-<ul class="sectlevel3">
+<ul class="sectlevel2">
 <li><a href="#_base_concepts">1.1. Base Concepts</a></li>
 <li><a href="#_example_resource">1.2. Example Resource</a></li>
 <li><a href="#_authorization_layers_in_rest_crud">1.3. Authorization Layers in REST CRUD</a></li>
 <li><a href="#_querying">1.4. Querying</a></li>
 <li><a href="#_responses_and_schemas">1.5. Responses and Schemas</a></li>
-<li><a href="#_error_handling">1.6. Error Handling</a></li>
-<li><a href="#_query_language_antlrbased">1.7. Query Language (ANTLR‑based)</a></li>
+<li><a href="#_error_handling">1.6. Error Handling</a>
+<ul class="sectlevel3">
+<li><a href="#_query_language_antlrbased">1.6.1. Query Language (ANTLR‑based)</a></li>
 </ul>
 </li>
-<li><a href="#_simple_filters_equals">2. Simple filters (equals)</a></li>
-<li><a href="#_advanced_filters_grouping_and_andornot">3. Advanced filters: grouping and AND/OR/NOT</a></li>
-<li><a href="#_in_lists">4. IN lists</a></li>
-<li><a href="#_sorting">5. Sorting</a></li>
-<li><a href="#_projections">6. Projections</a></li>
-<li><a href="#_endtoend_examples">7. End‑to‑end examples</a></li>
-<li><a href="#_csv_export_and_import">1. CSV Export and Import</a>
+<li><a href="#_simple_filters_equals">1.7. Simple filters (equals)</a></li>
+<li><a href="#_advanced_filters_grouping_and_andornot">1.8. Advanced filters: grouping and AND/OR/NOT</a></li>
+<li><a href="#_in_lists">1.9. IN lists</a></li>
+<li><a href="#_sorting">1.10. Sorting</a></li>
+<li><a href="#_projections">1.11. Projections</a></li>
+<li><a href="#_endtoend_examples">1.12. End‑to‑end examples</a></li>
+</ul>
+</li>
+<li><a href="#_csv_export_and_import">2. CSV Export and Import</a>
 <ul class="sectlevel2">
-<li><a href="#_export_get_csv">1.1. Export: GET /csv</a></li>
-<li><a href="#_import_post_csv_multipart">1.2. Import: POST /csv (multipart)</a></li>
-<li><a href="#_import_with_preview_sessions">1.3. Import with preview sessions</a></li>
+<li><a href="#_export_get_csv">2.1. Export: GET /csv</a></li>
+<li><a href="#_import_post_csv_multipart">2.2. Import: POST /csv (multipart)</a></li>
+<li><a href="#_import_with_preview_sessions">2.3. Import with preview sessions</a></li>
 </ul>
 </li>
 <li><a href="#rest-crud-auth">Authentication and Authorization</a>
 <ul class="sectlevel1">
-<li><a href="#_jwt_provider">2. JWT Provider</a></li>
-<li><a href="#_pluggable_authentication">3. Pluggable Authentication</a></li>
-<li><a href="#_creating_an_auth_plugin_using_the_custom_jwt_provider_as_a_reference">4. Creating an Auth Plugin (using the Custom JWT provider as a reference)</a></li>
-<li><a href="#_authprovider_interface_what_a_provider_must_implement">5. AuthProvider interface (what a provider must implement)</a></li>
-<li><a href="#_usermanagement_interface_operations_your_plugin_must_support">6. UserManagement interface (operations your plugin must support)</a></li>
-<li><a href="#_leveraging_baseauthprovider_in_your_plugin">7. Leveraging BaseAuthProvider in your plugin</a></li>
-<li><a href="#_implementing_your_own_provider">8. Implementing your own provider</a></li>
-<li><a href="#_credentialuseridpassword_model_and_domaincontext">9. CredentialUserIdPassword model and DomainContext</a></li>
-<li><a href="#_quarkus_oidc_out_of_the_box_and_integrating_with_common_idps">10. Quarkus OIDC out-of-the-box and integrating with common IdPs</a></li>
-<li><a href="#_authorization_via_rulecontext">11. Authorization via RuleContext</a></li>
+<li><a href="#_jwt_provider">3. JWT Provider</a></li>
+<li><a href="#_pluggable_authentication">4. Pluggable Authentication</a></li>
+<li><a href="#_creating_an_auth_plugin_using_the_custom_jwt_provider_as_a_reference">5. Creating an Auth Plugin (using the Custom JWT provider as a reference)</a></li>
+<li><a href="#_authprovider_interface_what_a_provider_must_implement">6. AuthProvider interface (what a provider must implement)</a></li>
+<li><a href="#_usermanagement_interface_operations_your_plugin_must_support">7. UserManagement interface (operations your plugin must support)</a></li>
+<li><a href="#_leveraging_baseauthprovider_in_your_plugin">8. Leveraging BaseAuthProvider in your plugin</a></li>
+<li><a href="#_implementing_your_own_provider">9. Implementing your own provider</a></li>
+<li><a href="#_credentialuseridpassword_model_and_domaincontext">10. CredentialUserIdPassword model and DomainContext</a></li>
+<li><a href="#_quarkus_oidc_out_of_the_box_and_integrating_with_common_idps">11. Quarkus OIDC out-of-the-box and integrating with common IdPs</a></li>
+<li><a href="#_authorization_via_rulecontext">12. Authorization via RuleContext</a>
+<ul class="sectlevel2">
+<li><a href="#ontology-rest-crud">12.1. Using Ontology Edges in List Endpoints (optional)</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
 </div>
 </div>
 <div id="content">
-<div class="sect2">
-<h3 id="rest-crud">1. REST: Find, Get, List, Save, Update, Delete</h3>
+<div class="sect1">
+<h2 id="rest-crud">1. REST: Find, Get, List, Save, Update, Delete</h2>
+<div class="sectionbody">
 <div class="paragraph">
 <p>Quantum provides consistent REST resources backed by repositories. Extend BaseResource to expose CRUD quickly and consistently.</p>
 </div>
-<div class="sect3">
-<h4 id="_base_concepts">1.1. Base Concepts</h4>
+<div class="sect2">
+<h3 id="_base_concepts">1.1. Base Concepts</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -609,8 +617,8 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </ul>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_example_resource">1.2. Example Resource</h4>
+<div class="sect2">
+<h3 id="_example_resource">1.2. Example Resource</h3>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">com.e2eq.framework.rest.resources.BaseResource</span>;
@@ -622,8 +630,8 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_authorization_layers_in_rest_crud">1.3. Authorization Layers in REST CRUD</h4>
+<div class="sect2">
+<h3 id="_authorization_layers_in_rest_crud">1.3. Authorization Layers in REST CRUD</h3>
 <div class="paragraph">
 <p>Quantum combines static, identity-based checks with dynamic, domain-aware policy evaluation. In practice you will often use both:</p>
 </div>
@@ -712,8 +720,8 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <p>For detailed rule-base matching (URL, headers, body predicates, priorities), see the Permissions section.</p>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_querying">1.4. Querying</h4>
+<div class="sect2">
+<h3 id="_querying">1.4. Querying</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -728,8 +736,8 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </ul>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_responses_and_schemas">1.5. Responses and Schemas</h4>
+<div class="sect2">
+<h3 id="_responses_and_schemas">1.5. Responses and Schemas</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -741,8 +749,8 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </ul>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_error_handling">1.6. Error Handling</h4>
+<div class="sect2">
+<h3 id="_error_handling">1.6. Error Handling</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -753,9 +761,8 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </li>
 </ul>
 </div>
-</div>
 <div class="sect3">
-<h4 id="_query_language_antlrbased">1.7. Query Language (ANTLR‑based)</h4>
+<h4 id="_query_language_antlrbased">1.6.1. Query Language (ANTLR‑based)</h4>
 <div class="paragraph">
 <p>The find/list endpoints accept a filter string parsed by an ANTLR grammar (BIAPIQuery.g4). Use the filter query parameter to express predicates; combine them with logical operators and grouping. Sorting and projection are separate query parameters.</p>
 </div>
@@ -835,7 +842,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect2">
-<h3 id="_simple_filters_equals">2. Simple filters (equals)</h3>
+<h3 id="_simple_filters_equals">1.7. Simple filters (equals)</h3>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code># string equality
@@ -861,7 +868,7 @@ dataDomain.tenantId:${pTenantId}</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_advanced_filters_grouping_and_andornot">3. Advanced filters: grouping and AND/OR/NOT</h3>
+<h3 id="_advanced_filters_grouping_and_andornot">1.8. Advanced filters: grouping and AND/OR/NOT</h3>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code># Products that are active and (name contains widget OR gizmo), excluding discontinued
@@ -881,7 +888,7 @@ category:!null &amp;&amp; !!(price:&lt;##10)</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_in_lists">4. IN lists</h3>
+<h3 id="_in_lists">1.9. IN lists</h3>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code>status:^[&quot;OPEN&quot;,&quot;CLOSED&quot;,&quot;ON_HOLD&quot;]
@@ -891,7 +898,7 @@ referenceId:^[@@5f1e9b9c8a0b0c0d1e2f3a4b, @@6a7b8c9d0e1f2a3b4c5d6e7f]</code></pr
 </div>
 </div>
 <div class="sect2">
-<h3 id="_sorting">5. Sorting</h3>
+<h3 id="_sorting">1.10. Sorting</h3>
 <div class="paragraph">
 <p>Provide a sort query parameter (comma‑separated fields):
 - '-' prefix = descending, '+' or no prefix = ascending.</p>
@@ -910,7 +917,7 @@ referenceId:^[@@5f1e9b9c8a0b0c0d1e2f3a4b, @@6a7b8c9d0e1f2a3b4c5d6e7f]</code></pr
 </div>
 </div>
 <div class="sect2">
-<h3 id="_projections">6. Projections</h3>
+<h3 id="_projections">1.11. Projections</h3>
 <div class="paragraph">
 <p>Limit returned fields with the projection parameter (comma‑separated):
 - '+' prefix = include, '-' prefix = exclude.</p>
@@ -926,7 +933,7 @@ referenceId:^[@@5f1e9b9c8a0b0c0d1e2f3a4b, @@6a7b8c9d0e1f2a3b4c5d6e7f]</code></pr
 </div>
 </div>
 <div class="sect2">
-<h3 id="_endtoend_examples">7. End‑to‑end examples</h3>
+<h3 id="_endtoend_examples">1.12. End‑to‑end examples</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -941,8 +948,10 @@ referenceId:^[@@5f1e9b9c8a0b0c0d1e2f3a4b, @@6a7b8c9d0e1f2a3b4c5d6e7f]</code></pr
 <p>These features integrate with RuleContext and DataDomain: your filter runs within the tenant/org scope derived from the security context; RuleContext may add further predicates or projections automatically.</p>
 </div>
 </div>
+</div>
+</div>
 <div class="sect1">
-<h2 id="_csv_export_and_import">1. CSV Export and Import</h2>
+<h2 id="_csv_export_and_import">2. CSV Export and Import</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>These endpoints are inherited by every resource that extends BaseResource. They are mounted under the resource’s base path. For example, PolicyResource at /security/permission/policies exposes:</p>
@@ -986,7 +995,7 @@ referenceId:^[@@5f1e9b9c8a0b0c0d1e2f3a4b, @@6a7b8c9d0e1f2a3b4c5d6e7f]</code></pr
 </ul>
 </div>
 <div class="sect2">
-<h3 id="_export_get_csv">1.1. Export: GET /csv</h3>
+<h3 id="_export_get_csv">2.1. Export: GET /csv</h3>
 <div class="paragraph">
 <p>Produces a streamed CSV download of the current resource collection.</p>
 </div>
@@ -1100,7 +1109,7 @@ curl -H &quot;Authorization: Bearer $JWT&quot; \
 </div>
 </div>
 <div class="sect2">
-<h3 id="_import_post_csv_multipart">1.2. Import: POST /csv (multipart)</h3>
+<h3 id="_import_post_csv_multipart">2.2. Import: POST /csv (multipart)</h3>
 <div class="paragraph">
 <p>Consumes a CSV file (multipart/form‑data) and imports records in batches. The form field name for the file is file.</p>
 </div>
@@ -1184,7 +1193,7 @@ curl -H &quot;Authorization: Bearer $JWT&quot; \
 </div>
 </div>
 <div class="sect2">
-<h3 id="_import_with_preview_sessions">1.3. Import with preview sessions</h3>
+<h3 id="_import_with_preview_sessions">2.3. Import with preview sessions</h3>
 <div class="paragraph">
 <p>Use a two‑step flow to analyze first, then commit only valid rows.</p>
 </div>
@@ -1268,7 +1277,7 @@ curl -H &quot;Authorization: Bearer $JWT&quot; \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_jwt_provider">2. JWT Provider</h2>
+<h2 id="_jwt_provider">3. JWT Provider</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -1286,7 +1295,7 @@ curl -H &quot;Authorization: Bearer $JWT&quot; \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_pluggable_authentication">3. Pluggable Authentication</h2>
+<h2 id="_pluggable_authentication">4. Pluggable Authentication</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>You can introduce alternative authentication mechanisms (e.g., API keys, SAML/OIDC front-channel tokens exchanged for back-end JWTs, HMAC signatures) by providing CDI beans that integrate with the security layer and emit the same normalized context consumed by DomainContext/RuleContext.</p>
@@ -1310,7 +1319,7 @@ curl -H &quot;Authorization: Bearer $JWT&quot; \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_creating_an_auth_plugin_using_the_custom_jwt_provider_as_a_reference">4. Creating an Auth Plugin (using the Custom JWT provider as a reference)</h2>
+<h2 id="_creating_an_auth_plugin_using_the_custom_jwt_provider_as_a_reference">5. Creating an Auth Plugin (using the Custom JWT provider as a reference)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>An auth plugin is typically a CDI bean that:</p>
@@ -1350,7 +1359,7 @@ curl -H &quot;Authorization: Bearer $JWT&quot; \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_authprovider_interface_what_a_provider_must_implement">5. AuthProvider interface (what a provider must implement)</h2>
+<h2 id="_authprovider_interface_what_a_provider_must_implement">6. AuthProvider interface (what a provider must implement)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Core methods:</p>
@@ -1428,7 +1437,7 @@ curl -H &quot;Authorization: Bearer $JWT&quot; \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_usermanagement_interface_operations_your_plugin_must_support">6. UserManagement interface (operations your plugin must support)</h2>
+<h2 id="_usermanagement_interface_operations_your_plugin_must_support">7. UserManagement interface (operations your plugin must support)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Typical responsibilities include:</p>
@@ -1519,7 +1528,7 @@ curl -H &quot;Authorization: Bearer $JWT&quot; \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_leveraging_baseauthprovider_in_your_plugin">7. Leveraging BaseAuthProvider in your plugin</h2>
+<h2 id="_leveraging_baseauthprovider_in_your_plugin">8. Leveraging BaseAuthProvider in your plugin</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>When you extend BaseAuthProvider, you inherit ready-to-use capabilities that reduce boilerplate:</p>
@@ -1595,7 +1604,7 @@ curl -H &quot;Authorization: Bearer $JWT&quot; \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_implementing_your_own_provider">8. Implementing your own provider</h2>
+<h2 id="_implementing_your_own_provider">9. Implementing your own provider</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Checklist:</p>
@@ -1672,7 +1681,7 @@ curl -H &quot;Authorization: Bearer $JWT&quot; \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_credentialuseridpassword_model_and_domaincontext">9. CredentialUserIdPassword model and DomainContext</h2>
+<h2 id="_credentialuseridpassword_model_and_domaincontext">10. CredentialUserIdPassword model and DomainContext</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This section explains how user credentials are represented, how those records tie to tenancy and realms, and how the server chooses the database (“realm”) for REST calls.</p>
@@ -1777,7 +1786,7 @@ curl -H &quot;Authorization: Bearer $JWT&quot; \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_quarkus_oidc_out_of_the_box_and_integrating_with_common_idps">10. Quarkus OIDC out-of-the-box and integrating with common IdPs</h2>
+<h2 id="_quarkus_oidc_out_of_the_box_and_integrating_with_common_idps">11. Quarkus OIDC out-of-the-box and integrating with common IdPs</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Quarkus ships with first-class OpenID Connect (OIDC) support, enabling both service-to-service and browser-based logins.</p>
@@ -1978,7 +1987,7 @@ curl -H &quot;Authorization: Bearer $JWT&quot; \
 </div>
 </div>
 <div class="sect1">
-<h2 id="_authorization_via_rulecontext">11. Authorization via RuleContext</h2>
+<h2 id="_authorization_via_rulecontext">12. Authorization via RuleContext</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Authentication establishes identity; RuleContext enforces what the identity can do. For each action (CREATE, UPDATE, VIEW, DELETE, ARCHIVE), RuleContext can:</p>
@@ -1999,13 +2008,56 @@ curl -H &quot;Authorization: Bearer $JWT&quot; \
 <div class="paragraph">
 <p>This division of responsibilities keeps providers focused on identity while policies remain centralized in RuleContext.</p>
 </div>
+<div class="sect2">
+<h3 id="ontology-rest-crud">12.1. Using Ontology Edges in List Endpoints (optional)</h3>
+<div class="paragraph">
+<p>When ontology is enabled and edges are materialized, list endpoints can avoid deep joins or multi-collection traversals by rewriting queries based on semantic relationships.</p>
+</div>
+<div class="paragraph">
+<p>Pattern A: Wrap BSON with ListQueryRewriter</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java">Bson base = Filters.and(existingFilters...);
+Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, <span class="string"><span class="delimiter">&quot;</span><span class="content">placedInOrg</span><span class="delimiter">&quot;</span></span>, orgRefName);
+collection.find(rewritten).iterator();</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Pattern B: Constrain Morphia query by IDs</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="predefined-type">Set</span>&lt;<span class="predefined-type">String</span>&gt; ids = edgeDao.srcIdsByDst(tenantId, <span class="string"><span class="delimiter">&quot;</span><span class="content">orderShipsToRegion</span><span class="delimiter">&quot;</span></span>, region);
+<span class="keyword">if</span> (!ids.isEmpty()) {
+  query.filter(dev.morphia.query.filters.Filters.in(<span class="string"><span class="delimiter">&quot;</span><span class="content">_id</span><span class="delimiter">&quot;</span></span>, ids));
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Notes</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Always scope by tenantId from DomainContext/RuleContext.</p>
+</li>
+<li>
+<p>Index edges on (tenantId, p, dst) and (tenantId, src, p) to keep queries fast.</p>
+</li>
+<li>
+<p>See <a href="ontology.html#ontology-integration-morphia-permissions">Integrating Ontology</a> for more integration options.</p>
+</li>
+</ul>
+</div>
+</div>
 </div>
 </div>
 </div>
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-09-26 15:22:22 -0400
+Last updated 2025-10-18 20:34:03 -0400
 </div>
 </div>
 </body>

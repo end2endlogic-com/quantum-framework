@@ -527,33 +527,48 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div id="header">
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
-<ul class="sectlevel2">
+<ul class="sectlevel1">
 <li><a href="#query-language">1. Query Language Reference</a>
+<ul class="sectlevel2">
+<li><a href="#_basic_syntax">1.1. Basic Syntax</a>
 <ul class="sectlevel3">
-<li><a href="#_basic_syntax">1.1. Basic Syntax</a></li>
-<li><a href="#_common_patterns">1.2. Common Patterns</a></li>
-<li><a href="#_advanced_examples">1.3. Advanced Examples</a></li>
-<li><a href="#_variables_in_filters">1.4. Variables in Filters</a></li>
-<li><a href="#_performance_tips">1.5. Performance Tips</a></li>
-<li><a href="#_integration_with_rest_apis">1.6. Integration with REST APIs</a></li>
-<li><a href="#_error_handling">1.7. Error Handling</a></li>
-<li><a href="#_see_also">1.8. See Also</a></li>
-<li><a href="#_execution_engines_and_listeners">1.9. Execution engines and listeners</a></li>
+<li><a href="#_operators">1.1.1. Operators</a></li>
+<li><a href="#_value_types">1.1.2. Value Types</a></li>
+<li><a href="#_logical_operators">1.1.3. Logical Operators</a></li>
+</ul>
+</li>
+<li><a href="#_common_patterns">1.2. Common Patterns</a>
+<ul class="sectlevel3">
+<li><a href="#_string_matching">1.2.1. String Matching</a></li>
+<li><a href="#_numeric_ranges">1.2.2. Numeric Ranges</a></li>
+<li><a href="#_date_and_time_queries">1.2.3. Date and Time Queries</a></li>
+<li><a href="#_list_membership">1.2.4. List Membership</a></li>
+<li><a href="#_advanced_examples">1.2.5. Advanced Examples</a></li>
+<li><a href="#_variables_in_filters">1.2.6. Variables in Filters</a></li>
+<li><a href="#_performance_tips">1.2.7. Performance Tips</a></li>
+<li><a href="#_integration_with_rest_apis">1.2.8. Integration with REST APIs</a></li>
+<li><a href="#_error_handling">1.2.9. Error Handling</a></li>
+<li><a href="#_see_also">1.2.10. See Also</a></li>
+<li><a href="#_execution_engines_and_listeners">1.2.11. Execution engines and listeners</a></li>
+<li><a href="#ontology-query-language">1.2.12. Expressing Ontology Constraints in Queries (optional)</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
 </div>
 </div>
 <div id="content">
-<div class="sect2">
-<h3 id="query-language">1. Query Language Reference</h3>
+<div class="sect1">
+<h2 id="query-language">1. Query Language Reference</h2>
+<div class="sectionbody">
 <div class="paragraph">
 <p>Quantum uses an ANTLR-based query language (BIAPIQuery.g4) for filtering, searching, and constraining data across all REST endpoints. This single, consistent syntax works everywhere: list APIs, permission rules, and access resolvers.</p>
 </div>
+<div class="sect2">
+<h3 id="_basic_syntax">1.1. Basic Syntax</h3>
 <div class="sect3">
-<h4 id="_basic_syntax">1.1. Basic Syntax</h4>
-<div class="sect4">
-<h5 id="_operators">Operators</h5>
+<h4 id="_operators">1.1.1. Operators</h4>
 <table class="tableblock frame-all grid-all stretch">
 <colgroup>
 <col style="width: 16.6666%;">
@@ -616,8 +631,8 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </tbody>
 </table>
 </div>
-<div class="sect4">
-<h5 id="_value_types">Value Types</h5>
+<div class="sect3">
+<h4 id="_value_types">1.1.2. Value Types</h4>
 <table class="tableblock frame-all grid-all stretch">
 <colgroup>
 <col style="width: 16.6666%;">
@@ -685,8 +700,8 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </tbody>
 </table>
 </div>
-<div class="sect4">
-<h5 id="_logical_operators">Logical Operators</h5>
+<div class="sect3">
+<h4 id="_logical_operators">1.1.3. Logical Operators</h4>
 <table class="tableblock frame-all grid-all stretch">
 <colgroup>
 <col style="width: 16.6666%;">
@@ -725,10 +740,10 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </table>
 </div>
 </div>
+<div class="sect2">
+<h3 id="_common_patterns">1.2. Common Patterns</h3>
 <div class="sect3">
-<h4 id="_common_patterns">1.2. Common Patterns</h4>
-<div class="sect4">
-<h5 id="_string_matching">String Matching</h5>
+<h4 id="_string_matching">1.2.1. String Matching</h4>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code># Exact match
@@ -745,8 +760,8 @@ name:&quot;WIDGET&quot;        # may or may not match &quot;widget&quot;</code><
 </div>
 </div>
 </div>
-<div class="sect4">
-<h5 id="_numeric_ranges">Numeric Ranges</h5>
+<div class="sect3">
+<h4 id="_numeric_ranges">1.2.2. Numeric Ranges</h4>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code># Price between 10 and 100
@@ -760,8 +775,8 @@ itemCount:#5</code></pre>
 </div>
 </div>
 </div>
-<div class="sect4">
-<h5 id="_date_and_time_queries">Date and Time Queries</h5>
+<div class="sect3">
+<h4 id="_date_and_time_queries">1.2.3. Date and Time Queries</h4>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code># Orders from today
@@ -778,8 +793,8 @@ updatedAt:&gt;=2024-01-01T00:00:00Z</code></pre>
 </div>
 </div>
 </div>
-<div class="sect4">
-<h5 id="_list_membership">List Membership</h5>
+<div class="sect3">
+<h4 id="_list_membership">1.2.4. List Membership</h4>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code># Status in specific values (IN)
@@ -807,7 +822,6 @@ priority:^[#1,#2,#3]
 customerId:!^[${accessibleCustomerIds}]</code></pre>
 </div>
 </div>
-</div>
 <div class="sect4">
 <h5 id="_null_and_existence_checks">Null and Existence Checks</h5>
 <div class="listingblock">
@@ -828,7 +842,7 @@ description:~ &amp;&amp; description:!&quot;&quot;</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_advanced_examples">1.3. Advanced Examples</h4>
+<h4 id="_advanced_examples">1.2.5. Advanced Examples</h4>
 <div class="sect4">
 <h5 id="_complex_business_logic">Complex Business Logic</h5>
 <div class="listingblock">
@@ -879,7 +893,7 @@ auditInfo.createdDate:!auditInfo.lastUpdatedDate # has been modified</code></pre
 </div>
 </div>
 <div class="sect3">
-<h4 id="_variables_in_filters">1.4. Variables in Filters</h4>
+<h4 id="_variables_in_filters">1.2.6. Variables in Filters</h4>
 <div class="paragraph">
 <p>Variables are resolved from the current security context and can be used in permission rules and access resolvers.</p>
 </div>
@@ -957,7 +971,7 @@ customerId:^[${accessibleCustomerIds}]</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_performance_tips">1.5. Performance Tips</h4>
+<h4 id="_performance_tips">1.2.7. Performance Tips</h4>
 <div class="sect4">
 <h5 id="_efficient_queries">Efficient Queries</h5>
 <div class="listingblock">
@@ -984,7 +998,7 @@ GET /products/list?filter=active:true&amp;projection=+id,+name,+price,-descripti
 </div>
 </div>
 <div class="sect3">
-<h4 id="_integration_with_rest_apis">1.6. Integration with REST APIs</h4>
+<h4 id="_integration_with_rest_apis">1.2.8. Integration with REST APIs</h4>
 <div class="sect4">
 <h5 id="_list_endpoints">List Endpoints</h5>
 <div class="listingblock">
@@ -1030,7 +1044,7 @@ andFilterString: <span class="string"><span class="delimiter">&quot;</span><span
 </div>
 </div>
 <div class="sect3">
-<h4 id="_error_handling">1.7. Error Handling</h4>
+<h4 id="_error_handling">1.2.9. Error Handling</h4>
 <div class="paragraph">
 <p>Common syntax errors and solutions:</p>
 </div>
@@ -1059,7 +1073,7 @@ createdDate:2024-12-25
 </div>
 </div>
 <div class="sect3">
-<h4 id="_see_also">1.8. See Also</h4>
+<h4 id="_see_also">1.2.10. See Also</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -1075,7 +1089,7 @@ createdDate:2024-12-25
 </div>
 </div>
 <div class="sect3">
-<h4 id="_execution_engines_and_listeners">1.9. Execution engines and listeners</h4>
+<h4 id="_execution_engines_and_listeners">1.2.11. Execution engines and listeners</h4>
 <div class="paragraph">
 <p>The BIAPI query syntax is parsed once (via ANTLR) and can be executed by different "listeners" depending on the use case. Quantum ships with two primary implementations that share the same grammar and semantics:</p>
 </div>
@@ -1304,12 +1318,98 @@ assert rx.test(ticket);</pre>
 </div>
 </div>
 </div>
+<div class="sect3">
+<h4 id="ontology-query-language">1.2.12. Expressing Ontology Constraints in Queries (optional)</h4>
+<div class="paragraph">
+<p>The BIAPI query language primarily targets fields on documents. When using the ontology modules, there are two ways to incorporate ontology relationships into queries:</p>
+</div>
+<div class="paragraph">
+<p>Option A: Variable from an AccessListResolver</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>A resolver computes the set of IDs using EdgeDao (e.g., orders related by placedInOrg to the caller’s org).</p>
+</li>
+<li>
+<p>Use an IN clause over id in your filter string:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># idsByPlacedInOrg is published by an AccessListResolver
+id:^${idsByPlacedInOrg}</code></pre>
+</div>
+</div>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Option B: Function-style helper (if you wire one)</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Some applications register a hasEdge(predicate, value) function into the filter translation path.</p>
+</li>
+<li>
+<p>Example (conceptual): hasEdge("placedInOrg", ${principal.orgRefName})</p>
+</li>
+<li>
+<p>Under the hood, it translates to id IN edgeDao.srcIdsByDst(tenantId, predicate, dst).</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Notes</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Ontology is optional; these patterns only apply when enabled and materialization is active.</p>
+</li>
+<li>
+<p>Always scope edge lookups by tenantId from RuleContext.</p>
+</li>
+<li>
+<p>See <a href="ontology.html#ontology-integration-morphia-permissions">Integrating Ontology</a> for wiring examples.</p>
+</li>
+</ul>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<div class="paragraph">
+<p>Policy function hasEdge()</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>The hasEdge(predicate, dstIdOrVar) operator is a policy-level function evaluated before query translation. It is not part of the BIAPI grammar parsed in this document.</p>
+</li>
+<li>
+<p>When present in a policy, the repository typically applies it by calling ListQueryRewriter.rewriteForHasEdge(&#8230;&#8203;), which constrains results by the set of IDs that have the specified ontology edge.</p>
+</li>
+<li>
+<p>See <a href="permissions.html#rule-hasedge">Rule language: add hasEdge()</a> for signature, semantics, and a full end-to-end example.</p>
+</li>
+</ul>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+</div>
 </div>
 </div>
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-10-16 14:20:06 -0400
+Last updated 2025-10-18 20:34:45 -0400
 </div>
 </div>
 </body>

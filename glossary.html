@@ -449,6 +449,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_framework_components">1.6. Framework Components</a></li>
 <li><a href="#_annotations">1.7. Annotations</a></li>
 <li><a href="#_external_integrations">1.8. External Integrations</a></li>
+<li><a href="#_ontology_optional_feature">1.9. Ontology (optional feature)</a></li>
 </ul>
 </li>
 </ul>
@@ -649,12 +650,43 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </dl>
 </div>
 </div>
+<div class="sect3">
+<h4 id="_ontology_optional_feature">1.9. Ontology (optional feature)</h4>
+<div class="dlist">
+<dl>
+<dt class="hdlist1"><strong>Ontology</strong></dt>
+<dd>
+<p>A formal description of concepts (classes) and their relationships (properties/predicates) with rules (e.g., property chains) that allow inferring implied facts. See <a href="../user-guide/ontology.html">Ontologies in Quantum</a>.</p>
+</dd>
+<dt class="hdlist1"><strong>Predicate / Property</strong></dt>
+<dd>
+<p>A named relationship (e.g., placedBy, memberOf, orderShipsToRegion). Predicates connect source and destination IDs and can be declared inverse or transitive.</p>
+</dd>
+<dt class="hdlist1"><strong>Property Chain</strong></dt>
+<dd>
+<p>A rule of the form p∘q⇒r meaning if (A --p-&#8594; B) and (B --q-&#8594; C), infer (A --r-&#8594; C). Chains make common traversals first-class and fast.</p>
+</dd>
+<dt class="hdlist1"><strong>Edge (materialized)</strong></dt>
+<dd>
+<p>A persisted tuple (tenantId, src, p, dst) representing a relationship, often inferred from rules. Edges live in a dedicated collection and power single-hop queries and policies.</p>
+</dd>
+<dt class="hdlist1"><strong>Ontology Materializer</strong></dt>
+<dd>
+<p>A component that computes inferred edges for an entity snapshot and upserts them to the edges collection. Keeps edges fresh as data changes.</p>
+</dd>
+<dt class="hdlist1"><strong>ListQueryRewriter</strong></dt>
+<dd>
+<p>A helper that turns semantic constraints into efficient Mongo queries (e.g., id IN srcIdsByDst). Integrates with permission rules and Morphia repos.</p>
+</dd>
+</dl>
+</div>
+</div>
 </div>
 </div>
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-09-30 21:05:37 -0400
+Last updated 2025-10-18 20:15:14 -0400
 </div>
 </div>
 </body>

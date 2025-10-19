@@ -5,7 +5,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="generator" content="Asciidoctor 2.0.20">
-<title>Modeling with Functional Areas, Domains, and Actions</title>
+<title>Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,300italic,400,400italic,600,600italic%7CNoto+Serif:400,400italic,700,700italic%7CDroid+Sans+Mono:400,700">
 <style>
 /*! Asciidoctor default stylesheet | MIT License | https://asciidoctor.org */
@@ -525,56 +525,40 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </head>
 <body class="book toc2 toc-left">
 <div id="header">
+<h1>Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</h1>
+<div class="details">
+<span id="revnumber">version 1.2.2-SNAPSHOT,</span>
+<span id="revdate">2025-10-19T00:51:33Z</span>
+</div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
 <ul class="sectlevel1">
-<li><a href="#modeling">1. Modeling with Functional Areas, Domains, and Actions</a>
-<ul class="sectlevel3">
-<li><a href="#_prefer_annotations_for_functional_mapping_recommended">1.1. Prefer Annotations for Functional Mapping (recommended)</a></li>
-<li><a href="#_datadomain_on_models">1.2. DataDomain on Models</a></li>
-<li><a href="#_persistence_repositories">1.3. Persistence Repositories</a></li>
-<li><a href="#_exposing_rest_resources">1.4. Exposing REST Resources</a></li>
-<li><a href="#_lombok_in_models">1.5. Lombok in Models</a></li>
-<li><a href="#_validation_with_jakarta_bean_validation">1.6. Validation with Jakarta Bean Validation</a></li>
-<li><a href="#_jackson_vs_jakarta_validation_annotations">1.7. Jackson vs Jakarta Validation Annotations</a></li>
-</ul>
-</li>
-<li><a href="#_jackson_objectmapper_in_quarkus_and_in_quantum">2. Jackson ObjectMapper in Quarkus and in Quantum</a></li>
-<li><a href="#_validation_lifecycle_and_morphia_interceptors">3. Validation Lifecycle and Morphia Interceptors</a></li>
-<li><a href="#_functional_areadomain_in_rulecontext_permission_language">4. Functional Area/Domain in RuleContext Permission Language</a></li>
-<li><a href="#_stategraphs_on_models">5. StateGraphs on Models</a></li>
-<li><a href="#_completiontasks_and_completiontaskgroups">6. CompletionTasks and CompletionTaskGroups</a></li>
-<li><a href="#_references_and_entityreference">7. References and EntityReference</a></li>
-<li><a href="#_tracking_references_with_trackreferences_and_delete_semantics">8. Tracking References with @TrackReferences and Delete Semantics</a>
+<li><a href="#ontologies-in-quantum">1. Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</a>
 <ul class="sectlevel2">
-<li><a href="#ontologies-in-quantum">8.1. Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</a>
-<ul class="sectlevel3">
-<li><a href="#_what_is_an_ontology">8.1.1. What is an Ontology?</a></li>
-<li><a href="#_ontology_vs_object_model">8.1.2. Ontology vs. Object Model</a></li>
-<li><a href="#_why_prefer_ontology_driven_relationships_over_referenceentityreference">8.1.3. Why prefer Ontology-driven relationships over @Reference/EntityReference</a></li>
-<li><a href="#_how_quantum_supports_ontologies">8.1.4. How Quantum supports Ontologies</a></li>
-<li><a href="#_modeling_guidance_from_object_fields_to_predicates">8.1.5. Modeling guidance: from object fields to predicates</a></li>
-<li><a href="#_querying_with_ontology_edges_vs_direct_references">8.1.6. Querying with ontology edges vs direct references</a></li>
-<li><a href="#_migration_from_reference_to_ontology_edges">8.1.7. Migration: from @Reference to ontology edges</a></li>
-<li><a href="#_performance_and_operational_notes">8.1.8. Performance and operational notes</a></li>
-<li><a href="#_how_this_integrates_with_functional_areasdomains">8.1.9. How this integrates with Functional Areas/Domains</a></li>
-<li><a href="#_summary">8.1.10. Summary</a></li>
-<li><a href="#ontology-ecommerce-example">8.1.11. Concrete example: Sales Orders, Shipments, and evolving to Fulfillment/Returns</a></li>
+<li><a href="#_what_is_an_ontology">1.1. What is an Ontology?</a></li>
+<li><a href="#_ontology_vs_object_model">1.2. Ontology vs. Object Model</a></li>
+<li><a href="#_why_prefer_ontology_driven_relationships_over_referenceentityreference">1.3. Why prefer Ontology-driven relationships over @Reference/EntityReference</a></li>
+<li><a href="#_how_quantum_supports_ontologies">1.4. How Quantum supports Ontologies</a></li>
+<li><a href="#_modeling_guidance_from_object_fields_to_predicates">1.5. Modeling guidance: from object fields to predicates</a></li>
+<li><a href="#_querying_with_ontology_edges_vs_direct_references">1.6. Querying with ontology edges vs direct references</a></li>
+<li><a href="#_migration_from_reference_to_ontology_edges">1.7. Migration: from @Reference to ontology edges</a></li>
+<li><a href="#_performance_and_operational_notes">1.8. Performance and operational notes</a></li>
+<li><a href="#_how_this_integrates_with_functional_areasdomains">1.9. How this integrates with Functional Areas/Domains</a></li>
+<li><a href="#_summary">1.10. Summary</a></li>
 </ul>
 </li>
-<li><a href="#ontology-integration-morphia-permissions">8.2. Integrating Ontology with Morphia, Permissions, and Multi-tenancy</a>
-<ul class="sectlevel3">
-<li><a href="#_big_picture_where_ontology_fits">8.2.1. Big picture: where ontology fits</a></li>
-<li><a href="#_rule_language_add_hasedge">8.2.2. Rule language: add hasEdge()</a></li>
-<li><a href="#_passing_tenantid_correctly">8.2.3. Passing tenantId correctly</a></li>
-<li><a href="#_morphia_repository_integration_patterns">8.2.4. Morphia repository integration patterns</a></li>
-<li><a href="#_where_to_hook_materialization">8.2.5. Where to hook materialization</a></li>
-<li><a href="#_security_and_multi_tenant_considerations">8.2.6. Security and multi-tenant considerations</a></li>
-<li><a href="#_developer_workflow_and_dx_checklist">8.2.7. Developer workflow and DX checklist</a></li>
-<li><a href="#_cookbook_end_to_end_example_with_orders_org">8.2.8. Cookbook: end-to-end example with Orders + Org</a></li>
-<li><a href="#_migration_notes_for_teams_using_reference">8.2.9. Migration notes for teams using @Reference</a></li>
-</ul>
-</li>
+<li><a href="#ontology-ecommerce-example">2. Concrete example: Sales Orders, Shipments, and evolving to Fulfillment/Returns</a></li>
+<li><a href="#ontology-integration-morphia-permissions">3. Integrating Ontology with Morphia, Permissions, and Multi-tenancy</a>
+<ul class="sectlevel2">
+<li><a href="#_big_picture_where_ontology_fits">3.1. Big picture: where ontology fits</a></li>
+<li><a href="#_rule_language_add_hasedge">3.2. Rule language: add hasEdge()</a></li>
+<li><a href="#_passing_tenantid_correctly">3.3. Passing tenantId correctly</a></li>
+<li><a href="#_morphia_repository_integration_patterns">3.4. Morphia repository integration patterns</a></li>
+<li><a href="#_where_to_hook_materialization">3.5. Where to hook materialization</a></li>
+<li><a href="#_security_and_multi_tenant_considerations">3.6. Security and multi-tenant considerations</a></li>
+<li><a href="#_developer_workflow_and_dx_checklist">3.7. Developer workflow and DX checklist</a></li>
+<li><a href="#_cookbook_end_to_end_example_with_orders_org">3.8. Cookbook: end-to-end example with Orders + Org</a></li>
+<li><a href="#_migration_notes_for_teams_using_reference">3.9. Migration notes for teams using @Reference</a></li>
 </ul>
 </li>
 </ul>
@@ -582,1006 +566,8 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 <div id="content">
 <div class="sect1">
-<h2 id="modeling">1. Modeling with Functional Areas, Domains, and Actions</h2>
+<h2 id="ontologies-in-quantum">1. Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</h2>
 <div class="sectionbody">
-<div class="paragraph">
-<p>Quantum organizes your system around three core constructs:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Functional Area: A broad capability area (e.g., Identity, Catalog, Orders, Collaboration).</p>
-</li>
-<li>
-<p>Functional Domain: A cohesive sub-area within an area (e.g., in Collaboration: Partners, Shipments, Tasks).</p>
-</li>
-<li>
-<p>Actions: The set of operations applicable to a domain (CREATE, UPDATE, VIEW, DELETE, ARCHIVE, plus domain-specific actions).</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>These constructs allow:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Fine-grained sharing: Point specific functional areas to shared databases while others remain strictly segmented.</p>
-</li>
-<li>
-<p>Policy composition: Apply RuleContext decisions at the level of area/domain/action.</p>
-</li>
-</ul>
-</div>
-<div class="sect3">
-<h4 id="_prefer_annotations_for_functional_mapping_recommended">1.1. Prefer Annotations for Functional Mapping (recommended)</h4>
-<div class="paragraph">
-<p>Starting with this version, you should use annotations to declare a model or resource&#8217;s Functional Area/Domain and the Action being performed. The legacy bmFunctionalArea() and bmFunctionalDomain() methods are still supported for backward compatibility in this release, but they will be phased out soon.</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Class-level mapping: use @FunctionalMapping(area = "&lt;area&gt;", domain = "&lt;domain&gt;") on your model or resource class.</p>
-</li>
-<li>
-<p>Method-level action: use @FunctionalAction("&lt;ACTION&gt;") on your JAX-RS resource methods when the action is not implied by the HTTP verb.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Example: model annotated with FunctionalMapping</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">dev.morphia.annotations.Entity</span>;
-<span class="keyword">import</span> <span class="include">lombok</span>.*;
-<span class="keyword">import</span> <span class="include">lombok.experimental.SuperBuilder</span>;
-<span class="keyword">import</span> <span class="include">com.e2eq.framework.model.persistent.base.BaseModel</span>;
-<span class="keyword">import</span> <span class="include">com.e2eq.framework.annotations.FunctionalMapping</span>;
-
-<span class="annotation">@Entity</span>
-<span class="annotation">@Data</span>
-<span class="annotation">@NoArgsConstructor</span>
-<span class="annotation">@SuperBuilder</span>
-<span class="annotation">@EqualsAndHashCode</span>(callSuper = <span class="predefined-constant">true</span>)
-<span class="annotation">@FunctionalMapping</span>(area = <span class="string"><span class="delimiter">&quot;</span><span class="content">catalog</span><span class="delimiter">&quot;</span></span>, domain = <span class="string"><span class="delimiter">&quot;</span><span class="content">product</span><span class="delimiter">&quot;</span></span>)
-<span class="directive">public</span> <span class="type">class</span> <span class="class">Product</span> <span class="directive">extends</span> BaseModel {
-    <span class="directive">private</span> <span class="predefined-type">String</span> sku;
-    <span class="directive">private</span> <span class="predefined-type">String</span> name;
-    <span class="comment">// No need to override bmFunctionalArea/bmFunctionalDomain when using @FunctionalMapping</span>
-}</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>Example: resource method annotated with FunctionalAction</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">jakarta.ws.rs</span>.*;
-<span class="keyword">import</span> <span class="include">jakarta.ws.rs.core.MediaType</span>;
-<span class="keyword">import</span> <span class="include">com.e2eq.framework.annotations.FunctionalAction</span>;
-
-<span class="annotation">@Path</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">/products</span><span class="delimiter">&quot;</span></span>)
-<span class="annotation">@Produces</span>(MediaType.APPLICATION_JSON)
-<span class="annotation">@Consumes</span>(MediaType.APPLICATION_JSON)
-<span class="directive">public</span> <span class="type">class</span> <span class="class">ProductResource</span> {
-
-    <span class="comment">// Action will default from HTTP verb (POST -&gt; CREATE), but you can be explicit:</span>
-    <span class="annotation">@POST</span>
-    <span class="annotation">@FunctionalAction</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">CREATE</span><span class="delimiter">&quot;</span></span>)
-    <span class="directive">public</span> Product create(Product payload) { <span class="comment">/* ... */</span> <span class="keyword">return</span> payload; }
-
-    <span class="comment">// GET will infer VIEW automatically when building the ResourceContext</span>
-    <span class="annotation">@GET</span>
-    <span class="annotation">@Path</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">/{id}</span><span class="delimiter">&quot;</span></span>)
-    <span class="directive">public</span> Product get(<span class="annotation">@PathParam</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">id</span><span class="delimiter">&quot;</span></span>) <span class="predefined-type">String</span> id) { <span class="comment">/* ... */</span> <span class="keyword">return</span> <span class="keyword">new</span> Product(); }
-}</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>How the framework uses these annotations</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>SecurityFilter: If the matched resource class has @FunctionalMapping, it uses area/domain from the annotation. If the method has @FunctionalAction, it uses that value; otherwise, it infers the action from the HTTP method (GET=VIEW, POST=CREATE, PUT/PATCH=UPDATE, DELETE=DELETE). If annotations are absent, it falls back to the existing path- and convention-based logic.</p>
-</li>
-<li>
-<p>MorphiaRepo.fillUIActions: If the model class has @FunctionalMapping, its area/domain are used to resolve allowed UI actions; otherwise, it falls back to the legacy bmFunctionalArea()/bmFunctionalDomain() methods.</p>
-</li>
-<li>
-<p>PermissionResource: When listing functional domains, it prefers @FunctionalMapping on entity classes and falls back to bmFunctionalArea()/bmFunctionalDomain() when missing.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Migration notes</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Preferred: add @FunctionalMapping to each model class (or resource class) and remove the bmFunctionalArea/bmFunctionalDomain overrides.</p>
-</li>
-<li>
-<p>Transitional: you can keep the legacy methods; they will be used only if the annotation is not present.</p>
-</li>
-<li>
-<p>Future: bmFunctionalArea and bmFunctionalDomain will be removed in a future release; plan to migrate now.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>See also: <a href="security-annotations.html#security-annotations">Security Annotations: FunctionalMapping and FunctionalAction</a></p>
-</div>
-</div>
-<div class="sect3">
-<h4 id="_datadomain_on_models">1.2. DataDomain on Models</h4>
-<div class="paragraph">
-<p>All persisted models carry DataDomain (tenantId, orgRefName, ownerId, etc.) for rule-based filtering and cross-tenant sharing.</p>
-</div>
-<div class="paragraph">
-<p>Example model:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">dev.morphia.annotations.Entity</span>;
-<span class="keyword">import</span> <span class="include">lombok.Data</span>;
-<span class="keyword">import</span> <span class="include">lombok.EqualsAndHashCode</span>;
-<span class="keyword">import</span> <span class="include">lombok.NoArgsConstructor</span>;
-<span class="keyword">import</span> <span class="include">lombok.experimental.SuperBuilder</span>;
-<span class="keyword">import</span> <span class="include">com.e2eq.framework.model.persistent.base.BaseModel</span>;
-
-<span class="annotation">@Entity</span>
-<span class="annotation">@Data</span>
-<span class="annotation">@NoArgsConstructor</span>
-<span class="annotation">@SuperBuilder</span>
-<span class="annotation">@EqualsAndHashCode</span>(callSuper = <span class="predefined-constant">true</span>)
-<span class="directive">public</span> <span class="type">class</span> <span class="class">Product</span> <span class="directive">extends</span> BaseModel {
-    <span class="directive">private</span> <span class="predefined-type">String</span> sku;
-    <span class="directive">private</span> <span class="predefined-type">String</span> name;
-
-    <span class="annotation">@Override</span>
-    <span class="directive">public</span> <span class="predefined-type">String</span> bmFunctionalArea() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">Catalog</span><span class="delimiter">&quot;</span></span>; }
-
-    <span class="annotation">@Override</span>
-    <span class="directive">public</span> <span class="predefined-type">String</span> bmFunctionalDomain() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">Product</span><span class="delimiter">&quot;</span></span>; }
-}</code></pre>
-</div>
-</div>
-</div>
-<div class="sect3">
-<h4 id="_persistence_repositories">1.3. Persistence Repositories</h4>
-<div class="paragraph">
-<p>Define a repository to persist and query your model. With Morphia:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">com.e2eq.framework.model.persistent.morphia.MorphiaRepo</span>;
-
-<span class="directive">public</span> <span class="type">interface</span> <span class="class">ProductRepo</span> <span class="directive">extends</span> MorphiaRepo&lt;Product&gt; {
-    <span class="comment">// custom queries can be added here</span>
-}</code></pre>
-</div>
-</div>
-</div>
-<div class="sect3">
-<h4 id="_exposing_rest_resources">1.4. Exposing REST Resources</h4>
-<div class="paragraph">
-<p>Expose consistent CRUD endpoints by extending BaseResource.</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">com.e2eq.framework.rest.resources.BaseResource</span>;
-<span class="keyword">import</span> <span class="include">jakarta.ws.rs.Path</span>;
-
-<span class="annotation">@Path</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">/products</span><span class="delimiter">&quot;</span></span>)
-<span class="directive">public</span> <span class="type">class</span> <span class="class">ProductResource</span> <span class="directive">extends</span> BaseResource&lt;Product, ProductRepo&gt; {
-    <span class="comment">// Inherit find, get, list, save, update, delete endpoints</span>
-}</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>With this minimal setup, you get standard REST APIs guarded by RuleContext/DataDomain and enriched with UIAction metadata.</p>
-</div>
-</div>
-<div class="sect3">
-<h4 id="_lombok_in_models">1.5. Lombok in Models</h4>
-<div class="paragraph">
-<p>Lombok reduces boilerplate in Quantum models and supports inheritance-friendly builders.</p>
-</div>
-<div class="paragraph">
-<p>Common annotations you will see:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>@Data: Generates getters, setters, toString, equals, and hashCode.</p>
-</li>
-<li>
-<p>@NoArgsConstructor: Required by frameworks that need a no-arg constructor (e.g., Jackson, Morphia).</p>
-</li>
-<li>
-<p>@EqualsAndHashCode(callSuper = true): Includes superclass fields in equality and hash.</p>
-</li>
-<li>
-<p>@SuperBuilder: Provides a builder that cooperates with parent classes (useful for BaseModel subclasses).</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Example:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@Data</span>
-<span class="annotation">@NoArgsConstructor</span>
-<span class="annotation">@SuperBuilder</span>
-<span class="annotation">@EqualsAndHashCode</span>(callSuper = <span class="predefined-constant">true</span>)
-<span class="directive">public</span> <span class="type">class</span> <span class="class">Product</span> <span class="directive">extends</span> BaseModel {
-  <span class="directive">private</span> <span class="predefined-type">String</span> sku;
-  <span class="directive">private</span> <span class="predefined-type">String</span> name;
-}</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>Notes:
-- Prefer @SuperBuilder over @Builder when extending BaseModel/UnversionedBaseModel.
-- Keep equals/hashCode stable for collections and caches; include callSuper when needed.</p>
-</div>
-</div>
-<div class="sect3">
-<h4 id="_validation_with_jakarta_bean_validation">1.6. Validation with Jakarta Bean Validation</h4>
-<div class="paragraph">
-<p>Quantum uses Jakarta Bean Validation to enforce invariants on models at persist time (and optionally at REST boundaries).</p>
-</div>
-<div class="paragraph">
-<p>Typical annotations:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>@Size(min=3): String/collection length constraints.</p>
-</li>
-<li>
-<p>@Valid: Cascade validation to nested objects (e.g., DataDomain on models).</p>
-</li>
-<li>
-<p>@NotNull, @Email, @Pattern, etc., as needed.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Where validation runs:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Repository layer via Morphia ValidationInterceptor (prePersist):</p>
-</li>
-<li>
-<p>Executes validator.validate(entity) before the document is written.</p>
-</li>
-<li>
-<p>If there are violations and the entity does not implement InvalidSavable with canSaveInvalid=true, an E2eqValidationException is thrown.</p>
-</li>
-<li>
-<p>If DataDomain is null and SecurityContext has a principal, ValidationInterceptor will default the DataDomain from the principal context.</p>
-</li>
-<li>
-<p>Optionally at REST boundaries: You may also annotate resource DTOs/parameters with Jakarta validation; Quarkus can validate them before the method executes.</p>
-</li>
-</ul>
-</div>
-</div>
-<div class="sect3">
-<h4 id="_jackson_vs_jakarta_validation_annotations">1.7. Jackson vs Jakarta Validation Annotations</h4>
-<div class="paragraph">
-<p>These two families of annotations serve different purposes and complement each other:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Jackson annotations (com.fasterxml.jackson.annotation.*) control JSON serialization/deserialization.</p>
-</li>
-<li>
-<p>Examples: @JsonIgnore, @JsonIgnoreProperties, @JsonProperty, @JsonInclude.</p>
-</li>
-<li>
-<p>They do not enforce business constraints; they affect how JSON is produced/consumed.</p>
-</li>
-<li>
-<p>Jakarta Validation annotations (jakarta.validation.*) declare constraints that are evaluated at runtime.</p>
-</li>
-<li>
-<p>Examples: @NotNull, @Size, @Valid, @Pattern.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Correspondence and interplay:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Use Jackson to hide or rename fields in API responses/requests (e.g., @JsonIgnore on transient/calculated fields such as UIActionList).</p>
-</li>
-<li>
-<p>Use Jakarta Validation to ensure incoming/outgoing models satisfy required constraints; ValidationInterceptor runs before persistence to enforce them.</p>
-</li>
-<li>
-<p>It’s common to annotate the same field with both families when you both constrain values and want specific JSON behavior.</p>
-</li>
-</ul>
-</div>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_jackson_objectmapper_in_quarkus_and_in_quantum">2. Jackson ObjectMapper in Quarkus and in Quantum</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>How Quarkus creates ObjectMapper:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Quarkus produces a CDI-managed ObjectMapper. You can customize it by providing a bean that implements io.quarkus.jackson.ObjectMapperCustomizer.</p>
-</li>
-<li>
-<p>You can also tweak common features via application.properties using quarkus.jackson.* properties.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Quantum defaults:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>The framework provides a QuarkusJacksonCustomizer that:</p>
-</li>
-<li>
-<p>Sets DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES = true (reject unknown JSON fields).</p>
-</li>
-<li>
-<p>Registers custom serializers/deserializers for org.bson.types.ObjectId so it can be used as String in APIs.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Snippet from the framework:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@Singleton</span>
-<span class="directive">public</span> <span class="type">class</span> <span class="class">QuarkusJacksonCustomizer</span> <span class="directive">implements</span> ObjectMapperCustomizer {
-  <span class="annotation">@Override</span>
-  <span class="directive">public</span> <span class="type">void</span> customize(ObjectMapper objectMapper) {
-    objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, <span class="predefined-constant">true</span>);
-    SimpleModule module = <span class="keyword">new</span> SimpleModule();
-    module.addSerializer(ObjectId.class, <span class="keyword">new</span> ObjectIdJsonSerializer());
-    module.addDeserializer(ObjectId.class, <span class="keyword">new</span> ObjectIdJsonDeserializer());
-    objectMapper.registerModule(module);
-  }
-}</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>Customize in your app:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Add another ObjectMapperCustomizer bean (order is not guaranteed; make changes idempotent):</p>
-</li>
-</ul>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@Singleton</span>
-<span class="directive">public</span> <span class="type">class</span> <span class="class">MyJacksonCustomizer</span> <span class="directive">implements</span> ObjectMapperCustomizer {
-  <span class="annotation">@Override</span>
-  <span class="directive">public</span> <span class="type">void</span> customize(ObjectMapper mapper) {
-    mapper.findAndRegisterModules();
-    mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-    mapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
-  }
-}</code></pre>
-</div>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Or set properties in application.properties:</p>
-</li>
-</ul>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code data-lang="properties"># Fail if extraneous fields are present
-quarkus.jackson.fail-on-unknown-properties=true
-# Example date format and inclusion
-quarkus.jackson.write-dates-as-timestamps=false
-quarkus.jackson.serialization-inclusion=NON_NULL</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>When to adjust:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Relax fail-on-unknown only for backward-compatibility scenarios; strictness helps catch client mistakes.</p>
-</li>
-<li>
-<p>Register modules (JavaTime, etc.) if your models include those types.</p>
-</li>
-</ul>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_validation_lifecycle_and_morphia_interceptors">3. Validation Lifecycle and Morphia Interceptors</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Morphia interceptors enhance and enforce behavior during persistence. Quantum registers the following for each realm-specific datastore:</p>
-</div>
-<div class="paragraph">
-<p>Order of registration (see MorphiaDataStore):
-1) ValidationInterceptor
-2) PermissionRuleInterceptor
-3) AuditInterceptor
-4) ReferenceInterceptor
-5) PersistenceAuditEventInterceptor</p>
-</div>
-<div class="paragraph">
-<p>High-level responsibilities:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>ValidationInterceptor (prePersist):</p>
-</li>
-<li>
-<p>Defaults DataDomain from SecurityContext if missing.</p>
-</li>
-<li>
-<p>Runs bean validation and throws E2eqValidationException on violations unless the entity supports saving invalid states (InvalidSavable).</p>
-</li>
-<li>
-<p>PermissionRuleInterceptor (prePersist):</p>
-</li>
-<li>
-<p>Evaluates RuleContext with PrincipalContext and ResourceContext from SecurityContext.</p>
-</li>
-<li>
-<p>Throws SecurityCheckException if the rule decision is not ALLOW (enforcing write permissions for save/update/delete).</p>
-</li>
-<li>
-<p>AuditInterceptor (prePersist):</p>
-</li>
-<li>
-<p>Sets AuditInfo on creation and updates lastUpdate fields on modification; captures impersonation details if present.</p>
-</li>
-<li>
-<p>ReferenceInterceptor (prePersist):</p>
-</li>
-<li>
-<p>For @Reference fields annotated with @TrackReferences, maintains back-references on the parent entities via ReferenceEntry and persists the parent when needed.</p>
-</li>
-<li>
-<p>PersistenceAuditEventInterceptor (prePersist when @AuditPersistence is present):</p>
-</li>
-<li>
-<p>Appends a PersistentEvent with type PERSIST, date, userId, and version to the model’s persistentEvents before saving.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>When does validation occur?</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>On every save/update path that hits persistence, prePersist triggers validation (and permission/audit/reference processing) before the document is written to MongoDB, guaranteeing constraints and policies are enforced consistently across all repositories.</p>
-</li>
-</ul>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_functional_areadomain_in_rulecontext_permission_language">4. Functional Area/Domain in RuleContext Permission Language</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Models express their placement in the business model via:
-- bmFunctionalArea(): returns a broad capability area (e.g., Catalog, Collaboration, Identity)
-- bmFunctionalDomain(): returns the specific domain within that area (e.g., Product, Shipment, Partner)</p>
-</div>
-<div class="paragraph">
-<p>How these map into authorization and rules:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>ResourceContext/DomainContext: When a request operates on a model, the framework derives the functional area and domain from the model type (or resource) and places them on the current context alongside the action (CREATE, UPDATE, VIEW, DELETE, ARCHIVE). RuleContext consumes these to evaluate policies.</p>
-</li>
-<li>
-<p>Permission language (path-derived ResourceContext): The framework derives area and functionalDomain from REST path segments using the convention: /{area}/{functionalDomain}/{action}/&#8230;&#8203; . These are placed on the ResourceContext and consumed by RuleContext. Rule bases typically match on HTTP method and URL patterns; no special headers are required.</p>
-</li>
-<li>
-<p>Permission language (query variables): The ANTLR-based query language exposes variables that can be referenced in filters:</p>
-</li>
-<li>
-<p>${area} corresponds to bmFunctionalArea()</p>
-</li>
-<li>
-<p>${functionalDomain} corresponds to bmFunctionalDomain()
-These can be used to author reusable filters or to record audit decisions by area/domain.</p>
-</li>
-<li>
-<p>Repository filters: RuleContext can contribute additional predicates that are area/domain-specific, enabling fine-grained sharing. For example, a shared Catalog area may allow cross-tenant VIEW, while a Collaboration.Shipment domain remains tenant-strict.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Examples</p>
-</div>
-<div class="paragraph">
-<p>1) Path-derived rule matching (Permissions)</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code data-lang="yaml">- <span class="string"><span class="content">name: allow-catalog-product-reads</span></span>
-  <span class="key">priority</span>: <span class="string"><span class="content">300</span></span>
-  <span class="key">match</span>:
-    <span class="key">method</span>: <span class="string"><span class="content">[GET]</span></span>
-    <span class="key">url</span>: <span class="string"><span class="content">/Catalog/Product/**</span></span>
-    <span class="key">rolesAny</span>: <span class="string"><span class="content">[USER, ADMIN]</span></span>
-  <span class="key">effect</span>: <span class="string"><span class="content">ALLOW</span></span>
-  <span class="key">filters</span>:
-    <span class="key">readScope</span>: <span class="string"><span class="content">{ orgRefName: PUBLIC }</span></span></code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>2) Query variable usage (Filters)</p>
-</div>
-<div class="paragraph">
-<p>You can reference the active area/domain in filter expressions (e.g., for auditing or conditional branching in custom rule evaluators):</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code># Constrain reads differently when operating in the Catalog area
-(${area}:&quot;Catalog&quot; &amp;&amp; dataDomain.orgRefName:&quot;PUBLIC&quot;) ||
-(${area}:!&quot;Catalog&quot; &amp;&amp; dataDomain.tenantId:${pTenantId})</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>3) Model-driven mapping</p>
-</div>
-<div class="paragraph">
-<p>Given a model like:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> bmFunctionalArea()  { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">Collaboration</span><span class="delimiter">&quot;</span></span>; }
-<span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> bmFunctionalDomain(){ <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">Shipment</span><span class="delimiter">&quot;</span></span>; }</code></pre>
-</div>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Incoming REST requests that operate on Shipment resources set area=Collaboration and functionalDomain=Shipment in the ResourceContext.</p>
-</li>
-<li>
-<p>RuleContext evaluates policies considering action + area + domain, e.g., deny cross-tenant UPDATE in Collaboration.Shipment, but allow cross-tenant VIEW in Collaboration.Partner if marked shared.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Notes</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Path convention: Use leading segments /{area}/{functionalDomain}/{action}/&#8230;&#8203; so the framework can derive ResourceContext reliably. Extra segments after the first three are allowed; only the first three are used to compute area, domain, and action.</p>
-</li>
-<li>
-<p>Nonconformant paths: If the path has fewer than three segments, the framework sets an anonymous/default ResourceContext. In practice, rules will typically evaluate to DENY unless there is an explicit allowance for anonymous contexts.</p>
-</li>
-<li>
-<p>See also: the Permissions section for rule-base matching and priorities, and the DomainContext/RuleContext section for end-to-end flow.</p>
-</li>
-</ul>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_stategraphs_on_models">5. StateGraphs on Models</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>StateGraphs let you restrict valid values and transitions of String state fields. They are declared on model fields with @StateGraph and enforced during save/update when the model class is annotated with @Stateful.</p>
-</div>
-<div class="paragraph">
-<p>Key pieces:
-- @StateGraph(graphName="&#8230;&#8203;"): mark a String field as governed by a named state graph.
-- @Stateful: mark the entity type as participating in state validation.
-- StateGraphManager: runtime registry that holds graphs and validates transitions.
-- StringState and StateNode: define the graph (states, initial/final flags, transitions).</p>
-</div>
-<div class="paragraph">
-<p>Defining a state graph at startup:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@Startup</span>
-<span class="annotation">@ApplicationScoped</span>
-<span class="directive">public</span> <span class="type">class</span> <span class="class">StateGraphInitializer</span> {
-  <span class="annotation">@Inject</span> StateGraphManager stateGraphManager;
-  <span class="annotation">@PostConstruct</span> <span class="type">void</span> init() {
-    StringState order = <span class="keyword">new</span> StringState();
-    order.setFieldName(<span class="string"><span class="delimiter">&quot;</span><span class="content">orderStringState</span><span class="delimiter">&quot;</span></span>);
-
-    <span class="predefined-type">Map</span>&lt;<span class="predefined-type">String</span>, StateNode&gt; states = <span class="keyword">new</span> <span class="predefined-type">HashMap</span>&lt;&gt;();
-    states.put(<span class="string"><span class="delimiter">&quot;</span><span class="content">PENDING</span><span class="delimiter">&quot;</span></span>,    StateNode.builder().state(<span class="string"><span class="delimiter">&quot;</span><span class="content">PENDING</span><span class="delimiter">&quot;</span></span>).initialState(<span class="predefined-constant">true</span>).finalState(<span class="predefined-constant">false</span>).build());
-    states.put(<span class="string"><span class="delimiter">&quot;</span><span class="content">PROCESSING</span><span class="delimiter">&quot;</span></span>, StateNode.builder().state(<span class="string"><span class="delimiter">&quot;</span><span class="content">PROCESSING</span><span class="delimiter">&quot;</span></span>).initialState(<span class="predefined-constant">false</span>).finalState(<span class="predefined-constant">false</span>).build());
-    states.put(<span class="string"><span class="delimiter">&quot;</span><span class="content">SHIPPED</span><span class="delimiter">&quot;</span></span>,    StateNode.builder().state(<span class="string"><span class="delimiter">&quot;</span><span class="content">SHIPPED</span><span class="delimiter">&quot;</span></span>).initialState(<span class="predefined-constant">false</span>).finalState(<span class="predefined-constant">false</span>).build());
-    states.put(<span class="string"><span class="delimiter">&quot;</span><span class="content">DELIVERED</span><span class="delimiter">&quot;</span></span>,  StateNode.builder().state(<span class="string"><span class="delimiter">&quot;</span><span class="content">DELIVERED</span><span class="delimiter">&quot;</span></span>).initialState(<span class="predefined-constant">false</span>).finalState(<span class="predefined-constant">true</span>).build());
-    states.put(<span class="string"><span class="delimiter">&quot;</span><span class="content">CANCELLED</span><span class="delimiter">&quot;</span></span>,  StateNode.builder().state(<span class="string"><span class="delimiter">&quot;</span><span class="content">CANCELLED</span><span class="delimiter">&quot;</span></span>).initialState(<span class="predefined-constant">false</span>).finalState(<span class="predefined-constant">true</span>).build());
-    order.setStates(states);
-
-    <span class="predefined-type">Map</span>&lt;<span class="predefined-type">String</span>, <span class="predefined-type">List</span>&lt;StateNode&gt;&gt; transitions = <span class="keyword">new</span> <span class="predefined-type">HashMap</span>&lt;&gt;();
-    transitions.put(<span class="string"><span class="delimiter">&quot;</span><span class="content">PENDING</span><span class="delimiter">&quot;</span></span>,    <span class="predefined-type">List</span>.of(states.get(<span class="string"><span class="delimiter">&quot;</span><span class="content">PROCESSING</span><span class="delimiter">&quot;</span></span>), states.get(<span class="string"><span class="delimiter">&quot;</span><span class="content">CANCELLED</span><span class="delimiter">&quot;</span></span>)));
-    transitions.put(<span class="string"><span class="delimiter">&quot;</span><span class="content">PROCESSING</span><span class="delimiter">&quot;</span></span>, <span class="predefined-type">List</span>.of(states.get(<span class="string"><span class="delimiter">&quot;</span><span class="content">SHIPPED</span><span class="delimiter">&quot;</span></span>), states.get(<span class="string"><span class="delimiter">&quot;</span><span class="content">CANCELLED</span><span class="delimiter">&quot;</span></span>)));
-    transitions.put(<span class="string"><span class="delimiter">&quot;</span><span class="content">SHIPPED</span><span class="delimiter">&quot;</span></span>,    <span class="predefined-type">List</span>.of(states.get(<span class="string"><span class="delimiter">&quot;</span><span class="content">DELIVERED</span><span class="delimiter">&quot;</span></span>), states.get(<span class="string"><span class="delimiter">&quot;</span><span class="content">CANCELLED</span><span class="delimiter">&quot;</span></span>)));
-    transitions.put(<span class="string"><span class="delimiter">&quot;</span><span class="content">DELIVERED</span><span class="delimiter">&quot;</span></span>,  <span class="predefined-constant">null</span>);
-    transitions.put(<span class="string"><span class="delimiter">&quot;</span><span class="content">CANCELLED</span><span class="delimiter">&quot;</span></span>,  <span class="predefined-constant">null</span>);
-    order.setTransitions(transitions);
-
-    stateGraphManager.defineStateGraph(order);
-  }
-}</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>Using the graph in a model:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@Stateful</span>
-<span class="annotation">@Entity</span>
-<span class="annotation">@EqualsAndHashCode</span>(callSuper = <span class="predefined-constant">true</span>)
-<span class="directive">public</span> <span class="type">class</span> <span class="class">Order</span> <span class="directive">extends</span> BaseModel {
-  <span class="annotation">@StateGraph</span>(graphName = <span class="string"><span class="delimiter">&quot;</span><span class="content">orderStringState</span><span class="delimiter">&quot;</span></span>)
-  <span class="directive">private</span> <span class="predefined-type">String</span> status;
-
-  <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> bmFunctionalArea()  { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">Orders</span><span class="delimiter">&quot;</span></span>; }
-  <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> bmFunctionalDomain(){ <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">Order</span><span class="delimiter">&quot;</span></span>; }
-}</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>How it affects save/update:
-- On create: validateInitialStates ensures the field value is one of the configured initial states. Otherwise, InvalidStateTransitionException is thrown.
-- On update: validateStateTransitions checks each @StateGraph field’s old&#8594;new transition against the graph via StateGraphManager.validateTransition(). If invalid, save/update fails with InvalidStateTransitionException. This applies to full-entity saves and to partial updates via repo.update(&#8230;&#8203;pairs) on that field.
-- Utilities: StateGraphManager.getNextPossibleStates(graphName, current) and printStateGraph(&#8230;&#8203;) can aid UIs.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_completiontasks_and_completiontaskgroups">6. CompletionTasks and CompletionTaskGroups</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>CompletionTasks and CompletionTaskGroups provide a simple, persistent way to track a series of work items that need to be completed, either by background processes or external systems. Use them when you need durable progress tracking across restarts and an auditable record of outcomes.</p>
-</div>
-<div class="paragraph">
-<p>Key models:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>CompletionTask: an individual unit of work with fields like status, timestamps, and optional result/details.</p>
-</li>
-<li>
-<p>CompletionTaskGroup: a container that represents a cohort of tasks progressing toward completion.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Model overview:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="comment">// Individual task</span>
-<span class="annotation">@Entity</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">completionTask</span><span class="delimiter">&quot;</span></span>)
-<span class="directive">public</span> <span class="type">class</span> <span class="class">CompletionTask</span> <span class="directive">extends</span> BaseModel {
-  <span class="directive">public</span> <span class="type">enum</span> Status { PENDING, RUNNING, SUCCESS, FAILED }
-
-  <span class="annotation">@Reference</span>
-  CompletionTaskGroup group;   <span class="comment">// optional grouping</span>
-  <span class="predefined-type">String</span> details;              <span class="comment">// human-readable context (what/why)</span>
-  Status status;               <span class="comment">// PENDING -&gt; RUNNING -&gt; (SUCCESS|FAILED)</span>
-  <span class="predefined-type">Date</span> createdDate;            <span class="comment">// when the task was created</span>
-  <span class="predefined-type">Date</span> completedDate;          <span class="comment">// set when terminal (SUCCESS/FAILED)</span>
-  <span class="predefined-type">String</span> result;               <span class="comment">// output, message, or error summary</span>
-
-  <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> bmFunctionalArea()   { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">TASK</span><span class="delimiter">&quot;</span></span>; }
-  <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> bmFunctionalDomain() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">COMPLETION_TASK</span><span class="delimiter">&quot;</span></span>; }
-}
-
-<span class="comment">// Group of tasks</span>
-<span class="annotation">@Entity</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">completionTaskGroup</span><span class="delimiter">&quot;</span></span>)
-<span class="directive">public</span> <span class="type">class</span> <span class="class">CompletionTaskGroup</span> <span class="directive">extends</span> BaseModel {
-  <span class="directive">public</span> <span class="type">enum</span> Status { NEW, RUNNING, COMPLETE }
-
-  <span class="predefined-type">String</span> description;   <span class="comment">// e.g., &quot;Onboarding: create resources&quot;</span>
-  Status status;        <span class="comment">// reflects overall progress of the group</span>
-  <span class="predefined-type">Date</span> createdDate;     <span class="comment">// when the group was created</span>
-  <span class="predefined-type">Date</span> completedDate;   <span class="comment">// when the group finished</span>
-
-  <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> bmFunctionalArea()   { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">TASK</span><span class="delimiter">&quot;</span></span>; }
-  <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> bmFunctionalDomain() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">COMPLETION_TASK_GROUP</span><span class="delimiter">&quot;</span></span>; }
-}</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>Typical lifecycle:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Create a CompletionTaskGroup in NEW status.</p>
-</li>
-<li>
-<p>Create N CompletionTasks (status=PENDING) referencing the group.</p>
-</li>
-<li>
-<p>A worker picks tasks and flips status to RUNNING, performs the work, then to SUCCESS or FAILED, setting completedDate and result.</p>
-</li>
-<li>
-<p>Periodically update the group:</p>
-</li>
-<li>
-<p>If at least one task is RUNNING (and none pending), set group status to RUNNING.</p>
-</li>
-<li>
-<p>When all tasks are terminal (SUCCESS or FAILED), set group status to COMPLETE and completedDate.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>How to use for tracking a series of things that need to be completed:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Batch operations: When submitting a batch (e.g., provisioning 100 accounts), create one group and 100 tasks. The UI/API can poll the group to show overall progress and per-item results.</p>
-</li>
-<li>
-<p>Multi-step workflows: Represent each step as its own task, or use one task per target resource. Groups help correlate all steps for a single business request.</p>
-</li>
-<li>
-<p>Retry/compensation: FAILED tasks can be retried by creating new tasks or resetting status to PENDING based on your policy. Keep result populated with failure reasons.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Example creation flow:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code data-lang="java">CompletionTaskGroup group = CompletionTaskGroup.builder()
-  .description(<span class="string"><span class="delimiter">&quot;</span><span class="content">Catalog import: 250 SKUs</span><span class="delimiter">&quot;</span></span>)
-  .status(CompletionTaskGroup.Status.NEW)
-  .createdDate(<span class="keyword">new</span> <span class="predefined-type">Date</span>())
-  .build();
-completionTaskGroupRepo.save(group);
-
-<span class="keyword">for</span> (Sku s : skus) {
-  CompletionTask t = CompletionTask.builder()
-    .group(group)
-    .details(<span class="string"><span class="delimiter">&quot;</span><span class="content">Import SKU </span><span class="delimiter">&quot;</span></span> + s.code())
-    .status(CompletionTask.Status.PENDING)
-    .createdDate(<span class="keyword">new</span> <span class="predefined-type">Date</span>())
-    .build();
-  completionTaskRepo.save(t);
-}</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>Example worker progression:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="comment">// Fetch a PENDING task and execute</span>
-CompletionTask t = completionTaskRepo.findOneByStatus(CompletionTask.Status.PENDING);
-<span class="keyword">if</span> (t != <span class="predefined-constant">null</span>) {
-  completionTaskRepo.update(t.getId(), <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTask.Status.RUNNING);
-  <span class="keyword">try</span> {
-    <span class="comment">// ... do work ...</span>
-    completionTaskRepo.update(t.getId(),
-      <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTask.Status.SUCCESS,
-      <span class="string"><span class="delimiter">&quot;</span><span class="content">completedDate</span><span class="delimiter">&quot;</span></span>, <span class="keyword">new</span> <span class="predefined-type">Date</span>(),
-      <span class="string"><span class="delimiter">&quot;</span><span class="content">result</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">OK</span><span class="delimiter">&quot;</span></span>);
-  } <span class="keyword">catch</span> (<span class="exception">Exception</span> e) {
-    completionTaskRepo.update(t.getId(),
-      <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTask.Status.FAILED,
-      <span class="string"><span class="delimiter">&quot;</span><span class="content">completedDate</span><span class="delimiter">&quot;</span></span>, <span class="keyword">new</span> <span class="predefined-type">Date</span>(),
-      <span class="string"><span class="delimiter">&quot;</span><span class="content">result</span><span class="delimiter">&quot;</span></span>, e.getMessage());
-  }
-}
-
-<span class="comment">// Periodically recompute group status</span>
-<span class="predefined-type">List</span>&lt;CompletionTask&gt; tasks = completionTaskRepo.findByGroup(group);
-<span class="type">boolean</span> allTerminal = tasks.stream().allMatch(x -&gt; x.getStatus()==SUCCESS || x.getStatus()==FAILED);
-<span class="type">boolean</span> anyRunning = tasks.stream().anyMatch(x -&gt; x.getStatus()==RUNNING);
-<span class="type">boolean</span> anyPending = tasks.stream().anyMatch(x -&gt; x.getStatus()==PENDING);
-
-<span class="keyword">if</span> (allTerminal) {
-  completionTaskGroupRepo.update(group.getId(),
-    <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTaskGroup.Status.COMPLETE,
-    <span class="string"><span class="delimiter">&quot;</span><span class="content">completedDate</span><span class="delimiter">&quot;</span></span>, <span class="keyword">new</span> <span class="predefined-type">Date</span>());
-} <span class="keyword">else</span> <span class="keyword">if</span> (anyRunning || (!anyPending &amp;&amp; !allTerminal)) {
-  completionTaskGroupRepo.update(group.getId(), <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTaskGroup.Status.RUNNING);
-}</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>Notes and best practices:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Keep details short but diagnostic, and store richer context in result.</p>
-</li>
-<li>
-<p>Use DataDomain fields for multi-tenant scoping so groups/tasks are isolated per tenant/org as needed.</p>
-</li>
-<li>
-<p>Avoid unbounded growth: archive or purge old groups once COMPLETE.</p>
-</li>
-<li>
-<p>Consider idempotency keys in details or a custom field to prevent processing the same logical work twice.</p>
-</li>
-</ul>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_references_and_entityreference">7. References and EntityReference</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Morphia @Reference establishes relationships between entities:
-- One-to-one: a BaseModel field annotated with @Reference.
-- One-to-many: a Collection&lt;BaseModel&gt; field annotated with @Reference.</p>
-</div>
-<div class="paragraph">
-<p>Example:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@Entity</span>
-<span class="directive">public</span> <span class="type">class</span> <span class="class">Shipment</span> <span class="directive">extends</span> BaseModel {
-  <span class="annotation">@Reference</span>(ignoreMissing = <span class="predefined-constant">false</span>)
-  <span class="annotation">@TrackReferences</span>
-  <span class="directive">private</span> Partner partner;   <span class="comment">// parent entity</span>
-}</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>EntityReference is a lightweight reference object used across the framework to avoid DBRef loading when only identity info is needed. Any model can produce one:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code data-lang="java">EntityReference ref = shipment.createEntityReference();
-<span class="comment">// contains: entityId, entityType, entityRefName, entityDisplayName (and optional realm)</span></code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>REST convenience:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>BaseResource exposes GET /entityref to list EntityReference for a model with optional filter/sort.</p>
-</li>
-<li>
-<p>Repositories expose getEntityReferenceListByQuery(&#8230;&#8203;), and utilities exist to convert lists of EntityReference back to entities when needed.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>When to use which:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Use @Reference for strong persistence-level links where Morphia should maintain foreign references.</p>
-</li>
-<li>
-<p>Use EntityReference for UI lists, foreign-key-like pointers in other documents, events/audit logs, or cross-module decoupling without DBRef behavior.</p>
-</li>
-</ul>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_tracking_references_with_trackreferences_and_delete_semantics">8. Tracking References with @TrackReferences and Delete Semantics</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>@TrackReferences on a @Reference field tells the framework to maintain a back-reference set on the parent entity. The back-reference field is UnversionedBaseModel.references (a Set&lt;ReferenceEntry&gt;), which is calculated/maintained by the framework and should not be set by clients.</p>
-</div>
-<div class="paragraph">
-<p>What references contains:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Each ReferenceEntry holds: referencedId (ObjectId of the child), type (fully-qualified class name of the child’s entity), and refName (child’s stable reference name).</p>
-</li>
-<li>
-<p>It indicates that the parent is being referenced by the given child entity. The set is used for fast checks and to enforce referential integrity.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>How tracking works (save/update):</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>ReferenceInterceptor inspects @Reference fields annotated with @TrackReferences during prePersist.</p>
-</li>
-<li>
-<p>When a child references a parent, a ReferenceEntry for the child is added to the parent’s references set and the parent is saved to persist the back-reference.</p>
-</li>
-<li>
-<p>For @Reference collections, entries are added for each child-parent pair.</p>
-</li>
-<li>
-<p>If a @Reference is null but ignoreMissing=false, a save will fail with an IllegalStateException since the parent is required.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>How it affects delete:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>During delete in MorphiaRepo.delete(&#8230;&#8203;):</p>
-</li>
-<li>
-<p>If obj.references is empty, the object can be deleted directly (after removing any references it holds to parents).</p>
-</li>
-<li>
-<p>If obj.references is not empty, the repo checks each ReferenceEntry. If any referring parent still exists, a ReferentialIntegrityViolationException is thrown to prevent breaking relationships.</p>
-</li>
-<li>
-<p>If all references are stale (referring objects no longer exist), the repo removes stale entries, removes this object’s own reference constraints from parents, and performs the delete within a transaction.</p>
-</li>
-<li>
-<p>removeReferenceConstraint(&#8230;&#8203;) ensures that, when deleting a child, its ReferenceEntry is removed from parent.references and the parent is saved, keeping back-references consistent.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Practical guidance:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Annotate parent links with both @Reference and @TrackReferences when you need strong integrity guarantees and easy “who references me?” queries.</p>
-</li>
-<li>
-<p>Use ignoreMissing=true only for optional references; you still get back-reference tracking when not null.</p>
-</li>
-<li>
-<p>Expect HTTP delete to fail with a meaningful error if there are live references; remove or update those references first, or design cascading behavior explicitly in your domain logic.</p>
-</li>
-</ul>
-</div>
-<div class="sect2">
-<h3 id="ontologies-in-quantum">8.1. Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</h3>
 <div class="admonitionblock note">
 <table>
 <tr>
@@ -1597,8 +583,8 @@ Looking for the short implementation plan? See PROPOSAL.md at the repository roo
 <div class="paragraph">
 <p>This section explains what an ontology is, how it differs from a traditional object model, and how the Quantum Ontology modules make it practical to apply ontology ideas to your domain models and queries. It also contrasts ontology-driven relationships with direct object references (for example, using @Reference or EntityReference).</p>
 </div>
-<div class="sect3">
-<h4 id="_what_is_an_ontology">8.1.1. What is an Ontology?</h4>
+<div class="sect2">
+<h3 id="_what_is_an_ontology">1.1. What is an Ontology?</h3>
 <div class="paragraph">
 <p>In software terms, an ontology is a formal, explicit specification of concepts and their relationships.</p>
 </div>
@@ -1622,8 +608,8 @@ Looking for the short implementation plan? See PROPOSAL.md at the repository roo
 <p>An ontology is not the data; it is the schema plus logic that gives your data additional meaning and enables consistent, automated inferences.</p>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_ontology_vs_object_model">8.1.2. Ontology vs. Object Model</h4>
+<div class="sect2">
+<h3 id="_ontology_vs_object_model">1.2. Ontology vs. Object Model</h3>
 <div class="paragraph">
 <p>A conventional object model focuses on concrete classes, fields, and direct references between objects at implementation time. An ontology focuses on semantic types and relationships, with explicit rules that can derive new knowledge independent of how objects are instantiated.</p>
 </div>
@@ -1643,8 +629,8 @@ Looking for the short implementation plan? See PROPOSAL.md at the repository roo
   - Ontology: Queries target semantic relationships; reasoners can materialize edges that queries reuse, decoupling queries from implementation details.</p>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_why_prefer_ontology_driven_relationships_over_referenceentityreference">8.1.3. Why prefer Ontology-driven relationships over @Reference/EntityReference</h4>
+<div class="sect2">
+<h3 id="_why_prefer_ontology_driven_relationships_over_referenceentityreference">1.3. Why prefer Ontology-driven relationships over @Reference/EntityReference</h3>
 <div class="paragraph">
 <p>Direct references (@Reference or custom EntityReference) are simple to start but become restrictive as domains grow:
 - Tight coupling: Code and queries couple to concrete field paths (customer.primaryAddress.id), making refactors risky.
@@ -1661,8 +647,8 @@ Looking for the short implementation plan? See PROPOSAL.md at the repository roo
 - Resilience to change: You can add or modify rules without rewriting data structures or touching referencing fields across models.</p>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_how_quantum_supports_ontologies">8.1.4. How Quantum supports Ontologies</h4>
+<div class="sect2">
+<h3 id="_how_quantum_supports_ontologies">1.4. How Quantum supports Ontologies</h3>
 <div class="paragraph">
 <p>Quantum provides three cooperating modules that make ontology modeling practical and fast:</p>
 </div>
@@ -1719,8 +705,8 @@ Looking for the short implementation plan? See PROPOSAL.md at the repository roo
 <p>These modules let you define your ontology (core), materialize derived relations (mongo), and leverage them in access and list queries (policy bridge).</p>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_modeling_guidance_from_object_fields_to_predicates">8.1.5. Modeling guidance: from object fields to predicates</h4>
+<div class="sect2">
+<h3 id="_modeling_guidance_from_object_fields_to_predicates">1.5. Modeling guidance: from object fields to predicates</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -1762,8 +748,8 @@ Looking for the short implementation plan? See PROPOSAL.md at the repository roo
 </ul>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_querying_with_ontology_edges_vs_direct_references">8.1.6. Querying with ontology edges vs direct references</h4>
+<div class="sect2">
+<h3 id="_querying_with_ontology_edges_vs_direct_references">1.6. Querying with ontology edges vs direct references</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -1793,8 +779,8 @@ Looking for the short implementation plan? See PROPOSAL.md at the repository roo
 </ul>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_migration_from_reference_to_ontology_edges">8.1.7. Migration: from @Reference to ontology edges</h4>
+<div class="sect2">
+<h3 id="_migration_from_reference_to_ontology_edges">1.7. Migration: from @Reference to ontology edges</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -1812,8 +798,8 @@ Looking for the short implementation plan? See PROPOSAL.md at the repository roo
 </ul>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_performance_and_operational_notes">8.1.8. Performance and operational notes</h4>
+<div class="sect2">
+<h3 id="_performance_and_operational_notes">1.8. Performance and operational notes</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -1831,8 +817,8 @@ Looking for the short implementation plan? See PROPOSAL.md at the repository roo
 </ul>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_how_this_integrates_with_functional_areasdomains">8.1.9. How this integrates with Functional Areas/Domains</h4>
+<div class="sect2">
+<h3 id="_how_this_integrates_with_functional_areasdomains">1.9. How this integrates with Functional Areas/Domains</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -1844,8 +830,8 @@ Looking for the short implementation plan? See PROPOSAL.md at the repository roo
 </ul>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_summary">8.1.10. Summary</h4>
+<div class="sect2">
+<h3 id="_summary">1.10. Summary</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -1860,8 +846,11 @@ Looking for the short implementation plan? See PROPOSAL.md at the repository roo
 </ul>
 </div>
 </div>
-<div class="sect3">
-<h4 id="ontology-ecommerce-example">8.1.11. Concrete example: Sales Orders, Shipments, and evolving to Fulfillment/Returns</h4>
+</div>
+</div>
+<div class="sect1">
+<h2 id="ontology-ecommerce-example">2. Concrete example: Sales Orders, Shipments, and evolving to Fulfillment/Returns</h2>
+<div class="sectionbody">
 <div class="paragraph">
 <p>This example shows how to use an ontology to model relationships around Orders, Customers, and Shipments, and how the model can evolve to include Fulfillment and Returns without breaking existing queries. We will:</p>
 </div>
@@ -2241,13 +1230,14 @@ Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, <span class="string"
 </div>
 </div>
 </div>
-<div class="sect2">
-<h3 id="ontology-integration-morphia-permissions">8.2. Integrating Ontology with Morphia, Permissions, and Multi-tenancy</h3>
+<div class="sect1">
+<h2 id="ontology-integration-morphia-permissions">3. Integrating Ontology with Morphia, Permissions, and Multi-tenancy</h2>
+<div class="sectionbody">
 <div class="paragraph">
 <p>This section focuses on integration and developer experience: how ontology edges flow into Morphia-based repositories and the permission rule language, while remaining fully multi-tenant and secure.</p>
 </div>
-<div class="sect3">
-<h4 id="_big_picture_where_ontology_fits">8.2.1. Big picture: where ontology fits</h4>
+<div class="sect2">
+<h3 id="_big_picture_where_ontology_fits">3.1. Big picture: where ontology fits</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -2277,8 +1267,8 @@ Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, <span class="string"
 </ul>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_rule_language_add_hasedge">8.2.2. Rule language: add hasEdge()</h4>
+<div class="sect2">
+<h3 id="_rule_language_add_hasedge">3.2. Rule language: add hasEdge()</h3>
 <div class="paragraph">
 <p>We introduce a policy function/operator to reference ontology edges directly from rules:</p>
 </div>
@@ -2324,8 +1314,8 @@ Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, <span class="string"
 <p>Under the hood, policy evaluation uses ListQueryRewriter.rewriteForHasEdge(&#8230;&#8203;), which converts hasEdge into a set of source ids and merges that with the base query.</p>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_passing_tenantid_correctly">8.2.3. Passing tenantId correctly</h4>
+<div class="sect2">
+<h3 id="_passing_tenantid_correctly">3.3. Passing tenantId correctly</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -2346,8 +1336,8 @@ Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, <span class="string"
 </ul>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_morphia_repository_integration_patterns">8.2.4. Morphia repository integration patterns</h4>
+<div class="sect2">
+<h3 id="_morphia_repository_integration_patterns">3.4. Morphia repository integration patterns</h3>
 <div class="paragraph">
 <p>The goal is zero-friction usage in existing repos without invasive changes.</p>
 </div>
@@ -2412,8 +1402,8 @@ query.filter(Filters.in(<span class="string"><span class="delimiter">&quot;</spa
 </div>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_where_to_hook_materialization">8.2.5. Where to hook materialization</h4>
+<div class="sect2">
+<h3 id="_where_to_hook_materialization">3.5. Where to hook materialization</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -2437,8 +1427,8 @@ query.filter(Filters.in(<span class="string"><span class="delimiter">&quot;</spa
 </ul>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_security_and_multi_tenant_considerations">8.2.6. Security and multi-tenant considerations</h4>
+<div class="sect2">
+<h3 id="_security_and_multi_tenant_considerations">3.6. Security and multi-tenant considerations</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -2453,8 +1443,8 @@ query.filter(Filters.in(<span class="string"><span class="delimiter">&quot;</spa
 </ul>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_developer_workflow_and_dx_checklist">8.2.7. Developer workflow and DX checklist</h4>
+<div class="sect2">
+<h3 id="_developer_workflow_and_dx_checklist">3.7. Developer workflow and DX checklist</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -2472,8 +1462,8 @@ query.filter(Filters.in(<span class="string"><span class="delimiter">&quot;</spa
 </ul>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_cookbook_end_to_end_example_with_orders_org">8.2.8. Cookbook: end-to-end example with Orders + Org</h4>
+<div class="sect2">
+<h3 id="_cookbook_end_to_end_example_with_orders_org">3.8. Cookbook: end-to-end example with Orders + Org</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -2490,8 +1480,8 @@ query.filter(Filters.in(<span class="string"><span class="delimiter">&quot;</spa
 </ul>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_migration_notes_for_teams_using_reference">8.2.9. Migration notes for teams using @Reference</h4>
+<div class="sect2">
+<h3 id="_migration_notes_for_teams_using_reference">3.9. Migration notes for teams using @Reference</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -2512,11 +1502,10 @@ query.filter(Filters.in(<span class="string"><span class="delimiter">&quot;</spa
 </div>
 </div>
 </div>
-</div>
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-10-18 20:46:01 -0400
+Last updated 2025-10-18 20:14:00 -0400
 </div>
 </div>
 </body>

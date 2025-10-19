@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>DomainContext, RuleContext, and DataDomain</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-10-18T17:12:23Z</span>
+<span id="revdate">2025-10-19T00:51:33Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -538,28 +538,20 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_rulecontext">3. RuleContext</a></li>
 <li><a href="#_end_to_end_flow">4. End-to-End Flow</a></li>
 <li><a href="#_resolvers_and_variables_in_rule_filters">5. Resolvers and Variables in Rule Filters</a></li>
-<li><a href="#domain-rule-context">DomainContext, RuleContext, and DataDomain</a>
-<ul class="sectlevel1">
-<li><a href="#_datadomain_2">6. DataDomain</a></li>
-<li><a href="#_domaincontext_2">7. DomainContext</a></li>
-<li><a href="#_rulecontext_2">8. RuleContext</a></li>
-<li><a href="#_end_to_end_flow_2">9. End-to-End Flow</a></li>
-<li><a href="#_resolvers_and_variables_in_rule_filters_2">10. Resolvers and Variables in Rule Filters</a></li>
-<li><a href="#_concrete_example_building_and_using_a_resolver">11. Concrete example: building and using a resolver</a>
+<li><a href="#_concrete_example_building_and_using_a_resolver">6. Concrete example: building and using a resolver</a>
 <ul class="sectlevel2">
-<li><a href="#_1_implement_the_spi">11.1. 1) Implement the SPI</a></li>
-<li><a href="#_2_how_rulecontext_uses_resolvers">11.2. 2) How RuleContext uses resolvers</a></li>
-<li><a href="#_3_author_a_rule_that_consumes_the_variable">11.3. 3) Author a rule that consumes the variable</a></li>
-<li><a href="#_4_end_to_end_behavior">11.4. 4) End-to-end behavior</a></li>
-<li><a href="#_string_literals_vs_typed_values_in_resolver_variables">11.5. String literals vs. typed values in resolver variables</a>
+<li><a href="#_1_implement_the_spi">6.1. 1) Implement the SPI</a></li>
+<li><a href="#_2_how_rulecontext_uses_resolvers">6.2. 2) How RuleContext uses resolvers</a></li>
+<li><a href="#_3_author_a_rule_that_consumes_the_variable">6.3. 3) Author a rule that consumes the variable</a></li>
+<li><a href="#_4_end_to_end_behavior">6.4. 4) End-to-end behavior</a></li>
+<li><a href="#_string_literals_vs_typed_values_in_resolver_variables">6.5. String literals vs. typed values in resolver variables</a>
 <ul class="sectlevel3">
-<li><a href="#_example_a_resolver_returns_objectids_typed">11.5.1. Example A: Resolver returns ObjectIds (typed)</a></li>
-<li><a href="#_example_b_resolver_returns_string_literals_force_raw_strings">11.5.2. Example B: Resolver returns String literals (force raw strings)</a></li>
-<li><a href="#_other_types_supported">11.5.3. Other types supported</a></li>
+<li><a href="#_example_a_resolver_returns_objectids_typed">6.5.1. Example A: Resolver returns ObjectIds (typed)</a></li>
+<li><a href="#_example_b_resolver_returns_string_literals_force_raw_strings">6.5.2. Example B: Resolver returns String literals (force raw strings)</a></li>
+<li><a href="#_other_types_supported">6.5.3. Other types supported</a></li>
 </ul>
 </li>
-</ul>
-</li>
+<li><a href="#ontology-domain-rule-context">6.6. Using AccessListResolver with Ontology (optional)</a></li>
 </ul>
 </li>
 </ul>
@@ -723,172 +715,14 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 </div>
-<h1 id="domain-rule-context" class="sect0">DomainContext, RuleContext, and DataDomain</h1>
-<div class="openblock partintro">
-<div class="content">
-<div class="paragraph">
-<p>Quantum enforces multi-tenant isolation and sharing through contextual data carried on models and evaluated at runtime.</p>
-</div>
-</div>
-</div>
 <div class="sect1">
-<h2 id="_datadomain_2">6. DataDomain</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Every persisted model includes a DataDomain that describes ownership and scope, commonly including fields such as:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>tenantId: Identifies the tenant</p>
-</li>
-<li>
-<p>orgRefName: Organization unit reference within a tenant</p>
-</li>
-<li>
-<p>ownerId: Owning user or system entity</p>
-</li>
-<li>
-<p>realm: Optional runtime override for partitioning</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>These fields enable filtering, authorization, and controlled sharing of data between tenants or org units.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_domaincontext_2">7. DomainContext</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>DomainContext represents the current execution context for a request or operation, typically capturing:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>current tenant/org/user identity</p>
-</li>
-<li>
-<p>functional area / functional domain</p>
-</li>
-<li>
-<p>the action being executed (e.g., CREATE, UPDATE, VIEW, DELETE, ARCHIVE)</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>It feeds downstream components (repositories, resources) to consistently apply filtering and policy decisions.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_rulecontext_2">8. RuleContext</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>RuleContext encapsulates policy evaluation. It can:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Enforce whether an action is allowed for a given model and DataDomain</p>
-</li>
-<li>
-<p>Produce additional filters and projections used by repositories</p>
-</li>
-<li>
-<p>Grant cross-tenant read access for specific functional areas (e.g., shared catalogs) while keeping others strictly isolated</p>
-</li>
-</ul>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_end_to_end_flow_2">9. End-to-End Flow</h2>
-<div class="sectionbody">
-<div class="olist arabic">
-<ol class="arabic">
-<li>
-<p>A REST request enters a BaseResource-derived endpoint.</p>
-</li>
-<li>
-<p>The resource builds a DomainContext from the security principal and request parameters.</p>
-</li>
-<li>
-<p>RuleContext evaluates permissions and returns effective filters.</p>
-</li>
-<li>
-<p>Repository applies filters (DataDomain-aware) to find/get/list/update/delete.</p>
-</li>
-<li>
-<p>The model’s UIActionList can be computed to reflect what the caller can do next.</p>
-</li>
-</ol>
-</div>
-<div class="paragraph">
-<p>This pattern ensures consistent enforcement across all CRUD operations, independent of the specific model or repository.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_resolvers_and_variables_in_rule_filters_2">10. Resolvers and Variables in Rule Filters</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>RuleContext can attach FILTERs (not only ALLOW/DENY) to repository queries using rule fields and filter strings. Variables inside those filter strings are populated from:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>PrincipalContext and ResourceContext standard variables: principalId, pAccountId, pTenantId, ownerId, orgRefName, resourceId, action, functionalDomain, area</p>
-</li>
-<li>
-<p>AccessListResolver SPI implementations: per-request computed Collections (e.g., customer IDs the caller can access)</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Implementation highlights:
-- AccessListResolver has methods key(), supports(&#8230;&#8203;), resolve(&#8230;&#8203;). Resolvers are injected and invoked for each request; results are published as variables by key.
-- MorphiaUtils.VariableBundle carries both string variables and object variables (including collections) to the query listener.
-- The QueryToFilterListener supports IN clauses using a single ${var} inside brackets, expanding Collections/arrays and coercing types (ObjectId, numbers, booleans, dates).</p>
-</div>
-<div class="paragraph">
-<p>Authoring examples:
-- Constrain by principal domain:</p>
-</div>
-<div class="paragraph">
-<p>+</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code>orgRefName:${orgRefName} &amp;&amp; dataDomain.tenantId:${pTenantId}</code></pre>
-</div>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Access list resolver for customer visibility:</p>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code>customerId:^[${accessibleCustomerIds}]</code></pre>
-</div>
-</div>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>For the complete query language reference, see <a href="query-language.html#query-language">Query Language</a>.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_concrete_example_building_and_using_a_resolver">11. Concrete example: building and using a resolver</h2>
+<h2 id="_concrete_example_building_and_using_a_resolver">6. Concrete example: building and using a resolver</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This section shows how to implement a resolver that restricts access to orders by the set of customerIds the current user is allowed to see.</p>
 </div>
 <div class="sect2">
-<h3 id="_1_implement_the_spi">11.1. 1) Implement the SPI</h3>
+<h3 id="_1_implement_the_spi">6.1. 1) Implement the SPI</h3>
 <div class="paragraph">
 <p>Create a CDI bean that implements AccessListResolver. It decides when it applies and returns a Collection of values. The collection can be ObjectId, String, numbers, etc.</p>
 </div>
@@ -939,7 +773,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect2">
-<h3 id="_2_how_rulecontext_uses_resolvers">11.2. 2) How RuleContext uses resolvers</h3>
+<h3 id="_2_how_rulecontext_uses_resolvers">6.2. 2) How RuleContext uses resolvers</h3>
 <div class="paragraph">
 <p>At query time, RuleContext discovers all AccessListResolver beans and calls supports(&#8230;&#8203;). For those that apply, it invokes resolve(&#8230;&#8203;) and publishes the result into the variable bundle under the provided key(). Variables are available to the BIAPI query via ${&#8230;&#8203;}.</p>
 </div>
@@ -948,7 +782,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect2">
-<h3 id="_3_author_a_rule_that_consumes_the_variable">11.3. 3) Author a rule that consumes the variable</h3>
+<h3 id="_3_author_a_rule_that_consumes_the_variable">6.3. 3) Author a rule that consumes the variable</h3>
 <div class="paragraph">
 <p>Given the resolver above, a rule can attach an IN filter to constrain queries:</p>
 </div>
@@ -966,7 +800,7 @@ customerId:^[${accessibleCustomerIds}]</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_4_end_to_end_behavior">11.4. 4) End-to-end behavior</h3>
+<h3 id="_4_end_to_end_behavior">6.4. 4) End-to-end behavior</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -985,7 +819,7 @@ customerId:^[${accessibleCustomerIds}]</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_string_literals_vs_typed_values_in_resolver_variables">11.5. String literals vs. typed values in resolver variables</h3>
+<h3 id="_string_literals_vs_typed_values_in_resolver_variables">6.5. String literals vs. typed values in resolver variables</h3>
 <div class="paragraph">
 <p>When an <code>AccessListResolver</code> returns a list of values that will be used in an <code>IN</code> clause (for example, <code>field:^[${var}]</code>), the engine attempts to coerce each element to an appropriate type so Mongo/Morphia filters are typed correctly:</p>
 </div>
@@ -1021,7 +855,7 @@ customerId:^[${accessibleCustomerIds}]</code></pre>
 <p>To do this, the framework provides a small wrapper type <code>StringLiteral</code>. If a resolver returns <code>StringLiteral</code> instances, the listener unwraps them to plain <code>String</code> values and skips coercion entirely.</p>
 </div>
 <div class="sect3">
-<h4 id="_example_a_resolver_returns_objectids_typed">11.5.1. Example A: Resolver returns ObjectIds (typed)</h4>
+<h4 id="_example_a_resolver_returns_objectids_typed">6.5.1. Example A: Resolver returns ObjectIds (typed)</h4>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@ApplicationScoped</span>
@@ -1052,7 +886,7 @@ customerId:^[${accessibleCustomerIds}]</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_example_b_resolver_returns_string_literals_force_raw_strings">11.5.2. Example B: Resolver returns String literals (force raw strings)</h4>
+<h4 id="_example_b_resolver_returns_string_literals_force_raw_strings">6.5.2. Example B: Resolver returns String literals (force raw strings)</h4>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@ApplicationScoped</span>
@@ -1083,7 +917,7 @@ customerId:^[${accessibleCustomerIds}]</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_other_types_supported">11.5.3. Other types supported</h4>
+<h4 id="_other_types_supported">6.5.3. Other types supported</h4>
 <div class="paragraph">
 <p>Resolvers can also return numbers, booleans, and dates/datetimes. Already-typed elements (Number, Boolean, java.util.Date, java.time.LocalDate, ObjectId) are preserved. String elements are heuristically parsed into those types unless wrapped with <code>StringLiteral</code>.</p>
 </div>
@@ -1105,13 +939,60 @@ customerId:^[${accessibleCustomerIds}]</code></pre>
 </div>
 </div>
 </div>
+<div class="sect2">
+<h3 id="ontology-domain-rule-context">6.6. Using AccessListResolver with Ontology (optional)</h3>
+<div class="paragraph">
+<p>When ontology is enabled, an AccessListResolver can compute ID lists from semantic edges (materialized in Mongo) and publish them as variables for use in rule filters.</p>
+</div>
+<div class="paragraph">
+<p>Example resolver (conceptual)</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@ApplicationScoped</span>
+<span class="directive">public</span> <span class="type">class</span> <span class="class">OrdersByOrgResolver</span> <span class="directive">implements</span> AccessListResolver {
+  <span class="annotation">@Inject</span> EdgeDao edgeDao; <span class="comment">// from quantum-ontology-mongo</span>
+  <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> key() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">idsByPlacedInOrg</span><span class="delimiter">&quot;</span></span>; }
+  <span class="annotation">@Override</span> <span class="directive">public</span> <span class="type">boolean</span> supports(PrincipalContext p, ResourceContext r, <span class="predefined-type">Class</span>&lt;? <span class="directive">extends</span> UnversionedBaseModel&gt; model) {
+    <span class="keyword">return</span> model.getSimpleName().equals(<span class="string"><span class="delimiter">&quot;</span><span class="content">Order</span><span class="delimiter">&quot;</span></span>);
+  }
+  <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">Collection</span>&lt;?&gt; resolve(PrincipalContext p, ResourceContext r, <span class="predefined-type">Class</span>&lt;? <span class="directive">extends</span> UnversionedBaseModel&gt; model) {
+    <span class="predefined-type">String</span> tenantId = p.getDataDomain().getTenantId();
+    <span class="predefined-type">String</span> org = p.getDataDomain().getOrgRefName();
+    <span class="keyword">return</span> edgeDao.srcIdsByDst(tenantId, <span class="string"><span class="delimiter">&quot;</span><span class="content">placedInOrg</span><span class="delimiter">&quot;</span></span>, org);
+  }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Rule filter usage</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>id:^${idsByPlacedInOrg}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Notes</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Always scope by tenantId from RuleContext/PrincipalContext.</p>
+</li>
+<li>
+<p>This is optional and only active if you wire ontology components. For a deeper integration path, see <a href="modeling.html#ontology-integration-morphia-permissions">Integrating Ontology</a>.</p>
+</li>
+</ul>
+</div>
+</div>
 </div>
 </div>
 </div>
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-09-28 00:15:19 -0400
+Last updated 2025-10-18 20:01:07 -0400
 </div>
 </div>
 </body>

@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Permissions: Rule Bases, SecurityURLHeaders, and SecurityURLBody</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-10-18T17:12:23Z</span>
+<span id="revdate">2025-10-19T00:51:33Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -580,6 +580,11 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_relation_to_tenancy_models">16.8. Relation to tenancy models</a></li>
 <li><a href="#_authoring_tips">16.9. Authoring tips</a></li>
 <li><a href="#_api_pointers">16.10. API pointers</a></li>
+<li><a href="#ontology-permissions">16.11. Ontology in Permission Rules (optional)</a>
+<ul class="sectlevel3">
+<li><a href="#rule-hasedge">16.11.1. Rule language: add hasEdge()</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
@@ -2487,13 +2492,270 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </ul>
 </div>
 </div>
+<div class="sect2">
+<h3 id="ontology-permissions">16.11. Ontology in Permission Rules (optional)</h3>
+<div class="paragraph">
+<p>If you enable the ontology modules, you can author rules that constrain access by semantic relationships, not field paths. This keeps policies stable as your object model evolves.</p>
+</div>
+<div class="paragraph">
+<p>Key idea</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Materialize edges in Mongo using OntologyMaterializer (e.g., placedInOrg, orderShipsToRegion).</p>
+</li>
+<li>
+<p>During rule evaluation, translate a semantic constraint like "has edge placedInOrg to OrgX" into a set of IDs, and combine that with your query.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>How to use</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Preferred: author a rule with a semantic hint and let the application translate it via ListQueryRewriter.</p>
+</li>
+<li>
+<p>Minimal change path: publish a variable via an AccessListResolver and use an IN filter over _id.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Example (resolver + IN filter)</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Add an AccessListResolver that returns order IDs for which (tenantId, p="placedInOrg", dst=orgRefName) exists.</p>
+</li>
+<li>
+<p>In your rule’s AND filter string (query language), use: id:^${idsByPlacedInOrg}</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>See also</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Ontology overview and examples: <a href="ontology.html">Ontologies in Quantum</a></p>
+</li>
+<li>
+<p>Integration with Morphia and multi-tenancy: <a href="ontology.html#ontology-integration-morphia-permissions">Integrating Ontology</a></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Operational notes</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Ontology is optional. Enable it per service when the config flag and dependencies are present.</p>
+</li>
+<li>
+<p>Always scope edge queries by tenantId sourced from RuleContext.</p>
+</li>
+<li>
+<p>Index edges on (tenantId, p, dst) and (tenantId, src, p) for performance.</p>
+</li>
+</ul>
+</div>
+<div class="sect3">
+<h4 id="rule-hasedge">16.11.1. Rule language: add hasEdge()</h4>
+<div class="paragraph">
+<p>We introduce a policy function/operator to reference ontology edges directly from rules. This lets policies constrain access by semantic relationships instead of field paths.</p>
+</div>
+<div class="paragraph">
+<p>Signature</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>hasEdge(predicate, dstIdOrVar)</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Parameters</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>predicate: String name of the ontology predicate (e.g., "placedInOrg", "orderShipsToRegion").</p>
+</li>
+<li>
+<p>dstIdOrVar: Either a concrete destination id/refName or a variable resolved from RuleContext (e.g., principal.orgRefName, request.region).</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Semantics</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>The rule grants/filters entities for which an edge exists: (tenantId, src = entity._id, p = predicate, dst = resolvedDst).</p>
+</li>
+<li>
+<p>Multi-tenant safety: tenantId is always taken from RuleContext/DomainContext.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Composition</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>hasEdge can be combined with existing rule clauses (and/or/not) and other filters (states, tags, ownerId, etc.).</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Examples</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Allow viewing Orders in the caller’s org (including ancestors via ontology closure):</p>
+</li>
+<li>
+<p>allow VIEW Order when hasEdge("placedInOrg", principal.orgRefName)</p>
+</li>
+<li>
+<p>Restrict list to Orders shipping to a region chosen in request:</p>
+</li>
+<li>
+<p>allow LIST Order when hasEdge("orderShipsToRegion", request.region)</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Under the hood</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Policy evaluation resolves dstIdOrVar against RuleContext (for example, principal.orgRefName → "OrgP").</p>
+</li>
+<li>
+<p>The list/filter query is rewritten using ListQueryRewriter.rewriteForHasEdge(&#8230;&#8203;), which turns the predicate into a set of source ids and merges it with the base query efficiently.</p>
+</li>
+<li>
+<p>EdgeDao must be indexed on (tenantId, p, dst) and (tenantId, src, p) for performance.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Full end-to-end example (implementation pattern)</p>
+</div>
+<div class="paragraph">
+<p>1) Author a rule (illustrative YAML/pseudocode)</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml">- <span class="string"><span class="content">name: list-orders-by-org</span></span>
+  <span class="key">priority</span>: <span class="string"><span class="content">100</span></span>
+  <span class="key">match</span>:
+    <span class="key">method</span>: <span class="string"><span class="content">[GET]</span></span>
+    <span class="key">url</span>: <span class="string"><span class="content">/sales/order/list</span></span>
+  <span class="key">effect</span>: <span class="string"><span class="content">ALLOW</span></span>
+  <span class="comment"># semantic constraint expressed via hasEdge</span>
+  <span class="key">policy</span>:
+    <span class="key">hasEdge</span>:
+      <span class="key">predicate</span>: <span class="string"><span class="content">placedInOrg</span></span>
+      <span class="key">dstVar</span>: <span class="string"><span class="content">principal.orgRefName</span></span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>2) Evaluate policy and apply constraint in the repository/list path</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">com.e2eq.ontology.policy.ListQueryRewriter</span>;
+<span class="keyword">import</span> <span class="include">com.e2eq.ontology.mongo.EdgeDao</span>;
+<span class="keyword">import</span> <span class="include">com.mongodb.client.model.Filters</span>;
+<span class="keyword">import</span> <span class="include">org.bson.conversions.Bson</span>;
+
+<span class="comment">// Injected once per service when ontology is enabled</span>
+EdgeDao edgeDao = <span class="comment">/* created with your edges collection */</span>;
+ListQueryRewriter rewriter = <span class="keyword">new</span> ListQueryRewriter(edgeDao);
+
+<span class="comment">// Inside your list method, after building the base filter</span>
+<span class="predefined-type">String</span> tenantId = ruleContext.getRealmId(pctx, rctx); <span class="comment">// or from DomainContext</span>
+<span class="predefined-type">String</span> predicate = <span class="string"><span class="delimiter">&quot;</span><span class="content">placedInOrg</span><span class="delimiter">&quot;</span></span>;
+<span class="predefined-type">String</span> orgRefName = pctx.getDataDomain().getOrgRefName(); <span class="comment">// resolves principal.orgRefName</span>
+
+Bson base = Filters.and(existingFilters...);
+Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, predicate, orgRefName);
+<span class="type">var</span> results = datastore.getDatabase().getCollection(<span class="string"><span class="delimiter">&quot;</span><span class="content">orders</span><span class="delimiter">&quot;</span></span>).find(rewritten).iterator();</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>3) Morphia-typed queries alternative</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="comment">// If you’re using Morphia’s typed Query API</span>
+<span class="predefined-type">Set</span>&lt;<span class="predefined-type">String</span>&gt; ids = edgeDao.srcIdsByDst(tenantId, <span class="string"><span class="delimiter">&quot;</span><span class="content">placedInOrg</span><span class="delimiter">&quot;</span></span>, orgRefName);
+<span class="keyword">if</span> (ids.isEmpty()) {
+  <span class="keyword">return</span> java.util.List.of(); <span class="comment">// short-circuit</span>
+}
+query.filter(dev.morphia.query.filters.Filters.in(<span class="string"><span class="delimiter">&quot;</span><span class="content">_id</span><span class="delimiter">&quot;</span></span>, ids));</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Developer requirements and checklist</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Enable ontology (optional feature): set e2eq.ontology.enabled=true in your app and add module dependencies.</p>
+</li>
+<li>
+<p>Provide a TBox (OntologyRegistry) and run OntologyMaterializer on entity changes to keep edges up to date.</p>
+</li>
+<li>
+<p>Create EdgeDao for your edges collection and call ensureIndexes() on startup.</p>
+</li>
+<li>
+<p>Always pass tenantId from RuleContext/DomainContext; never cross tenants.</p>
+</li>
+<li>
+<p>When using variables on the RHS (dstIdOrVar), ensure the RuleContext exposes them (for example, principal.orgRefName or request.region).</p>
+</li>
+<li>
+<p>Monitor provenance (edge.prov) and re-materialize edges when intermediate nodes change.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Notes</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>hasEdge() is a policy function; it is evaluated before constructing database filters. It is not part of the core BIAPI query grammar.</p>
+</li>
+<li>
+<p>If ontology is disabled, skip the rewrite (return base) or configure a no-op implementation so policies that include hasEdge are rejected early with a clear error message.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
 </div>
 </div>
 </div>
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-09-22 10:25:37 -0400
+Last updated 2025-10-18 20:17:40 -0400
 </div>
 </div>
 </body>
