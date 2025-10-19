@@ -63,6 +63,9 @@
 
     <modules>
         <module>quantum-util</module>
+        <module>quantum-ontology-core</module>
+        <module>quantum-ontology-policy-bridge</module>
+        <module>quantum-ontology-mongo</module>
         <module>quantum-models</module>
         <module>quantum-morphia-repos</module>
         <module>quantum-jwt-provider</module>
@@ -239,10 +242,14 @@
             <id>oss-release</id>
             <modules>
                 <module>quantum-util</module>
+                <module>quantum-ontology-core</module>
+                <module>quantum-ontology-mongo</module>
+                <module>quantum-ontology-policy-bridge</module>
                 <module>quantum-models</module>
                 <module>quantum-morphia-repos</module>
                 <module>quantum-jwt-provider</module>
                 <module>quantum-framework</module>
+                <module>quantum-seed-s3</module>
                 <module>quantum-docs</module>
             </modules>
             <build>
@@ -275,7 +282,8 @@
                                 <arg>--pinentry-mode</arg>
                                 <arg>loopback</arg>
                             </gpgArguments>
-                            <passphraseServerId>gpg.passphrase</passphraseServerId>
+                            <passphraseServerId
+                            >gpg.passphrase</passphraseServerId>
                         </configuration>
                     </plugin>
                     <plugin>
@@ -310,7 +318,8 @@
                 <repository>
                     <name>Central Portal Snapshots</name>
                     <id>central-portal-snapshots</id>
-                    <url>https://central.sonatype.com/repository/maven-snapshots/</url>
+                    <url
+                    >https://central.sonatype.com/repository/maven-snapshots/</url>
                     <releases>
                         <enabled>false</enabled>
                     </releases>

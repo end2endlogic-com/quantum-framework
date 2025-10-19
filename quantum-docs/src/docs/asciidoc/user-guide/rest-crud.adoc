@@ -1,9 +1,9 @@
 [[rest-crud]]
-=== REST: Find, Get, List, Save, Update, Delete
+== REST: Find, Get, List, Save, Update, Delete
 
 Quantum provides consistent REST resources backed by repositories. Extend BaseResource to expose CRUD quickly and consistently.
 
-==== Base Concepts
+=== Base Concepts
 
 - BaseResource<T, R extends Repo<T>> provides endpoints for:
   - find: query by criteria (filters, pagination)
@@ -15,7 +15,7 @@ Quantum provides consistent REST resources backed by repositories. Extend BaseRe
 - UIActionList: derive available actions based on current model state.
 - DataDomain filtering is applied across all operations to enforce multi-tenancy.
 
-==== Example Resource
+=== Example Resource
 
 [source,java]
 ----
@@ -27,7 +27,7 @@ public class ProductResource extends BaseResource<Product, ProductRepo> {
 }
 ----
 
-==== Authorization Layers in REST CRUD
+=== Authorization Layers in REST CRUD
 
 Quantum combines static, identity-based checks with dynamic, domain-aware policy evaluation. In practice you will often use both:
 
@@ -71,18 +71,18 @@ public class ProductResource extends BaseResource<Product, ProductRepo> {
 
 For detailed rule-base matching (URL, headers, body predicates, priorities), see the Permissions section.
 
-==== Querying
+=== Querying
 
 - Use query parameters or a request body (depending on your API convention) to express filters.
 - RuleContext contributes tenant-aware filters and projections automatically.
 - See xref:query-language.adoc#query-language[Query Language] for the full BIAPIQuery syntax, including array filtering with elemMatch and IN‑clause enhancements that accept resolver‑provided lists.
 
-==== Responses and Schemas
+=== Responses and Schemas
 
 - Models are returned with calculated fields (e.g., actionList) when appropriate.
 - OpenAPI annotations in your models/resources integrate with MicroProfile OpenAPI for schema docs.
 
-==== Error Handling
+=== Error Handling
 
 - Validation errors (e.g., ImportRequiredField, Size) return helpful messages.
 - Rule-based denials return appropriate HTTP statuses (403/404) without leaking cross-tenant metadata.
@@ -586,3 +586,35 @@ Authentication establishes identity; RuleContext enforces what the identity can 
 - Adjust UIActionList to reflect permitted next steps
 
 This division of responsibilities keeps providers focused on identity while policies remain centralized in RuleContext.
+
+
+
+[[ontology-rest-crud]]
+=== Using Ontology Edges in List Endpoints (optional)
+
+When ontology is enabled and edges are materialized, list endpoints can avoid deep joins or multi-collection traversals by rewriting queries based on semantic relationships.
+
+Pattern A: Wrap BSON with ListQueryRewriter
+
+[source,java]
+----
+Bson base = Filters.and(existingFilters...);
+Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, "placedInOrg", orgRefName);
+collection.find(rewritten).iterator();
+----
+
+Pattern B: Constrain Morphia query by IDs
+
+[source,java]
+----
+Set<String> ids = edgeDao.srcIdsByDst(tenantId, "orderShipsToRegion", region);
+if (!ids.isEmpty()) {
+  query.filter(dev.morphia.query.filters.Filters.in("_id", ids));
+}
+----
+
+Notes
+
+- Always scope by tenantId from DomainContext/RuleContext.
+- Index edges on (tenantId, p, dst) and (tenantId, src, p) to keep queries fast.
+- See xref:ontology.adoc#ontology-integration-morphia-permissions[Integrating Ontology] for more integration options.

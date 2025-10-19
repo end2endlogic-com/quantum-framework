@@ -1,5 +1,5 @@
 [[overview]]
-=== Overview: Building SaaS with Quantum
+== Overview: Building SaaS with Quantum
 
 Quantum is a Quarkus-based framework that accelerates building multi-tenant SaaS platforms on MongoDB. It provides:
 
@@ -12,7 +12,7 @@ Quantum is a Quarkus-based framework that accelerates building multi-tenant SaaS
 This guide targets mid-level Java developers and follows a structure similar to Spring’s reference docs. Use Maven to generate HTML/PDF: see docs module README for commands.
 
 [[overview-saas]]
-==== SaaS and Multi‑Tenancy First
+=== SaaS and Multi‑Tenancy First
 
 SaaS solutions require:
 

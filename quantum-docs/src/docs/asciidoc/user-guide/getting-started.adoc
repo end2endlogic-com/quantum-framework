@@ -1,16 +1,16 @@
 [[getting-started]]
-=== Getting Started: Your First Quantum Application
+== Getting Started: Your First Quantum Application
 
 This section walks through creating a simple multi-tenant Product catalog to demonstrate core Quantum concepts.
 
-==== Prerequisites
+=== Prerequisites
 
 - Java 17+
 - Maven 3.8+
 - MongoDB (local or cloud)
 - Basic Quarkus knowledge (see xref:../appendix/quarkus-foundation.adoc[Quarkus Foundation])
 
-==== Project Setup
+=== Project Setup
 
 Create a new Quarkus project with Quantum dependencies:
 
@@ -34,7 +34,7 @@ Add Quantum dependencies to `pom.xml`:
 </dependency>
 ----
 
-==== Configuration
+=== Configuration
 
 Create `.env` file (copy from template):
 
@@ -65,7 +65,7 @@ quarkus.http.cors=true
 quarkus.http.cors.origins=http://localhost:3000
 ----
 
-==== Your First Model
+=== Your First Model
 
 Create a Product model with multi-tenancy built-in:
 
@@ -92,15 +92,15 @@ import java.math.BigDecimal;
 @EqualsAndHashCode(callSuper = true)
 @FunctionalMapping(area = "catalog", domain = "product")
 public class Product extends BaseModel {
-    
+
     @NotBlank
     @Size(max = 50)
     private String sku;
-    
+
     @NotBlank
     @Size(max = 200)
     private String name;
-    
+
     private String description;
     private BigDecimal price;
     private boolean active = true;
@@ -113,7 +113,7 @@ Key points:
 - Standard Jakarta validation annotations
 - Lombok reduces boilerplate
 
-==== Repository
+=== Repository
 
 Create a repository interface:
 
@@ -129,7 +129,7 @@ public interface ProductRepo extends MorphiaRepo<Product> {
 }
 ----
 
-==== REST Resource
+=== REST Resource
 
 Create a REST endpoint:
 
@@ -153,7 +153,7 @@ public class ProductResource extends BaseResource<Product, ProductRepo> {
 }
 ----
 
-==== Running the Application
+=== Running the Application
 
 Start your application:
 
@@ -166,7 +166,7 @@ The application provides:
 - Swagger UI at http://localhost:8080/q/swagger-ui/
 - Dev UI at http://localhost:8080/q/dev/
 
-==== Testing Your API
+=== Testing Your API
 
 Create a product:
 
@@ -197,7 +197,7 @@ Filter products:
 curl "http://localhost:8080/products/list?filter=active:true&&price:>##20"
 ----
 
-==== What You Get Automatically
+=== What You Get Automatically
 
 With this minimal setup, Quantum provides:
 
@@ -215,9 +215,44 @@ With this minimal setup, Quantum provides:
 
 **OpenAPI**: Automatic API documentation
 
-==== Next Steps
+=== Next Steps
 
 - Add authentication: xref:auth.adoc[Authentication Guide]
-- Create sharing rules: xref:permissions.adoc[Permissions Guide]  
+- Create sharing rules: xref:permissions.adoc[Permissions Guide]
 - Learn the query language: xref:query-language.adoc[Query Language]
 - See real-world example: xref:../tutorials/supply-chain.adoc[Supply Chain Tutorial]
+
+
+=== Optional: Enable Ontology Modules
+
+You can adopt ontology incrementally. If you don’t enable it, everything works as before.
+
+Quick checklist
+
+1) Add dependencies (app-level)
+- quantum-ontology-core, quantum-ontology-mongo, quantum-ontology-policy-bridge
+
+2) Turn it on via config
+
+[source,properties]
+----
+e2eq.ontology.enabled=true
+----
+
+3) Provide an ontology registry (TBox)
+- Start with an in-memory registry (recommended initially). See xref:ontology.adoc[Ontologies in Quantum].
+
+4) Wire data and indexes
+- Create EdgeDao for your edges collection; call ensureIndexes() at startup.
+- Indices: (tenantId, p, dst) and (tenantId, src, p)
+
+5) Materialize edges on entity changes
+- Use OntologyMaterializer when sources or intermediates change (e.g., Order/Customer/Org/Address/Shipment in the e‑commerce example).
+
+6) Use edges in queries/policies
+- Wrap BSON via ListQueryRewriter or constrain by _id sets. See xref:ontology.adoc#ontology-integration-morphia-permissions[Integrating Ontology].
+
+Notes
+
+- Keep it optional: only wire beans and create collections when e2eq.ontology.enabled=true.
+- Multi-tenant: always pass tenantId from RuleContext.

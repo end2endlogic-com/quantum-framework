@@ -9,7 +9,7 @@
 
 This documentation provides user guides and tutorials for mid-level Java developers to build SaaS applications with multi-tenancy on the Quantum framework, in a structure similar to Spring’s reference documentation. Artifacts are generated as HTML and PDF via Maven.
 
-=== Quick links
+== Quick links
 
 - Tutorial Guide: xref:#tutorial-guide[Quantum Tutorial]
 - Reference Guide: xref:#reference-guide[Quantum Reference Guide]

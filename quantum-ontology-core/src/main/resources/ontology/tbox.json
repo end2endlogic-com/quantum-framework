@@ -1,0 +1,30 @@
+{
+  "classes": {
+    "Shipment": {},
+    "Order": {},
+    "Customer": {}
+  },
+  "properties": {
+    "FULFILLS": {
+      "domain": "Shipment",
+      "range": "Order"
+    },
+    "PLACED_BY": {
+      "domain": "Order",
+      "range": "Customer"
+    },
+    "INDIRECTLY_SERVES": {
+      "domain": "Shipment",
+      "range": "Customer"
+    }
+  },
+  "propertyChains": [
+    {
+      "chain": [
+        "FULFILLS",
+        "PLACED_BY"
+      ],
+      "implies": "INDIRECTLY_SERVES"
+    }
+  ]
+}
