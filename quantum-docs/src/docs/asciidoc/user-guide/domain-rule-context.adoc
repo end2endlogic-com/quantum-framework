@@ -71,79 +71,6 @@ customerId:^[${accessibleCustomerIds}]
 
 For the complete query language reference, see xref:query-language.adoc#query-language[Query Language].
 
-[[domain-rule-context]]
-= DomainContext, RuleContext, and DataDomain
-
-Quantum enforces multi-tenant isolation and sharing through contextual data carried on models and evaluated at runtime.
-
-== DataDomain
-
-Every persisted model includes a DataDomain that describes ownership and scope, commonly including fields such as:
-
-- tenantId: Identifies the tenant
-- orgRefName: Organization unit reference within a tenant
-- ownerId: Owning user or system entity
-- realm: Optional runtime override for partitioning
-
-These fields enable filtering, authorization, and controlled sharing of data between tenants or org units.
-
-== DomainContext
-
-DomainContext represents the current execution context for a request or operation, typically capturing:
-
-- current tenant/org/user identity
-- functional area / functional domain
-- the action being executed (e.g., CREATE, UPDATE, VIEW, DELETE, ARCHIVE)
-
-It feeds downstream components (repositories, resources) to consistently apply filtering and policy decisions.
-
-== RuleContext
-
-RuleContext encapsulates policy evaluation. It can:
-
-- Enforce whether an action is allowed for a given model and DataDomain
-- Produce additional filters and projections used by repositories
-- Grant cross-tenant read access for specific functional areas (e.g., shared catalogs) while keeping others strictly isolated
-
-== End-to-End Flow
-
-1. A REST request enters a BaseResource-derived endpoint.
-2. The resource builds a DomainContext from the security principal and request parameters.
-3. RuleContext evaluates permissions and returns effective filters.
-4. Repository applies filters (DataDomain-aware) to find/get/list/update/delete.
-5. The model’s UIActionList can be computed to reflect what the caller can do next.
-
-This pattern ensures consistent enforcement across all CRUD operations, independent of the specific model or repository.
-
-== Resolvers and Variables in Rule Filters
-
-RuleContext can attach FILTERs (not only ALLOW/DENY) to repository queries using rule fields and filter strings. Variables inside those filter strings are populated from:
-
-- PrincipalContext and ResourceContext standard variables: principalId, pAccountId, pTenantId, ownerId, orgRefName, resourceId, action, functionalDomain, area
-- AccessListResolver SPI implementations: per-request computed Collections (e.g., customer IDs the caller can access)
-
-Implementation highlights:
-- AccessListResolver has methods key(), supports(...), resolve(...). Resolvers are injected and invoked for each request; results are published as variables by key.
-- MorphiaUtils.VariableBundle carries both string variables and object variables (including collections) to the query listener.
-- The QueryToFilterListener supports IN clauses using a single ${var} inside brackets, expanding Collections/arrays and coercing types (ObjectId, numbers, booleans, dates).
-
-Authoring examples:
-- Constrain by principal domain:
-+
-[source]
-----
-orgRefName:${orgRefName} && dataDomain.tenantId:${pTenantId}
-----
-
-- Access list resolver for customer visibility:
-+
-[source]
-----
-customerId:^[${accessibleCustomerIds}]
-----
-
-For the complete query language reference, see xref:query-language.adoc#query-language[Query Language].
-
 == Concrete example: building and using a resolver
 
 This section shows how to implement a resolver that restricts access to orders by the set of customerIds the current user is allowed to see.
@@ -305,3 +232,41 @@ Authoring tips:
 - Prefer returning already-typed values when you know the target field type.
 - Use `StringLiteral` when a value might be misinterpreted (for example, 24‑hex or numeric-looking strings).
 - For CSV strings published under a variable, the engine splits by comma and applies the same per-element coercion.
+
+
+
+[[ontology-domain-rule-context]]
+=== Using AccessListResolver with Ontology (optional)
+
+When ontology is enabled, an AccessListResolver can compute ID lists from semantic edges (materialized in Mongo) and publish them as variables for use in rule filters.
+
+Example resolver (conceptual)
+
+[source,java]
+----
+@ApplicationScoped
+public class OrdersByOrgResolver implements AccessListResolver {
+  @Inject EdgeDao edgeDao; // from quantum-ontology-mongo
+  @Override public String key() { return "idsByPlacedInOrg"; }
+  @Override public boolean supports(PrincipalContext p, ResourceContext r, Class<? extends UnversionedBaseModel> model) {
+    return model.getSimpleName().equals("Order");
+  }
+  @Override public Collection<?> resolve(PrincipalContext p, ResourceContext r, Class<? extends UnversionedBaseModel> model) {
+    String tenantId = p.getDataDomain().getTenantId();
+    String org = p.getDataDomain().getOrgRefName();
+    return edgeDao.srcIdsByDst(tenantId, "placedInOrg", org);
+  }
+}
+----
+
+Rule filter usage
+
+[source]
+----
+id:^${idsByPlacedInOrg}
+----
+
+Notes
+
+- Always scope by tenantId from RuleContext/PrincipalContext.
+- This is optional and only active if you wire ontology components. For a deeper integration path, see xref:modeling.adoc#ontology-integration-morphia-permissions[Integrating Ontology].

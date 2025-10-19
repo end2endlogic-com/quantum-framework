@@ -32,7 +32,7 @@ How Quantum helps: Provides opinionated dependencies, conventions, and ready-mad
 
 Walkthrough: Follow the steps below to create and run your first service.
 
-include::../user-guide/getting-started.adoc[]
+include::../user-guide/getting-started.adoc[leveloffset=+1]
 
 [[sec-overview]]
 == 2. Platform overview
@@ -45,7 +45,7 @@ How Quantum helps: A cohesive model with clear boundaries and integration points
 
 Walkthrough: Read the overview and keep it handy as you progress.
 
-include::../user-guide/overview.adoc[]
+include::../user-guide/overview.adoc[leveloffset=+1]
 
 [[sec-modeling]]
 == 3. Domain modeling fundamentals
@@ -58,7 +58,7 @@ How Quantum helps: Provides base models, annotations, and repository patterns to
 
 Walkthrough: Build a minimal domain model and persist it.
 
-include::../user-guide/modeling.adoc[]
+include::../user-guide/modeling.adoc[leveloffset=+1]
 
 [[sec-tenant-models]]
 == 4. Multi-tenant model and realm separation
@@ -71,7 +71,7 @@ How Quantum helps: Realm/tenant identifiers, context propagation, transforms, an
 
 Walkthrough: Configure realms and mark your models for tenancy.
 
-include::../user-guide/tenant-models.adoc[]
+include::../user-guide/tenant-models.adoc[leveloffset=+1]
 
 [[sec-domain-rule-context]]
 == 5. Domain rule context
@@ -84,7 +84,7 @@ How Quantum helps: Built-in domain rule context to consistently pass identity an
 
 Walkthrough: Inject and use the context in services and repositories.
 
-include::../user-guide/domain-rule-context.adoc[]
+include::../user-guide/domain-rule-context.adoc[leveloffset=+1]
 
 [[sec-rest-crud]]
 == 6. Building RESTful CRUD APIs
@@ -97,7 +97,7 @@ How Quantum helps: Resource scaffolding, conventions, and helpers for common CRU
 
 Walkthrough: Create controllers/resources for your model and wire persistence.
 
-include::../user-guide/rest-crud.adoc[]
+include::../user-guide/rest-crud.adoc[leveloffset=+1]
 
 [[sec-query-language]]
 == 7. Query language and filtering
@@ -110,7 +110,7 @@ How Quantum helps: A uniform query language layer with server-side enforcement.
 
 Walkthrough: Add query endpoints and test filters/security.
 
-include::../user-guide/query-language.adoc[]
+include::../user-guide/query-language.adoc[leveloffset=+1]
 
 [[sec-security]]
 == 8. Authentication, permissions, and annotations
@@ -123,9 +123,9 @@ How Quantum helps: JWT integration, permissions model, and security annotations.
 
 Walkthrough: Protect your APIs and add role/permission checks.
 
-include::../user-guide/auth.adoc[]
-include::../user-guide/permissions.adoc[]
-include::../user-guide/security-annotations.adoc[]
+include::../user-guide/auth.adoc[leveloffset=+1]
+include::../user-guide/permissions.adoc[leveloffset=+1]
+include::../user-guide/security-annotations.adoc[leveloffset=+1]
 
 [[sec-seed-packs]]
 == 9. Seed packs: Declarative tenant seeding
@@ -139,7 +139,7 @@ How Quantum helps: Seed packs with manifests, datasets, transforms, includes, ar
 Walkthrough: Create a seed pack, apply it programmatically, and verify idempotency.
 
 // Keep the comprehensive guide for deep dive; the tutorial references it
-include::../user-guide/seed-packs.adoc[]
+include::../user-guide/seed-packs.adoc[leveloffset=+1]
 
 [[sec-migrations]]
 == 10. Migrations
@@ -152,7 +152,7 @@ How Quantum helps: Opinionated patterns and hooks for applying safe migrations.
 
 Walkthrough: Add and run a simple migration.
 
-include::../user-guide/migrations.adoc[]
+include::../user-guide/migrations.adoc[leveloffset=+1]
 
 [[sec-testing]]
 == 11. Testing
@@ -165,7 +165,7 @@ How Quantum helps: Test utilities, runtime hooks, and integration testing guidan
 
 Walkthrough: Write integration tests for APIs and seed packs.
 
-include::../user-guide/testing.adoc[]
+include::../user-guide/testing.adoc[leveloffset=+1]
 
 [[sec-next-steps]]
 == 12. Next steps

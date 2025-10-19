@@ -123,3 +123,34 @@ quantum.anonymousUserId=anonymous
 
 - https://quarkus.io/guides/config-reference[Quarkus Configuration Guide]
 - xref:../user-guide/auth.adoc[Authentication Configuration]
+
+
+==== Ontology Configuration (optional)
+
+Enablement
+
+[source,properties]
+----
+e2eq.ontology.enabled=false   # default; set true to enable ontology wiring in your app
+----
+
+Registry modes
+
+- In-memory (recommended to start): build a TBox in code/resources and instantiate OntologyRegistry.inMemory(tbox).
+- Mongo-backed (advanced): load a TBox from a Mongo collection and cache it in memory for hot reload/versioning.
+
+Edges collection and indexes
+
+- Create an edges collection (name of your choice) when enabling ontology. Ensure the following indexes:
+  - Compound: { tenantId:1, p:1, dst:1 }
+  - Compound: { tenantId:1, src:1, p:1 }
+- Optionally, add a TTL on ts for inferred edges if you plan periodic full recomputes.
+
+Materialization hooks
+
+- Use OntologyMaterializer to recompute inferred edges when entities change (sources and intermediates for your property chains).
+
+See also
+
+- xref:../user-guide/ontology.adoc[Ontologies in Quantum]
+- xref:../user-guide/ontology.adoc#ontology-integration-morphia-permissions[Integrating Ontology]

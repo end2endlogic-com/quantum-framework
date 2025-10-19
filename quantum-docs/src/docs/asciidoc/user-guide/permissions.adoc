@@ -843,3 +843,141 @@ Because the resolver always validates through the principal context and falls ba
 - GlobalDataDomainPolicyProvider: holds an optional in‑memory global policy (null by default).
 - DataDomainPolicyEntry.resolutionMode: FROM_CREDENTIAL (default) or FIXED.
 - DataDomainResolver / DefaultDataDomainResolver: the extension point and default behavior.
+
+
+
+[[ontology-permissions]]
+=== Ontology in Permission Rules (optional)
+
+If you enable the ontology modules, you can author rules that constrain access by semantic relationships, not field paths. This keeps policies stable as your object model evolves.
+
+Key idea
+
+- Materialize edges in Mongo using OntologyMaterializer (e.g., placedInOrg, orderShipsToRegion).
+- During rule evaluation, translate a semantic constraint like "has edge placedInOrg to OrgX" into a set of IDs, and combine that with your query.
+
+How to use
+
+- Preferred: author a rule with a semantic hint and let the application translate it via ListQueryRewriter.
+- Minimal change path: publish a variable via an AccessListResolver and use an IN filter over _id.
+
+Example (resolver + IN filter)
+
+- Add an AccessListResolver that returns order IDs for which (tenantId, p="placedInOrg", dst=orgRefName) exists.
+- In your rule’s AND filter string (query language), use: id:^${idsByPlacedInOrg}
+
+See also
+
+- Ontology overview and examples: xref:ontology.adoc[Ontologies in Quantum]
+- Integration with Morphia and multi-tenancy: xref:ontology.adoc#ontology-integration-morphia-permissions[Integrating Ontology]
+
+Operational notes
+
+- Ontology is optional. Enable it per service when the config flag and dependencies are present.
+- Always scope edge queries by tenantId sourced from RuleContext.
+- Index edges on (tenantId, p, dst) and (tenantId, src, p) for performance.
+
+
+[[rule-hasedge]]
+==== Rule language: add hasEdge()
+
+We introduce a policy function/operator to reference ontology edges directly from rules. This lets policies constrain access by semantic relationships instead of field paths.
+
+Signature
+
+- hasEdge(predicate, dstIdOrVar)
+
+Parameters
+
+- predicate: String name of the ontology predicate (e.g., "placedInOrg", "orderShipsToRegion").
+- dstIdOrVar: Either a concrete destination id/refName or a variable resolved from RuleContext (e.g., principal.orgRefName, request.region).
+
+Semantics
+
+- The rule grants/filters entities for which an edge exists: (tenantId, src = entity._id, p = predicate, dst = resolvedDst).
+- Multi-tenant safety: tenantId is always taken from RuleContext/DomainContext.
+
+Composition
+
+- hasEdge can be combined with existing rule clauses (and/or/not) and other filters (states, tags, ownerId, etc.).
+
+Examples
+
+- Allow viewing Orders in the caller’s org (including ancestors via ontology closure):
+  - allow VIEW Order when hasEdge("placedInOrg", principal.orgRefName)
+- Restrict list to Orders shipping to a region chosen in request:
+  - allow LIST Order when hasEdge("orderShipsToRegion", request.region)
+
+Under the hood
+
+- Policy evaluation resolves dstIdOrVar against RuleContext (for example, principal.orgRefName → "OrgP").
+- The list/filter query is rewritten using ListQueryRewriter.rewriteForHasEdge(...), which turns the predicate into a set of source ids and merges it with the base query efficiently.
+- EdgeDao must be indexed on (tenantId, p, dst) and (tenantId, src, p) for performance.
+
+Full end-to-end example (implementation pattern)
+
+1) Author a rule (illustrative YAML/pseudocode)
+
+[source,yaml]
+----
+- name: list-orders-by-org
+  priority: 100
+  match:
+    method: [GET]
+    url: /sales/order/list
+  effect: ALLOW
+  # semantic constraint expressed via hasEdge
+  policy:
+    hasEdge:
+      predicate: placedInOrg
+      dstVar: principal.orgRefName
+----
+
+2) Evaluate policy and apply constraint in the repository/list path
+
+[source,java]
+----
+import com.e2eq.ontology.policy.ListQueryRewriter;
+import com.e2eq.ontology.mongo.EdgeDao;
+import com.mongodb.client.model.Filters;
+import org.bson.conversions.Bson;
+
+// Injected once per service when ontology is enabled
+EdgeDao edgeDao = /* created with your edges collection */;
+ListQueryRewriter rewriter = new ListQueryRewriter(edgeDao);
+
+// Inside your list method, after building the base filter
+String tenantId = ruleContext.getRealmId(pctx, rctx); // or from DomainContext
+String predicate = "placedInOrg";
+String orgRefName = pctx.getDataDomain().getOrgRefName(); // resolves principal.orgRefName
+
+Bson base = Filters.and(existingFilters...);
+Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, predicate, orgRefName);
+var results = datastore.getDatabase().getCollection("orders").find(rewritten).iterator();
+----
+
+3) Morphia-typed queries alternative
+
+[source,java]
+----
+// If you’re using Morphia’s typed Query API
+Set<String> ids = edgeDao.srcIdsByDst(tenantId, "placedInOrg", orgRefName);
+if (ids.isEmpty()) {
+  return java.util.List.of(); // short-circuit
+}
+query.filter(dev.morphia.query.filters.Filters.in("_id", ids));
+----
+
+Developer requirements and checklist
+
+- Enable ontology (optional feature): set e2eq.ontology.enabled=true in your app and add module dependencies.
+- Provide a TBox (OntologyRegistry) and run OntologyMaterializer on entity changes to keep edges up to date.
+- Create EdgeDao for your edges collection and call ensureIndexes() on startup.
+- Always pass tenantId from RuleContext/DomainContext; never cross tenants.
+- When using variables on the RHS (dstIdOrVar), ensure the RuleContext exposes them (for example, principal.orgRefName or request.region).
+- Monitor provenance (edge.prov) and re-materialize edges when intermediate nodes change.
+
+Notes
+
+- hasEdge() is a policy function; it is evaluated before constructing database filters. It is not part of the core BIAPI query grammar.
+- If ontology is disabled, skip the rewrite (return base) or configure a no-op implementation so policies that include hasEdge are rejected early with a clear error message.

@@ -13,6 +13,10 @@ Use it to jump directly to a subject and then explore details in context.
 
 == Modeling and Tenancy
 
+- Ontologies in Quantum (deep dive): xref:./ontology.adoc[Modeling relationships with ontologies]
+- Concrete e-commerce example: xref:./ontology.adoc#ontology-ecommerce-example[Orders, Shipments, Fulfillment, Returns]
+- Integration with Morphia/permissions: xref:./ontology.adoc#ontology-integration-morphia-permissions[Integrating ontology with rules and repos]
+
 - Domain modeling: xref:../tutorials/quantum-tutorial.adoc#sec-modeling[Domain modeling fundamentals]
 - Tenant models and realms: xref:../tutorials/quantum-tutorial.adoc#sec-tenant-models[Multi-tenant model and realm separation]
 - Domain rule context: xref:../tutorials/quantum-tutorial.adoc#sec-domain-rule-context[Domain rule context]

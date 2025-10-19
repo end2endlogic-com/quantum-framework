@@ -1,11 +1,11 @@
 [[query-language]]
-=== Query Language Reference
+== Query Language Reference
 
 Quantum uses an ANTLR-based query language (BIAPIQuery.g4) for filtering, searching, and constraining data across all REST endpoints. This single, consistent syntax works everywhere: list APIs, permission rules, and access resolvers.
 
-==== Basic Syntax
+=== Basic Syntax
 
-===== Operators
+==== Operators
 
 [cols="1,2,3"]
 |===
@@ -22,7 +22,7 @@ Quantum uses an ANTLR-based query language (BIAPIQuery.g4) for filtering, search
 |Not in list |`:!^` |`status:!^["DELETED","ARCHIVED"]`
 |===
 
-===== Value Types
+==== Value Types
 
 [cols="1,2,3"]
 |===
@@ -40,7 +40,7 @@ Quantum uses an ANTLR-based query language (BIAPIQuery.g4) for filtering, search
 |Variable |`${...}` |`ownerId:${principalId}`
 |===
 
-===== Logical Operators
+==== Logical Operators
 
 [cols="1,2,3"]
 |===
@@ -52,9 +52,9 @@ Quantum uses an ANTLR-based query language (BIAPIQuery.g4) for filtering, search
 |Grouping |`()` |`(active:true \|\| featured:true) && price:>##0`
 |===
 
-==== Common Patterns
+=== Common Patterns
 
-===== String Matching
+==== String Matching
 
 [source]
 ----
@@ -71,7 +71,7 @@ name:w?dget          # single character wildcard
 name:"WIDGET"        # may or may not match "widget"
 ----
 
-===== Numeric Ranges
+==== Numeric Ranges
 
 [source]
 ----
@@ -85,7 +85,7 @@ quantity:>#0
 itemCount:#5
 ----
 
-===== Date and Time Queries
+==== Date and Time Queries
 
 [source]
 ----
@@ -102,7 +102,7 @@ updatedAt:2024-12-25T14:30:00Z
 updatedAt:>=2024-01-01T00:00:00Z
 ----
 
-===== List Membership
+==== List Membership
 
 [source]
 ----
@@ -484,3 +484,43 @@ assert rx.test(ticket);
   * You need to evaluate a query over already materialized objects without another database round-trip
 
 Both listeners aim to maintain parity with the grammar. If you observe mismatches, please file an issue with the query string, the evaluated data sample, and the expected vs actual results.
+
+
+
+[[ontology-query-language]]
+==== Expressing Ontology Constraints in Queries (optional)
+
+The BIAPI query language primarily targets fields on documents. When using the ontology modules, there are two ways to incorporate ontology relationships into queries:
+
+Option A: Variable from an AccessListResolver
+
+- A resolver computes the set of IDs using EdgeDao (e.g., orders related by placedInOrg to the caller’s org).
+- Use an IN clause over id in your filter string:
++
+[source]
+----
+# idsByPlacedInOrg is published by an AccessListResolver
+id:^${idsByPlacedInOrg}
+----
+
+Option B: Function-style helper (if you wire one)
+
+- Some applications register a hasEdge(predicate, value) function into the filter translation path.
+- Example (conceptual): hasEdge("placedInOrg", ${principal.orgRefName})
+- Under the hood, it translates to id IN edgeDao.srcIdsByDst(tenantId, predicate, dst).
+
+Notes
+
+- Ontology is optional; these patterns only apply when enabled and materialization is active.
+- Always scope edge lookups by tenantId from RuleContext.
+- See xref:ontology.adoc#ontology-integration-morphia-permissions[Integrating Ontology] for wiring examples.
+
+
+[NOTE]
+====
+Policy function hasEdge()
+
+- The hasEdge(predicate, dstIdOrVar) operator is a policy-level function evaluated before query translation. It is not part of the BIAPI grammar parsed in this document.
+- When present in a policy, the repository typically applies it by calling ListQueryRewriter.rewriteForHasEdge(...), which constrains results by the set of IDs that have the specified ontology edge.
+- See xref:permissions.adoc#rule-hasedge[Rule language: add hasEdge()] for signature, semantics, and a full end-to-end example.
+====

@@ -84,3 +84,18 @@
 **Feature Flags**:: Configuration-driven capability toggles with targeting rules for gradual rollouts and A/B testing.
 
 **Postmark Integration**:: Email service integration for transactional messaging with template support.
+
+
+==== Ontology (optional feature)
+
+**Ontology**:: A formal description of concepts (classes) and their relationships (properties/predicates) with rules (e.g., property chains) that allow inferring implied facts. See xref:../user-guide/ontology.adoc[Ontologies in Quantum].
+
+**Predicate / Property**:: A named relationship (e.g., placedBy, memberOf, orderShipsToRegion). Predicates connect source and destination IDs and can be declared inverse or transitive.
+
+**Property Chain**:: A rule of the form p∘q⇒r meaning if (A --p--> B) and (B --q--> C), infer (A --r--> C). Chains make common traversals first-class and fast.
+
+**Edge (materialized)**:: A persisted tuple (tenantId, src, p, dst) representing a relationship, often inferred from rules. Edges live in a dedicated collection and power single-hop queries and policies.
+
+**Ontology Materializer**:: A component that computes inferred edges for an entity snapshot and upserts them to the edges collection. Keeps edges fresh as data changes.
+
+**ListQueryRewriter**:: A helper that turns semantic constraints into efficient Mongo queries (e.g., id IN srcIdsByDst). Integrates with permission rules and Morphia repos.
