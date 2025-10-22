@@ -1,6 +1,6 @@
 package com.e2eq.ontology.policy;
 
-import com.e2eq.ontology.mongo.EdgeDao;
+import com.e2eq.ontology.mongo.EdgeRelationStore;
 import org.bson.conversions.Bson;
 import org.junit.jupiter.api.Test;
 
@@ -10,22 +10,26 @@ import static org.junit.jupiter.api.Assertions.*;
 
 public class ListQueryRewriterTest {
 
-    static class FakeEdgeDao extends EdgeDao {
+    static class FakeEdgeDao implements EdgeRelationStore {
         private final Map<String, Set<String>> map = new HashMap<>(); // key: p|dst -> src ids
-        public FakeEdgeDao() { super(null); }
         public void put(String p, String dst, String... srcs) {
             map.computeIfAbsent(p+"|"+dst, k -> new HashSet<>()).addAll(Arrays.asList(srcs));
         }
-        @Override
-        public Set<String> srcIdsByDst(String tenantId, String p, String dst){
+        @Override public void upsert(String tenantId, String src, String p, String dst, boolean inferred, Map<String, Object> prov) { }
+        @Override public void upsertMany(Collection<?> edgesOrDocs) { }
+        @Override public void deleteBySrc(String tenantId, String src, boolean inferredOnly) { }
+        @Override public void deleteBySrcAndPredicate(String tenantId, String src, String p) { }
+        @Override public void deleteInferredBySrcNotIn(String tenantId, String src, String p, Collection<String> dstKeep) { }
+        @Override public Set<String> srcIdsByDst(String tenantId, String p, String dst){
             return new HashSet<>(map.getOrDefault(p+"|"+dst, Set.of()));
         }
-        @Override
-        public Set<String> srcIdsByDstIn(String tenantId, String p, Collection<String> dstIds){
+        @Override public Set<String> srcIdsByDstIn(String tenantId, String p, Collection<String> dstIds){
             Set<String> rc = new HashSet<>();
             for (String d : dstIds) rc.addAll(map.getOrDefault(p+"|"+d, Set.of()));
             return rc;
         }
+        @Override public Map<String, Set<String>> srcIdsByDstGrouped(String tenantId, String p, Collection<String> dstIds) { return Map.of(); }
+        @Override public List<?> findBySrc(String tenantId, String src) { return List.of(); }
     }
 
     @Test

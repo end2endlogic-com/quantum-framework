@@ -76,6 +76,8 @@ Quantum provides three cooperating modules that make ontology modeling practical
 
 These modules let you define your ontology (core), materialize derived relations (mongo), and leverage them in access and list queries (policy bridge).
 
+NOTE: In Quarkus, all ontology components are CDI-managed. Inject EdgeDao and services via @Inject; indexes are ensured automatically at startup by OntologyMongoProducers. Configure collection/database with properties ontology.mongo.database and ontology.mongo.collection.edges.
+
 === Modeling guidance: from object fields to predicates
 
 - Name relationships explicitly

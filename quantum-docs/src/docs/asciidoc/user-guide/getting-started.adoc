@@ -243,7 +243,7 @@ e2eq.ontology.enabled=true
 - Start with an in-memory registry (recommended initially). See xref:ontology.adoc[Ontologies in Quantum].
 
 4) Wire data and indexes
-- Create EdgeDao for your edges collection; call ensureIndexes() at startup.
+- Inject EdgeDao as a CDI bean (@Inject); indexes are ensured automatically at startup.
 - Indices: (tenantId, p, dst) and (tenantId, src, p)
 
 5) Materialize edges on entity changes

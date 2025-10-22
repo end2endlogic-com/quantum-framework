@@ -1,6 +1,6 @@
 package com.e2eq.ontology.policy;
 
-import com.e2eq.ontology.mongo.EdgeDao;
+import com.e2eq.ontology.mongo.EdgeRelationStore;
 import com.mongodb.client.model.Filters;
 import org.bson.conversions.Bson;
 import org.junit.jupiter.api.Test;
@@ -17,13 +17,17 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 public class HasEdgePolicyIntegrationTest {
 
-    static class TenantAwareEdgeDao extends EdgeDao {
+    static class TenantAwareEdgeDao implements EdgeRelationStore {
         private final Map<String, Set<String>> map = new HashMap<>(); // key: tenant|p|dst -> src ids
-        public TenantAwareEdgeDao() { super(null); }
         public void put(String tenant, String p, String dst, String... srcs) {
             map.computeIfAbsent(key(tenant, p, dst), k -> new HashSet<>()).addAll(Arrays.asList(srcs));
         }
         private static String key(String tenant, String p, String dst){ return tenant+"|"+p+"|"+dst; }
+        @Override public void upsert(String tenantId, String src, String p, String dst, boolean inferred, Map<String, Object> prov) { }
+        @Override public void upsertMany(Collection<?> edgesOrDocs) { }
+        @Override public void deleteBySrc(String tenantId, String src, boolean inferredOnly) { }
+        @Override public void deleteBySrcAndPredicate(String tenantId, String src, String p) { }
+        @Override public void deleteInferredBySrcNotIn(String tenantId, String src, String p, Collection<String> dstKeep) { }
         @Override
         public Set<String> srcIdsByDst(String tenantId, String p, String dst){
             return new HashSet<>(map.getOrDefault(key(tenantId, p, dst), Set.of()));
@@ -34,6 +38,8 @@ public class HasEdgePolicyIntegrationTest {
             for (String d : dstIds) rc.addAll(map.getOrDefault(key(tenantId, p, d), Set.of()));
             return rc;
         }
+        @Override public Map<String, Set<String>> srcIdsByDstGrouped(String tenantId, String p, Collection<String> dstIds) { return Map.of(); }
+        @Override public List<?> findBySrc(String tenantId, String src) { return List.of(); }
     }
 
     @Test

@@ -1141,6 +1141,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public long delete(T obj) throws ReferentialIntegrityViolationException {
+       Objects.requireNonNull(obj, "Null argument passed to delete, api requires a non-null object");
         return delete(getSecurityContextRealmId(), obj);
     }
 
@@ -1153,6 +1154,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public long delete( @NotNull( value ="ObjectId is required to be non null") ObjectId id) throws ReferentialIntegrityViolationException {
+       Objects.requireNonNull(id, "Null ID argument passed to delete, api requires a non-null id");
        return delete(getSecurityContextRealmId(), id);
     }
 

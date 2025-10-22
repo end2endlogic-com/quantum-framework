@@ -938,12 +938,12 @@ Full end-to-end example (implementation pattern)
 [source,java]
 ----
 import com.e2eq.ontology.policy.ListQueryRewriter;
-import com.e2eq.ontology.mongo.EdgeDao;
+import com.e2eq.ontology.repo.OntologyEdgeRepo;
 import com.mongodb.client.model.Filters;
 import org.bson.conversions.Bson;
 
-// Injected once per service when ontology is enabled
-EdgeDao edgeDao = /* created with your edges collection */;
+// Injected once per service when ontology is enabled (Quarkus CDI)
+@jakarta.inject.Inject EdgeDao edgeDao;
 ListQueryRewriter rewriter = new ListQueryRewriter(edgeDao);
 
 // Inside your list method, after building the base filter
@@ -972,7 +972,7 @@ Developer requirements and checklist
 
 - Enable ontology (optional feature): set e2eq.ontology.enabled=true in your app and add module dependencies.
 - Provide a TBox (OntologyRegistry) and run OntologyMaterializer on entity changes to keep edges up to date.
-- Create EdgeDao for your edges collection and call ensureIndexes() on startup.
+- Inject EdgeDao as a CDI bean (@Inject); indexes are ensured automatically at startup.
 - Always pass tenantId from RuleContext/DomainContext; never cross tenants.
 - When using variables on the RHS (dstIdOrVar), ensure the RuleContext exposes them (for example, principal.orgRefName or request.region).
 - Monitor provenance (edge.prov) and re-materialize edges when intermediate nodes change.

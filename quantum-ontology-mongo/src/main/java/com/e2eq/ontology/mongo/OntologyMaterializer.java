@@ -4,14 +4,16 @@ package com.e2eq.ontology.mongo;
 import java.util.*;
 import org.bson.Document;
 import com.e2eq.ontology.core.*;
+import jakarta.enterprise.context.ApplicationScoped;
 
+@ApplicationScoped
 public class OntologyMaterializer {
 
     private final Reasoner reasoner;
     private final OntologyRegistry registry;
-    private final EdgeDao edgeDao;
+    private final EdgeRelationStore edgeDao;
 
-    public OntologyMaterializer(Reasoner reasoner, OntologyRegistry registry, EdgeDao edgeDao) {
+    public OntologyMaterializer(Reasoner reasoner, OntologyRegistry registry, EdgeRelationStore edgeDao) {
         this.reasoner = reasoner;
         this.registry = registry;
         this.edgeDao = edgeDao;
@@ -44,12 +46,24 @@ public class OntologyMaterializer {
         }
 
         // Load current inferred edges for this source and prune per predicate
-        List<org.bson.Document> existing = edgeDao.findBySrc(tenantId, entityId);
+        List<?> existing = edgeDao.findBySrc(tenantId, entityId);
         Map<String, Set<String>> existingInfByP = new HashMap<>();
-        for (var d : existing) {
-            if (!Boolean.TRUE.equals(d.getBoolean("inferred"))) continue;
-            String p = d.getString("p");
-            String dst = d.getString("dst");
+        for (Object o : existing) {
+            String p;
+            String dst;
+            Boolean inferred;
+            if (o instanceof org.bson.Document d) {
+                inferred = d.getBoolean("inferred");
+                p = d.getString("p");
+                dst = d.getString("dst");
+            } else if (o instanceof com.e2eq.ontology.model.OntologyEdge e) {
+                inferred = e.isInferred();
+                p = e.getP();
+                dst = e.getDst();
+            } else {
+                continue;
+            }
+            if (!Boolean.TRUE.equals(inferred)) continue;
             existingInfByP.computeIfAbsent(p, k -> new HashSet<>()).add(dst);
         }
         for (Map.Entry<String, Set<String>> en : existingInfByP.entrySet()) {
