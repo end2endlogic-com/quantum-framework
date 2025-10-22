@@ -10,16 +10,23 @@ import static org.junit.jupiter.api.Assertions.*;
 
 public class OntologyMaterializerTest {
 
-    static class CapturingEdgeDao extends EdgeDao {
+    static class CapturingEdgeDao implements EdgeRelationStore {
         List<Document> upserts = new ArrayList<>();
         List<String> deleteCalls = new ArrayList<>();
         List<Document> existing = new ArrayList<>();
-        public CapturingEdgeDao(){ super(null); }
-        @Override public void upsertMany(Collection<Document> docs){ upserts.addAll(docs); }
-        @Override public List<Document> findBySrc(String tenantId, String src){ return new ArrayList<>(existing); }
+        @Override public void upsert(String tenantId, String src, String p, String dst, boolean inferred, Map<String, Object> prov) { /* not used */ }
+        @Override public void upsertMany(Collection<?> docs){
+            for (Object o : docs) if (o instanceof Document d) upserts.add(d);
+        }
+        @Override public void deleteBySrc(String tenantId, String src, boolean inferredOnly) { /* not used */ }
+        @Override public void deleteBySrcAndPredicate(String tenantId, String src, String p) { /* not used */ }
         @Override public void deleteInferredBySrcNotIn(String tenantId, String src, String p, Collection<String> dstKeep){
             deleteCalls.add(src+"|"+p+"|"+new TreeSet<>(dstKeep));
         }
+        @Override public Set<String> srcIdsByDst(String tenantId, String p, String dst) { return Set.of(); }
+        @Override public Set<String> srcIdsByDstIn(String tenantId, String p, Collection<String> dstIds) { return Set.of(); }
+        @Override public Map<String, Set<String>> srcIdsByDstGrouped(String tenantId, String p, Collection<String> dstIds) { return Map.of(); }
+        @Override public List<?> findBySrc(String tenantId, String src){ return new ArrayList<>(existing); }
     }
 
     private OntologyRegistry registry() {

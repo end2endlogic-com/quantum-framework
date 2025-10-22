@@ -4,13 +4,13 @@ package com.e2eq.ontology.policy;
 import java.util.*;
 import org.bson.conversions.Bson;
 import com.mongodb.client.model.Filters;
-import com.e2eq.ontology.mongo.EdgeDao;
+import com.e2eq.ontology.mongo.EdgeRelationStore;
 
 public class ListQueryRewriter {
 
-    private final EdgeDao edgeDao;
+    private final EdgeRelationStore edgeDao;
 
-    public ListQueryRewriter(EdgeDao edgeDao){
+    public ListQueryRewriter(EdgeRelationStore edgeDao){
         this.edgeDao = edgeDao;
     }
 

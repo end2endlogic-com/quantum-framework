@@ -4,7 +4,9 @@ package com.e2eq.ontology.core;
 import java.util.*;
 import com.e2eq.ontology.core.OntologyRegistry.*;
 import static com.e2eq.ontology.core.Reasoner.*;
+import jakarta.enterprise.context.ApplicationScoped;
 
+@ApplicationScoped
 public final class ForwardChainingReasoner implements Reasoner {
 
     @Override
@@ -117,12 +119,5 @@ public final class ForwardChainingReasoner implements Reasoner {
         return new InferenceResult(types, labels, edges, new ArrayList<>());
     }
 
-    // Fallback to iterate properties if registry is not InMemoryOntologyRegistry
-    private Map<String, PropertyDef> regProperties(OntologyRegistry reg) {
-        Map<String, PropertyDef> map = new HashMap<>();
-        for (PropertyChainDef ch : reg.propertyChains()) {
-            // no-op; we cannot enumerate props via API; return empty
-        }
-        return map; // we won't add inverse edges in this path
-    }
+
 }
