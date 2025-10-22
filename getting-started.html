@@ -851,7 +851,7 @@ quarkus.http.cors.origins=http://localhost:3000</code></pre>
 </div>
 <div class="paragraph">
 <p>4) Wire data and indexes
-- Create EdgeDao for your edges collection; call ensureIndexes() at startup.
+- Inject EdgeDao as a CDI bean (@Inject); indexes are ensured automatically at startup.
 - Indices: (tenantId, p, dst) and (tenantId, src, p)</p>
 </div>
 <div class="paragraph">
@@ -882,7 +882,7 @@ quarkus.http.cors.origins=http://localhost:3000</code></pre>
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-10-18 20:45:14 -0400
+Last updated 2025-10-21 13:04:34 -0400
 </div>
 </div>
 </body>

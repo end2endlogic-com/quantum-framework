@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-10-19T00:51:33Z</span>
+<span id="revdate">2025-10-22T01:39:23Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -703,6 +703,18 @@ Looking for the short implementation plan? See PROPOSAL.md at the repository roo
 </div>
 <div class="paragraph">
 <p>These modules let you define your ontology (core), materialize derived relations (mongo), and leverage them in access and list queries (policy bridge).</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+In Quarkus, all ontology components are CDI-managed. Inject EdgeDao and services via @Inject; indexes are ensured automatically at startup by OntologyMongoProducers. Configure collection/database with properties ontology.mongo.database and ontology.mongo.collection.edges.
+</td>
+</tr>
+</table>
 </div>
 </div>
 <div class="sect2">
@@ -1505,7 +1517,7 @@ query.filter(Filters.in(<span class="string"><span class="delimiter">&quot;</spa
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-10-18 20:14:00 -0400
+Last updated 2025-10-21 13:19:15 -0400
 </div>
 </div>
 </body>

@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Framework Documentation</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-10-19T00:51:33Z</span>
+<span id="revdate">2025-10-22T01:39:23Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -1238,7 +1238,7 @@ quarkus.http.cors.origins=http://localhost:3000</code></pre>
 </div>
 <div class="paragraph">
 <p>4) Wire data and indexes
-- Create EdgeDao for your edges collection; call ensureIndexes() at startup.
+- Inject EdgeDao as a CDI bean (@Inject); indexes are ensured automatically at startup.
 - Indices: (tenantId, p, dst) and (tenantId, src, p)</p>
 </div>
 <div class="paragraph">
@@ -9000,12 +9000,12 @@ id:^${idsByPlacedInOrg}</code></pre>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">com.e2eq.ontology.policy.ListQueryRewriter</span>;
-<span class="keyword">import</span> <span class="include">com.e2eq.ontology.mongo.EdgeDao</span>;
+<span class="keyword">import</span> <span class="include">com.e2eq.ontology.repo.OntologyEdgeRepo</span>;
 <span class="keyword">import</span> <span class="include">com.mongodb.client.model.Filters</span>;
 <span class="keyword">import</span> <span class="include">org.bson.conversions.Bson</span>;
 
-<span class="comment">// Injected once per service when ontology is enabled</span>
-EdgeDao edgeDao = <span class="comment">/* created with your edges collection */</span>;
+<span class="comment">// Injected once per service when ontology is enabled (Quarkus CDI)</span>
+<span class="annotation">@jakarta</span>.inject.Inject EdgeDao edgeDao;
 ListQueryRewriter rewriter = <span class="keyword">new</span> ListQueryRewriter(edgeDao);
 
 <span class="comment">// Inside your list method, after building the base filter</span>
@@ -9043,7 +9043,7 @@ query.filter(dev.morphia.query.filters.Filters.in(<span class="string"><span cla
 <p>Provide a TBox (OntologyRegistry) and run OntologyMaterializer on entity changes to keep edges up to date.</p>
 </li>
 <li>
-<p>Create EdgeDao for your edges collection and call ensureIndexes() on startup.</p>
+<p>Inject EdgeDao as a CDI bean (@Inject); indexes are ensured automatically at startup.</p>
 </li>
 <li>
 <p>Always pass tenantId from RuleContext/DomainContext; never cross tenants.</p>
