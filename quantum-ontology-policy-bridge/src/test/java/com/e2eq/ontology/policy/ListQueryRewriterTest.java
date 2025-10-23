@@ -1,7 +1,7 @@
 package com.e2eq.ontology.policy;
 
 import com.e2eq.ontology.mongo.EdgeRelationStore;
-import org.bson.conversions.Bson;
+import dev.morphia.query.filters.Filter;
 import org.junit.jupiter.api.Test;
 
 import java.util.*;
@@ -33,32 +33,29 @@ public class ListQueryRewriterTest {
     }
 
     @Test
-    public void testRewriteForHasEdge() {
+    public void testHasEdge() {
         FakeEdgeDao dao = new FakeEdgeDao();
         dao.put("placedInOrg", "OrgP", "O1", "O2");
         ListQueryRewriter rw = new ListQueryRewriter(dao);
-        Bson base = com.mongodb.client.model.Filters.eq("status", "OPEN");
-        Bson rewritten = rw.rewriteForHasEdge(base, "t1", "placedInOrg", "OrgP");
-        String s = rewritten.toString();
-        assertTrue(s.contains("status"));
-        assertTrue(s.contains("$in"));
+        Filter f = rw.hasEdge("t1", "placedInOrg", "OrgP");
+        String s = String.valueOf(f);
+        assertTrue(s.contains("_id"));
         assertTrue(s.contains("O1") && s.contains("O2"));
     }
 
     @Test
-    public void testRewriteForHasEdgeAnyAndNot() {
+    public void testHasEdgeAnyAndNot() {
         FakeEdgeDao dao = new FakeEdgeDao();
         dao.put("orderShipsToRegion", "West", "O1");
         dao.put("orderShipsToRegion", "East", "O2");
         ListQueryRewriter rw = new ListQueryRewriter(dao);
-        Bson base = com.mongodb.client.model.Filters.empty();
-        Bson rAny = rw.rewriteForHasEdgeAny(base, "t1", "orderShipsToRegion", List.of("West", "East"));
-        String s1 = rAny.toString();
+        Filter rAny = rw.hasEdgeAny("t1", "orderShipsToRegion", List.of("West", "East"));
+        String s1 = String.valueOf(rAny);
         assertTrue(s1.contains("O1") && s1.contains("O2"));
 
-        Bson rNot = rw.rewriteForNotHasEdge(base, "t1", "orderShipsToRegion", "West");
-        String s2 = rNot.toString();
-        assertTrue(s2.contains("$nin"));
+        Filter rNot = rw.notHasEdge("t1", "orderShipsToRegion", "West");
+        String s2 = String.valueOf(rNot);
+        assertTrue(s2.toLowerCase().contains("nin"));
         assertTrue(s2.contains("O1"));
     }
 }
