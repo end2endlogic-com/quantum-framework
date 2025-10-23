@@ -10,14 +10,12 @@ import com.e2eq.ontology.core.ForwardChainingReasoner;
 import com.e2eq.ontology.mongo.EdgeDao;
 import com.e2eq.ontology.mongo.OntologyMaterializer;
 import com.e2eq.ontology.mongo.EdgeRelationStore;
-import com.e2eq.ontology.policy.ListQueryRewriter;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.Filters;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import org.bson.Document;
-import org.bson.conversions.Bson;
 import org.junit.jupiter.api.*;
 
 import java.util.*;
@@ -141,13 +139,6 @@ public class OntologyEndToEndIntegrationTest {
         assertTrue(hasOrgA, "Expected inferred placedInOrg edge to OrgA");
         boolean hasOrgOld = edgesForOrder.stream().anyMatch(d -> "OrgOld".equals(d.getString("dst")));
         assertFalse(hasOrgOld, "Obsolete inferred edge should be pruned");
-
-        // Policy bridge: rewrite a real Mongo query
-        ListQueryRewriter rewriter = new ListQueryRewriter(edgeDao);
-        Bson base = Filters.eq("status", "OPEN");
-        Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, "placedInOrg", orgA);
-        List<String> resultIds = ordersRaw.find(rewritten).map(d -> d.getString("_id")).into(new ArrayList<>());
-        assertEquals(List.of("ORD1"), resultIds, "Only ORD1 should match hasEdge(placedInOrg, OrgA)");
 
         // MorphiaRepo list API: use repository method that constrains by ontology ids
         List<TestOrder> repoList = orderRepo.listByHasEdge(REALM, "placedInOrg", orgA, edgeDao);

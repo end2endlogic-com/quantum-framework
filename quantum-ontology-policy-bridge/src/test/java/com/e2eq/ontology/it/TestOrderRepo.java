@@ -2,13 +2,11 @@ package com.e2eq.ontology.it;
 
 import com.e2eq.framework.model.persistent.morphia.MorphiaRepo;
 import com.e2eq.ontology.mongo.EdgeRelationStore;
-import com.mongodb.client.MongoCollection;
-import com.mongodb.client.model.Filters;
 import dev.morphia.Datastore;
+import dev.morphia.query.Query;
+import dev.morphia.query.filters.Filters;
 import jakarta.enterprise.context.ApplicationScoped;
-import org.bson.Document;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
@@ -16,20 +14,13 @@ import java.util.Set;
 public class TestOrderRepo extends MorphiaRepo<TestOrder> {
 
     public List<TestOrder> listByHasEdge(String realmId, String predicate, String dstId, EdgeRelationStore edgeDao) {
-        // Compute ids via ontology and constrain Morphia query
+        // Compute ids via ontology and constrain Morphia query using Morphia Filters
         Set<String> ids = edgeDao.srcIdsByDst(getTenantIdFromRealm(realmId), predicate, dstId);
         if (ids.isEmpty()) return java.util.List.of();
         Datastore datastore = morphiaDataStore.getDataStore(realmId);
-        MongoCollection<Document> col = datastore.getDatabase().getCollection("orders");
-        List<TestOrder> out = new ArrayList<>();
-        for (Document d : col.find(Filters.in("refName", ids))) {
-            TestOrder t = new TestOrder();
-            t.setRefName(d.getString("refName"));
-            t.setDisplayName(d.getString("displayName"));
-            t.setStatus(d.getString("status"));
-            out.add(t);
-        }
-        return out;
+        Query<TestOrder> q = datastore.find(TestOrder.class)
+                .filter(Filters.in("refName", ids));
+        return q.iterator().toList();
     }
 
     private String getTenantIdFromRealm(String realmId) {

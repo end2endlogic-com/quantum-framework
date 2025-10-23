@@ -1,8 +1,8 @@
 package com.e2eq.ontology.policy;
 
 import com.e2eq.ontology.mongo.EdgeRelationStore;
-import com.mongodb.client.model.Filters;
-import org.bson.conversions.Bson;
+import dev.morphia.query.filters.Filter;
+import dev.morphia.query.filters.Filters;
 import org.junit.jupiter.api.Test;
 
 import java.util.*;
@@ -12,8 +12,8 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Ensures policy-level hasEdge semantics using ListQueryRewriter:
  * - Tenant scoping: only edges for the provided tenantId are considered
- * - Composition: base filter is preserved when rewriting
- * - Empty semantics: when no matching edges exist, the rewritten filter yields no results
+ * - Composition: base filter is preserved when combined
+ * - Empty semantics: when no matching edges exist, the filter yields no results
  */
 public class HasEdgePolicyIntegrationTest {
 
@@ -50,18 +50,18 @@ public class HasEdgePolicyIntegrationTest {
         dao.put("t2", "placedInOrg", "OrgP", "X1");
 
         ListQueryRewriter rw = new ListQueryRewriter(dao);
-        Bson base = Filters.eq("status", "OPEN");
+        Filter base = Filters.eq("status", "OPEN");
 
         // For tenant t1 we should only include O1,O2 (not X1)
-        Bson rewrittenT1 = rw.rewriteForHasEdge(base, "t1", "placedInOrg", "OrgP");
-        String s1 = rewrittenT1.toString();
+        Filter combinedT1 = Filters.and(base, rw.hasEdge("t1", "placedInOrg", "OrgP"));
+        String s1 = String.valueOf(combinedT1);
         assertTrue(s1.contains("status"), "base filter must be preserved");
         assertTrue(s1.contains("O1") && s1.contains("O2"), "t1 src IDs should be included");
         assertFalse(s1.contains("X1"), "t2 src IDs must not leak into t1");
 
         // For tenant t2 we should only include X1
-        Bson rewrittenT2 = rw.rewriteForHasEdge(Filters.empty(), "t2", "placedInOrg", "OrgP");
-        String s2 = rewrittenT2.toString();
+        Filter onlyHasEdgeT2 = rw.hasEdge("t2", "placedInOrg", "OrgP");
+        String s2 = String.valueOf(onlyHasEdgeT2);
         assertTrue(s2.contains("X1"), "t2 src IDs should be included");
         assertFalse(s2.contains("O1") || s2.contains("O2"), "t1 src IDs must not appear for t2");
     }
@@ -71,8 +71,8 @@ public class HasEdgePolicyIntegrationTest {
         TenantAwareEdgeDao dao = new TenantAwareEdgeDao();
         // No entries for this dst -> should force empty result set
         ListQueryRewriter rw = new ListQueryRewriter(dao);
-        Bson rewritten = rw.rewriteForHasEdge(Filters.empty(), "t1", "orderShipsToRegion", "West");
-        String s = rewritten.toString();
+        Filter f = rw.hasEdge("t1", "orderShipsToRegion", "West");
+        String s = String.valueOf(f);
         // The bridge uses an impossible _id value to force no results
         assertTrue(s.contains("_id") && s.contains("__none__"), "empty hasEdge should force no results");
     }
