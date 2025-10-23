@@ -58,4 +58,17 @@ public class ListQueryRewriterTest {
         assertTrue(s2.toLowerCase().contains("nin"));
         assertTrue(s2.contains("O1"));
     }
+
+    @Test
+    public void testHasEdgeAllIntersectionSinglePredicate() {
+        FakeEdgeDao dao = new FakeEdgeDao();
+        // O1 appears in both dsts; O2 only in East
+        dao.put("orderShipsToRegion", "West", "O1");
+        dao.put("orderShipsToRegion", "East", "O1", "O2");
+        ListQueryRewriter rw = new ListQueryRewriter(dao);
+        Filter rAll = rw.hasEdgeAll("t1", "orderShipsToRegion", List.of("West", "East"));
+        String s = String.valueOf(rAll);
+        assertTrue(s.contains("O1"));
+        assertFalse(s.contains("O2"));
+    }
 }

@@ -351,7 +351,7 @@ Example rule snippets (illustrative):
 - Restrict list to Orders shipping to a region chosen in request:
   - allow LIST Order when hasEdge("orderShipsToRegion", request.region)
 
-Under the hood, policy evaluation uses ListQueryRewriter.rewriteForHasEdge(...), which converts hasEdge into a set of source ids and merges that with the base query.
+Under the hood, policy evaluation uses ListQueryRewriter.hasEdge(...), which converts hasEdge into a Morphia Filter limiting _id to the allowed source ids; compose it with your base filter via Filters.and(...).
 
 === Passing tenantId correctly
 

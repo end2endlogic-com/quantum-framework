@@ -705,5 +705,45 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         super.enterCompoundExpr(ctx);
     }
 
-
+    // Ontology function: hasEdge(predicate, dst)
+    // This method relies on the extended grammar; when ontology is not wired, it fails closed (no results)
+    @Override
+    public void enterHasEdgeExpr(BIAPIQueryParser.HasEdgeExprContext ctx) {
+        String predicate = ctx.predicate.getText();
+        String dst = ctx.dst.getText();
+        if (sub != null) {
+            predicate = sub.replace(predicate);
+            dst = sub.replace(dst);
+        }
+        String tenantId = null;
+        if (variableMap != null) {
+            tenantId = variableMap.get("pTenantId");
+            if (tenantId == null) tenantId = variableMap.get("tenantId");
+        }
+        Set<String> ids = Collections.emptySet();
+        if (tenantId != null && !tenantId.isBlank()) {
+            try {
+                var cdi = jakarta.enterprise.inject.spi.CDI.current();
+                if (cdi != null) {
+                    Class<?> edgeIface = Class.forName("com.e2eq.ontology.mongo.EdgeRelationStore");
+                    var sel = cdi.select(edgeIface);
+                    Object store = sel.isUnsatisfied() ? null : sel.get();
+                    if (store != null) {
+                        java.lang.reflect.Method m = edgeIface.getMethod("srcIdsByDst", String.class, String.class, String.class);
+                        Object result = m.invoke(store, tenantId, predicate, dst);
+                        if (result instanceof java.util.Set) {
+                            ids = (Set<String>) result;
+                        }
+                    }
+                }
+            } catch (Throwable t) {
+                // ignore and fail closed below
+            }
+        }
+        if (ids == null || ids.isEmpty()) {
+            filterStack.push(Filters.eq("_id", "__none__"));
+        } else {
+            filterStack.push(Filters.in("_id", ids));
+        }
+    }
 }
