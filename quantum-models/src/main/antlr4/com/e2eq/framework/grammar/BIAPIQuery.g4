@@ -3,7 +3,7 @@ grammar BIAPIQuery;
 query: (exprGroup | compoundExpr) (exprOp (exprGroup | compoundExpr))*;
 exprGroup: lp=LPAREN (exprGroup | compoundExpr) (exprOp (exprGroup | compoundExpr))* rp=RPAREN;
 compoundExpr: allowedExpr (exprOp allowedExpr)*;
-allowedExpr:   inExpr |  basicExpr |  nullExpr | existsExpr | booleanExpr | notExpr | regexExpr | elemMatchExpr;
+allowedExpr:   inExpr |  basicExpr |  nullExpr | existsExpr | booleanExpr | notExpr | regexExpr | elemMatchExpr | hasEdgeExpr;
 exprOp: op=(AND | OR);
 existsExpr: field=STRING op=EXISTS;
 booleanExpr: field=STRING op=(EQ | NEQ) value=(TRUE | FALSE);
@@ -36,6 +36,11 @@ nullExpr: field=STRING op=(EQ | NEQ) value=NULL;
 
 elemMatchExpr: field=STRING op=EQ lp=LBRCE nested=query rp=RBRCE;
 
+// Ontology function
+hasEdgeExpr: HASEDGE LPAREN predicate=(STRING|QUOTED_STRING) COMMA dst=(STRING|QUOTED_STRING|VARIABLE|OID|REFERENCE) RPAREN;
+
+
+HASEDGE: 'hasEdge';
 
 // Operators
 EQ: ':';

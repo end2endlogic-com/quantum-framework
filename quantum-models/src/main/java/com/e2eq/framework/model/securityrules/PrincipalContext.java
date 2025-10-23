@@ -278,7 +278,7 @@ public final class PrincipalContext {
    @Override
    public String toString () {
       return "PrincipalContext{" +
-               "realm='" + defaultRealm + '\'' +
+               "defaultRealm='" + defaultRealm + '\'' +
                ", dataDomain=" + dataDomain +
                ", userId='" + userId + '\'' +
                ", roles=" + Arrays.toString(roles) +

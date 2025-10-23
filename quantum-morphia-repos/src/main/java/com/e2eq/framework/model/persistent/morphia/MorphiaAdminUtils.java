@@ -123,8 +123,8 @@ public class MorphiaAdminUtils {
                         // ensure new identity and updated domain
                         clone.setId(null);
                         clone.setDataDomain(to);
-                        // set realm transiently if helpful for downstream interceptors
-                        clone.setRealm(toRealm);
+                        // set modelSourceRealm transiently if helpful for downstream interceptors
+                        clone.setModelSourceRealm(toRealm);
                         dst.save(clone);
                         copiedForEntity++;
                     } catch (Exception ex) {

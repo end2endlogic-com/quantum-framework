@@ -9,20 +9,17 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.mongodb.client.model.CollationStrength;
 import dev.morphia.annotations.*;
 import io.quarkus.runtime.annotations.RegisterForReflection;
-import jakarta.annotation.security.PermitAll;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
 import org.apache.commons.text.WordUtils;
 import org.bson.codecs.pojo.annotations.BsonExtraElements;
-import org.bson.codecs.pojo.annotations.BsonIgnore;
 import org.bson.types.ObjectId;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 import static dev.morphia.mapping.IndexType.DESC;
@@ -38,7 +35,7 @@ import static dev.morphia.mapping.IndexType.DESC;
                   )
 })
 @RegisterForReflection
-@EqualsAndHashCode(exclude={"realm"})
+@EqualsAndHashCode(exclude={"modelSourceRealm"})
 @SuperBuilder
 @Data
 @NoArgsConstructor
@@ -78,8 +75,14 @@ public abstract  class UnversionedBaseModel {
 
     protected ActiveStatus activeStatus;
 
-    @Transient
-    protected String realm;
+   /**
+    * this variable is not to be used its here for information
+    * purposes only and is set on read, but should be ignored on write, and is not
+    * stored in mongodb.  Its here to provide to the REST API caller an indication
+    * where the structure being returned came from but serves no other purpose
+    */
+   @Transient
+    protected String modelSourceRealm;
 
     /**
      The set of tags associated with this record.  A tag can be used for billing purposes, searching purposes or other purposes.
