@@ -407,14 +407,47 @@ public final class OntologyFilterHelper {
 }
 ----
 
-=== Where to hook materialization
+=== Where ontology materialization happens
 
-- On entity changes that are sources or intermediates for chains:
-  - Order (placedBy, orderHasShipment), Customer (memberOf), Shipment (shipsTo), Address (locatedIn), Organization (ancestorOf/parent), and any Fulfillment/Returns entities.
-- Recommended patterns:
-  - On-save/on-update hooks in your service layer call OntologyMaterializer.apply(...) with the explicit edges known from the entity snapshot.
-  - For intermediates (e.g., Address.region changed), enqueue affected sources for recomputation; use provenance to locate impacted edges.
+- Automatic on write via repository hook:
+  - When you save or update an entity, the framework runs an internal PostPersistHook (OntologyWriteHook) that:
+    - extracts explicit edges from fields/getters annotated with @OntologyProperty using a startup-built metadata cache (no per-call reflection), and
+    - calls OntologyMaterializer to infer inverse, transitive, symmetric, and super-property edges and upsert them to the edges collection.
+  - This is enabled by default. To disable temporarily (e.g., for bulk loads), set: ontology.auto-materialize=false
+- Intermediates and re-materialization:
+  - If you change entities that are not the source but affect chains (e.g., Address.region, Customer.memberOf), those sources will get updated the next time they are saved. For immediate consistency across a tenant, run the re-materialization job (see below).
   - Provide nightly/backfill jobs for recomputing edges across a tenant when ontology rules evolve.
+
+==== Configuration
+
+[source,properties]
+----
+# default is true
+ontology.auto-materialize=true
+----
+
+==== Example: annotate and save — edges are materialized automatically
+
+[source,java]
+----
+@OntologyClass(id = "Order")
+public class Order {
+  private String refName;
+
+  @OntologyProperty(id = "placedBy", functional = true)
+  public Customer getCustomer() { return customer; }
+}
+
+@OntologyClass(id = "Customer")
+public class Customer {
+  private String refName;
+
+  @OntologyProperty(id = "memberOf")
+  public Organization getOrg() { return org; }
+}
+----
+
+- Saving an Order will automatically create explicit placedBy and, via chains/inference, placedInOrg and inverse edges as defined in your ontology registry. No manual calls to OntologyMaterializer.apply(...) are required.
 
 === Security and multi-tenant considerations
 
@@ -795,25 +828,30 @@ TIP: Keep annotations minimal. Only add traits that aren’t obvious from the Ja
 
 === Materializing inferences from annotated models
 
-When your application saves or updates entities, collect the explicit edges implied by the entity’s fields and call OntologyMaterializer to compute and persist inferred edges. The reasoner will apply traits discovered by the loader (inverse, symmetric, transitive, subPropertyOf) automatically.
+Materialization is automatic on save/update through the repository hook; you do not need to assemble explicit edge lists or call OntologyMaterializer manually.
+
+- What happens:
+  - The framework inspects fields/getters annotated with @OntologyProperty and extracts explicit edges.
+  - The reasoner applies inverse, symmetric, transitive, and subPropertyOf traits from the registry and upserts inferred edges.
+- When to trigger re-materialization manually:
+  - After ontology rule changes (e.g., you mark a property transitive or add an inverse), run your re-materialization job to recompute edges for existing entities in a tenant.
+  - During bulk imports, you can disable auto-materialize and run the job afterward.
+
+Example: disable auto-materialize for a batch, then rebuild
+
+[source,properties]
+----
+ontology.auto-materialize=false
+----
 
 [source,java]
 ----
-@Inject OntologyMaterializer materializer;
+@Inject OntologyRebuilder rebuilder; // your maintenance utility
 
-public void onOrderSaved(String tenant, Order order) {
-  List<Reasoner.Edge> explicit = new ArrayList<>();
-  if (order.getPlacedBy() != null) {
-    explicit.add(new Reasoner.Edge(order.getRefName(), "placedBy", order.getPlacedBy().getRefName(), false, Optional.empty()));
-  }
-  if (order.getInOrgDirect() != null) {
-    explicit.add(new Reasoner.Edge(order.getRefName(), "placedInOrg", order.getInOrgDirect().getRefName(), false, Optional.empty()));
-  }
-  materializer.apply(tenant, order.getRefName(), "Order", explicit);
+public void runBackfill(String tenantId) {
+  rebuilder.recomputeTenant(tenantId);
 }
 ----
-
-In many cases you only need to pass the minimal explicit edges (e.g., placedBy and memberOf via customer); property chains configured elsewhere or declared in code will infer placedInOrg as before.
 
 === Querying using ListQueryRewriter (unchanged)
 
