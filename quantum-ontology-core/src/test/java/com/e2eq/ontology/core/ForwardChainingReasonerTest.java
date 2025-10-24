@@ -16,12 +16,12 @@ public class ForwardChainingReasonerTest {
         );
 
         Map<String, OntologyRegistry.PropertyDef> props = new HashMap<>();
-        props.put("placedBy", new OntologyRegistry.PropertyDef("placedBy", Optional.of("Order"), Optional.of("Customer"), false, Optional.empty(), false));
-        props.put("memberOf", new OntologyRegistry.PropertyDef("memberOf", Optional.of("Customer"), Optional.of("Organization"), false, Optional.empty(), false));
-        props.put("ancestorOf", new OntologyRegistry.PropertyDef("ancestorOf", Optional.of("Organization"), Optional.of("Organization"), false, Optional.empty(), true));
-        props.put("placedInOrg", new OntologyRegistry.PropertyDef("placedInOrg", Optional.of("Order"), Optional.of("Organization"), false, Optional.empty(), false));
-        props.put("parentOf", new OntologyRegistry.PropertyDef("parentOf", Optional.of("Organization"), Optional.of("Organization"), false, Optional.of("childOf"), false));
-        props.put("childOf", new OntologyRegistry.PropertyDef("childOf", Optional.of("Organization"), Optional.of("Organization"), true, Optional.empty(), false));
+        props.put("placedBy", new OntologyRegistry.PropertyDef("placedBy", Optional.of("Order"), Optional.of("Customer"), false, Optional.empty(), false, false, true, Set.of()));
+        props.put("memberOf", new OntologyRegistry.PropertyDef("memberOf", Optional.of("Customer"), Optional.of("Organization"), false, Optional.empty(), false, false, false, Set.of()));
+        props.put("ancestorOf", new OntologyRegistry.PropertyDef("ancestorOf", Optional.of("Organization"), Optional.of("Organization"), false, Optional.empty(), true, false, false, Set.of()));
+        props.put("placedInOrg", new OntologyRegistry.PropertyDef("placedInOrg", Optional.of("Order"), Optional.of("Organization"), false, Optional.empty(), false, false, false, Set.of()));
+        props.put("parentOf", new OntologyRegistry.PropertyDef("parentOf", Optional.of("Organization"), Optional.of("Organization"), false, Optional.of("childOf"), false, false, false, Set.of()));
+        props.put("childOf", new OntologyRegistry.PropertyDef("childOf", Optional.of("Organization"), Optional.of("Organization"), true, Optional.empty(), false, false, false, Set.of()));
 
         List<OntologyRegistry.PropertyChainDef> chains = List.of(
                 new OntologyRegistry.PropertyChainDef(List.of("placedBy", "memberOf"), "placedInOrg"),
@@ -69,8 +69,8 @@ public class ForwardChainingReasonerTest {
                 "Organization", new OntologyRegistry.ClassDef("Organization", Set.of(), Set.of(), Set.of())
         );
         Map<String, OntologyRegistry.PropertyDef> props = new HashMap<>();
-        props.put("parentOf", new OntologyRegistry.PropertyDef("parentOf", Optional.of("Organization"), Optional.of("Organization"), false, Optional.of("childOf"), false));
-        props.put("childOf", new OntologyRegistry.PropertyDef("childOf", Optional.of("Organization"), Optional.of("Organization"), true, Optional.empty(), false));
+        props.put("parentOf", new OntologyRegistry.PropertyDef("parentOf", Optional.of("Organization"), Optional.of("Organization"), false, Optional.of("childOf"), false, false, false, Set.of()));
+        props.put("childOf", new OntologyRegistry.PropertyDef("childOf", Optional.of("Organization"), Optional.of("Organization"), true, Optional.empty(), false, false, false, Set.of()));
         OntologyRegistry.TBox tbox = new OntologyRegistry.TBox(classes, props, List.of());
         OntologyRegistry reg = OntologyRegistry.inMemory(tbox);
 

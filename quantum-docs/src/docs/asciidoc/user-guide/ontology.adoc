@@ -445,3 +445,417 @@ public final class OntologyFilterHelper {
 - Introduce ontology edges on hot read paths first; update policy rules to hasEdge and verify results.
 - Gradually replace deep $lookup traversals with hasEdge-based rewrites.
 - Ensure materialization hooks are deployed before removing data fields used as inputs to the ontology.
+
+
+
+== Primer: First-time guide to core relationship semantics
+
+If you are new to ontology terms, the following quick explanations will help you build intuition. Each concept explains what it means, a tiny example, and how it affects queries using hasEdge.
+
+- Functional property
+  - What it means: For a given source entity, there is at most one target for this property. Think “single-valued.”
+  - Example: placedBy(Order, Customer) is functional because an Order is placed by exactly one Customer.
+  - Why it matters: On writes, the latest value replaces any previous one. In storage, you can enforce uniqueness for (tenantId, src, p). Queries are simpler because there’s at most one matching edge per source.
+  - In practice: When you save an Order with a different placedBy, the old edge is replaced so hasEdge("placedBy", customerX) reflects the latest truth.
+
+- Transitive property
+  - What it means: The relationship “chains through” intermediates. If A relates-to B and B relates-to C with the same property p, then A relates-to C by p as well.
+  - Example: ancestorOf(Org, Org) is transitive: OrgA ancestorOf OrgB and OrgB ancestorOf OrgC implies OrgA ancestorOf OrgC.
+  - Why it matters: You can answer reachability questions without specifying every hop. The system can materialize or compute the closure so queries like hasEdge("ancestorOf", OrgC) return OrgA even if the path is multiple hops.
+  - In practice: Use transitive for hierarchies like parent/ancestor, partOf, locatedIn, reportsTo.
+
+- subPropertyOf (property hierarchy)
+  - What it means: One property is a more specific form of another. If p ⊑ q (“p is a sub-property of q”), then every (s, p, o) also counts as (s, q, o).
+  - Example: placedInOrg ⊑ inOrg. If an Order is placedInOrg ACME, then it is also inOrg ACME.
+  - Why it matters: Queries written against the broader property (q) automatically include results from all its specializations (p). The system may materialize the super-property edges for performance.
+  - In practice: You can write policies/queries once for inOrg and still match edges stored as placedInOrg.
+
+- inverseOf (inverse properties)
+  - What it means: Two properties point in opposite directions. If p is the inverse of q, then (s, p, o) implies (o, q, s).
+  - Example: parentOf ⇄ childOf. If OrgA parentOf OrgB, then OrgB childOf OrgA.
+  - Why it matters: You only need to assert one direction; the system can infer the other. Queries can use whichever direction is natural.
+  - In practice: If you stored parentOf, you can still query with hasEdge("childOf", OrgA) and find OrgB once inverses are materialized.
+
+Putting it together
+- These traits combine. For example, placedInOrg can be declared a subPropertyOf inOrg; ancestorOf can be transitive; parentOf and childOf can be inverses. The reasoner uses these facts to materialize convenient edges so your queries remain simple and fast.
+- Your application code typically continues to use the same three query helpers: hasEdge, hasEdgeAny, notHasEdge. The richer semantics affect which edges exist, not how you call them.
+
+== New ontology features in this release
+
+This release expands the ontology engine and query integration to support a richer, OWL‑RL–inspired subset while keeping the developer experience simple and backward compatible. The following capabilities are now available and used transparently by the materializer and query rewriter:
+
+=== Feature overview
+
+- subClassOf (class hierarchy)
+  - Model taxonomies (e.g., Order ⊑ Entity, Employee ⊑ Person). Used for validation and optional type filters.
+- subPropertyOf (property hierarchy)
+  - If p ⊑ q and you assert (s, p, o), the system materializes (s, q, o). Queries on q will match p’s edges as well.
+- inverse properties
+  - If p is the inverse of q, asserting (s, p, o) will materialize (o, q, s). Example: parentOf ⇄ childOf.
+- symmetric properties
+  - For symmetric p, asserting (s, p, o) materializes (o, p, s). Example: peerOf between organizations.
+- transitive properties
+  - For transitive p, if (s, p, m) and (m, p, o) then (s, p, o) is inferred. Typical for ancestorOf, partOf, locatedIn, memberOf within hierarchical contexts.
+- functional properties
+  - For functional p, each source s has at most one destination o. Upserts replace the prior value. Useful for single-valued relations like placedBy on Order.
+
+All inferred edges carry inferred=true and provenance containing the rule used (e.g., transitive, inverse, subPropertyOf). These edges live in the same collection and are fully queryable.
+
+=== Business problems solved
+
+- E‑commerce organizational access
+  - Problem: “Show me all orders placed in ACME (including subsidiaries).”
+  - Solution: Define placedBy, memberOf, placedInOrg with chain placedBy ∘ memberOf ⇒ placedInOrg, and make ancestorOf transitive. Either materialize closure with a chain placedInOrg ∘ ancestorOf ⇒ placedInOrg or use p being transitive. Queries use hasEdge("placedInOrg", orgId).
+
+- HR management
+  - Problem: “List employees who report to VP_X directly or indirectly.”
+  - Solution: Define reportsTo as transitive. Query hasEdge("reportsTo", "VP_X").
+
+- Third‑party and data lineage
+  - Problem: “Which datasets are derived from Source S?”
+  - Solution: Define derivedFrom as transitive and inverse derivedInto. Record symmetric peerOf for bidirectional partnerships where relevant.
+
+- Supplier networks (supply chain)
+  - Problem: “Find parts supplied by a vendor’s parent company’s peers.”
+  - Solution: Use subPropertyOf to roll up specialized edges into a common supplies predicate, define parentOf/childOf inverses, and peerOf symmetric at the org level.
+
+=== How to code it with current APIs
+
+Below are concise examples showing how to define the ontology, materialize inferences, and query with existing components. These mirror the types already present in this repository and require no grammar changes.
+
+==== 1) Define ontology (programmatic TBox)
+
+Java (at startup, e.g., in a CDI producer):
+
+[source,java]
+----
+@Produces @Singleton
+public OntologyRegistry ontologyRegistry() {
+  Map<String, OntologyRegistry.ClassDef> classes = Map.of(
+      "Order",       new OntologyRegistry.ClassDef("Order", Set.of(), Set.of(), Set.of()),
+      "Customer",    new OntologyRegistry.ClassDef("Customer", Set.of(), Set.of(), Set.of()),
+      "Organization",new OntologyRegistry.ClassDef("Organization", Set.of(), Set.of(), Set.of())
+  );
+
+  Map<String, OntologyRegistry.PropertyDef> props = new HashMap<>();
+  // Single-valued ⇒ functional
+  props.put("placedBy",   new OntologyRegistry.PropertyDef(
+      "placedBy", Optional.of("Order"), Optional.of("Customer"), false, Optional.empty(),
+      false, /*transitive*/ false, /*symmetric*/ true /*functional*/, Set.of()
+  ));
+  props.put("memberOf",   new OntologyRegistry.PropertyDef(
+      "memberOf", Optional.of("Customer"), Optional.of("Organization"), false, Optional.empty(),
+      false, false, false, Set.of()
+  ));
+  props.put("placedInOrg",new OntologyRegistry.PropertyDef(
+      "placedInOrg", Optional.of("Order"), Optional.of("Organization"), false, Optional.empty(),
+      false, false, false, Set.of("inOrg") // subPropertyOf example
+  ));
+  props.put("inOrg",      new OntologyRegistry.PropertyDef(
+      "inOrg", Optional.of("Order"), Optional.of("Organization"), false, Optional.empty(),
+      false, false, false, Set.of()
+  ));
+  // Transitive ancestor relation
+  props.put("ancestorOf", new OntologyRegistry.PropertyDef(
+      "ancestorOf", Optional.of("Organization"), Optional.of("Organization"), false, Optional.empty(),
+      true, /*transitive*/ false, false, Set.of()
+  ));
+  // Inverses and symmetric
+  props.put("parentOf",   new OntologyRegistry.PropertyDef(
+      "parentOf", Optional.of("Organization"), Optional.of("Organization"), false, Optional.of("childOf"),
+      false, false, false, Set.of()
+  ));
+  props.put("childOf",    new OntologyRegistry.PropertyDef(
+      "childOf", Optional.of("Organization"), Optional.of("Organization"), true, Optional.empty(),
+      false, false, false, Set.of()
+  ));
+  props.put("peerOf",     new OntologyRegistry.PropertyDef(
+      "peerOf", Optional.of("Organization"), Optional.of("Organization"), false, Optional.empty(),
+      false, /*transitive*/ true, /*symmetric*/ false, /*functional*/ Set.of()
+  ));
+
+  List<OntologyRegistry.PropertyChainDef> chains = List.of(
+      // Order --placedBy--> Customer --memberOf--> Org  ⇒ Order --placedInOrg--> Org
+      new OntologyRegistry.PropertyChainDef(List.of("placedBy", "memberOf"), "placedInOrg"),
+      // Include ancestor closure for placedInOrg results
+      new OntologyRegistry.PropertyChainDef(List.of("placedInOrg", "ancestorOf"), "placedInOrg")
+  );
+
+  return OntologyRegistry.inMemory(new OntologyRegistry.TBox(classes, props, chains));
+}
+----
+
+Notes:
+- subPropertyOf is modeled via the PropertyDef.subPropertyOf set.
+- Inverse and symmetric are encoded in PropertyDef.inverseOf and PropertyDef.symmetric.
+- Transitivity is toggled via PropertyDef.transitive.
+
+==== 2) Materialize inferences when data changes
+
+Use OntologyMaterializer or call the Reasoner directly and upsert edges via OntologyEdgeRepo.
+
+[source,java]
+----
+@Inject ForwardChainingReasoner reasoner;
+@Inject OntologyRegistry ontologyRegistry;
+@Inject OntologyEdgeRepo edgeRepo;
+
+public void onOrderSaved(String tenant, String orderId, String customerId, String orgId) {
+  List<Reasoner.Edge> explicit = List.of(
+      new Reasoner.Edge(orderId, "placedBy", customerId, false, Optional.empty()),
+      new Reasoner.Edge(customerId, "memberOf", orgId, false, Optional.empty())
+  );
+  Reasoner.EntitySnapshot snap = new Reasoner.EntitySnapshot(tenant, orderId, "Order", explicit);
+  Reasoner.InferenceResult out = reasoner.infer(snap, ontologyRegistry);
+  for (Reasoner.Edge e : out.addEdges()) {
+    Map<String,Object> prov = e.prov().map(p -> Map.<String,Object>of("rule", p.rule(), "inputs", p.inputs())).orElse(Map.of());
+    edgeRepo.upsert(tenant, e.srcId(), e.p(), e.dstId(), true, prov);
+  }
+}
+----
+
+The materializer computes and persists:
+- subPropertyOf roll‑ups (e.g., placedInOrg ⊑ inOrg ⇒ write inOrg)
+- inverse/symmetric counterparts
+- transitive closures (bounded to the snapshot inputs; you can also chain for closures)
+
+==== 3) Query with ListQueryRewriter (Quarkus/Morphia)
+
+Use hasEdge/hasEdgeAny/notHasEdge to turn ontology constraints into Morphia filters over your entity collection. The rewriter internally fetches the set of source ids from the edge store and builds an in("refName", …) filter that composes with your attribute predicates.
+
+[source,java]
+----
+@Inject ListQueryRewriter queryRewriter;
+@Inject MorphiaDatastore datastore;
+
+public List<TestOrder> openOrdersIn(String tenant, String orgId) {
+  var status = dev.morphia.query.filters.Filters.eq("status", "OPEN");
+  var inOrg = queryRewriter.hasEdge(tenant, "placedInOrg", orgId);
+  var combined = dev.morphia.query.filters.Filters.and(status, inOrg);
+  return datastore.find(TestOrder.class).filter(combined).iterator().toList();
+}
+----
+
+To include multiple orgs:
+
+[source,java]
+----
+var f = queryRewriter.hasEdgeAny(tenant, "placedInOrg", List.of("ORG-ACME", "ORG-GLOBEX"));
+----
+
+To exclude restricted orgs:
+
+[source,java]
+----
+var f = queryRewriter.notHasEdge(tenant, "placedInOrg", "ORG-RESTRICTED");
+----
+
+==== Functional properties at write time
+
+For single‑valued relationships declared functional, configure a unique index over (tenantId, src, p) in your edge store (or rely on repo semantics) and treat upserts as replacements.
+
+Practical guidance:
+- Mark naturally single‑valued links functional (placedBy, primaryOwner).
+- On write, remove or overwrite any prior dst for the same (tenant, src, p).
+
+=== Backward compatibility and migration
+
+- Grammar/API: No changes needed. The same hasEdge/hasEdgeAny/notHasEdge functions work; results simply become more expressive as ontology features are enabled.
+- Feature flags: You may enable features per property (e.g., transitive) gradually. Queries remain stable.
+- Provenance: Keep prov so you can re‑compute or retract inferred edges when inputs or rules change.
+
+=== Troubleshooting and tips
+
+- Empty result from hasEdge: Means no matching edges exist; check whether inferences are being materialized for the predicate you expect.
+- Tenant scoping: All repo calls include tenantId; ensure you pass the correct tenant in both write and read paths.
+- Indexes: For heavy reads, ensure compound indexes on (tenantId, p, dst) and (tenantId, src, p). For functional, consider a unique (tenantId, src, p).
+- Testing: Use Quarkus @QuarkusTest to wire CDI and a test OntologyRegistry producer. Populate explicit edges, run the reasoner, then assert with the repo and query rewriter as shown in the integration tests included with the repository.
+
+
+
+== Model-first ontology with annotations and MorphiaOntologyLoader
+
+This section shows how to use your Morphia model classes as the source of truth for the ontology. You annotate model classes/fields to declare ontology concepts and property traits; at startup, MorphiaOntologyLoader scans MorphiaDatastore.getMapper() to build the OntologyRegistry automatically.
+
+=== Why model-first?
+
+- Single source of truth: semantics live next to the data model; less drift between code and config.
+- Safer refactors: renames/types evolve in code and the ontology follows.
+- No separate YAML/JSON needed for most use cases; optional overrides remain possible later if needed.
+
+=== Annotations overview
+
+Two lightweight annotations are used on model classes and fields. They are provided by quantum-ontology-core and can be added to any Morphia-mapped entity (deriving from UnversionedBaseModel).
+
+- @OntologyClass
+  - id: optional explicit class id (defaults to the simple class name)
+  - subClassOf: optional extra parents (in addition to Java inheritance)
+
+- @OntologyProperty
+  - id: optional explicit property id (defaults to the field name)
+  - subPropertyOf: property hierarchy roll-up targets
+  - inverseOf: name of the inverse property (declare on one side)
+  - transitive: whether the property is transitive
+  - symmetric: whether the property is symmetric
+  - functional: at most one target per source (defaults to true for single-valued fields)
+  - domain: override inferred domain (defaults to declaring @OntologyClass)
+  - range: override inferred range (defaults to the field/element type)
+
+NOTE: functional is inferred true for single-valued fields and false for collections/maps unless you override it.
+
+=== Example: Orders placed in an Organization (e-commerce)
+
+Below we implement the same business example covered earlier using model annotations.
+
+[source,java]
+----
+@OntologyClass(id = "Order")
+@Entity(value = "orders")
+public class Order extends UnversionedBaseModel {
+  private String status;
+
+  // Order --placedBy--> Customer (single-valued ⇒ functional)
+  @OntologyProperty(id = "placedBy", inverseOf = "placed", functional = true)
+  private Customer placedBy;
+}
+
+@OntologyClass(id = "Customer")
+@Entity(value = "customers")
+public class Customer extends UnversionedBaseModel {
+  // Customer --memberOf--> Org (transitive across org tree)
+  @OntologyProperty(id = "memberOf", transitive = true)
+  private Org memberOf;
+}
+
+@OntologyClass(id = "Organization")
+@Entity(value = "orgs")
+public class Org extends UnversionedBaseModel {
+  // Org --parentOf--> Org, with inverse childOf
+  @OntologyProperty(id = "parentOf", inverseOf = "childOf")
+  private Org parent;
+
+  // Optional symmetric relationship between peers
+  @OntologyProperty(id = "peerOf", symmetric = true)
+  private Set<Org> peers;
+}
+----
+
+Optionally, model a super-property to roll up specialized edges:
+
+[source,java]
+----
+@OntologyClass(id = "Order")
+public class Order extends UnversionedBaseModel {
+  @OntologyProperty(id = "placedBy", inverseOf = "placed", functional = true)
+  private Customer placedBy;
+
+  // Roll-up predicate for org membership of orders; placedInOrg ⊑ inOrg
+  @OntologyProperty(id = "placedInOrg", subPropertyOf = {"inOrg"})
+  private Org inOrgDirect;
+}
+----
+
+With these annotations in place, the loader will infer:
+- Classes: Order, Customer, Organization (+ hierarchy from Java inheritance)
+- Properties: placedBy (functional), memberOf (transitive), parentOf ⇄ childOf (inverse), peerOf (symmetric)
+- subPropertyOf: placedInOrg ⊑ inOrg (if declared)
+
+=== How the registry is produced (Quarkus CDI)
+
+OntologyCoreProducers wires MorphiaOntologyLoader by default. On startup it scans your models and produces a singleton OntologyRegistry.
+
+[source,java]
+----
+@ApplicationScoped
+public class OntologyCoreProducers {
+  @Inject MorphiaDatastore morphiaDatastore;
+
+  @Produces @Singleton
+  public OntologyRegistry ontologyRegistry() {
+    try {
+      MorphiaOntologyLoader loader = new MorphiaOntologyLoader(morphiaDatastore);
+      OntologyRegistry reg = loader.load();
+      return isEmpty(reg) ? emptyRegistry() : reg;
+    } catch (Throwable t) {
+      return emptyRegistry();
+    }
+  }
+}
+----
+
+If you need manual control (tests, migrations), you can call the loader directly:
+
+[source,java]
+----
+MorphiaOntologyLoader loader = new MorphiaOntologyLoader(datastore);
+OntologyRegistry registry = loader.load();
+----
+
+TIP: Keep annotations minimal. Only add traits that aren’t obvious from the Java type system (e.g., transitive, symmetric, inverse, subPropertyOf).
+
+=== Materializing inferences from annotated models
+
+When your application saves or updates entities, collect the explicit edges implied by the entity’s fields and call OntologyMaterializer to compute and persist inferred edges. The reasoner will apply traits discovered by the loader (inverse, symmetric, transitive, subPropertyOf) automatically.
+
+[source,java]
+----
+@Inject OntologyMaterializer materializer;
+
+public void onOrderSaved(String tenant, Order order) {
+  List<Reasoner.Edge> explicit = new ArrayList<>();
+  if (order.getPlacedBy() != null) {
+    explicit.add(new Reasoner.Edge(order.getRefName(), "placedBy", order.getPlacedBy().getRefName(), false, Optional.empty()));
+  }
+  if (order.getInOrgDirect() != null) {
+    explicit.add(new Reasoner.Edge(order.getRefName(), "placedInOrg", order.getInOrgDirect().getRefName(), false, Optional.empty()));
+  }
+  materializer.apply(tenant, order.getRefName(), "Order", explicit);
+}
+----
+
+In many cases you only need to pass the minimal explicit edges (e.g., placedBy and memberOf via customer); property chains configured elsewhere or declared in code will infer placedInOrg as before.
+
+=== Querying using ListQueryRewriter (unchanged)
+
+Your query code does not change. It benefits from materialized edges that now carry richer semantics from annotations.
+
+[source,java]
+----
+@Inject ListQueryRewriter queryRewriter;
+@Inject MorphiaDatastore datastore;
+
+public List<Order> openOrdersIn(String tenant, String orgId) {
+  var status = dev.morphia.query.filters.Filters.eq("status", "OPEN");
+  var inOrg = queryRewriter.hasEdge(tenant, "placedInOrg", orgId);
+  var combined = dev.morphia.query.filters.Filters.and(status, inOrg);
+  return datastore.find(Order.class).filter(combined).iterator().toList();
+}
+----
+
+To include subsidiaries via ancestor/parent relationships, either:
+- Declare ancestorOf as transitive in the model and materialize a closure, or
+- Add a property chain placedInOrg ∘ ancestorOf ⇒ placedInOrg in your registry initialization.
+
+=== Business case recipes with annotations
+
+- E‑commerce org access
+  - Annotate placedBy (functional), memberOf (transitive), and optionally parentOf (inverse childOf). Materialize placedInOrg via a property chain. Query hasEdge("placedInOrg", org).
+- HR reporting lines
+  - Annotate reportsTo as transitive on Employee; query hasEdge("reportsTo", managerId).
+- Supplier networks
+  - Annotate supplies as a base property; use subPropertyOf to roll up specialized suppliesDirect and suppliesViaSubsidiary to supplies; annotate peerOf on Org as symmetric.
+
+=== Troubleshooting
+
+- The registry is empty at runtime
+  - Ensure your models are discovered by Morphia (annotated with @Entity) and that the Quarkus application initializes MorphiaDatastore before the ontology producer.
+- Inverse not applied
+  - Declare inverseOf on one side only; the loader will wire both directions.
+- Functional not enforced
+  - For functional properties, ensure your edge repository enforces unique (tenantId, src, p) or that your write path overwrites prior values.
+
+=== Migration strategy
+
+- Start by adding @OntologyProperty to the most important relationships; don’t attempt to annotate everything at once.
+- Keep existing @Reference fields if you have them; use edges for query-time semantics and policy integration first.
+- Add tests that verify the loader discovered your properties (including inverses/subPropertyOf) and that queries via hasEdge behave as expected.

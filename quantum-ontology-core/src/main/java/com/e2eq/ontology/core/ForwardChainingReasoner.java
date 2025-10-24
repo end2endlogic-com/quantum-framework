@@ -3,7 +3,7 @@ package com.e2eq.ontology.core;
 
 import java.util.*;
 import com.e2eq.ontology.core.OntologyRegistry.*;
-import static com.e2eq.ontology.core.Reasoner.*;
+
 import jakarta.enterprise.context.ApplicationScoped;
 
 @ApplicationScoped
@@ -69,27 +69,59 @@ public final class ForwardChainingReasoner implements Reasoner {
             }
         }
 
-        // 3) Inverses: if current property has an inverseOf, add inverse edge (y, inverseOf, x)
+        // 3) SubPropertyOf: materialize super-property edges (s, q, o) for each q in p.subPropertyOf
+        for (Map.Entry<String, Map<String, Set<String>>> entry : outByP.entrySet()) {
+            String p = entry.getKey();
+            Optional<PropertyDef> pDef = reg.propertyOf(p);
+            if (pDef.isPresent()) {
+                Set<String> supers = Optional.ofNullable(pDef.get().subPropertyOf()).orElse(Set.of());
+                if (!supers.isEmpty()) {
+                    for (String superP : supers) {
+                        for (Map.Entry<String, Set<String>> e1 : entry.getValue().entrySet()) {
+                            String x = e1.getKey();
+                            for (String y : e1.getValue()) {
+                                Map<String, Object> inputs = new HashMap<>();
+                                inputs.put("sub", p);
+                                inputs.put("super", superP);
+                                inputs.put("via", List.of(x, y));
+                                Provenance prov = new Provenance("subPropertyOf", inputs);
+                                edges.add(new Edge(x, superP, y, true, Optional.of(prov)));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4) Inverses and symmetric: if property has an inverseOf or symmetric, add corresponding edges
         for (Map.Entry<String, Map<String, Set<String>>> entry : outByP.entrySet()) {
             String p = entry.getKey();
             Optional<PropertyDef> pDef = reg.propertyOf(p);
             if (pDef.isEmpty()) continue;
             Optional<String> inv = pDef.get().inverseOf();
-            if (inv.isEmpty()) continue;
-            String invName = inv.get();
+            boolean symmetric = pDef.get().symmetric();
             for (Map.Entry<String, Set<String>> e1 : entry.getValue().entrySet()) {
                 String x = e1.getKey();
                 for (String y : e1.getValue()) {
-                    Map<String, Object> inputs = new HashMap<>();
-                    inputs.put("of", p);
-                    inputs.put("via", List.of(x, y));
-                    Provenance prov = new Provenance("inverse", inputs);
-                    edges.add(new Edge(y, invName, x, true, Optional.of(prov)));
+                    if (inv.isPresent()) {
+                        Map<String, Object> inputs = new HashMap<>();
+                        inputs.put("of", p);
+                        inputs.put("via", List.of(x, y));
+                        Provenance prov = new Provenance("inverse", inputs);
+                        edges.add(new Edge(y, inv.get(), x, true, Optional.of(prov)));
+                    }
+                    if (symmetric) {
+                        Map<String, Object> inputs2 = new HashMap<>();
+                        inputs2.put("prop", p);
+                        inputs2.put("via", List.of(x, y));
+                        Provenance prov2 = new Provenance("symmetric", inputs2);
+                        edges.add(new Edge(y, p, x, true, Optional.of(prov2)));
+                    }
                 }
             }
         }
 
-        // 4) Transitive closure per transitive property (limited to explicit edges in snapshot)
+        // 5) Transitive closure per transitive property (limited to explicit edges in snapshot)
         for (Map.Entry<String, Map<String, Set<String>>> entry : outByP.entrySet()) {
             String p = entry.getKey();
             Optional<PropertyDef> def = reg.propertyOf(p);
