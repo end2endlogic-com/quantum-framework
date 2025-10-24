@@ -26,12 +26,12 @@ import java.util.Map;
 })
 public class OntologyEdge extends UnversionedBaseModel {
 
-    private String src;
-    private String p;
-    private String dst;
-    private boolean inferred;
-    private Map<String, Object> prov;
-    private Date ts;
+    protected String src;
+    protected String p;
+    protected String dst;
+    protected boolean inferred;
+    protected Map<String, Object> prov;
+    protected Date ts;
 
     @Override
     public String bmFunctionalArea() {

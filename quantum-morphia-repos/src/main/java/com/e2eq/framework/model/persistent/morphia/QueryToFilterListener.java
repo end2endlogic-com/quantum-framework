@@ -725,7 +725,7 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
             try {
                 var cdi = jakarta.enterprise.inject.spi.CDI.current();
                 if (cdi != null) {
-                    Class<?> edgeIface = Class.forName("com.e2eq.ontology.mongo.EdgeRelationStore");
+                    Class<?> edgeIface = Class.forName("com.e2eq.ontology.repo.OntologyEdgeRepo");
                     var sel = cdi.select(edgeIface);
                     Object store = sel.isUnsatisfied() ? null : sel.get();
                     if (store != null) {

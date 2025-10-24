@@ -3,8 +3,9 @@ package com.e2eq.ontology.policy;
 
 import java.util.*;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
-import com.e2eq.ontology.mongo.EdgeRelationStore;
+import com.e2eq.ontology.repo.OntologyEdgeRepo;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
 
@@ -13,27 +14,36 @@ public class ListQueryRewriter {
 
     // Optional CDI injection to avoid UnsatisfiedResolutionException when no bean is present (e.g., in tests)
     @Inject
-    jakarta.enterprise.inject.Instance<EdgeRelationStore> edgeDaoInstance;
+    Instance<OntologyEdgeRepo> edgeRepoInstance;
 
-    // Testing/legacy convenience: allow manual construction with a provided store
-    private EdgeRelationStore edgeDao;
+    // Testing/legacy convenience: allow manual construction with a provided repo or legacy store
+    private OntologyEdgeRepo edgeRepo;
+
 
     public ListQueryRewriter() { }
-    public ListQueryRewriter(EdgeRelationStore edgeDao){
-        this.edgeDao = edgeDao;
+    public ListQueryRewriter(OntologyEdgeRepo edgeRepo){
+        this.edgeRepo = edgeRepo;
     }
 
-    private EdgeRelationStore store() {
-        if (this.edgeDao != null) return this.edgeDao;
-        if (edgeDaoInstance != null && !edgeDaoInstance.isUnsatisfied()) {
-            return edgeDaoInstance.get();
+    private Set<String> srcIdsByDst(String tenantId, String predicate, String dstId){
+        if (edgeRepo != null) return edgeRepo.srcIdsByDst(tenantId, predicate, dstId);
+
+        if (edgeRepoInstance != null && !edgeRepoInstance.isUnsatisfied()) {
+            return edgeRepoInstance.get().srcIdsByDst(tenantId, predicate, dstId);
         }
-        throw new IllegalStateException("EdgeRelationStore bean not available; provide via CDI or constructor");
+        throw new IllegalStateException("OntologyEdgeRepo bean not available; provide via CDI or constructor");
+    }
+    private Set<String> srcIdsByDstIn(String tenantId, String predicate, Collection<String> dstIds){
+        if (edgeRepo != null) return edgeRepo.srcIdsByDstIn(tenantId, predicate, dstIds);
+        if (edgeRepoInstance != null && !edgeRepoInstance.isUnsatisfied()) {
+            return edgeRepoInstance.get().srcIdsByDstIn(tenantId, predicate, dstIds);
+        }
+        throw new IllegalStateException("OntologyEdgeRepo bean not available; provide via CDI or constructor");
     }
 
     // Build a Morphia filter that caller can compose with others
     public Filter hasEdge(String tenantId, String predicate, String dstId){
-        Set<String> srcIds = store().srcIdsByDst(tenantId, predicate, dstId);
+        Set<String> srcIds = srcIdsByDst(tenantId, predicate, dstId);
         if (srcIds.isEmpty()) {
             // force empty result: impossible equality on _id
             return Filters.eq("_id", "__none__");
@@ -45,7 +55,7 @@ public class ListQueryRewriter {
         if (dstIds == null || dstIds.isEmpty()) {
             return Filters.eq("_id", "__none__");
         }
-        Set<String> srcIds = store().srcIdsByDstIn(tenantId, predicate, dstIds);
+        Set<String> srcIds = srcIdsByDstIn(tenantId, predicate, dstIds);
         if (srcIds.isEmpty()) {
             return Filters.eq("_id", "__none__");
         }
@@ -62,7 +72,7 @@ public class ListQueryRewriter {
         Set<String> intersection = null;
         while (it.hasNext()) {
             String dst = it.next();
-            Set<String> srcIds = store().srcIdsByDst(tenantId, predicate, dst);
+            Set<String> srcIds = srcIdsByDst(tenantId, predicate, dst);
             if (intersection == null) {
                 intersection = new HashSet<>(srcIds);
             } else {
@@ -88,7 +98,7 @@ public class ListQueryRewriter {
     }
 
     public Filter notHasEdge(String tenantId, String predicate, String dstId){
-        Set<String> srcIds = store().srcIdsByDst(tenantId, predicate, dstId);
+        Set<String> srcIds = srcIdsByDst(tenantId, predicate, dstId);
         if (srcIds.isEmpty()) {
             // nothing to exclude
             return Filters.exists("_id");
@@ -97,10 +107,10 @@ public class ListQueryRewriter {
     }
 
     public Set<String> idsForHasEdge(String tenantId, String predicate, String dstId){
-        return store().srcIdsByDst(tenantId, predicate, dstId);
+        return srcIdsByDst(tenantId, predicate, dstId);
     }
 
     public Set<String> idsForHasEdgeAny(String tenantId, String predicate, Collection<String> dstIds){
-        return store().srcIdsByDstIn(tenantId, predicate, dstIds);
+        return srcIdsByDstIn(tenantId, predicate, dstIds);
     }
 }

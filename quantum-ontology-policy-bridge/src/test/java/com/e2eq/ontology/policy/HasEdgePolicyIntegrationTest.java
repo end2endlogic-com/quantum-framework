@@ -1,6 +1,8 @@
 package com.e2eq.ontology.policy;
 
-import com.e2eq.ontology.mongo.EdgeRelationStore;
+
+import com.e2eq.ontology.model.OntologyEdge;
+import com.e2eq.ontology.repo.OntologyEdgeRepo;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
 import org.junit.jupiter.api.Test;
@@ -17,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 public class HasEdgePolicyIntegrationTest {
 
-    static class TenantAwareEdgeDao implements EdgeRelationStore {
+    static class TenantAwareEdgeDao extends OntologyEdgeRepo {
         private final Map<String, Set<String>> map = new HashMap<>(); // key: tenant|p|dst -> src ids
         public void put(String tenant, String p, String dst, String... srcs) {
             map.computeIfAbsent(key(tenant, p, dst), k -> new HashSet<>()).addAll(Arrays.asList(srcs));
@@ -39,7 +41,7 @@ public class HasEdgePolicyIntegrationTest {
             return rc;
         }
         @Override public Map<String, Set<String>> srcIdsByDstGrouped(String tenantId, String p, Collection<String> dstIds) { return Map.of(); }
-        @Override public List<?> findBySrc(String tenantId, String src) { return List.of(); }
+        @Override public List<OntologyEdge> findBySrc(String tenantId, String src) { return List.of(); }
     }
 
     @Test
