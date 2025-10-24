@@ -40,6 +40,7 @@ public class HasEdgeQueryIT {
 
     @BeforeEach
     public void setup() {
+
         reasoner = new ForwardChainingReasoner();
         edgeRepo.deleteAll();
 
