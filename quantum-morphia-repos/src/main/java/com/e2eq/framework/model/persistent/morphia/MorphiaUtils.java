@@ -82,6 +82,18 @@ public class MorphiaUtils {
       return MorphiaUtils.convertToFilterWContext(queryString, null, null, modelClass );
    }
 
+   /**
+    * New entry point that plans a query and either returns a Filter (existing path) or
+    * an aggregation pipeline representation. Backward-compatible: existing callers may
+    * continue using convertToFilter().
+    */
+   public static <T extends UnversionedBaseModel> com.e2eq.framework.model.persistent.morphia.planner.PlannedQuery convertToPlannedQuery(
+           String queryString, Class<T> modelClass) {
+      com.e2eq.framework.model.persistent.morphia.planner.QueryPlanner planner =
+              new com.e2eq.framework.model.persistent.morphia.planner.QueryPlanner();
+      return planner.plan(queryString, modelClass);
+   }
+
    public static Map<String, String> createStandardVariableMapFrom(PrincipalContext pcontext, ResourceContext rcontext) {
       Map<String, String> variableMap = new HashMap<>();
       variableMap.put("principalId", pcontext.getUserId());

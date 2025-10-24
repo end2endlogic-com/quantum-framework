@@ -24,6 +24,8 @@ include::user-guide/modeling.adoc[]
 
 include::user-guide/rest-crud.adoc[]
 include::user-guide/query-language.adoc[]
+include::user-guide/query-expansion.adoc[]
+include::user-guide/planner-and-query-gateway.adoc[]
 
 == Security
 

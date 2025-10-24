@@ -148,6 +148,8 @@ public class AnnotatedEdgeExtractor {
     public static class DefaultIdAccessor {
         public String idOf(Object entity) {
             if (entity == null) return null;
+            // If the target is already a CharSequence (e.g., String id), use it directly
+            if (entity instanceof CharSequence cs) return cs.toString();
             try {
                 Method m = entity.getClass().getMethod("getRefName");
                 Object v = m.invoke(entity);

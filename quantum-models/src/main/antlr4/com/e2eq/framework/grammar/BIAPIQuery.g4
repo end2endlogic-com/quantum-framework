@@ -3,7 +3,7 @@ grammar BIAPIQuery;
 query: (exprGroup | compoundExpr) (exprOp (exprGroup | compoundExpr))*;
 exprGroup: lp=LPAREN (exprGroup | compoundExpr) (exprOp (exprGroup | compoundExpr))* rp=RPAREN;
 compoundExpr: allowedExpr (exprOp allowedExpr)*;
-allowedExpr:   inExpr |  basicExpr |  nullExpr | existsExpr | booleanExpr | notExpr | regexExpr | elemMatchExpr | hasEdgeExpr;
+allowedExpr:   inExpr |  basicExpr |  nullExpr | existsExpr | booleanExpr | notExpr | regexExpr | elemMatchExpr | hasEdgeExpr | expandExpr;
 exprOp: op=(AND | OR);
 existsExpr: field=STRING op=EXISTS;
 booleanExpr: field=STRING op=(EQ | NEQ) value=(TRUE | FALSE);
@@ -39,8 +39,13 @@ elemMatchExpr: field=STRING op=EQ lp=LBRCE nested=query rp=RBRCE;
 // Ontology function
 hasEdgeExpr: HASEDGE LPAREN predicate=(STRING|QUOTED_STRING) COMMA dst=(STRING|QUOTED_STRING|VARIABLE|OID|REFERENCE) RPAREN;
 
+// Expansion directive (parsed but evaluation is handled elsewhere)
+// Support simple dotted paths and optional array wildcards [*] between segments.
+// Tokens come in as: STRING ('[' '*' ']')? (STRING ('[' '*' ']')? )*
+expandExpr: EXPAND LPAREN head=STRING (LBRKT WILDCARD RBRKT)? (seg=STRING (LBRKT WILDCARD RBRKT)? )* RPAREN;
 
 HASEDGE: 'hasEdge';
+EXPAND: 'expand';
 
 // Operators
 EQ: ':';
