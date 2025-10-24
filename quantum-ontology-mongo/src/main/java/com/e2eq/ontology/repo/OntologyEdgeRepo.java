@@ -7,11 +7,16 @@ import dev.morphia.Datastore;
 import dev.morphia.query.Query;
 import dev.morphia.query.filters.Filters;
 import jakarta.enterprise.context.ApplicationScoped;
+import org.bson.conversions.Bson;
 
 import java.util.*;
 
 @ApplicationScoped
 public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
+
+   public void deleteAll() {
+      ds().getCollection(OntologyEdge.class).deleteMany(new org.bson.Document());
+   }
 
     private Datastore ds() {
         // Use the default realm configured for the service; MorphiaRepo injects it.

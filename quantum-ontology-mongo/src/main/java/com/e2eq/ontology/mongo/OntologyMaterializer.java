@@ -2,22 +2,25 @@
 package com.e2eq.ontology.mongo;
 
 import java.util.*;
+
+import jakarta.inject.Inject;
 import org.bson.Document;
 import com.e2eq.ontology.core.*;
+import com.e2eq.ontology.model.OntologyEdge;
+import com.e2eq.ontology.repo.OntologyEdgeRepo;
 import jakarta.enterprise.context.ApplicationScoped;
 
 @ApplicationScoped
 public class OntologyMaterializer {
 
-    private final Reasoner reasoner;
-    private final OntologyRegistry registry;
-    private final EdgeRelationStore edgeDao;
+   @Inject
+   protected  Reasoner reasoner;
 
-    public OntologyMaterializer(Reasoner reasoner, OntologyRegistry registry, EdgeRelationStore edgeDao) {
-        this.reasoner = reasoner;
-        this.registry = registry;
-        this.edgeDao = edgeDao;
-    }
+   private OntologyRegistry registry;
+
+    @Inject
+    protected OntologyEdgeRepo edgeRepo;
+
 
     public void apply(String tenantId, String entityId, String entityType, List<Reasoner.Edge> explicitEdges){
         var snap = new Reasoner.EntitySnapshot(tenantId, entityId, entityType, explicitEdges);
@@ -42,36 +45,28 @@ public class OntologyMaterializer {
             upserts.add(doc);
         }
         if (!upserts.isEmpty()) {
-            edgeDao.upsertMany(upserts);
+            // simple data conversion path supported by both repo and legacy store
+            edgeRepo.upsertMany(upserts);
         }
 
         // Load current inferred edges for this source and prune per predicate
-        List<?> existing = edgeDao.findBySrc(tenantId, entityId);
+        List<OntologyEdge> existing = findEdgesBySrcTyped(tenantId, entityId);
         Map<String, Set<String>> existingInfByP = new HashMap<>();
-        for (Object o : existing) {
-            String p;
-            String dst;
-            Boolean inferred;
-            if (o instanceof org.bson.Document d) {
-                inferred = d.getBoolean("inferred");
-                p = d.getString("p");
-                dst = d.getString("dst");
-            } else if (o instanceof com.e2eq.ontology.model.OntologyEdge e) {
-                inferred = e.isInferred();
-                p = e.getP();
-                dst = e.getDst();
-            } else {
-                continue;
-            }
-            if (!Boolean.TRUE.equals(inferred)) continue;
-            existingInfByP.computeIfAbsent(p, k -> new HashSet<>()).add(dst);
+        for (OntologyEdge e : existing) {
+            if (!e.isInferred()) continue;
+            existingInfByP.computeIfAbsent(e.getP(), k -> new HashSet<>()).add(e.getDst());
         }
         for (Map.Entry<String, Set<String>> en : existingInfByP.entrySet()) {
             String p = en.getKey();
             Set<String> keep = newByP.getOrDefault(p, Set.of());
             // delete inferred edges not in keep for predicate p
-            edgeDao.deleteInferredBySrcNotIn(tenantId, entityId, p, keep);
+            edgeRepo.deleteInferredBySrcNotIn(tenantId, entityId, p, keep);
         }
         // TODO: write back types/labels on entity doc if needed
+    }
+
+    // Convert raw results from legacy store into typed edges to simplify downstream logic
+    private List<OntologyEdge> findEdgesBySrcTyped(String tenantId, String src) {
+         return edgeRepo.findBySrc(tenantId, src);
     }
 }

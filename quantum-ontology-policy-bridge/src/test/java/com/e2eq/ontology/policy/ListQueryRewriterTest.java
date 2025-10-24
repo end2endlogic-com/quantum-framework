@@ -1,6 +1,8 @@
 package com.e2eq.ontology.policy;
 
-import com.e2eq.ontology.mongo.EdgeRelationStore;
+
+import com.e2eq.ontology.model.OntologyEdge;
+import com.e2eq.ontology.repo.OntologyEdgeRepo;
 import dev.morphia.query.filters.Filter;
 import org.junit.jupiter.api.Test;
 
@@ -10,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 public class ListQueryRewriterTest {
 
-    static class FakeEdgeDao implements EdgeRelationStore {
+    static class FakeEdgeDao extends OntologyEdgeRepo {
         private final Map<String, Set<String>> map = new HashMap<>(); // key: p|dst -> src ids
         public void put(String p, String dst, String... srcs) {
             map.computeIfAbsent(p+"|"+dst, k -> new HashSet<>()).addAll(Arrays.asList(srcs));
@@ -29,7 +31,7 @@ public class ListQueryRewriterTest {
             return rc;
         }
         @Override public Map<String, Set<String>> srcIdsByDstGrouped(String tenantId, String p, Collection<String> dstIds) { return Map.of(); }
-        @Override public List<?> findBySrc(String tenantId, String src) { return List.of(); }
+        @Override public List<OntologyEdge>findBySrc(String tenantId, String src) { return List.of(); }
     }
 
     @Test
