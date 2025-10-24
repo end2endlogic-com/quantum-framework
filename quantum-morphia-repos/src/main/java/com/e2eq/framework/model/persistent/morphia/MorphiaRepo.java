@@ -42,6 +42,7 @@ import org.bson.types.ObjectId;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import jakarta.enterprise.inject.Instance;
 
 import java.lang.reflect.Field;
 import java.util.*;
@@ -57,6 +58,23 @@ import static dev.morphia.query.Sort.descending;
  * @param <T> The model class this repo will use.
  */
 public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements BaseMorphiaRepo<T> {
+
+    @Inject
+    Instance<PostPersistHook> postPersistHooks;
+
+    @ConfigProperty(name = "ontology.auto-materialize", defaultValue = "true")
+    boolean autoMaterialize;
+
+    private void callPostPersistHooks(String realmId, Object entity) {
+        if (!autoMaterialize || postPersistHooks == null) return;
+        for (PostPersistHook hook : postPersistHooks) {
+            try {
+                hook.afterPersist(realmId, entity);
+            } catch (Throwable t) {
+                Log.warn("PostPersistHook threw exception: " + t.getMessage());
+            }
+        }
+    }
 
     @Inject
     protected MorphiaDataStore morphiaDataStore;
@@ -1025,7 +1043,9 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         }
        setDefaultValues(value);
         value.validate();
-        return session.save(value);
+        T saved = session.save(value);
+        callPostPersistHooks(getSecurityContextRealmId(), saved);
+        return saved;
     }
 
     @Override
@@ -1052,7 +1072,11 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
           setDefaultValues(entity);
           entity.validate();
        });
-       return datastore.save(entities);
+       List<T> saved = datastore.save(entities);
+       // invoke hooks for each saved entity
+       String realmId = getSecurityContextRealmId();
+       for (T e : saved) callPostPersistHooks(realmId, e);
+       return saved;
     }
 
     @Override
@@ -1070,7 +1094,10 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
           entity.validate();
        });
 
-       return session.save(entities);
+       List<T> saved = session.save(entities);
+       String realmId = getSecurityContextRealmId();
+       for (T e : saved) callPostPersistHooks(realmId, e);
+       return saved;
     }
 
 
