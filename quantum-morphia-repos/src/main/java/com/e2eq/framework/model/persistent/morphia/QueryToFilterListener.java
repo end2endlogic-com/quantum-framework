@@ -101,6 +101,7 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         super.exitNullExpr(ctx);
     }
 
+
     private String escapeRegexChars(String inputString) {
         if (inputString != null) {
             //. ^ $ * + - ? ( ) [ ] { } \ |

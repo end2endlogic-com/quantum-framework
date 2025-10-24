@@ -1,0 +1,71 @@
+[[planner-and-query-gateway]]
+== Planner and QueryGateway
+
+The planner decides whether a query runs as a simple single-collection filter (FILTER mode) or as a MongoDB aggregation (AGGREGATION mode). This is transparent to callers.
+
+In v1 the planner recognizes expand(path) and selects AGGREGATION mode when present. Otherwise, FILTER mode is used and the existing Morphia path is taken.
+
+=== Planner decisions
+
+- FILTER mode: No expand(...) in the query. The system generates a Morphia Filter and queries a single collection.
+- AGGREGATION mode: One or more expand(...) directives are present. The system will build an aggregation pipeline (with $lookup, etc.). In v1, a placeholder pipeline is returned to establish the contract.
+
+=== Public facade: QueryGateway
+
+A new collection-agnostic facade exposes plan/inspect capabilities and will later execute aggregation pipelines when enabled.
+
+.Java
+[source,java]
+----
+import com.e2eq.framework.model.persistent.morphia.query.QueryGateway;
+import com.e2eq.framework.model.persistent.morphia.query.QueryGatewayImpl;
+import com.e2eq.framework.model.persistent.morphia.planner.PlannerResult;
+
+QueryGateway gateway = new QueryGatewayImpl();
+
+// Decide which mode would be used
+PlannerResult pr = gateway.plan("expand(customer) && status:active", Order.class);
+// pr.getMode() == PlannerResult.Mode.AGGREGATION
+// pr.getExpandPaths() == ["customer"]
+----
+
+If you prefer a lower-level API:
+
+.Java
+[source,java]
+----
+import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
+import com.e2eq.framework.model.persistent.morphia.planner.PlannedQuery;
+
+PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(
+    "expand(items[*].product) && status:active",
+    Order.class
+);
+
+switch (planned.getMode()) {
+  case FILTER:
+    // Use planned.getFilter() with Morphia datastore
+    break;
+  case AGGREGATION:
+    // Use planned.getAggregation() to inspect the pipeline (placeholder in v1)
+    break;
+}
+----
+
+=== Examples end-to-end
+
+- No expansion (FILTER mode):
+
+[source]
+----
+q = "realm:acme && status:active && fields:[+_id,+total]"
+----
+
+- With expansion (AGGREGATION mode):
+
+[source]
+----
+q = "expand(customer, fields:[+name,+tier]) && status:active && fields:[+_id,+customer.name]"
+----
+
+See also: xref:query-expansion.adoc[Relationship hydration with expand(path)].

@@ -897,3 +897,74 @@ To include subsidiaries via ancestor/parent relationships, either:
 - Start by adding @OntologyProperty to the most important relationships; don’t attempt to annotate everything at once.
 - Keep existing @Reference fields if you have them; use edges for query-time semantics and policy integration first.
 - Add tests that verify the loader discovered your properties (including inverses/subPropertyOf) and that queries via hasEdge behave as expected.
+
+
+
+=== Modeling guidance: annotate existing id/reference getters (keep API and DB clean)
+
+- Prefer annotating getters that already exist in your schema (String ids or existing @Reference fields). Avoid adding embedded objects solely to drive ontology.
+- If you do need a synthetic accessor purely for ontology, hide it from API docs and persistence using @JsonIgnore, @Schema(hidden = true), and @dev.morphia.annotations.Transient.
+
+Recommended pattern: annotate an existing id getter (Swagger unchanged)
+
+[source,java]
+----
+import com.e2eq.ontology.annotations.OntologyClass;
+import com.e2eq.ontology.annotations.OntologyProperty;
+import dev.morphia.annotations.Entity;
+
+@Entity
+@OntologyClass(id = "Order")
+public class Order extends UnversionedBaseModel {
+  // Existing field that is already part of your API/DB contract
+  private String customerRefName;
+
+  public String getCustomerRefName() { return customerRefName; }
+  public void setCustomerRefName(String v) { this.customerRefName = v; }
+
+  // Drives ontology edges without changing Swagger: the getter already exists and returns a String id
+  @OntologyProperty(id = "placedBy", functional = true)
+  public String customerIdForEdges() { return getCustomerRefName(); }
+}
+----
+
+Because AnnotatedEdgeExtractor treats CharSequence targets as ids, annotating a String-returning getter produces edges without introducing new embedded objects. Your Swagger/OpenAPI and persisted shape remain unchanged.
+
+Optional: use an existing @Reference instead of an id
+
+[source,java]
+----
+@Entity
+@OntologyClass(id = "Order")
+public class Order extends UnversionedBaseModel {
+  @dev.morphia.annotations.Reference
+  private Customer customer; // already in your schema
+
+  @OntologyProperty(id = "placedBy", inverseOf = "placed", functional = true)
+  public Customer getCustomer() { return customer; }
+}
+----
+
+If you must add an ontology-only accessor, hide it
+
+[source,java]
+----
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import io.swagger.v3.oas.annotations.media.Schema;
+import dev.morphia.annotations.Transient;
+
+@Entity
+@OntologyClass(id = "Order")
+public class Order extends UnversionedBaseModel {
+  private String orgRefName; // real field
+
+  // Hidden from API docs and persistence, used only to emit an ontology edge
+  @JsonIgnore
+  @Schema(hidden = true)
+  @Transient
+  @OntologyProperty(id = "placedInOrg", subPropertyOf = {"inOrg"})
+  public String placedInOrgEdge() { return orgRefName; }
+}
+----
+
+These patterns keep your REST and database contracts clear while allowing ontology materialization to happen automatically on writes.

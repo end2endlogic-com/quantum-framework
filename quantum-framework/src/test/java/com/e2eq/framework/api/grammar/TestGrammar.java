@@ -165,7 +165,7 @@ public class TestGrammar {
       f = MorphiaUtils.convertToFilter(dateTimeTsString, UserProfile.class);
       Log.infof("Value:%s", f.getValue());
 
-      dateTimeTsString = "field1:>2022-01-01T12:00:00Z"; 
+      dateTimeTsString = "field1:>2022-01-01T12:00:00Z";
       f = MorphiaUtils.convertToFilter(dateTimeTsString, UserProfile.class);
       Log.infof("Value:%s", f.getValue());
    }
@@ -176,5 +176,26 @@ public class TestGrammar {
       Filter f = MorphiaUtils.convertToFilter(queryString, UserProfile.class);
       assertNotNull(f);
       assertEquals("arrayField", f.getField());
+   }
+
+   @Test
+   public void testExpandDirectiveParsing() {
+      String[] samples = new String[] {
+         "expand(customer)",
+         "expand(items[*].product)",
+         "expand(patient.visits[*].diagnoses[*])"
+      };
+      for (String q : samples) {
+         BIAPIQueryLexer lexer = new BIAPIQueryLexer(CharStreams.fromString(q));
+         BIAPIQueryParser parser = new BIAPIQueryParser(new CommonTokenStream(lexer));
+         parser.addErrorListener(new BaseErrorListener() {
+            @Override
+            public void syntaxError(Recognizer<?, ?> recognizer, Object offendingSymbol, int line,
+                                    int charPositionInLine, String msg, RecognitionException e) {
+               throw new IllegalStateException("failed to parse due to " + msg, e);
+            }
+         });
+         parser.query();
+      }
    }
 }
