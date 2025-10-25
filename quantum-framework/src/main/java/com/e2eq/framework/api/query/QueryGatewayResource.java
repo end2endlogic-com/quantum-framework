@@ -2,6 +2,7 @@ package com.e2eq.framework.api.query;
 
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
+import com.e2eq.framework.model.persistent.morphia.planner.LogicalPlan;
 import com.e2eq.framework.model.persistent.morphia.planner.PlannedQuery;
 import com.e2eq.framework.model.persistent.morphia.planner.PlannerResult;
 import com.e2eq.framework.model.persistent.morphia.query.QueryGateway;
@@ -28,7 +29,7 @@ import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
 /**
  * REST facade for the planner-driven query path.
  * - POST /api/query/plan: returns planner mode and expand paths.
- * - POST /api/query/find: executes query in FILTER mode and returns Collection<T>.
+ * - POST /api/query/find: executes query in FILTER mode and returns Collection
  *   If AGGREGATION mode is selected, returns 501 until aggregation compiler is implemented.
  */
 @Path("/api/query")
@@ -64,7 +65,7 @@ public class QueryGatewayResource {
     public Response find(FindRequest req) {
         Class<? extends UnversionedBaseModel> root = resolveRoot(req.rootType);
         // Build planned query, passing paging/sort through so the compiler can emit root stages
-        java.util.List<com.e2eq.framework.model.persistent.morphia.planner.LogicalPlan.SortSpec.Field> sortFields = null;
+        java.util.List<LogicalPlan.SortSpec.Field> sortFields = null;
         if (req.sort != null && !req.sort.isEmpty()) {
             sortFields = new java.util.ArrayList<>();
             for (SortSpec s : req.sort) {
