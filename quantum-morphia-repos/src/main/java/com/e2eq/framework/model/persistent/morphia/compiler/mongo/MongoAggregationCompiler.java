@@ -21,6 +21,33 @@ public class MongoAggregationCompiler {
         List<String> paths = plan.expansions.stream().map(e -> e.path).toList();
         pipeline.add(new Document("$plannedExpandPaths", paths));
 
+        // 1.25) Root $match from simple filters (when available). Insert before sort/limit.
+        Document match = toMatch(plan.rootFilter);
+        if (match != null && !match.isEmpty()) {
+            pipeline.add(new Document("$match", match));
+        }
+
+        // 1.5) Root stages: $sort → $skip → $limit (apply before lookups when present)
+        if (plan.sort != null && plan.sort.fields != null && !plan.sort.fields.isEmpty()) {
+            Document sort = new Document();
+            for (LogicalPlan.SortSpec.Field f : plan.sort.fields) {
+                if (f != null && f.name != null && !f.name.isBlank()) {
+                    sort.append(f.name, f.dir >= 0 ? 1 : -1);
+                }
+            }
+            if (!sort.isEmpty()) {
+                pipeline.add(new Document("$sort", sort));
+            }
+        }
+        if (plan.page != null) {
+            if (plan.page.skip != null && plan.page.skip > 0) {
+                pipeline.add(new Document("$skip", plan.page.skip));
+            }
+            if (plan.page.limit != null && plan.page.limit > 0) {
+                pipeline.add(new Document("$limit", plan.page.limit));
+            }
+        }
+
         // 2) Append per-expand stages (single-hop only)
         for (LogicalPlan.Expand e : plan.expansions) {
             String path = e.path;
@@ -79,8 +106,74 @@ public class MongoAggregationCompiler {
             pipeline.add(new Document("$project", new Document(temp, 0)));
         }
 
-        // Root projection (if any) would be appended here in a future iteration
+        // Root projection (if any)
+        if (plan.rootProjection != null) {
+            Document projDoc = new Document();
+            if (plan.rootProjection.includeMode) {
+                for (String inc : plan.rootProjection.include) {
+                    projDoc.append(inc, 1);
+                }
+                for (String exc : plan.rootProjection.exclude) {
+                    projDoc.append(exc, 0);
+                }
+                // preserve default _id unless explicitly excluded or included
+                if (!projDoc.containsKey("_id")) {
+                    projDoc.append("_id", 1);
+                }
+            } else {
+                for (String exc : plan.rootProjection.exclude) {
+                    projDoc.append(exc, 0);
+                }
+            }
+            if (!projDoc.isEmpty()) {
+                pipeline.add(new Document("$project", projDoc));
+            }
+        }
         return pipeline;
+    }
+
+    // Minimal translator for common Morphia Filter operators to $match
+    private Document toMatch(dev.morphia.query.filters.Filter filter) {
+        if (filter == null) return null;
+        try {
+            String name = filter.getName();
+            String field = filter.getField();
+            Object value = filter.getValue();
+            if (name == null) return new Document();
+            // Equality can be emitted as direct field match for simplicity
+            switch (name) {
+                case "$eq":
+                    return new Document(field, value);
+                case "$ne":
+                    return new Document(field, new Document("$ne", value));
+                case "$gt":
+                    return new Document(field, new Document("$gt", value));
+                case "$gte":
+                    return new Document(field, new Document("$gte", value));
+                case "$lt":
+                    return new Document(field, new Document("$lt", value));
+                case "$lte":
+                    return new Document(field, new Document("$lte", value));
+                case "$in":
+                    return new Document(field, new Document("$in", value));
+                case "$nin":
+                    return new Document(field, new Document("$nin", value));
+                case "$exists":
+                    return new Document(field, new Document("$exists", value));
+                default:
+                    // Special handling for RegexFilter (Morphia)
+                    if (filter instanceof dev.morphia.query.filters.RegexFilter rf) {
+                        String f = rf.getField();
+                        Object v = rf.getValue();
+                        return new Document(f, new Document("$regex", v));
+                    }
+                    // Fallback: return empty to avoid emitting an invalid $match
+                    return new Document();
+            }
+        } catch (Throwable t) {
+            // Be conservative: on any unexpected shape, skip $match
+            return new Document();
+        }
     }
 
     private static String tempAlias(String path) {

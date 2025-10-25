@@ -84,7 +84,7 @@ public class QueryGatewayResourceIT {
             .body("limit", is(10))
             .body("filter", is("displayName:*Alice*"));
 
-        // Aggregation mode not implemented: expect 501
+        // Aggregation with unresolved target collection should return 422 (since feature flag is on in tests)
         body.put("query", "expand(customer) && status:active");
         given()
             .contentType(ContentType.JSON)
@@ -92,7 +92,7 @@ public class QueryGatewayResourceIT {
         .when()
             .post("/api/query/find")
         .then()
-            .statusCode(501)
-            .body("error", is("NotImplemented"));
+            .statusCode(422)
+            .body("error", is("UnresolvedCollection"));
     }
 }
