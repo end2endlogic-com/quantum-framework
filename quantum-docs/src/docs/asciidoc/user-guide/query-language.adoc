@@ -524,3 +524,103 @@ Policy function hasEdge()
 - When present in a policy, the repository typically applies it by calling ListQueryRewriter.rewriteForHasEdge(...), which constrains results by the set of IDs that have the specified ontology edge.
 - See xref:permissions.adoc#rule-hasedge[Rule language: add hasEdge()] for signature, semantics, and a full end-to-end example.
 ====
+
+
+
+=== Relationships and Ontology-aware Queries
+
+==== Hydrating related data with expand(path)
+
+The query language supports a compact, non-SQL directive to request hydration (materialization) of related entities referenced by the root documents.
+
+- Syntax: `expand(path)`
+- Path: a dotted path; array segments may use `[*]` to indicate an array of references.
+- Examples:
++
+[source]
+----
+# Single reference
+expand(customer)
+
+# Array of references
+expand(items[*].product)
+
+# Nested paths (bounded by first non-reference boundary)
+expand(patient.visits[*].diagnoses[*])
+----
+
+Semantics
+
+- Presence of `expand(...)` informs the planner to choose an aggregation-based execution plan (e.g., MongoDB $lookup) rather than a simple single-collection filter.
+- Filters remain expressed with the existing primitives and compose as usual. For example:
++
+[source]
+----
+# Filter roots by status AND hydrate the related customer
+expand(customer) && status:active
+----
+
+Notes and limits (v1)
+
+- Backend: MongoDB only in this release. The planner selects aggregation mode when `expand(...)` appears.
+- Depth: for mixed arrays/objects, traversal stops at the first non-reference boundary.
+- Projection: a concise projection form `fields:[+a,+b,-c]` can be used at the root (see below). Per-expansion projections and related-entity filters are documented in xref:query-expansion.adoc[Query Expansion] and may be introduced incrementally.
+- Errors: unknown projection paths (when using `fields:[…]`) are hard errors.
+
+See also
+
+- xref:query-expansion.adoc[Query Expansion] for more examples and planner behavior.
+- xref:planner-and-query-gateway.adoc[Planner and QueryGateway] for how execution mode is chosen.
+
+
+==== Ontology operator: hasEdge(predicate, dst)
+
+When the ontology module is enabled and edges are materialized, you can constrain results by semantic relationships using `hasEdge`.
+
+- Syntax: `hasEdge(predicate, dst)` where
+  - `predicate` is a string (unquoted or quoted)
+  - `dst` can be a literal id, a variable like `${principalId}`, an ObjectId, or a reference literal `@@...`
+- Examples:
++
+[source]
+----
+# Orders placed in a specific organization
+hasEdge("placedInOrg", ${orgRefName})
+
+# Tickets routed to a region by id
+hasEdge("routedToRegion", 507f1f77bcf86cd799439011)
+----
+
+Semantics
+
+- `hasEdge` narrows the result set to entities that have the specified ontology edge from the entity (source) to the destination id/value.
+- It composes with other filters using `&&`, `||`, and `!!` like any other expression.
+- Tenancy: edge resolution is always scoped by tenant/realm per your configuration.
+
+See also
+
+- xref:permissions.adoc#rule-hasedge[Rule language: add hasEdge()] for a deep dive and policy usage.
+- xref:ontology.adoc#ontology-integration-morphia-permissions[Ontology integration] for repository wiring and examples.
+
+
+==== Root projection recap: fields:[+…,-…]
+
+To include or exclude fields from the root documents:
+
+- Syntax: `fields:[+f1,+f2,-f3]`
+- Include mode: if any `+` is present, only the listed fields are included (with explicit `-` carving out exceptions).
+- Exclude mode: if only `-` entries exist, all fields are included except those.
+- Default `_id`: preserved unless explicitly specified (`+_id`/`-_id`).
+
+Examples
+
+[source]
+----
+# Include a few fields from the root and drop one
+fields:[+_id,+total,-internalNotes]
+
+# Combine with expansion (planner chooses aggregation mode)
+expand(customer) && fields:[+_id,+customer,+total]
+----
+
+For per-expansion projections and advanced traversal filters, see xref:query-expansion.adoc[Query Expansion].

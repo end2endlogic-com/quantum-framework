@@ -112,6 +112,81 @@ Walkthrough: Add query endpoints and test filters/security.
 
 include::../user-guide/query-language.adoc[leveloffset=+1]
 
+=== Hands-on: Relationships and Ontology-aware queries
+
+In addition to basic filters, the query layer supports relationship hydration and ontology-aware constraints.
+These features are MongoDB-first in this release and remain backward compatible:
+- If you don't use them, behavior is unchanged.
+- When you do, the planner may choose a Mongo aggregation under the hood.
+
+==== Hydrate related data with expand(path)
+
+Use expand(path) to materialize related entities referenced by your root documents. Paths are dotted and can include array wildcards [*].
+
+Examples:
+
+[source]
+----
+# Single reference
+expand(customer)
+
+# Array of references in an items array
+expand(items[*].product)
+
+# Nested arrays (bounded by the first non-reference boundary)
+expand(patient.visits[*].diagnoses[*])
+----
+
+Combine with normal filters and projection:
+
+[source]
+----
+q = "realm:acme && expand(customer, fields:[+name,+tier]) && fields:[+_id,+total,+customer.name]"
+----
+
+Notes:
+- Depth on mixed arrays/objects stops at the first non-reference boundary.
+- Unknown projection paths are hard errors.
+
+See: xref:../user-guide/query-expansion.adoc[Query Expansion] for more patterns and semantics.
+
+==== Ontology: constrain by relationships with hasEdge(predicate, dst)
+
+When the ontology module is enabled and edges are materialized, you can filter by semantic relationships using hasEdge.
+
+Examples:
+
+[source]
+----
+# Orders placed in a specific organization
+hasEdge("placedInOrg", ${orgRefName})
+
+# Tickets routed to a region by id
+hasEdge("routedToRegion", 507f1f77bcf86cd799439011)
+----
+
+Tenancy is always applied when resolving edges. See:
+- xref:../user-guide/permissions.adoc#rule-hasedge[Permissions: hasEdge rule]
+- xref:../user-guide/query-language.adoc#ontology-query-language[Ontology in queries]
+
+==== Inspect the planner with QueryGateway
+
+You can inspect how a query will execute (FILTER vs AGGREGATION) using the new QueryGateway facade.
+
+[source,java]
+----
+import com.e2eq.framework.model.persistent.morphia.query.QueryGateway;
+import com.e2eq.framework.model.persistent.morphia.query.QueryGatewayImpl;
+import com.e2eq.framework.model.persistent.morphia.planner.PlannerResult;
+
+QueryGateway gateway = new QueryGatewayImpl();
+PlannerResult pr = gateway.plan("expand(customer) && status:active", Order.class);
+// pr.getMode() == PlannerResult.Mode.AGGREGATION
+// pr.getExpandPaths() == ["customer"]
+----
+
+For lower-level control, use MorphiaUtils.convertToPlannedQuery(...). See: xref:../user-guide/planner-and-query-gateway.adoc[Planner and QueryGateway].
+
 [[sec-security]]
 == 8. Authentication, permissions, and annotations
 

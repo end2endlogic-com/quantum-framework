@@ -3,6 +3,7 @@ package com.e2eq.framework.model.security;
 
 import com.e2eq.framework.model.persistent.base.BaseModel;
 import com.e2eq.framework.model.persistent.base.EntityReference;
+import com.e2eq.framework.model.persistent.base.ReferenceTarget;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import dev.morphia.annotations.Entity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
@@ -44,6 +45,7 @@ public  class UserProfile extends BaseModel {
     @JsonProperty(required = true)
     @NotNull (message = "credential reference must not be null")
     @NonNull
+    @ReferenceTarget(target = com.e2eq.framework.model.security.CredentialUserIdPassword.class)
     protected EntityReference credentialUserIdPasswordRef;
     protected String userId;
 
