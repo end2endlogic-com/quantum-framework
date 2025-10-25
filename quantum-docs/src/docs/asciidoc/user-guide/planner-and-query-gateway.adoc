@@ -69,3 +69,50 @@ q = "expand(customer, fields:[+name,+tier]) && status:active && fields:[+_id,+cu
 ----
 
 See also: xref:query-expansion.adoc[Relationship hydration with expand(path)].
+
+=== REST endpoints (v1)
+
+Two helper endpoints expose the planner and execution in FILTER mode:
+
+- POST /api/query/plan — returns planner mode and expand paths
+- POST /api/query/find — executes FILTER-mode queries and returns the standard Collection<T> envelope; returns 501 when AGGREGATION is requested (until aggregation compiler is enabled)
+
+.Request: plan
+[source,json]
+----
+{
+  "rootType": "com.e2eq.framework.model.security.UserProfile",
+  "query": "expand(customer) && status:active"
+}
+----
+
+.Response: plan
+[source,json]
+----
+{
+  "mode": "AGGREGATION",
+  "expandPaths": ["customer"]
+}
+----
+
+.Request: find (FILTER mode)
+[source,json]
+----
+{
+  "rootType": "com.e2eq.framework.model.security.UserProfile",
+  "query": "displayName:*Alice*",
+  "page": { "limit": 10, "skip": 0 }
+}
+----
+
+.Response: find (Collection envelope)
+[source,json]
+----
+{
+  "offset": 0,
+  "limit": 10,
+  "rows": [ { "displayName": "Alice T", "refName": "alice" } ],
+  "rowCount": 1,
+  "filter": "displayName:*Alice*"
+}
+----
