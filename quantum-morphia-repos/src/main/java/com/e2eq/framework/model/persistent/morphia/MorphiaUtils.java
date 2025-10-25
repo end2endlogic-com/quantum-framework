@@ -94,6 +94,21 @@ public class MorphiaUtils {
       return planner.plan(queryString, modelClass);
    }
 
+   /**
+    * Overload that accepts paging and sort for aggregation planning.
+    */
+   public static <T extends UnversionedBaseModel> com.e2eq.framework.model.persistent.morphia.planner.PlannedQuery convertToPlannedQuery(
+           String queryString,
+           Class<T> modelClass,
+           Integer limit,
+           Integer skip,
+           java.util.List<com.e2eq.framework.model.persistent.morphia.planner.LogicalPlan.SortSpec.Field> sortFields
+   ) {
+      com.e2eq.framework.model.persistent.morphia.planner.QueryPlanner planner =
+              new com.e2eq.framework.model.persistent.morphia.planner.QueryPlanner();
+      return planner.plan(queryString, modelClass, limit, skip, sortFields);
+   }
+
    public static Map<String, String> createStandardVariableMapFrom(PrincipalContext pcontext, ResourceContext rcontext) {
       Map<String, String> variableMap = new HashMap<>();
       variableMap.put("principalId", pcontext.getUserId());

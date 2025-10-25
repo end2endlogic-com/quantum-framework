@@ -63,7 +63,19 @@ public class QueryGatewayResource {
     @Path("/find")
     public Response find(FindRequest req) {
         Class<? extends UnversionedBaseModel> root = resolveRoot(req.rootType);
-        PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(req.query, root);
+        // Build planned query, passing paging/sort through so the compiler can emit root stages
+        java.util.List<com.e2eq.framework.model.persistent.morphia.planner.LogicalPlan.SortSpec.Field> sortFields = null;
+        if (req.sort != null && !req.sort.isEmpty()) {
+            sortFields = new java.util.ArrayList<>();
+            for (SortSpec s : req.sort) {
+                if (s == null || s.field == null || s.field.isBlank()) continue;
+                int dir = (s.dir != null && s.dir.equalsIgnoreCase("DESC")) ? -1 : 1;
+                sortFields.add(new com.e2eq.framework.model.persistent.morphia.planner.LogicalPlan.SortSpec.Field(s.field, dir));
+            }
+        }
+        Integer limit = (req.page != null) ? req.page.limit : null;
+        Integer skip = (req.page != null) ? req.page.skip : null;
+        PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(req.query, root, limit, skip, sortFields);
         if (planned.getMode() == PlannerResult.Mode.AGGREGATION) {
             if (!aggregationExecutionEnabled) {
                 Map<String, Object> body = new HashMap<>();
@@ -85,11 +97,31 @@ public class QueryGatewayResource {
                 body.put("message", "Aggregation pipeline contains an unresolved $lookup.from. MetadataRegistry must resolve target collections.");
                 return Response.status(422).entity(body).build();
             }
-            // Until full execution wiring is implemented, return 501 to avoid partial behavior
-            Map<String, Object> body = new HashMap<>();
-            body.put("error", "NotImplemented");
-            body.put("message", "Aggregation execution path is under construction. Use /plan for now.");
-            return Response.status(Response.Status.NOT_IMPLEMENTED).entity(body).build();
+            // Execute aggregation pipeline against the root collection
+            String realm = (req.realm == null || req.realm.isBlank()) ? defaultRealm : req.realm;
+            Datastore ds = morphiaDataStore.getDataStore(realm);
+            String rootCollection = resolveCollectionName(root);
+
+            // Strip out non-executable marker stages and build a clean pipeline
+            List<org.bson.conversions.Bson> clean = new java.util.ArrayList<>();
+            for (org.bson.conversions.Bson s : pipeline) {
+                if (s instanceof org.bson.Document d && d.containsKey("$plannedExpandPaths")) {
+                    continue; // drop marker
+                }
+                clean.add(s);
+            }
+
+            // Determine paging values for the Collection envelope
+            int effLimit = (limit != null) ? limit : 50;
+            int effSkip = (skip != null) ? skip : 0;
+
+            // Run aggregation and wrap results
+            List<org.bson.Document> rows = ds.getDatabase()
+                    .getCollection(rootCollection)
+                    .aggregate(clean, org.bson.Document.class)
+                    .into(new java.util.ArrayList<>());
+            Collection<org.bson.Document> col = new Collection<>(rows, effSkip, effLimit, req.query);
+            return Response.ok(col).build();
         }
         // FILTER path using Morphia
         String realm = (req.realm == null || req.realm.isBlank()) ? defaultRealm : req.realm;
@@ -98,12 +130,20 @@ public class QueryGatewayResource {
         if (planned.getFilter() != null) {
             q = q.filter(planned.getFilter());
         }
-        int limit = req.page != null && req.page.limit != null ? req.page.limit : 50;
-        int skip = req.page != null && req.page.skip != null ? req.page.skip : 0;
-        FindOptions fo = new FindOptions().limit(limit).skip(skip);
+        int fLimit = req.page != null && req.page.limit != null ? req.page.limit : 50;
+        int fSkip = req.page != null && req.page.skip != null ? req.page.skip : 0;
+        FindOptions fo = new FindOptions().limit(fLimit).skip(fSkip);
         List<?> rows = q.iterator(fo).toList();
-        Collection<?> col = new Collection<>(rows, skip, limit, req.query);
+        Collection<?> col = new Collection<>(rows, fSkip, fLimit, req.query);
         return Response.ok(col).build();
+    }
+
+    private String resolveCollectionName(Class<? extends UnversionedBaseModel> root) {
+        dev.morphia.annotations.Entity e = root.getAnnotation(dev.morphia.annotations.Entity.class);
+        if (e != null && e.value() != null && !e.value().isBlank()) {
+            return e.value();
+        }
+        return root.getSimpleName();
     }
 
     @SuppressWarnings("unchecked")
@@ -135,7 +175,10 @@ public class QueryGatewayResource {
         public String query;
         public Page page;
         public String realm; // optional; if absent default realm is used
+        public java.util.List<SortSpec> sort; // optional; if present, applied; query string sort takes precedence when parsed in future
     }
     @RegisterForReflection
     public static class Page { public Integer limit; public Integer skip; }
+    @RegisterForReflection
+    public static class SortSpec { public String field; public String dir; } // dir: ASC|DESC
 }
