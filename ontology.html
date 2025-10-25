@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-10-22T01:39:23Z</span>
+<span id="revdate">2025-10-25T02:25:04Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -554,11 +554,47 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_rule_language_add_hasedge">3.2. Rule language: add hasEdge()</a></li>
 <li><a href="#_passing_tenantid_correctly">3.3. Passing tenantId correctly</a></li>
 <li><a href="#_morphia_repository_integration_patterns">3.4. Morphia repository integration patterns</a></li>
-<li><a href="#_where_to_hook_materialization">3.5. Where to hook materialization</a></li>
+<li><a href="#_where_ontology_materialization_happens">3.5. Where ontology materialization happens</a>
+<ul class="sectlevel3">
+<li><a href="#_configuration">3.5.1. Configuration</a></li>
+<li><a href="#_example_annotate_and_save_edges_are_materialized_automatically">3.5.2. Example: annotate and save — edges are materialized automatically</a></li>
+</ul>
+</li>
 <li><a href="#_security_and_multi_tenant_considerations">3.6. Security and multi-tenant considerations</a></li>
 <li><a href="#_developer_workflow_and_dx_checklist">3.7. Developer workflow and DX checklist</a></li>
 <li><a href="#_cookbook_end_to_end_example_with_orders_org">3.8. Cookbook: end-to-end example with Orders + Org</a></li>
 <li><a href="#_migration_notes_for_teams_using_reference">3.9. Migration notes for teams using @Reference</a></li>
+</ul>
+</li>
+<li><a href="#_primer_first_time_guide_to_core_relationship_semantics">4. Primer: First-time guide to core relationship semantics</a></li>
+<li><a href="#_new_ontology_features_in_this_release">5. New ontology features in this release</a>
+<ul class="sectlevel2">
+<li><a href="#_feature_overview">5.1. Feature overview</a></li>
+<li><a href="#_business_problems_solved">5.2. Business problems solved</a></li>
+<li><a href="#_how_to_code_it_with_current_apis">5.3. How to code it with current APIs</a>
+<ul class="sectlevel3">
+<li><a href="#_1_define_ontology_programmatic_tbox">5.3.1. 1) Define ontology (programmatic TBox)</a></li>
+<li><a href="#_2_materialize_inferences_when_data_changes">5.3.2. 2) Materialize inferences when data changes</a></li>
+<li><a href="#_3_query_with_listqueryrewriter_quarkusmorphia">5.3.3. 3) Query with ListQueryRewriter (Quarkus/Morphia)</a></li>
+<li><a href="#_functional_properties_at_write_time">5.3.4. Functional properties at write time</a></li>
+</ul>
+</li>
+<li><a href="#_backward_compatibility_and_migration">5.4. Backward compatibility and migration</a></li>
+<li><a href="#_troubleshooting_and_tips">5.5. Troubleshooting and tips</a></li>
+</ul>
+</li>
+<li><a href="#_model_first_ontology_with_annotations_and_morphiaontologyloader">6. Model-first ontology with annotations and MorphiaOntologyLoader</a>
+<ul class="sectlevel2">
+<li><a href="#_why_model_first">6.1. Why model-first?</a></li>
+<li><a href="#_annotations_overview">6.2. Annotations overview</a></li>
+<li><a href="#_example_orders_placed_in_an_organization_e_commerce">6.3. Example: Orders placed in an Organization (e-commerce)</a></li>
+<li><a href="#_how_the_registry_is_produced_quarkus_cdi">6.4. How the registry is produced (Quarkus CDI)</a></li>
+<li><a href="#_materializing_inferences_from_annotated_models">6.5. Materializing inferences from annotated models</a></li>
+<li><a href="#_querying_using_listqueryrewriter_unchanged">6.6. Querying using ListQueryRewriter (unchanged)</a></li>
+<li><a href="#_business_case_recipes_with_annotations">6.7. Business case recipes with annotations</a></li>
+<li><a href="#_troubleshooting">6.8. Troubleshooting</a></li>
+<li><a href="#_migration_strategy">6.9. Migration strategy</a></li>
+<li><a href="#_modeling_guidance_annotate_existing_idreference_getters_keep_api_and_db_clean">6.10. Modeling guidance: annotate existing id/reference getters (keep API and DB clean)</a></li>
 </ul>
 </li>
 </ul>
@@ -1323,7 +1359,7 @@ Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, <span class="string"
 </ul>
 </div>
 <div class="paragraph">
-<p>Under the hood, policy evaluation uses ListQueryRewriter.rewriteForHasEdge(&#8230;&#8203;), which converts hasEdge into a set of source ids and merges that with the base query.</p>
+<p>Under the hood, policy evaluation uses ListQueryRewriter.hasEdge(&#8230;&#8203;), which converts hasEdge into a Morphia Filter limiting _id to the allowed source ids; compose it with your base filter via Filters.and(&#8230;&#8203;).</p>
 </div>
 </div>
 <div class="sect2">
@@ -1415,28 +1451,72 @@ query.filter(Filters.in(<span class="string"><span class="delimiter">&quot;</spa
 </div>
 </div>
 <div class="sect2">
-<h3 id="_where_to_hook_materialization">3.5. Where to hook materialization</h3>
+<h3 id="_where_ontology_materialization_happens">3.5. Where ontology materialization happens</h3>
 <div class="ulist">
 <ul>
 <li>
-<p>On entity changes that are sources or intermediates for chains:</p>
+<p>Automatic on write via repository hook:</p>
 </li>
 <li>
-<p>Order (placedBy, orderHasShipment), Customer (memberOf), Shipment (shipsTo), Address (locatedIn), Organization (ancestorOf/parent), and any Fulfillment/Returns entities.</p>
+<p>When you save or update an entity, the framework runs an internal PostPersistHook (OntologyWriteHook) that:</p>
 </li>
 <li>
-<p>Recommended patterns:</p>
+<p>extracts explicit edges from fields/getters annotated with @OntologyProperty using a startup-built metadata cache (no per-call reflection), and</p>
 </li>
 <li>
-<p>On-save/on-update hooks in your service layer call OntologyMaterializer.apply(&#8230;&#8203;) with the explicit edges known from the entity snapshot.</p>
+<p>calls OntologyMaterializer to infer inverse, transitive, symmetric, and super-property edges and upsert them to the edges collection.</p>
 </li>
 <li>
-<p>For intermediates (e.g., Address.region changed), enqueue affected sources for recomputation; use provenance to locate impacted edges.</p>
+<p>This is enabled by default. To disable temporarily (e.g., for bulk loads), set: ontology.auto-materialize=false</p>
+</li>
+<li>
+<p>Intermediates and re-materialization:</p>
+</li>
+<li>
+<p>If you change entities that are not the source but affect chains (e.g., Address.region, Customer.memberOf), those sources will get updated the next time they are saved. For immediate consistency across a tenant, run the re-materialization job (see below).</p>
 </li>
 <li>
 <p>Provide nightly/backfill jobs for recomputing edges across a tenant when ontology rules evolve.</p>
 </li>
 </ul>
+</div>
+<div class="sect3">
+<h4 id="_configuration">3.5.1. Configuration</h4>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="properties"># default is true
+ontology.auto-materialize=true</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_example_annotate_and_save_edges_are_materialized_automatically">3.5.2. Example: annotate and save — edges are materialized automatically</h4>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@OntologyClass</span>(id = <span class="string"><span class="delimiter">&quot;</span><span class="content">Order</span><span class="delimiter">&quot;</span></span>)
+<span class="directive">public</span> <span class="type">class</span> <span class="class">Order</span> {
+  <span class="directive">private</span> <span class="predefined-type">String</span> refName;
+
+  <span class="annotation">@OntologyProperty</span>(id = <span class="string"><span class="delimiter">&quot;</span><span class="content">placedBy</span><span class="delimiter">&quot;</span></span>, functional = <span class="predefined-constant">true</span>)
+  <span class="directive">public</span> Customer getCustomer() { <span class="keyword">return</span> customer; }
+}
+
+<span class="annotation">@OntologyClass</span>(id = <span class="string"><span class="delimiter">&quot;</span><span class="content">Customer</span><span class="delimiter">&quot;</span></span>)
+<span class="directive">public</span> <span class="type">class</span> <span class="class">Customer</span> {
+  <span class="directive">private</span> <span class="predefined-type">String</span> refName;
+
+  <span class="annotation">@OntologyProperty</span>(id = <span class="string"><span class="delimiter">&quot;</span><span class="content">memberOf</span><span class="delimiter">&quot;</span></span>)
+  <span class="directive">public</span> Organization getOrg() { <span class="keyword">return</span> org; }
+}</code></pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Saving an Order will automatically create explicit placedBy and, via chains/inference, placedInOrg and inverse edges as defined in your ontology registry. No manual calls to OntologyMaterializer.apply(&#8230;&#8203;) are required.</p>
+</li>
+</ul>
+</div>
 </div>
 </div>
 <div class="sect2">
@@ -1513,11 +1593,780 @@ query.filter(Filters.in(<span class="string"><span class="delimiter">&quot;</spa
 </div>
 </div>
 </div>
+<div class="sect1">
+<h2 id="_primer_first_time_guide_to_core_relationship_semantics">4. Primer: First-time guide to core relationship semantics</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>If you are new to ontology terms, the following quick explanations will help you build intuition. Each concept explains what it means, a tiny example, and how it affects queries using hasEdge.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Functional property</p>
+</li>
+<li>
+<p>What it means: For a given source entity, there is at most one target for this property. Think “single-valued.”</p>
+</li>
+<li>
+<p>Example: placedBy(Order, Customer) is functional because an Order is placed by exactly one Customer.</p>
+</li>
+<li>
+<p>Why it matters: On writes, the latest value replaces any previous one. In storage, you can enforce uniqueness for (tenantId, src, p). Queries are simpler because there’s at most one matching edge per source.</p>
+</li>
+<li>
+<p>In practice: When you save an Order with a different placedBy, the old edge is replaced so hasEdge("placedBy", customerX) reflects the latest truth.</p>
+</li>
+<li>
+<p>Transitive property</p>
+</li>
+<li>
+<p>What it means: The relationship “chains through” intermediates. If A relates-to B and B relates-to C with the same property p, then A relates-to C by p as well.</p>
+</li>
+<li>
+<p>Example: ancestorOf(Org, Org) is transitive: OrgA ancestorOf OrgB and OrgB ancestorOf OrgC implies OrgA ancestorOf OrgC.</p>
+</li>
+<li>
+<p>Why it matters: You can answer reachability questions without specifying every hop. The system can materialize or compute the closure so queries like hasEdge("ancestorOf", OrgC) return OrgA even if the path is multiple hops.</p>
+</li>
+<li>
+<p>In practice: Use transitive for hierarchies like parent/ancestor, partOf, locatedIn, reportsTo.</p>
+</li>
+<li>
+<p>subPropertyOf (property hierarchy)</p>
+</li>
+<li>
+<p>What it means: One property is a more specific form of another. If p ⊑ q (“p is a sub-property of q”), then every (s, p, o) also counts as (s, q, o).</p>
+</li>
+<li>
+<p>Example: placedInOrg ⊑ inOrg. If an Order is placedInOrg ACME, then it is also inOrg ACME.</p>
+</li>
+<li>
+<p>Why it matters: Queries written against the broader property (q) automatically include results from all its specializations (p). The system may materialize the super-property edges for performance.</p>
+</li>
+<li>
+<p>In practice: You can write policies/queries once for inOrg and still match edges stored as placedInOrg.</p>
+</li>
+<li>
+<p>inverseOf (inverse properties)</p>
+</li>
+<li>
+<p>What it means: Two properties point in opposite directions. If p is the inverse of q, then (s, p, o) implies (o, q, s).</p>
+</li>
+<li>
+<p>Example: parentOf ⇄ childOf. If OrgA parentOf OrgB, then OrgB childOf OrgA.</p>
+</li>
+<li>
+<p>Why it matters: You only need to assert one direction; the system can infer the other. Queries can use whichever direction is natural.</p>
+</li>
+<li>
+<p>In practice: If you stored parentOf, you can still query with hasEdge("childOf", OrgA) and find OrgB once inverses are materialized.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Putting it together
+- These traits combine. For example, placedInOrg can be declared a subPropertyOf inOrg; ancestorOf can be transitive; parentOf and childOf can be inverses. The reasoner uses these facts to materialize convenient edges so your queries remain simple and fast.
+- Your application code typically continues to use the same three query helpers: hasEdge, hasEdgeAny, notHasEdge. The richer semantics affect which edges exist, not how you call them.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_new_ontology_features_in_this_release">5. New ontology features in this release</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>This release expands the ontology engine and query integration to support a richer, OWL‑RL–inspired subset while keeping the developer experience simple and backward compatible. The following capabilities are now available and used transparently by the materializer and query rewriter:</p>
+</div>
+<div class="sect2">
+<h3 id="_feature_overview">5.1. Feature overview</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>subClassOf (class hierarchy)</p>
+</li>
+<li>
+<p>Model taxonomies (e.g., Order ⊑ Entity, Employee ⊑ Person). Used for validation and optional type filters.</p>
+</li>
+<li>
+<p>subPropertyOf (property hierarchy)</p>
+</li>
+<li>
+<p>If p ⊑ q and you assert (s, p, o), the system materializes (s, q, o). Queries on q will match p’s edges as well.</p>
+</li>
+<li>
+<p>inverse properties</p>
+</li>
+<li>
+<p>If p is the inverse of q, asserting (s, p, o) will materialize (o, q, s). Example: parentOf ⇄ childOf.</p>
+</li>
+<li>
+<p>symmetric properties</p>
+</li>
+<li>
+<p>For symmetric p, asserting (s, p, o) materializes (o, p, s). Example: peerOf between organizations.</p>
+</li>
+<li>
+<p>transitive properties</p>
+</li>
+<li>
+<p>For transitive p, if (s, p, m) and (m, p, o) then (s, p, o) is inferred. Typical for ancestorOf, partOf, locatedIn, memberOf within hierarchical contexts.</p>
+</li>
+<li>
+<p>functional properties</p>
+</li>
+<li>
+<p>For functional p, each source s has at most one destination o. Upserts replace the prior value. Useful for single-valued relations like placedBy on Order.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>All inferred edges carry inferred=true and provenance containing the rule used (e.g., transitive, inverse, subPropertyOf). These edges live in the same collection and are fully queryable.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_business_problems_solved">5.2. Business problems solved</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>E‑commerce organizational access</p>
+</li>
+<li>
+<p>Problem: “Show me all orders placed in ACME (including subsidiaries).”</p>
+</li>
+<li>
+<p>Solution: Define placedBy, memberOf, placedInOrg with chain placedBy ∘ memberOf ⇒ placedInOrg, and make ancestorOf transitive. Either materialize closure with a chain placedInOrg ∘ ancestorOf ⇒ placedInOrg or use p being transitive. Queries use hasEdge("placedInOrg", orgId).</p>
+</li>
+<li>
+<p>HR management</p>
+</li>
+<li>
+<p>Problem: “List employees who report to VP_X directly or indirectly.”</p>
+</li>
+<li>
+<p>Solution: Define reportsTo as transitive. Query hasEdge("reportsTo", "VP_X").</p>
+</li>
+<li>
+<p>Third‑party and data lineage</p>
+</li>
+<li>
+<p>Problem: “Which datasets are derived from Source S?”</p>
+</li>
+<li>
+<p>Solution: Define derivedFrom as transitive and inverse derivedInto. Record symmetric peerOf for bidirectional partnerships where relevant.</p>
+</li>
+<li>
+<p>Supplier networks (supply chain)</p>
+</li>
+<li>
+<p>Problem: “Find parts supplied by a vendor’s parent company’s peers.”</p>
+</li>
+<li>
+<p>Solution: Use subPropertyOf to roll up specialized edges into a common supplies predicate, define parentOf/childOf inverses, and peerOf symmetric at the org level.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_how_to_code_it_with_current_apis">5.3. How to code it with current APIs</h3>
+<div class="paragraph">
+<p>Below are concise examples showing how to define the ontology, materialize inferences, and query with existing components. These mirror the types already present in this repository and require no grammar changes.</p>
+</div>
+<div class="sect3">
+<h4 id="_1_define_ontology_programmatic_tbox">5.3.1. 1) Define ontology (programmatic TBox)</h4>
+<div class="paragraph">
+<p>Java (at startup, e.g., in a CDI producer):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@Produces</span> <span class="annotation">@Singleton</span>
+<span class="directive">public</span> OntologyRegistry ontologyRegistry() {
+  <span class="predefined-type">Map</span>&lt;<span class="predefined-type">String</span>, OntologyRegistry.ClassDef&gt; classes = <span class="predefined-type">Map</span>.of(
+      <span class="string"><span class="delimiter">&quot;</span><span class="content">Order</span><span class="delimiter">&quot;</span></span>,       <span class="keyword">new</span> OntologyRegistry.ClassDef(<span class="string"><span class="delimiter">&quot;</span><span class="content">Order</span><span class="delimiter">&quot;</span></span>, <span class="predefined-type">Set</span>.of(), <span class="predefined-type">Set</span>.of(), <span class="predefined-type">Set</span>.of()),
+      <span class="string"><span class="delimiter">&quot;</span><span class="content">Customer</span><span class="delimiter">&quot;</span></span>,    <span class="keyword">new</span> OntologyRegistry.ClassDef(<span class="string"><span class="delimiter">&quot;</span><span class="content">Customer</span><span class="delimiter">&quot;</span></span>, <span class="predefined-type">Set</span>.of(), <span class="predefined-type">Set</span>.of(), <span class="predefined-type">Set</span>.of()),
+      <span class="string"><span class="delimiter">&quot;</span><span class="content">Organization</span><span class="delimiter">&quot;</span></span>,<span class="keyword">new</span> OntologyRegistry.ClassDef(<span class="string"><span class="delimiter">&quot;</span><span class="content">Organization</span><span class="delimiter">&quot;</span></span>, <span class="predefined-type">Set</span>.of(), <span class="predefined-type">Set</span>.of(), <span class="predefined-type">Set</span>.of())
+  );
+
+  <span class="predefined-type">Map</span>&lt;<span class="predefined-type">String</span>, OntologyRegistry.PropertyDef&gt; props = <span class="keyword">new</span> <span class="predefined-type">HashMap</span>&lt;&gt;();
+  <span class="comment">// Single-valued ⇒ functional</span>
+  props.put(<span class="string"><span class="delimiter">&quot;</span><span class="content">placedBy</span><span class="delimiter">&quot;</span></span>,   <span class="keyword">new</span> OntologyRegistry.PropertyDef(
+      <span class="string"><span class="delimiter">&quot;</span><span class="content">placedBy</span><span class="delimiter">&quot;</span></span>, Optional.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">Order</span><span class="delimiter">&quot;</span></span>), Optional.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">Customer</span><span class="delimiter">&quot;</span></span>), <span class="predefined-constant">false</span>, Optional.empty(),
+      <span class="predefined-constant">false</span>, <span class="comment">/*transitive*/</span> <span class="predefined-constant">false</span>, <span class="comment">/*symmetric*/</span> <span class="predefined-constant">true</span> <span class="comment">/*functional*/</span>, <span class="predefined-type">Set</span>.of()
+  ));
+  props.put(<span class="string"><span class="delimiter">&quot;</span><span class="content">memberOf</span><span class="delimiter">&quot;</span></span>,   <span class="keyword">new</span> OntologyRegistry.PropertyDef(
+      <span class="string"><span class="delimiter">&quot;</span><span class="content">memberOf</span><span class="delimiter">&quot;</span></span>, Optional.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">Customer</span><span class="delimiter">&quot;</span></span>), Optional.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">Organization</span><span class="delimiter">&quot;</span></span>), <span class="predefined-constant">false</span>, Optional.empty(),
+      <span class="predefined-constant">false</span>, <span class="predefined-constant">false</span>, <span class="predefined-constant">false</span>, <span class="predefined-type">Set</span>.of()
+  ));
+  props.put(<span class="string"><span class="delimiter">&quot;</span><span class="content">placedInOrg</span><span class="delimiter">&quot;</span></span>,<span class="keyword">new</span> OntologyRegistry.PropertyDef(
+      <span class="string"><span class="delimiter">&quot;</span><span class="content">placedInOrg</span><span class="delimiter">&quot;</span></span>, Optional.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">Order</span><span class="delimiter">&quot;</span></span>), Optional.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">Organization</span><span class="delimiter">&quot;</span></span>), <span class="predefined-constant">false</span>, Optional.empty(),
+      <span class="predefined-constant">false</span>, <span class="predefined-constant">false</span>, <span class="predefined-constant">false</span>, <span class="predefined-type">Set</span>.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">inOrg</span><span class="delimiter">&quot;</span></span>) <span class="comment">// subPropertyOf example</span>
+  ));
+  props.put(<span class="string"><span class="delimiter">&quot;</span><span class="content">inOrg</span><span class="delimiter">&quot;</span></span>,      <span class="keyword">new</span> OntologyRegistry.PropertyDef(
+      <span class="string"><span class="delimiter">&quot;</span><span class="content">inOrg</span><span class="delimiter">&quot;</span></span>, Optional.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">Order</span><span class="delimiter">&quot;</span></span>), Optional.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">Organization</span><span class="delimiter">&quot;</span></span>), <span class="predefined-constant">false</span>, Optional.empty(),
+      <span class="predefined-constant">false</span>, <span class="predefined-constant">false</span>, <span class="predefined-constant">false</span>, <span class="predefined-type">Set</span>.of()
+  ));
+  <span class="comment">// Transitive ancestor relation</span>
+  props.put(<span class="string"><span class="delimiter">&quot;</span><span class="content">ancestorOf</span><span class="delimiter">&quot;</span></span>, <span class="keyword">new</span> OntologyRegistry.PropertyDef(
+      <span class="string"><span class="delimiter">&quot;</span><span class="content">ancestorOf</span><span class="delimiter">&quot;</span></span>, Optional.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">Organization</span><span class="delimiter">&quot;</span></span>), Optional.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">Organization</span><span class="delimiter">&quot;</span></span>), <span class="predefined-constant">false</span>, Optional.empty(),
+      <span class="predefined-constant">true</span>, <span class="comment">/*transitive*/</span> <span class="predefined-constant">false</span>, <span class="predefined-constant">false</span>, <span class="predefined-type">Set</span>.of()
+  ));
+  <span class="comment">// Inverses and symmetric</span>
+  props.put(<span class="string"><span class="delimiter">&quot;</span><span class="content">parentOf</span><span class="delimiter">&quot;</span></span>,   <span class="keyword">new</span> OntologyRegistry.PropertyDef(
+      <span class="string"><span class="delimiter">&quot;</span><span class="content">parentOf</span><span class="delimiter">&quot;</span></span>, Optional.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">Organization</span><span class="delimiter">&quot;</span></span>), Optional.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">Organization</span><span class="delimiter">&quot;</span></span>), <span class="predefined-constant">false</span>, Optional.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">childOf</span><span class="delimiter">&quot;</span></span>),
+      <span class="predefined-constant">false</span>, <span class="predefined-constant">false</span>, <span class="predefined-constant">false</span>, <span class="predefined-type">Set</span>.of()
+  ));
+  props.put(<span class="string"><span class="delimiter">&quot;</span><span class="content">childOf</span><span class="delimiter">&quot;</span></span>,    <span class="keyword">new</span> OntologyRegistry.PropertyDef(
+      <span class="string"><span class="delimiter">&quot;</span><span class="content">childOf</span><span class="delimiter">&quot;</span></span>, Optional.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">Organization</span><span class="delimiter">&quot;</span></span>), Optional.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">Organization</span><span class="delimiter">&quot;</span></span>), <span class="predefined-constant">true</span>, Optional.empty(),
+      <span class="predefined-constant">false</span>, <span class="predefined-constant">false</span>, <span class="predefined-constant">false</span>, <span class="predefined-type">Set</span>.of()
+  ));
+  props.put(<span class="string"><span class="delimiter">&quot;</span><span class="content">peerOf</span><span class="delimiter">&quot;</span></span>,     <span class="keyword">new</span> OntologyRegistry.PropertyDef(
+      <span class="string"><span class="delimiter">&quot;</span><span class="content">peerOf</span><span class="delimiter">&quot;</span></span>, Optional.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">Organization</span><span class="delimiter">&quot;</span></span>), Optional.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">Organization</span><span class="delimiter">&quot;</span></span>), <span class="predefined-constant">false</span>, Optional.empty(),
+      <span class="predefined-constant">false</span>, <span class="comment">/*transitive*/</span> <span class="predefined-constant">true</span>, <span class="comment">/*symmetric*/</span> <span class="predefined-constant">false</span>, <span class="comment">/*functional*/</span> <span class="predefined-type">Set</span>.of()
+  ));
+
+  <span class="predefined-type">List</span>&lt;OntologyRegistry.PropertyChainDef&gt; chains = <span class="predefined-type">List</span>.of(
+      <span class="comment">// Order --placedBy--&gt; Customer --memberOf--&gt; Org  ⇒ Order --placedInOrg--&gt; Org</span>
+      <span class="keyword">new</span> OntologyRegistry.PropertyChainDef(<span class="predefined-type">List</span>.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">placedBy</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">memberOf</span><span class="delimiter">&quot;</span></span>), <span class="string"><span class="delimiter">&quot;</span><span class="content">placedInOrg</span><span class="delimiter">&quot;</span></span>),
+      <span class="comment">// Include ancestor closure for placedInOrg results</span>
+      <span class="keyword">new</span> OntologyRegistry.PropertyChainDef(<span class="predefined-type">List</span>.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">placedInOrg</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">ancestorOf</span><span class="delimiter">&quot;</span></span>), <span class="string"><span class="delimiter">&quot;</span><span class="content">placedInOrg</span><span class="delimiter">&quot;</span></span>)
+  );
+
+  <span class="keyword">return</span> OntologyRegistry.inMemory(<span class="keyword">new</span> OntologyRegistry.TBox(classes, props, chains));
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Notes:
+- subPropertyOf is modeled via the PropertyDef.subPropertyOf set.
+- Inverse and symmetric are encoded in PropertyDef.inverseOf and PropertyDef.symmetric.
+- Transitivity is toggled via PropertyDef.transitive.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_2_materialize_inferences_when_data_changes">5.3.2. 2) Materialize inferences when data changes</h4>
+<div class="paragraph">
+<p>Use OntologyMaterializer or call the Reasoner directly and upsert edges via OntologyEdgeRepo.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@Inject</span> ForwardChainingReasoner reasoner;
+<span class="annotation">@Inject</span> OntologyRegistry ontologyRegistry;
+<span class="annotation">@Inject</span> OntologyEdgeRepo edgeRepo;
+
+<span class="directive">public</span> <span class="type">void</span> onOrderSaved(<span class="predefined-type">String</span> tenant, <span class="predefined-type">String</span> orderId, <span class="predefined-type">String</span> customerId, <span class="predefined-type">String</span> orgId) {
+  <span class="predefined-type">List</span>&lt;Reasoner.Edge&gt; explicit = <span class="predefined-type">List</span>.of(
+      <span class="keyword">new</span> Reasoner.Edge(orderId, <span class="string"><span class="delimiter">&quot;</span><span class="content">placedBy</span><span class="delimiter">&quot;</span></span>, customerId, <span class="predefined-constant">false</span>, Optional.empty()),
+      <span class="keyword">new</span> Reasoner.Edge(customerId, <span class="string"><span class="delimiter">&quot;</span><span class="content">memberOf</span><span class="delimiter">&quot;</span></span>, orgId, <span class="predefined-constant">false</span>, Optional.empty())
+  );
+  Reasoner.EntitySnapshot snap = <span class="keyword">new</span> Reasoner.EntitySnapshot(tenant, orderId, <span class="string"><span class="delimiter">&quot;</span><span class="content">Order</span><span class="delimiter">&quot;</span></span>, explicit);
+  Reasoner.InferenceResult out = reasoner.infer(snap, ontologyRegistry);
+  <span class="keyword">for</span> (Reasoner.Edge e : out.addEdges()) {
+    <span class="predefined-type">Map</span>&lt;<span class="predefined-type">String</span>,<span class="predefined-type">Object</span>&gt; prov = e.prov().map(p -&gt; <span class="predefined-type">Map</span>.&lt;<span class="predefined-type">String</span>,<span class="predefined-type">Object</span>&gt;of(<span class="string"><span class="delimiter">&quot;</span><span class="content">rule</span><span class="delimiter">&quot;</span></span>, p.rule(), <span class="string"><span class="delimiter">&quot;</span><span class="content">inputs</span><span class="delimiter">&quot;</span></span>, p.inputs())).orElse(<span class="predefined-type">Map</span>.of());
+    edgeRepo.upsert(tenant, e.srcId(), e.p(), e.dstId(), <span class="predefined-constant">true</span>, prov);
+  }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The materializer computes and persists:
+- subPropertyOf roll‑ups (e.g., placedInOrg ⊑ inOrg ⇒ write inOrg)
+- inverse/symmetric counterparts
+- transitive closures (bounded to the snapshot inputs; you can also chain for closures)</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_3_query_with_listqueryrewriter_quarkusmorphia">5.3.3. 3) Query with ListQueryRewriter (Quarkus/Morphia)</h4>
+<div class="paragraph">
+<p>Use hasEdge/hasEdgeAny/notHasEdge to turn ontology constraints into Morphia filters over your entity collection. The rewriter internally fetches the set of source ids from the edge store and builds an in("refName", …) filter that composes with your attribute predicates.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@Inject</span> ListQueryRewriter queryRewriter;
+<span class="annotation">@Inject</span> MorphiaDatastore datastore;
+
+<span class="directive">public</span> <span class="predefined-type">List</span>&lt;TestOrder&gt; openOrdersIn(<span class="predefined-type">String</span> tenant, <span class="predefined-type">String</span> orgId) {
+  <span class="type">var</span> status = dev.morphia.query.filters.Filters.eq(<span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">OPEN</span><span class="delimiter">&quot;</span></span>);
+  <span class="type">var</span> inOrg = queryRewriter.hasEdge(tenant, <span class="string"><span class="delimiter">&quot;</span><span class="content">placedInOrg</span><span class="delimiter">&quot;</span></span>, orgId);
+  <span class="type">var</span> combined = dev.morphia.query.filters.Filters.and(status, inOrg);
+  <span class="keyword">return</span> datastore.find(TestOrder.class).filter(combined).iterator().toList();
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>To include multiple orgs:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="type">var</span> f = queryRewriter.hasEdgeAny(tenant, <span class="string"><span class="delimiter">&quot;</span><span class="content">placedInOrg</span><span class="delimiter">&quot;</span></span>, <span class="predefined-type">List</span>.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">ORG-ACME</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">ORG-GLOBEX</span><span class="delimiter">&quot;</span></span>));</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>To exclude restricted orgs:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="type">var</span> f = queryRewriter.notHasEdge(tenant, <span class="string"><span class="delimiter">&quot;</span><span class="content">placedInOrg</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">ORG-RESTRICTED</span><span class="delimiter">&quot;</span></span>);</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_functional_properties_at_write_time">5.3.4. Functional properties at write time</h4>
+<div class="paragraph">
+<p>For single‑valued relationships declared functional, configure a unique index over (tenantId, src, p) in your edge store (or rely on repo semantics) and treat upserts as replacements.</p>
+</div>
+<div class="paragraph">
+<p>Practical guidance:
+- Mark naturally single‑valued links functional (placedBy, primaryOwner).
+- On write, remove or overwrite any prior dst for the same (tenant, src, p).</p>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_backward_compatibility_and_migration">5.4. Backward compatibility and migration</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Grammar/API: No changes needed. The same hasEdge/hasEdgeAny/notHasEdge functions work; results simply become more expressive as ontology features are enabled.</p>
+</li>
+<li>
+<p>Feature flags: You may enable features per property (e.g., transitive) gradually. Queries remain stable.</p>
+</li>
+<li>
+<p>Provenance: Keep prov so you can re‑compute or retract inferred edges when inputs or rules change.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_troubleshooting_and_tips">5.5. Troubleshooting and tips</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Empty result from hasEdge: Means no matching edges exist; check whether inferences are being materialized for the predicate you expect.</p>
+</li>
+<li>
+<p>Tenant scoping: All repo calls include tenantId; ensure you pass the correct tenant in both write and read paths.</p>
+</li>
+<li>
+<p>Indexes: For heavy reads, ensure compound indexes on (tenantId, p, dst) and (tenantId, src, p). For functional, consider a unique (tenantId, src, p).</p>
+</li>
+<li>
+<p>Testing: Use Quarkus @QuarkusTest to wire CDI and a test OntologyRegistry producer. Populate explicit edges, run the reasoner, then assert with the repo and query rewriter as shown in the integration tests included with the repository.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_model_first_ontology_with_annotations_and_morphiaontologyloader">6. Model-first ontology with annotations and MorphiaOntologyLoader</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>This section shows how to use your Morphia model classes as the source of truth for the ontology. You annotate model classes/fields to declare ontology concepts and property traits; at startup, MorphiaOntologyLoader scans MorphiaDatastore.getMapper() to build the OntologyRegistry automatically.</p>
+</div>
+<div class="sect2">
+<h3 id="_why_model_first">6.1. Why model-first?</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Single source of truth: semantics live next to the data model; less drift between code and config.</p>
+</li>
+<li>
+<p>Safer refactors: renames/types evolve in code and the ontology follows.</p>
+</li>
+<li>
+<p>No separate YAML/JSON needed for most use cases; optional overrides remain possible later if needed.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_annotations_overview">6.2. Annotations overview</h3>
+<div class="paragraph">
+<p>Two lightweight annotations are used on model classes and fields. They are provided by quantum-ontology-core and can be added to any Morphia-mapped entity (deriving from UnversionedBaseModel).</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>@OntologyClass</p>
+</li>
+<li>
+<p>id: optional explicit class id (defaults to the simple class name)</p>
+</li>
+<li>
+<p>subClassOf: optional extra parents (in addition to Java inheritance)</p>
+</li>
+<li>
+<p>@OntologyProperty</p>
+</li>
+<li>
+<p>id: optional explicit property id (defaults to the field name)</p>
+</li>
+<li>
+<p>subPropertyOf: property hierarchy roll-up targets</p>
+</li>
+<li>
+<p>inverseOf: name of the inverse property (declare on one side)</p>
+</li>
+<li>
+<p>transitive: whether the property is transitive</p>
+</li>
+<li>
+<p>symmetric: whether the property is symmetric</p>
+</li>
+<li>
+<p>functional: at most one target per source (defaults to true for single-valued fields)</p>
+</li>
+<li>
+<p>domain: override inferred domain (defaults to declaring @OntologyClass)</p>
+</li>
+<li>
+<p>range: override inferred range (defaults to the field/element type)</p>
+</li>
+</ul>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+functional is inferred true for single-valued fields and false for collections/maps unless you override it.
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_example_orders_placed_in_an_organization_e_commerce">6.3. Example: Orders placed in an Organization (e-commerce)</h3>
+<div class="paragraph">
+<p>Below we implement the same business example covered earlier using model annotations.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@OntologyClass</span>(id = <span class="string"><span class="delimiter">&quot;</span><span class="content">Order</span><span class="delimiter">&quot;</span></span>)
+<span class="annotation">@Entity</span>(value = <span class="string"><span class="delimiter">&quot;</span><span class="content">orders</span><span class="delimiter">&quot;</span></span>)
+<span class="directive">public</span> <span class="type">class</span> <span class="class">Order</span> <span class="directive">extends</span> UnversionedBaseModel {
+  <span class="directive">private</span> <span class="predefined-type">String</span> status;
+
+  <span class="comment">// Order --placedBy--&gt; Customer (single-valued ⇒ functional)</span>
+  <span class="annotation">@OntologyProperty</span>(id = <span class="string"><span class="delimiter">&quot;</span><span class="content">placedBy</span><span class="delimiter">&quot;</span></span>, inverseOf = <span class="string"><span class="delimiter">&quot;</span><span class="content">placed</span><span class="delimiter">&quot;</span></span>, functional = <span class="predefined-constant">true</span>)
+  <span class="directive">private</span> Customer placedBy;
+}
+
+<span class="annotation">@OntologyClass</span>(id = <span class="string"><span class="delimiter">&quot;</span><span class="content">Customer</span><span class="delimiter">&quot;</span></span>)
+<span class="annotation">@Entity</span>(value = <span class="string"><span class="delimiter">&quot;</span><span class="content">customers</span><span class="delimiter">&quot;</span></span>)
+<span class="directive">public</span> <span class="type">class</span> <span class="class">Customer</span> <span class="directive">extends</span> UnversionedBaseModel {
+  <span class="comment">// Customer --memberOf--&gt; Org (transitive across org tree)</span>
+  <span class="annotation">@OntologyProperty</span>(id = <span class="string"><span class="delimiter">&quot;</span><span class="content">memberOf</span><span class="delimiter">&quot;</span></span>, transitive = <span class="predefined-constant">true</span>)
+  <span class="directive">private</span> Org memberOf;
+}
+
+<span class="annotation">@OntologyClass</span>(id = <span class="string"><span class="delimiter">&quot;</span><span class="content">Organization</span><span class="delimiter">&quot;</span></span>)
+<span class="annotation">@Entity</span>(value = <span class="string"><span class="delimiter">&quot;</span><span class="content">orgs</span><span class="delimiter">&quot;</span></span>)
+<span class="directive">public</span> <span class="type">class</span> <span class="class">Org</span> <span class="directive">extends</span> UnversionedBaseModel {
+  <span class="comment">// Org --parentOf--&gt; Org, with inverse childOf</span>
+  <span class="annotation">@OntologyProperty</span>(id = <span class="string"><span class="delimiter">&quot;</span><span class="content">parentOf</span><span class="delimiter">&quot;</span></span>, inverseOf = <span class="string"><span class="delimiter">&quot;</span><span class="content">childOf</span><span class="delimiter">&quot;</span></span>)
+  <span class="directive">private</span> Org parent;
+
+  <span class="comment">// Optional symmetric relationship between peers</span>
+  <span class="annotation">@OntologyProperty</span>(id = <span class="string"><span class="delimiter">&quot;</span><span class="content">peerOf</span><span class="delimiter">&quot;</span></span>, symmetric = <span class="predefined-constant">true</span>)
+  <span class="directive">private</span> <span class="predefined-type">Set</span>&lt;Org&gt; peers;
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Optionally, model a super-property to roll up specialized edges:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@OntologyClass</span>(id = <span class="string"><span class="delimiter">&quot;</span><span class="content">Order</span><span class="delimiter">&quot;</span></span>)
+<span class="directive">public</span> <span class="type">class</span> <span class="class">Order</span> <span class="directive">extends</span> UnversionedBaseModel {
+  <span class="annotation">@OntologyProperty</span>(id = <span class="string"><span class="delimiter">&quot;</span><span class="content">placedBy</span><span class="delimiter">&quot;</span></span>, inverseOf = <span class="string"><span class="delimiter">&quot;</span><span class="content">placed</span><span class="delimiter">&quot;</span></span>, functional = <span class="predefined-constant">true</span>)
+  <span class="directive">private</span> Customer placedBy;
+
+  <span class="comment">// Roll-up predicate for org membership of orders; placedInOrg ⊑ inOrg</span>
+  <span class="annotation">@OntologyProperty</span>(id = <span class="string"><span class="delimiter">&quot;</span><span class="content">placedInOrg</span><span class="delimiter">&quot;</span></span>, subPropertyOf = {<span class="string"><span class="delimiter">&quot;</span><span class="content">inOrg</span><span class="delimiter">&quot;</span></span>})
+  <span class="directive">private</span> Org inOrgDirect;
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>With these annotations in place, the loader will infer:
+- Classes: Order, Customer, Organization (+ hierarchy from Java inheritance)
+- Properties: placedBy (functional), memberOf (transitive), parentOf ⇄ childOf (inverse), peerOf (symmetric)
+- subPropertyOf: placedInOrg ⊑ inOrg (if declared)</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_how_the_registry_is_produced_quarkus_cdi">6.4. How the registry is produced (Quarkus CDI)</h3>
+<div class="paragraph">
+<p>OntologyCoreProducers wires MorphiaOntologyLoader by default. On startup it scans your models and produces a singleton OntologyRegistry.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@ApplicationScoped</span>
+<span class="directive">public</span> <span class="type">class</span> <span class="class">OntologyCoreProducers</span> {
+  <span class="annotation">@Inject</span> MorphiaDatastore morphiaDatastore;
+
+  <span class="annotation">@Produces</span> <span class="annotation">@Singleton</span>
+  <span class="directive">public</span> OntologyRegistry ontologyRegistry() {
+    <span class="keyword">try</span> {
+      MorphiaOntologyLoader loader = <span class="keyword">new</span> MorphiaOntologyLoader(morphiaDatastore);
+      OntologyRegistry reg = loader.load();
+      <span class="keyword">return</span> isEmpty(reg) ? emptyRegistry() : reg;
+    } <span class="keyword">catch</span> (<span class="predefined-type">Throwable</span> t) {
+      <span class="keyword">return</span> emptyRegistry();
+    }
+  }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If you need manual control (tests, migrations), you can call the loader directly:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java">MorphiaOntologyLoader loader = <span class="keyword">new</span> MorphiaOntologyLoader(datastore);
+OntologyRegistry registry = loader.load();</code></pre>
+</div>
+</div>
+<div class="admonitionblock tip">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-tip" title="Tip"></i>
+</td>
+<td class="content">
+Keep annotations minimal. Only add traits that aren’t obvious from the Java type system (e.g., transitive, symmetric, inverse, subPropertyOf).
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_materializing_inferences_from_annotated_models">6.5. Materializing inferences from annotated models</h3>
+<div class="paragraph">
+<p>Materialization is automatic on save/update through the repository hook; you do not need to assemble explicit edge lists or call OntologyMaterializer manually.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>What happens:</p>
+</li>
+<li>
+<p>The framework inspects fields/getters annotated with @OntologyProperty and extracts explicit edges.</p>
+</li>
+<li>
+<p>The reasoner applies inverse, symmetric, transitive, and subPropertyOf traits from the registry and upserts inferred edges.</p>
+</li>
+<li>
+<p>When to trigger re-materialization manually:</p>
+</li>
+<li>
+<p>After ontology rule changes (e.g., you mark a property transitive or add an inverse), run your re-materialization job to recompute edges for existing entities in a tenant.</p>
+</li>
+<li>
+<p>During bulk imports, you can disable auto-materialize and run the job afterward.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Example: disable auto-materialize for a batch, then rebuild</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="properties">ontology.auto-materialize=false</code></pre>
+</div>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@Inject</span> OntologyRebuilder rebuilder; <span class="comment">// your maintenance utility</span>
+
+<span class="directive">public</span> <span class="type">void</span> runBackfill(<span class="predefined-type">String</span> tenantId) {
+  rebuilder.recomputeTenant(tenantId);
+}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_querying_using_listqueryrewriter_unchanged">6.6. Querying using ListQueryRewriter (unchanged)</h3>
+<div class="paragraph">
+<p>Your query code does not change. It benefits from materialized edges that now carry richer semantics from annotations.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@Inject</span> ListQueryRewriter queryRewriter;
+<span class="annotation">@Inject</span> MorphiaDatastore datastore;
+
+<span class="directive">public</span> <span class="predefined-type">List</span>&lt;Order&gt; openOrdersIn(<span class="predefined-type">String</span> tenant, <span class="predefined-type">String</span> orgId) {
+  <span class="type">var</span> status = dev.morphia.query.filters.Filters.eq(<span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">OPEN</span><span class="delimiter">&quot;</span></span>);
+  <span class="type">var</span> inOrg = queryRewriter.hasEdge(tenant, <span class="string"><span class="delimiter">&quot;</span><span class="content">placedInOrg</span><span class="delimiter">&quot;</span></span>, orgId);
+  <span class="type">var</span> combined = dev.morphia.query.filters.Filters.and(status, inOrg);
+  <span class="keyword">return</span> datastore.find(Order.class).filter(combined).iterator().toList();
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>To include subsidiaries via ancestor/parent relationships, either:
+- Declare ancestorOf as transitive in the model and materialize a closure, or
+- Add a property chain placedInOrg ∘ ancestorOf ⇒ placedInOrg in your registry initialization.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_business_case_recipes_with_annotations">6.7. Business case recipes with annotations</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>E‑commerce org access</p>
+</li>
+<li>
+<p>Annotate placedBy (functional), memberOf (transitive), and optionally parentOf (inverse childOf). Materialize placedInOrg via a property chain. Query hasEdge("placedInOrg", org).</p>
+</li>
+<li>
+<p>HR reporting lines</p>
+</li>
+<li>
+<p>Annotate reportsTo as transitive on Employee; query hasEdge("reportsTo", managerId).</p>
+</li>
+<li>
+<p>Supplier networks</p>
+</li>
+<li>
+<p>Annotate supplies as a base property; use subPropertyOf to roll up specialized suppliesDirect and suppliesViaSubsidiary to supplies; annotate peerOf on Org as symmetric.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_troubleshooting">6.8. Troubleshooting</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>The registry is empty at runtime</p>
+</li>
+<li>
+<p>Ensure your models are discovered by Morphia (annotated with @Entity) and that the Quarkus application initializes MorphiaDatastore before the ontology producer.</p>
+</li>
+<li>
+<p>Inverse not applied</p>
+</li>
+<li>
+<p>Declare inverseOf on one side only; the loader will wire both directions.</p>
+</li>
+<li>
+<p>Functional not enforced</p>
+</li>
+<li>
+<p>For functional properties, ensure your edge repository enforces unique (tenantId, src, p) or that your write path overwrites prior values.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_migration_strategy">6.9. Migration strategy</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Start by adding @OntologyProperty to the most important relationships; don’t attempt to annotate everything at once.</p>
+</li>
+<li>
+<p>Keep existing @Reference fields if you have them; use edges for query-time semantics and policy integration first.</p>
+</li>
+<li>
+<p>Add tests that verify the loader discovered your properties (including inverses/subPropertyOf) and that queries via hasEdge behave as expected.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_modeling_guidance_annotate_existing_idreference_getters_keep_api_and_db_clean">6.10. Modeling guidance: annotate existing id/reference getters (keep API and DB clean)</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Prefer annotating getters that already exist in your schema (String ids or existing @Reference fields). Avoid adding embedded objects solely to drive ontology.</p>
+</li>
+<li>
+<p>If you do need a synthetic accessor purely for ontology, hide it from API docs and persistence using @JsonIgnore, @Schema(hidden = true), and @dev.morphia.annotations.Transient.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Recommended pattern: annotate an existing id getter (Swagger unchanged)</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">com.e2eq.ontology.annotations.OntologyClass</span>;
+<span class="keyword">import</span> <span class="include">com.e2eq.ontology.annotations.OntologyProperty</span>;
+<span class="keyword">import</span> <span class="include">dev.morphia.annotations.Entity</span>;
+
+<span class="annotation">@Entity</span>
+<span class="annotation">@OntologyClass</span>(id = <span class="string"><span class="delimiter">&quot;</span><span class="content">Order</span><span class="delimiter">&quot;</span></span>)
+<span class="directive">public</span> <span class="type">class</span> <span class="class">Order</span> <span class="directive">extends</span> UnversionedBaseModel {
+  <span class="comment">// Existing field that is already part of your API/DB contract</span>
+  <span class="directive">private</span> <span class="predefined-type">String</span> customerRefName;
+
+  <span class="directive">public</span> <span class="predefined-type">String</span> getCustomerRefName() { <span class="keyword">return</span> customerRefName; }
+  <span class="directive">public</span> <span class="type">void</span> setCustomerRefName(<span class="predefined-type">String</span> v) { <span class="local-variable">this</span>.customerRefName = v; }
+
+  <span class="comment">// Drives ontology edges without changing Swagger: the getter already exists and returns a String id</span>
+  <span class="annotation">@OntologyProperty</span>(id = <span class="string"><span class="delimiter">&quot;</span><span class="content">placedBy</span><span class="delimiter">&quot;</span></span>, functional = <span class="predefined-constant">true</span>)
+  <span class="directive">public</span> <span class="predefined-type">String</span> customerIdForEdges() { <span class="keyword">return</span> getCustomerRefName(); }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Because AnnotatedEdgeExtractor treats CharSequence targets as ids, annotating a String-returning getter produces edges without introducing new embedded objects. Your Swagger/OpenAPI and persisted shape remain unchanged.</p>
+</div>
+<div class="paragraph">
+<p>Optional: use an existing @Reference instead of an id</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@Entity</span>
+<span class="annotation">@OntologyClass</span>(id = <span class="string"><span class="delimiter">&quot;</span><span class="content">Order</span><span class="delimiter">&quot;</span></span>)
+<span class="directive">public</span> <span class="type">class</span> <span class="class">Order</span> <span class="directive">extends</span> UnversionedBaseModel {
+  <span class="annotation">@dev</span>.morphia.annotations.Reference
+  <span class="directive">private</span> Customer customer; <span class="comment">// already in your schema</span>
+
+  <span class="annotation">@OntologyProperty</span>(id = <span class="string"><span class="delimiter">&quot;</span><span class="content">placedBy</span><span class="delimiter">&quot;</span></span>, inverseOf = <span class="string"><span class="delimiter">&quot;</span><span class="content">placed</span><span class="delimiter">&quot;</span></span>, functional = <span class="predefined-constant">true</span>)
+  <span class="directive">public</span> Customer getCustomer() { <span class="keyword">return</span> customer; }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If you must add an ontology-only accessor, hide it</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">com.fasterxml.jackson.annotation.JsonIgnore</span>;
+<span class="keyword">import</span> <span class="include">io.swagger.v3.oas.annotations.media.Schema</span>;
+<span class="keyword">import</span> <span class="include">dev.morphia.annotations.Transient</span>;
+
+<span class="annotation">@Entity</span>
+<span class="annotation">@OntologyClass</span>(id = <span class="string"><span class="delimiter">&quot;</span><span class="content">Order</span><span class="delimiter">&quot;</span></span>)
+<span class="directive">public</span> <span class="type">class</span> <span class="class">Order</span> <span class="directive">extends</span> UnversionedBaseModel {
+  <span class="directive">private</span> <span class="predefined-type">String</span> orgRefName; <span class="comment">// real field</span>
+
+  <span class="comment">// Hidden from API docs and persistence, used only to emit an ontology edge</span>
+  <span class="annotation">@JsonIgnore</span>
+  <span class="annotation">@Schema</span>(hidden = <span class="predefined-constant">true</span>)
+  <span class="annotation">@Transient</span>
+  <span class="annotation">@OntologyProperty</span>(id = <span class="string"><span class="delimiter">&quot;</span><span class="content">placedInOrg</span><span class="delimiter">&quot;</span></span>, subPropertyOf = {<span class="string"><span class="delimiter">&quot;</span><span class="content">inOrg</span><span class="delimiter">&quot;</span></span>})
+  <span class="directive">public</span> <span class="predefined-type">String</span> placedInOrgEdge() { <span class="keyword">return</span> orgRefName; }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>These patterns keep your REST and database contracts clear while allowing ontology materialization to happen automatically on writes.</p>
+</div>
+</div>
+</div>
+</div>
 </div>
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-10-21 13:19:15 -0400
+Last updated 2025-10-24 16:31:16 -0400
 </div>
 </div>
 </body>

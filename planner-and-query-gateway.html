@@ -5,7 +5,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="generator" content="Asciidoctor 2.0.20">
-<title>Supply Chain Collaboration SaaS: A Business‑First Guide</title>
+<title>Planner and QueryGateway</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,300italic,400,400italic,600,600italic%7CNoto+Serif:400,400italic,700,700italic%7CDroid+Sans+Mono:400,700">
 <style>
 /*! Asciidoctor default stylesheet | MIT License | https://asciidoctor.org */
@@ -433,478 +433,208 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 @media amzn-kf8{#header,#content,#footnotes,#footer{padding:0}}
 </style>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+<style>
+/*! Stylesheet for CodeRay to loosely match GitHub themes | MIT License */
+pre.CodeRay{background:#f7f7f8}
+.CodeRay .line-numbers{border-right:1px solid;opacity:.35;padding:0 .5em 0 0;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none}
+.CodeRay span.line-numbers{display:inline-block;margin-right:.75em}
+.CodeRay .line-numbers strong{color:#000}
+table.CodeRay{border-collapse:separate;border:0;margin-bottom:0;background:none}
+table.CodeRay td{vertical-align:top;line-height:inherit}
+table.CodeRay td.line-numbers{text-align:right}
+table.CodeRay td.code{padding:0 0 0 .75em}
+.CodeRay .debug{color:#fff!important;background:navy!important}
+.CodeRay .annotation{color:#007}
+.CodeRay .attribute-name{color:navy}
+.CodeRay .attribute-value{color:#700}
+.CodeRay .binary{color:#509}
+.CodeRay .comment{color:#998;font-style:italic}
+.CodeRay .char{color:#04d}
+.CodeRay .char .content{color:#04d}
+.CodeRay .char .delimiter{color:#039}
+.CodeRay .class{color:#458;font-weight:bold}
+.CodeRay .complex{color:#a08}
+.CodeRay .constant,.CodeRay .predefined-constant{color:teal}
+.CodeRay .color{color:#099}
+.CodeRay .class-variable{color:#369}
+.CodeRay .decorator{color:#b0b}
+.CodeRay .definition{color:#099}
+.CodeRay .delimiter{color:#000}
+.CodeRay .doc{color:#970}
+.CodeRay .doctype{color:#34b}
+.CodeRay .doc-string{color:#d42}
+.CodeRay .escape{color:#666}
+.CodeRay .entity{color:#800}
+.CodeRay .error{color:#808}
+.CodeRay .exception{color:inherit}
+.CodeRay .filename{color:#099}
+.CodeRay .function{color:#900;font-weight:bold}
+.CodeRay .global-variable{color:teal}
+.CodeRay .hex{color:#058}
+.CodeRay .integer,.CodeRay .float{color:#099}
+.CodeRay .include{color:#555}
+.CodeRay .inline{color:#000}
+.CodeRay .inline .inline{background:#ccc}
+.CodeRay .inline .inline .inline{background:#bbb}
+.CodeRay .inline .inline-delimiter{color:#d14}
+.CodeRay .inline-delimiter{color:#d14}
+.CodeRay .important{color:#555;font-weight:bold}
+.CodeRay .interpreted{color:#b2b}
+.CodeRay .instance-variable{color:teal}
+.CodeRay .label{color:#970}
+.CodeRay .local-variable{color:#963}
+.CodeRay .octal{color:#40e}
+.CodeRay .predefined{color:#369}
+.CodeRay .preprocessor{color:#579}
+.CodeRay .pseudo-class{color:#555}
+.CodeRay .directive{font-weight:bold}
+.CodeRay .type{font-weight:bold}
+.CodeRay .predefined-type{color:inherit}
+.CodeRay .reserved,.CodeRay .keyword{color:#000;font-weight:bold}
+.CodeRay .key{color:#808}
+.CodeRay .key .delimiter{color:#606}
+.CodeRay .key .char{color:#80f}
+.CodeRay .value{color:#088}
+.CodeRay .regexp .delimiter{color:#808}
+.CodeRay .regexp .content{color:#808}
+.CodeRay .regexp .modifier{color:#808}
+.CodeRay .regexp .char{color:#d14}
+.CodeRay .regexp .function{color:#404;font-weight:bold}
+.CodeRay .string{color:#d20}
+.CodeRay .string .string .string{background:#ffd0d0}
+.CodeRay .string .content{color:#d14}
+.CodeRay .string .char{color:#d14}
+.CodeRay .string .delimiter{color:#d14}
+.CodeRay .shell{color:#d14}
+.CodeRay .shell .delimiter{color:#d14}
+.CodeRay .symbol{color:#990073}
+.CodeRay .symbol .content{color:#a60}
+.CodeRay .symbol .delimiter{color:#630}
+.CodeRay .tag{color:teal}
+.CodeRay .tag-special{color:#d70}
+.CodeRay .variable{color:#036}
+.CodeRay .insert{background:#afa}
+.CodeRay .delete{background:#faa}
+.CodeRay .change{color:#aaf;background:#007}
+.CodeRay .head{color:#f8f;background:#505}
+.CodeRay .insert .insert{color:#080}
+.CodeRay .delete .delete{color:#800}
+.CodeRay .change .change{color:#66f}
+.CodeRay .head .head{color:#f4f}
+</style>
 </head>
-<body id="tutorial-supply-chain" class="book toc2 toc-left">
+<body class="book toc2 toc-left">
 <div id="header">
-<h1>Supply Chain Collaboration SaaS: A Business‑First Guide</h1>
-<div class="details">
-<span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-10-25T02:25:04Z</span>
-</div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
 <ul class="sectlevel1">
-<li><a href="#_what_a_supplychain_saas_needs_and_how_quantum_helps">1. What a supply‑chain SaaS needs (and how Quantum helps)</a></li>
-<li><a href="#_why_multitenancy_is_a_natural_fit_for_supply_chains">2. Why multi‑tenancy is a natural fit for supply chains</a></li>
-<li><a href="#_who_uses_the_system_organizations_and_roles">3. Who uses the system (organizations and roles)</a></li>
-<li><a href="#_identity_and_access_meet_partners_where_they_are">4. Identity and access: meet partners where they are</a></li>
-<li><a href="#_modeling_without_jargon_areas_domains_and_actions">5. Modeling without jargon: Areas, Domains, and Actions</a></li>
-<li><a href="#_policies_that_say_who_can_do_what_rule_language">6. Policies that say “who can do what” (Rule Language)</a></li>
-<li><a href="#_domain_contexts_and_domain_policies_placing_and_sharing_data">7. Domain contexts and domain policies (placing and sharing data)</a></li>
-<li><a href="#_bootstrap_tenants_with_seed_packs_zerotouch_baseline_data">8. Bootstrap tenants with Seed Packs (zero‑touch baseline data)</a></li>
-<li><a href="#_security_policies_practical_protections_and_proofs">9. Security policies: practical protections and proofs</a></li>
-<li><a href="#_a_small_powerful_api_surface_list_query">10. A small, powerful API surface: List + Query</a></li>
-<li><a href="#_delegated_administration_tenantlevel_user_management">11. Delegated Administration (tenant‑level user management)</a></li>
-<li><a href="#_integrations_and_data_management">12. Integrations and data management</a></li>
-<li><a href="#_endtoend_examples">13. End‑to‑end examples</a></li>
-<li><a href="#_what_you_dont_have_to_build_from_scratch">14. What you don’t have to build from scratch</a></li>
-<li><a href="#_other_helpful_capabilities_you_get_out_of_the_box">15. Other helpful capabilities you get out of the box</a></li>
-<li><a href="#_next_steps">16. Next steps</a></li>
-<li><a href="#_a_day_in_the_life_from_purchase_order_to_delivery">17. A day in the life: From Purchase Order to Delivery</a></li>
+<li><a href="#planner-and-query-gateway">1. Planner and QueryGateway</a>
+<ul class="sectlevel2">
+<li><a href="#_planner_decisions">1.1. Planner decisions</a></li>
+<li><a href="#_public_facade_querygateway">1.2. Public facade: QueryGateway</a></li>
+<li><a href="#_examples_end_to_end">1.3. Examples end-to-end</a></li>
+</ul>
+</li>
 </ul>
 </div>
 </div>
 <div id="content">
-<div id="preamble">
-<div class="sectionbody">
-<div class="paragraph">
-<p>This guide explains, in plain language, how the Quantum framework helps you build a Supply Chain Collaboration Software‑as‑a‑Service (SaaS). We focus on real business problems—secure data sharing, multi‑party workflows, and tenant isolation—and show how the framework’s building blocks solve them without requiring you to stitch together dozens of bespoke APIs.</p>
-</div>
-</div>
-</div>
 <div class="sect1">
-<h2 id="_what_a_supplychain_saas_needs_and_how_quantum_helps">1. What a supply‑chain SaaS needs (and how Quantum helps)</h2>
+<h2 id="planner-and-query-gateway">1. Planner and QueryGateway</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>Common needs when launching a collaboration platform:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Secure sharing across companies: Buyers, suppliers, carriers, and 3PLs must see the same truth, but only what they’re allowed to see.</p>
-</li>
-<li>
-<p>Role‑appropriate views: Planners, operations, and analysts look at the same orders/shipments but need different fields, filters, and actions.</p>
-</li>
-<li>
-<p>Auditability and control: You need a clear explanation of who saw or changed what, and why that was allowed.</p>
-</li>
-<li>
-<p>Fast onboarding: Each partner authenticates differently; you can’t force everyone into one identity provider.</p>
-</li>
-<li>
-<p>API consistency: Your UI and integrations shouldn’t learn a different API for every screen or entity.</p>
-</li>
-<li>
-<p>Data lifecycle and stewardship: Easy data imports/exports, clear status tracking, and repeatable completion steps.</p>
-</li>
-</ul>
+<p>The planner decides whether a query runs as a simple single-collection filter (FILTER mode) or as a MongoDB aggregation (AGGREGATION mode). This is transparent to callers.</p>
 </div>
 <div class="paragraph">
-<p>How Quantum maps to these needs:</p>
+<p>In v1 the planner recognizes expand(path) and selects AGGREGATION mode when present. Otherwise, FILTER mode is used and the existing Morphia path is taken.</p>
 </div>
+<div class="sect2">
+<h3 id="_planner_decisions">1.1. Planner decisions</h3>
 <div class="ulist">
 <ul>
 <li>
-<p>Multi‑tenancy by design: Each organization (tenant) is isolated by default; sharing is added deliberately and safely.</p>
+<p>FILTER mode: No expand(&#8230;&#8203;) in the query. The system generates a Morphia Filter and queries a single collection.</p>
 </li>
 <li>
-<p>Policy‑driven permissions: Human‑readable rules answer “who can do what” and add scoping filters so only the right data shows up.</p>
-</li>
-<li>
-<p>Consistent REST and Query: One List API and a simple query language cover most searches and reports—no explosion of bespoke endpoints.</p>
-</li>
-<li>
-<p>Flexible identity: Support for different authentication methods per organization, plus delegated admin so each tenant manages its own users.</p>
-</li>
-<li>
-<p>State + tasks: Built‑in patterns for long‑running, stateful processes and “completion tasks” to move work forward predictably.</p>
+<p>AGGREGATION mode: One or more expand(&#8230;&#8203;) directives are present. The system will build an aggregation pipeline (with $lookup, etc.). In v1, a placeholder pipeline is returned to establish the contract.</p>
 </li>
 </ul>
 </div>
 </div>
-</div>
-<div class="sect1">
-<h2 id="_why_multitenancy_is_a_natural_fit_for_supply_chains">2. Why multi‑tenancy is a natural fit for supply chains</h2>
-<div class="sectionbody">
+<div class="sect2">
+<h3 id="_public_facade_querygateway">1.2. Public facade: QueryGateway</h3>
 <div class="paragraph">
-<p>Supply chains are networks. Everyone shares a process, but not a database. Quantum isolates each tenant’s data by default and lets you selectively share records with partners:</p>
+<p>A new collection-agnostic facade exposes plan/inspect capabilities and will later execute aggregation pipelines when enabled.</p>
+</div>
+<div class="listingblock">
+<div class="title">Java</div>
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">com.e2eq.framework.model.persistent.morphia.query.QueryGateway</span>;
+<span class="keyword">import</span> <span class="include">com.e2eq.framework.model.persistent.morphia.query.QueryGatewayImpl</span>;
+<span class="keyword">import</span> <span class="include">com.e2eq.framework.model.persistent.morphia.planner.PlannerResult</span>;
+
+QueryGateway gateway = <span class="keyword">new</span> QueryGatewayImpl();
+
+<span class="comment">// Decide which mode would be used</span>
+PlannerResult pr = gateway.plan(<span class="string"><span class="delimiter">&quot;</span><span class="content">expand(customer) &amp;&amp; status:active</span><span class="delimiter">&quot;</span></span>, Order.class);
+<span class="comment">// pr.getMode() == PlannerResult.Mode.AGGREGATION</span>
+<span class="comment">// pr.getExpandPaths() == [&quot;customer&quot;]</span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If you prefer a lower-level API:</p>
+</div>
+<div class="listingblock">
+<div class="title">Java</div>
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">com.e2eq.framework.model.persistent.morphia.MorphiaUtils</span>;
+<span class="keyword">import</span> <span class="include">com.e2eq.framework.model.persistent.morphia.planner.PlannedQuery</span>;
+
+PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(
+    <span class="string"><span class="delimiter">&quot;</span><span class="content">expand(items[*].product) &amp;&amp; status:active</span><span class="delimiter">&quot;</span></span>,
+    Order.class
+);
+
+<span class="keyword">switch</span> (planned.getMode()) {
+  <span class="keyword">case</span> FILTER:
+    <span class="comment">// Use planned.getFilter() with Morphia datastore</span>
+    <span class="keyword">break</span>;
+  <span class="keyword">case</span> AGGREGATION:
+    <span class="comment">// Use planned.getAggregation() to inspect the pipeline (placeholder in v1)</span>
+    <span class="keyword">break</span>;
+}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_examples_end_to_end">1.3. Examples end-to-end</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>No expansion (FILTER mode):</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>q = &quot;realm:acme &amp;&amp; status:active &amp;&amp; fields:[+_id,+total]&quot;</code></pre>
+</div>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p>Private by default: A supplier’s purchase orders are not visible to other suppliers.</p>
-</li>
-<li>
-<p>Share on purpose: Create a “collaboration bubble” around a purchase order or shipment so a buyer and a specific carrier can see the same milestones and documents.</p>
-</li>
-<li>
-<p>Central where it helps: Keep a global partner directory or product catalog in a shared domain if that reduces duplication.</p>
-</li>
-<li>
-<p>Regional and regulatory needs: Pin certain data (e.g., EU shipments) to the correct region with simple policies.</p>
+<p>With expansion (AGGREGATION mode):</p>
 </li>
 </ul>
 </div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>q = &quot;expand(customer, fields:[+name,+tier]) &amp;&amp; status:active &amp;&amp; fields:[+_id,+customer.name]&quot;</code></pre>
 </div>
-</div>
-<div class="sect1">
-<h2 id="_who_uses_the_system_organizations_and_roles">3. Who uses the system (organizations and roles)</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Organizations (tenants)
-- Shippers and customers: create orders, monitor shipments, approve changes.
-- Carriers and 3PLs: accept tenders, provide status, confirm delivery.
-- Suppliers: acknowledge POs, provide ASN/invoice data.</p>
 </div>
 <div class="paragraph">
-<p>Common user types within each organization
-- Planners: need forward‑looking visibility—capacity, forecasts, purchase orders.
-- Operations: need day‑to‑day details—stops, ETAs, exceptions.
-- Business analysts: need trends and history—on‑time performance, cost, root causes.</p>
+<p>See also: <a href="query-expansion.html">Relationship hydration with expand(path)</a>.</p>
 </div>
-<div class="paragraph">
-<p>Data visibility examples
-- Private notes: an operations note on a shipment visible only inside the shipper’s tenant.
-- Shared context: a delivery appointment visible to both the shipper and the carrier for a specific shipment.
-- Role‑filtered: analysts see aggregated KPIs, planners see open exceptions, operators see actionable tasks.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_identity_and_access_meet_partners_where_they_are">4. Identity and access: meet partners where they are</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Every organization may authenticate differently:
-- Enterprise SSO (OIDC/SAML) for shippers and large suppliers.
-- Username/password for smaller partners.
-- Service accounts and tokens for system‑to‑system integrations.</p>
-</div>
-<div class="paragraph">
-<p>Quantum supports these patterns and lets each tenant manage its own users (delegated administration). Permissions can differ by user type and tenant while staying auditable and predictable.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_modeling_without_jargon_areas_domains_and_actions">5. Modeling without jargon: Areas, Domains, and Actions</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>To keep your platform organized, Quantum groups things into:
-- Functional Areas: broad business spaces like Collaboration, Finance, or Catalog.
-- Functional Domains: specific entity types within an area—Partner, Shipment, PurchaseOrder, Invoice.
-- Functional Actions: what users do—VIEW, CREATE, UPDATE, DELETE, APPROVE, EXPORT, etc.</p>
-</div>
-<div class="paragraph">
-<p>Why this matters:
-- Clear menus for the UI (group screens by area and domain).
-- Clear policy rules (easier to say “Carriers can VIEW Shipments” or “Only Finance can APPROVE Invoices”).</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_policies_that_say_who_can_do_what_rule_language">6. Policies that say “who can do what” (Rule Language)</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Policies are simple, readable rules that match:
-- Who is calling (identity and roles)
-- What they’re trying to access (area, domain, action)
-- Request details (headers/body, like a shipment id or tenant)</p>
-</div>
-<div class="paragraph">
-<p>Rules then allow or deny the action and can add filters so the user only sees data they’re permitted to see. See the Permissions guide for authoring details (<a href="../user-guide/permissions.html#permissions">../user-guide/permissions.html</a>).</p>
-</div>
-<div class="paragraph">
-<p>Write‑time data placement (where a new record belongs)
-- By default, new records use the creator’s organization.
-- You can override per area/domain with a small policy—for example, keep Partner records in a shared “directory” domain while Shipments stay tenant‑local. See “Data domain assignment on create” (<a href="../user-guide/permissions.html#_data_domain_assignment">../user-guide/permissions.html</a>).</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_domain_contexts_and_domain_policies_placing_and_sharing_data">7. Domain contexts and domain policies (placing and sharing data)</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>In supply chains, the same entity often lives in different business contexts (e.g., a Shipment inside a Supplier’s operations vs. the Buyer’s view). Domain contexts let you keep data where it naturally belongs while still collaborating safely:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Keep most data tenant‑local: Each organization owns its operational truth (orders, shipments, tasks).</p>
-</li>
-<li>
-<p>Create shared contexts deliberately: Use a shared “Directory” context for master data like Partners and Facilities so everyone references the same records.</p>
-</li>
-<li>
-<p>Policy‑driven sharing: Collaboration bubbles share just the relevant records (a specific PO, shipment, or appointment) with the right partners. Policies ensure each party only sees the fields and actions appropriate to them.</p>
-</li>
-<li>
-<p>Regional and compliance contexts: Pin data to a geography (e.g., EU) when regulations require it; policies keep reads and writes aligned.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Business impact
-- Lower friction: Organize data the way teams actually work (local operations + shared directories).
-- Safer collaboration: Sharing is explicit and explainable—no surprise data leaks.
-- Compliance by construction: Residency and scoping rules are enforced by policy, not by custom code.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_bootstrap_tenants_with_seed_packs_zerotouch_baseline_data">8. Bootstrap tenants with Seed Packs (zero‑touch baseline data)</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Onboarding partners is a bottleneck in many SaaS rollouts. Seed packs provide a fast, repeatable way to initialize each tenant with the right starting data and settings.</p>
-</div>
-<div class="paragraph">
-<p>What seed packs give you
-- Versioned, reviewable baseline: Curate CSV/JSON datasets and settings (code lists, roles, sample workflows) under version control.
-- Archetypes for editions: Bundle multiple packs into a named edition (e.g., “Logistics Core” vs. “Supplier Lite”) to match your product tiers.
-- Safe, idempotent updates: Re‑apply packs any time; only changes are applied. You can inspect what’s pending before you apply.
-- Admin APIs and startup automation: New tenants can be provisioned with the right archetype automatically; admins can check pending updates and apply them when ready.</p>
-</div>
-<div class="paragraph">
-<p>Why this matters to a supply‑chain SaaS
-- Faster go‑live: New buyers, suppliers, and carriers start with consistent roles, code lists, and sample workflows.
-- Less manual setup: Reduce back‑and‑forth with partners; eliminate error‑prone spreadsheets and one‑off scripts.
-- Controlled change: Roll out new catalogs or policy tweaks as a versioned pack; apply to selected tenants when they opt in.</p>
-</div>
-<div class="paragraph">
-<p>Learn more: <a href="../user-guide/seed-packs.html">Seed packs and declarative tenant seeding</a>.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_security_policies_practical_protections_and_proofs">9. Security policies: practical protections and proofs</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Security isn’t just login. The framework’s policy layer turns business rules into enforceable, auditable protections across UI, APIs, and imports/exports.</p>
-</div>
-<div class="paragraph">
-<p>What’s protected
-- Least privilege by role: Planners, Operators, and Analysts only get the actions and fields they need.
-- Field‑level and record‑level controls: Share a shipment with a carrier without exposing private buyer notes or margins.
-- Tamper‑evident changes: Important state transitions and task completions are tracked and explainable.
-- Delegated administration: Each organization manages its users and roles; platform admins retain oversight with audit trails.</p>
-</div>
-<div class="paragraph">
-<p>Why it’s better than ad‑hoc controls
-- One policy engine, everywhere: The same rules guard screens, APIs, and bulk operations—reducing gaps and regressions.
-- Explainable decisions: When an action is denied or filtered, admins can see why.
-- Easier audits: Policies and seed packs create a repeatable, documented configuration per tenant.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_a_small_powerful_api_surface_list_query">10. A small, powerful API surface: List + Query</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Instead of building a unique search endpoint for every screen, Quantum gives you:
-- List API: a single, consistent endpoint per domain to list, filter, sort, page, and project fields.
-- Query Language: a simple filter syntax so UIs and reports can ask precise questions.
-- Automatic enforcement: policies and data‑domain rules are always applied server‑side, so callers only receive allowed data.</p>
-</div>
-<div class="paragraph">
-<p>Business outcomes
-- Faster delivery: new screens reuse the same list API.
-- Fewer mistakes: less custom code, more consistent results.
-- Safer by default: even power users can’t bypass policy enforcement.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_delegated_administration_tenantlevel_user_management">11. Delegated Administration (tenant‑level user management)</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Empower each organization to run their own house while you keep platform‑wide safety:
-- Tenant admins invite users, reset passwords, and assign roles.
-- Role templates per tenant align with their org structure (Planner, Ops, Analyst, Carrier Dispatcher, etc.).
-- Cross‑tenant boundaries are respected; global administrators can still support, audit, and troubleshoot with impersonation/acting‑on‑behalf‑of where permitted and logged.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_integrations_and_data_management">12. Integrations and data management</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Supply chains depend on clean, timely data. Quantum provides:
-- CSV imports/exports: onboard master data quickly, rerun safely, and let business users fix and re‑upload.
-- Stateful objects: model processes (e.g., Shipment lifecycle) with clear states—Created → In‑Transit → Delivered → Closed.
-- Completion Tasks: checklist‑like steps (confirm pickup, upload POD, reconcile invoice) that drive work to done and provide accountability.
-- Consistent access: the same policies that protect your UI protect imports/exports and API calls.</p>
-</div>
-<div class="paragraph">
-<p>Example uses
-- Bulk load a new supplier catalog with CSV import; analysts export exceptions weekly for review.
-- Track shipment exceptions as tasks; operations completes them with evidence (attachments/notes), all audited.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_endtoend_examples">13. End‑to‑end examples</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>1) Buyer–supplier collaboration on a Purchase Order
-- Create a collaboration bubble around a PO so both parties see schedule, holds, and documents.
-- Supplier can UPDATE promised dates; buyer can APPROVE changes. Private buyer notes remain private.</p>
-</div>
-<div class="paragraph">
-<p>2) Shared partner directory, curated centrally
-- Keep one shared Partner domain so everyone finds the same carrier and facility records.
-- Only directory curators can CREATE/UPDATE; all tenants can VIEW.</p>
-</div>
-<div class="paragraph">
-<p>3) EU shipment residency
-- Shipments created by anyone in Europe are written to an EU partition by policy. Reads remain role‑ and tenant‑scoped.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_what_you_dont_have_to_build_from_scratch">14. What you don’t have to build from scratch</h2>
-<div class="sectionbody">
-<div class="ulist">
-<ul>
-<li>
-<p>Data isolation and safe sharing across tenants</p>
-</li>
-<li>
-<p>A consistent CRUD and search API for every domain</p>
-</li>
-<li>
-<p>A policy engine that explains its decisions and applies filters</p>
-</li>
-<li>
-<p>A write‑time placement policy (so data lands in the right partition)</p>
-</li>
-<li>
-<p>Patterns for long‑running, stateful business processes and task completion</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>The framework gives you these foundations so your teams focus on business value—on‑time deliveries, lower cost, happier customers.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_other_helpful_capabilities_you_get_out_of_the_box">15. Other helpful capabilities you get out of the box</h2>
-<div class="sectionbody">
-<div class="ulist">
-<ul>
-<li>
-<p>Pending seed visibility: Admins can see which seed packs have updates pending for a tenant before applying them, reducing surprise changes.</p>
-</li>
-<li>
-<p>Version selection and rollback strategy: The platform automatically selects the latest compatible seed pack version; because packs are versioned and reviewable, you can test in a sandbox realm before rolling out.</p>
-</li>
-<li>
-<p>Archetypes (editions): Model product tiers by composing packs; useful for offering lighter supplier/carrier editions versus full buyer editions.</p>
-</li>
-<li>
-<p>Explainable access decisions: When access is denied or results are filtered, admins can inspect the reasoning—useful during partner onboarding and audits.</p>
-</li>
-<li>
-<p>Idempotent imports/exports: Bulk data operations can be retried safely, which is critical when partners exchange large files over unreliable networks.</p>
-</li>
-<li>
-<p>Observability hooks: Standardized endpoints and logs make it easier to monitor SLAs (e.g., late tasks, delayed updates) without custom plumbing.</p>
-</li>
-</ul>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_next_steps">16. Next steps</h2>
-<div class="sectionbody">
-<div class="ulist">
-<ul>
-<li>
-<p>Start with siloed defaults; prove value quickly using the List API.</p>
-</li>
-<li>
-<p>Add small, targeted policies to enable collaboration bubbles and shared directories.</p>
-</li>
-<li>
-<p>Introduce delegated administration so partners self‑serve.</p>
-</li>
-<li>
-<p>Use CSV imports and Completion Tasks to operationalize data stewardship.</p>
-</li>
-<li>
-<p>Deep dive: Permissions and Rule Language (<a href="../user-guide/permissions.html#permissions">../user-guide/permissions.html</a>), and Data domain assignment on create (<a href="../user-guide/permissions.html#_data_domain_assignment">../user-guide/permissions.html</a>).</p>
-</li>
-</ul>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_a_day_in_the_life_from_purchase_order_to_delivery">17. A day in the life: From Purchase Order to Delivery</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>This story ties the pieces together in a realistic sequence. We follow a Purchase Order (PO) from creation to delivery, with shared visibility for suppliers and carriers, a clear state graph, and checklist-like Completion Tasks guiding the work.</p>
-</div>
-<div class="paragraph">
-<p>1) Purchase Order is created (by the Buyer)
-- Action: A buyer creates a PO in the Collaboration area under the PurchaseOrder domain.
-- Data placement: By default, the PO is written to the buyer’s organization (their data domain). If you prefer a shared domain for POs, configure a small policy; otherwise, the default works well.
-- Programmatic sharing: A rule shares the specific PO with the chosen Supplier (or Suppliers). The Supplier can view the PO and update the fields you allow (e.g., promised date), but cannot see private buyer-only fields.</p>
-</div>
-<div class="paragraph">
-<p>State graph (illustrative)
-- Draft → Open → SupplierAcknowledged → ReadyToShip → PartiallyShipped → FullyShipped → Received → Closed</p>
-</div>
-<div class="paragraph">
-<p>Completion Tasks (examples attached to the PO)
-- Buyer: Provide required documents (commercial terms, incoterms)
-- Supplier: Acknowledge PO (due in 24 hours)
-- Supplier: Provide ASN (advanced shipping notice) for each shipment
-- Supplier: Confirm pickup window
-- Buyer: Approve any date changes</p>
-</div>
-<div class="paragraph">
-<p>2) The Supplier prepares shipments (shared onward to Carriers)
-- Action: The Supplier creates one or more Shipments linked to the PO (and optionally to specific lines).
-- Data placement: Shipments are written to the Supplier’s domain by default (their own organization), but are shared with the Buyer so both parties see the same timeline.
-- Sharing to Carriers: When the Supplier tenders a shipment, the shipment is shared with the selected Carrier so they can update movement and milestones.</p>
-</div>
-<div class="paragraph">
-<p>Shipment state graph (illustrative)
-- Planned → Tendered → Accepted → InTransit → Delivered → ProofVerified → Closed</p>
-</div>
-<div class="paragraph">
-<p>Shipment Completion Tasks (examples)
-- Carrier: Confirm pickup
-- Carrier: Update in-transit location/ETA
-- Carrier: Upload POD (proof of delivery)
-- Supplier: Reconcile quantities shipped vs. ordered</p>
-</div>
-<div class="paragraph">
-<p>3) Status updates complete tasks and move states forward
-- When the Supplier marks “SupplierAcknowledged,” the PO’s acknowledgement task completes and the PO moves to SupplierAcknowledged.
-- When all lines are ready and at least one shipment is created, the PO advances to ReadyToShip. If some but not all lines ship, it enters PartiallyShipped; once all lines ship, it becomes FullyShipped.
-- Carrier updates (e.g., Delivered with POD uploaded) complete shipment tasks. Those completion events can also advance the PO state (e.g., all shipments Delivered → PO moves to Received). Final checks (invoices matched, discrepancies resolved) move the PO to Closed.</p>
-</div>
-<div class="paragraph">
-<p>Why this is safe and predictable
-- Roles and policies ensure each party sees only what they should: the Buyer sees everything; the Supplier sees the shared PO and its related shipments; the Carrier sees only the shipments they handle.
-- Completion Tasks remove ambiguity: everyone knows the next step and who owns it. Each task completion is audited.
-- The state graph makes lifecycle transitions explicit. Policies can require certain tasks to be completed before a state transition is allowed.</p>
-</div>
-<div class="paragraph">
-<p>4) Business visibility and reporting (List API + Query)
-- Operations view: “Purchase Orders in progress” shows all POs in Open, SupplierAcknowledged, ReadyToShip, or PartiallyShipped, including late tasks and upcoming milestones.
-- Buyer/supplier view: Both parties see the same PO status and related Shipments, with role-appropriate fields.
-- Simple reporting example (illustrative):
-  GET /collaboration/purchaseorder/list?filter=status IN ("Open","SupplierAcknowledged","ReadyToShip","PartiallyShipped")&amp;sort=dueDate:asc&amp;limit=50
-  - Add projections to include key fields and roll-ups (e.g., shipped vs. ordered quantities). Related Shipment info can be retrieved similarly via the List API on the Shipment domain, filtered by the PO id.</p>
-</div>
-<div class="paragraph">
-<p>What made this easy (and repeatable)
-- Multi-tenancy by default: Each org’s data is isolated; sharing is explicit and safe.
-- Policies (Rule Language): Define who can see or update which fields and when. The same rules apply to UI, API, and imports/exports.
-- Data domain assignment on create: Defaults keep data in the creator’s org; you can configure exceptions (e.g., shared directories) with a tiny policy.
-- Stateful objects + Completion Tasks: Clear states and checklists turn complex collaboration into a predictable flow.
-- List API + Query Language: One consistent way to fetch work lists, timelines, and reports without proliferating custom endpoints.</p>
 </div>
 </div>
 </div>
@@ -912,7 +642,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-10-14 21:28:59 -0400
+Last updated 2025-10-24 16:48:01 -0400
 </div>
 </div>
 </body>
