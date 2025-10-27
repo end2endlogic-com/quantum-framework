@@ -87,14 +87,19 @@ public class DefaultMetadataRegistry implements MetadataRegistry {
             if (f == null) return null;
             var ann = f.getAnnotation(com.e2eq.framework.model.persistent.base.ReferenceTarget.class);
             if (ann == null) return null;
-            if (!ann.collection().isBlank()) return ann.collection();
+            String collectionValue = ann.collection();
+            if (collectionValue != null && !collectionValue.isBlank()) {
+                return collectionValue;
+            }
             Class<?> target = ann.target();
+            if (target == null || target == void.class) return null;
             // Check Morphia @Entity value
             dev.morphia.annotations.Entity e = target.getAnnotation(dev.morphia.annotations.Entity.class);
             if (e != null && e.value() != null && !e.value().isBlank()) {
                 return e.value();
             }
-            return target.getSimpleName();
+            String simpleName = target.getSimpleName();
+            return (simpleName != null && !simpleName.isBlank()) ? simpleName : null;
         } catch (Exception ex) {
             return null;
         }

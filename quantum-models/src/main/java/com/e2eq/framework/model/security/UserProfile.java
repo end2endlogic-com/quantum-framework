@@ -45,7 +45,7 @@ public  class UserProfile extends BaseModel {
     @JsonProperty(required = true)
     @NotNull (message = "credential reference must not be null")
     @NonNull
-    @ReferenceTarget(target = com.e2eq.framework.model.security.CredentialUserIdPassword.class)
+    @ReferenceTarget(target = com.e2eq.framework.model.security.CredentialUserIdPassword.class, collection="credentialUserIdPassword")
     protected EntityReference credentialUserIdPasswordRef;
     protected String userId;
 

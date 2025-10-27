@@ -21,7 +21,7 @@ public class MetadataRegistryTest {
         assertFalse(js.localIsArray);
         // fromCollection resolved via @ReferenceTarget on the field
         assertNotNull(js.fromCollection);
-        assertEquals("CredentialUserIdPassword", js.fromCollection);
+        assertEquals("credentialUserIdPassword", js.fromCollection);
     }
 
     @Test

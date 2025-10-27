@@ -146,12 +146,20 @@ field:*__edfs&&field2:^[value1,value2,value3]
 field:"*15"" LAPTOP SLEEVE-Black Twill*"
 
 # --DATEs
-#((field:dfefe%&&field:2)||(field:1&&field1.blah:4))&&(field:1&&field:2015-04-04)
-#((field:dfefe%&&field:2)||(field:1&&field1.blah:4))&&(field:1||field:2015-04-04T12:12:33)
-#((field:dfefe%&&field:>2)||(field:1&&field1.blah:4))&&(field:1||field:2015-04-04T12:12:33)
-#((field:dfefe%&&field:<#2)||(field:1&&field1.blah:4))&&(field:1||field:2015-04-04T12:12:33)
-#((field:dfefe%&&field:<#2)||(field:<=#1&&field1.blah:>=4))&&(field:1||field:2015-04-04T12:12:33)
+#((field:dfefe*&&field:2)||(field:1&&field1.blah:4))&&(field:1&&field:2015-04-04)
+#((field:dfefe*&&field:2)||(field:1&&field1.blah:4))&&(field:1||field:2015-04-04T12:12:33)
+#((field:dfefe*&&field:>2)||(field:1&&field1.blah:4))&&(field:1||field:2015-04-04T12:12:33)
+#((field:dfefe*&&field:<#2)||(field:1&&field1.blah:4))&&(field:1||field:2015-04-04T12:12:33)
+#((field:dfefe*&&field:<#2)||(field:<=#1&&field1.blah:>=4))&&(field:1||field:2015-04-04T12:12:33)
 #((field:true&&field:<#2)||(field:<=#1&&field1.blah:>=4))&&(field:1||field:2015-04-04T12:12:33)
 #((field:false&&field:<#2)||(field:<=#1&&field1.blah.blah:>=4))&&(field:1||field:2015-04-04T12:12:33)
 #((field:false&&field:<#2)||(field:<=#1&&field1.blah.blah:>=4))&&(field:1||field:2015-04-04)
 #(((field:false&&field:<#2)||(field:<=#1&&field1.blah.blah:>=4))&&(field:1||field:2015-04-04))
+
+#--Expand
+#expand(customer)
+#expand(items[*].product)
+#expand(patient.visits[*].diagnoses[*])
+
+#--Has Edge
+hasEdge(placedInOrg, ORG-ACME)
