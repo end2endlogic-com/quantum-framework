@@ -6,6 +6,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import com.e2eq.ontology.repo.OntologyEdgeRepo;
+import com.e2eq.ontology.core.OntologyAliasResolver;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
 
@@ -16,6 +17,10 @@ public class ListQueryRewriter {
     @Inject
     Instance<OntologyEdgeRepo> edgeRepoInstance;
 
+    // Alias resolver to normalize predicate names (supports synonyms). Optional to keep tests lightweight.
+    @Inject
+    Instance<OntologyAliasResolver> aliasResolverInstance;
+
     // Testing/legacy convenience: allow manual construction with a provided repo or legacy store
     private OntologyEdgeRepo edgeRepo;
 
@@ -25,18 +30,29 @@ public class ListQueryRewriter {
         this.edgeRepo = edgeRepo;
     }
 
+    private String canon(String predicate) {
+        try {
+            if (aliasResolverInstance != null && !aliasResolverInstance.isUnsatisfied()) {
+                return aliasResolverInstance.get().canonical(predicate);
+            }
+        } catch (Throwable ignored) { }
+        return predicate;
+    }
+
     private Set<String> srcIdsByDst(String tenantId, String predicate, String dstId){
-        if (edgeRepo != null) return edgeRepo.srcIdsByDst(tenantId, predicate, dstId);
+        String p = canon(predicate);
+        if (edgeRepo != null) return edgeRepo.srcIdsByDst(tenantId, p, dstId);
 
         if (edgeRepoInstance != null && !edgeRepoInstance.isUnsatisfied()) {
-            return edgeRepoInstance.get().srcIdsByDst(tenantId, predicate, dstId);
+            return edgeRepoInstance.get().srcIdsByDst(tenantId, p, dstId);
         }
         throw new IllegalStateException("OntologyEdgeRepo bean not available; provide via CDI or constructor");
     }
     private Set<String> srcIdsByDstIn(String tenantId, String predicate, Collection<String> dstIds){
-        if (edgeRepo != null) return edgeRepo.srcIdsByDstIn(tenantId, predicate, dstIds);
+        String p = canon(predicate);
+        if (edgeRepo != null) return edgeRepo.srcIdsByDstIn(tenantId, p, dstIds);
         if (edgeRepoInstance != null && !edgeRepoInstance.isUnsatisfied()) {
-            return edgeRepoInstance.get().srcIdsByDstIn(tenantId, predicate, dstIds);
+            return edgeRepoInstance.get().srcIdsByDstIn(tenantId, p, dstIds);
         }
         throw new IllegalStateException("OntologyEdgeRepo bean not available; provide via CDI or constructor");
     }

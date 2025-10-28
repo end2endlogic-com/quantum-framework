@@ -21,4 +21,5 @@ public @interface OntologyProperty {
     boolean functional() default false;      // inferred true for single-valued unless overridden
     String domain() default "";             // override declaring class id
     String range() default "";              // override inferred target class id
+    String[] aliases() default {};           // optional synonyms/aliases for this property
 }
