@@ -721,6 +721,41 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
             tenantId = variableMap.get("pTenantId");
             if (tenantId == null) tenantId = variableMap.get("tenantId");
         }
+
+        // Try to canonicalize predicate using OntologyAliasResolver if available via CDI
+        try {
+            var cdi = jakarta.enterprise.inject.spi.CDI.current();
+            if (cdi != null) {
+                Class<?> aliasCls = Class.forName("com.e2eq.ontology.core.OntologyAliasResolver");
+                var aliasSel = cdi.select(aliasCls);
+                Object resolver = aliasSel.isUnsatisfied() ? null : aliasSel.get();
+                if (resolver != null) {
+                    java.lang.reflect.Method cm = aliasCls.getMethod("canonical", String.class);
+                    Object can = cm.invoke(resolver, predicate);
+                    if (can instanceof String s) predicate = s;
+                }
+            }
+        } catch (Throwable ignored) { /* continue if resolver not present */ }
+
+        // Optional safety: validate that the predicate's domain matches the current model class (or its subclasses)
+        try {
+            if (modelClass != null) {
+                var cdi = jakarta.enterprise.inject.spi.CDI.current();
+                if (cdi != null) {
+                    Class<?> regIface = Class.forName("com.e2eq.ontology.core.OntologyRegistry");
+                    var regSel = cdi.select(regIface);
+                    Object registry = regSel.isUnsatisfied() ? null : regSel.get();
+                    if (registry != null) {
+                        if (!isPredicateApplicableToModel(registry, regIface, predicate, modelClass)) {
+                            // Fail closed: predicate not applicable to this collection/entity
+                            filterStack.push(Filters.eq("_id", "__none__"));
+                            return;
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) { /* if ontology not wired, continue with best-effort behavior */ }
+
         Set<String> ids = Collections.emptySet();
         if (tenantId != null && !tenantId.isBlank()) {
             try {
@@ -746,5 +781,77 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         } else {
             filterStack.push(Filters.in("_id", ids));
         }
+    }
+
+    // Reflective helper: check if predicate domain is compatible with modelClass
+    private boolean isPredicateApplicableToModel(Object registry, Class<?> regIface, String predicate, Class<?> modelClass) {
+        try {
+            java.lang.reflect.Method propertyOf = regIface.getMethod("propertyOf", String.class);
+            Object optProp = propertyOf.invoke(registry, predicate);
+            if (!(optProp instanceof java.util.Optional<?> opt) || opt.isEmpty()) return true; // no info => allow
+            Object propDef = opt.get();
+            java.lang.reflect.Method domainMethod = propDef.getClass().getMethod("domain");
+            Object optDomain = domainMethod.invoke(propDef);
+            if (!(optDomain instanceof java.util.Optional<?> od) || od.isEmpty()) return true; // no domain declared
+            Object domainIdObj = od.get();
+            if (!(domainIdObj instanceof String domainId)) return true;
+
+            String modelId = classIdOf(modelClass);
+            if (modelId.equals(domainId)) return true;
+
+            // Traverse parents of modelId to see if it is a subclass of domainId
+            return isA(registry, regIface, modelId, domainId);
+        } catch (Throwable t) {
+            return true; // be permissive on reflection failures
+        }
+    }
+
+    private boolean isA(Object registry, Class<?> regIface, String typeId, String targetSuperId) {
+        if (typeId == null || targetSuperId == null) return false;
+        if (typeId.equals(targetSuperId)) return true;
+        try {
+            java.lang.reflect.Method classOf = regIface.getMethod("classOf", String.class);
+            java.util.Set<String> visited = new java.util.HashSet<>();
+            String current = typeId;
+            while (current != null && visited.add(current)) {
+                Object optCls = classOf.invoke(registry, current);
+                if (optCls instanceof java.util.Optional<?> opt && opt.isPresent()) {
+                    Object classDef = opt.get();
+                    java.lang.reflect.Method parentsMethod = classDef.getClass().getMethod("parents");
+                    Object parentsObj = parentsMethod.invoke(classDef);
+                    if (parentsObj instanceof java.util.Set<?> parents) {
+                        for (Object p : parents) {
+                            if (p instanceof String ps) {
+                                if (ps.equals(targetSuperId)) return true;
+                                // BFS upwards
+                                if (!visited.contains(ps)) {
+                                    // Recurse upward
+                                    if (isA(registry, regIface, ps, targetSuperId)) return true;
+                                }
+                            }
+                        }
+                        return false;
+                    }
+                }
+                // not found in registry
+                return false;
+            }
+            return false;
+        } catch (Throwable t) {
+            return true; // on failure, do not block query
+        }
+    }
+
+    private String classIdOf(Class<?> clazz) {
+        try {
+            Class<?> annoClass = Class.forName("com.e2eq.ontology.annotations.OntologyClass");
+            java.lang.annotation.Annotation a = clazz.getAnnotation((Class<java.lang.annotation.Annotation>) annoClass);
+            if (a != null) {
+                java.lang.reflect.Method idMethod = annoClass.getMethod("id");
+                Object id = idMethod.invoke(a);
+                if (id instanceof String s && !s.isEmpty()) return s;
+            }
+        } catch (Throwable ignored) { }
+        return clazz.getSimpleName();
     }
 }
