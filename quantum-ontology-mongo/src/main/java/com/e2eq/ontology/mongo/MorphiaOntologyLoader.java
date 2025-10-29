@@ -2,6 +2,7 @@ package com.e2eq.ontology.mongo;
 
 import com.e2eq.ontology.annotations.OntologyClass;
 import com.e2eq.ontology.annotations.OntologyProperty;
+import com.e2eq.ontology.annotations.RelationType;
 import com.e2eq.ontology.core.InMemoryOntologyRegistry;
 import com.e2eq.ontology.core.OntologyRegistry;
 import dev.morphia.MorphiaDatastore;
@@ -61,14 +62,24 @@ public final class MorphiaOntologyLoader {
                 OntologyProperty pa = f.getAnnotation(OntologyProperty.class);
                 // Consider only annotated fields for now to avoid over-eager edge creation
                 if (pa == null) continue;
-                String pid = pa.id().isEmpty() ? f.getName() : pa.id();
-                String range = inferRangeFromField(f, entityClasses).orElse(pa.range().isEmpty() ? null : pa.range());
+                String pid = !pa.edgeType().isEmpty() ? pa.edgeType() : (pa.id().isEmpty() ? f.getName() : pa.id());
+                String range = null;
+                if (!pa.ref().isEmpty()) {
+                    range = pa.ref();
+                } else {
+                    range = inferRangeFromField(f, entityClasses).orElse(pa.range().isEmpty() ? null : pa.range());
+                }
                 Optional<String> rangeOpt = Optional.ofNullable(range);
                 Optional<String> domainOpt = Optional.of(domain);
-                boolean functional = pa.functional();
-                if (!functional) {
-                    // infer functional from single-valued (non-collection) field
-                    functional = !isCollectionOrArray(f.getType());
+                boolean functional;
+                if (pa.relation() != RelationType.NONE) {
+                    functional = (pa.relation() == RelationType.ONE_TO_ONE || pa.relation() == RelationType.MANY_TO_ONE);
+                } else {
+                    functional = pa.functional();
+                    if (!functional) {
+                        // infer functional from single-valued (non-collection) field
+                        functional = !isCollectionOrArray(f.getType());
+                    }
                 }
                 Set<String> superProps = new LinkedHashSet<>(Arrays.asList(pa.subPropertyOf()));
                 Optional<String> inverseOf = pa.inverseOf().isEmpty() ? Optional.empty() : Optional.of(pa.inverseOf());

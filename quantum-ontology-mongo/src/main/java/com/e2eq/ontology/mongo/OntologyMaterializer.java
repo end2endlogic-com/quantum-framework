@@ -25,6 +25,8 @@ public class OntologyMaterializer {
 
     public void apply(String tenantId, String entityId, String entityType, List<Reasoner.Edge> explicitEdges){
         var snap = new Reasoner.EntitySnapshot(tenantId, entityId, entityType, explicitEdges);
+        // [DEBUG_LOG] dump registry props
+        try { io.quarkus.logging.Log.infof("[DEBUG_LOG] Registry properties: %s", registry.properties().keySet()); } catch (Exception ignored) {}
         var out = reasoner.infer(snap, registry);
 
         // Collect new inferred edges by predicate
@@ -45,10 +47,18 @@ public class OntologyMaterializer {
                     .append("ts", new Date());
             upserts.add(doc);
         }
+        // [DEBUG_LOG] summarize inferred edges
+        try {
+            System.out.println("[DEBUG_LOG] OntologyMaterializer.apply inferred edges: src=" + entityId + ", tenant=" + tenantId + ", count=" + upserts.size() + ", byP=" + newByP);
+        } catch (Exception ignored) {}
         if (!upserts.isEmpty()) {
             // simple data conversion path supported by both repo and legacy store
             edgeRepo.upsertMany(upserts);
         }
+        try {
+            var srcEdges = edgeRepo.findBySrc(tenantId, entityId);
+            io.quarkus.logging.Log.infof("[DEBUG_LOG] After upsert, edges from src=%s: %s", entityId, srcEdges.stream().map(e -> e.getP()+"->"+e.getDst()).toList());
+        } catch (Exception ignored) {}
 
         // Load current inferred edges for this source and prune per predicate
         List<OntologyEdge> existing = findEdgesBySrcTyped(tenantId, entityId);

@@ -7,6 +7,7 @@ public interface OntologyRegistry {
     Optional<ClassDef> classOf(String name);
     Optional<PropertyDef> propertyOf(String name);
     List<PropertyChainDef> propertyChains();
+    Map<String, PropertyDef> properties();
     static OntologyRegistry inMemory(TBox tbox) { return new InMemoryOntologyRegistry(tbox); }
     record ClassDef(String name, Set<String> parents, Set<String> disjointWith, Set<String> sameAs){}
     // Extended PropertyDef to support subPropertyOf, symmetric, and functional characteristics

@@ -22,4 +22,11 @@ public @interface OntologyProperty {
     String domain() default "";             // override declaring class id
     String range() default "";              // override inferred target class id
     String[] aliases() default {};           // optional synonyms/aliases for this property
+
+    // Relationship/edge semantics (optional)
+    String ref() default "";                // target ontology type/class id (overrides range if set)
+    RelationType relation() default RelationType.NONE; // multiplicity/cardinality
+    String edgeType() default "";          // edge label/name used for traversal/materialization
+    String inverseOfEdge() default "";     // optional pointer to inverse edge label
+    boolean materializeEdge() default true; // allow opting out of edge materialization while keeping ref
 }

@@ -99,6 +99,15 @@ public final class ForwardChainingReasoner implements Reasoner {
             Optional<PropertyDef> pDef = reg.propertyOf(p);
             if (pDef.isEmpty()) continue;
             Optional<String> inv = pDef.get().inverseOf();
+            // If no direct inverse is declared on this property, search for a property that declares this as its inverse
+            if (inv.isEmpty()) {
+                for (PropertyDef q : reg.properties().values()) {
+                    if (q.inverseOf().isPresent() && q.inverseOf().get().equals(p)) {
+                        inv = Optional.of(q.name());
+                        break;
+                    }
+                }
+            }
             boolean symmetric = pDef.get().symmetric();
             for (Map.Entry<String, Set<String>> e1 : entry.getValue().entrySet()) {
                 String x = e1.getKey();

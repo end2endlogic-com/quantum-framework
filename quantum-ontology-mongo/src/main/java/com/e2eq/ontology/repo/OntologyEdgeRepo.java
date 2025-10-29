@@ -35,7 +35,12 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
             edge = new OntologyEdge();
             edge.setRefName(src + "|" + p + "|" + dst);
             DataDomain dd = new DataDomain();
+            // Populate required DataDomain fields for ontology edges; tests use default realm without user context
             dd.setTenantId(tenantId);
+            // Derive minimal defaults; in production these should be set from SecurityContext/Seed context
+            if (dd.getOrgRefName() == null) dd.setOrgRefName("ontology");
+            if (dd.getAccountNum() == null) dd.setAccountNum("0000000000");
+            if (dd.getOwnerId() == null) dd.setOwnerId("system");
             edge.setDataDomain(dd);
             edge.setSrc(src);
             edge.setP(p);

@@ -17,4 +17,5 @@ public final class InMemoryOntologyRegistry implements OntologyRegistry {
     public Optional<ClassDef> classOf(String name){ return Optional.ofNullable(classes.get(name)); }
     public Optional<PropertyDef> propertyOf(String name){ return Optional.ofNullable(properties.get(name)); }
     public List<PropertyChainDef> propertyChains(){ return chains; }
+    public Map<String, PropertyDef> properties(){ return properties; }
 }
