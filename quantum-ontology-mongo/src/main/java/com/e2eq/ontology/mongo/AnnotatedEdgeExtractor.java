@@ -25,10 +25,12 @@ public class AnnotatedEdgeExtractor {
         public final String predicateId;
         public final MethodHandle accessor;
         public final boolean collection;
-        PropertyBinding(String predicateId, MethodHandle accessor, boolean collection) {
+        public final boolean materialize;
+        PropertyBinding(String predicateId, MethodHandle accessor, boolean collection, boolean materialize) {
             this.predicateId = predicateId;
             this.accessor = accessor;
             this.collection = collection;
+            this.materialize = materialize;
         }
     }
     public static final class ClassMeta {
@@ -60,12 +62,13 @@ public class AnnotatedEdgeExtractor {
             for (Field f : clazz.getDeclaredFields()) {
                 OntologyProperty pa = f.getAnnotation(OntologyProperty.class);
                 if (pa == null) continue;
-                String pid = pa.id().isEmpty() ? f.getName() : pa.id();
+                String pid = !pa.edgeType().isEmpty() ? pa.edgeType() : (pa.id().isEmpty() ? f.getName() : pa.id());
                 try {
                     f.setAccessible(true);
                     MethodHandle mh = lookup.unreflectGetter(f);
                     boolean isCol = Collection.class.isAssignableFrom(f.getType()) || f.getType().isArray();
-                    props.add(new PropertyBinding(pid, mh, isCol));
+                    boolean materialize = pa.materializeEdge();
+                    props.add(new PropertyBinding(pid, mh, isCol, materialize));
                 } catch (IllegalAccessException ignored) {}
             }
             for (Method m : clazz.getDeclaredMethods()) {
@@ -73,12 +76,13 @@ public class AnnotatedEdgeExtractor {
                 if (pa == null) continue;
                 String name = m.getName();
                 String derived = (name.startsWith("get") && name.length() > 3) ? Character.toLowerCase(name.charAt(3)) + name.substring(4) : name;
-                String pid = pa.id().isEmpty() ? derived : pa.id();
+                String pid = !pa.edgeType().isEmpty() ? pa.edgeType() : (pa.id().isEmpty() ? derived : pa.id());
                 try {
                     m.setAccessible(true);
                     MethodHandle mh = lookup.unreflect(m);
                     boolean isCol = Collection.class.isAssignableFrom(m.getReturnType()) || m.getReturnType().isArray();
-                    props.add(new PropertyBinding(pid, mh, isCol));
+                    boolean materialize = pa.materializeEdge();
+                    props.add(new PropertyBinding(pid, mh, isCol, materialize));
                 } catch (IllegalAccessException ignored) {}
             }
             metas.put(clazz, new ClassMeta(classId, List.copyOf(props)));
@@ -107,7 +111,57 @@ public class AnnotatedEdgeExtractor {
     @Inject
     DefaultIdAccessor idAccessor;
 
-    public Optional<ClassMeta> metaOf(Class<?> clazz) { return Optional.ofNullable(metas.get(clazz)); }
+    public String idOf(Object entity) {
+        DefaultIdAccessor acc = (this.idAccessor != null) ? this.idAccessor : new DefaultIdAccessor();
+        return acc.idOf(entity);
+    }
+
+    public Optional<ClassMeta> metaOf(Class<?> clazz) {
+        ClassMeta meta = metas.get(clazz);
+        if (meta != null) return Optional.of(meta);
+        // Fallback: build metadata on demand for classes not discovered at startup
+        ClassMeta built = buildMetaFor(clazz);
+        if (built != null) {
+            metas.put(clazz, built);
+            return Optional.of(built);
+        }
+        return Optional.empty();
+    }
+
+    private ClassMeta buildMetaFor(Class<?> clazz) {
+        OntologyClass oc = clazz.getAnnotation(OntologyClass.class);
+        if (oc == null) return null;
+        String classId = classIdOf(clazz);
+        List<PropertyBinding> props = new ArrayList<>();
+        MethodHandles.Lookup lookup = MethodHandles.lookup();
+        for (Field f : clazz.getDeclaredFields()) {
+            OntologyProperty pa = f.getAnnotation(OntologyProperty.class);
+            if (pa == null) continue;
+            String pid = !pa.edgeType().isEmpty() ? pa.edgeType() : (pa.id().isEmpty() ? f.getName() : pa.id());
+            try {
+                f.setAccessible(true);
+                MethodHandle mh = lookup.unreflectGetter(f);
+                boolean isCol = Collection.class.isAssignableFrom(f.getType()) || f.getType().isArray();
+                boolean materialize = pa.materializeEdge();
+                props.add(new PropertyBinding(pid, mh, isCol, materialize));
+            } catch (IllegalAccessException ignored) {}
+        }
+        for (Method m : clazz.getDeclaredMethods()) {
+            OntologyProperty pa = m.getAnnotation(OntologyProperty.class);
+            if (pa == null) continue;
+            String name = m.getName();
+            String derived = (name.startsWith("get") && name.length() > 3) ? Character.toLowerCase(name.charAt(3)) + name.substring(4) : name;
+            String pid = !pa.edgeType().isEmpty() ? pa.edgeType() : (pa.id().isEmpty() ? derived : pa.id());
+            try {
+                m.setAccessible(true);
+                MethodHandle mh = lookup.unreflect(m);
+                boolean isCol = Collection.class.isAssignableFrom(m.getReturnType()) || m.getReturnType().isArray();
+                boolean materialize = pa.materializeEdge();
+                props.add(new PropertyBinding(pid, mh, isCol, materialize));
+            } catch (IllegalAccessException ignored) {}
+        }
+        return new ClassMeta(classId, List.copyOf(props));
+    }
 
     public List<Reasoner.Edge> fromEntity(String tenantId, Object entity) {
         var meta = metaOf(entity.getClass());
@@ -115,6 +169,9 @@ public class AnnotatedEdgeExtractor {
         String srcId = idAccessor.idOf(entity);
         List<Reasoner.Edge> out = new ArrayList<>();
         for (PropertyBinding b : meta.get().properties) {
+            if (!b.materialize) {
+                continue; // skip edge extraction when materialization disabled
+            }
             Object val;
             try {
                 val = b.accessor.invoke(entity);

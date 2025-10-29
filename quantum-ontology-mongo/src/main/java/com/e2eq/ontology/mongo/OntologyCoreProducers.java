@@ -7,6 +7,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Produces;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
+import io.quarkus.arc.DefaultBean;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -19,6 +20,7 @@ public class OntologyCoreProducers {
     MorphiaDatastore morphiaDatastore;
 
     @Produces
+    @DefaultBean
     @Singleton
     public OntologyRegistry ontologyRegistry() {
         // Base TBox from Morphia annotations, if possible
