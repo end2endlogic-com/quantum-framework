@@ -102,14 +102,14 @@ public class SeedStartupRunner {
                // var db = mongoClient.getDatabase(realm);
                // var upColl = db.getCollection("userProfile");
                // adminDoc = upColl.find(new org.bson.Document("email", adminUserId)).first();
-               Optional<CredentialUserIdPassword> oAdminCred = credRepo.findByUserId(adminUserId);
+               Optional<CredentialUserIdPassword> oAdminCred = credRepo.findByUserId(adminUserId, envConfigUtils.getSystemRealm(), true);
                if (!oAdminCred.isPresent()) {
                    Log.warnf("SeedStartupRunner: admin user %s not found in realm %s. Seeding will proceed with system context",
                       adminUserId, credRepo.getDatabaseName());
-                      oAdminCred = credRepo.findByUserId(envConfigUtils.getSystemUserId());
+                      oAdminCred = credRepo.findByUserId(envConfigUtils.getSystemUserId(), envConfigUtils.getSystemRealm(), true);
                       if (!oAdminCred.isPresent()) {
                           Log.warnf("SeedStartupRunner: system user %s not found in realm %s. Seeding will proceed with realm-only context; tenant substitutions may be blank.",
-                             envConfigUtils.getSystemUserId(), credRepo.getDatabaseName());
+                             envConfigUtils.getSystemUserId(), envConfigUtils.getSystemRealm());
                       } else {
                          adminCred = oAdminCred.get();
                       }
