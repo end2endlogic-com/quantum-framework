@@ -3,6 +3,10 @@ package com.e2eq.framework.service.seed;
 import com.coditory.sherlock.DistributedLock;
 import com.coditory.sherlock.Sherlock;
 import com.coditory.sherlock.mongo.MongoSherlock;
+import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
+import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
+import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.util.SecurityUtils;
 import com.mongodb.client.MongoClient;
@@ -33,6 +37,9 @@ public class SeedStartupRunner {
 
     @Inject
     MongoClient mongoClient;
+
+    @Inject
+    CredentialRepo credRepo;
 
     @Inject
     MorphiaSeedRepository morphiaSeedRepository;
@@ -90,38 +97,42 @@ public class SeedStartupRunner {
             String adminUserId = String.format("admin@%s", tenantId);
 
             // Lookup admin user profile in the target realm to obtain its dataDomain without requiring SecurityContext
-            org.bson.Document adminDoc = null;
+            CredentialUserIdPassword adminCred = null;
             try {
-                var db = mongoClient.getDatabase(realm);
-                var upColl = db.getCollection("userProfile");
-                adminDoc = upColl.find(new org.bson.Document("email", adminUserId)).first();
+               // var db = mongoClient.getDatabase(realm);
+               // var upColl = db.getCollection("userProfile");
+               // adminDoc = upColl.find(new org.bson.Document("email", adminUserId)).first();
+               Optional<CredentialUserIdPassword> oAdminCred = credRepo.findByUserId(adminUserId);
+               if (!oAdminCred.isPresent()) {
+                   Log.warnf("SeedStartupRunner: admin user %s not found in realm %s. Seeding will proceed with system context",
+                      adminUserId, credRepo.getDatabaseName());
+                      oAdminCred = credRepo.findByUserId(envConfigUtils.getSystemUserId());
+                      if (!oAdminCred.isPresent()) {
+                          Log.warnf("SeedStartupRunner: system user %s not found in realm %s. Seeding will proceed with realm-only context; tenant substitutions may be blank.",
+                             envConfigUtils.getSystemUserId(), credRepo.getDatabaseName());
+                      } else {
+                         adminCred = oAdminCred.get();
+                      }
+               } else {
+                  adminCred = oAdminCred.get();
+               }
+
             } catch (Exception e) {
                 Log.warnf("SeedStartupRunner: error looking up admin user in realm %s: %s", realm, e.getMessage());
             }
-            if (adminDoc == null) {
+            if (adminCred == null) {
                 Log.warnf("SeedStartupRunner: admin user %s not found in realm %s. Seeding will proceed with realm-only context; tenant substitutions may be blank.", adminUserId, realm);
             }
 
             // Build SeedContext with values from admin's dataDomain when available
             SeedContext.Builder ctxBuilder = SeedContext.builder(realm);
-            org.bson.Document adminDDDoc = (adminDoc != null) ? (org.bson.Document) adminDoc.get("dataDomain") : null;
-            com.e2eq.framework.model.persistent.base.DataDomain adminDD = null;
+            DataDomain adminDD = (adminCred != null) ? adminCred.getDataDomain() : null;
+
             String resolvedOwnerId = null;
-            if (adminDDDoc != null) {
-                try {
-                    adminDD = new com.e2eq.framework.model.persistent.base.DataDomain(
-                            adminDDDoc.getString("orgRefName"),
-                            adminDDDoc.getString("accountNum"),
-                            adminDDDoc.getString("tenantId"),
-                            adminDDDoc.getInteger("dataSegment") != null ? adminDDDoc.getInteger("dataSegment") : 0,
-                            adminDDDoc.getString("ownerId")
-                    );
-                    resolvedOwnerId = adminDoc.getString("userId");
-                } catch (Exception ex) {
-                    Log.warnf("SeedStartupRunner: failed to materialize admin dataDomain in realm %s: exception msg: %s", realm, ex.getMessage());
-                    adminDD = null;
-                }
-            }
+             if (adminCred != null ) {
+                    resolvedOwnerId = adminCred.getUserId();
+             }
+
             if (adminDD != null) {
                 ctxBuilder
                         .tenantId(adminDD.getTenantId())
