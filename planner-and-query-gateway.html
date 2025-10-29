@@ -533,7 +533,12 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_planner_decisions">1.1. Planner decisions</a></li>
 <li><a href="#_public_facade_querygateway">1.2. Public facade: QueryGateway</a></li>
 <li><a href="#_examples_end_to_end">1.3. Examples end-to-end</a></li>
-<li><a href="#_rest_endpoints_v1">1.4. REST endpoints (v1)</a></li>
+<li><a href="#query-gateway-rest">1.4. REST endpoints (v1)</a>
+<ul class="sectlevel3">
+<li><a href="#_requestresponse_apiqueryplan">1.4.1. Request/Response: /api/query/plan</a></li>
+<li><a href="#_requestresponse_apiqueryfind">1.4.2. Request/Response: /api/query/find</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
@@ -570,16 +575,19 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div class="listingblock">
 <div class="title">Java</div>
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">com.e2eq.framework.model.persistent.morphia.query.QueryGateway</span>;
+<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">com.e2eq.framework.model.persistent.morphia.planner.PlannerResult</span>;
+<span class="keyword">import</span> <span class="include">com.e2eq.framework.model.persistent.morphia.query.QueryGateway</span>;
 <span class="keyword">import</span> <span class="include">com.e2eq.framework.model.persistent.morphia.query.QueryGatewayImpl</span>;
-<span class="keyword">import</span> <span class="include">com.e2eq.framework.model.persistent.morphia.planner.PlannerResult</span>;
 
-QueryGateway gateway = <span class="keyword">new</span> QueryGatewayImpl();
-
-<span class="comment">// Decide which mode would be used</span>
-PlannerResult pr = gateway.plan(<span class="string"><span class="delimiter">&quot;</span><span class="content">expand(customer) &amp;&amp; status:active</span><span class="delimiter">&quot;</span></span>, Order.class);
-<span class="comment">// pr.getMode() == PlannerResult.Mode.AGGREGATION</span>
-<span class="comment">// pr.getExpandPaths() == [&quot;customer&quot;]</span></code></pre>
+<span class="directive">public</span> <span class="type">class</span> <span class="class">PlannerSnippet1</span> {
+  <span class="directive">static</span> <span class="type">class</span> <span class="class">Order</span> {}
+  <span class="directive">public</span> <span class="directive">static</span> <span class="type">void</span> main(<span class="predefined-type">String</span><span class="type">[]</span> args) {
+    QueryGateway gateway = <span class="keyword">new</span> QueryGatewayImpl();
+    PlannerResult pr = gateway.plan(<span class="string"><span class="delimiter">&quot;</span><span class="content">expand(customer) &amp;&amp; status:active</span><span class="delimiter">&quot;</span></span>, Order.class);
+    <span class="predefined-type">System</span>.out.println(pr.getMode());        <span class="comment">// AGGREGATION</span>
+    <span class="predefined-type">System</span>.out.println(pr.getExpandPaths()); <span class="comment">// [customer]</span>
+  }
+}</code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -588,21 +596,21 @@ PlannerResult pr = gateway.plan(<span class="string"><span class="delimiter">&qu
 <div class="listingblock">
 <div class="title">Java</div>
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">com.e2eq.framework.model.persistent.morphia.MorphiaUtils</span>;
-<span class="keyword">import</span> <span class="include">com.e2eq.framework.model.persistent.morphia.planner.PlannedQuery</span>;
+<pre class="CodeRay highlight"><code>import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
+import com.e2eq.framework.model.persistent.morphia.planner.PlannedQuery;
 
 PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(
-    <span class="string"><span class="delimiter">&quot;</span><span class="content">expand(items[*].product) &amp;&amp; status:active</span><span class="delimiter">&quot;</span></span>,
+    &quot;expand(items[*].product) &amp;&amp; status:active&quot;,
     Order.class
 );
 
-<span class="keyword">switch</span> (planned.getMode()) {
-  <span class="keyword">case</span> FILTER:
-    <span class="comment">// Use planned.getFilter() with Morphia datastore</span>
-    <span class="keyword">break</span>;
-  <span class="keyword">case</span> AGGREGATION:
-    <span class="comment">// Use planned.getAggregation() to inspect the pipeline (placeholder in v1)</span>
-    <span class="keyword">break</span>;
+switch (planned.getMode()) {
+  case FILTER:
+    // Use planned.getFilter() with Morphia datastore
+    break;
+  case AGGREGATION:
+    // Use planned.getAggregation() to inspect the pipeline (placeholder in v1)
+    break;
 }</code></pre>
 </div>
 </div>
@@ -634,26 +642,28 @@ PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(
 </div>
 </div>
 <div class="paragraph">
-<p>See also: <a href="query-expansion.html">Relationship hydration with expand(path)</a>.</p>
+<p>See also: <a href="query-expansion.html">Relationship hydration with expand(path)</a>. For concrete pipelines, see <a href="query-expansion.html#aggregation-examples">Aggregation examples: what expand(&#8230;&#8203;) compiles to</a>.</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_rest_endpoints_v1">1.4. REST endpoints (v1)</h3>
+<h3 id="query-gateway-rest">1.4. REST endpoints (v1)</h3>
 <div class="paragraph">
-<p>Two helper endpoints expose the planner and execution in FILTER mode:</p>
+<p>Two helper endpoints expose the planner and execution path. FILTER mode executes immediately. AGGREGATION mode is planned, and execution is guarded by a feature flag.</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p>POST /api/query/plan — returns planner mode and expand paths</p>
+<p>POST /api/query/plan — returns planner mode and expand paths detected</p>
 </li>
 <li>
-<p>POST /api/query/find — executes FILTER-mode queries and returns the standard Collection&lt;T&gt; envelope; returns 501 when AGGREGATION is requested (until aggregation compiler is enabled)</p>
+<p>POST /api/query/find — executes FILTER-mode queries and returns the standard Collection&lt;T&gt; envelope; when AGGREGATION is requested, behavior depends on a feature flag (see below)</p>
 </li>
 </ul>
 </div>
+<div class="sect3">
+<h4 id="_requestresponse_apiqueryplan">1.4.1. Request/Response: /api/query/plan</h4>
 <div class="listingblock">
-<div class="title">Request: plan</div>
+<div class="title">Request body</div>
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="json">{
   <span class="key"><span class="delimiter">&quot;</span><span class="content">rootType</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">com.e2eq.framework.model.security.UserProfile</span><span class="delimiter">&quot;</span></span>,
@@ -662,7 +672,7 @@ PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(
 </div>
 </div>
 <div class="listingblock">
-<div class="title">Response: plan</div>
+<div class="title">Response body</div>
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="json">{
   <span class="key"><span class="delimiter">&quot;</span><span class="content">mode</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">AGGREGATION</span><span class="delimiter">&quot;</span></span>,
@@ -670,18 +680,58 @@ PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(
 }</code></pre>
 </div>
 </div>
+<div class="paragraph">
+<p>Notes</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>mode is FILTER when no expand(&#8230;&#8203;) directives are present; otherwise AGGREGATION.</p>
+</li>
+<li>
+<p>expandPaths lists the paths detected by the planner for hydration. See <a href="query-expansion.html">Query Expansion</a>.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_requestresponse_apiqueryfind">1.4.2. Request/Response: /api/query/find</h4>
+<div class="paragraph">
+<p>Parameters in the request body</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>rootType: fully-qualified class name extending UnversionedBaseModel</p>
+</li>
+<li>
+<p>query: BIAPI query string (see <a href="query-language.html">Query Language Reference</a>)</p>
+</li>
+<li>
+<p>page: optional object with limit and skip</p>
+</li>
+<li>
+<p>sort: optional array of { field, dir } objects, where dir is ASC or DESC</p>
+</li>
+<li>
+<p>realm: optional, overrides the default realm/database</p>
+</li>
+</ul>
+</div>
 <div class="listingblock">
-<div class="title">Request: find (FILTER mode)</div>
+<div class="title">Request body (FILTER mode)</div>
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="json">{
   <span class="key"><span class="delimiter">&quot;</span><span class="content">rootType</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">com.e2eq.framework.model.security.UserProfile</span><span class="delimiter">&quot;</span></span>,
   <span class="key"><span class="delimiter">&quot;</span><span class="content">query</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">displayName:*Alice*</span><span class="delimiter">&quot;</span></span>,
-  <span class="key"><span class="delimiter">&quot;</span><span class="content">page</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">limit</span><span class="delimiter">&quot;</span></span>: <span class="integer">10</span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">skip</span><span class="delimiter">&quot;</span></span>: <span class="integer">0</span> }
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">page</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">limit</span><span class="delimiter">&quot;</span></span>: <span class="integer">10</span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">skip</span><span class="delimiter">&quot;</span></span>: <span class="integer">0</span> },
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">sort</span><span class="delimiter">&quot;</span></span>: [ { <span class="key"><span class="delimiter">&quot;</span><span class="content">field</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">createdDate</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">dir</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">DESC</span><span class="delimiter">&quot;</span></span> } ],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">realm</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">acme</span><span class="delimiter">&quot;</span></span>
 }</code></pre>
 </div>
 </div>
 <div class="listingblock">
-<div class="title">Response: find (Collection envelope)</div>
+<div class="title">Response body (Collection envelope)</div>
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="json">{
   <span class="key"><span class="delimiter">&quot;</span><span class="content">offset</span><span class="delimiter">&quot;</span></span>: <span class="integer">0</span>,
@@ -692,6 +742,53 @@ PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(
 }</code></pre>
 </div>
 </div>
+<div class="paragraph">
+<p>Behavior when AGGREGATION is requested</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>If the planner selects AGGREGATION (due to expand(&#8230;&#8203;)) and the configuration property feature.queryGateway.execution.enabled=false (default), the endpoint responds with HTTP 501 Not Implemented and a message indicating execution is disabled.</p>
+</li>
+<li>
+<p>If feature.queryGateway.execution.enabled=true, the gateway attempts to execute the aggregation pipeline. If the pipeline contains an unresolved $lookup.from ("<em>unknown</em>"), the endpoint responds with HTTP 422 Unprocessable Entity and an explanatory error. Otherwise, results are returned in the same Collection envelope shape, with rows being Documents.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>cURL examples</p>
+</div>
+<div class="listingblock">
+<div class="title">Planning with expansion</div>
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="bash">curl -sS -X POST \
+  -H 'Content-Type: application/json' \
+  localhost:8080/api/query/plan \
+  -d '{
+    &quot;rootType&quot;:&quot;com.e2eq.framework.model.security.UserProfile&quot;,
+    &quot;query&quot;:&quot;expand(customer) &amp;&amp; status:active&quot;
+  }'</code></pre>
+</div>
+</div>
+<div class="listingblock">
+<div class="title">Finding with paging, sort, realm (FILTER path)</div>
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="bash">curl -sS -X POST \
+  -H 'Content-Type: application/json' \
+  localhost:8080/api/query/find \
+  -d '{
+    &quot;rootType&quot;:&quot;com.e2eq.framework.model.security.UserProfile&quot;,
+    &quot;query&quot;:&quot;displayName:*Alice*&quot;,
+    &quot;page&quot;: { &quot;limit&quot;: 10, &quot;skip&quot;: 0 },
+    &quot;sort&quot;: [ { &quot;field&quot;: &quot;createdDate&quot;, &quot;dir&quot;: &quot;DESC&quot; } ],
+    &quot;realm&quot;:&quot;acme&quot;
+  }'</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>See also: <a href="query-expansion.html">Relationship hydration with expand(path)</a>.</p>
+</div>
+</div>
 </div>
 </div>
 </div>
@@ -699,7 +796,7 @@ PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-10-24 23:03:42 -0400
+Last updated 2025-10-29 16:40:27 -0400
 </div>
 </div>
 </body>

@@ -530,11 +530,20 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <ul class="sectlevel1">
 <li><a href="#query-expansion">1. Relationship hydration with expand(path)</a>
 <ul class="sectlevel2">
-<li><a href="#_what_is_expandpath">1.1. What is expand(path)?</a></li>
-<li><a href="#_filtering_related_entities_inline">1.2. Filtering related entities (inline)</a></li>
-<li><a href="#_projection_with_fields">1.3. Projection with fields:[+/-]</a></li>
-<li><a href="#_examples">1.4. Examples</a></li>
-<li><a href="#_semantics_and_limits">1.5. Semantics and limits</a></li>
+<li><a href="#_how_it_works">1.1. How it works</a></li>
+<li><a href="#_what_is_expandpath">1.2. What is expand(path)?</a></li>
+<li><a href="#_filtering_related_entities_inline">1.3. Filtering related entities (inline)</a></li>
+<li><a href="#_projection_with_fields">1.4. Projection with fields:[+/-]</a></li>
+<li><a href="#_examples">1.5. Examples</a></li>
+<li><a href="#_semantics_and_limits">1.6. Semantics and limits</a></li>
+<li><a href="#aggregation-examples">1.7. Aggregation examples: what expand(&#8230;&#8203;) compiles to</a>
+<ul class="sectlevel3">
+<li><a href="#_single_reference_expandcustomer">1.7.1. Single reference: expand(customer)</a></li>
+<li><a href="#_array_of_references_expanditems_product">1.7.2. Array of references: expand(items[*].product)</a></li>
+<li><a href="#_nested_arrays_expandpatient_visits_diagnoses">1.7.3. Nested arrays: expand(patient.visits[<strong>].diagnoses[</strong>])</a></li>
+<li><a href="#_when_is_aggregation_used_vs_filter">1.7.4. When is AGGREGATION used vs FILTER?</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
@@ -549,7 +558,42 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 It preserves backward compatibility and introduces no SQL-like syntax.</p>
 </div>
 <div class="sect2">
-<h3 id="_what_is_expandpath">1.1. What is expand(path)?</h3>
+<h3 id="_how_it_works">1.1. How it works</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>You add one or more expand(path) directives to your query string to request hydration of related entities at specific paths.</p>
+</li>
+<li>
+<p>The planner inspects the query. If any expand(&#8230;&#8203;) directives are present, it selects AGGREGATION mode; otherwise, FILTER mode.</p>
+</li>
+<li>
+<p>In FILTER mode, the system converts the query to a Morphia Filter and queries a single MongoDB collection.</p>
+</li>
+<li>
+<p>In AGGREGATION mode, the system constructs an aggregation pipeline (with $lookup, $unwind, etc.) to materialize related documents. Execution may be guarded by a feature flag in the QueryGatewayResource.</p>
+</li>
+<li>
+<p>Projection can be applied at the root and per expansion using fields:[+/-] syntax. Unknown projection paths are hard errors.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>See also:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="planner-and-query-gateway.html">Planner and QueryGateway</a> for mode selection and Java APIs</p>
+</li>
+<li>
+<p><a href="planner-and-query-gateway.html#query-gateway-rest">QueryGateway REST endpoints</a> to plan or execute queries over HTTP</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_what_is_expandpath">1.2. What is expand(path)?</h3>
 <div class="paragraph">
 <p>Use expand(path) to hydrate properties that are modeled as EntityReference or ontology-annotated relations.
 The path is dot-based and may include array wildcards [*] between segments.</p>
@@ -572,7 +616,7 @@ The path is dot-based and may include array wildcards [*] between segments.</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_filtering_related_entities_inline">1.2. Filtering related entities (inline)</h3>
+<h3 id="_filtering_related_entities_inline">1.3. Filtering related entities (inline)</h3>
 <div class="paragraph">
 <p>Continue to use your existing filter primitives in the same query string to filter the root collection.
 Filtering on related entities will be supported via either:</p>
@@ -592,7 +636,7 @@ Filtering on related entities will be supported via either:</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_projection_with_fields">1.3. Projection with fields:[+/-]</h3>
+<h3 id="_projection_with_fields">1.4. Projection with fields:[+/-]</h3>
 <div class="paragraph">
 <p>A unified projection syntax can be used both at the root and per expansion.</p>
 </div>
@@ -617,7 +661,7 @@ Filtering on related entities will be supported via either:</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_examples">1.4. Examples</h3>
+<h3 id="_examples">1.5. Examples</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -656,7 +700,7 @@ Filtering on related entities will be supported via either:</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_semantics_and_limits">1.5. Semantics and limits</h3>
+<h3 id="_semantics_and_limits">1.6. Semantics and limits</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -674,13 +718,188 @@ Filtering on related entities will be supported via either:</p>
 <p>See also: <a href="planner-and-query-gateway.html">Planner and QueryGateway</a></p>
 </div>
 </div>
+<div class="sect2">
+<h3 id="aggregation-examples">1.7. Aggregation examples: what expand(&#8230;&#8203;) compiles to</h3>
+<div class="paragraph">
+<p>This section shows typical MongoDB aggregation stages the planner emits when expand(path) is present. Exact collection names and field names depend on your model mapping. If the collection cannot be resolved at plan-time, the planner will emit a placeholder from: "<em>unknown</em>"; the REST gateway returns HTTP 422 on execution in that case.</p>
+</div>
+<div class="paragraph">
+<p>Tip: You can inspect the chosen mode and expand paths with POST /api/query/plan. See <a href="planner-and-query-gateway.html#query-gateway-rest">QueryGateway REST endpoints</a>.</p>
+</div>
+<div class="sect3">
+<h4 id="_single_reference_expandcustomer">1.7.1. Single reference: expand(customer)</h4>
+<div class="paragraph">
+<p>Query</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>q = &quot;status:active &amp;&amp; expand(customer, fields:[+name,+tier]) &amp;&amp; fields:[+_id,+total,+customer]&quot;</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Typical pipeline skeleton</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">[
+  { <span class="key"><span class="delimiter">&quot;</span><span class="content">$match</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">active</span><span class="delimiter">&quot;</span></span> } },
+  { <span class="key"><span class="delimiter">&quot;</span><span class="content">$lookup</span><span class="delimiter">&quot;</span></span>: {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">from</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">customers</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">localField</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">customerId</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">foreignField</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">_id</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">as</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">__exp_customer</span><span class="delimiter">&quot;</span></span>
+  }},
+  { <span class="key"><span class="delimiter">&quot;</span><span class="content">$unwind</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">path</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">$__exp_customer</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">preserveNullAndEmptyArrays</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span> }},
+  { <span class="key"><span class="delimiter">&quot;</span><span class="content">$set</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">customer</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">$__exp_customer</span><span class="delimiter">&quot;</span></span> }},
+  { <span class="key"><span class="delimiter">&quot;</span><span class="content">$project</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">_id</span><span class="delimiter">&quot;</span></span>: <span class="integer">1</span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">total</span><span class="delimiter">&quot;</span></span>: <span class="integer">1</span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">customer</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">name</span><span class="delimiter">&quot;</span></span>: <span class="integer">1</span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">tier</span><span class="delimiter">&quot;</span></span>: <span class="integer">1</span> } } }
+]</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Result shape (conceptual)</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">_id</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">O123</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">total</span><span class="delimiter">&quot;</span></span>: <span class="float">99.50</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">customer</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">_id</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">C1</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">name</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Acme</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">tier</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">GOLD</span><span class="delimiter">&quot;</span></span> }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Notes
+- The intermediate field __exp_customer is an internal staging alias; the planner may omit it in future.
+- Per-expansion projection fields:[+name,+tier] narrows the embedded document via $project.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_array_of_references_expanditems_product">1.7.2. Array of references: expand(items[*].product)</h4>
+<div class="paragraph">
+<p>Query</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>q = &quot;expand(items[*].product, fields:[+sku,+title]) &amp;&amp; fields:[+_id,+items.product]&quot;</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Typical pipeline patterns (two common strategies)</p>
+</div>
+<div class="paragraph">
+<p>1) Unwind-and-regroup (easy to read)</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">[
+  { <span class="key"><span class="delimiter">&quot;</span><span class="content">$unwind</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">path</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">$items</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">preserveNullAndEmptyArrays</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span> }},
+  { <span class="key"><span class="delimiter">&quot;</span><span class="content">$lookup</span><span class="delimiter">&quot;</span></span>: {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">from</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">products</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">localField</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">items.productId</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">foreignField</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">_id</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">as</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">__exp_product</span><span class="delimiter">&quot;</span></span>
+  }},
+  { <span class="key"><span class="delimiter">&quot;</span><span class="content">$unwind</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">path</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">$__exp_product</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">preserveNullAndEmptyArrays</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span> }},
+  { <span class="key"><span class="delimiter">&quot;</span><span class="content">$set</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">items.product</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">$__exp_product</span><span class="delimiter">&quot;</span></span> }},
+  { <span class="key"><span class="delimiter">&quot;</span><span class="content">$group</span><span class="delimiter">&quot;</span></span>: {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">_id</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">$_id</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">doc</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">$first</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">$$ROOT</span><span class="delimiter">&quot;</span></span> },
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">items</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">$push</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">$items</span><span class="delimiter">&quot;</span></span> }
+  }},
+  { <span class="key"><span class="delimiter">&quot;</span><span class="content">$replaceRoot</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">newRoot</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">$mergeObjects</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">$doc</span><span class="delimiter">&quot;</span></span>, { <span class="key"><span class="delimiter">&quot;</span><span class="content">items</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">$items</span><span class="delimiter">&quot;</span></span> }] } }},
+  { <span class="key"><span class="delimiter">&quot;</span><span class="content">$project</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">_id</span><span class="delimiter">&quot;</span></span>: <span class="integer">1</span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">items.product</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">sku</span><span class="delimiter">&quot;</span></span>: <span class="integer">1</span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">title</span><span class="delimiter">&quot;</span></span>: <span class="integer">1</span> } } }
+]</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>2) Map-with-lookup (keeps array order without grouping; requires $lookup with pipeline + $map)</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">[
+  { <span class="key"><span class="delimiter">&quot;</span><span class="content">$set</span><span class="delimiter">&quot;</span></span>: {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">items</span><span class="delimiter">&quot;</span></span>: {
+        <span class="key"><span class="delimiter">&quot;</span><span class="content">$map</span><span class="delimiter">&quot;</span></span>: {
+          <span class="key"><span class="delimiter">&quot;</span><span class="content">input</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">$items</span><span class="delimiter">&quot;</span></span>,
+          <span class="key"><span class="delimiter">&quot;</span><span class="content">as</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">it</span><span class="delimiter">&quot;</span></span>,
+          <span class="key"><span class="delimiter">&quot;</span><span class="content">in</span><span class="delimiter">&quot;</span></span>: {
+            <span class="key"><span class="delimiter">&quot;</span><span class="content">$let</span><span class="delimiter">&quot;</span></span>: {
+              <span class="key"><span class="delimiter">&quot;</span><span class="content">vars</span><span class="delimiter">&quot;</span></span>: {
+                <span class="key"><span class="delimiter">&quot;</span><span class="content">p</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">$first</span><span class="delimiter">&quot;</span></span>: {
+                  <span class="key"><span class="delimiter">&quot;</span><span class="content">$lookup</span><span class="delimiter">&quot;</span></span>: {
+                    <span class="key"><span class="delimiter">&quot;</span><span class="content">from</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">products</span><span class="delimiter">&quot;</span></span>,
+                    <span class="key"><span class="delimiter">&quot;</span><span class="content">let</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">pid</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">$$it.productId</span><span class="delimiter">&quot;</span></span> },
+                    <span class="key"><span class="delimiter">&quot;</span><span class="content">pipeline</span><span class="delimiter">&quot;</span></span>: [ { <span class="key"><span class="delimiter">&quot;</span><span class="content">$match</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">$expr</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">$eq</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">$_id</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">$$pid</span><span class="delimiter">&quot;</span></span>] } } } ],
+                    <span class="key"><span class="delimiter">&quot;</span><span class="content">as</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">p</span><span class="delimiter">&quot;</span></span>
+                  }
+                }}
+              },
+              <span class="key"><span class="delimiter">&quot;</span><span class="content">in</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">$mergeObjects</span><span class="delimiter">&quot;</span></span>: [ <span class="string"><span class="delimiter">&quot;</span><span class="content">$$it</span><span class="delimiter">&quot;</span></span>, { <span class="key"><span class="delimiter">&quot;</span><span class="content">product</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">$p</span><span class="delimiter">&quot;</span></span> } ] }
+            }
+          }
+        }
+      }
+  }},
+  { <span class="key"><span class="delimiter">&quot;</span><span class="content">$project</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">_id</span><span class="delimiter">&quot;</span></span>: <span class="integer">1</span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">items.product</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">sku</span><span class="delimiter">&quot;</span></span>: <span class="integer">1</span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">title</span><span class="delimiter">&quot;</span></span>: <span class="integer">1</span> } } }
+]</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Notes
+- The actual compiler may choose either strategy based on simplicity; behavior is equivalent for most cases.
+- Null or missing productId yields product: null due to preserveNullAndEmptyArrays.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_nested_arrays_expandpatient_visits_diagnoses">1.7.3. Nested arrays: expand(patient.visits[<strong>].diagnoses[</strong>])</h4>
+<div class="paragraph">
+<p>Query</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>q = &quot;expand(patient.visits[*].diagnoses[*]) &amp;&amp; fields:[+_id,+patient.visits.diagnoses]&quot;</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Typical staged pipeline (high level)</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>1. $lookup patient -&gt; __exp_patient; $set patient
+2. $unwind visits (preserveNullAndEmptyArrays)
+3. $unwind visits.diagnoses
+4. $lookup diagnosis -&gt; set visits.diagnoses[*]
+5. $group back by root _id while reconstructing visits and diagnoses arrays in original order
+6. optional $project to constrain fields</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Caveats
+- Depth and mixed object/array hops are bounded; traversal stops at a non-reference boundary.
+- For very large arrays, prefer targeted filtering before expansion to reduce fan-out.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_when_is_aggregation_used_vs_filter">1.7.4. When is AGGREGATION used vs FILTER?</h4>
+<div class="ulist">
+<ul>
+<li>
+<p>FILTER: no expand(&#8230;&#8203;). Planner returns a Morphia Filter and the gateway executes find with dev.morphia.query.Query.</p>
+</li>
+<li>
+<p>AGGREGATION: one or more expand(&#8230;&#8203;). Planner returns a pipeline with $lookup/$unwind and optional $project stages. Execution requires feature.queryGateway.execution.enabled=true; otherwise, POST /api/query/find returns 501. If any $lookup.from is "<em>unknown</em>", execution returns HTTP 422.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
 </div>
 </div>
 </div>
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-10-24 16:47:27 -0400
+Last updated 2025-10-29 16:37:40 -0400
 </div>
 </div>
 </body>
