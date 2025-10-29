@@ -29,7 +29,16 @@ public class OntologyMaterializer {
         try { io.quarkus.logging.Log.infof("[DEBUG_LOG] Registry properties: %s", registry.properties().keySet()); } catch (Exception ignored) {}
         var out = reasoner.infer(snap, registry);
 
-        // Collect new inferred edges by predicate
+        // 1) Upsert EXPLICIT edges as-is for traversal and cascade logic
+        Map<String, Set<String>> explicitByP = new HashMap<>();
+        if (explicitEdges != null) {
+            for (var e : explicitEdges) {
+                explicitByP.computeIfAbsent(e.p(), k -> new HashSet<>()).add(e.dstId());
+                edgeRepo.upsert(tenantId, e.srcId(), e.p(), e.dstId(), false, Map.of());
+            }
+        }
+
+        // 2) Collect new INFERRED edges by predicate
         Map<String, Set<String>> newByP = new HashMap<>();
         List<Document> upserts = new ArrayList<>();
         for (var e : out.addEdges()) {
@@ -60,7 +69,7 @@ public class OntologyMaterializer {
             io.quarkus.logging.Log.infof("[DEBUG_LOG] After upsert, edges from src=%s: %s", entityId, srcEdges.stream().map(e -> e.getP()+"->"+e.getDst()).toList());
         } catch (Exception ignored) {}
 
-        // Load current inferred edges for this source and prune per predicate
+        // 3) Prune inferred edges no longer justified
         List<OntologyEdge> existing = findEdgesBySrcTyped(tenantId, entityId);
         Map<String, Set<String>> existingInfByP = new HashMap<>();
         for (OntologyEdge e : existing) {
@@ -73,6 +82,29 @@ public class OntologyMaterializer {
             // delete inferred edges not in keep for predicate p
             edgeRepo.deleteInferredBySrcNotIn(tenantId, entityId, p, keep);
         }
+
+        // 4) Prune explicit edges that are no longer present in the entity snapshot
+        // Determine all predicates that currently exist for this source
+        Set<String> existingExplicitPreds = new HashSet<>();
+        for (OntologyEdge e : existing) {
+            if (!e.isInferred()) existingExplicitPreds.add(e.getP());
+        }
+        // For predicates present in snapshot: keep only dsts that remain
+        for (Map.Entry<String, Set<String>> en : explicitByP.entrySet()) {
+            String p = en.getKey();
+            Set<String> keep = en.getValue();
+            edgeRepo.deleteExplicitBySrcNotIn(tenantId, entityId, p, keep);
+            existingExplicitPreds.remove(p);
+        }
+        // For predicates absent now: remove all explicit edges for those predicates
+        for (String pAbsent : existingExplicitPreds) {
+            edgeRepo.deleteExplicitBySrcNotIn(tenantId, entityId, pAbsent, Set.of());
+        }
+        // Final debug: show edges after pruning
+        try {
+            var srcEdges2 = edgeRepo.findBySrc(tenantId, entityId);
+            io.quarkus.logging.Log.infof("[DEBUG_LOG] After pruning, edges from src=%s: %s", entityId, srcEdges2.stream().map(e -> (e.isInferred()?"I":"E")+":"+e.getP()+"->"+e.getDst()).toList());
+        } catch (Exception ignored) {}
         // TODO: write back types/labels on entity doc if needed
     }
 

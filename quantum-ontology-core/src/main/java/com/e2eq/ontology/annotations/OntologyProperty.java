@@ -29,4 +29,8 @@ public @interface OntologyProperty {
     String edgeType() default "";          // edge label/name used for traversal/materialization
     String inverseOfEdge() default "";     // optional pointer to inverse edge label
     boolean materializeEdge() default true; // allow opting out of edge materialization while keeping ref
+
+    // Cascading (optional and opt-in)
+    CascadeType[] cascade() default { CascadeType.NONE };
+    int cascadeDepth() default 1;           // safety cap for recursive deletes
 }

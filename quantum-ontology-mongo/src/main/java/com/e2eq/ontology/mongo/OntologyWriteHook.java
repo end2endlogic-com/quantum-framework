@@ -3,6 +3,8 @@ package com.e2eq.ontology.mongo;
 import com.e2eq.framework.model.persistent.morphia.PostPersistHook;
 import com.e2eq.ontology.core.OntologyRegistry;
 import com.e2eq.ontology.core.Reasoner;
+import com.e2eq.ontology.model.OntologyEdge;
+import com.e2eq.ontology.repo.OntologyEdgeRepo;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
@@ -16,6 +18,8 @@ public class OntologyWriteHook implements PostPersistHook {
 
     @Inject AnnotatedEdgeExtractor extractor;
     @Inject OntologyMaterializer materializer;
+    @Inject CascadeExecutor cascadeExecutor;
+    @Inject OntologyEdgeRepo edgeRepo;
 
     @Override
     public void afterPersist(String realmId, Object entity) {
@@ -36,8 +40,14 @@ public class OntologyWriteHook implements PostPersistHook {
                 io.quarkus.logging.Log.infof("[DEBUG_LOG]   explicit: (%s)-['%s']->(%s)", e.srcId(), e.p(), e.dstId());
             }
         } catch (Exception ignored) {}
-        if (explicit.isEmpty()) return;
         String srcId = extractor.idOf(entity);
+        // Capture prior edges for this source to support cascade diffs
+        java.util.List<OntologyEdge> priorAll = edgeRepo.findBySrc(realmId, srcId);
+        java.util.List<OntologyEdge> priorExplicit = new java.util.ArrayList<>();
+        for (OntologyEdge e : priorAll) if (!e.isInferred()) priorExplicit.add(e);
+        // First, apply materialization so explicit edges are upserted and stale ones pruned
         materializer.apply(realmId, srcId, entityType, explicit);
+        // Then handle ORPHAN_REMOVE cascade based on prior vs new state and repo contents
+        try { cascadeExecutor.onAfterPersist(realmId, srcId, entity, priorExplicit, explicit); } catch (Throwable ignored) {}
     }
 }
