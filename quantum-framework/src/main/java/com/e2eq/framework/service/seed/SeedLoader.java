@@ -78,8 +78,8 @@ public final class SeedLoader {
         Objects.requireNonNull(packRefs, "packRefs");
         Objects.requireNonNull(context, "context");
 
-        Log.infof("Seed context realm {0}, applying {1} seed pack(s)", context.getRealmId(), packRefs.size());
-        Log.infof("Seedcontext.tenantId: %s, orgRefName: %s, accountId: %s, ownerId: %s",
+        Log.infof("Seed context realm %s, applying %s seed pack(s)", context.getRealmId(), packRefs.size());
+        Log.infof("Seed context.tenantId: %s, orgRefName: %s, accountId: %s, ownerId: %s",
            context.getTenantId().isPresent() ? context.getTenantId().get() : "null",
            context.getOrgRefName().isPresent()?  context.getOrgRefName().get(): "null",
            context.getAccountId().isPresent() ?  context.getAccountId().get() : "null",
