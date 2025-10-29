@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-10-29T14:03:58Z</span>
+<span id="revdate">2025-10-29T20:02:55Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -586,7 +586,13 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_model_first_ontology_with_annotations_and_morphiaontologyloader">6. Model-first ontology with annotations and MorphiaOntologyLoader</a>
 <ul class="sectlevel2">
 <li><a href="#_why_model_first">6.1. Why model-first?</a></li>
-<li><a href="#_annotations_overview">6.2. Annotations overview</a></li>
+<li><a href="#_annotations_overview">6.2. Annotations overview</a>
+<ul class="sectlevel3">
+<li><a href="#ontology-relationships">6.2.1. Relationship semantics on @OntologyProperty</a></li>
+<li><a href="#ontology-cascading">6.2.2. Cascading policies for relationships</a></li>
+<li><a href="#ontology-benefits-relationships">6.2.3. Business benefits of ontology relationships and cascade</a></li>
+</ul>
+</li>
 <li><a href="#_example_orders_placed_in_an_organization_e_commerce">6.3. Example: Orders placed in an Organization (e-commerce)</a></li>
 <li><a href="#_how_the_registry_is_produced_quarkus_cdi">6.4. How the registry is produced (Quarkus CDI)</a></li>
 <li><a href="#_materializing_inferences_from_annotated_models">6.5. Materializing inferences from annotated models</a></li>
@@ -2021,6 +2027,27 @@ ontology.auto-materialize=true</code></pre>
 <li>
 <p>range: override inferred range (defaults to the field/element type)</p>
 </li>
+<li>
+<p>ref: target ontology class id when this field represents a relationship to another ontology type</p>
+</li>
+<li>
+<p>relation: the multiplicity/cardinality for the relationship (NONE, ONE_TO_ONE, ONE_TO_MANY, MANY_TO_ONE, MANY_TO_MANY)</p>
+</li>
+<li>
+<p>edgeType: the edge label used in the ontology graph; if omitted, falls back to id or field name</p>
+</li>
+<li>
+<p>inverseOfEdge: optional inverse edge label if you prefer naming inverses at the edge level</p>
+</li>
+<li>
+<p>materializeEdge: when false, keeps the reference value but skips edge creation (defaults to true)</p>
+</li>
+<li>
+<p>cascade: optional cascade policies (NONE by default). Supports ORPHAN_REMOVE, DELETE, and BLOCK_IF_REFERENCED; see below.</p>
+</li>
+<li>
+<p>cascadeDepth: limit for recursive cascades (default 1); used by DELETE cascades to bound depth and prevent long chains</p>
+</li>
 </ul>
 </div>
 <div class="admonitionblock note">
@@ -2034,6 +2061,163 @@ functional is inferred true for single-valued fields and false for collections/m
 </td>
 </tr>
 </table>
+</div>
+<div class="sect3">
+<h4 id="ontology-relationships">6.2.1. Relationship semantics on @OntologyProperty</h4>
+<div class="paragraph">
+<p>When a field is annotated with @OntologyProperty and declares any of ref, relation, or edgeType, the framework treats it as a relationship and will materialize an ontology edge for it on persist/update.</p>
+</div>
+<div class="paragraph">
+<p>Key attributes:
+- ref: Names the target ontology class id. If omitted, the loader attempts to infer it from the Java type of the field or its generic element type.
+- relation: Declares multiplicity. If not set, it is inferred from the field type: collections imply plural (ONE_TO_MANY), scalars imply singular (MANY_TO_ONE) by convention.
+- edgeType: Controls the predicate id used to write/read edges. If absent, the property id (or field name) is used.
+- materializeEdge: Set to false to store the reference value without creating graph edges; traversal and inferences will ignore this property.</p>
+</div>
+<div class="paragraph">
+<p>Examples:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@OntologyClass</span>(id = <span class="string"><span class="delimiter">&quot;</span><span class="content">Order</span><span class="delimiter">&quot;</span></span>)
+<span class="annotation">@Entity</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">orders</span><span class="delimiter">&quot;</span></span>)
+<span class="directive">public</span> <span class="type">class</span> <span class="class">Order</span> <span class="directive">extends</span> UnversionedBaseModel {
+  <span class="comment">// Many orders reference one Customer (MANY_TO_ONE); name the edge explicitly</span>
+  <span class="annotation">@OntologyProperty</span>(
+    id = <span class="string"><span class="delimiter">&quot;</span><span class="content">customer</span><span class="delimiter">&quot;</span></span>,
+    ref = <span class="string"><span class="delimiter">&quot;</span><span class="content">Customer</span><span class="delimiter">&quot;</span></span>,
+    relation = <span class="predefined-type">RelationType</span>.MANY_TO_ONE,
+    edgeType = <span class="string"><span class="delimiter">&quot;</span><span class="content">CUSTOMER_OF</span><span class="delimiter">&quot;</span></span>
+  )
+  <span class="directive">private</span> <span class="predefined-type">String</span> customerId; <span class="comment">// or Customer if you store the object</span>
+}
+
+<span class="annotation">@OntologyClass</span>(id = <span class="string"><span class="delimiter">&quot;</span><span class="content">SCorp</span><span class="delimiter">&quot;</span></span>)
+<span class="annotation">@Entity</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">scorps</span><span class="delimiter">&quot;</span></span>)
+<span class="directive">public</span> <span class="type">class</span> <span class="class">SCorp</span> <span class="directive">extends</span> UnversionedBaseModel {
+  <span class="comment">// One SCorp authorizes many Resolutions</span>
+  <span class="annotation">@OntologyProperty</span>(
+    id = <span class="string"><span class="delimiter">&quot;</span><span class="content">resolutionIds</span><span class="delimiter">&quot;</span></span>,
+    ref = <span class="string"><span class="delimiter">&quot;</span><span class="content">Resolution</span><span class="delimiter">&quot;</span></span>,
+    relation = <span class="predefined-type">RelationType</span>.ONE_TO_MANY,
+    edgeType = <span class="string"><span class="delimiter">&quot;</span><span class="content">AUTHORIZES_RESOLUTION</span><span class="delimiter">&quot;</span></span>
+  )
+  <span class="directive">private</span> <span class="predefined-type">List</span>&lt;<span class="predefined-type">String</span>&gt; resolutionIds;
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Runtime materialization (conceptual):
+- (Order) -[CUSTOMER_OF]&#8594; (Customer)
+- (SCorp) -[AUTHORIZES_RESOLUTION]&#8594; (Resolution)</p>
+</div>
+<div class="admonitionblock tip">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-tip" title="Tip"></i>
+</td>
+<td class="content">
+If ref is provided but edgeType is omitted, the system uses the property id (or field name). Consider using descriptive edge names for durability of queries.
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect3">
+<h4 id="ontology-cascading">6.2.2. Cascading policies for relationships</h4>
+<div class="paragraph">
+<p>Cascading is opt-in and conservative. It controls what happens to related targets and edges when a relationship is modified or a source is deleted.</p>
+</div>
+<div class="paragraph">
+<p>Supported policies today:
+- ORPHAN_REMOVE: On update, when an element is removed from a collection (or a singular reference is replaced), the framework deletes the removed target if and only if no other sources still reference it via the same predicate. This is useful for owned child aggregates.
+- UNLINK: Edges are always pruned to reflect the current snapshot; you can think of this as implicit and always-on for edge hygiene.</p>
+</div>
+<div class="paragraph">
+<p>Delete-time cascades (also supported):
+- DELETE: When deleting the source, also delete targets up to cascadeDepth with cycle guards. Targets are deleted only for predicates that declare DELETE on the source side.
+- BLOCK_IF_REFERENCED: Before deleting a target (either directly or via DELETE cascade), if the target is still referenced by another source via the same predicate, the deletion is skipped (or blocked) to preserve referential integrity.</p>
+</div>
+<div class="paragraph">
+<p>Example (delete children when parent is deleted, with safety guards):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@OntologyClass</span>(id = <span class="string"><span class="delimiter">&quot;</span><span class="content">Parent</span><span class="delimiter">&quot;</span></span>)
+<span class="annotation">@Entity</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">parents</span><span class="delimiter">&quot;</span></span>)
+<span class="directive">public</span> <span class="type">class</span> <span class="class">Parent</span> <span class="directive">extends</span> UnversionedBaseModel {
+  <span class="annotation">@OntologyProperty</span>(
+    id = <span class="string"><span class="delimiter">&quot;</span><span class="content">children</span><span class="delimiter">&quot;</span></span>,
+    edgeType = <span class="string"><span class="delimiter">&quot;</span><span class="content">HAS_CHILD</span><span class="delimiter">&quot;</span></span>,
+    ref = <span class="string"><span class="delimiter">&quot;</span><span class="content">Child</span><span class="delimiter">&quot;</span></span>,
+    relation = <span class="predefined-type">RelationType</span>.ONE_TO_MANY,
+    cascade = { CascadeType.DELETE, CascadeType.BLOCK_IF_REFERENCED },
+    cascadeDepth = <span class="integer">1</span> <span class="comment">// delete only direct children</span>
+  )
+  <span class="directive">private</span> <span class="predefined-type">List</span>&lt;Child&gt; children = <span class="keyword">new</span> <span class="predefined-type">ArrayList</span>&lt;&gt;();
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Behavior:
+- Deleting a Parent removes explicit edges and, with DELETE, deletes its Child documents up to the specified depth.
+- With BLOCK_IF_REFERENCED, a Child that is still referenced by another Parent is not deleted; only the edge from the deleted Parent is removed.
+- Cycles are guarded by a visited set; depth prevents long delete chains.</p>
+</div>
+<div class="paragraph">
+<p>See integration tests in the ontology-mongo module (CascadeDeleteIT) for expected behavior.</p>
+</div>
+<div class="paragraph">
+<p>Example (owned children with orphan removal):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@OntologyClass</span>(id = <span class="string"><span class="delimiter">&quot;</span><span class="content">Parent</span><span class="delimiter">&quot;</span></span>)
+<span class="annotation">@Entity</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">parents</span><span class="delimiter">&quot;</span></span>)
+<span class="directive">public</span> <span class="type">class</span> <span class="class">Parent</span> <span class="directive">extends</span> UnversionedBaseModel {
+  <span class="annotation">@OntologyProperty</span>(
+    id = <span class="string"><span class="delimiter">&quot;</span><span class="content">children</span><span class="delimiter">&quot;</span></span>,
+    edgeType = <span class="string"><span class="delimiter">&quot;</span><span class="content">HAS_CHILD</span><span class="delimiter">&quot;</span></span>,
+    ref = <span class="string"><span class="delimiter">&quot;</span><span class="content">Child</span><span class="delimiter">&quot;</span></span>,
+    relation = <span class="predefined-type">RelationType</span>.ONE_TO_MANY,
+    cascade = { CascadeType.ORPHAN_REMOVE }
+  )
+  <span class="directive">private</span> <span class="predefined-type">List</span>&lt;Child&gt; children = <span class="keyword">new</span> <span class="predefined-type">ArrayList</span>&lt;&gt;();
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Behavior:
+- Persisting a Parent materializes edges (P --HAS_CHILD-&#8594; C) for current children.
+- Removing a Child from the collection prunes the edge. If no other Parent points to that Child via HAS_CHILD, the Child entity is deleted.
+- If the Child is still referenced by another Parent, it is retained.</p>
+</div>
+<div class="paragraph">
+<p>Verification: See integration tests under quantum-ontology-mongo it module (CascadeOrphanRemoveIT) covering both deletion and shared reference cases.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="ontology-benefits-relationships">6.2.3. Business benefits of ontology relationships and cascade</h4>
+<div class="ulist">
+<ul>
+<li>
+<p>Faster queries and policies: Pre-materialized edges make filtering by relationships a single indexed lookup instead of deep joins or application-side traversals.</p>
+</li>
+<li>
+<p>Safer evolution: Edge names and ontology traits remain stable as you refactor field names/types; queries continue to work.</p>
+</li>
+<li>
+<p>Cleaner models: Relationship intent lives in one place (@OntologyProperty) rather than being scattered across repos and services.</p>
+</li>
+<li>
+<p>Reduced data drift: Automated edge pruning and orphan removal keep the graph consistent with your source-of-truth objects.</p>
+</li>
+<li>
+<p>Auditability: Provenance on inferred edges documents why links exist, aiding debugging and compliance.</p>
+</li>
+</ul>
+</div>
 </div>
 </div>
 <div class="sect2">
@@ -2366,7 +2550,7 @@ Keep annotations minimal. Only add traits that aren’t obvious from the Java ty
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-10-24 16:31:16 -0400
+Last updated 2025-10-29 15:07:09 -0400
 </div>
 </div>
 </body>
