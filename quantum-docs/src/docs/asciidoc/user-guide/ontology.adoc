@@ -733,8 +733,110 @@ Two lightweight annotations are used on model classes and fields. They are provi
   - functional: at most one target per source (defaults to true for single-valued fields)
   - domain: override inferred domain (defaults to declaring @OntologyClass)
   - range: override inferred range (defaults to the field/element type)
+  - ref: target ontology class id when this field represents a relationship to another ontology type
+  - relation: the multiplicity/cardinality for the relationship (NONE, ONE_TO_ONE, ONE_TO_MANY, MANY_TO_ONE, MANY_TO_MANY)
+  - edgeType: the edge label used in the ontology graph; if omitted, falls back to id or field name
+  - inverseOfEdge: optional inverse edge label if you prefer naming inverses at the edge level
+  - materializeEdge: when false, keeps the reference value but skips edge creation (defaults to true)
+  - cascade: optional cascade policies (NONE by default). Currently supports ORPHAN_REMOVE; see below.
+  - cascadeDepth: limit for recursive cascades (default 1); future use when DELETE is enabled
 
 NOTE: functional is inferred true for single-valued fields and false for collections/maps unless you override it.
+
+[[ontology-relationships]]
+==== Relationship semantics on @OntologyProperty
+
+When a field is annotated with @OntologyProperty and declares any of ref, relation, or edgeType, the framework treats it as a relationship and will materialize an ontology edge for it on persist/update.
+
+Key attributes:
+- ref: Names the target ontology class id. If omitted, the loader attempts to infer it from the Java type of the field or its generic element type.
+- relation: Declares multiplicity. If not set, it is inferred from the field type: collections imply plural (ONE_TO_MANY), scalars imply singular (MANY_TO_ONE) by convention.
+- edgeType: Controls the predicate id used to write/read edges. If absent, the property id (or field name) is used.
+- materializeEdge: Set to false to store the reference value without creating graph edges; traversal and inferences will ignore this property.
+
+Examples:
+
+[source,java]
+----
+@OntologyClass(id = "Order")
+@Entity("orders")
+public class Order extends UnversionedBaseModel {
+  // Many orders reference one Customer (MANY_TO_ONE); name the edge explicitly
+  @OntologyProperty(
+    id = "customer",
+    ref = "Customer",
+    relation = RelationType.MANY_TO_ONE,
+    edgeType = "CUSTOMER_OF"
+  )
+  private String customerId; // or Customer if you store the object
+}
+
+@OntologyClass(id = "SCorp")
+@Entity("scorps")
+public class SCorp extends UnversionedBaseModel {
+  // One SCorp authorizes many Resolutions
+  @OntologyProperty(
+    id = "resolutionIds",
+    ref = "Resolution",
+    relation = RelationType.ONE_TO_MANY,
+    edgeType = "AUTHORIZES_RESOLUTION"
+  )
+  private List<String> resolutionIds;
+}
+----
+
+Runtime materialization (conceptual):
+- (Order) -[CUSTOMER_OF]-> (Customer)
+- (SCorp) -[AUTHORIZES_RESOLUTION]-> (Resolution)
+
+TIP: If ref is provided but edgeType is omitted, the system uses the property id (or field name). Consider using descriptive edge names for durability of queries.
+
+[[ontology-cascading]]
+==== Cascading policies for relationships
+
+Cascading is opt-in and conservative. It controls what happens to related targets and edges when a relationship is modified or a source is deleted.
+
+Supported policies today:
+- ORPHAN_REMOVE: On update, when an element is removed from a collection (or a singular reference is replaced), the framework deletes the removed target if and only if no other sources still reference it via the same predicate. This is useful for owned child aggregates.
+- UNLINK: Edges are always pruned to reflect the current snapshot; you can think of this as implicit and always-on for edge hygiene.
+
+Planned but not yet wired globally (scaffolded in code, subject to enablement):
+- DELETE: On deleting the source, also delete targets up to cascadeDepth with cycle guards.
+- BLOCK_IF_REFERENCED: Prevent deletion if the target is still referenced elsewhere.
+
+Example (owned children with orphan removal):
+
+[source,java]
+----
+@OntologyClass(id = "Parent")
+@Entity("parents")
+public class Parent extends UnversionedBaseModel {
+  @OntologyProperty(
+    id = "children",
+    edgeType = "HAS_CHILD",
+    ref = "Child",
+    relation = RelationType.ONE_TO_MANY,
+    cascade = { CascadeType.ORPHAN_REMOVE }
+  )
+  private List<Child> children = new ArrayList<>();
+}
+----
+
+Behavior:
+- Persisting a Parent materializes edges (P --HAS_CHILD--> C) for current children.
+- Removing a Child from the collection prunes the edge. If no other Parent points to that Child via HAS_CHILD, the Child entity is deleted.
+- If the Child is still referenced by another Parent, it is retained.
+
+Verification: See integration tests under quantum-ontology-mongo it module (CascadeOrphanRemoveIT) covering both deletion and shared reference cases.
+
+[[ontology-benefits-relationships]]
+==== Business benefits of ontology relationships and cascade
+
+- Faster queries and policies: Pre-materialized edges make filtering by relationships a single indexed lookup instead of deep joins or application-side traversals.
+- Safer evolution: Edge names and ontology traits remain stable as you refactor field names/types; queries continue to work.
+- Cleaner models: Relationship intent lives in one place (@OntologyProperty) rather than being scattered across repos and services.
+- Reduced data drift: Automated edge pruning and orphan removal keep the graph consistent with your source-of-truth objects.
+- Auditability: Provenance on inferred edges documents why links exist, aiding debugging and compliance.
 
 === Example: Orders placed in an Organization (e-commerce)
 

@@ -97,6 +97,17 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
                 .delete();
     }
 
+    public void deleteExplicitBySrcNotIn(String tenantId, String src, String p, Collection<String> dstKeep) {
+        // Treat explicit edges as those where inferred != true (handles nulls)
+        ds().find(OntologyEdge.class)
+                .filter(Filters.eq("dataDomain.tenantId", tenantId))
+                .filter(Filters.eq("src", src))
+                .filter(Filters.eq("p", p))
+                .filter(Filters.ne("inferred", true))
+                .filter(Filters.nin("dst", dstKeep))
+                .delete();
+    }
+
     public Set<String> srcIdsByDst(String tenantId, String p, String dst) {
         Set<String> ids = new HashSet<>();
         for (OntologyEdge e : ds().find(OntologyEdge.class)
@@ -137,6 +148,23 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
         return ds().find(OntologyEdge.class)
                 .filter(Filters.eq("dataDomain.tenantId", tenantId))
                 .filter(Filters.eq("src", src))
+                .iterator()
+                .toList();
+    }
+
+    public List<OntologyEdge> findByDst(String tenantId, String dst) {
+        return ds().find(OntologyEdge.class)
+                .filter(Filters.eq("dataDomain.tenantId", tenantId))
+                .filter(Filters.eq("dst", dst))
+                .iterator()
+                .toList();
+    }
+
+    public List<OntologyEdge> findByDstAndP(String tenantId, String dst, String p) {
+        return ds().find(OntologyEdge.class)
+                .filter(Filters.eq("dataDomain.tenantId", tenantId))
+                .filter(Filters.eq("dst", dst))
+                .filter(Filters.eq("p", p))
                 .iterator()
                 .toList();
     }
