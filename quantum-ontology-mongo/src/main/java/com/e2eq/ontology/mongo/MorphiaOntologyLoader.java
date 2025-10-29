@@ -24,6 +24,11 @@ public final class MorphiaOntologyLoader {
     }
 
     public OntologyRegistry load() {
+        OntologyRegistry.TBox tbox = loadTBox();
+        return new InMemoryOntologyRegistry(tbox);
+    }
+
+    public OntologyRegistry.TBox loadTBox() {
         Map<String, OntologyRegistry.ClassDef> classes = new HashMap<>();
         Map<String, OntologyRegistry.PropertyDef> props = new HashMap<>();
         List<OntologyRegistry.PropertyChainDef> chains = new ArrayList<>(); // chains not derived here yet
@@ -89,8 +94,7 @@ public final class MorphiaOntologyLoader {
             });
         }
 
-        OntologyRegistry.TBox tbox = new OntologyRegistry.TBox(classes, props, chains);
-        return new InMemoryOntologyRegistry(tbox);
+        return new OntologyRegistry.TBox(classes, props, chains);
     }
 
     private String classIdOf(Class<?> clazz) {

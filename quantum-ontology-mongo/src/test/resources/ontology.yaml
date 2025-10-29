@@ -1,0 +1,51 @@
+version: 1
+classes:
+  - id: Order
+  - id: Customer
+  - id: Organization
+  - id: Shipment
+  - id: Address
+  - id: Region
+
+properties:
+  - id: placedBy
+    domain: Order
+    range: Customer
+    functional: true
+    transitive: false
+  - id: memberOf
+    domain: Customer
+    range: Organization
+  - id: orderHasShipment
+    domain: Order
+    range: Shipment
+  - id: shipsTo
+    domain: Shipment
+    range: Address
+  - id: locatedIn
+    domain: Address
+    range: Region
+  - id: ancestorOf
+    domain: Organization
+    range: Organization
+    transitive: true
+  # implied predicates
+  - id: placedInOrg
+    domain: Order
+    range: Organization
+  - id: orderShipsTo
+    domain: Order
+    range: Address
+  - id: orderShipsToRegion
+    domain: Order
+    range: Region
+
+chains:
+  - chain: [placedBy, memberOf]
+    implies: placedInOrg
+  - chain: [orderHasShipment, shipsTo]
+    implies: orderShipsTo
+  - chain: [orderShipsTo, locatedIn]
+    implies: orderShipsToRegion
+  - chain: [placedInOrg, ancestorOf]
+    implies: placedInOrg

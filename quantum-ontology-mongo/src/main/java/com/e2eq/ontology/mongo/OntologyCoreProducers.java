@@ -1,15 +1,16 @@
 package com.e2eq.ontology.mongo;
 
-import com.e2eq.ontology.core.InMemoryOntologyRegistry;
-import com.e2eq.ontology.core.OntologyRegistry;
+import com.e2eq.ontology.core.*;
+import com.e2eq.ontology.core.OntologyRegistry.*;
 import dev.morphia.MorphiaDatastore;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Produces;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 
-import java.util.List;
-import java.util.Map;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.*;
 
 @ApplicationScoped
 public class OntologyCoreProducers {
@@ -20,32 +21,42 @@ public class OntologyCoreProducers {
     @Produces
     @Singleton
     public OntologyRegistry ontologyRegistry() {
-        // Try to build ontology from Morphia model annotations; fallback to empty registry
+        // Base TBox from Morphia annotations, if possible
+        TBox base = new TBox(Map.of(), Map.of(), List.of());
         try {
             if (morphiaDatastore != null && morphiaDatastore.getMapper() != null) {
                 MorphiaOntologyLoader loader = new MorphiaOntologyLoader(morphiaDatastore);
-                OntologyRegistry reg = loader.load();
-                // If nothing discovered, return empty to preserve behavior
-                if (isEmpty(reg)) {
-                    return emptyRegistry();
-                }
-                return reg;
+                base = loader.loadTBox();
             }
-        } catch (Throwable ignored) {
-            // fall through to empty
-        }
-        return emptyRegistry();
+        } catch (Throwable ignored) { }
+
+        // YAML overlay from configured or conventional locations
+        TBox overlay = null;
+        try {
+            YamlOntologyLoader yaml = new YamlOntologyLoader();
+            Optional<Path> path = resolveYamlPath();
+            if (path.isPresent() && Files.exists(path.get())) {
+                overlay = yaml.loadFromPath(path.get());
+            } else {
+                try {
+                    overlay = yaml.loadFromClasspath("/ontology.yaml");
+                } catch (Exception ignored) { }
+            }
+        } catch (Throwable ignored) { }
+
+        TBox merged = (overlay != null) ? OntologyMerger.merge(base, overlay) : base;
+        // Validate final TBox
+        try { OntologyValidator.validate(merged); } catch (Exception e) { /* in prod you may want to fail fast */ }
+        return new InMemoryOntologyRegistry(merged);
     }
 
-    private boolean isEmpty(OntologyRegistry reg) {
-        // crude check: try resolving a non-existent class/property and ensure there are no chains
-        return reg.propertyChains().isEmpty()
-                && reg.classOf("__none__").isEmpty()
-                && reg.propertyOf("__none__").isEmpty();
-    }
-
-    private OntologyRegistry emptyRegistry() {
-        OntologyRegistry.TBox empty = new OntologyRegistry.TBox(Map.of(), Map.of(), List.of());
-        return new InMemoryOntologyRegistry(empty);
+    private Optional<Path> resolveYamlPath() {
+        String sys = System.getProperty("ontology.yaml.path");
+        if (sys != null && !sys.isBlank()) return Optional.of(Path.of(sys));
+        String env = System.getenv("ONTOLOGY_YAML");
+        if (env != null && !env.isBlank()) return Optional.of(Path.of(env));
+        Path conventional = Path.of("config", "ontology.yaml");
+        if (Files.exists(conventional)) return Optional.of(conventional);
+        return Optional.empty();
     }
 }
