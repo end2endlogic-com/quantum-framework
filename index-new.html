@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Framework Documentation</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-10-25T02:25:04Z</span>
+<span id="revdate">2025-10-29T03:42:12Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -696,6 +696,13 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#ontology-query-language">31.3.12. Expressing Ontology Constraints in Queries (optional)</a></li>
 </ul>
 </li>
+<li><a href="#_relationships_and_ontology_aware_queries">31.4. Relationships and Ontology-aware Queries</a>
+<ul class="sectlevel3">
+<li><a href="#_hydrating_related_data_with_expandpath">31.4.1. Hydrating related data with expand(path)</a></li>
+<li><a href="#_ontology_operator_hasedgepredicate_dst">31.4.2. Ontology operator: hasEdge(predicate, dst)</a></li>
+<li><a href="#_root_projection_recap_fields">31.4.3. Root projection recap: fields:[+…,-…]</a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li><a href="#query-expansion">32. Relationship hydration with expand(path)</a>
@@ -712,6 +719,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_planner_decisions">33.1. Planner decisions</a></li>
 <li><a href="#_public_facade_querygateway">33.2. Public facade: QueryGateway</a></li>
 <li><a href="#_examples_end_to_end">33.3. Examples end-to-end</a></li>
+<li><a href="#_rest_endpoints_v1">33.4. REST endpoints (v1)</a></li>
 </ul>
 </li>
 <li><a href="#_security">34. Security</a></li>
@@ -6067,6 +6075,188 @@ id:^${idsByPlacedInOrg}</code></pre>
 </div>
 </div>
 </div>
+<div class="sect2">
+<h3 id="_relationships_and_ontology_aware_queries">31.4. Relationships and Ontology-aware Queries</h3>
+<div class="sect3">
+<h4 id="_hydrating_related_data_with_expandpath">31.4.1. Hydrating related data with expand(path)</h4>
+<div class="paragraph">
+<p>The query language supports a compact, non-SQL directive to request hydration (materialization) of related entities referenced by the root documents.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Syntax: <code>expand(path)</code></p>
+</li>
+<li>
+<p>Path: a dotted path; array segments may use <code>[*]</code> to indicate an array of references.</p>
+</li>
+<li>
+<p>Examples:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># Single reference
+expand(customer)
+
+# Array of references
+expand(items[*].product)
+
+# Nested paths (bounded by first non-reference boundary)
+expand(patient.visits[*].diagnoses[*])</code></pre>
+</div>
+</div>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Semantics</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Presence of <code>expand(&#8230;&#8203;)</code> informs the planner to choose an aggregation-based execution plan (e.g., MongoDB $lookup) rather than a simple single-collection filter.</p>
+</li>
+<li>
+<p>Filters remain expressed with the existing primitives and compose as usual. For example:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># Filter roots by status AND hydrate the related customer
+expand(customer) &amp;&amp; status:active</code></pre>
+</div>
+</div>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Notes and limits (v1)</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Backend: MongoDB only in this release. The planner selects aggregation mode when <code>expand(&#8230;&#8203;)</code> appears.</p>
+</li>
+<li>
+<p>Depth: for mixed arrays/objects, traversal stops at the first non-reference boundary.</p>
+</li>
+<li>
+<p>Projection: a concise projection form <code>fields:[+a,+b,-c]</code> can be used at the root (see below). Per-expansion projections and related-entity filters are documented in <a href="query-expansion.html">Query Expansion</a> and may be introduced incrementally.</p>
+</li>
+<li>
+<p>Errors: unknown projection paths (when using <code>fields:[…]</code>) are hard errors.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>See also</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="query-expansion.html">Query Expansion</a> for more examples and planner behavior.</p>
+</li>
+<li>
+<p><a href="planner-and-query-gateway.html">Planner and QueryGateway</a> for how execution mode is chosen.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_ontology_operator_hasedgepredicate_dst">31.4.2. Ontology operator: hasEdge(predicate, dst)</h4>
+<div class="paragraph">
+<p>When the ontology module is enabled and edges are materialized, you can constrain results by semantic relationships using <code>hasEdge</code>.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Syntax: <code>hasEdge(predicate, dst)</code> where</p>
+</li>
+<li>
+<p><code>predicate</code> is a string (unquoted or quoted)</p>
+</li>
+<li>
+<p><code>dst</code> can be a literal id, a variable like <code>${principalId}</code>, an ObjectId, or a reference literal <code>@@&#8230;&#8203;</code></p>
+</li>
+<li>
+<p>Examples:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># Orders placed in a specific organization
+hasEdge(&quot;placedInOrg&quot;, ${orgRefName})
+
+# Tickets routed to a region by id
+hasEdge(&quot;routedToRegion&quot;, 507f1f77bcf86cd799439011)</code></pre>
+</div>
+</div>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Semantics</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>hasEdge</code> narrows the result set to entities that have the specified ontology edge from the entity (source) to the destination id/value.</p>
+</li>
+<li>
+<p>It composes with other filters using <code>&amp;&amp;</code>, <code>||</code>, and <code>!!</code> like any other expression.</p>
+</li>
+<li>
+<p>Tenancy: edge resolution is always scoped by tenant/realm per your configuration.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>See also</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="permissions.html#rule-hasedge">Rule language: add hasEdge()</a> for a deep dive and policy usage.</p>
+</li>
+<li>
+<p><a href="ontology.html#ontology-integration-morphia-permissions">Ontology integration</a> for repository wiring and examples.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_root_projection_recap_fields">31.4.3. Root projection recap: fields:[+…,-…]</h4>
+<div class="paragraph">
+<p>To include or exclude fields from the root documents:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Syntax: <code>fields:[+f1,+f2,-f3]</code></p>
+</li>
+<li>
+<p>Include mode: if any <code>+</code> is present, only the listed fields are included (with explicit <code>-</code> carving out exceptions).</p>
+</li>
+<li>
+<p>Exclude mode: if only <code>-</code> entries exist, all fields are included except those.</p>
+</li>
+<li>
+<p>Default <code>_id</code>: preserved unless explicitly specified (<code>+_id</code>/<code>-_id</code>).</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Examples</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># Include a few fields from the root and drop one
+fields:[+_id,+total,-internalNotes]
+
+# Combine with expansion (planner chooses aggregation mode)
+expand(customer) &amp;&amp; fields:[+_id,+customer,+total]</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>For per-expansion projections and advanced traversal filters, see <a href="query-expansion.html">Query Expansion</a>.</p>
+</div>
+</div>
+</div>
 </div>
 </div>
 <div class="sect1">
@@ -6299,6 +6489,62 @@ PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(
 </div>
 <div class="paragraph">
 <p>See also: <a href="query-expansion.html">Relationship hydration with expand(path)</a>.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_rest_endpoints_v1">33.4. REST endpoints (v1)</h3>
+<div class="paragraph">
+<p>Two helper endpoints expose the planner and execution in FILTER mode:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>POST /api/query/plan — returns planner mode and expand paths</p>
+</li>
+<li>
+<p>POST /api/query/find — executes FILTER-mode queries and returns the standard Collection&lt;T&gt; envelope; returns 501 when AGGREGATION is requested (until aggregation compiler is enabled)</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="title">Request: plan</div>
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">rootType</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">com.e2eq.framework.model.security.UserProfile</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">query</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">expand(customer) &amp;&amp; status:active</span><span class="delimiter">&quot;</span></span>
+}</code></pre>
+</div>
+</div>
+<div class="listingblock">
+<div class="title">Response: plan</div>
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">mode</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">AGGREGATION</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">expandPaths</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">customer</span><span class="delimiter">&quot;</span></span>]
+}</code></pre>
+</div>
+</div>
+<div class="listingblock">
+<div class="title">Request: find (FILTER mode)</div>
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">rootType</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">com.e2eq.framework.model.security.UserProfile</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">query</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">displayName:*Alice*</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">page</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">limit</span><span class="delimiter">&quot;</span></span>: <span class="integer">10</span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">skip</span><span class="delimiter">&quot;</span></span>: <span class="integer">0</span> }
+}</code></pre>
+</div>
+</div>
+<div class="listingblock">
+<div class="title">Response: find (Collection envelope)</div>
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">offset</span><span class="delimiter">&quot;</span></span>: <span class="integer">0</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">limit</span><span class="delimiter">&quot;</span></span>: <span class="integer">10</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">rows</span><span class="delimiter">&quot;</span></span>: [ { <span class="key"><span class="delimiter">&quot;</span><span class="content">displayName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Alice T</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">refName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">alice</span><span class="delimiter">&quot;</span></span> } ],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">rowCount</span><span class="delimiter">&quot;</span></span>: <span class="integer">1</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">filter</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">displayName:*Alice*</span><span class="delimiter">&quot;</span></span>
+}</code></pre>
+</div>
 </div>
 </div>
 </div>

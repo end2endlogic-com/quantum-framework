@@ -533,6 +533,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_planner_decisions">1.1. Planner decisions</a></li>
 <li><a href="#_public_facade_querygateway">1.2. Public facade: QueryGateway</a></li>
 <li><a href="#_examples_end_to_end">1.3. Examples end-to-end</a></li>
+<li><a href="#_rest_endpoints_v1">1.4. REST endpoints (v1)</a></li>
 </ul>
 </li>
 </ul>
@@ -636,13 +637,69 @@ PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(
 <p>See also: <a href="query-expansion.html">Relationship hydration with expand(path)</a>.</p>
 </div>
 </div>
+<div class="sect2">
+<h3 id="_rest_endpoints_v1">1.4. REST endpoints (v1)</h3>
+<div class="paragraph">
+<p>Two helper endpoints expose the planner and execution in FILTER mode:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>POST /api/query/plan — returns planner mode and expand paths</p>
+</li>
+<li>
+<p>POST /api/query/find — executes FILTER-mode queries and returns the standard Collection&lt;T&gt; envelope; returns 501 when AGGREGATION is requested (until aggregation compiler is enabled)</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="title">Request: plan</div>
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">rootType</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">com.e2eq.framework.model.security.UserProfile</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">query</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">expand(customer) &amp;&amp; status:active</span><span class="delimiter">&quot;</span></span>
+}</code></pre>
+</div>
+</div>
+<div class="listingblock">
+<div class="title">Response: plan</div>
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">mode</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">AGGREGATION</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">expandPaths</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">customer</span><span class="delimiter">&quot;</span></span>]
+}</code></pre>
+</div>
+</div>
+<div class="listingblock">
+<div class="title">Request: find (FILTER mode)</div>
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">rootType</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">com.e2eq.framework.model.security.UserProfile</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">query</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">displayName:*Alice*</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">page</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">limit</span><span class="delimiter">&quot;</span></span>: <span class="integer">10</span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">skip</span><span class="delimiter">&quot;</span></span>: <span class="integer">0</span> }
+}</code></pre>
+</div>
+</div>
+<div class="listingblock">
+<div class="title">Response: find (Collection envelope)</div>
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">offset</span><span class="delimiter">&quot;</span></span>: <span class="integer">0</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">limit</span><span class="delimiter">&quot;</span></span>: <span class="integer">10</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">rows</span><span class="delimiter">&quot;</span></span>: [ { <span class="key"><span class="delimiter">&quot;</span><span class="content">displayName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Alice T</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">refName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">alice</span><span class="delimiter">&quot;</span></span> } ],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">rowCount</span><span class="delimiter">&quot;</span></span>: <span class="integer">1</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">filter</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">displayName:*Alice*</span><span class="delimiter">&quot;</span></span>
+}</code></pre>
+</div>
+</div>
+</div>
 </div>
 </div>
 </div>
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-10-24 16:48:01 -0400
+Last updated 2025-10-24 23:03:42 -0400
 </div>
 </div>
 </body>

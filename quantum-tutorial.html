@@ -528,7 +528,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Tutorial: Build a Multi-tenant SaaS with Quantum</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-10-25T02:25:04Z</span>
+<span id="revdate">2025-10-29T03:42:12Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -670,6 +670,14 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <ul class="sectlevel3">
 <li><a href="#_basic_syntax">9.1.1. Basic Syntax</a></li>
 <li><a href="#_common_patterns">9.1.2. Common Patterns</a></li>
+<li><a href="#_relationships_and_ontology_aware_queries">9.1.3. Relationships and Ontology-aware Queries</a></li>
+</ul>
+</li>
+<li><a href="#_hands_on_relationships_and_ontology_aware_queries">9.2. Hands-on: Relationships and Ontology-aware queries</a>
+<ul class="sectlevel3">
+<li><a href="#_hydrate_related_data_with_expandpath">9.2.1. Hydrate related data with expand(path)</a></li>
+<li><a href="#_ontology_constrain_by_relationships_with_hasedgepredicate_dst">9.2.2. Ontology: constrain by relationships with hasEdge(predicate, dst)</a></li>
+<li><a href="#_inspect_the_planner_with_querygateway">9.2.3. Inspect the planner with QueryGateway</a></li>
 </ul>
 </li>
 </ul>
@@ -6094,6 +6102,278 @@ id:^${idsByPlacedInOrg}</code></pre>
 </tr>
 </table>
 </div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_relationships_and_ontology_aware_queries">9.1.3. Relationships and Ontology-aware Queries</h4>
+<div class="sect4">
+<h5 id="_hydrating_related_data_with_expandpath">Hydrating related data with expand(path)</h5>
+<div class="paragraph">
+<p>The query language supports a compact, non-SQL directive to request hydration (materialization) of related entities referenced by the root documents.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Syntax: <code>expand(path)</code></p>
+</li>
+<li>
+<p>Path: a dotted path; array segments may use <code>[*]</code> to indicate an array of references.</p>
+</li>
+<li>
+<p>Examples:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># Single reference
+expand(customer)
+
+# Array of references
+expand(items[*].product)
+
+# Nested paths (bounded by first non-reference boundary)
+expand(patient.visits[*].diagnoses[*])</code></pre>
+</div>
+</div>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Semantics</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Presence of <code>expand(&#8230;&#8203;)</code> informs the planner to choose an aggregation-based execution plan (e.g., MongoDB $lookup) rather than a simple single-collection filter.</p>
+</li>
+<li>
+<p>Filters remain expressed with the existing primitives and compose as usual. For example:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># Filter roots by status AND hydrate the related customer
+expand(customer) &amp;&amp; status:active</code></pre>
+</div>
+</div>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Notes and limits (v1)</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Backend: MongoDB only in this release. The planner selects aggregation mode when <code>expand(&#8230;&#8203;)</code> appears.</p>
+</li>
+<li>
+<p>Depth: for mixed arrays/objects, traversal stops at the first non-reference boundary.</p>
+</li>
+<li>
+<p>Projection: a concise projection form <code>fields:[+a,+b,-c]</code> can be used at the root (see below). Per-expansion projections and related-entity filters are documented in <a href="query-expansion.html">Query Expansion</a> and may be introduced incrementally.</p>
+</li>
+<li>
+<p>Errors: unknown projection paths (when using <code>fields:[…]</code>) are hard errors.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>See also</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="query-expansion.html">Query Expansion</a> for more examples and planner behavior.</p>
+</li>
+<li>
+<p><a href="planner-and-query-gateway.html">Planner and QueryGateway</a> for how execution mode is chosen.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_ontology_operator_hasedgepredicate_dst">Ontology operator: hasEdge(predicate, dst)</h5>
+<div class="paragraph">
+<p>When the ontology module is enabled and edges are materialized, you can constrain results by semantic relationships using <code>hasEdge</code>.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Syntax: <code>hasEdge(predicate, dst)</code> where</p>
+</li>
+<li>
+<p><code>predicate</code> is a string (unquoted or quoted)</p>
+</li>
+<li>
+<p><code>dst</code> can be a literal id, a variable like <code>${principalId}</code>, an ObjectId, or a reference literal <code>@@&#8230;&#8203;</code></p>
+</li>
+<li>
+<p>Examples:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># Orders placed in a specific organization
+hasEdge(&quot;placedInOrg&quot;, ${orgRefName})
+
+# Tickets routed to a region by id
+hasEdge(&quot;routedToRegion&quot;, 507f1f77bcf86cd799439011)</code></pre>
+</div>
+</div>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Semantics</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>hasEdge</code> narrows the result set to entities that have the specified ontology edge from the entity (source) to the destination id/value.</p>
+</li>
+<li>
+<p>It composes with other filters using <code>&amp;&amp;</code>, <code>||</code>, and <code>!!</code> like any other expression.</p>
+</li>
+<li>
+<p>Tenancy: edge resolution is always scoped by tenant/realm per your configuration.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>See also</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="permissions.html#rule-hasedge">Rule language: add hasEdge()</a> for a deep dive and policy usage.</p>
+</li>
+<li>
+<p><a href="ontology.html#ontology-integration-morphia-permissions">Ontology integration</a> for repository wiring and examples.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_root_projection_recap_fields">Root projection recap: fields:[+…,-…]</h5>
+<div class="paragraph">
+<p>To include or exclude fields from the root documents:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Syntax: <code>fields:[+f1,+f2,-f3]</code></p>
+</li>
+<li>
+<p>Include mode: if any <code>+</code> is present, only the listed fields are included (with explicit <code>-</code> carving out exceptions).</p>
+</li>
+<li>
+<p>Exclude mode: if only <code>-</code> entries exist, all fields are included except those.</p>
+</li>
+<li>
+<p>Default <code>_id</code>: preserved unless explicitly specified (<code>+_id</code>/<code>-_id</code>).</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Examples</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># Include a few fields from the root and drop one
+fields:[+_id,+total,-internalNotes]
+
+# Combine with expansion (planner chooses aggregation mode)
+expand(customer) &amp;&amp; fields:[+_id,+customer,+total]</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>For per-expansion projections and advanced traversal filters, see <a href="query-expansion.html">Query Expansion</a>.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_hands_on_relationships_and_ontology_aware_queries">9.2. Hands-on: Relationships and Ontology-aware queries</h3>
+<div class="paragraph">
+<p>In addition to basic filters, the query layer supports relationship hydration and ontology-aware constraints.
+These features are MongoDB-first in this release and remain backward compatible:
+- If you don&#8217;t use them, behavior is unchanged.
+- When you do, the planner may choose a Mongo aggregation under the hood.</p>
+</div>
+<div class="sect3">
+<h4 id="_hydrate_related_data_with_expandpath">9.2.1. Hydrate related data with expand(path)</h4>
+<div class="paragraph">
+<p>Use expand(path) to materialize related entities referenced by your root documents. Paths are dotted and can include array wildcards [*].</p>
+</div>
+<div class="paragraph">
+<p>Examples:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># Single reference
+expand(customer)
+
+# Array of references in an items array
+expand(items[*].product)
+
+# Nested arrays (bounded by the first non-reference boundary)
+expand(patient.visits[*].diagnoses[*])</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Combine with normal filters and projection:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>q = &quot;realm:acme &amp;&amp; expand(customer, fields:[+name,+tier]) &amp;&amp; fields:[+_id,+total,+customer.name]&quot;</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Notes:
+- Depth on mixed arrays/objects stops at the first non-reference boundary.
+- Unknown projection paths are hard errors.</p>
+</div>
+<div class="paragraph">
+<p>See: <a href="../user-guide/query-expansion.html">Query Expansion</a> for more patterns and semantics.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_ontology_constrain_by_relationships_with_hasedgepredicate_dst">9.2.2. Ontology: constrain by relationships with hasEdge(predicate, dst)</h4>
+<div class="paragraph">
+<p>When the ontology module is enabled and edges are materialized, you can filter by semantic relationships using hasEdge.</p>
+</div>
+<div class="paragraph">
+<p>Examples:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># Orders placed in a specific organization
+hasEdge(&quot;placedInOrg&quot;, ${orgRefName})
+
+# Tickets routed to a region by id
+hasEdge(&quot;routedToRegion&quot;, 507f1f77bcf86cd799439011)</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Tenancy is always applied when resolving edges. See:
+- <a href="#rule-hasedge">Permissions: hasEdge rule</a>
+- <a href="#ontology-query-language">Ontology in queries</a></p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_inspect_the_planner_with_querygateway">9.2.3. Inspect the planner with QueryGateway</h4>
+<div class="paragraph">
+<p>You can inspect how a query will execute (FILTER vs AGGREGATION) using the new QueryGateway facade.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">com.e2eq.framework.model.persistent.morphia.query.QueryGateway</span>;
+<span class="keyword">import</span> <span class="include">com.e2eq.framework.model.persistent.morphia.query.QueryGatewayImpl</span>;
+<span class="keyword">import</span> <span class="include">com.e2eq.framework.model.persistent.morphia.planner.PlannerResult</span>;
+
+QueryGateway gateway = <span class="keyword">new</span> QueryGatewayImpl();
+PlannerResult pr = gateway.plan(<span class="string"><span class="delimiter">&quot;</span><span class="content">expand(customer) &amp;&amp; status:active</span><span class="delimiter">&quot;</span></span>, Order.class);
+<span class="comment">// pr.getMode() == PlannerResult.Mode.AGGREGATION</span>
+<span class="comment">// pr.getExpandPaths() == [&quot;customer&quot;]</span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>For lower-level control, use MorphiaUtils.convertToPlannedQuery(&#8230;&#8203;). See: <a href="../user-guide/planner-and-query-gateway.html">Planner and QueryGateway</a>.</p>
 </div>
 </div>
 </div>
@@ -11542,7 +11822,7 @@ void cleanup() { com.e2eq.framework.model.securityrules.SecurityContext.clear();
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-10-18 20:36:25 -0400
+Last updated 2025-10-24 22:36:20 -0400
 </div>
 </div>
 </body>
