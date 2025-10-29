@@ -738,8 +738,8 @@ Two lightweight annotations are used on model classes and fields. They are provi
   - edgeType: the edge label used in the ontology graph; if omitted, falls back to id or field name
   - inverseOfEdge: optional inverse edge label if you prefer naming inverses at the edge level
   - materializeEdge: when false, keeps the reference value but skips edge creation (defaults to true)
-  - cascade: optional cascade policies (NONE by default). Currently supports ORPHAN_REMOVE; see below.
-  - cascadeDepth: limit for recursive cascades (default 1); future use when DELETE is enabled
+  - cascade: optional cascade policies (NONE by default). Supports ORPHAN_REMOVE, DELETE, and BLOCK_IF_REFERENCED; see below.
+  - cascadeDepth: limit for recursive cascades (default 1); used by DELETE cascades to bound depth and prevent long chains
 
 NOTE: functional is inferred true for single-valued fields and false for collections/maps unless you override it.
 
@@ -800,9 +800,35 @@ Supported policies today:
 - ORPHAN_REMOVE: On update, when an element is removed from a collection (or a singular reference is replaced), the framework deletes the removed target if and only if no other sources still reference it via the same predicate. This is useful for owned child aggregates.
 - UNLINK: Edges are always pruned to reflect the current snapshot; you can think of this as implicit and always-on for edge hygiene.
 
-Planned but not yet wired globally (scaffolded in code, subject to enablement):
-- DELETE: On deleting the source, also delete targets up to cascadeDepth with cycle guards.
-- BLOCK_IF_REFERENCED: Prevent deletion if the target is still referenced elsewhere.
+Delete-time cascades (also supported):
+- DELETE: When deleting the source, also delete targets up to cascadeDepth with cycle guards. Targets are deleted only for predicates that declare DELETE on the source side.
+- BLOCK_IF_REFERENCED: Before deleting a target (either directly or via DELETE cascade), if the target is still referenced by another source via the same predicate, the deletion is skipped (or blocked) to preserve referential integrity.
+
+Example (delete children when parent is deleted, with safety guards):
+
+[source,java]
+----
+@OntologyClass(id = "Parent")
+@Entity("parents")
+public class Parent extends UnversionedBaseModel {
+  @OntologyProperty(
+    id = "children",
+    edgeType = "HAS_CHILD",
+    ref = "Child",
+    relation = RelationType.ONE_TO_MANY,
+    cascade = { CascadeType.DELETE, CascadeType.BLOCK_IF_REFERENCED },
+    cascadeDepth = 1 // delete only direct children
+  )
+  private List<Child> children = new ArrayList<>();
+}
+----
+
+Behavior:
+- Deleting a Parent removes explicit edges and, with DELETE, deletes its Child documents up to the specified depth.
+- With BLOCK_IF_REFERENCED, a Child that is still referenced by another Parent is not deleted; only the edge from the deleted Parent is removed.
+- Cycles are guarded by a visited set; depth prevents long delete chains.
+
+See integration tests in the ontology-mongo module (CascadeDeleteIT) for expected behavior.
 
 Example (owned children with orphan removal):
 

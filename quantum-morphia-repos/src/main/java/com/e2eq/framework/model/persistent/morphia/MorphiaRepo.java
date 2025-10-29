@@ -62,6 +62,12 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     @Inject
     Instance<PostPersistHook> postPersistHooks;
 
+    @Inject
+    Instance<PreDeleteHook> preDeleteHooks;
+
+    @Inject
+    Instance<PostDeleteHook> postDeleteHooks;
+
     @ConfigProperty(name = "ontology.auto-materialize", defaultValue = "true")
     boolean autoMaterialize;
 
@@ -72,6 +78,29 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                 hook.afterPersist(realmId, entity);
             } catch (Throwable t) {
                 Log.warn("PostPersistHook threw exception: " + t.getMessage());
+            }
+        }
+    }
+
+    private void callPreDeleteHooks(String realmId, Object entity) {
+        if (preDeleteHooks == null) return;
+        for (PreDeleteHook hook : preDeleteHooks) {
+            try {
+                hook.beforeDelete(realmId, entity);
+            } catch (Throwable t) {
+                // if a pre-delete throws, propagate as runtime to abort deletion
+                throw t instanceof RuntimeException ? (RuntimeException) t : new RuntimeException(t);
+            }
+        }
+    }
+
+    private void callPostDeleteHooks(String realmId, Class<?> entityClass, String idAsString) {
+        if (postDeleteHooks == null) return;
+        for (PostDeleteHook hook : postDeleteHooks) {
+            try {
+                hook.afterDelete(realmId, entityClass, idAsString);
+            } catch (Throwable t) {
+                Log.warn("PostDeleteHook threw exception: " + t.getMessage());
             }
         }
     }
@@ -1201,8 +1230,12 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                 // delete the object and remove any references that it may have had to parents
                 try (MorphiaSession s = morphiaDataStore.getDataStore(realmId).startSession()) {
                     s.startTransaction();
+                    // ontology pre-delete hooks (may throw to block)
+                    try { callPreDeleteHooks(realmId, obj); } catch (RuntimeException ex) { s.abortTransaction(); throw ex; }
                     removeReferenceConstraint(obj, s);
                     result = s.delete(obj);
+                    // ontology post-delete hooks
+                    try { callPostDeleteHooks(realmId, obj.getClass(), String.valueOf(obj.getRefName()!=null?obj.getRefName():obj.getId())); } catch (Throwable ignored) {}
                     s.commitTransaction();
                 }
                 // we are done so now we can return the number of deleted records which should be just one
@@ -1235,12 +1268,16 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                             // entities are empty so there are no valid references to this object.
                             // no remove all the reference there may from this class to other classes.
                             removeReferenceConstraint(obj, s);
+                            // ontology pre-delete hooks (may throw to block)
+                            try { callPreDeleteHooks(realmId, obj); } catch (RuntimeException ex) { s.abortTransaction(); throw ex; }
                             // now actually delete the object
                             result = s.delete(obj);
 
                             // just for completeness we can remove all the entries now
                             obj.getReferences().removeAll(entriesToRemove);
 
+                            // ontology post-delete hooks
+                            try { callPostDeleteHooks(realmId, obj.getClass(), String.valueOf(obj.getRefName()!=null?obj.getRefName():obj.getId())); } catch (Throwable ignored) {}
                             // commit the transaction and we are done.
                             s.commitTransaction();
                         } else {
