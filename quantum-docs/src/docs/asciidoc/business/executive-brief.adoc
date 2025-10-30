@@ -1,0 +1,125 @@
+[[executive-brief]]
+= Quantum Framework: Executive Brief for Business Leaders
+
+This brief is written for senior business and technology leaders who do not write code. It explains what the Quantum framework is, the business problems it solves, and why its approach to ontologies, data governance, and layered architecture is valuable across industries. A supply chain scenario is used to ground the concepts in familiar outcomes.
+
+== What Quantum is (in one page)
+
+Quantum is a foundation for building secure, multi‑tenant business applications where multiple parties need to collaborate on shared data without losing control of their own data. It reduces time‑to‑value by giving product teams a consistent way to:
+
+- Define the language of the business (via an ontology) so the system understands how things relate: orders, shipments, customers, facilities, approvals, etc.
+- Enforce policy‑driven data access and data placement (data governance) so people only see what they should, and data lives where it should.
+- Offer a consistent API and query model to the UI and to partner systems, avoiding a tangle of bespoke endpoints.
+- Operate as a true multi‑tenant SaaS: each organization is separate by default, with explicit, auditable sharing when needed.
+
+Think of Quantum as a “business‑aware operating system” for enterprise SaaS: you focus on the domain and outcomes, while the framework bakes in the cross‑cutting concerns.
+
+== Why this matters to the business
+
+- Faster delivery of new products and modules: teams assemble capabilities instead of re‑building plumbing.
+- Lower integration friction: partners and internal apps access data through consistent, governed interfaces.
+- Reduced risk: privacy, residency, and least‑privilege access are enforced by policy rather than scattered code.
+- Explainable security: clear answers to “who can do what, with which data, and why.”
+- Future‑proof data: an ontology makes relationships explicit so you can extend, analyze, and automate without re‑platforming.
+
+== Core concepts in plain language
+
+=== Ontologies: the business map
+
+An ontology is a formal map of the important things in your business and how they relate. In Quantum, the ontology:
+
+- Names the key entities (Shipment, PurchaseOrder, Partner, Invoice, Facility, etc.).
+- Captures how those entities connect (e.g., Shipment fulfills a PurchaseOrder; Partner operates a Facility).
+- Lets rules and analytics reason over those relationships (e.g., "show me all shipments for orders from strategic suppliers").
+
+Business value
+- Shared understanding across teams and systems—no more mismatched semantics.
+- Richer navigation and reporting—less brittle than hard‑coded joins and endpoints.
+- Safer automation—policies and workflows operate on concepts the business understands, not table names.
+
+See also: Modeling relationships and cascading (xref:../user-guide/ontology.adoc[Ontology Guide]).
+
+=== Data governance: policy‑driven access and placement
+
+Data governance in Quantum is not an afterthought. It is expressed as human‑readable policies that:
+
+- Decide who can perform which action (VIEW, CREATE, APPROVE, EXPORT, etc.) on which domain objects.
+- Filter results so users see only the records they are entitled to.
+- Determine where new data belongs (which tenant or shared domain) to satisfy ownership and residency rules.
+
+Business value
+- Compliance by construction: residency, separation, and least‑privilege enforced centrally.
+- Clear audit: policies explain why a user saw or changed specific data.
+- Low cost of change: update a rule, not a dozen services.
+
+See also: xref:../user-guide/permissions.adoc[Permissions and Policy Guide].
+
+=== Layered architecture: clarity and agility
+
+Quantum separates concerns so teams can move independently while staying consistent:
+
+- Identity and tenancy layer: integrates enterprise SSO, supports partner logins, and isolates each organization by default.
+- Policy layer: human‑readable rules specify who can do what and where data lives.
+- Ontology layer: defines entities and relationships; enables graph‑style reasoning and cascaded actions.
+- Data access & query layer: consistent list/filter/query for all domains; fewer bespoke endpoints.
+- Workflow & state layer: patterns for long‑running processes and completion tasks.
+- Seed packs & configuration layer: versioned baseline data and settings for rapid, repeatable onboarding.
+
+Business value
+- Predictable delivery: features fit naturally into the layers instead of reinventing plumbing.
+- Easier governance: one place to review identity, policy, and data placement.
+- Extensibility: add domains and relationships without ripping up the foundation.
+
+== Supply chain: how the pieces come together
+
+Consider a multi‑party supply chain platform where shippers, suppliers, carriers, and 3PLs collaborate.
+
+Business needs
+- Secure cross‑company sharing without exposing everything.
+- Role‑appropriate visibility: planners, operators, and analysts each see what they need.
+- Auditability and compliance across regions.
+- Rapid partner onboarding without long IT cycles.
+
+How Quantum addresses these needs
+
+- Ontology maps the domain
+  - Entities: PurchaseOrder, Shipment, Item, Partner, Facility, Appointment, Invoice.
+  - Relationships: Shipment fulfills PurchaseOrder; Partner operates Facility; Appointment schedules Facility for Shipment.
+  - Outcomes: Ask meaningful questions like “Which late shipments are tied to orders from strategic suppliers with capacity constraints?”
+
+- Data governance via policy
+  - Private by default: each company’s data is isolated within its tenant.
+  - Deliberate sharing: create a "collaboration bubble" for a specific order or shipment so the buyer and a chosen carrier see the same milestones and documents—nothing more.
+  - Residency & scope: EU shipments remain in‑region; policies pin reads/writes accordingly.
+
+- Layered delivery
+  - Identity/tenancy: enterprises use SSO; smaller partners use passwords; all mapped consistently.
+  - Policy: human‑readable rules control who can VIEW, UPDATE, or APPROVE across areas like Collaboration or Finance.
+  - Ontology: relationships drive navigation, automation, and impact analysis.
+  - Query: one consistent List API powers dashboards and reports without proliferating endpoints.
+  - Seed packs: onboard a new supplier with a versioned baseline—roles, code lists, sample workflows—applied in minutes.
+
+Measurable business outcomes
+- Time‑to‑value: new partners live in days, not weeks.
+- Lower operating risk: explainable access and audit trails by design.
+- Better decisioning: cross‑entity insights (“orders at risk by lane and supplier”) with less IT effort.
+- Product agility: add a returns workflow or a new KPI without re‑architecting.
+
+For a business‑friendly deep dive, see the Supply Chain Collaboration guide (xref:../tutorials/supply-chain.adoc[Supply Chain]).
+
+== Where Quantum fits in your landscape
+
+- Complement to ERP/TMS: Quantum doesn’t replace your systems of record; it coordinates collaboration around them with governed data sharing.
+- Safer data mesh: connect domains through the ontology and policies rather than ad‑hoc point‑to‑point contracts.
+- Cloud‑ready foundation: designed for multi‑tenant SaaS, whether deployed privately or as a shared service.
+
+== Getting started: pragmatic rollout
+
+- Start with one domain and one outcome (e.g., shipment visibility and exception handling for a key lane).
+- Define the ontology for that slice and the access policies.
+- Use seed packs to bootstrap pilot tenants and iterate quickly.
+- Expand to adjacent domains (orders, appointments, invoices) once the core is delivering value.
+
+== Summary for executives
+
+Quantum gives you a governed, business‑aware foundation for multi‑party applications. Its ontology makes the business explicit; its policies make access and residency enforceable and explainable; and its layered architecture accelerates delivery while lowering risk. The result: faster product cycles, safer collaboration, and durable data assets that keep paying dividends as you grow.
