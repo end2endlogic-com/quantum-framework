@@ -16,9 +16,8 @@ import io.quarkus.logging.Log;
 import io.smallrye.mutiny.subscription.MultiEmitter;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
+import com.e2eq.framework.service.seed.SeedPathResolver;
 
-import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -40,11 +39,6 @@ public class TenantProvisioningService {
     @Inject CredentialRepo credentialRepo;
 
     @Inject MongoClient mongoClient;
-
-    @ConfigProperty(name = "quantum.seed.root", defaultValue = "")
-    Optional<String> seedRootConfig;
-
-    private static final String DEFAULT_TEST_SEED_ROOT = "src/test/resources/seed-packs";
 
     public static class ProvisionResult {
         public String realmId;
@@ -201,7 +195,7 @@ public class TenantProvisioningService {
         // 5) Apply requested seed archetypes (optional)
         if (archetypes != null && !archetypes.isEmpty()) {
             SeedLoader loader = SeedLoader.builder()
-                    .addSeedSource(new FileSeedSource("files", resolveSeedRoot()))
+                    .addSeedSource(new FileSeedSource("files", SeedPathResolver.resolveSeedRoot()))
                     .seedRepository(new MongoSeedRepository(mongoClient))
                     .seedRegistry(new MongoSeedRegistry(mongoClient))
                     .build();
@@ -224,12 +218,5 @@ public class TenantProvisioningService {
         migrationService.checkInitialized(realmId);
 
         return result;
-    }
-
-    private Path resolveSeedRoot() {
-        if (seedRootConfig.isPresent() && !seedRootConfig.get().isBlank()) {
-            return Path.of(seedRootConfig.get());
-        }
-        return Path.of(DEFAULT_TEST_SEED_ROOT);
     }
 }

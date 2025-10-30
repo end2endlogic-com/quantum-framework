@@ -5,12 +5,12 @@ import io.quarkus.logging.Log;
 import io.quarkus.runtime.Startup;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.io.IOException;
 import java.util.*;
 
 import com.e2eq.framework.util.EnvConfigUtils;
+import com.e2eq.framework.service.seed.SeedPathResolver;
 
 /**
  * Logs a summary of pending seed packs at application startup for key realms.
@@ -25,10 +25,6 @@ public class PendingSeedsStartupLogger {
     @Inject
     EnvConfigUtils envConfigUtils;
 
-    @ConfigProperty(name = "quantum.seed.root", defaultValue = "")
-    Optional<String> seedRootConfig;
-
-    private static final String DEFAULT_TEST_SEED_ROOT = "src/test/resources/seed-packs";
 
     @jakarta.annotation.PostConstruct
     void onStart() {
@@ -57,11 +53,13 @@ public class PendingSeedsStartupLogger {
     }
 
     private int countPending(String realm) throws IOException {
-        java.nio.file.Path root = resolveSeedRoot();
+        java.nio.file.Path root = SeedPathResolver.resolveSeedRoot();
         FileSeedSource source = new FileSeedSource("files", root);
         SeedContext context = SeedContext.builder(realm).build();
         MongoSeedRegistry registry = new MongoSeedRegistry(mongoClient);
         List<SeedPackDescriptor> descriptors = source.loadSeedPacks(context);
+        // Filter by scope applicability (gated by feature flag)
+        descriptors.removeIf(d -> !com.e2eq.framework.service.seed.ScopeMatcher.isApplicable(d, context));
         Map<String, SeedPackDescriptor> latestByPack = new LinkedHashMap<>();
         for (SeedPackDescriptor d : descriptors) {
             String name = d.getManifest().getSeedPack();
@@ -91,12 +89,6 @@ public class PendingSeedsStartupLogger {
         return count;
     }
 
-    private java.nio.file.Path resolveSeedRoot() {
-        if (seedRootConfig.isPresent() && !seedRootConfig.get().isBlank()) {
-            return java.nio.file.Path.of(seedRootConfig.get());
-        }
-        return java.nio.file.Path.of(DEFAULT_TEST_SEED_ROOT);
-    }
 
     private static int compareSemver(String a, String b) {
         String[] as = a.split("\\.");

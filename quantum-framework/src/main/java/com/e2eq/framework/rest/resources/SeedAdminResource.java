@@ -15,12 +15,10 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
+import com.e2eq.framework.service.seed.SeedPathResolver;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
@@ -42,10 +40,6 @@ public class SeedAdminResource {
     @Inject
     MorphiaSeedRepository morphiaSeedRepository;
 
-    @ConfigProperty(name = "quantum.seed.root", defaultValue = "")
-    Optional<String> seedRootConfig;
-
-    private static final String DEFAULT_TEST_SEED_ROOT = "src/test/resources/seed-packs";
 
     // ----- Endpoints -----
 
@@ -53,7 +47,7 @@ public class SeedAdminResource {
     @Path("/pending/{realm}")
     public List<PendingSeedPack> listPending(@PathParam("realm") String realm,
                                              @QueryParam("filter") String filterCsv) {
-        java.nio.file.Path root = resolveSeedRoot();
+        java.nio.file.Path root = SeedPathResolver.resolveSeedRoot();
         SeedContext context = SeedContext.builder(realm).build();
         FileSeedSource source = new FileSeedSource("files", root);
         MongoSeedRegistry registry = new MongoSeedRegistry(mongoClient);
@@ -64,12 +58,15 @@ public class SeedAdminResource {
             throw new InternalServerErrorException("Failed to load seed packs: " + e.getMessage());
         }
         if (descriptors.isEmpty()) {
+           Log.infof("No seed packs found in realm %s ", realm);
             return List.of();
         }
         Set<String> allowed = parseFilter(filterCsv);
         if (!allowed.isEmpty()) {
             descriptors.removeIf(d -> !allowed.contains(d.getManifest().getSeedPack()));
         }
+        // Filter by scope applicability (gated by feature flag)
+        descriptors.removeIf(d -> !com.e2eq.framework.service.seed.ScopeMatcher.isApplicable(d, context));
         Map<String, SeedPackDescriptor> latestByPack = latestByPack(descriptors);
         List<PendingSeedPack> pending = new ArrayList<>();
         for (SeedPackDescriptor d : latestByPack.values()) {
@@ -109,7 +106,7 @@ public class SeedAdminResource {
     @Path("/apply/{realm}")
     public ApplyResult applyAll(@PathParam("realm") String realm,
                                 @QueryParam("filter") String filterCsv) {
-        java.nio.file.Path root = resolveSeedRoot();
+        java.nio.file.Path root = SeedPathResolver.resolveSeedRoot();
         SeedLoader loader = SeedLoader.builder()
                 .addSeedSource(new FileSeedSource("files", root))
                 .seedRepository(morphiaSeedRepository)
@@ -129,6 +126,8 @@ public class SeedAdminResource {
         if (!allowed.isEmpty()) {
             descriptors.removeIf(d -> !allowed.contains(d.getManifest().getSeedPack()));
         }
+        // Filter by scope applicability (gated by feature flag)
+        descriptors.removeIf(d -> !com.e2eq.framework.service.seed.ScopeMatcher.isApplicable(d, context));
         Map<String, SeedPackDescriptor> latestByPack = latestByPack(descriptors);
         List<SeedPackRef> refs = latestByPack.values().stream()
                 .map(d -> SeedPackRef.exact(d.getManifest().getSeedPack(), d.getManifest().getVersion()))
@@ -143,7 +142,7 @@ public class SeedAdminResource {
     @Path("/{realm}/{seedPack}/apply")
     public ApplyResult applyOne(@PathParam("realm") String realm,
                                 @PathParam("seedPack") String seedPack) {
-        java.nio.file.Path root = resolveSeedRoot();
+        java.nio.file.Path root = com.e2eq.framework.service.seed.SeedPathResolver.resolveSeedRoot();
         SeedLoader loader = SeedLoader.builder()
                 .addSeedSource(new FileSeedSource("files", root))
                 .seedRepository(morphiaSeedRepository)
@@ -159,10 +158,12 @@ public class SeedAdminResource {
         } catch (IOException e) {
             throw new NotFoundException("Failed to load seed packs: " + e.getMessage());
         }
+        // Apply scope filtering first
+        descriptors.removeIf(d -> !com.e2eq.framework.service.seed.ScopeMatcher.isApplicable(d, context));
         SeedPackDescriptor latest = descriptors.stream()
                 .filter(d -> seedPack.equals(d.getManifest().getSeedPack()))
                 .max(Comparator.comparing(d -> d.getManifest().getVersion(), SeedAdminResource::compareSemver))
-                .orElseThrow(() -> new NotFoundException("Seed pack not found: " + seedPack));
+                .orElseThrow(() -> new NotFoundException("Seed pack not found or not applicable: " + seedPack));
         loader.apply(List.of(SeedPackRef.exact(seedPack, latest.getManifest().getVersion())), context);
         ApplyResult result = new ApplyResult();
         result.applied = List.of(seedPack);
@@ -204,12 +205,6 @@ public class SeedAdminResource {
         return latestByName;
     }
 
-    private java.nio.file.Path resolveSeedRoot() {
-        if (seedRootConfig.isPresent() && !seedRootConfig.get().isBlank()) {
-            return java.nio.file.Path.of(seedRootConfig.get());
-        }
-        return java.nio.file.Path.of(DEFAULT_TEST_SEED_ROOT);
-    }
 
     private static Set<String> parseFilter(String csv) {
         if (csv == null || csv.isBlank()) return Collections.emptySet();

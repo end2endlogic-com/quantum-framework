@@ -17,22 +17,25 @@ A new collection-agnostic facade exposes plan/inspect capabilities and will late
 .Java
 [source,java]
 ----
+import com.e2eq.framework.model.persistent.morphia.planner.PlannerResult;
 import com.e2eq.framework.model.persistent.morphia.query.QueryGateway;
 import com.e2eq.framework.model.persistent.morphia.query.QueryGatewayImpl;
-import com.e2eq.framework.model.persistent.morphia.planner.PlannerResult;
 
-QueryGateway gateway = new QueryGatewayImpl();
-
-// Decide which mode would be used
-PlannerResult pr = gateway.plan("expand(customer) && status:active", Order.class);
-// pr.getMode() == PlannerResult.Mode.AGGREGATION
-// pr.getExpandPaths() == ["customer"]
+public class PlannerSnippet1 {
+  static class Order {}
+  public static void main(String[] args) {
+    QueryGateway gateway = new QueryGatewayImpl();
+    PlannerResult pr = gateway.plan("expand(customer) && status:active", Order.class);
+    System.out.println(pr.getMode());        // AGGREGATION
+    System.out.println(pr.getExpandPaths()); // [customer]
+  }
+}
 ----
 
 If you prefer a lower-level API:
 
 .Java
-[source,java]
+[source]
 ----
 import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
 import com.e2eq.framework.model.persistent.morphia.planner.PlannedQuery;
@@ -68,16 +71,19 @@ q = "realm:acme && status:active && fields:[+_id,+total]"
 q = "expand(customer, fields:[+name,+tier]) && status:active && fields:[+_id,+customer.name]"
 ----
 
-See also: xref:query-expansion.adoc[Relationship hydration with expand(path)].
+See also: xref:query-expansion.adoc[Relationship hydration with expand(path)]. For concrete pipelines, see xref:query-expansion.adoc#aggregation-examples[Aggregation examples: what expand(...) compiles to].
 
+[[query-gateway-rest]]
 === REST endpoints (v1)
 
-Two helper endpoints expose the planner and execution in FILTER mode:
+Two helper endpoints expose the planner and execution path. FILTER mode executes immediately. AGGREGATION mode is planned, and execution is guarded by a feature flag.
 
-- POST /api/query/plan — returns planner mode and expand paths
-- POST /api/query/find — executes FILTER-mode queries and returns the standard Collection<T> envelope; returns 501 when AGGREGATION is requested (until aggregation compiler is enabled)
+- POST /api/query/plan — returns planner mode and expand paths detected
+- POST /api/query/find — executes FILTER-mode queries and returns the standard Collection<T> envelope; when AGGREGATION is requested, behavior depends on a feature flag (see below)
 
-.Request: plan
+==== Request/Response: /api/query/plan
+
+.Request body
 [source,json]
 ----
 {
@@ -86,7 +92,7 @@ Two helper endpoints expose the planner and execution in FILTER mode:
 }
 ----
 
-.Response: plan
+.Response body
 [source,json]
 ----
 {
@@ -95,17 +101,34 @@ Two helper endpoints expose the planner and execution in FILTER mode:
 }
 ----
 
-.Request: find (FILTER mode)
+Notes
+
+- mode is FILTER when no expand(...) directives are present; otherwise AGGREGATION.
+- expandPaths lists the paths detected by the planner for hydration. See xref:query-expansion.adoc[Query Expansion].
+
+==== Request/Response: /api/query/find
+
+Parameters in the request body
+
+- rootType: fully-qualified class name extending UnversionedBaseModel
+- query: BIAPI query string (see xref:query-language.adoc[Query Language Reference])
+- page: optional object with limit and skip
+- sort: optional array of { field, dir } objects, where dir is ASC or DESC
+- realm: optional, overrides the default realm/database
+
+.Request body (FILTER mode)
 [source,json]
 ----
 {
   "rootType": "com.e2eq.framework.model.security.UserProfile",
   "query": "displayName:*Alice*",
-  "page": { "limit": 10, "skip": 0 }
+  "page": { "limit": 10, "skip": 0 },
+  "sort": [ { "field": "createdDate", "dir": "DESC" } ],
+  "realm": "acme"
 }
 ----
 
-.Response: find (Collection envelope)
+.Response body (Collection envelope)
 [source,json]
 ----
 {
@@ -116,3 +139,39 @@ Two helper endpoints expose the planner and execution in FILTER mode:
   "filter": "displayName:*Alice*"
 }
 ----
+
+Behavior when AGGREGATION is requested
+
+- If the planner selects AGGREGATION (due to expand(...)) and the configuration property feature.queryGateway.execution.enabled=false (default), the endpoint responds with HTTP 501 Not Implemented and a message indicating execution is disabled.
+- If feature.queryGateway.execution.enabled=true, the gateway attempts to execute the aggregation pipeline. If the pipeline contains an unresolved $lookup.from ("__unknown__"), the endpoint responds with HTTP 422 Unprocessable Entity and an explanatory error. Otherwise, results are returned in the same Collection envelope shape, with rows being Documents.
+
+cURL examples
+
+.Planning with expansion
+[source,bash]
+----
+curl -sS -X POST \
+  -H 'Content-Type: application/json' \
+  localhost:8080/api/query/plan \
+  -d '{
+    "rootType":"com.e2eq.framework.model.security.UserProfile",
+    "query":"expand(customer) && status:active"
+  }'
+----
+
+.Finding with paging, sort, realm (FILTER path)
+[source,bash]
+----
+curl -sS -X POST \
+  -H 'Content-Type: application/json' \
+  localhost:8080/api/query/find \
+  -d '{
+    "rootType":"com.e2eq.framework.model.security.UserProfile",
+    "query":"displayName:*Alice*",
+    "page": { "limit": 10, "skip": 0 },
+    "sort": [ { "field": "createdDate", "dir": "DESC" } ],
+    "realm":"acme"
+  }'
+----
+
+See also: xref:query-expansion.adoc[Relationship hydration with expand(path)].

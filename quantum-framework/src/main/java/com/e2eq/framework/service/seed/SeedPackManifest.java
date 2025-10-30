@@ -31,6 +31,8 @@ public final class SeedPackManifest {
     private List<Dataset> datasets;
     private List<String> includes;
     private List<Archetype> archetypes;
+    // Optional scope block to control applicability
+    private SeedScope scope;
     private transient String sourceDescription;
 
 

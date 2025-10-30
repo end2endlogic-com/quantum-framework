@@ -4,6 +4,19 @@
 This section documents the new relationship traversal and hydration capability added to the BIAPI query language.
 It preserves backward compatibility and introduces no SQL-like syntax.
 
+=== How it works
+
+- You add one or more expand(path) directives to your query string to request hydration of related entities at specific paths.
+- The planner inspects the query. If any expand(...) directives are present, it selects AGGREGATION mode; otherwise, FILTER mode.
+- In FILTER mode, the system converts the query to a Morphia Filter and queries a single MongoDB collection.
+- In AGGREGATION mode, the system constructs an aggregation pipeline (with $lookup, $unwind, etc.) to materialize related documents. Execution may be guarded by a feature flag in the QueryGatewayResource.
+- Projection can be applied at the root and per expansion using fields:[+/-] syntax. Unknown projection paths are hard errors.
+
+See also:
+
+- xref:planner-and-query-gateway.adoc[Planner and QueryGateway] for mode selection and Java APIs
+- xref:planner-and-query-gateway.adoc#query-gateway-rest[QueryGateway REST endpoints] to plan or execute queries over HTTP
+
 === What is expand(path)?
 
 Use expand(path) to hydrate properties that are modeled as EntityReference or ontology-annotated relations.
@@ -68,3 +81,153 @@ q = "items[*].product{ active:true, sku:^[A123,B456] } && fields:[+_id,+total]"
 - Unknown projection paths are hard errors (the request fails with a clear message).
 
 See also: xref:planner-and-query-gateway.adoc[Planner and QueryGateway]
+
+[[aggregation-examples]]
+=== Aggregation examples: what expand(...) compiles to
+
+This section shows typical MongoDB aggregation stages the planner emits when expand(path) is present. Exact collection names and field names depend on your model mapping. If the collection cannot be resolved at plan-time, the planner will emit a placeholder from: "__unknown__"; the REST gateway returns HTTP 422 on execution in that case.
+
+Tip: You can inspect the chosen mode and expand paths with POST /api/query/plan. See xref:planner-and-query-gateway.adoc#query-gateway-rest[QueryGateway REST endpoints].
+
+==== Single reference: expand(customer)
+
+Query
+
+[source]
+----
+q = "status:active && expand(customer, fields:[+name,+tier]) && fields:[+_id,+total,+customer]"
+----
+
+Typical pipeline skeleton
+
+[source,json]
+----
+[
+  { "$match": { "status": "active" } },
+  { "$lookup": {
+      "from": "customers",
+      "localField": "customerId",
+      "foreignField": "_id",
+      "as": "__exp_customer"
+  }},
+  { "$unwind": { "path": "$__exp_customer", "preserveNullAndEmptyArrays": true }},
+  { "$set": { "customer": "$__exp_customer" }},
+  { "$project": { "_id": 1, "total": 1, "customer": { "name": 1, "tier": 1 } } }
+]
+----
+
+Result shape (conceptual)
+
+[source,json]
+----
+{
+  "_id": "O123",
+  "total": 99.50,
+  "customer": { "_id": "C1", "name": "Acme", "tier": "GOLD" }
+}
+----
+
+Notes
+- The intermediate field __exp_customer is an internal staging alias; the planner may omit it in future.
+- Per-expansion projection fields:[+name,+tier] narrows the embedded document via $project.
+
+==== Array of references: expand(items[*].product)
+
+Query
+
+[source]
+----
+q = "expand(items[*].product, fields:[+sku,+title]) && fields:[+_id,+items.product]"
+----
+
+Typical pipeline patterns (two common strategies)
+
+1) Unwind-and-regroup (easy to read)
+
+[source,json]
+----
+[
+  { "$unwind": { "path": "$items", "preserveNullAndEmptyArrays": true }},
+  { "$lookup": {
+      "from": "products",
+      "localField": "items.productId",
+      "foreignField": "_id",
+      "as": "__exp_product"
+  }},
+  { "$unwind": { "path": "$__exp_product", "preserveNullAndEmptyArrays": true }},
+  { "$set": { "items.product": "$__exp_product" }},
+  { "$group": {
+      "_id": "$_id",
+      "doc": { "$first": "$$ROOT" },
+      "items": { "$push": "$items" }
+  }},
+  { "$replaceRoot": { "newRoot": { "$mergeObjects": ["$doc", { "items": "$items" }] } }},
+  { "$project": { "_id": 1, "items.product": { "sku": 1, "title": 1 } } }
+]
+----
+
+2) Map-with-lookup (keeps array order without grouping; requires $lookup with pipeline + $map)
+
+[source,json]
+----
+[
+  { "$set": {
+      "items": {
+        "$map": {
+          "input": "$items",
+          "as": "it",
+          "in": {
+            "$let": {
+              "vars": {
+                "p": { "$first": {
+                  "$lookup": {
+                    "from": "products",
+                    "let": { "pid": "$$it.productId" },
+                    "pipeline": [ { "$match": { "$expr": { "$eq": ["$_id", "$$pid"] } } } ],
+                    "as": "p"
+                  }
+                }}
+              },
+              "in": { "$mergeObjects": [ "$$it", { "product": "$p" } ] }
+            }
+          }
+        }
+      }
+  }},
+  { "$project": { "_id": 1, "items.product": { "sku": 1, "title": 1 } } }
+]
+----
+
+Notes
+- The actual compiler may choose either strategy based on simplicity; behavior is equivalent for most cases.
+- Null or missing productId yields product: null due to preserveNullAndEmptyArrays.
+
+==== Nested arrays: expand(patient.visits[*].diagnoses[*])
+
+Query
+
+[source]
+----
+q = "expand(patient.visits[*].diagnoses[*]) && fields:[+_id,+patient.visits.diagnoses]"
+----
+
+Typical staged pipeline (high level)
+
+[source]
+----
+1. $lookup patient -> __exp_patient; $set patient
+2. $unwind visits (preserveNullAndEmptyArrays)
+3. $unwind visits.diagnoses
+4. $lookup diagnosis -> set visits.diagnoses[*]
+5. $group back by root _id while reconstructing visits and diagnoses arrays in original order
+6. optional $project to constrain fields
+----
+
+Caveats
+- Depth and mixed object/array hops are bounded; traversal stops at a non-reference boundary.
+- For very large arrays, prefer targeted filtering before expansion to reduce fan-out.
+
+==== When is AGGREGATION used vs FILTER?
+
+- FILTER: no expand(...). Planner returns a Morphia Filter and the gateway executes find with dev.morphia.query.Query.
+- AGGREGATION: one or more expand(...). Planner returns a pipeline with $lookup/$unwind and optional $project stages. Execution requires feature.queryGateway.execution.enabled=true; otherwise, POST /api/query/find returns 501. If any $lookup.from is "__unknown__", execution returns HTTP 422.
