@@ -14,7 +14,7 @@ This documentation provides user guides and tutorials for mid-level Java develop
 - Executive Brief: xref:business/executive-brief.adoc[Executive Brief for Business Leaders]
 - Tutorial Guide: xref:#tutorial-guide[Quantum Tutorial]
 - Reference Guide: xref:#reference-guide[Quantum Reference Guide]
-- Ontologies in Quantum: xref:user-guide/ontology.adoc[Modeling relationships and cascading]
+- Ontologies in Quantum: xref:user-guide/ontology.adoc#ontologies-in-quantum[Modeling relationships and cascading]
 
 [[executive-brief-section]]
 == Executive Brief
