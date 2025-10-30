@@ -89,7 +89,7 @@ public class SeedStartupRunner {
         DistributedLock lock = getSeedLock(realm);
         lock.acquire();
         try {
-            Path root = resolveSeedRoot();
+            Path root = SeedPathResolver.resolveSeedRoot();
             FileSeedSource source = new FileSeedSource("files", root);
 
             // Derive tenantId from realm (replace the last '-' with '.') and resolve admin userId
@@ -192,6 +192,8 @@ public class SeedStartupRunner {
                     descriptors.removeIf(d -> !allowed.contains(d.getManifest().getSeedPack()));
                 }
             }
+            // Filter by scope applicability (gated by feature flag)
+            descriptors.removeIf(d -> !ScopeMatcher.isApplicable(d, context));
             Map<String, SeedPackDescriptor> latestByName = new LinkedHashMap<>();
             for (SeedPackDescriptor d : descriptors) {
                 String name = d.getManifest().getSeedPack();
