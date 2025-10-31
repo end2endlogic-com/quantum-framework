@@ -3,6 +3,7 @@ package com.e2eq.framework.service.seed;
 import java.time.Instant;
 import java.util.Objects;
 
+import io.quarkus.logging.Log;
 import org.bson.Document;
 
 import com.mongodb.client.MongoClient;
@@ -32,6 +33,7 @@ public final class MongoSeedRegistry implements SeedRegistry {
         Document existing = getCollection(context).find(Filters.and(
                 Filters.eq("seedPack", manifest.getSeedPack()),
                 Filters.eq("version", manifest.getVersion()),
+                Filters.eq("realmId", context.getRealm()),
                 Filters.eq("dataset", dataset.getCollection()))).first();
         if (existing == null) {
             return true;
@@ -51,6 +53,7 @@ public final class MongoSeedRegistry implements SeedRegistry {
                 .append("dataset", dataset.getCollection())
                 .append("checksum", checksum)
                 .append("records", recordsApplied)
+                .append("appliedToRealm", context.getRealm())
                 .append("appliedAt", Instant.now());
         getCollection(context).replaceOne(Filters.and(
                         Filters.eq("seedPack", manifest.getSeedPack()),
@@ -61,7 +64,8 @@ public final class MongoSeedRegistry implements SeedRegistry {
     }
 
     private MongoCollection<Document> getCollection(SeedContext context) {
-        MongoDatabase database = mongoClient.getDatabase(context.getRealmId());
+        Log.infof("Getting  collection %s for realm %s", COLLECTION,context.getRealm());
+        MongoDatabase database = mongoClient.getDatabase(context.getRealm());
         MongoCollection<Document> collection = database.getCollection(COLLECTION);
         collection.createIndex(new Document("seedPack", 1).append("version", 1).append("dataset", 1));
         return collection;

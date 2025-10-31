@@ -8,22 +8,22 @@ import java.util.Optional;
  */
 public final class SeedContext {
 
-    private final String realmId;
+    private final String realm;
     private final String tenantId;
     private final String orgRefName;
     private final String accountId;
     private final String ownerId;
 
     private SeedContext(Builder builder) {
-        this.realmId = Objects.requireNonNull(builder.realmId, "realmId");
+        this.realm = Objects.requireNonNull(builder.realm, "realmId");
         this.tenantId = builder.tenantId;
         this.orgRefName = builder.orgRefName;
         this.accountId = builder.accountId;
         this.ownerId = builder.ownerId;
     }
 
-    public String getRealmId() {
-        return realmId;
+    public String getRealm () {
+        return realm;
     }
 
     public Optional<String> getTenantId() {
@@ -47,14 +47,14 @@ public final class SeedContext {
     }
 
     public static final class Builder {
-        private final String realmId;
+        private final String realm;
         private String tenantId;
         private String orgRefName;
         private String accountId;
         private String ownerId;
 
-        private Builder(String realmId) {
-            this.realmId = Objects.requireNonNull(realmId, "realmId");
+        private Builder(String realm) {
+            this.realm = Objects.requireNonNull(realm, "realm");
         }
 
         public Builder tenantId(String tenantId) {

@@ -216,7 +216,7 @@ public class SeedAdminResource {
         return set;
     }
 
-    private static int compareSemver(String a, String b) {
+    public static int compareSemver (String a, String b) {
         String[] as = a.split("\\.");
         String[] bs = b.split("\\.");
         for (int i = 0; i < Math.max(as.length, bs.length); i++) {

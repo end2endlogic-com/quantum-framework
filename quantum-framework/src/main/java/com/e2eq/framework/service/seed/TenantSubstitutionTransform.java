@@ -50,7 +50,7 @@ public final class TenantSubstitutionTransform implements SeedTransform {
         context.getAccountId().ifPresent(value -> maybePut(dataDomain, accountField, value));
 
         // realmId is not part of DataDomain; keep it at the root
-        maybePut(mutated, realmField, context.getRealmId());
+        maybePut(mutated, realmField, context.getRealm());
         return mutated;
     }
 
