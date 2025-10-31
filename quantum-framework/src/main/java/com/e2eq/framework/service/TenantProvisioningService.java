@@ -18,12 +18,8 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import com.e2eq.framework.service.seed.SeedPathResolver;
 
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Set;
+import java.io.IOException;
+import java.util.*;
 
 /**
  * Service to provision a new tenant: creates a Realm, runs migrations on that realm DB,
@@ -91,6 +87,7 @@ public class TenantProvisioningService {
         // 1) Compute realm id
         String realmId = tenantEmailDomain.replace('.', '-');
         result.realmId = realmId;
+        Log.infof("  computed realmId: %s", realmId);
 
         // 2) Lookup/Prevent duplicates in the system catalog (system realm)
         String systemRealm = envConfigUtils.getSystemRealm();
@@ -123,19 +120,45 @@ public class TenantProvisioningService {
                 .build();
 
         if (existingOpt.isPresent()) {
+           Log.warnf("Realm %s already exists in the realm collection in realm %s", realmId, systemRealm);
             Realm existing = existingOpt.get();
-            boolean same = Objects.equals(existing.getEmailDomain(), desiredRealm.getEmailDomain()) &&
-                           Objects.equals(existing.getDatabaseName(), desiredRealm.getDatabaseName()) &&
-                           Objects.equals(existing.getDefaultAdminUserId(), desiredRealm.getDefaultAdminUserId()) &&
-                           Objects.equals(existing.getDomainContext(), desiredRealm.getDomainContext());
-            if (!same) {
-                throw new IllegalStateException("Realm already exists, and the request would modify it. Aborting.");
+           List<String> diffs = new ArrayList<>();
+           if (!Objects.equals(existing.getEmailDomain(), desiredRealm.getEmailDomain())) {
+              diffs.add(String.format("emailDomain: existing='%s', requested='%s'",
+                 existing.getEmailDomain(), desiredRealm.getEmailDomain()));
+           }
+           if (!Objects.equals(existing.getDatabaseName(), desiredRealm.getDatabaseName())) {
+              diffs.add(String.format("databaseName: existing='%s', requested='%s'",
+                 existing.getDatabaseName(), desiredRealm.getDatabaseName()));
+           }
+           if (!Objects.equals(existing.getDefaultAdminUserId(), desiredRealm.getDefaultAdminUserId())) {
+              diffs.add(String.format("defaultAdminUserId: existing='%s', requested='%s'",
+                 existing.getDefaultAdminUserId(), desiredRealm.getDefaultAdminUserId()));
+           }
+           if (!Objects.equals(existing.getDomainContext(), desiredRealm.getDomainContext())) {
+              diffs.add(String.format("domainContext: existing='%s', requested='%s'",
+                 existing.getDomainContext(), desiredRealm.getDomainContext()));
+           }
+
+           if (!diffs.isEmpty()) {
+              throw new IllegalStateException(
+                 "Realm already exists; differences detected: " + String.join("; ", diffs));
+           }
+            if (!diffs.isEmpty()) {
+               StringBuffer bdiffs = new StringBuffer();
+               for (String diff : diffs) {
+                  Log.errorf("Diff: %s", diff);
+                  bdiffs.append(diff).append("\n");
+               }
+                String text ="Realm already exists, and the request would modify it. Aborting." + bdiffs.toString();
+                Log.error(text);
+                throw new IllegalStateException(text);
             }
             Log.warnf("Realm %s already exists in system catalog; proceeding idempotently.", realmId);
             result.addWarning("Realm already exists; no catalog changes were made.");
         } else {
             // Save realm in the system realm catalog
-            realmRepo.save(systemRealm, desiredRealm);
+            realmRepo.save(systemRealm, desiredRealm); // save in the system realm, the new record
             Log.infof("Created realm catalog entry for %s in system realm %s", realmId, systemRealm);
             result.realmCreated = true;
         }
@@ -177,7 +200,7 @@ public class TenantProvisioningService {
         } else {
             Optional<CredentialUserIdPassword> credOpt = credentialRepo.findByUserId(adminUserId, systemRealm, true);
             if (credOpt.isEmpty()) {
-                throw new IllegalStateException("Admin user exists but cannot be loaded for validation.");
+                throw new IllegalStateException(String.format("Admin user exists but credential with UserId: %s was not found in credential repo in realm: %s.", adminUserId, systemRealm));
             }
             CredentialUserIdPassword cred = credOpt.get();
             Set<String> storedRoles = cred.getRoles() == null ? java.util.Collections.emptySet() : new HashSet<>(Arrays.asList(cred.getRoles()));
@@ -186,31 +209,105 @@ public class TenantProvisioningService {
                     && Objects.equals(Boolean.FALSE, cred.getForceChangePassword())
                     && Objects.equals(cred.getDomainContext(), dc);
             if (!attributesMatch) {
-                throw new IllegalStateException("Admin user already exists with different attributes.");
+               List<String> diffs = new ArrayList<>();
+               if (!Objects.equals(cred.getSubject(), adminSubject)) {
+                  diffs.add(String.format("subject: existing='%s', requested='%s'",
+                         cred.getSubject(), adminSubject));
+               }
+               if (!Objects.equals(storedRoles, desiredRoles)) {
+                  diffs.add(String.format("roles: existing='%s', requested='%s'",
+                         storedRoles, desiredRoles));
+               }
+               if (!Objects.equals(Boolean.FALSE, cred.getForceChangePassword())) {
+                  diffs.add(String.format("forceChangePassword: existing='%s', requested='%s'",
+                         cred.getForceChangePassword(), Boolean.FALSE));
+               }
+               if (!Objects.equals(cred.getDomainContext(), dc)) {
+                  diffs.add(String.format("domainContext: existing='%s', requested='%s'",
+                         cred.getDomainContext(), dc));
+               }
+               StringBuffer btext = new StringBuffer();
+               for (String diff : diffs) {
+                  btext.append(diff).append("\n");
+               }
+               String text = String.format("Admin user already exists with different attributes. Diffs:%s", btext.toString());
+                throw new IllegalStateException(text);
             }
             Log.warnf("Admin user %s already exists in realm %s; proceeding idempotently.", adminUserId, realmId);
             result.addWarning("Admin user already exists; no user changes were made.");
         }
 
-        // 5) Apply requested seed archetypes (optional)
+        // first apply any seed that does not have a aarchetype but
+       // is a perTenant Seed.
+       SeedLoader loader = SeedLoader.builder()
+                              .addSeedSource(new FileSeedSource("files", SeedPathResolver.resolveSeedRoot()))
+                              .seedRepository(new MongoSeedRepository(mongoClient))
+                              .seedRegistry(new MongoSeedRegistry(mongoClient))
+                              .build();
+
+       SeedContext ctx = SeedContext.builder(realmId)
+                            .tenantId(dc.getTenantId())
+                            .orgRefName(dc.getOrgRefName())
+                            .accountId(dc.getAccountId())
+                            .ownerId(adminUserId)
+                            .build();
+
+       // Discover latest applicable packs for this context
+       FileSeedSource source = new FileSeedSource("files", SeedPathResolver.resolveSeedRoot());
+       List<SeedPackDescriptor> descriptors;
+       try {
+          descriptors = source.loadSeedPacks(ctx);
+       } catch (IOException e) {
+          throw new IllegalStateException("Failed to load seed packs: " + e.getMessage(), e);
+       }
+
+       // Keep only packs applicable to this tenant context (includes GLOBAL and unspecified)
+       descriptors.removeIf(d -> !com.e2eq.framework.service.seed.ScopeMatcher.isApplicable(d, ctx));
+
+       // Take the latest version per seedPack
+       Map<String, SeedPackDescriptor> latestByPack = new HashMap<>();
+       for (SeedPackDescriptor d : descriptors) {
+          String name = d.getManifest().getSeedPack();
+          latestByPack.merge(
+             name,
+             d,
+             (a, b) -> com.e2eq.framework.rest.resources.SeedAdminResource
+                          .compareSemver(a.getManifest().getVersion(), b.getManifest().getVersion()) >= 0 ? a : b
+          );
+       }
+
+       // Apply all applicable (GLOBAL/unscoped and any per-tenant that match)
+       List<SeedPackRef> baseRefs = latestByPack.values().stream()
+                                       .map(d -> SeedPackRef.exact(d.getManifest().getSeedPack(), d.getManifest().getVersion()))
+                                       .toList();
+       if (!baseRefs.isEmpty()) {
+          Log.infof("Applying %d base seed pack(s) (GLOBAL/unscoped/per-tenant) to realm %s", baseRefs.size(), realmId);
+          loader.apply(baseRefs, ctx);
+       }
+
+
+       // 5) Apply requested seed archetypes (optional)
         if (archetypes != null && !archetypes.isEmpty()) {
-            SeedLoader loader = SeedLoader.builder()
+
+           /* loader = SeedLoader.builder()
                     .addSeedSource(new FileSeedSource("files", SeedPathResolver.resolveSeedRoot()))
                     .seedRepository(new MongoSeedRepository(mongoClient))
                     .seedRegistry(new MongoSeedRegistry(mongoClient))
                     .build();
-            SeedContext ctx = SeedContext.builder(realmId)
+             ctx = SeedContext.builder(realmId)
                     .tenantId(dc.getTenantId())
                     .orgRefName(dc.getOrgRefName())
                     .accountId(dc.getAccountId())
                     .ownerId(adminUserId)
-                    .build();
+                    .build(); */
             for (String archetype : archetypes) {
                 String at = archetype == null ? null : archetype.trim();
                 if (at == null || at.isEmpty()) continue;
                 Log.infof("Applying seed archetype '%s' to realm %s", at, realmId);
                 loader.applyArchetype(at, ctx); // will throw if not found
             }
+        } else {
+           Log.info("No Archetypes applicable");
         }
 
         // 6) Idempotent: Apply indexes and verify

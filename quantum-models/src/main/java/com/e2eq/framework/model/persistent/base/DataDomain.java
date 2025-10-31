@@ -33,7 +33,6 @@ public class DataDomain {
     The account that this object belongs to
     */
     @NotNull( message = "accountNum must be non null")
-    @Pattern(regexp = "^\\d{10}$", message = "accountId must be exactly 10 digits")
     @NonNull
     @JsonProperty(required = true)
     protected String accountNum;

@@ -24,7 +24,7 @@ public final class ScopeMatcher {
         SeedScope scope = manifest.getScope();
         if (scope == null || scope.getType() == null) return true; // default behavior
 
-        String realm = context.getRealmId();
+        String realm = context.getRealm();
         String tenantId = context.getTenantId().orElse(null);
         String archetype = null; // SeedContext currently does not expose archetype; extend later as needed
 

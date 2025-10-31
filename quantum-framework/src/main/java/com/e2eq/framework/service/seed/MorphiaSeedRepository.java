@@ -48,7 +48,7 @@ public class MorphiaSeedRepository implements SeedRepository {
         if (repoOpt.isPresent()) {
             try {
                 // Let Morphia ensure mapped indexes for the model in the target realm
-                repoOpt.get().ensureIndexes(context.getRealmId(), dataset.getCollection());
+                repoOpt.get().ensureIndexes(context.getRealm(), dataset.getCollection());
             } catch (Exception e) {
                 Log.warnf("Failed ensuring indexes via Morphia for %s: %s", dataset.getCollection(), e.getMessage());
             }
@@ -80,14 +80,14 @@ public class MorphiaSeedRepository implements SeedRepository {
         List<String> naturalKey = dataset.getNaturalKey();
         if (naturalKey == null || naturalKey.isEmpty()) {
             // If no natural key, just save (Morphia Repo applies security/data domain/audit)
-            repo.save(context.getRealmId(), entity);
+            repo.save(context.getRealm(), entity);
             return;
         }
 
         // Find existing entity by matching natural key fields. For simplicity and to avoid
         // depending on the repo's query language here, load a small list and filter in-memory.
         // Seed datasets are typically small.
-        List existingList = repo.getAllList(context.getRealmId());
+        List existingList = repo.getAllList(context.getRealm());
         UnversionedBaseModel matched = null;
         for (Object o : existingList) {
             if (o instanceof UnversionedBaseModel e) {
@@ -103,10 +103,10 @@ public class MorphiaSeedRepository implements SeedRepository {
 
         // Save will insert or replace based on presence of id
         try {
-            repo.save(context.getRealmId(), entity);
+            repo.save(context.getRealm(), entity);
         } catch (RuntimeException ex) {
             Log.warnf("Morphia save failed for model %s in realm %s: %s. Falling back to Mongo write.",
-                    modelClass.getSimpleName(), context.getRealmId(), ex.getMessage());
+                    modelClass.getSimpleName(), context.getRealm(), ex.getMessage());
             // Fallback to direct Mongo write using original record (already adapted but may miss Morphia-only fields)
             fallback().upsertRecord(context, dataset, record);
         }

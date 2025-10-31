@@ -57,7 +57,7 @@ public final class MongoSeedRepository implements SeedRepository {
     }
 
     private MongoCollection<Document> getCollection(SeedContext context, SeedPackManifest.Dataset dataset) {
-        MongoDatabase database = mongoClient.getDatabase(context.getRealmId());
+        MongoDatabase database = mongoClient.getDatabase(context.getRealm());
         return database.getCollection(dataset.getCollection());
     }
 

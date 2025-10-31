@@ -20,7 +20,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
-import com.e2eq.framework.service.seed.SeedPackManifest;
 import com.e2eq.framework.service.seed.SeedPackManifest.Archetype;
 import com.e2eq.framework.service.seed.SeedPackManifest.Dataset;
 import com.e2eq.framework.service.seed.SeedPackManifest.Transform;
@@ -78,7 +77,7 @@ public final class SeedLoader {
         Objects.requireNonNull(packRefs, "packRefs");
         Objects.requireNonNull(context, "context");
 
-        Log.infof("Seed context realm %s, applying %s seed pack(s)", context.getRealmId(), packRefs.size());
+        Log.infof("Seed context realm %s, applying %s seed pack(s)", context.getRealm(), packRefs.size());
         Log.infof("Seed context.tenantId: %s, orgRefName: %s, accountId: %s, ownerId: %s",
            context.getTenantId().isPresent() ? context.getTenantId().get() : "null",
            context.getOrgRefName().isPresent()?  context.getOrgRefName().get(): "null",
@@ -86,7 +85,7 @@ public final class SeedLoader {
            context.getOwnerId().isPresent() ?  context.getOwnerId().get() : "null");
 
         if (packRefs.isEmpty()) {
-            Log.infov("No seed packs requested for realm {0}", context.getRealmId());
+            Log.infov("No seed packs requested for realm {0}", context.getRealm());
             return;
         }
         Set<String> applied = new LinkedHashSet<>();
@@ -127,7 +126,7 @@ public final class SeedLoader {
         for (Dataset dataset : datasets) {
             // Ensure collection is set; when modelClass is provided, derive collection name from @Entity or class simple name
             deriveCollectionIfMissing(dataset);
-            Log.infov("Applying seed dataset {0}/{1} into realm {2}", descriptor.getManifest().getSeedPack(), dataset.getCollection(), context.getRealmId());
+            Log.infov("Applying seed dataset {0}/{1} into realm {2}", descriptor.getManifest().getSeedPack(), dataset.getCollection(), context.getRealm());
             DatasetPayload payload = readDataset(descriptor, dataset);
             if (!seedRegistry.shouldApply(context, descriptor.getManifest(), dataset, payload.checksum())) {
                 Log.debugf("Dataset %s already applied with matching checksum", dataset.getCollection());
