@@ -11,9 +11,30 @@ import java.util.List;
 @Entity("policy")
 @RegisterForReflection
 public class Policy extends FullBaseModel {
+   public enum PrincipalType {
+      ROLE,
+      USER;
+      String value;
+      PrincipalType() {
+         this.value = this.name();
+      }
+      public String toString() {
+         return this.value;
+      }
+   }
+
    protected @NotNull String principalId;
+   protected PrincipalType principalType = PrincipalType.ROLE;
    protected String description;
    protected List<Rule> rules = new ArrayList<>();
+
+   public PrincipalType getPrincipalType () {
+      return principalType;
+   }
+
+   public void setPrincipalType (PrincipalType principalType) {
+      this.principalType = principalType;
+   }
 
    public String getPrincipalId () {
       return principalId;
