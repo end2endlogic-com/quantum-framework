@@ -26,6 +26,34 @@ public final class ScriptHelpers {
             }
             return false;
         });
+       scriptBindings.put("hasAnyEdge", (Bi2<String, Collection<String>, Boolean>) (p, dsts) -> {
+          if (p == null || dsts == null || dsts.isEmpty()) return false;
+          for (Map<String,Object> e : edges){
+             if (!Objects.equals(e.get("p"), p)) continue;
+             Object d = e.get("dst");
+             if (d instanceof String ds && dsts.contains(ds)) return true;
+          }
+          return false;
+       });
+
+       // hasAllEdges(predicate, [dst1, dst2, ...]) -> true only if there is an edge for every dst
+       scriptBindings.put("hasAllEdges", (Bi2<String, Collection<String>, Boolean>) (p, dsts) -> {
+          if (p == null || dsts == null || dsts.isEmpty()) return false;
+          // Build a set of dsts actually present for predicate p
+          Set<String> present = new HashSet<>();
+          for (Map<String,Object> e : edges){
+             if (Objects.equals(e.get("p"), p)) {
+                Object d = e.get("dst");
+                if (d instanceof String ds) present.add(ds);
+             }
+          }
+          for (String required : dsts) {
+             if (!present.contains(required)) return false;
+          }
+          return true;
+       });
+
+
         scriptBindings.put("relatedIds", (Function<String, List<String>>) p -> {
             List<String> out = new ArrayList<>();
             for (Map<String,Object> e : edges){
