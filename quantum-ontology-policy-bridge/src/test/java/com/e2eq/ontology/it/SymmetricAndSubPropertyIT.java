@@ -60,15 +60,15 @@ public class SymmetricAndSubPropertyIT {
     @Test
     public void testSymmetric_propertyInference() {
         // Given: ORG-A peerOf ORG-B explicitly
-        edgeRepo.upsert(TENANT, "ORG-A", "peerOf", "ORG-B", false, null);
+        edgeRepo.upsert(TENANT, "Organization", "ORG-A", "peerOf", "Organization", "ORG-B", false, null);
 
         // Infer symmetric counterpart using reasoner on an org snapshot
-        List<Reasoner.Edge> explicit = List.of(new Reasoner.Edge("ORG-A", "peerOf", "ORG-B", false, Optional.empty()));
+        List<Reasoner.Edge> explicit = List.of(new Reasoner.Edge("ORG-A", "Organization", "peerOf", "ORG-B", "Organization", false, Optional.empty()));
         Reasoner.EntitySnapshot snap = new Reasoner.EntitySnapshot(TENANT, "ORG-A", "Organization", explicit);
         Reasoner.InferenceResult out = reasoner.infer(snap, ontologyRegistry);
         for (Reasoner.Edge e : out.addEdges()) {
             Map<String, Object> prov = e.prov().map(p -> Map.<String, Object>of("rule", p)).orElse(null);
-            edgeRepo.upsert(TENANT, e.srcId(), e.p(), e.dstId(), e.inferred(), prov);
+            edgeRepo.upsert(TENANT, e.srcType(), e.srcId(), e.p(), e.dstType(), e.dstId(), e.inferred(), prov);
         }
 
         // When: querying for who is peerOf ORG-A should include ORG-B
@@ -84,12 +84,12 @@ public class SymmetricAndSubPropertyIT {
     }
 
     private void setupOrderInOrg(String orderId, String customerId, String orgId) {
-        edgeRepo.upsert(TENANT, orderId, "placedBy", customerId, false, null);
-        edgeRepo.upsert(TENANT, customerId, "memberOf", orgId, false, null);
+        edgeRepo.upsert(TENANT, "Order", orderId, "placedBy", "Customer", customerId, false, null);
+        edgeRepo.upsert(TENANT, "Customer", customerId, "memberOf", "Organization", orgId, false, null);
 
         List<Reasoner.Edge> explicitEdges = List.of(
-                new Reasoner.Edge(orderId, "placedBy", customerId, false, Optional.empty()),
-                new Reasoner.Edge(customerId, "memberOf", orgId, false, Optional.empty())
+                new Reasoner.Edge(orderId, "Order", "placedBy", customerId, "Customer", false, Optional.empty()),
+                new Reasoner.Edge(customerId, "Customer", "memberOf", orgId, "Organization", false, Optional.empty())
         );
 
         Reasoner.EntitySnapshot snapshot = new Reasoner.EntitySnapshot(TENANT, orderId, "Order", explicitEdges);
@@ -97,7 +97,7 @@ public class SymmetricAndSubPropertyIT {
 
         for (Reasoner.Edge edge : result.addEdges()) {
             Map<String, Object> prov = edge.prov().map(p -> Map.<String, Object>of("rule", p)).orElse(null);
-            edgeRepo.upsert(TENANT, edge.srcId(), edge.p(), edge.dstId(), edge.inferred(), prov);
+            edgeRepo.upsert(TENANT, edge.srcType(), edge.srcId(), edge.p(), edge.dstType(), edge.dstId(), edge.inferred(), prov);
         }
     }
 }
