@@ -27,8 +27,10 @@ import java.util.Map;
 public class OntologyEdge extends UnversionedBaseModel {
 
     protected String src;
+    protected String srcType;
     protected String p;
     protected String dst;
+    protected String dstType;
     protected boolean inferred;
     protected Map<String, Object> prov;
     protected Date ts;
