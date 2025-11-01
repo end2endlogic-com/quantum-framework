@@ -26,11 +26,17 @@ public class AnnotatedEdgeExtractor {
         public final MethodHandle accessor;
         public final boolean collection;
         public final boolean materialize;
-        PropertyBinding(String predicateId, MethodHandle accessor, boolean collection, boolean materialize) {
+        public final String rangeType;
+        PropertyBinding(String predicateId,
+                        MethodHandle accessor,
+                        boolean collection,
+                        boolean materialize,
+                        String rangeType) {
             this.predicateId = predicateId;
             this.accessor = accessor;
             this.collection = collection;
             this.materialize = materialize;
+            this.rangeType = rangeType;
         }
     }
     public static final class ClassMeta {
@@ -68,7 +74,8 @@ public class AnnotatedEdgeExtractor {
                     MethodHandle mh = lookup.unreflectGetter(f);
                     boolean isCol = Collection.class.isAssignableFrom(f.getType()) || f.getType().isArray();
                     boolean materialize = pa.materializeEdge();
-                    props.add(new PropertyBinding(pid, mh, isCol, materialize));
+                    String rangeType = resolveRangeType(pa, f.getType(), f.getGenericType());
+                    props.add(new PropertyBinding(pid, mh, isCol, materialize, rangeType));
                 } catch (IllegalAccessException ignored) {}
             }
             for (Method m : clazz.getDeclaredMethods()) {
@@ -82,7 +89,8 @@ public class AnnotatedEdgeExtractor {
                     MethodHandle mh = lookup.unreflect(m);
                     boolean isCol = Collection.class.isAssignableFrom(m.getReturnType()) || m.getReturnType().isArray();
                     boolean materialize = pa.materializeEdge();
-                    props.add(new PropertyBinding(pid, mh, isCol, materialize));
+                    String rangeType = resolveRangeType(pa, m.getReturnType(), m.getGenericReturnType());
+                    props.add(new PropertyBinding(pid, mh, isCol, materialize, rangeType));
                 } catch (IllegalAccessException ignored) {}
             }
             metas.put(clazz, new ClassMeta(classId, List.copyOf(props)));
@@ -143,7 +151,8 @@ public class AnnotatedEdgeExtractor {
                 MethodHandle mh = lookup.unreflectGetter(f);
                 boolean isCol = Collection.class.isAssignableFrom(f.getType()) || f.getType().isArray();
                 boolean materialize = pa.materializeEdge();
-                props.add(new PropertyBinding(pid, mh, isCol, materialize));
+                String rangeType = resolveRangeType(pa, f.getType(), f.getGenericType());
+                props.add(new PropertyBinding(pid, mh, isCol, materialize, rangeType));
             } catch (IllegalAccessException ignored) {}
         }
         for (Method m : clazz.getDeclaredMethods()) {
@@ -157,7 +166,8 @@ public class AnnotatedEdgeExtractor {
                 MethodHandle mh = lookup.unreflect(m);
                 boolean isCol = Collection.class.isAssignableFrom(m.getReturnType()) || m.getReturnType().isArray();
                 boolean materialize = pa.materializeEdge();
-                props.add(new PropertyBinding(pid, mh, isCol, materialize));
+                String rangeType = resolveRangeType(pa, m.getReturnType(), m.getGenericReturnType());
+                props.add(new PropertyBinding(pid, mh, isCol, materialize, rangeType));
             } catch (IllegalAccessException ignored) {}
         }
         return new ClassMeta(classId, List.copyOf(props));
@@ -178,27 +188,66 @@ public class AnnotatedEdgeExtractor {
             } catch (Throwable t) {
                 continue;
             }
-            addEdges(out, srcId, b.predicateId, val);
+            addEdges(out, meta.get().classId, b, srcId, val);
         }
         return out;
     }
 
-    private void addEdges(List<Reasoner.Edge> out, String srcId, String p, Object val) {
+    private void addEdges(List<Reasoner.Edge> out, String srcType, PropertyBinding binding, String srcId, Object val) {
         if (val == null) return;
         if (val instanceof Collection<?> c) {
-            for (Object v : c) addSingle(out, srcId, p, v);
+            for (Object v : c) addSingle(out, srcType, binding, srcId, v);
         } else if (val.getClass().isArray()) {
             int len = java.lang.reflect.Array.getLength(val);
-            for (int i = 0; i < len; i++) addSingle(out, srcId, p, java.lang.reflect.Array.get(val, i));
+            for (int i = 0; i < len; i++) addSingle(out, srcType, binding, srcId, java.lang.reflect.Array.get(val, i));
         } else {
-            addSingle(out, srcId, p, val);
+            addSingle(out, srcType, binding, srcId, val);
         }
     }
 
-    private void addSingle(List<Reasoner.Edge> out, String srcId, String p, Object target) {
+    private void addSingle(List<Reasoner.Edge> out, String srcType, PropertyBinding binding, String srcId, Object target) {
         if (target == null) return;
         String dstId = idAccessor.idOf(target);
-        out.add(new Reasoner.Edge(srcId, p, dstId, false, Optional.empty()));
+        String dstType = resolveTargetType(binding.rangeType, target);
+        if (dstType == null) {
+            throw new IllegalStateException("Unable to determine destination type for predicate " + binding.predicateId);
+        }
+        out.add(new Reasoner.Edge(srcId, srcType, binding.predicateId, dstId, dstType, false, Optional.empty()));
+    }
+
+    private String resolveTargetType(String declaredRange, Object target) {
+        if (declaredRange != null && !declaredRange.isBlank()) {
+            return declaredRange;
+        }
+        if (target != null) {
+            if (target instanceof Class<?> clazz) {
+                return classIdOf(clazz);
+            }
+            return classIdOf(target.getClass());
+        }
+        return null;
+    }
+
+    private String resolveRangeType(OntologyProperty property, Class<?> rawType, java.lang.reflect.Type genericType) {
+        if (property != null) {
+            if (!property.ref().isEmpty()) return property.ref();
+            if (!property.range().isEmpty()) return property.range();
+        }
+        Class<?> candidate = rawType;
+        if (Collection.class.isAssignableFrom(rawType)) {
+            if (genericType instanceof java.lang.reflect.ParameterizedType p) {
+                java.lang.reflect.Type t = p.getActualTypeArguments().length > 0 ? p.getActualTypeArguments()[0] : Object.class;
+                if (t instanceof Class<?> c) {
+                    candidate = c;
+                }
+            }
+        } else if (rawType.isArray()) {
+            candidate = rawType.getComponentType();
+        }
+        if (candidate != null && candidate != Object.class) {
+            return classIdOf(candidate);
+        }
+        return null;
     }
 
     @ApplicationScoped

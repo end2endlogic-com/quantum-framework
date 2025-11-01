@@ -23,7 +23,23 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
         return morphiaDataStore.getDataStore(defaultRealm);
     }
 
-    public void upsert(String tenantId, String src, String p, String dst, boolean inferred, Map<String, Object> prov) {
+    public void upsert(String tenantId,
+                       String srcType,
+                       String src,
+                       String p,
+                       String dstType,
+                       String dst,
+                       boolean inferred,
+                       Map<String, Object> prov) {
+        if (tenantId == null || tenantId.isBlank()) {
+            throw new IllegalArgumentException("tenantId must be provided");
+        }
+        if (srcType == null || srcType.isBlank()) {
+            throw new IllegalArgumentException("srcType must be provided for edge " + src + "-" + p + "-" + dst);
+        }
+        if (dstType == null || dstType.isBlank()) {
+            throw new IllegalArgumentException("dstType must be provided for edge " + src + "-" + p + "-" + dst);
+        }
         Datastore d = ds();
         Query<OntologyEdge> q = d.find(OntologyEdge.class)
                 .filter(Filters.eq("dataDomain.tenantId", tenantId))
@@ -43,9 +59,13 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
             if (dd.getOwnerId() == null) dd.setOwnerId("system");
             edge.setDataDomain(dd);
             edge.setSrc(src);
+            edge.setSrcType(srcType);
             edge.setP(p);
             edge.setDst(dst);
+            edge.setDstType(dstType);
         }
+        edge.setSrcType(srcType);
+        edge.setDstType(dstType);
         edge.setInferred(inferred);
         edge.setProv(prov);
         edge.setTs(new Date());
@@ -57,16 +77,21 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
         for (Object o : edgesOrDocs) {
             if (o instanceof OntologyEdge e) {
                 String tenantId = e.getDataDomain() != null ? e.getDataDomain().getTenantId() : null;
-                upsert(tenantId, e.getSrc(), e.getP(), e.getDst(), e.isInferred(), e.getProv());
+                upsert(tenantId, e.getSrcType(), e.getSrc(), e.getP(), e.getDstType(), e.getDst(), e.isInferred(), e.getProv());
             } else if (o instanceof org.bson.Document d) {
                 String tenantId = d.getString("tenantId");
+                String srcType = d.getString("srcType");
                 String src = d.getString("src");
                 String p = d.getString("p");
+                String dstType = d.getString("dstType");
                 String dst = d.getString("dst");
                 boolean inferred = Boolean.TRUE.equals(d.getBoolean("inferred"));
                 @SuppressWarnings("unchecked")
                 Map<String, Object> prov = (Map<String, Object>) d.getOrDefault("prov", Map.of());
-                upsert(tenantId, src, p, dst, inferred, prov);
+                if (tenantId == null || srcType == null || dstType == null) {
+                    throw new IllegalArgumentException("tenantId, srcType, and dstType must be provided in edge document");
+                }
+                upsert(tenantId, srcType, src, p, dstType, dst, inferred, prov);
             }
         }
     }
