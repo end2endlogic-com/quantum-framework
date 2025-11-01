@@ -160,13 +160,13 @@ public class HasEdgeQueryIT {
 
     private void setupOrderInOrg(String orderId, String customerId, String orgId) {
         // Store explicit edges
-        edgeRepo.upsert(TENANT, orderId, "placedBy", customerId, false, null);
-        edgeRepo.upsert(TENANT, customerId, "memberOf", orgId, false, null);
+        edgeRepo.upsert(TENANT, "Order", orderId, "placedBy", "Customer", customerId, false, null);
+        edgeRepo.upsert(TENANT, "Customer", customerId, "memberOf", "Organization", orgId, false, null);
 
         // Infer placedInOrg edge
         List<Reasoner.Edge> explicitEdges = List.of(
-                new Reasoner.Edge(orderId, "placedBy", customerId, false, Optional.empty()),
-                new Reasoner.Edge(customerId, "memberOf", orgId, false, Optional.empty())
+                new Reasoner.Edge(orderId, "Order", "placedBy", customerId, "Customer", false, Optional.empty()),
+                new Reasoner.Edge(customerId, "Customer", "memberOf", orgId, "Organization", false, Optional.empty())
         );
 
         Reasoner.EntitySnapshot snapshot = new Reasoner.EntitySnapshot(TENANT, orderId, "Order", explicitEdges);
@@ -174,7 +174,7 @@ public class HasEdgeQueryIT {
 
         for (Reasoner.Edge edge : result.addEdges()) {
             Map<String, Object> prov = edge.prov().map(p -> Map.<String, Object>of("rule", p)).orElse(null);
-            edgeRepo.upsert(TENANT, edge.srcId(), edge.p(), edge.dstId(), edge.inferred(), prov);
+            edgeRepo.upsert(TENANT, edge.srcType(), edge.srcId(), edge.p(), edge.dstType(), edge.dstId(), edge.inferred(), prov);
         }
     }
 }
