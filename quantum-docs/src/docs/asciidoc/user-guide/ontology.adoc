@@ -635,14 +635,14 @@ Use OntologyMaterializer or call the Reasoner directly and upsert edges via Onto
 
 public void onOrderSaved(String tenant, String orderId, String customerId, String orgId) {
   List<Reasoner.Edge> explicit = List.of(
-      new Reasoner.Edge(orderId, "placedBy", customerId, false, Optional.empty()),
-      new Reasoner.Edge(customerId, "memberOf", orgId, false, Optional.empty())
+      new Reasoner.Edge(orderId, "Order", "placedBy", customerId, "Customer", false, Optional.empty()),
+      new Reasoner.Edge(customerId, "Customer", "memberOf", orgId, "Organization", false, Optional.empty())
   );
   Reasoner.EntitySnapshot snap = new Reasoner.EntitySnapshot(tenant, orderId, "Order", explicit);
   Reasoner.InferenceResult out = reasoner.infer(snap, ontologyRegistry);
   for (Reasoner.Edge e : out.addEdges()) {
     Map<String,Object> prov = e.prov().map(p -> Map.<String,Object>of("rule", p.rule(), "inputs", p.inputs())).orElse(Map.of());
-    edgeRepo.upsert(tenant, e.srcId(), e.p(), e.dstId(), true, prov);
+    edgeRepo.upsert(tenant, e.srcType(), e.srcId(), e.p(), e.dstType(), e.dstId(), true, prov);
   }
 }
 ----
