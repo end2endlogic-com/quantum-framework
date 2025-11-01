@@ -981,3 +981,86 @@ Notes
 
 - hasEdge() is a policy function; it is evaluated before constructing database filters. It is not part of the core BIAPI query grammar.
 - If ontology is disabled, skip the rewrite (return base) or configure a no-op implementation so policies that include hasEdge are rejected early with a clear error message.
+
+
+
+[[label-resolution-spi]]
+=== Label resolution SPI and hasLabel() in rules
+
+Labels are a lightweight way to attach semantic markers to principals and resources, and then use them in rule scripts. Quantum provides a pluggable label resolution SPI and a script helper to check labels during policy evaluation.
+
+Why labels?
+- Decouple policy from rigid fields (e.g., “VIP”, “HARD_DELETE_DISABLED”, “B2B”).
+- Compute labels from multiple sources (simple tags, advancedTags, dynamic attributes, or custom derivations).
+
+Components
+
+- LabelResolver (SPI):
++
+[source,java]
+----
+public interface LabelResolver {
+  boolean supports(Class<?> type);
+  java.util.Set<String> resolveLabels(Object entity);
+}
+----
+- DefaultLabelResolver (built-in): Applies to UnversionedBaseModel.
+  - Collects tags (String[]), advancedTags.name, and optionally any dynamicAttributes whose isInheritable()==true, using best‑effort reflection.
+- LabelService: Aggregates all LabelResolver beans via CDI and delegates to the first that supports the entity type. Also supports annotation-based extraction (see below).
+- Annotations (optional, opt-in at your model):
++
+[source,java]
+----
+@LabelSource(method = "computeLabels") // class-level method returning Collection<String>, String[], or String
+public class MyEntity { ... }
+
+public class MyEntity {
+  @LabelField                // field can be Collection<String>, String[], or String
+  private java.util.List<String> policyLabels;
+}
+----
+
+Availability in rule scripts
+
+During policy evaluation, RuleContext resolves labels for both principal and resource contexts and installs a script helper:
+
+- hasLabel(label: String) → Boolean
+  - Returns true if the current resource context has the specified label.
+  - Label resolution uses LabelService (including custom resolvers and annotations) at evaluation time.
+
+Examples (postcondition script)
+
+[source,javascript]
+----
+// Allow if the resource is labeled VIP
+hasLabel("VIP")
+
+// Combine with other helpers when ontology is enabled
+hasLabel("RESTRICTED") && !hasEdge("placedInOrg", "OrgX")
+----
+
+Extending labels for your domain
+
+- Add a new resolver:
++
+[source,java]
+----
+@jakarta.enterprise.context.ApplicationScoped
+public class InvoiceLabelResolver implements LabelResolver {
+  public boolean supports(Class<?> type) { return type.getName().endsWith("Invoice"); }
+  public java.util.Set<String> resolveLabels(Object entity) {
+    var out = new java.util.LinkedHashSet<String>();
+    var inv = (com.example.Invoice) entity;
+    if (inv.isHighValue()) out.add("HIGH_VALUE");
+    if (inv.isPastDue()) out.add("PAST_DUE");
+    return out;
+  }
+}
+----
+
+- Or annotate your model with @LabelSource/@LabelField to contribute labels without writing a resolver.
+
+Notes
+- Labels are resolved best‑effort; failures are swallowed to keep policy evaluation robust.
+- If multiple resolvers exist, the first that supports the type wins. Prefer narrow supports() checks.
+- Keep label names stable; treat them as part of your policy contract.

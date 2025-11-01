@@ -31,6 +31,7 @@ Use it to jump directly to a subject and then explore details in context.
 - Authentication: xref:../tutorials/quantum-tutorial.adoc#sec-security[Authentication, permissions, and annotations]
 - Permissions: xref:../tutorials/quantum-tutorial.adoc#sec-security[Permissions]
 - Security annotations: xref:../tutorials/quantum-tutorial.adoc#sec-security[Security annotations]
+- Label resolution and script helpers: xref:./permissions.adoc#label-resolution-spi[Labels (SPI) and hasLabel()]
 
 == Data Seeding
 

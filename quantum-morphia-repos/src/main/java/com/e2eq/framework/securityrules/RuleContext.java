@@ -10,6 +10,7 @@ import com.e2eq.framework.util.IOCase;
 import com.e2eq.framework.util.SecurityUtils;
 import com.e2eq.framework.util.WildCardMatcher;
 import com.google.common.collect.Ordering;
+import java.util.function.Function;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
 import io.quarkus.logging.Log;
@@ -305,6 +306,7 @@ public class RuleContext {
                           identity = p.getPrincipalId();
                        }
                        if (identity == null || identity.isBlank()) {
+                          Log.warnf("Rule:%s dod mpt jave an identity specified:", r.toString());
                           // skip malformed entries
                           continue;
                        }
@@ -379,11 +381,56 @@ public class RuleContext {
      * @param rcontext the resource context
      * @return true or false based upon the evaluation of the script
      */
+    @Inject
+    LabelService labelService;
+
     boolean runScript(PrincipalContext pcontext, ResourceContext rcontext, String script) {
-        // Context c = Context.newBuilder().allowAllAccess(true).build();
         Context c = Context.newBuilder().allowAllAccess(true).build();
-        c.getBindings("js").putMember("pcontext", pcontext);
-        c.getBindings("js").putMember("rcontext", rcontext);
+        // Keep existing object bindings for backward compatibility
+        var jsBindings = c.getBindings("js");
+        jsBindings.putMember("pcontext", pcontext);
+        jsBindings.putMember("rcontext", rcontext);
+
+        // Prepare helper bindings: rcontext map with labels/types/edges if available
+        Map<String,Object> sb = new HashMap<>();
+        Map<String,Object> rctx = new HashMap<>();
+        Map<String,Object> pctx = new HashMap<>();
+        // Resolve labels via LabelService for both contexts (resolvers may consider type)
+        try {
+            Set<String> labels = labelService != null ? labelService.labelsFor(rcontext) : Set.of();
+            rctx.put("labels", new ArrayList<>(labels));
+        } catch (Throwable ignored) {}
+        try {
+            Set<String> plabels = labelService != null ? labelService.labelsFor(pcontext) : Set.of();
+            pctx.put("labels", new ArrayList<>(plabels));
+        } catch (Throwable ignored) {}
+        sb.put("rcontext", rctx);
+        sb.put("pcontext", pctx);
+
+        // Install script helpers into the same map and then export helper functions to JS
+        try {
+            // reflectively call ScriptHelpers.install(Map) if available to avoid hard module dependency
+            try {
+                Class<?> cls = Class.forName("com.e2eq.ontology.policy.ScriptHelpers");
+                java.lang.reflect.Method m = cls.getMethod("install", Map.class);
+                m.invoke(null, sb);
+            } catch (Throwable ignoredInner) {}
+            // Export known helpers if present
+            Object isA = sb.get("isA");
+            if (isA != null) jsBindings.putMember("isA", isA);
+            Object hasLabel = sb.get("hasLabel");
+            if (hasLabel != null) jsBindings.putMember("hasLabel", hasLabel);
+            Object hasEdge = sb.get("hasEdge");
+            if (hasEdge != null) jsBindings.putMember("hasEdge", hasEdge);
+            Object hasAnyEdge = sb.get("hasAnyEdge");
+            if (hasAnyEdge != null) jsBindings.putMember("hasAnyEdge", hasAnyEdge);
+            Object hasAllEdges = sb.get("hasAllEdges");
+            if (hasAllEdges != null) jsBindings.putMember("hasAllEdges", hasAllEdges);
+            Object relatedIds = sb.get("relatedIds");
+            if (relatedIds != null) jsBindings.putMember("relatedIds", relatedIds);
+            Object noViolations = sb.get("noViolations");
+            if (noViolations != null) jsBindings.putMember("noViolations", noViolations);
+        } catch (Throwable ignored) {}
 
         boolean allow = c.eval("js", script).asBoolean();
         return allow;
