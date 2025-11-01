@@ -34,7 +34,7 @@ public class OntologyMaterializer {
         if (explicitEdges != null) {
             for (var e : explicitEdges) {
                 explicitByP.computeIfAbsent(e.p(), k -> new HashSet<>()).add(e.dstId());
-                edgeRepo.upsert(tenantId, e.srcId(), e.p(), e.dstId(), false, Map.of());
+                edgeRepo.upsert(tenantId, e.srcType(), e.srcId(), e.p(), e.dstType(), e.dstId(), false, Map.of());
             }
         }
 
@@ -49,8 +49,10 @@ public class OntologyMaterializer {
             )).orElse(Map.of());
             Document doc = new Document("tenantId", tenantId)
                     .append("src", e.srcId())
+                    .append("srcType", e.srcType())
                     .append("p", e.p())
                     .append("dst", e.dstId())
+                    .append("dstType", e.dstType())
                     .append("inferred", true)
                     .append("prov", prov)
                     .append("ts", new Date());

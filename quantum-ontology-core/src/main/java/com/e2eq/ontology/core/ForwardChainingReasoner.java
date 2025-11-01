@@ -15,6 +15,19 @@ public final class ForwardChainingReasoner implements Reasoner {
         Set<String> labels = new HashSet<>();
         List<Edge> edges = new ArrayList<>();
 
+        Map<String, String> nodeTypes = new HashMap<>();
+        if (snap.entityType() != null && !snap.entityType().isBlank()) {
+            nodeTypes.put(snap.entityId(), snap.entityType());
+        }
+        for (Edge e : snap.explicitEdges()) {
+            if (e.srcType() != null && !e.srcType().isBlank()) {
+                nodeTypes.putIfAbsent(e.srcId(), e.srcType());
+            }
+            if (e.dstType() != null && !e.dstType().isBlank()) {
+                nodeTypes.putIfAbsent(e.dstId(), e.dstType());
+            }
+        }
+
         if (reg == null) {
             return new InferenceResult(types, labels, edges, new ArrayList<>());
         }
@@ -65,7 +78,9 @@ public final class ForwardChainingReasoner implements Reasoner {
                 inputs.put("chain", chain);
                 inputs.put("via", List.of());
                 Provenance prov = new Provenance("chain", inputs);
-                edges.add(new Edge(snap.entityId(), implies, z, true, Optional.of(prov)));
+                String srcType = resolveSourceType(reg, nodeTypes, implies, snap.entityId(), snap.entityType());
+                String dstType = resolveDestinationType(reg, nodeTypes, implies, z, null);
+                edges.add(new Edge(snap.entityId(), srcType, implies, z, dstType, true, Optional.of(prov)));
             }
         }
 
@@ -85,7 +100,9 @@ public final class ForwardChainingReasoner implements Reasoner {
                                 inputs.put("super", superP);
                                 inputs.put("via", List.of(x, y));
                                 Provenance prov = new Provenance("subPropertyOf", inputs);
-                                edges.add(new Edge(x, superP, y, true, Optional.of(prov)));
+                                String srcType = resolveSourceType(reg, nodeTypes, superP, x, null);
+                                String dstType = resolveDestinationType(reg, nodeTypes, superP, y, null);
+                                edges.add(new Edge(x, srcType, superP, y, dstType, true, Optional.of(prov)));
                             }
                         }
                     }
@@ -117,14 +134,18 @@ public final class ForwardChainingReasoner implements Reasoner {
                         inputs.put("of", p);
                         inputs.put("via", List.of(x, y));
                         Provenance prov = new Provenance("inverse", inputs);
-                        edges.add(new Edge(y, inv.get(), x, true, Optional.of(prov)));
+                        String invSrcType = resolveSourceType(reg, nodeTypes, inv.get(), y, null);
+                        String invDstType = resolveDestinationType(reg, nodeTypes, inv.get(), x, null);
+                        edges.add(new Edge(y, invSrcType, inv.get(), x, invDstType, true, Optional.of(prov)));
                     }
                     if (symmetric) {
                         Map<String, Object> inputs2 = new HashMap<>();
                         inputs2.put("prop", p);
                         inputs2.put("via", List.of(x, y));
                         Provenance prov2 = new Provenance("symmetric", inputs2);
-                        edges.add(new Edge(y, p, x, true, Optional.of(prov2)));
+                        String symSrcType = resolveSourceType(reg, nodeTypes, p, y, null);
+                        String symDstType = resolveDestinationType(reg, nodeTypes, p, x, null);
+                        edges.add(new Edge(y, symSrcType, p, x, symDstType, true, Optional.of(prov2)));
                     }
                 }
             }
@@ -151,7 +172,9 @@ public final class ForwardChainingReasoner implements Reasoner {
                         inputs.put("prop", p);
                         inputs.put("via", List.of(x, y));
                         Provenance prov = new Provenance("transitive", inputs);
-                        edges.add(new Edge(snap.entityId(), p, y, true, Optional.of(prov)));
+                        String srcType = resolveSourceType(reg, nodeTypes, p, snap.entityId(), snap.entityType());
+                        String dstType = resolveDestinationType(reg, nodeTypes, p, y, null);
+                        edges.add(new Edge(snap.entityId(), srcType, p, y, dstType, true, Optional.of(prov)));
                     }
                 }
             }
@@ -160,5 +183,46 @@ public final class ForwardChainingReasoner implements Reasoner {
         return new InferenceResult(types, labels, edges, new ArrayList<>());
     }
 
+    private String resolveSourceType(OntologyRegistry reg,
+                                     Map<String, String> nodeTypes,
+                                     String property,
+                                     String nodeId,
+                                     String fallback) {
+        Optional<String> declared = Optional.empty();
+        if (reg != null) {
+            declared = reg.propertyOf(property).flatMap(OntologyRegistry.PropertyDef::domain);
+        }
+        return resolveType(declared, nodeTypes, nodeId, fallback, "source", property);
+    }
 
+    private String resolveDestinationType(OntologyRegistry reg,
+                                          Map<String, String> nodeTypes,
+                                          String property,
+                                          String nodeId,
+                                          String fallback) {
+        Optional<String> declared = Optional.empty();
+        if (reg != null) {
+            declared = reg.propertyOf(property).flatMap(OntologyRegistry.PropertyDef::range);
+        }
+        return resolveType(declared, nodeTypes, nodeId, fallback, "destination", property);
+    }
+
+    private String resolveType(Optional<String> declared,
+                               Map<String, String> nodeTypes,
+                               String nodeId,
+                               String fallback,
+                               String role,
+                               String property) {
+        if (declared.isPresent() && !declared.get().isBlank()) {
+            return declared.get();
+        }
+        String fromMap = nodeTypes.get(nodeId);
+        if (fromMap != null && !fromMap.isBlank()) {
+            return fromMap;
+        }
+        if (fallback != null && !fallback.isBlank()) {
+            return fallback;
+        }
+        throw new IllegalStateException("Unable to resolve " + role + " type for property '" + property + "' and node '" + nodeId + "'");
+    }
 }

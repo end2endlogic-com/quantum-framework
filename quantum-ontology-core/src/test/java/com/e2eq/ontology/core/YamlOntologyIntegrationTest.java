@@ -81,12 +81,12 @@ public class YamlOntologyIntegrationTest {
         String region = "RegionWest";
 
         List<Reasoner.Edge> explicit = List.of(
-                new Reasoner.Edge(order, "placedBy", cust, false, Optional.empty()),
-                new Reasoner.Edge(cust, "memberOf", orgA, false, Optional.empty()),
-                new Reasoner.Edge(order, "orderHasShipment", ship, false, Optional.empty()),
-                new Reasoner.Edge(ship, "shipsTo", addr, false, Optional.empty()),
-                new Reasoner.Edge(addr, "locatedIn", region, false, Optional.empty()),
-                new Reasoner.Edge(orgA, "ancestorOf", orgP, false, Optional.empty())
+                new Reasoner.Edge(order, "Order", "placedBy", cust, "Customer", false, Optional.empty()),
+                new Reasoner.Edge(cust, "Customer", "memberOf", orgA, "Organization", false, Optional.empty()),
+                new Reasoner.Edge(order, "Order", "orderHasShipment", ship, "Shipment", false, Optional.empty()),
+                new Reasoner.Edge(ship, "Shipment", "shipsTo", addr, "Address", false, Optional.empty()),
+                new Reasoner.Edge(addr, "Address", "locatedIn", region, "Region", false, Optional.empty()),
+                new Reasoner.Edge(orgA, "Organization", "ancestorOf", orgP, "Organization", false, Optional.empty())
         );
 
         Reasoner.EntitySnapshot snap = new Reasoner.EntitySnapshot(tenant, order, "Order", explicit);

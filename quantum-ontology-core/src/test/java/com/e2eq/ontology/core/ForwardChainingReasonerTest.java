@@ -45,9 +45,9 @@ public class ForwardChainingReasonerTest {
         String orgP = "OrgParent";
 
         List<Reasoner.Edge> explicit = List.of(
-                new Reasoner.Edge(order, "placedBy", cust, false, Optional.empty()),
-                new Reasoner.Edge(cust, "memberOf", orgA, false, Optional.empty()),
-                new Reasoner.Edge(orgA, "ancestorOf", orgP, false, Optional.empty())
+                new Reasoner.Edge(order, "Order", "placedBy", cust, "Customer", false, Optional.empty()),
+                new Reasoner.Edge(cust, "Customer", "memberOf", orgA, "Organization", false, Optional.empty()),
+                new Reasoner.Edge(orgA, "Organization", "ancestorOf", orgP, "Organization", false, Optional.empty())
         );
 
         Reasoner.EntitySnapshot snap = new Reasoner.EntitySnapshot(tenant, order, "Order", explicit);
@@ -77,7 +77,7 @@ public class ForwardChainingReasonerTest {
         ForwardChainingReasoner r = new ForwardChainingReasoner();
         String tenant = "t1";
         List<Reasoner.Edge> explicit = List.of(
-                new Reasoner.Edge("OrgA", "parentOf", "OrgB", false, Optional.empty())
+                new Reasoner.Edge("OrgA", "Organization", "parentOf", "OrgB", "Organization", false, Optional.empty())
         );
         Reasoner.EntitySnapshot snap = new Reasoner.EntitySnapshot(tenant, "OrgA", "Organization", explicit);
         Reasoner.InferenceResult res = r.infer(snap, reg);

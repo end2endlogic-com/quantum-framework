@@ -47,8 +47,8 @@ public class OntologySemanticReasoningIT {
         String orgId = "ORG-ACME";
 
         List<Reasoner.Edge> explicitEdges = List.of(
-                new Reasoner.Edge(orderId, "placedBy", customerId, false, Optional.empty()),
-                new Reasoner.Edge(customerId, "memberOf", orgId, false, Optional.empty())
+                new Reasoner.Edge(orderId, "Order", "placedBy", customerId, "Customer", false, Optional.empty()),
+                new Reasoner.Edge(customerId, "Customer", "memberOf", orgId, "Organization", false, Optional.empty())
         );
 
         // When: Forward chaining reasoner infers new edges
@@ -85,29 +85,29 @@ public class OntologySemanticReasoningIT {
         String orgOther = "ORG-OTHER";
 
         // Store explicit edges
-        edgeRepo.upsert(TENANT, order1, "placedBy", cust1, false, null);
-        edgeRepo.upsert(TENANT, cust1, "memberOf", orgAcme, false, null);
+        edgeRepo.upsert(TENANT, "Order", order1, "placedBy", "Customer", cust1, false, null);
+        edgeRepo.upsert(TENANT, "Customer", cust1, "memberOf", "Organization", orgAcme, false, null);
 
-        edgeRepo.upsert(TENANT, order2, "placedBy", cust2, false, null);
-        edgeRepo.upsert(TENANT, cust2, "memberOf", orgAcme, false, null);
+        edgeRepo.upsert(TENANT, "Order", order2, "placedBy", "Customer", cust2, false, null);
+        edgeRepo.upsert(TENANT, "Customer", cust2, "memberOf", "Organization", orgAcme, false, null);
 
-        edgeRepo.upsert(TENANT, order3, "placedBy", cust3, false, null);
-        edgeRepo.upsert(TENANT, cust3, "memberOf", orgOther, false, null);
+        edgeRepo.upsert(TENANT, "Order", order3, "placedBy", "Customer", cust3, false, null);
+        edgeRepo.upsert(TENANT, "Customer", cust3, "memberOf", "Organization", orgOther, false, null);
 
         // Infer placedInOrg edges for each order
         inferAndStoreEdges(order1, "Order", List.of(
-                new Reasoner.Edge(order1, "placedBy", cust1, false, Optional.empty()),
-                new Reasoner.Edge(cust1, "memberOf", orgAcme, false, Optional.empty())
+                new Reasoner.Edge(order1, "Order", "placedBy", cust1, "Customer", false, Optional.empty()),
+                new Reasoner.Edge(cust1, "Customer", "memberOf", orgAcme, "Organization", false, Optional.empty())
         ));
 
         inferAndStoreEdges(order2, "Order", List.of(
-                new Reasoner.Edge(order2, "placedBy", cust2, false, Optional.empty()),
-                new Reasoner.Edge(cust2, "memberOf", orgAcme, false, Optional.empty())
+                new Reasoner.Edge(order2, "Order", "placedBy", cust2, "Customer", false, Optional.empty()),
+                new Reasoner.Edge(cust2, "Customer", "memberOf", orgAcme, "Organization", false, Optional.empty())
         ));
 
         inferAndStoreEdges(order3, "Order", List.of(
-                new Reasoner.Edge(order3, "placedBy", cust3, false, Optional.empty()),
-                new Reasoner.Edge(cust3, "memberOf", orgOther, false, Optional.empty())
+                new Reasoner.Edge(order3, "Order", "placedBy", cust3, "Customer", false, Optional.empty()),
+                new Reasoner.Edge(cust3, "Customer", "memberOf", orgOther, "Organization", false, Optional.empty())
         ));
 
         // When: Query for orders placed in ORG-ACME using ontology edges
@@ -130,12 +130,12 @@ public class OntologySemanticReasoningIT {
         String orgId = "ORG-SHARED";
 
         // Store edges in tenant1
-        edgeRepo.upsert(tenant1, orderId, "placedBy", customerId, false, null);
-        edgeRepo.upsert(tenant1, customerId, "memberOf", orgId, false, null);
+        edgeRepo.upsert(tenant1, "Order", orderId, "placedBy", "Customer", customerId, false, null);
+        edgeRepo.upsert(tenant1, "Customer", customerId, "memberOf", "Organization", orgId, false, null);
 
         inferAndStoreEdges(tenant1, orderId, "Order", List.of(
-                new Reasoner.Edge(orderId, "placedBy", customerId, false, Optional.empty()),
-                new Reasoner.Edge(customerId, "memberOf", orgId, false, Optional.empty())
+                new Reasoner.Edge(orderId, "Order", "placedBy", customerId, "Customer", false, Optional.empty()),
+                new Reasoner.Edge(customerId, "Customer", "memberOf", orgId, "Organization", false, Optional.empty())
         ));
 
         // When: Query each tenant separately
@@ -159,7 +159,7 @@ public class OntologySemanticReasoningIT {
 
         for (Reasoner.Edge edge : result.addEdges()) {
             Map<String, Object> prov = edge.prov().map(p -> Map.<String, Object>of("rule", p)).orElse(null);
-            edgeRepo.upsert(tenant, edge.srcId(), edge.p(), edge.dstId(), edge.inferred(), prov);
-        }
+            edgeRepo.upsert(tenant, edge.srcType(), edge.srcId(), edge.p(), edge.dstType(), edge.dstId(), edge.inferred(), prov);
     }
+}
 }
