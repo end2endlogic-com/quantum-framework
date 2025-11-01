@@ -25,7 +25,7 @@ public class HasEdgePolicyIntegrationTest {
             map.computeIfAbsent(key(tenant, p, dst), k -> new HashSet<>()).addAll(Arrays.asList(srcs));
         }
         private static String key(String tenant, String p, String dst){ return tenant+"|"+p+"|"+dst; }
-        @Override public void upsert(String tenantId, String src, String p, String dst, boolean inferred, Map<String, Object> prov) { }
+        @Override public void upsert(String tenantId, String srcType, String src, String p, String dstType, String dst, boolean inferred, Map<String, Object> prov) { }
         @Override public void upsertMany(Collection<?> edgesOrDocs) { }
         @Override public void deleteBySrc(String tenantId, String src, boolean inferredOnly) { }
         @Override public void deleteBySrcAndPredicate(String tenantId, String src, String p) { }

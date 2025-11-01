@@ -17,7 +17,7 @@ public class ListQueryRewriterTest {
         public void put(String p, String dst, String... srcs) {
             map.computeIfAbsent(p+"|"+dst, k -> new HashSet<>()).addAll(Arrays.asList(srcs));
         }
-        @Override public void upsert(String tenantId, String src, String p, String dst, boolean inferred, Map<String, Object> prov) { }
+        @Override public void upsert(String tenantId, String srcType, String src, String p, String dstType, String dst, boolean inferred, Map<String, Object> prov) { }
         @Override public void upsertMany(Collection<?> edgesOrDocs) { }
         @Override public void deleteBySrc(String tenantId, String src, boolean inferredOnly) { }
         @Override public void deleteBySrcAndPredicate(String tenantId, String src, String p) { }
