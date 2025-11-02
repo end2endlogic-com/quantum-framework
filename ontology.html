@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="generator" content="Asciidoctor 2.0.20">
+<meta name="generator" content="Asciidoctor 2.0.23">
 <title>Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,300italic,400,400italic,600,600italic%7CNoto+Serif:400,400italic,700,700italic%7CDroid+Sans+Mono:400,700">
 <style>
@@ -140,7 +140,7 @@ p a>code:hover{color:rgba(0,0,0,.9)}
 #content::before{content:none}
 #header>h1:first-child{color:rgba(0,0,0,.85);margin-top:2.25rem;margin-bottom:0}
 #header>h1:first-child+#toc{margin-top:8px;border-top:1px solid #dddddf}
-#header>h1:only-child,body.toc2 #header>h1:nth-last-child(2){border-bottom:1px solid #dddddf;padding-bottom:8px}
+#header>h1:only-child{border-bottom:1px solid #dddddf;padding-bottom:8px}
 #header .details{border-bottom:1px solid #dddddf;line-height:1.45;padding-top:.25em;padding-bottom:.25em;padding-left:.25em;color:rgba(0,0,0,.6);display:flex;flex-flow:row wrap}
 #header .details span:first-child{margin-left:-.125em}
 #header .details span.email a{color:rgba(0,0,0,.85)}
@@ -162,6 +162,7 @@ p a>code:hover{color:rgba(0,0,0,.9)}
 #toctitle{color:#7a2518;font-size:1.2em}
 @media screen and (min-width:768px){#toctitle{font-size:1.375em}
 body.toc2{padding-left:15em;padding-right:0}
+body.toc2 #header>h1:nth-last-child(2){border-bottom:1px solid #dddddf;padding-bottom:8px}
 #toc.toc2{margin-top:0!important;background:#f8f8f7;position:fixed;width:15em;left:0;top:0;border-right:1px solid #e7e7e9;border-top-width:0!important;border-bottom-width:0!important;z-index:1000;padding:1.25em 1em;height:100%;overflow:auto}
 #toc.toc2 #toctitle{margin-top:0;margin-bottom:.8rem;font-size:1.2em}
 #toc.toc2>ul{font-size:.9em;margin-bottom:0}
@@ -327,7 +328,7 @@ a.image{text-decoration:none;display:inline-block}
 a.image object{pointer-events:none}
 sup.footnote,sup.footnoteref{font-size:.875em;position:static;vertical-align:super}
 sup.footnote a,sup.footnoteref a{text-decoration:none}
-sup.footnote a:active,sup.footnoteref a:active{text-decoration:underline}
+sup.footnote a:active,sup.footnoteref a:active,#footnotes .footnote a:first-of-type:active{text-decoration:underline}
 #footnotes{padding-top:.75em;padding-bottom:.75em;margin-bottom:.625em}
 #footnotes hr{width:20%;min-width:6.25em;margin:-.25em 0 .75em;border-width:1px 0 0}
 #footnotes .footnote{padding:0 .375em 0 .225em;line-height:1.3334;font-size:.875em;margin-left:1.2em;margin-bottom:.2em}
@@ -528,7 +529,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-10-29T20:43:14Z</span>
+<span id="revdate">2025-11-02T20:37:40Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -548,59 +549,68 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </ul>
 </li>
 <li><a href="#ontology-ecommerce-example">2. Concrete example: Sales Orders, Shipments, and evolving to Fulfillment/Returns</a></li>
-<li><a href="#ontology-integration-morphia-permissions">3. Integrating Ontology with Morphia, Permissions, and Multi-tenancy</a>
+<li><a href="#ontology-visualizing-edges-and-provenance">3. Visualizing ontology edges and provenance</a>
 <ul class="sectlevel2">
-<li><a href="#_big_picture_where_ontology_fits">3.1. Big picture: where ontology fits</a></li>
-<li><a href="#_rule_language_add_hasedge">3.2. Rule language: add hasEdge()</a></li>
-<li><a href="#_passing_tenantid_correctly">3.3. Passing tenantId correctly</a></li>
-<li><a href="#_morphia_repository_integration_patterns">3.4. Morphia repository integration patterns</a></li>
-<li><a href="#_where_ontology_materialization_happens">3.5. Where ontology materialization happens</a>
-<ul class="sectlevel3">
-<li><a href="#_configuration">3.5.1. Configuration</a></li>
-<li><a href="#_example_annotate_and_save_edges_are_materialized_automatically">3.5.2. Example: annotate and save — edges are materialized automatically</a></li>
+<li><a href="#_example_graph_orders_customers_organizations">3.1. Example graph: Orders, Customers, Organizations</a></li>
+<li><a href="#_example_graph_shipments_and_regions">3.2. Example graph: Shipments and Regions</a></li>
+<li><a href="#_what_is_provenance_and_how_to_read_it">3.3. What is provenance and how to read it</a></li>
 </ul>
 </li>
-<li><a href="#_security_and_multi_tenant_considerations">3.6. Security and multi-tenant considerations</a></li>
-<li><a href="#_developer_workflow_and_dx_checklist">3.7. Developer workflow and DX checklist</a></li>
-<li><a href="#_cookbook_end_to_end_example_with_orders_org">3.8. Cookbook: end-to-end example with Orders + Org</a></li>
-<li><a href="#_migration_notes_for_teams_using_reference">3.9. Migration notes for teams using @Reference</a></li>
-</ul>
-</li>
-<li><a href="#_primer_first_time_guide_to_core_relationship_semantics">4. Primer: First-time guide to core relationship semantics</a></li>
-<li><a href="#_new_ontology_features_in_this_release">5. New ontology features in this release</a>
+<li><a href="#ontology-integration-morphia-permissions">4. Integrating Ontology with Morphia, Permissions, and Multi-tenancy</a>
 <ul class="sectlevel2">
-<li><a href="#_feature_overview">5.1. Feature overview</a></li>
-<li><a href="#_business_problems_solved">5.2. Business problems solved</a></li>
-<li><a href="#_how_to_code_it_with_current_apis">5.3. How to code it with current APIs</a>
+<li><a href="#_big_picture_where_ontology_fits">4.1. Big picture: where ontology fits</a></li>
+<li><a href="#_rule_language_add_hasedge">4.2. Rule language: add hasEdge()</a></li>
+<li><a href="#_passing_tenantid_correctly">4.3. Passing tenantId correctly</a></li>
+<li><a href="#_morphia_repository_integration_patterns">4.4. Morphia repository integration patterns</a></li>
+<li><a href="#_where_ontology_materialization_happens">4.5. Where ontology materialization happens</a>
 <ul class="sectlevel3">
-<li><a href="#_1_define_ontology_programmatic_tbox">5.3.1. 1) Define ontology (programmatic TBox)</a></li>
-<li><a href="#_2_materialize_inferences_when_data_changes">5.3.2. 2) Materialize inferences when data changes</a></li>
-<li><a href="#_3_query_with_listqueryrewriter_quarkusmorphia">5.3.3. 3) Query with ListQueryRewriter (Quarkus/Morphia)</a></li>
-<li><a href="#_functional_properties_at_write_time">5.3.4. Functional properties at write time</a></li>
+<li><a href="#_extending_materialization_with_ontologyedgeprovider_spi">4.5.1. Extending materialization with OntologyEdgeProvider (SPI)</a></li>
+<li><a href="#_configuration">4.5.2. Configuration</a></li>
+<li><a href="#_example_annotate_and_save_edges_are_materialized_automatically">4.5.3. Example: annotate and save — edges are materialized automatically</a></li>
 </ul>
 </li>
-<li><a href="#_backward_compatibility_and_migration">5.4. Backward compatibility and migration</a></li>
-<li><a href="#_troubleshooting_and_tips">5.5. Troubleshooting and tips</a></li>
+<li><a href="#_security_and_multi_tenant_considerations">4.6. Security and multi-tenant considerations</a></li>
+<li><a href="#_developer_workflow_and_dx_checklist">4.7. Developer workflow and DX checklist</a></li>
+<li><a href="#_cookbook_end_to_end_example_with_orders_org">4.8. Cookbook: end-to-end example with Orders + Org</a></li>
+<li><a href="#_migration_notes_for_teams_using_reference">4.9. Migration notes for teams using @Reference</a></li>
 </ul>
 </li>
-<li><a href="#_model_first_ontology_with_annotations_and_morphiaontologyloader">6. Model-first ontology with annotations and MorphiaOntologyLoader</a>
+<li><a href="#_primer_first_time_guide_to_core_relationship_semantics">5. Primer: First-time guide to core relationship semantics</a></li>
+<li><a href="#_new_ontology_features_in_this_release">6. New ontology features in this release</a>
 <ul class="sectlevel2">
-<li><a href="#_why_model_first">6.1. Why model-first?</a></li>
-<li><a href="#_annotations_overview">6.2. Annotations overview</a>
+<li><a href="#_feature_overview">6.1. Feature overview</a></li>
+<li><a href="#_business_problems_solved">6.2. Business problems solved</a></li>
+<li><a href="#_how_to_code_it_with_current_apis">6.3. How to code it with current APIs</a>
 <ul class="sectlevel3">
-<li><a href="#ontology-relationships">6.2.1. Relationship semantics on @OntologyProperty</a></li>
-<li><a href="#ontology-cascading">6.2.2. Cascading policies for relationships</a></li>
-<li><a href="#ontology-benefits-relationships">6.2.3. Business benefits of ontology relationships and cascade</a></li>
+<li><a href="#_1_define_ontology_programmatic_tbox">6.3.1. 1) Define ontology (programmatic TBox)</a></li>
+<li><a href="#_2_materialize_inferences_when_data_changes">6.3.2. 2) Materialize inferences when data changes</a></li>
+<li><a href="#_3_query_with_listqueryrewriter_quarkusmorphia">6.3.3. 3) Query with ListQueryRewriter (Quarkus/Morphia)</a></li>
+<li><a href="#_functional_properties_at_write_time">6.3.4. Functional properties at write time</a></li>
 </ul>
 </li>
-<li><a href="#_example_orders_placed_in_an_organization_e_commerce">6.3. Example: Orders placed in an Organization (e-commerce)</a></li>
-<li><a href="#_how_the_registry_is_produced_quarkus_cdi">6.4. How the registry is produced (Quarkus CDI)</a></li>
-<li><a href="#_materializing_inferences_from_annotated_models">6.5. Materializing inferences from annotated models</a></li>
-<li><a href="#_querying_using_listqueryrewriter_unchanged">6.6. Querying using ListQueryRewriter (unchanged)</a></li>
-<li><a href="#_business_case_recipes_with_annotations">6.7. Business case recipes with annotations</a></li>
-<li><a href="#_troubleshooting">6.8. Troubleshooting</a></li>
-<li><a href="#_migration_strategy">6.9. Migration strategy</a></li>
-<li><a href="#_modeling_guidance_annotate_existing_idreference_getters_keep_api_and_db_clean">6.10. Modeling guidance: annotate existing id/reference getters (keep API and DB clean)</a></li>
+<li><a href="#_backward_compatibility_and_migration">6.4. Backward compatibility and migration</a></li>
+<li><a href="#_troubleshooting_and_tips">6.5. Troubleshooting and tips</a></li>
+</ul>
+</li>
+<li><a href="#_model_first_ontology_with_annotations_and_morphiaontologyloader">7. Model-first ontology with annotations and MorphiaOntologyLoader</a>
+<ul class="sectlevel2">
+<li><a href="#_why_model_first">7.1. Why model-first?</a></li>
+<li><a href="#_annotations_overview">7.2. Annotations overview</a>
+<ul class="sectlevel3">
+<li><a href="#ontology-relationships">7.2.1. Relationship semantics on @OntologyProperty</a></li>
+<li><a href="#ontology-cascading">7.2.2. Cascading policies for relationships</a></li>
+<li><a href="#ontology-benefits-relationships">7.2.3. Business benefits of ontology relationships and cascade</a></li>
+</ul>
+</li>
+<li><a href="#_example_orders_placed_in_an_organization_e_commerce">7.3. Example: Orders placed in an Organization (e-commerce)</a></li>
+<li><a href="#_how_the_registry_is_produced_quarkus_cdi">7.4. How the registry is produced (Quarkus CDI)</a></li>
+<li><a href="#_defining_an_ontology_with_yaml_yamlontologyloader">7.5. Defining an ontology with YAML (YamlOntologyLoader)</a></li>
+<li><a href="#_materializing_inferences_from_annotated_models">7.6. Materializing inferences from annotated models</a></li>
+<li><a href="#_querying_using_listqueryrewriter_unchanged">7.7. Querying using ListQueryRewriter (unchanged)</a></li>
+<li><a href="#_business_case_recipes_with_annotations">7.8. Business case recipes with annotations</a></li>
+<li><a href="#_troubleshooting">7.9. Troubleshooting</a></li>
+<li><a href="#_migration_strategy">7.10. Migration strategy</a></li>
+<li><a href="#_modeling_guidance_annotate_existing_idreference_getters_keep_api_and_db_clean">7.11. Modeling guidance: annotate existing id/reference getters (keep API and DB clean)</a></li>
 </ul>
 </li>
 </ul>
@@ -994,6 +1004,14 @@ In Quarkus, all ontology components are CDI-managed. Inject EdgeDao and services
 </ul>
 </div>
 <div class="paragraph">
+<p>Diagram of the core classes and predicates for this example:</p>
+</div>
+<div class="imageblock">
+<div class="content">
+<img src="diag-graphviz-md5-4ca094e1102e9d1f770462f4e7ca96d4.svg" alt="Diagram" width="864" height="311">
+</div>
+</div>
+<div class="paragraph">
 <p>A minimal Java-style snippet to define this TBox</p>
 </div>
 <div class="listingblock">
@@ -1285,13 +1303,108 @@ Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, <span class="string"
 </div>
 </div>
 <div class="sect1">
-<h2 id="ontology-integration-morphia-permissions">3. Integrating Ontology with Morphia, Permissions, and Multi-tenancy</h2>
+<h2 id="ontology-visualizing-edges-and-provenance">3. Visualizing ontology edges and provenance</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>This section uses simple diagrams to illustrate how explicit facts (edges) combine with ontology rules (property chains, inverses, transitivity) to produce inferred edges, and how provenance explains each inference.</p>
+</div>
+<div class="sect2">
+<h3 id="_example_graph_orders_customers_organizations">3.1. Example graph: Orders, Customers, Organizations</h3>
+<div class="paragraph">
+<p>We start from the running example introduced above. The following diagram shows explicit edges in solid lines and inferred edges as dotted lines.</p>
+</div>
+<div class="imageblock">
+<div class="content">
+<img src="diag-graphviz-md5-f6605933d90779dad4b0df64cddf4ead.svg" alt="Diagram" width="953" height="168">
+</div>
+</div>
+<div class="paragraph">
+<p>You can add more nodes and predicates (shipments, addresses, regions) and draw similar diagrams. The important idea is that you query for semantics (placedInOrg), while the reasoner ensures the materialized edges exist according to the rules.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_example_graph_shipments_and_regions">3.2. Example graph: Shipments and Regions</h3>
+<div class="imageblock">
+<div class="content">
+<img src="diag-graphviz-md5-d9ee623c7b9a9e666c8e0738da5e4364.svg" alt="Diagram" width="937" height="168">
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_what_is_provenance_and_how_to_read_it">3.3. What is provenance and how to read it</h3>
+<div class="paragraph">
+<p>Every inferred edge includes a provenance payload prov that answers “why does this edge exist?”. It captures the rule used and the contributing input edges. With recent enrichments, inputs also include type information when available.</p>
+</div>
+<div class="paragraph">
+<p>Here is an example edge document (simplified JSON for clarity) for the inference O1 --placedInOrg-&#8594; OrgA via the chain placedBy ∘ memberOf ⇒ placedInOrg:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">tenantId</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">t1</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">src</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">O1</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">srcType</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Order</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">p</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">placedInOrg</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">dst</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">OrgA</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">dstType</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Organization</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">inferred</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">prov</span><span class="delimiter">&quot;</span></span>: {
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">rule</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">chain</span><span class="delimiter">&quot;</span></span>,
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">inputs</span><span class="delimiter">&quot;</span></span>: {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">chain</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">placedBy</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">memberOf</span><span class="delimiter">&quot;</span></span>],
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">inputs</span><span class="delimiter">&quot;</span></span>: [
+        { <span class="key"><span class="delimiter">&quot;</span><span class="content">src</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">O1</span><span class="delimiter">&quot;</span></span>,  <span class="key"><span class="delimiter">&quot;</span><span class="content">srcType</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Order</span><span class="delimiter">&quot;</span></span>,     <span class="key"><span class="delimiter">&quot;</span><span class="content">p</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">placedBy</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">dst</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">C9</span><span class="delimiter">&quot;</span></span>,   <span class="key"><span class="delimiter">&quot;</span><span class="content">dstType</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Customer</span><span class="delimiter">&quot;</span></span> },
+        { <span class="key"><span class="delimiter">&quot;</span><span class="content">src</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">C9</span><span class="delimiter">&quot;</span></span>,  <span class="key"><span class="delimiter">&quot;</span><span class="content">srcType</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Customer</span><span class="delimiter">&quot;</span></span>,  <span class="key"><span class="delimiter">&quot;</span><span class="content">p</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">memberOf</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">dst</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">OrgA</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">dstType</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Organization</span><span class="delimiter">&quot;</span></span> }
+      ]
+    }
+  },
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">ts</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">2025-10-20T10:01:02Z</span><span class="delimiter">&quot;</span></span>
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Notes:
+- rule indicates which inference rule created the edge (chain, inverse, symmetric, transitive, subPropertyOf).
+- inputs lists the contributing explicit edges (or minimal hops) that justified the inference. When types are known from domain/range or snapshots, srcType and dstType are included.
+- This provenance enables audit, troubleshooting, and selective recomputation when inputs change.</p>
+</div>
+<div class="paragraph">
+<p>For a transitive example, an O1 --placedInOrg-&#8594; OrgParent edge could have:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json"><span class="key"><span class="delimiter">&quot;</span><span class="content">prov</span><span class="delimiter">&quot;</span></span>: {
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">rule</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">transitive</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">inputs</span><span class="delimiter">&quot;</span></span>: {
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">prop</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">placedInOrg</span><span class="delimiter">&quot;</span></span>,
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">inputs</span><span class="delimiter">&quot;</span></span>: [ { <span class="key"><span class="delimiter">&quot;</span><span class="content">src</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">O1</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">p</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">placedInOrg</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">dst</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">OrgA</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">srcType</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Order</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">dstType</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Organization</span><span class="delimiter">&quot;</span></span> } ]
+  }
+}</code></pre>
+</div>
+</div>
+<div class="admonitionblock tip">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-tip" title="Tip"></i>
+</td>
+<td class="content">
+Provenance is for explanation and maintenance. The runtime edges you query on remain simple (src, p, dst) with optional type fields for validation and indexing.
+</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="ontology-integration-morphia-permissions">4. Integrating Ontology with Morphia, Permissions, and Multi-tenancy</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This section focuses on integration and developer experience: how ontology edges flow into Morphia-based repositories and the permission rule language, while remaining fully multi-tenant and secure.</p>
 </div>
 <div class="sect2">
-<h3 id="_big_picture_where_ontology_fits">3.1. Big picture: where ontology fits</h3>
+<h3 id="_big_picture_where_ontology_fits">4.1. Big picture: where ontology fits</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -1322,7 +1435,7 @@ Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, <span class="string"
 </div>
 </div>
 <div class="sect2">
-<h3 id="_rule_language_add_hasedge">3.2. Rule language: add hasEdge()</h3>
+<h3 id="_rule_language_add_hasedge">4.2. Rule language: add hasEdge()</h3>
 <div class="paragraph">
 <p>We introduce a policy function/operator to reference ontology edges directly from rules:</p>
 </div>
@@ -1369,7 +1482,7 @@ Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, <span class="string"
 </div>
 </div>
 <div class="sect2">
-<h3 id="_passing_tenantid_correctly">3.3. Passing tenantId correctly</h3>
+<h3 id="_passing_tenantid_correctly">4.3. Passing tenantId correctly</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -1391,7 +1504,7 @@ Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, <span class="string"
 </div>
 </div>
 <div class="sect2">
-<h3 id="_morphia_repository_integration_patterns">3.4. Morphia repository integration patterns</h3>
+<h3 id="_morphia_repository_integration_patterns">4.4. Morphia repository integration patterns</h3>
 <div class="paragraph">
 <p>The goal is zero-friction usage in existing repos without invasive changes.</p>
 </div>
@@ -1457,7 +1570,7 @@ query.filter(Filters.in(<span class="string"><span class="delimiter">&quot;</spa
 </div>
 </div>
 <div class="sect2">
-<h3 id="_where_ontology_materialization_happens">3.5. Where ontology materialization happens</h3>
+<h3 id="_where_ontology_materialization_happens">4.5. Where ontology materialization happens</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -1475,6 +1588,147 @@ query.filter(Filters.in(<span class="string"><span class="delimiter">&quot;</spa
 <li>
 <p>This is enabled by default. To disable temporarily (e.g., for bulk loads), set: ontology.auto-materialize=false</p>
 </li>
+</ul>
+</div>
+<div class="sect3">
+<h4 id="_extending_materialization_with_ontologyedgeprovider_spi">4.5.1. Extending materialization with OntologyEdgeProvider (SPI)</h4>
+<div class="paragraph">
+<p>The write hook is annotation-first and SPI-second:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>First, it extracts explicit edges from @OntologyProperty fields/getters on the entity being saved.</p>
+</li>
+<li>
+<p>Then, it discovers any CDI beans implementing com.e2eq.ontology.spi.OntologyEdgeProvider that support the entity type and merges their edges.</p>
+</li>
+<li>
+<p>Finally, it persists explicit edges, prunes stale ones, and rematerializes inferred edges (inverse, subPropertyOf, transitive, symmetric).</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>This keeps OntologyWriteHook thin and generic while allowing domain modules to contribute additional explicit edges without changing the core.</p>
+</div>
+<div class="paragraph">
+<p>Basic contract</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Implementations must declare:</p>
+</li>
+<li>
+<p>boolean supports(Class&lt;?&gt; entityType) — return true for the entity types you handle.</p>
+</li>
+<li>
+<p>List&lt;Reasoner.Edge&gt; edges(String realmId, Object entity) — return explicit edges to add for that instance.</p>
+</li>
+<li>
+<p>Register the implementation as a CDI bean (e.g., @ApplicationScoped) in your module; Quarkus will discover it.</p>
+</li>
+<li>
+<p>Edges you return should use your domain refName (or id) for src/dst ids and the ontology type ids for srcType/dstType.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Example provider</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@jakarta</span>.enterprise.context.ApplicationScoped
+<span class="directive">public</span> <span class="type">class</span> <span class="class">UserCredentialEdgeProvider</span> <span class="directive">implements</span> com.e2eq.ontology.spi.OntologyEdgeProvider {
+  <span class="annotation">@Override</span>
+  <span class="directive">public</span> <span class="type">boolean</span> supports(<span class="predefined-type">Class</span>&lt;?&gt; entityType) {
+    <span class="keyword">return</span> com.e2eq.framework.model.security.User.class.isAssignableFrom(entityType);
+  }
+
+  <span class="annotation">@Override</span>
+  <span class="directive">public</span> java.util.List&lt;com.e2eq.ontology.core.Reasoner.Edge&gt; edges(<span class="predefined-type">String</span> realmId, <span class="predefined-type">Object</span> entity) {
+    <span class="type">var</span> user = (com.e2eq.framework.model.security.User) entity;
+    <span class="predefined-type">String</span> srcId = user.getRefName();
+    <span class="keyword">if</span> (srcId == <span class="predefined-constant">null</span> || srcId.isBlank()) <span class="keyword">return</span> java.util.List.of();
+    <span class="predefined-type">String</span> credRef = user.getCredentialRefName();
+    <span class="keyword">if</span> (credRef == <span class="predefined-constant">null</span> || credRef.isBlank()) <span class="keyword">return</span> java.util.List.of();
+    <span class="keyword">return</span> java.util.List.of(
+      <span class="keyword">new</span> com.e2eq.ontology.core.Reasoner.Edge(
+        srcId, <span class="string"><span class="delimiter">&quot;</span><span class="content">User</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">userHasCredential</span><span class="delimiter">&quot;</span></span>, credRef, <span class="string"><span class="delimiter">&quot;</span><span class="content">CredentialUserIdPassword</span><span class="delimiter">&quot;</span></span>, <span class="predefined-constant">false</span>, java.util.Optional.empty()
+      )
+    );
+  }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Merging behavior and lifecycle</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>The hook calls all matching providers and concatenates their edges with the annotation-derived ones.</p>
+</li>
+<li>
+<p>It computes the diff against prior explicit edges for the same source and prunes any stale explicit edges per predicate.</p>
+</li>
+<li>
+<p>Then it invokes the reasoner/materializer to compute and upsert inferred edges.</p>
+</li>
+<li>
+<p>Finally, it executes cascade policies (e.g., ORPHAN_REMOVE/DELETE) declared on @OntologyProperty, using the prior vs. new explicit state.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>ID and type resolution tips</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>srcId: By default, the hook resolves an entity id using getRefName(), getId(), or toString() fallback. Prefer setting refName on your entities.</p>
+</li>
+<li>
+<p>dstId: You may point to another entity by refName string (no fetch required) if your domain guarantees uniqueness per type and tenant.</p>
+</li>
+<li>
+<p>srcType/dstType: Use the @OntologyClass(id=&#8230;&#8203;) values for the types (e.g., "User", "CredentialUserIdPassword").</p>
+</li>
+<li>
+<p>realmId: The framework passes the current tenant/realm id; include it when persisting or resolving external references if needed.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Testing your provider</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>You can write a Quarkus test that persists a source and any targets, calls OntologyWriteHook.afterPersist(tenant, entity), and asserts that:</p>
+</li>
+<li>
+<p>the annotation-derived edges exist, and</p>
+</li>
+<li>
+<p>your provider-derived edges are also present and marked as explicit (inferred=false).</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Migration guidance</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Start annotation-first. Only add a provider when edges depend on computed fields, cross-aggregate ids, or non-entity sources.</p>
+</li>
+<li>
+<p>Keep providers small and focused per entity type. Avoid duplicating edges that annotations already cover.</p>
+</li>
+<li>
+<p>If multiple providers contribute the same edge, the repo upsert is idempotent.</p>
+</li>
 <li>
 <p>Intermediates and re-materialization:</p>
 </li>
@@ -1486,8 +1740,9 @@ query.filter(Filters.in(<span class="string"><span class="delimiter">&quot;</spa
 </li>
 </ul>
 </div>
+</div>
 <div class="sect3">
-<h4 id="_configuration">3.5.1. Configuration</h4>
+<h4 id="_configuration">4.5.2. Configuration</h4>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="properties"># default is true
@@ -1496,7 +1751,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_example_annotate_and_save_edges_are_materialized_automatically">3.5.2. Example: annotate and save — edges are materialized automatically</h4>
+<h4 id="_example_annotate_and_save_edges_are_materialized_automatically">4.5.3. Example: annotate and save — edges are materialized automatically</h4>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@OntologyClass</span>(id = <span class="string"><span class="delimiter">&quot;</span><span class="content">Order</span><span class="delimiter">&quot;</span></span>)
@@ -1526,7 +1781,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_security_and_multi_tenant_considerations">3.6. Security and multi-tenant considerations</h3>
+<h3 id="_security_and_multi_tenant_considerations">4.6. Security and multi-tenant considerations</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -1542,7 +1797,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_developer_workflow_and_dx_checklist">3.7. Developer workflow and DX checklist</h3>
+<h3 id="_developer_workflow_and_dx_checklist">4.7. Developer workflow and DX checklist</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -1561,7 +1816,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_cookbook_end_to_end_example_with_orders_org">3.8. Cookbook: end-to-end example with Orders + Org</h3>
+<h3 id="_cookbook_end_to_end_example_with_orders_org">4.8. Cookbook: end-to-end example with Orders + Org</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -1579,7 +1834,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_migration_notes_for_teams_using_reference">3.9. Migration notes for teams using @Reference</h3>
+<h3 id="_migration_notes_for_teams_using_reference">4.9. Migration notes for teams using @Reference</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -1600,7 +1855,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_primer_first_time_guide_to_core_relationship_semantics">4. Primer: First-time guide to core relationship semantics</h2>
+<h2 id="_primer_first_time_guide_to_core_relationship_semantics">5. Primer: First-time guide to core relationship semantics</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>If you are new to ontology terms, the following quick explanations will help you build intuition. Each concept explains what it means, a tiny example, and how it affects queries using hasEdge.</p>
@@ -1677,13 +1932,13 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_new_ontology_features_in_this_release">5. New ontology features in this release</h2>
+<h2 id="_new_ontology_features_in_this_release">6. New ontology features in this release</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This release expands the ontology engine and query integration to support a richer, OWL‑RL–inspired subset while keeping the developer experience simple and backward compatible. The following capabilities are now available and used transparently by the materializer and query rewriter:</p>
 </div>
 <div class="sect2">
-<h3 id="_feature_overview">5.1. Feature overview</h3>
+<h3 id="_feature_overview">6.1. Feature overview</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -1729,7 +1984,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_business_problems_solved">5.2. Business problems solved</h3>
+<h3 id="_business_problems_solved">6.2. Business problems solved</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -1772,12 +2027,20 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_to_code_it_with_current_apis">5.3. How to code it with current APIs</h3>
+<h3 id="_how_to_code_it_with_current_apis">6.3. How to code it with current APIs</h3>
 <div class="paragraph">
 <p>Below are concise examples showing how to define the ontology, materialize inferences, and query with existing components. These mirror the types already present in this repository and require no grammar changes.</p>
 </div>
 <div class="sect3">
-<h4 id="_1_define_ontology_programmatic_tbox">5.3.1. 1) Define ontology (programmatic TBox)</h4>
+<h4 id="_1_define_ontology_programmatic_tbox">6.3.1. 1) Define ontology (programmatic TBox)</h4>
+<div class="paragraph">
+<p>A small TBox-level view of the classes and predicates we define:</p>
+</div>
+<div class="imageblock">
+<div class="content">
+<img src="diag-graphviz-md5-c0c55938d0e17cdd80c2046a3d2eddd4.svg" alt="Diagram" width="533" height="242">
+</div>
+</div>
 <div class="paragraph">
 <p>Java (at startup, e.g., in a CDI producer):</p>
 </div>
@@ -1847,7 +2110,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_2_materialize_inferences_when_data_changes">5.3.2. 2) Materialize inferences when data changes</h4>
+<h4 id="_2_materialize_inferences_when_data_changes">6.3.2. 2) Materialize inferences when data changes</h4>
 <div class="paragraph">
 <p>Use OntologyMaterializer or call the Reasoner directly and upsert edges via OntologyEdgeRepo.</p>
 </div>
@@ -1859,14 +2122,14 @@ ontology.auto-materialize=true</code></pre>
 
 <span class="directive">public</span> <span class="type">void</span> onOrderSaved(<span class="predefined-type">String</span> tenant, <span class="predefined-type">String</span> orderId, <span class="predefined-type">String</span> customerId, <span class="predefined-type">String</span> orgId) {
   <span class="predefined-type">List</span>&lt;Reasoner.Edge&gt; explicit = <span class="predefined-type">List</span>.of(
-      <span class="keyword">new</span> Reasoner.Edge(orderId, <span class="string"><span class="delimiter">&quot;</span><span class="content">placedBy</span><span class="delimiter">&quot;</span></span>, customerId, <span class="predefined-constant">false</span>, Optional.empty()),
-      <span class="keyword">new</span> Reasoner.Edge(customerId, <span class="string"><span class="delimiter">&quot;</span><span class="content">memberOf</span><span class="delimiter">&quot;</span></span>, orgId, <span class="predefined-constant">false</span>, Optional.empty())
+      <span class="keyword">new</span> Reasoner.Edge(orderId, <span class="string"><span class="delimiter">&quot;</span><span class="content">Order</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">placedBy</span><span class="delimiter">&quot;</span></span>, customerId, <span class="string"><span class="delimiter">&quot;</span><span class="content">Customer</span><span class="delimiter">&quot;</span></span>, <span class="predefined-constant">false</span>, Optional.empty()),
+      <span class="keyword">new</span> Reasoner.Edge(customerId, <span class="string"><span class="delimiter">&quot;</span><span class="content">Customer</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">memberOf</span><span class="delimiter">&quot;</span></span>, orgId, <span class="string"><span class="delimiter">&quot;</span><span class="content">Organization</span><span class="delimiter">&quot;</span></span>, <span class="predefined-constant">false</span>, Optional.empty())
   );
   Reasoner.EntitySnapshot snap = <span class="keyword">new</span> Reasoner.EntitySnapshot(tenant, orderId, <span class="string"><span class="delimiter">&quot;</span><span class="content">Order</span><span class="delimiter">&quot;</span></span>, explicit);
   Reasoner.InferenceResult out = reasoner.infer(snap, ontologyRegistry);
   <span class="keyword">for</span> (Reasoner.Edge e : out.addEdges()) {
     <span class="predefined-type">Map</span>&lt;<span class="predefined-type">String</span>,<span class="predefined-type">Object</span>&gt; prov = e.prov().map(p -&gt; <span class="predefined-type">Map</span>.&lt;<span class="predefined-type">String</span>,<span class="predefined-type">Object</span>&gt;of(<span class="string"><span class="delimiter">&quot;</span><span class="content">rule</span><span class="delimiter">&quot;</span></span>, p.rule(), <span class="string"><span class="delimiter">&quot;</span><span class="content">inputs</span><span class="delimiter">&quot;</span></span>, p.inputs())).orElse(<span class="predefined-type">Map</span>.of());
-    edgeRepo.upsert(tenant, e.srcId(), e.p(), e.dstId(), <span class="predefined-constant">true</span>, prov);
+    edgeRepo.upsert(tenant, e.srcType(), e.srcId(), e.p(), e.dstType(), e.dstId(), <span class="predefined-constant">true</span>, prov);
   }
 }</code></pre>
 </div>
@@ -1879,7 +2142,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_3_query_with_listqueryrewriter_quarkusmorphia">5.3.3. 3) Query with ListQueryRewriter (Quarkus/Morphia)</h4>
+<h4 id="_3_query_with_listqueryrewriter_quarkusmorphia">6.3.3. 3) Query with ListQueryRewriter (Quarkus/Morphia)</h4>
 <div class="paragraph">
 <p>Use hasEdge/hasEdgeAny/notHasEdge to turn ontology constraints into Morphia filters over your entity collection. The rewriter internally fetches the set of source ids from the edge store and builds an in("refName", …) filter that composes with your attribute predicates.</p>
 </div>
@@ -1914,7 +2177,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_functional_properties_at_write_time">5.3.4. Functional properties at write time</h4>
+<h4 id="_functional_properties_at_write_time">6.3.4. Functional properties at write time</h4>
 <div class="paragraph">
 <p>For single‑valued relationships declared functional, configure a unique index over (tenantId, src, p) in your edge store (or rely on repo semantics) and treat upserts as replacements.</p>
 </div>
@@ -1926,7 +2189,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_backward_compatibility_and_migration">5.4. Backward compatibility and migration</h3>
+<h3 id="_backward_compatibility_and_migration">6.4. Backward compatibility and migration</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -1942,7 +2205,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_troubleshooting_and_tips">5.5. Troubleshooting and tips</h3>
+<h3 id="_troubleshooting_and_tips">6.5. Troubleshooting and tips</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -1963,13 +2226,13 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_model_first_ontology_with_annotations_and_morphiaontologyloader">6. Model-first ontology with annotations and MorphiaOntologyLoader</h2>
+<h2 id="_model_first_ontology_with_annotations_and_morphiaontologyloader">7. Model-first ontology with annotations and MorphiaOntologyLoader</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This section shows how to use your Morphia model classes as the source of truth for the ontology. You annotate model classes/fields to declare ontology concepts and property traits; at startup, MorphiaOntologyLoader scans MorphiaDatastore.getMapper() to build the OntologyRegistry automatically.</p>
 </div>
 <div class="sect2">
-<h3 id="_why_model_first">6.1. Why model-first?</h3>
+<h3 id="_why_model_first">7.1. Why model-first?</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -1985,7 +2248,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_annotations_overview">6.2. Annotations overview</h3>
+<h3 id="_annotations_overview">7.2. Annotations overview</h3>
 <div class="paragraph">
 <p>Two lightweight annotations are used on model classes and fields. They are provided by quantum-ontology-core and can be added to any Morphia-mapped entity (deriving from UnversionedBaseModel).</p>
 </div>
@@ -2063,7 +2326,7 @@ functional is inferred true for single-valued fields and false for collections/m
 </table>
 </div>
 <div class="sect3">
-<h4 id="ontology-relationships">6.2.1. Relationship semantics on @OntologyProperty</h4>
+<h4 id="ontology-relationships">7.2.1. Relationship semantics on @OntologyProperty</h4>
 <div class="paragraph">
 <p>When a field is annotated with @OntologyProperty and declares any of ref, relation, or edgeType, the framework treats it as a relationship and will materialize an ontology edge for it on persist/update.</p>
 </div>
@@ -2125,7 +2388,7 @@ If ref is provided but edgeType is omitted, the system uses the property id (or 
 </div>
 </div>
 <div class="sect3">
-<h4 id="ontology-cascading">6.2.2. Cascading policies for relationships</h4>
+<h4 id="ontology-cascading">7.2.2. Cascading policies for relationships</h4>
 <div class="paragraph">
 <p>Cascading is opt-in and conservative. It controls what happens to related targets and edges when a relationship is modified or a source is deleted.</p>
 </div>
@@ -2198,7 +2461,7 @@ If ref is provided but edgeType is omitted, the system uses the property id (or 
 </div>
 </div>
 <div class="sect3">
-<h4 id="ontology-benefits-relationships">6.2.3. Business benefits of ontology relationships and cascade</h4>
+<h4 id="ontology-benefits-relationships">7.2.3. Business benefits of ontology relationships and cascade</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -2221,7 +2484,7 @@ If ref is provided but edgeType is omitted, the system uses the property id (or 
 </div>
 </div>
 <div class="sect2">
-<h3 id="_example_orders_placed_in_an_organization_e_commerce">6.3. Example: Orders placed in an Organization (e-commerce)</h3>
+<h3 id="_example_orders_placed_in_an_organization_e_commerce">7.3. Example: Orders placed in an Organization (e-commerce)</h3>
 <div class="paragraph">
 <p>Below we implement the same business example covered earlier using model annotations.</p>
 </div>
@@ -2282,7 +2545,7 @@ If ref is provided but edgeType is omitted, the system uses the property id (or 
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_the_registry_is_produced_quarkus_cdi">6.4. How the registry is produced (Quarkus CDI)</h3>
+<h3 id="_how_the_registry_is_produced_quarkus_cdi">7.4. How the registry is produced (Quarkus CDI)</h3>
 <div class="paragraph">
 <p>OntologyCoreProducers wires MorphiaOntologyLoader by default. On startup it scans your models and produces a singleton OntologyRegistry.</p>
 </div>
@@ -2328,7 +2591,143 @@ Keep annotations minimal. Only add traits that aren’t obvious from the Java ty
 </div>
 </div>
 <div class="sect2">
-<h3 id="_materializing_inferences_from_annotated_models">6.5. Materializing inferences from annotated models</h3>
+<h3 id="_defining_an_ontology_with_yaml_yamlontologyloader">7.5. Defining an ontology with YAML (YamlOntologyLoader)</h3>
+<div class="paragraph">
+<p>You can also author your ontology in a simple YAML file and load it at runtime using YamlOntologyLoader. This is useful when:
+- You want product or ops teams to evolve predicates and chains without changing Java models.
+- You need to add an overlay (additional properties or chains) on top of what is discovered from annotations.</p>
+</div>
+<div class="paragraph">
+<p>YAML structure supported by YamlOntologyLoader:
+- classes: list of concept ids
+- properties: list of predicate definitions with optional fields
+  - id: predicate name
+  - domain: optional class id for the source
+  - range: optional class id for the target
+  - inverseOf: optional inverse predicate id (declare on either side; loader wires both)
+  - transitive: boolean
+  - symmetric: boolean
+  - relation: NONE | ONE_TO_ONE | ONE_TO_MANY | MANY_TO_ONE | MANY_TO_MANY (if provided, overrides functional)
+  - functional: boolean (deprecated in favor of relation; still supported for backward compatibility)
+  - subPropertyOf: list of super-predicate ids
+- chains: list of property chains
+  - chain: [p1, p2, &#8230;&#8203;]
+  - implies: r</p>
+</div>
+<div class="paragraph">
+<p>Example YAML (full file available in docs at user-guide/examples/ontology.yaml):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml"><span class="comment"># Example ontology.yaml used by YamlOntologyLoader</span>
+<span class="key">version</span>: <span class="string"><span class="content">1</span></span>
+<span class="key">classes</span>:
+  - <span class="string"><span class="content">id: Order</span></span>
+  - <span class="string"><span class="content">id: Customer</span></span>
+  - <span class="string"><span class="content">id: Organization</span></span>
+<span class="key">properties</span>:
+  - <span class="string"><span class="content">id: placedBy</span></span>
+    <span class="key">domain</span>: <span class="string"><span class="content">Order</span></span>
+    <span class="key">range</span>: <span class="string"><span class="content">Customer</span></span>
+    <span class="key">inverseOf</span>: <span class="string"><span class="content">placed</span></span>
+    <span class="key">functional</span>: <span class="string"><span class="content">true</span></span>
+  - <span class="string"><span class="content">id: placed</span></span>
+    <span class="key">domain</span>: <span class="string"><span class="content">Customer</span></span>
+    <span class="key">range</span>: <span class="string"><span class="content">Order</span></span>
+    <span class="key">inverseOf</span>: <span class="string"><span class="content">placedBy</span></span>
+  - <span class="string"><span class="content">id: memberOf</span></span>
+    <span class="key">domain</span>: <span class="string"><span class="content">Customer</span></span>
+    <span class="key">range</span>: <span class="string"><span class="content">Organization</span></span>
+  - <span class="string"><span class="content">id: placedInOrg</span></span>
+    <span class="key">domain</span>: <span class="string"><span class="content">Order</span></span>
+    <span class="key">range</span>: <span class="string"><span class="content">Organization</span></span>
+    <span class="key">subPropertyOf</span>: <span class="string"><span class="content">[ &quot;inOrg&quot; ]</span></span>
+  - <span class="string"><span class="content">id: inOrg</span></span>
+    <span class="key">domain</span>: <span class="string"><span class="content">Order</span></span>
+    <span class="key">range</span>: <span class="string"><span class="content">Organization</span></span>
+  - <span class="string"><span class="content">id: parentOf</span></span>
+    <span class="key">domain</span>: <span class="string"><span class="content">Organization</span></span>
+    <span class="key">range</span>: <span class="string"><span class="content">Organization</span></span>
+    <span class="key">inverseOf</span>: <span class="string"><span class="content">childOf</span></span>
+  - <span class="string"><span class="content">id: childOf</span></span>
+    <span class="key">domain</span>: <span class="string"><span class="content">Organization</span></span>
+    <span class="key">range</span>: <span class="string"><span class="content">Organization</span></span>
+    <span class="key">inverseOf</span>: <span class="string"><span class="content">parentOf</span></span>
+  - <span class="string"><span class="content">id: ancestorOf</span></span>
+    <span class="key">domain</span>: <span class="string"><span class="content">Organization</span></span>
+    <span class="key">range</span>: <span class="string"><span class="content">Organization</span></span>
+    <span class="key">transitive</span>: <span class="string"><span class="content">true</span></span>
+  - <span class="string"><span class="content">id: peerOf</span></span>
+    <span class="key">domain</span>: <span class="string"><span class="content">Organization</span></span>
+    <span class="key">range</span>: <span class="string"><span class="content">Organization</span></span>
+    <span class="key">symmetric</span>: <span class="string"><span class="content">true</span></span>
+<span class="key">chains</span>:
+  - <span class="string"><span class="content">chain: [ &quot;placedBy&quot;, &quot;memberOf&quot; ]</span></span>
+    <span class="key">implies</span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">placedInOrg</span><span class="delimiter">&quot;</span></span>
+  - <span class="string"><span class="content">chain: [ &quot;placedInOrg&quot;, &quot;ancestorOf&quot; ]</span></span>
+    <span class="key">implies</span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">placedInOrg</span><span class="delimiter">&quot;</span></span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Loading YAML in code:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Direct usage (plain Java):</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">com.e2eq.ontology.core.OntologyRegistry</span>;
+<span class="keyword">import</span> <span class="include">com.e2eq.ontology.core.YamlOntologyLoader</span>;
+
+YamlOntologyLoader loader = <span class="keyword">new</span> YamlOntologyLoader();
+
+<span class="comment">// From classpath resource (place ontology.yaml under src/main/resources)</span>
+OntologyRegistry.TBox tbox1 = loader.loadFromClasspath(<span class="string"><span class="delimiter">&quot;</span><span class="content">/ontology.yaml</span><span class="delimiter">&quot;</span></span>);
+
+<span class="comment">// From a file system path</span>
+java.nio.file.Path path = java.nio.file.Path.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">config</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">ontology.yaml</span><span class="delimiter">&quot;</span></span>);
+OntologyRegistry.TBox tbox2 = loader.loadFromPath(path);
+
+<span class="comment">// Build a registry (in-memory) from a TBox</span>
+OntologyRegistry registry = <span class="keyword">new</span> com.e2eq.ontology.core.InMemoryOntologyRegistry(tbox2);</code></pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Quarkus auto-wiring (preferred):</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>OntologyCoreProducers will try to overlay YAML on top of the Morphia-discovered TBox at startup. It looks for one of the following, in order:
+- A system property ontology.yaml.path pointing to the file.
+- An environment variable ONTOLOGY_YAML pointing to the file.
+- A conventional file config/ontology.yaml in the working directory.
+- A classpath resource /ontology.yaml.</p>
+</div>
+<div class="paragraph">
+<p>If found, it loads the YAML TBox and merges it with the base TBox from annotations using OntologyMerger, then validates using OntologyValidator.</p>
+</div>
+<div class="admonitionblock tip">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-tip" title="Tip"></i>
+</td>
+<td class="content">
+Keep overlays additive. If you need to override flags (e.g., mark an existing property as transitive), ensure your overlay defines the same predicate id with the desired traits; the merger will apply the union/override semantics where supported.
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_materializing_inferences_from_annotated_models">7.6. Materializing inferences from annotated models</h3>
 <div class="paragraph">
 <p>Materialization is automatic on save/update through the repository hook; you do not need to assemble explicit edge lists or call OntologyMaterializer manually.</p>
 </div>
@@ -2373,7 +2772,7 @@ Keep annotations minimal. Only add traits that aren’t obvious from the Java ty
 </div>
 </div>
 <div class="sect2">
-<h3 id="_querying_using_listqueryrewriter_unchanged">6.6. Querying using ListQueryRewriter (unchanged)</h3>
+<h3 id="_querying_using_listqueryrewriter_unchanged">7.7. Querying using ListQueryRewriter (unchanged)</h3>
 <div class="paragraph">
 <p>Your query code does not change. It benefits from materialized edges that now carry richer semantics from annotations.</p>
 </div>
@@ -2397,7 +2796,7 @@ Keep annotations minimal. Only add traits that aren’t obvious from the Java ty
 </div>
 </div>
 <div class="sect2">
-<h3 id="_business_case_recipes_with_annotations">6.7. Business case recipes with annotations</h3>
+<h3 id="_business_case_recipes_with_annotations">7.8. Business case recipes with annotations</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -2422,7 +2821,7 @@ Keep annotations minimal. Only add traits that aren’t obvious from the Java ty
 </div>
 </div>
 <div class="sect2">
-<h3 id="_troubleshooting">6.8. Troubleshooting</h3>
+<h3 id="_troubleshooting">7.9. Troubleshooting</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -2447,7 +2846,7 @@ Keep annotations minimal. Only add traits that aren’t obvious from the Java ty
 </div>
 </div>
 <div class="sect2">
-<h3 id="_migration_strategy">6.9. Migration strategy</h3>
+<h3 id="_migration_strategy">7.10. Migration strategy</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -2463,7 +2862,7 @@ Keep annotations minimal. Only add traits that aren’t obvious from the Java ty
 </div>
 </div>
 <div class="sect2">
-<h3 id="_modeling_guidance_annotate_existing_idreference_getters_keep_api_and_db_clean">6.10. Modeling guidance: annotate existing id/reference getters (keep API and DB clean)</h3>
+<h3 id="_modeling_guidance_annotate_existing_idreference_getters_keep_api_and_db_clean">7.11. Modeling guidance: annotate existing id/reference getters (keep API and DB clean)</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -2550,7 +2949,7 @@ Keep annotations minimal. Only add traits that aren’t obvious from the Java ty
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-10-29 15:07:09 -0400
+Last updated 2025-11-02 12:22:59 -0500
 </div>
 </div>
 </body>

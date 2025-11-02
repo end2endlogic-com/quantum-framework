@@ -1,0 +1,66 @@
+# Example ontology.yaml used by YamlOntologyLoader
+# Version is optional and currently informational only
+version: 1
+
+# List of classes (concepts)
+classes:
+  - id: Order
+  - id: Customer
+  - id: Organization
+
+# List of properties (predicates)
+# Supported flags: domain, range, inverseOf, transitive, symmetric, functional, subPropertyOf
+properties:
+  - id: placedBy
+    domain: Order
+    range: Customer
+    inverseOf: placed
+    relation: MANY_TO_ONE
+
+  - id: placed
+    domain: Customer
+    range: Order
+    inverseOf: placedBy
+
+  - id: memberOf
+    domain: Customer
+    range: Organization
+
+  - id: placedInOrg
+    domain: Order
+    range: Organization
+    subPropertyOf: [ "inOrg" ]
+
+  - id: inOrg
+    domain: Order
+    range: Organization
+
+  - id: parentOf
+    domain: Organization
+    range: Organization
+    inverseOf: childOf
+
+  - id: childOf
+    domain: Organization
+    range: Organization
+    inverseOf: parentOf
+
+  - id: ancestorOf
+    domain: Organization
+    range: Organization
+    transitive: true
+
+  - id: peerOf
+    domain: Organization
+    range: Organization
+    symmetric: true
+
+# Property chains: chain (list of predicate ids) implies -> predicate id
+chains:
+  # Order --placedBy--> Customer --memberOf--> Org  implies  Order --placedInOrg--> Org
+  - chain: [ "placedBy", "memberOf" ]
+    implies: "placedInOrg"
+
+  # Roll up through the org tree: placedInOrg ∘ ancestorOf ⇒ placedInOrg
+  - chain: [ "placedInOrg", "ancestorOf" ]
+    implies: "placedInOrg"
