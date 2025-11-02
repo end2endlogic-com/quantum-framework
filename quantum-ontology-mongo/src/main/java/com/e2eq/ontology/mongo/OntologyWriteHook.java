@@ -5,9 +5,12 @@ import com.e2eq.ontology.core.OntologyRegistry;
 import com.e2eq.ontology.core.Reasoner;
 import com.e2eq.ontology.model.OntologyEdge;
 import com.e2eq.ontology.repo.OntologyEdgeRepo;
+import com.e2eq.ontology.spi.OntologyEdgeProvider;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -20,6 +23,7 @@ public class OntologyWriteHook implements PostPersistHook {
     @Inject OntologyMaterializer materializer;
     @Inject CascadeExecutor cascadeExecutor;
     @Inject OntologyEdgeRepo edgeRepo;
+    @Inject Instance<OntologyEdgeProvider> providers;
 
     @Override
     public void afterPersist(String realmId, Object entity) {
@@ -33,7 +37,18 @@ public class OntologyWriteHook implements PostPersistHook {
         if (metaOpt.isEmpty()) return; // not an ontology participant
         String entityType = metaOpt.get().classId;
         // Use realmId as tenant id in ontology edges
-        List<Reasoner.Edge> explicit = extractor.fromEntity(realmId, entity);
+        List<Reasoner.Edge> explicit = new ArrayList<>(extractor.fromEntity(realmId, entity));
+        // Extend with SPI-provided edges
+        try {
+            for (OntologyEdgeProvider p : providers) {
+                if (p.supports(entity.getClass())) {
+                    var extra = p.edges(realmId, entity);
+                    if (extra != null && !extra.isEmpty()) explicit.addAll(extra);
+                }
+            }
+        } catch (Throwable t) {
+            io.quarkus.logging.Log.warn("[DEBUG_LOG] OntologyWriteHook: provider extension failed", t);
+        }
         try {
             io.quarkus.logging.Log.infof("[DEBUG_LOG] OntologyWriteHook.afterPersist entityType=%s, realm=%s, explicitEdges=%d", entityType, realmId, explicit.size());
             for (Reasoner.Edge e : explicit) {

@@ -3,6 +3,7 @@ package com.e2eq.ontology.core;
 import com.e2eq.ontology.core.OntologyRegistry.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import com.e2eq.ontology.annotations.RelationType;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -24,7 +25,9 @@ public final class YamlOntologyLoader {
             String id,
             String domain,
             String range,
+            // Backwards compatible: either 'functional' or 'relation' can be used; 'relation' takes precedence
             Boolean functional,
+            String relation,
             String inverseOf,
             Boolean transitive,
             Boolean symmetric,
@@ -59,6 +62,21 @@ public final class YamlOntologyLoader {
         Map<String, PropertyDef> props = new LinkedHashMap<>();
         for (YProperty p : Optional.ofNullable(y.properties()).orElse(List.of())) {
             Set<String> supers = new LinkedHashSet<>(Optional.ofNullable(p.subPropertyOf()).orElse(List.of()));
+
+            // Determine functional based on relation if provided; fallback to explicit functional flag
+            boolean functional;
+            if (p.relation() != null && !p.relation().isBlank()) {
+                RelationType rt;
+                try {
+                    rt = RelationType.valueOf(p.relation().trim().toUpperCase(Locale.ROOT));
+                } catch (IllegalArgumentException iae) {
+                    throw new RuntimeException("Unknown relation type '" + p.relation() + "' for property '" + p.id() + "'. Expected one of: " + Arrays.toString(RelationType.values()));
+                }
+                functional = (rt == RelationType.ONE_TO_ONE || rt == RelationType.MANY_TO_ONE);
+            } else {
+                functional = Boolean.TRUE.equals(p.functional());
+            }
+
             PropertyDef def = new PropertyDef(
                     p.id(),
                     Optional.ofNullable(p.domain()),
@@ -67,7 +85,7 @@ public final class YamlOntologyLoader {
                     Optional.ofNullable(p.inverseOf()).filter(s -> !s.isBlank()),
                     Boolean.TRUE.equals(p.transitive()),
                     Boolean.TRUE.equals(p.symmetric()),
-                    Boolean.TRUE.equals(p.functional()),
+                    functional,
                     supers
             );
             props.put(p.id(), def);
