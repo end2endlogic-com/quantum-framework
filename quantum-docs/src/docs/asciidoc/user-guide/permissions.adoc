@@ -3,8 +3,6 @@
 
 This section explains how Quantum evaluates permissions for REST requests using rule bases that match on a SecurityURI composed of a header and a body. The header includes identity, area, functionalDomain, and action. The body includes realm, accountNumber, tenantId, dataSegment, ownerId, and resourceId. It also covers how identities and roles (as found on userProfile or credentialUserIdPassword) are matched, how priority works, and how multiple matching rule bases are evaluated.
 
-Note: Rules do not match on raw HTTP method or URL, and there is no rolesAny/rolesAll field. Instead, the engine evaluates rules for the caller's userId and each role as separate identities. The terms SecurityURIHeader and SecurityURIBody in this document correspond directly to the model used by the code.
-
 == Introduction: Layered Enforcement Overview
 
 Quantum evaluates "can this identity do X?" through three complementary layers. Understanding them in order helps you pick the right tool for the job and combine them safely:
@@ -45,7 +43,10 @@ Compare and contrast
 * Permission Rules and the Rule Language are data-driven and user-changeable (with proper governance), enabling rapid, auditable policy changes and DataDomain scoping.
 * In practice: apply annotations as the first gate, evaluate feature flags to determine exposure/variant, then evaluate permission rules to decide ALLOW/DENY and attach scopes. This layered approach yields both safety and agility.
 
-Tip: Ontology- and label-aware policy helpers are available to postconditionScript when the optional ontology module is enabled. Helpers include hasEdge, hasAnyEdge, hasAllEdges, relatedIds for graph checks; hasLabel for label checks; and isA/noViolations for type/validation contexts. See the "Script Helpers reference" section for details. When data access must be restricted to lists resolved outside the rule engine (for example, from an external ACL service), use AccessListResolvers (SPI) and reference their outputs from andFilterString/orFilterString.
+[TIP]
+
+Ontology- and label-aware policy helpers are available to postconditionScript when the optional ontology module is enabled. Helpers include hasEdge, hasAnyEdge, hasAllEdges, relatedIds for graph checks; hasLabel for label checks; and isA/noViolations for type/validation contexts. See the "Script Helpers reference" section for details. When data access must be restricted to lists resolved outside the rule engine (for example, from an external ACL service), use AccessListResolvers (SPI) and reference their outputs from andFilterString/orFilterString.
+
 
 [plantuml]
 ....

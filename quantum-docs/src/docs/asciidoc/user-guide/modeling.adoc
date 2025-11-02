@@ -272,6 +272,29 @@ When to adjust:
 
 == Validation Lifecycle and Morphia Interceptors
 
+[plantuml]
+....
+@startuml
+actor App
+participant Repo
+participant "ValidationInterceptor"
+participant "PermissionRuleInterceptor"
+participant "AuditInterceptor"
+participant "ReferenceInterceptor"
+participant "PersistenceAuditEventInterceptor"
+
+App -> Repo: save/update/delete
+Repo -> "ValidationInterceptor": prePersist (bean validation, dataDomain default)
+"ValidationInterceptor" --> Repo: ok or throw
+Repo -> "PermissionRuleInterceptor": prePersist (authorize)
+"PermissionRuleInterceptor" --> Repo: ok or throw
+Repo -> "AuditInterceptor": prePersist (stamp audit)
+Repo -> "ReferenceInterceptor": prePersist (track references)
+Repo -> "PersistenceAuditEventInterceptor": prePersist (append event)
+Repo --> App: persist or error
+@enduml
+....
+
 Morphia interceptors enhance and enforce behavior during persistence. Quantum registers the following for each realm-specific datastore:
 
 Order of registration (see MorphiaDataStore):
@@ -303,6 +326,26 @@ When does validation occur?
 
 == Functional Area/Domain in RuleContext Permission Language
 
+[plantuml]
+....
+@startuml
+actor Client
+participant "JAX-RS Resource" as API
+participant SecurityFilter
+participant "ResourceContext"
+participant "RuleContext"
+
+Client -> API: HTTP /{area}/{functionalDomain}/{action}/...
+API -> SecurityFilter: request
+SecurityFilter -> ResourceContext: derive area/domain/action
+SecurityFilter -> RuleContext: build SecurityURI (header+body)
+note right of RuleContext
+  Match rules by wildcard on SecurityURI
+  Roles are evaluated as identities
+end note
+@enduml
+....
+
 Models express their placement in the business model via:
 - bmFunctionalArea(): returns a broad capability area (e.g., Catalog, Collaboration, Identity)
 - bmFunctionalDomain(): returns the specific domain within that area (e.g., Product, Shipment, Partner)
@@ -311,7 +354,7 @@ How these map into authorization and rules:
 
 - ResourceContext/DomainContext: When a request operates on a model, the framework derives the functional area and domain from the model type (or resource) and places them on the current context alongside the action (CREATE, UPDATE, VIEW, DELETE, ARCHIVE). RuleContext consumes these to evaluate policies.
 
-- Permission language (path-derived ResourceContext): The framework derives area and functionalDomain from REST path segments using the convention: /{area}/{functionalDomain}/{action}/... . These are placed on the ResourceContext and consumed by RuleContext. Rule bases typically match on HTTP method and URL patterns; no special headers are required.
+- Permission language (SecurityURI-based matching): The framework derives area and functionalDomain from REST path segments using the convention: /{area}/{functionalDomain}/{action}/... . These values, together with action and identity, form the SecurityURI (header + body) used by the rule engine. Rules match on SecurityURI fields using wildcard string comparison; there is no HTTP method/URL pattern matching.
 
 - Permission language (query variables): The ANTLR-based query language exposes variables that can be referenced in filters:
   - ${area} corresponds to bmFunctionalArea()
@@ -322,19 +365,28 @@ How these map into authorization and rules:
 
 Examples
 
-1) Path-derived rule matching (Permissions)
+1) SecurityURI-based rule matching (Permissions)
 
 [source,yaml]
 ----
 - name: allow-catalog-product-reads
-  priority: 300
-  match:
-    method: [GET]
-    url: /Catalog/Product/**
-    rolesAny: [USER, ADMIN]
+  description: Allow USER and ADMIN to view products in the Catalog area
+  securityURI:
+    header:
+      identity: USER            # role treated as identity; author a second rule for ADMIN if needed
+      area: Catalog
+      functionalDomain: Product
+      action: view
+    body:
+      realm: system-com
+      accountNumber: '*'
+      tenantId: '*'
+      dataSegment: '*'
+      ownerId: '*'
+      resourceId: '*'
   effect: ALLOW
-  filters:
-    readScope: { orgRefName: PUBLIC }
+  priority: 300
+  finalRule: false
 ----
 
 2) Query variable usage (Filters)
@@ -411,6 +463,37 @@ public class StateGraphInitializer {
   }
 }
 ----
+== State Graph (DOT)
+
+[graphviz, state-graph, svg]
+----
+digraph StateGraph {
+  rankdir=LR;
+  node [shape=circle, fontsize=12];
+
+  state
+  start [shape=point, label=""];
+  PENDING [label="PENDING"];
+  PROCESSING [label="PROCESSING"];
+  SHIPPED [label="SHIPPED"];
+  CANCELLED [label="CANCELLED"];
+  DELIVERED [label="DELIVERED", shape=doublecircle];
+
+
+  CANCELLED [shape=doublecircle];
+
+
+  start -> PENDING [label="create"];
+  PENDING -> PROCESSING [label="approve"];
+  PENDING -> CANCELLED [label="cancel"];
+  PROCESSING -> SHIPPED [label="ship"];
+  PROCESSING -> CANCELLED [label="cancel"];
+  SHIPPED -> DELIVERED [label="deliver"];
+  SHIPPED -> CANCELLED [label="cancel"];
+}
+----
+
+
 
 Using the graph in a model:
 
@@ -428,7 +511,36 @@ public class Order extends BaseModel {
 }
 ----
 
+[plantuml, state-lifecycle, svg]
+....
+@startuml
+|API|
+start
+:Create request;
+
+|Domain Service|
+:Validate command;
+:Apply transition intent;
+
+|StateGraph|
+:Check allowed transition;
+if (allowed?) then (yes)
+  |Domain Service|
+  :Mutate aggregate state;
+  |Repo|
+  :Persist changes;
+  |Domain Service|
+  :Emit domain events;
+else (no)
+  |API|
+  :Return 409/422 with reason;
+endif
+stop
+@enduml
+....
+
 How it affects save/update:
+
 - On create: validateInitialStates ensures the field value is one of the configured initial states. Otherwise, InvalidStateTransitionException is thrown.
 - On update: validateStateTransitions checks each @StateGraph field’s old->new transition against the graph via StateGraphManager.validateTransition(). If invalid, save/update fails with InvalidStateTransitionException. This applies to full-entity saves and to partial updates via repo.update(...pairs) on that field.
 - Utilities: StateGraphManager.getNextPossibleStates(graphName, current) and printStateGraph(...) can aid UIs.
@@ -480,6 +592,28 @@ public class CompletionTaskGroup extends BaseModel {
 ----
 
 Typical lifecycle:
+
+[plantuml]
+....
+@startuml
+skinparam dpi 120
+hide empty description
+state "CompletionTaskGroup" as Group {
+  [*] --> NEW
+  NEW --> RUNNING : any task RUNNING
+  RUNNING --> COMPLETE : all tasks terminal
+}
+
+state "CompletionTask" as Task {
+  [*] --> PENDING
+  PENDING --> RUNNING : worker picks up
+  RUNNING --> SUCCESS : work done
+  RUNNING --> FAILED : error
+}
+
+Task --> Group : updates status
+@enduml
+....
 
 - Create a CompletionTaskGroup in NEW status.
 - Create N CompletionTasks (status=PENDING) referencing the group.
