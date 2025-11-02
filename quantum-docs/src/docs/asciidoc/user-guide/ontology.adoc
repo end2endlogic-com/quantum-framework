@@ -165,6 +165,37 @@ Property chains (implied relationships)
 - placedInOrg ∘ ancestorOf ⇒ placedInOrg
   - Makes placedInOrg resilient to org hierarchy changes (ancestorOf is transitive). This is a common “closure” trick: re-assert the same predicate via chain to absorb hierarchy.
 
+Diagram of the core classes and predicates for this example:
+
+[graphviz]
+----
+digraph Ontology {
+  rankdir=LR;
+  node [shape=box];
+
+  // Classes
+  Order [label="Order"];
+  Customer [label="Customer"];
+  Organization [label="Organization"];
+  Shipment [label="Shipment"];
+  Address [label="Address"];
+  Region [label="Region"];
+
+  // Explicit predicates (solid)
+  Order -> Customer    [label="placedBy"];
+  Customer -> Organization [label="memberOf"];
+  Order -> Shipment    [label="orderHasShipment"];
+  Shipment -> Address  [label="shipsTo"];
+  Address -> Region    [label="locatedIn"];
+  Organization -> Organization [label="ancestorOf"];
+
+  // Implied predicates (dashed)
+  Order -> Organization [label="placedInOrg", style=dashed, color=gray40];
+  Order -> Address      [label="orderShipsTo", style=dashed, color=gray40];
+  Order -> Region       [label="orderShipsToRegion", style=dashed, color=gray40];
+}
+----
+
 A minimal Java-style snippet to define this TBox
 
 [source,java]
@@ -317,6 +348,113 @@ Operational tips for this scenario
 - Use OntologyMaterializer when Order, Shipment, Customer, Address, or org hierarchy changes to keep edges fresh.
 - Keep provenance in edge.prov (rule, inputs) so you can recompute or retract edges when source data changes.
 
+
+[[ontology-visualizing-edges-and-provenance]]
+== Visualizing ontology edges and provenance
+
+This section uses simple diagrams to illustrate how explicit facts (edges) combine with ontology rules (property chains, inverses, transitivity) to produce inferred edges, and how provenance explains each inference.
+
+=== Example graph: Orders, Customers, Organizations
+
+We start from the running example introduced above. The following diagram shows explicit edges in solid lines and inferred edges as dotted lines.
+
+[graphviz]
+----
+digraph G {
+  rankdir=LR;
+  node [shape=box];
+
+  O1 [label="Order O1"];
+  C9 [label="Customer C9"];
+  OrgA [label="Organization OrgA"];
+  OrgParent [label="Organization OrgParent"];
+
+  // Explicit facts (solid)
+  O1 -> C9       [label="placedBy"];
+  C9 -> OrgA     [label="memberOf"];
+  OrgA -> OrgParent [label="ancestorOf"];
+
+  // Inferred edges (dashed)
+  O1 -> OrgA       [label="placedInOrg", style=dashed, color=gray40];
+  O1 -> OrgParent  [label="placedInOrg", style=dashed, color=gray40];
+}
+----
+
+You can add more nodes and predicates (shipments, addresses, regions) and draw similar diagrams. The important idea is that you query for semantics (placedInOrg), while the reasoner ensures the materialized edges exist according to the rules.
+
+=== Example graph: Shipments and Regions
+
+[graphviz]
+----
+digraph G {
+  rankdir=LR;
+  node [shape=box];
+
+  O1 [label="Order O1"];
+  S17 [label="Shipment S17"];
+  A42 [label="Address 42"];
+  RW [label="Region West"];
+
+  // Explicit facts (solid)
+  O1  -> S17 [label="orderHasShipment"];
+  S17 -> A42 [label="shipsTo"];
+  A42 -> RW  [label="locatedIn"];
+
+  // Inferred edges (dashed)
+  O1 -> A42 [label="orderShipsTo", style=dashed, color=gray40];
+  O1 -> RW  [label="orderShipsToRegion", style=dashed, color=gray40];
+}
+----
+
+=== What is provenance and how to read it
+
+Every inferred edge includes a provenance payload prov that answers “why does this edge exist?”. It captures the rule used and the contributing input edges. With recent enrichments, inputs also include type information when available.
+
+Here is an example edge document (simplified JSON for clarity) for the inference O1 --placedInOrg--> OrgA via the chain placedBy ∘ memberOf ⇒ placedInOrg:
+
+[source,json]
+----
+{
+  "tenantId": "t1",
+  "src": "O1",
+  "srcType": "Order",
+  "p": "placedInOrg",
+  "dst": "OrgA",
+  "dstType": "Organization",
+  "inferred": true,
+  "prov": {
+    "rule": "chain",
+    "inputs": {
+      "chain": ["placedBy", "memberOf"],
+      "inputs": [
+        { "src": "O1",  "srcType": "Order",     "p": "placedBy", "dst": "C9",   "dstType": "Customer" },
+        { "src": "C9",  "srcType": "Customer",  "p": "memberOf", "dst": "OrgA", "dstType": "Organization" }
+      ]
+    }
+  },
+  "ts": "2025-10-20T10:01:02Z"
+}
+----
+
+Notes:
+- rule indicates which inference rule created the edge (chain, inverse, symmetric, transitive, subPropertyOf).
+- inputs lists the contributing explicit edges (or minimal hops) that justified the inference. When types are known from domain/range or snapshots, srcType and dstType are included.
+- This provenance enables audit, troubleshooting, and selective recomputation when inputs change.
+
+For a transitive example, an O1 --placedInOrg--> OrgParent edge could have:
+
+[source,json]
+----
+"prov": {
+  "rule": "transitive",
+  "inputs": {
+    "prop": "placedInOrg",
+    "inputs": [ { "src": "O1", "p": "placedInOrg", "dst": "OrgA", "srcType": "Order", "dstType": "Organization" } ]
+  }
+}
+----
+
+TIP: Provenance is for explanation and maintenance. The runtime edges you query on remain simple (src, p, dst) with optional type fields for validation and indexing.
 
 [[ontology-integration-morphia-permissions]]
 == Integrating Ontology with Morphia, Permissions, and Multi-tenancy
@@ -629,6 +767,36 @@ All inferred edges carry inferred=true and provenance containing the rule used (
 Below are concise examples showing how to define the ontology, materialize inferences, and query with existing components. These mirror the types already present in this repository and require no grammar changes.
 
 ==== 1) Define ontology (programmatic TBox)
+
+A small TBox-level view of the classes and predicates we define:
+
+[graphviz]
+----
+digraph TBox {
+  rankdir=LR;
+  node [shape=box];
+
+  // Classes
+  Order [label="Order"];
+  Customer [label="Customer"];
+  Organization [label="Organization"];
+
+  // Explicit predicates (solid)
+  Order -> Customer     [label="placedBy"];
+  Customer -> Organization [label="memberOf"];
+  Organization -> Organization [label="ancestorOf"];
+
+  // Implied predicate via chain (dashed)
+  Order -> Organization [label="placedInOrg", style=dashed, color=gray40];
+
+  // Inverse pair (shown separately)
+  Organization -> Organization [label="parentOf"];
+  Organization -> Organization [label="childOf"];
+
+  // Symmetric relation (bidirectional arrows)
+  Organization -> Organization [label="peerOf", dir=both, arrowhead=normal, arrowtail=normal, color=gray50];
+}
+----
 
 Java (at startup, e.g., in a CDI producer):
 

@@ -55,8 +55,8 @@ public final class ForwardChainingReasoner implements Reasoner {
             // paths start at snap.entityId
             Set<String> frontier = new HashSet<>();
             frontier.add(snap.entityId());
-            List<String> viaPath = new ArrayList<>();
-            viaPath.add(snap.entityId());
+            // For provenance inputs: collect contributing hops for this source
+            List<Map<String, Object>> contributingHops = new ArrayList<>();
             Set<String> reached = new HashSet<>();
             // iterate along chain predicates
             for (int i = 0; i < chain.size(); i++) {
@@ -64,7 +64,19 @@ public final class ForwardChainingReasoner implements Reasoner {
                 Set<String> nextFrontier = new HashSet<>();
                 for (String x : frontier) {
                     Set<String> ys = outByP.getOrDefault(p, Map.of()).getOrDefault(x, Set.of());
-                    nextFrontier.addAll(ys);
+                    for (String y : ys) {
+                        nextFrontier.add(y);
+                        // capture hop for provenance (include type information if available)
+                        Map<String, Object> hop = new HashMap<>();
+                        hop.put("src", x);
+                        hop.put("p", p);
+                        hop.put("dst", y);
+                        String hopSrcType = resolveSourceTypeOptional(reg, nodeTypes, p, x, x.equals(snap.entityId()) ? snap.entityType() : null);
+                        String hopDstType = resolveDestinationTypeOptional(reg, nodeTypes, p, y, null);
+                        if (hopSrcType != null) hop.put("srcType", hopSrcType);
+                        if (hopDstType != null) hop.put("dstType", hopDstType);
+                        contributingHops.add(hop);
+                    }
                 }
                 frontier = nextFrontier;
                 if (frontier.isEmpty()) break;
@@ -76,7 +88,7 @@ public final class ForwardChainingReasoner implements Reasoner {
                 if (z.equals(snap.entityId())) continue;
                 Map<String, Object> inputs = new HashMap<>();
                 inputs.put("chain", chain);
-                inputs.put("via", List.of());
+                inputs.put("inputs", contributingHops);
                 Provenance prov = new Provenance("chain", inputs);
                 String srcType = resolveSourceType(reg, nodeTypes, implies, snap.entityId(), snap.entityType());
                 String dstType = resolveDestinationType(reg, nodeTypes, implies, z, null);
@@ -98,7 +110,15 @@ public final class ForwardChainingReasoner implements Reasoner {
                                 Map<String, Object> inputs = new HashMap<>();
                                 inputs.put("sub", p);
                                 inputs.put("super", superP);
-                                inputs.put("via", List.of(x, y));
+                                Map<String, Object> inEdge = new HashMap<>();
+                                inEdge.put("src", x);
+                                inEdge.put("p", p);
+                                inEdge.put("dst", y);
+                                String inSrcType = resolveSourceTypeOptional(reg, nodeTypes, p, x, x.equals(snap.entityId()) ? snap.entityType() : null);
+                                String inDstType = resolveDestinationTypeOptional(reg, nodeTypes, p, y, null);
+                                if (inSrcType != null) inEdge.put("srcType", inSrcType);
+                                if (inDstType != null) inEdge.put("dstType", inDstType);
+                                inputs.put("inputs", List.of(inEdge));
                                 Provenance prov = new Provenance("subPropertyOf", inputs);
                                 String srcType = resolveSourceType(reg, nodeTypes, superP, x, null);
                                 String dstType = resolveDestinationType(reg, nodeTypes, superP, y, null);
@@ -132,7 +152,15 @@ public final class ForwardChainingReasoner implements Reasoner {
                     if (inv.isPresent()) {
                         Map<String, Object> inputs = new HashMap<>();
                         inputs.put("of", p);
-                        inputs.put("via", List.of(x, y));
+                        Map<String, Object> inEdge = new HashMap<>();
+                        inEdge.put("src", x);
+                        inEdge.put("p", p);
+                        inEdge.put("dst", y);
+                        String inSrcType = resolveSourceTypeOptional(reg, nodeTypes, p, x, x.equals(snap.entityId()) ? snap.entityType() : null);
+                        String inDstType = resolveDestinationTypeOptional(reg, nodeTypes, p, y, null);
+                        if (inSrcType != null) inEdge.put("srcType", inSrcType);
+                        if (inDstType != null) inEdge.put("dstType", inDstType);
+                        inputs.put("inputs", List.of(inEdge));
                         Provenance prov = new Provenance("inverse", inputs);
                         String invSrcType = resolveSourceType(reg, nodeTypes, inv.get(), y, null);
                         String invDstType = resolveDestinationType(reg, nodeTypes, inv.get(), x, null);
@@ -141,7 +169,15 @@ public final class ForwardChainingReasoner implements Reasoner {
                     if (symmetric) {
                         Map<String, Object> inputs2 = new HashMap<>();
                         inputs2.put("prop", p);
-                        inputs2.put("via", List.of(x, y));
+                        Map<String, Object> inEdge2 = new HashMap<>();
+                        inEdge2.put("src", x);
+                        inEdge2.put("p", p);
+                        inEdge2.put("dst", y);
+                        String in2SrcType = resolveSourceTypeOptional(reg, nodeTypes, p, x, x.equals(snap.entityId()) ? snap.entityType() : null);
+                        String in2DstType = resolveDestinationTypeOptional(reg, nodeTypes, p, y, null);
+                        if (in2SrcType != null) inEdge2.put("srcType", in2SrcType);
+                        if (in2DstType != null) inEdge2.put("dstType", in2DstType);
+                        inputs2.put("inputs", List.of(inEdge2));
                         Provenance prov2 = new Provenance("symmetric", inputs2);
                         String symSrcType = resolveSourceType(reg, nodeTypes, p, y, null);
                         String symDstType = resolveDestinationType(reg, nodeTypes, p, x, null);
@@ -161,17 +197,31 @@ public final class ForwardChainingReasoner implements Reasoner {
             Deque<String> dq = new ArrayDeque<>();
             dq.add(snap.entityId());
             visited.add(snap.entityId());
+            // Track predecessor to reconstruct minimal path input for provenance
+            Map<String, String> prev = new HashMap<>();
             while (!dq.isEmpty()) {
                 String x = dq.removeFirst();
                 for (String y : outByP.getOrDefault(p, Map.of()).getOrDefault(x, Set.of())) {
                     if (visited.add(y)) {
+                        prev.put(y, x);
                         dq.addLast(y);
                     }
                     if (!y.equals(snap.entityId())) {
-                        Map<String, Object> inputs = new HashMap<>();
-                        inputs.put("prop", p);
-                        inputs.put("via", List.of(x, y));
-                        Provenance prov = new Provenance("transitive", inputs);
+                        // reconstruct simple path S -> ... -> y (we only record the last hop for compactness)
+                        List<Map<String, Object>> inputs = new ArrayList<>();
+                        Map<String, Object> inEdge = new HashMap<>();
+                        inEdge.put("src", x);
+                        inEdge.put("p", p);
+                        inEdge.put("dst", y);
+                        String inSrcType = resolveSourceTypeOptional(reg, nodeTypes, p, x, x.equals(snap.entityId()) ? snap.entityType() : null);
+                        String inDstType = resolveDestinationTypeOptional(reg, nodeTypes, p, y, null);
+                        if (inSrcType != null) inEdge.put("srcType", inSrcType);
+                        if (inDstType != null) inEdge.put("dstType", inDstType);
+                        inputs.add(inEdge);
+                        Map<String, Object> provInputs = new HashMap<>();
+                        provInputs.put("prop", p);
+                        provInputs.put("inputs", inputs);
+                        Provenance prov = new Provenance("transitive", provInputs);
                         String srcType = resolveSourceType(reg, nodeTypes, p, snap.entityId(), snap.entityType());
                         String dstType = resolveDestinationType(reg, nodeTypes, p, y, null);
                         edges.add(new Edge(snap.entityId(), srcType, p, y, dstType, true, Optional.of(prov)));
@@ -207,6 +257,31 @@ public final class ForwardChainingReasoner implements Reasoner {
         return resolveType(declared, nodeTypes, nodeId, fallback, "destination", property);
     }
 
+    // Optional type resolvers for provenance enrichment that avoid throwing
+    private String resolveSourceTypeOptional(OntologyRegistry reg,
+                                             Map<String, String> nodeTypes,
+                                             String property,
+                                             String nodeId,
+                                             String fallback) {
+        Optional<String> declared = Optional.empty();
+        if (reg != null) {
+            declared = reg.propertyOf(property).flatMap(OntologyRegistry.PropertyDef::domain);
+        }
+        return resolveTypeOptional(declared, nodeTypes, nodeId, fallback);
+    }
+
+    private String resolveDestinationTypeOptional(OntologyRegistry reg,
+                                                  Map<String, String> nodeTypes,
+                                                  String property,
+                                                  String nodeId,
+                                                  String fallback) {
+        Optional<String> declared = Optional.empty();
+        if (reg != null) {
+            declared = reg.propertyOf(property).flatMap(OntologyRegistry.PropertyDef::range);
+        }
+        return resolveTypeOptional(declared, nodeTypes, nodeId, fallback);
+    }
+
     private String resolveType(Optional<String> declared,
                                Map<String, String> nodeTypes,
                                String nodeId,
@@ -224,5 +299,22 @@ public final class ForwardChainingReasoner implements Reasoner {
             return fallback;
         }
         throw new IllegalStateException("Unable to resolve " + role + " type for property '" + property + "' and node '" + nodeId + "'");
+    }
+
+    private String resolveTypeOptional(Optional<String> declared,
+                                       Map<String, String> nodeTypes,
+                                       String nodeId,
+                                       String fallback) {
+        if (declared.isPresent() && !declared.get().isBlank()) {
+            return declared.get();
+        }
+        String fromMap = nodeTypes.get(nodeId);
+        if (fromMap != null && !fromMap.isBlank()) {
+            return fromMap;
+        }
+        if (fallback != null && !fallback.isBlank()) {
+            return fallback;
+        }
+        return null;
     }
 }
