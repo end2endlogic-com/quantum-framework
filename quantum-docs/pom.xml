@@ -37,11 +37,20 @@
                         <artifactId>asciidoctorj-pdf</artifactId>
                         <version>${asciidoctorj.pdf.version}</version>
                     </dependency>
+                    <!-- Enable diagrams via Asciidoctor Diagram (Java) -->
+                    <dependency>
+                        <groupId>org.asciidoctor</groupId>
+                        <artifactId>asciidoctorj-diagram</artifactId>
+                        <version>3.0.1</version>
+                    </dependency>
                 </dependencies>
                 <configuration>
                     <sourceDirectory>${project.basedir}/src/docs/asciidoc</sourceDirectory>
                     <outputDirectory>${docs.output.dir}</outputDirectory>
                     <relativeBaseDir>true</relativeBaseDir>
+                    <requires>
+                        <require>asciidoctor-diagram</require>
+                    </requires>
                     <attributes>
                         <toc>left</toc>
                         <toclevels>3</toclevels>
@@ -53,6 +62,9 @@
                         <pdf-theme>default</pdf-theme>
                         <pdf-fontsdir>${project.basedir}/src/docs/fonts</pdf-fontsdir>
                         <source-highlighter>coderay</source-highlighter>
+                        <!-- Ensure diagram outputs prefer SVG (often more robust with mmdc) -->
+                        <diagram-format>svg</diagram-format>
+                        <mermaid-format>svg</mermaid-format>
                     </attributes>
                 </configuration>
                 <executions>
