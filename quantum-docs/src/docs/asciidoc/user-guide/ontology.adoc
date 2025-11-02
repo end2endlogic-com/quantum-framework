@@ -414,6 +414,78 @@ public final class OntologyFilterHelper {
     - extracts explicit edges from fields/getters annotated with @OntologyProperty using a startup-built metadata cache (no per-call reflection), and
     - calls OntologyMaterializer to infer inverse, transitive, symmetric, and super-property edges and upsert them to the edges collection.
   - This is enabled by default. To disable temporarily (e.g., for bulk loads), set: ontology.auto-materialize=false
+
+==== Extending materialization with OntologyEdgeProvider (SPI)
+
+The write hook is annotation-first and SPI-second:
+
+- First, it extracts explicit edges from @OntologyProperty fields/getters on the entity being saved.
+- Then, it discovers any CDI beans implementing com.e2eq.ontology.spi.OntologyEdgeProvider that support the entity type and merges their edges.
+- Finally, it persists explicit edges, prunes stale ones, and rematerializes inferred edges (inverse, subPropertyOf, transitive, symmetric).
+
+This keeps OntologyWriteHook thin and generic while allowing domain modules to contribute additional explicit edges without changing the core.
+
+Basic contract
+
+- Implementations must declare:
+  - boolean supports(Class<?> entityType) — return true for the entity types you handle.
+  - List<Reasoner.Edge> edges(String realmId, Object entity) — return explicit edges to add for that instance.
+- Register the implementation as a CDI bean (e.g., @ApplicationScoped) in your module; Quarkus will discover it.
+- Edges you return should use your domain refName (or id) for src/dst ids and the ontology type ids for srcType/dstType.
+
+Example provider
+
+[source,java]
+----
+@jakarta.enterprise.context.ApplicationScoped
+public class UserCredentialEdgeProvider implements com.e2eq.ontology.spi.OntologyEdgeProvider {
+  @Override
+  public boolean supports(Class<?> entityType) {
+    return com.e2eq.framework.model.security.User.class.isAssignableFrom(entityType);
+  }
+
+  @Override
+  public java.util.List<com.e2eq.ontology.core.Reasoner.Edge> edges(String realmId, Object entity) {
+    var user = (com.e2eq.framework.model.security.User) entity;
+    String srcId = user.getRefName();
+    if (srcId == null || srcId.isBlank()) return java.util.List.of();
+    String credRef = user.getCredentialRefName();
+    if (credRef == null || credRef.isBlank()) return java.util.List.of();
+    return java.util.List.of(
+      new com.e2eq.ontology.core.Reasoner.Edge(
+        srcId, "User", "userHasCredential", credRef, "CredentialUserIdPassword", false, java.util.Optional.empty()
+      )
+    );
+  }
+}
+----
+
+Merging behavior and lifecycle
+
+- The hook calls all matching providers and concatenates their edges with the annotation-derived ones.
+- It computes the diff against prior explicit edges for the same source and prunes any stale explicit edges per predicate.
+- Then it invokes the reasoner/materializer to compute and upsert inferred edges.
+- Finally, it executes cascade policies (e.g., ORPHAN_REMOVE/DELETE) declared on @OntologyProperty, using the prior vs. new explicit state.
+
+ID and type resolution tips
+
+- srcId: By default, the hook resolves an entity id using getRefName(), getId(), or toString() fallback. Prefer setting refName on your entities.
+- dstId: You may point to another entity by refName string (no fetch required) if your domain guarantees uniqueness per type and tenant.
+- srcType/dstType: Use the @OntologyClass(id=...) values for the types (e.g., "User", "CredentialUserIdPassword").
+- realmId: The framework passes the current tenant/realm id; include it when persisting or resolving external references if needed.
+
+Testing your provider
+
+- You can write a Quarkus test that persists a source and any targets, calls OntologyWriteHook.afterPersist(tenant, entity), and asserts that:
+  - the annotation-derived edges exist, and
+  - your provider-derived edges are also present and marked as explicit (inferred=false).
+
+Migration guidance
+
+- Start annotation-first. Only add a provider when edges depend on computed fields, cross-aggregate ids, or non-entity sources.
+- Keep providers small and focused per entity type. Avoid duplicating edges that annotations already cover.
+- If multiple providers contribute the same edge, the repo upsert is idempotent.
+
 - Intermediates and re-materialization:
   - If you change entities that are not the source but affect chains (e.g., Address.region, Customer.memberOf), those sources will get updated the next time they are saved. For immediate consistency across a tenant, run the re-materialization job (see below).
   - Provide nightly/backfill jobs for recomputing edges across a tenant when ontology rules evolve.
@@ -953,6 +1025,115 @@ OntologyRegistry registry = loader.load();
 ----
 
 TIP: Keep annotations minimal. Only add traits that aren’t obvious from the Java type system (e.g., transitive, symmetric, inverse, subPropertyOf).
+
+=== Defining an ontology with YAML (YamlOntologyLoader)
+
+You can also author your ontology in a simple YAML file and load it at runtime using YamlOntologyLoader. This is useful when:
+- You want product or ops teams to evolve predicates and chains without changing Java models.
+- You need to add an overlay (additional properties or chains) on top of what is discovered from annotations.
+
+YAML structure supported by YamlOntologyLoader:
+- classes: list of concept ids
+- properties: list of predicate definitions with optional fields
+  - id: predicate name
+  - domain: optional class id for the source
+  - range: optional class id for the target
+  - inverseOf: optional inverse predicate id (declare on either side; loader wires both)
+  - transitive: boolean
+  - symmetric: boolean
+  - relation: NONE | ONE_TO_ONE | ONE_TO_MANY | MANY_TO_ONE | MANY_TO_MANY (if provided, overrides functional)
+  - functional: boolean (deprecated in favor of relation; still supported for backward compatibility)
+  - subPropertyOf: list of super-predicate ids
+- chains: list of property chains
+  - chain: [p1, p2, ...]
+  - implies: r
+
+Example YAML (full file available in docs at user-guide/examples/ontology.yaml):
+
+[source,yaml]
+----
+# Example ontology.yaml used by YamlOntologyLoader
+version: 1
+classes:
+  - id: Order
+  - id: Customer
+  - id: Organization
+properties:
+  - id: placedBy
+    domain: Order
+    range: Customer
+    inverseOf: placed
+    functional: true
+  - id: placed
+    domain: Customer
+    range: Order
+    inverseOf: placedBy
+  - id: memberOf
+    domain: Customer
+    range: Organization
+  - id: placedInOrg
+    domain: Order
+    range: Organization
+    subPropertyOf: [ "inOrg" ]
+  - id: inOrg
+    domain: Order
+    range: Organization
+  - id: parentOf
+    domain: Organization
+    range: Organization
+    inverseOf: childOf
+  - id: childOf
+    domain: Organization
+    range: Organization
+    inverseOf: parentOf
+  - id: ancestorOf
+    domain: Organization
+    range: Organization
+    transitive: true
+  - id: peerOf
+    domain: Organization
+    range: Organization
+    symmetric: true
+chains:
+  - chain: [ "placedBy", "memberOf" ]
+    implies: "placedInOrg"
+  - chain: [ "placedInOrg", "ancestorOf" ]
+    implies: "placedInOrg"
+----
+
+Loading YAML in code:
+
+- Direct usage (plain Java):
+
+[source,java]
+----
+import com.e2eq.ontology.core.OntologyRegistry;
+import com.e2eq.ontology.core.YamlOntologyLoader;
+
+YamlOntologyLoader loader = new YamlOntologyLoader();
+
+// From classpath resource (place ontology.yaml under src/main/resources)
+OntologyRegistry.TBox tbox1 = loader.loadFromClasspath("/ontology.yaml");
+
+// From a file system path
+java.nio.file.Path path = java.nio.file.Path.of("config", "ontology.yaml");
+OntologyRegistry.TBox tbox2 = loader.loadFromPath(path);
+
+// Build a registry (in-memory) from a TBox
+OntologyRegistry registry = new com.e2eq.ontology.core.InMemoryOntologyRegistry(tbox2);
+----
+
+- Quarkus auto-wiring (preferred):
+
+OntologyCoreProducers will try to overlay YAML on top of the Morphia-discovered TBox at startup. It looks for one of the following, in order:
+- A system property ontology.yaml.path pointing to the file.
+- An environment variable ONTOLOGY_YAML pointing to the file.
+- A conventional file config/ontology.yaml in the working directory.
+- A classpath resource /ontology.yaml.
+
+If found, it loads the YAML TBox and merges it with the base TBox from annotations using OntologyMerger, then validates using OntologyValidator.
+
+TIP: Keep overlays additive. If you need to override flags (e.g., mark an existing property as transitive), ensure your overlay defines the same predicate id with the desired traits; the merger will apply the union/override semantics where supported.
 
 === Materializing inferences from annotated models
 
