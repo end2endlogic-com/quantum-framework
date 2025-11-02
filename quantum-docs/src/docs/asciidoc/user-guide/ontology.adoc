@@ -24,28 +24,38 @@ An ontology is not the data; it is the schema plus logic that gives your data ad
 A conventional object model focuses on concrete classes, fields, and direct references between objects at implementation time. An ontology focuses on semantic types and relationships, with explicit rules that can derive new knowledge independent of how objects are instantiated.
 
 Key differences:
-- Purpose
+
+Purpose
+
   - Object model: Encapsulate data and behavior for application code generation and persistence.
   - Ontology: Encode shared meaning, constraints, and inference rules that remain stable as implementation details change.
-- Relationship handling
+
+Relationship handling
+
   - Object model: Typically uses direct references or foreign keys; traversals are hard-coded and fragile to change.
   - Ontology: Uses named predicates (properties) and can infer additional relationships by rules (property chains, inverses, transitivity).
-- Polymorphism and evolution
+
+Polymorphism and evolution
+
   - Object model: Polymorphism requires class inheritance in code; cross-cutting categories are awkward to add later.
   - Ontology: Entities can have multiple types/labels at once. New concepts and properties can be introduced without breaking existing data.
-- Querying
+
+Querying
+
   - Object model: Queries couple to concrete classes and field paths; changes force query rewrites.
   - Ontology: Queries target semantic relationships; reasoners can materialize edges that queries reuse, decoupling queries from implementation details.
 
 === Why prefer Ontology-driven relationships over @Reference/EntityReference
 
 Direct references (@Reference or custom EntityReference) are simple to start but become restrictive as domains grow:
+
 - Tight coupling: Code and queries couple to concrete field paths (customer.primaryAddress.id), making refactors risky.
 - Limited expressivity: Hard to encode and reuse higher-order relationships (e.g., "partners of my supplier's parent org").
 - Poor polymorphism: References point to one collection/type; accommodating multiple target types requires extra code.
 - Performance pitfalls: Deep traversals cause extra queries, N+1 selects, or complex $lookup joins.
 
 Ontology-driven edges address these issues:
+
 - Decoupling via predicates: Use named predicates (e.g., hasAddress, memberOf, supplies) that remain stable while internal object fields change.
 - Inference for reachability: Property chains can materialize implied links (A --p--> B & B --q--> C => A --r--> C), avoiding runtime multi-hop traversals.
 - Polymorphism-first: A predicate can connect heterogeneous types; type inferences (domain/range) remain consistent.

@@ -14,6 +14,7 @@ Artifacts: The docs can be built as HTML/PDF via Maven; the code snippets compil
 What you'll build: A small, tenant-aware service with domain models, REST CRUD, flexible queries, security, migrations, and seed packs for baseline data.
 
 Each section starts with:
+
 - Problem: What we are solving
 - Why for SaaS: Why this matters in multi-tenant systems
 - How Quantum helps: Concepts and features that address the problem
