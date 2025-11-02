@@ -15,8 +15,12 @@
     <packaging>jar</packaging>
 
     <properties>
-        <asciidoctor.maven.plugin.version>2.2.6</asciidoctor.maven.plugin.version>
+
+        <asciidoctor.maven.plugin.version>3.2.0</asciidoctor.maven.plugin.version>
         <asciidoctorj.pdf.version>2.3.9</asciidoctorj.pdf.version>
+        <asciidoctorj.diagram.version>3.0.1</asciidoctorj.diagram.version>
+        <asciidoctorj.diagram.plantuml.version>1.2025.3</asciidoctorj.diagram.plantuml.version>
+
         <docs.output.dir>${project.reporting.outputDirectory}</docs.output.dir>
         <!-- Configure GitHub Pages (Option 2: gh-pages branch) -->
         <!-- Replace ORG/REPO with your GitHub org/user and repository name -->
@@ -41,7 +45,13 @@
                     <dependency>
                         <groupId>org.asciidoctor</groupId>
                         <artifactId>asciidoctorj-diagram</artifactId>
-                        <version>3.0.1</version>
+                        <version>${asciidoctorj.diagram.version}</version>
+                    </dependency>
+                    <!-- PlantUML adapter for AsciidoctorJ Diagram (required since 3.x) -->
+                     <dependency>
+                        <groupId>org.asciidoctor</groupId>
+                        <artifactId>asciidoctorj-diagram-plantuml</artifactId>
+                        <version>${asciidoctorj.diagram.plantuml.version}</version>
                     </dependency>
                 </dependencies>
                 <configuration>

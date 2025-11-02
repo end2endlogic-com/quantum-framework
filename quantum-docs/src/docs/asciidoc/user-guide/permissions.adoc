@@ -1,9 +1,9 @@
 [[permissions]]
-= Permissions: Rule Bases, SecurityURLHeaders, and SecurityURLBody
+= Permissions: Rule Bases, SecurityURIHeader, and SecurityURIBody
 
-This section explains how Quantum evaluates permissions for REST requests using rule bases that match on URL, HTTP method, headers, and request body content. It also covers how identities and roles (as found on userProfile or credentialUserIdPassword) are matched, how priority works, and how multiple matching rule bases are evaluated.
+This section explains how Quantum evaluates permissions for REST requests using rule bases that match on a SecurityURI composed of a header and a body. The header includes identity, area, functionalDomain, and action. The body includes realm, accountNumber, tenantId, dataSegment, ownerId, and resourceId. It also covers how identities and roles (as found on userProfile or credentialUserIdPassword) are matched, how priority works, and how multiple matching rule bases are evaluated.
 
-Note: The terms SecurityURLHeaders and SecurityURLBody in this document describe the matching dimensions for rules. Implementations may vary, but the semantics below are stable for authoring and reasoning about permissions.
+Note: Rules do not match on raw HTTP method or URL, and there is no rolesAny/rolesAll field. Instead, the engine evaluates rules for the caller's userId and each role as separate identities. The terms SecurityURIHeader and SecurityURIBody in this document correspond directly to the model used by the code.
 
 == Introduction: Layered Enforcement Overview
 
@@ -21,15 +21,15 @@ Quantum evaluates "can this identity do X?" through three complementary layers. 
 ** Pros: Reversible, environment-aware, safe rollout and experimentation.
 ** Cons: Not a substitute for authorization; must be paired with roles/permission rules for enforcement.
 
-. Permission Rules with DataDomain filtering (fine-grained, dynamic)
-** What: Declarative rule bases that match URL, method, SecurityURLHeaders, and SecurityURLBody, and decide ALLOW/DENY. ALLOWs can contribute DataDomain constraints applied by repositories. See sections "Key Concepts", "Matching Algorithm", and examples below.
+. Permission Rules with SecurityURI (fine-grained, dynamic)
+** What: Declarative rule bases authored against a SecurityURI composed of header (identity, area, functionalDomain, action) and body (realm, accountNumber, tenantId, dataSegment, ownerId, resourceId). Rules decide ALLOW or DENY and may use an optional postconditionScript for additional checks. See sections "Key Concepts", "Matching Algorithm", and examples below.
 ** Purpose: Express least-privilege, data-aware policies that evolve without code changes (data-driven authoring).
-** Pros: Dynamic, auditable, supports role checks plus attribute predicates and domain scoping.
+** Pros: Dynamic, auditable, supports role-based matching and simple attribute scoping via the SecurityURI body.
 ** Cons: Requires governance of rulebases and careful priority management.
 
 How roles, Functional Areas, and Functional Domains fit in
 
-* Roles: Used by both layers (1) and (3). Annotations directly reference roles; rules can require rolesAny/rolesAll. Effective roles are resolved by merging IdP roles with roles on the user record; see "How roles are defined for an identity" below.
+* Roles: Used by both layers (1) and (3). Annotations directly reference roles. In the rule engine, roles are evaluated by treating each role as an identity: rules authored for a role name (for example, "ADMIN") are considered alongside rules authored for the user's own userId. Effective roles are resolved by merging IdP roles with roles on the user record; see "How roles are defined for an identity" below.
 * Functional Area/Domain: Derived from the URL convention `/{area}/{functionalDomain}/{action}` as parsed by `SecurityFilter.determineResourceContext`. Author policies using these fields to target business capabilities rather than raw URLs or ad‑hoc headers.
 * DataDomain: When rules ALLOW an action, they can attach data-scope filters (tenant/org/owner) so downstream reads/writes are constrained to the caller’s domain.
 
@@ -45,6 +45,23 @@ Compare and contrast
 * Permission Rules and the Rule Language are data-driven and user-changeable (with proper governance), enabling rapid, auditable policy changes and DataDomain scoping.
 * In practice: apply annotations as the first gate, evaluate feature flags to determine exposure/variant, then evaluate permission rules to decide ALLOW/DENY and attach scopes. This layered approach yields both safety and agility.
 
+Tip: Ontology- and label-aware policy helpers are available to postconditionScript when the optional ontology module is enabled. Helpers include hasEdge, hasAnyEdge, hasAllEdges, relatedIds for graph checks; hasLabel for label checks; and isA/noViolations for type/validation contexts. See the "Script Helpers reference" section for details. When data access must be restricted to lists resolved outside the rule engine (for example, from an external ACL service), use AccessListResolvers (SPI) and reference their outputs from andFilterString/orFilterString.
+
+[plantuml]
+....
+@startuml
+start
+:Incoming REST request;
+:Code-level annotations (@RolesAllowed, @PermitAll...);
+:Feature flags (exposure/variants);
+:Permission Rules (SecurityURI) - ALLOW/DENY + optional postconditionScript;
+:Decision + optional repository filters;
+:Repo layer applies filters (MorphiaRepo);
+:DB;
+stop
+@enduml
+....
+
 == Key Concepts
 
 * Identity: The authenticated principal, typically originating from JWT or another provider. It includes:
@@ -52,74 +69,141 @@ Compare and contrast
   - roles (authorities/groups)
   - tenantId, orgRefName, optional realm, and other claims that contribute to DomainContext
 * userProfile: A domain representation of the user that adds human information such as first name, last name, email address, phone number and provides a linkage back to  identity, roles, and policy decorations (feature flags, plans, expiration, etc.).
-* Rule Base (Permission Rule): A declarative rule with matching criteria and an effect (ALLOW or DENY). Criteria may include:
-  - HTTP method and URL pattern
-  - SecurityURLHeaders: predicates over selected HTTP headers (for example, `X-Tenant-Id`). Note: functional area/domain/action are derived from the URL, not headers.
-  - SecurityURLBody: predicates over request body fields (JSON paths) or query parameters
-  - Required roles/attributes on identity or userProfile
-  - Functional area/domain/action
-  - Priority: integer used to sort rule evaluation
-  - Effect: ALLOW or DENY; an ALLOW may also contribute scope filters (e.g., DataDomain constraints) to be applied downstream by repositories.
+* Rule Base (Permission Rule): A declarative rule with matching criteria and an effect (ALLOW or DENY). Criteria are authored against SecurityURI and may include:
+  - SecurityURIHeader fields: identity (userId or role name), area, functionalDomain, action
+  - SecurityURIBody fields: realm, accountNumber, tenantId, dataSegment, ownerId, resourceId
+  - Optional postconditionScript evaluated with pcontext/rcontext for additional checks
+  - Priority: integer used to sort rule evaluation (lower numbers evaluated first)
+  - Effect: ALLOW or DENY; ALLOWs may be paired with repository-level scoping using the SecurityURI body (e.g., DataDomain constraints)
 
 == Rule Structure (Illustrative)
 
+[plantuml]
+....
+@startuml
+skinparam classAttributeIconSize 0
+class SecurityURI
+class Header {
+  + identity
+  + area
+  + functionalDomain
+  + action
+}
+class Body {
+  + realm
+  + orgRefName
+  + accountNumber
+  + tenantId
+  + dataSegment
+  + ownerId
+  + resourceId
+}
+SecurityURI *-- Header
+SecurityURI *-- Body
+note right of SecurityURI
+URI string = headerUri + ":" + bodyUri
+end note
+@enduml
+....
+
 [source,yaml]
 ----
-- name: allow-public-reads
-  priority: 100
-  match:
-    method: [GET]
-    url: /Catalog/**
-    rolesAny: [USER, ADMIN]
+- name: allow-catalog-product-reads
+  description: Allow USER and ADMIN to view products in the Catalog area
+  securityURI:
+    header:
+      identity: USER            # or a specific userId; roles are treated as identities
+      area: Catalog
+      functionalDomain: Product
+      action: view
+    body:
+      realm: system-com
+      accountNumber: '*'
+      tenantId: '*'
+      dataSegment: '*'
+      ownerId: '*'
+      resourceId: '*'
+  postconditionScript:
   effect: ALLOW
-  filters:
-    # Optional: contribute additional DataDomain filters
-    readScope: { orgRefName: PUBLIC }
-
-- name: deny-non-admin-delete
-  priority: 10
-  match:
-    method: [DELETE]
-    url: /api/**
-  requireRolesAll: [ADMIN]
-  effect: ALLOW
+  priority: 300
+  finalRule: false
 
 - name: default-deny
-  priority: 10000
-  match: {}
+  description: Fallback deny when nothing else matches
+  securityURI:
+    header:
+      identity: '*'
+      area: '*'
+      functionalDomain: '*'
+      action: '*'
+    body:
+      realm: '*'
+      accountNumber: '*'
+      tenantId: '*'
+      dataSegment: '*'
+      ownerId: '*'
+      resourceId: '*'
   effect: DENY
+  priority: 10000
+  finalRule: true
 ----
 
-- headers under match are the SecurityURLHeaders predicates. Functional area/domain/action are parsed from the URL convention `/{area}/{functionalDomain}/{action}` (see `SecurityFilter.determineResourceContext`).
-- Body predicates (SecurityURLBody) can be expressed similarly as JSONPath-like constraints:
-
-[source,yaml]
-----
-  body:
-    $.dataDomain.tenantId: ${identity.tenantId}
-    $.action: [CREATE, UPDATE]
-----
+- The securityURI.header section corresponds to SecurityURIHeader: identity (userId or role name), area, functionalDomain, and action. Functional area/domain/action are typically derived from the URL convention `/{area}/{functionalDomain}/{action}` by SecurityFilter.
+- The securityURI.body section corresponds to SecurityURIBody: realm, accountNumber, tenantId, dataSegment, ownerId, and resourceId. These values are matched using simple string equality with support for the wildcard '*'.
+- Optional postconditionScript may be provided and is executed as JavaScript with pcontext and rcontext bindings; the rule only applies if the script evaluates to true.
 
 == Matching Algorithm
 
-Given a request R and identity I, evaluate a set of rule bases RB as follows:
+[plantuml]
+....
+@startuml
+actor Client
+participant SecurityFilter
+participant "RuleContext.checkRules" as RuleContext
+participant "postconditionScript" as Script
 
-1. Candidate selection
-   - From RB, select all rules whose URL pattern and HTTP method match R.
-2. Attribute and header/body checks
-   - For each candidate, check:
-     - SecurityURLHeaders: header predicates must all match (case-insensitive header names; values support exact string, regex, or one-of lists depending on rule authoring capability).
-     - SecurityURLBody: if present, evaluate body predicates against parsed JSON body (or query params when body is absent). Predicates must all match.
-     - Identity/UserProfile: role requirements and attribute requirements must be satisfied.
-3. Priority sort
-   - Sort matching candidates by ascending priority (lower numbers indicate higher precedence). If not specified, default priority is 1000.
-4. Evaluation order and decision
-   - Iterate in sorted order; the first rule that yields a decisive effect (ALLOW or DENY) becomes the decision.
-   - If the rule is ALLOW and contributes filters (e.g., DataDomain read/write scope), attach those to the request context for downstream repositories.
-5. Multi-match aggregation (optional advanced mode)
-   - In advanced configurations, if multiple ALLOW rules match at the same priority, their filters may be merged (intersection for restrictive scope, union for permissive scope) according to a configured merge strategy. If not configured, the default is first-match-wins.
-6. Fallback
-   - If no rules match decisively, apply a default policy (typically DENY).
+Client ->> SecurityFilter: HTTP request
+SecurityFilter ->> RuleContext: PrincipalContext + ResourceContext
+activate RuleContext
+note over RuleContext: Expand identities: userId ∪ roles
+RuleContext -> RuleContext: Gather rules for each identity
+RuleContext -> RuleContext: Sort by ascending priority
+loop Each rule in order
+  RuleContext -> RuleContext: Wildcard match on SecurityURI (header+body)
+  alt matched and script present
+    RuleContext -> Script: run(pcontext, rcontext)
+    Script --> RuleContext: boolean
+  end
+  alt match (and script true)
+    RuleContext -> RuleContext: set decision (ALLOW/DENY)
+    opt finalRule == true
+      RuleContext --> SecurityFilter: stop evaluation
+    end
+  end
+end
+RuleContext --> SecurityFilter: finalEffect
+deactivate RuleContext
+@enduml
+....
+
+The engine evaluates permission rules using SecurityURI wildcard matching. At a high level:
+
+1. Build ResourceContext
+   - SecurityFilter derives area, functionalDomain, and action from the request path (or REST annotations if present) and sets the ResourceContext.
+2. Expand identities
+   - Build a set of identities consisting of the caller’s userId plus each effective role. Each of these identities is treated as a potential match target for rules.
+3. Gather candidate rules
+   - For each identity, collect rules authored for that identity. This forms the candidate set. There is no separate HTTP method/URL or rolesAny/rolesAll matching.
+4. Sort by priority
+   - Order candidates by ascending priority (lower numbers are evaluated first).
+5. URI wildcard comparison
+   - For each rule in priority order, compare the caller’s expanded SecurityURIs to the rule’s securityURI using case‑insensitive wildcard comparison on the full URI string (header + body). Asterisks ('*') in rules match any value.
+6. Postcondition script (optional)
+   - If the rule specifies postconditionScript, execute it as JavaScript with pcontext (principal) and rcontext (resource) variables bound. The rule applies only if the script returns true.
+7. Apply effect and finalRule
+   - When a rule matches (and any script returns true), set the response’s finalEffect to the rule’s effect (ALLOW or DENY). If finalRule is true, stop evaluating further rules; otherwise continue.
+8. Default decision
+   - If no rule determines a decision, the system returns the default final effect configured by the caller of the check (typically DENY).
 
 == Priorities
 
@@ -151,8 +235,11 @@ Example defaults:
 ----
 - name: default-deny
   priority: 10000
-  match: {}
+  securityURI:
+    header: { identity: '*', area: '*', functionalDomain: '*', action: '*' }
+    body:   { realm: '*', accountNumber: '*', tenantId: '*', dataSegment: '*', ownerId: '*', resourceId: '*'}
   effect: DENY
+  finalRule: true
 ----
 
 - Deny-based (use with caution):
@@ -161,8 +248,11 @@ Example defaults:
 ----
 - name: default-allow
   priority: 10000
-  match: {}
+  securityURI:
+    header: { identity: '*', area: '*', functionalDomain: '*', action: '*' }
+    body:   { realm: '*', accountNumber: '*', tenantId: '*', dataSegment: '*', ownerId: '*', resourceId: '*'}
   effect: ALLOW
+  finalRule: true
 ----
 
 Tip: Even in a deny-based set, author low‑number DENY rules for critical protections. In most production systems, prefer the grant-based model and layer specific ALLOWs for each capability.
@@ -226,23 +316,53 @@ Notes on TargetRules:
 
 How feature flags complement Permission Rule Context:
 
-- The evaluation of a request can enrich the Rule Context (SecurityURLHeaders/Body or userProfile) with resolved feature flags and variants (e.g., userProfile.features["SEARCH_V2"] = "v2").
+- The evaluation of a request can enrich the Rule Context (SecurityURI or userProfile) with resolved feature flags and variants (e.g., userProfile.features["SEARCH_V2"] = "v2").
 - Permission rules can then require a feature to be present before ALLOWing an action:
 
 [source,yaml]
 ----
 - name: allow-export-when-flag-on
-  priority: 300
-  match:
-    method: [GET]
-    url: /Reports/Export/**
-    # Example predicate that assumes features are surfaced in userProfile
-    userProfile.features.EXPORT_API: [true]
-  rolesAny: [ADMIN, REPORTER]
+  description: Allow ADMIN and REPORTER identities to view export when feature flag is on
+  securityURI:
+    header:
+      identity: ADMIN      # treat roles as identities
+      area: Reports
+      functionalDomain: Export
+      action: view
+    body:
+      realm: system-com
+      accountNumber: '*'
+      tenantId: '*'
+      dataSegment: '*'
+      ownerId: '*'
+      resourceId: '*'
+  postconditionScript: userProfile?.features?.EXPORT_API === true
   effect: ALLOW
+  priority: 300
+  finalRule: false
+
+- name: allow-export-when-flag-on-reporter
+  description: Same as above but for REPORTER role
+  securityURI:
+    header:
+      identity: REPORTER
+      area: Reports
+      functionalDomain: Export
+      action: view
+    body:
+      realm: system-com
+      accountNumber: '*'
+      tenantId: '*'
+      dataSegment: '*'
+      ownerId: '*'
+      resourceId: '*'
+  postconditionScript: userProfile?.features?.EXPORT_API === true
+  effect: ALLOW
+  priority: 300
+  finalRule: false
 ----
 
-Alternatively, systems may surface feature decisions via headers (e.g., X-Feature-SEARCH_V2: v2) so that SecurityURLHeaders can match directly.
+Alternatively, systems may surface feature decisions via headers (e.g., X-Feature-SEARCH_V2: v2) so that rules or postconditionScript can read them directly from the request context.
 
 Business usage examples for TargetRules and their correlation to Permission Rules:
 
@@ -265,17 +385,17 @@ Recommendation:: Use a grant‑based permission posture (default DENY) and let f
 
 == Multiple Matching RuleBases
 
-- First-match-wins (default): after sorting by priority, the first decisive rule determines the result; subsequent matches are ignored.
-- Merge strategy (optional):
-  - When enabled and multiple ALLOW rules share the same priority, scopes/filters are merged.
-  - Conflicts between ALLOW and DENY at the same priority resolve to DENY unless explicitly configured otherwise (fail-safe).
+- Ordering: rules are evaluated in ascending priority (lower numbers first).
+- Decision: when a rule matches, its effect (ALLOW or DENY) becomes the current decision.
+- finalRule: if the matching rule has finalRule: true, evaluation stops immediately; otherwise, evaluation continues and a later rule may overwrite the decision.
+- Default: if no rule matches decisively, the default effect supplied by the caller (typically DENY) is returned.
 
 == Identity and Role Matching
 
-- RolesAny: request is allowed if identity has at least one of the specified roles.
-- RolesAll: request requires all listed roles.
-- Attribute predicates can compare identity/userProfile attributes (e.g., identity.tenantId == header.x-tenant-id).
-- Time or plan-based conditions: userProfile can embed plan and expiration; rules may check that trials are active or features are enabled.
+- Roles-as-identities: the engine evaluates rules for the caller's userId and for each effective role by treating each role name as an identity.
+- There are no rolesAny/rolesAll fields in rules; author separate rules for specific roles as needed.
+- Optional postconditionScript can inspect attributes (for example, tenantId) via pcontext and rcontext when additional checks are needed.
+- Time or plan-based conditions can be implemented inside postconditionScript or via feature flags.
 
 === How roles are defined for an identity (role sources and resolution)
 
@@ -371,8 +491,8 @@ Cross-references:
 == Operational Tips
 
 - Author specific DENY rules with low numbers to prevent accidental exposure.
-- Keep URL patterns narrowly tailored for sensitive domains.
-- Prefer header/body predicates to refine matches without exploding URL patterns.
+- Author SecurityURI header (area/domain/action) as narrowly as needed for sensitive domains.
+- Prefer SecurityURI body fields and postconditionScript to refine matches without over-broad area/domain/action patterns.
 - Log matched rule names and applied scopes for auditability.
 
 == How UIActions and DefaultUIActions are calculated
@@ -393,7 +513,7 @@ How the server computes them:
 . Start with a default action template for the entity type (DefaultUIActions).
 . Apply simple state-based adjustments (for example, suppress CREATE on already-persisted instances).
 . Evaluate the permission rules with the current identity and context:
-* Consider roles, functional area/domain, action intent, headers/body, and any rule-contributed scopes.
+* Consider roles, functional area/domain, action intent, SecurityURI body fields, and any rule-contributed scopes.
 * Resolve DataDomain constraints to ensure the identity is permitted to act within the entity’s domain.
 . Produce UIActions as the allowed subset for that entity instance.
 . Return both lists with each entity in collection responses.
@@ -421,7 +541,7 @@ Operational considerations:
 == How This Integrates End-to-End
 
 - BaseResource extracts identity and headers to construct DomainContext.
-- Rule evaluation uses URL/method + SecurityURLHeaders + SecurityURLBody + identity/userProfile to reach a decision and derive scope filters.
+- Rule evaluation uses SecurityURI (header + body) matching with optional postconditionScript and identity/userProfile to reach a decision and derive scope filters.
 - Repositories (e.g., MorphiaRepo) apply the filters to queries and updates, ensuring DataDomain-respecting access.
 
 
@@ -442,6 +562,7 @@ A Policy extends FullBaseModel and includes:
 - rules: array of Rule entries
 
 Rule fields (key ones):
+
 - name, description
 - securityURI.header: identity, area, functionalDomain, action (supports wildcard "*")
 - securityURI.body: realm, orgRefName, accountNumber, tenantId, ownerId, dataSegment, resourceId (supports wildcard "*")
@@ -449,6 +570,248 @@ Rule fields (key ones):
 - priority: integer; lower numbers evaluated first
 - finalRule: boolean; stop evaluating when this rule applies
 - andFilterString / orFilterString: ANTLR filter DSL snippets injected into repository queries (see Query Language section)
+- joinOp: how to combine the andFilterString group with the orFilterString group when both are present; defaults to AND
+
+=== How rule-contributed filters work (andFilterString, orFilterString, joinOp)
+
+When an ALLOW rule matches, it can contribute repository-level filters that restrict which documents are visible or mutable. The fields are:
+
+- andFilterString: a filter expression added to the AND group.
+- orFilterString: a filter expression added to the OR group.
+- joinOp: when both groups are present, specifies how to join them. Values: AND or OR. Default: AND.
+
+[plantuml]
+....
+@startuml
+start
+:Matched rules (in priority order);
+:For each rule r:
+if (andFilterString present?) then (yes)
+  :parse -> andFilters += A_r;
+
+if (orFilterString present?) then (yes)
+  :parse -> orFilters += O_r;
+
+if (both groups non-empty?) then (yes)
+  if (joinOp == AND [default]) then (AND-join)
+    :E_r = AND( AND(all A_r), OR(all O_r) );
+  else (OR-join)
+    :E_r = OR( OR(all O_r), AND(all A_r) );
+  endif
+else (one or none)
+  :E_r = AND(all A_r) or OR(all O_r);
+endif
+:add E_r to query filters;
+if (r.finalRule == true) then (yes)
+  stop
+endif
+@enduml
+....
+
+Composition algorithm (implemented in RuleContext.getFilters):
+
+1. Collect all matched rules (in priority order; skipping NOT_APPLICABLE script results). For each rule:
+   - If andFilterString is set, parse it into a Morphia Filter and add to the and-group.
+   - If orFilterString is set, parse it into a Morphia Filter and add to the or-group.
+2. If both groups are non-empty for the current rule:
+   - If joinOp == AND (default): effective = AND( AND(all and-group), OR(all or-group) ).
+   - If joinOp == OR: effective = OR( OR(all or-group), AND(all and-group) ).
+3. If only one group is non-empty:
+   - Use AND(all and-group) or OR(all or-group) as the effective filter.
+4. Append the effective filter(s) to the query’s filter list. If the rule has finalRule: true, stop accumulating more filters.
+5. Deduplicate filters by string form before returning.
+
+Examples:
+
+- AND only
+
+[source,yaml]
+----
+- name: tenant-scope
+  securityURI:
+    header: { identity: USER, area: sales, functionalDomain: order, action: view }
+    body:   { realm: '*', orgRefName: '*', accountNumber: '*', tenantId: '*', ownerId: '*', dataSegment: '*', resourceId: '*' }
+  andFilterString: "dataDomain.tenantId:${pcontext.dataDomain.tenantId}"
+  effect: ALLOW
+  priority: 200
+----
+Resulting Morphia: AND( eq("dataDomain.tenantId", <caller-tenant>) )
+
+- OR only
+
+[source,yaml]
+----
+- name: visibility-by-segment
+  securityURI:
+    header: { identity: USER, area: sales, functionalDomain: order, action: view }
+    body:   { realm: '*', orgRefName: '*', accountNumber: '*', tenantId: '*', ownerId: '*', dataSegment: '*', resourceId: '*' }
+  orFilterString: "dataDomain.dataSegment:^[PUBLIC|INTERNAL]"
+  effect: ALLOW
+  priority: 210
+----
+Resulting Morphia: OR( in("dataDomain.dataSegment", [PUBLIC, INTERNAL]) )
+
+- AND + OR with joinOp: AND (default)
+
+[source,yaml]
+----
+- name: own-or-public
+  securityURI:
+    header: { identity: USER, area: security, functionalDomain: userProfile, action: view }
+    body:   { realm: '*', orgRefName: '*', accountNumber: '*', tenantId: '*', ownerId: '*', dataSegment: '*', resourceId: '*' }
+  andFilterString: "dataDomain.ownerId:${principalId}"
+  orFilterString:  "dataDomain.dataSegment:^[PUBLIC]"
+  joinOp: AND
+  effect: ALLOW
+  priority: 220
+----
+Effective: AND( eq(ownerId, principalId), OR(eq(dataSegment, 'PUBLIC')) )
+
+- AND + OR with joinOp: OR
+
+[source,yaml]
+----
+- name: owner-or-segment
+  securityURI:
+    header: { identity: USER, area: files, functionalDomain: document, action: view }
+    body:   { realm: '*', orgRefName: '*', accountNumber: '*', tenantId: '*', ownerId: '*', dataSegment: '*', resourceId: '*' }
+  andFilterString: "dataDomain.ownerId:${principalId}"
+  orFilterString:  "tags:^[shared]"
+  joinOp: OR
+  effect: ALLOW
+  priority: 230
+----
+Effective: OR( eq(ownerId, principalId), AND(eq(tags, 'shared')) )
+
+Placeholders and variables:
+
+- ${principalId}, ${pTenantId}, and other variables are resolved from PrincipalContext/ResourceContext and AccessListResolvers.
+- The filter DSL is described in the Query Language guide; it maps to Morphia dev.morphia.query.filters.Filters under the hood via MorphiaUtils.convertToFilter.
+
+=== AccessListResolvers (SPI) for list-based access
+
+[plantuml]
+....
+@startuml
+participant Repo as MorphiaRepo
+participant RC as "RuleContext.getFilters"
+participant Res as "AccessListResolver(s)"
+participant MU as MorphiaUtils
+
+Repo ->> RC: getFilters(base, pctx, rctx, modelClass)
+RC ->> Res: supports(pctx, rctx, modelClass)?
+Res -->> RC: true/false
+RC ->> Res: resolve(...)
+Res -->> RC: Collection (e.g., accessibleOrderIds)
+RC ->> MU: buildVariableBundle(pctx, rctx, extraObjects)
+MU -->> RC: {strings, objects}
+RC ->> MU: convertToFilter(and/orFilterString, vars, modelClass)
+MU -->> RC: Morphia Filter incl. IN("_id", list)
+RC -->> Repo: security filters
+@enduml
+....
+
+AccessListResolvers let you plug in computed collections (IDs, codes, emails, etc.) at request time and reference them from andFilterString/orFilterString. This is ideal for ACL-style list checks or integrating with external systems that decide which resources a user may access.
+
+How it works (as implemented):
+
+- SPI: com.e2eq.framework.securityrules.AccessListResolver
+  - key(): the variable name published to the filter variable bundle (e.g., "accessibleCustomerIds").
+  - supports(pctx, rctx, modelClass): return true when this resolver applies for the current request and repository model type.
+  - resolve(pctx, rctx, modelClass): return a Collection<?> which will be available as ${<key>} in filter strings.
+- RuleContext.getFilters discovers all AccessListResolver beans via CDI, calls supports(...), and for those that apply it puts key() -> resolve(...) into the "extraObjects" map. MorphiaUtils.buildVariableBundle merges these into the variable set used by convertToFilter.
+- In your filter DSL, use:
+  - IN with resolver-provided lists: field:^${key}
+  - Equality with resolver-provided scalars: field:${key}
+  - You can also reference nested principals: ${pcontext.dataDomain.tenantId}, ${principalId}, etc.
+
+Examples:
+
+- Restrict Orders to the set of ids returned by a resolver
+
+[source,yaml]
+----
+- name: orders-by-acl
+  securityURI:
+    header: { identity: USER, area: sales, functionalDomain: order, action: view }
+    body:   { realm: '*', orgRefName: '*', accountNumber: '*', tenantId: '*', ownerId: '*', dataSegment: '*', resourceId: '*' }
+  andFilterString: "_id:^${accessibleOrderIds}"
+  effect: ALLOW
+  priority: 200
+----
+
+- Use resolver that returns customer codes and OR with a public segment
+
+[source,yaml]
+----
+- name: customer-code-or-public
+  securityURI:
+    header: { identity: USER, area: crm, functionalDomain: customer, action: view }
+    body:   { realm: '*', orgRefName: '*', accountNumber: '*', tenantId: '*', ownerId: '*', dataSegment: '*', resourceId: '*' }
+  andFilterString: "code:^${visibleCustomerCodes}"
+  orFilterString:  "dataDomain.dataSegment:^[PUBLIC]"
+  joinOp: OR
+  effect: ALLOW
+  priority: 210
+----
+
+Reference implementation (tests/examples):
+- RuleContext.getFilters collects resolvers and exposes them to the filter StringSubstitutor via MorphiaUtils.buildVariableBundle.
+- See also: quantum-framework/src/test/java/com/e2eq/framework/securityrules/TestCustomerAccessResolver.java and TestStringAccessResolver.java for sample resolvers.
+
+Guidance:
+- Keep keys stable and document them; they form your contract between resolver authors and rule authors.
+- Always scope resolver queries by tenant/realm from PrincipalContext/ResourceContext.
+- Return empty collections instead of null. An empty IN list yields no matches, which is safe by default.
+
+Where filters are applied (MorphiaRepo methods):
+
+[plantuml]
+....
+@startuml
+start
+:Controller/Resource method;
+:MorphiaRepo (repository call);
+:Build base filters (user query);
+:ruleContext.getFilters(base, pctx, rctx, modelClass);
+:Effective filters = base AND security filters;
+:Apply filters to operation (find/update/delete);
+:Results scoped;
+stop
+@enduml
+....
+
+- getList / getListByQuery / find: RuleContext.getFilters augments the base filters with the effective security filters before executing the query.
+- count: same as read paths, ensuring counts reflect scoped visibility.
+- save (create): rules typically do not inject filters for inserts; writes are validated by separate preconditions or postconditionScript. If your policy encodes write-scope, author UPDATE/DELETE rules to guard modifications rather than CREATE, unless your domain enforces ownership/tenant on insert.
+- update / merge / set / bulk set: the security filters are ANDed into the target selection so only documents visible under the policy are affected.
+- delete (by id or by query): security filters are applied to the selection to prevent deleting outside the allowed scope.
+
+Implementation reference:
+
+[source,java]
+----
+// Repositories call into RuleContext to augment filters
+List<Filter> filters = ruleContext.getFilters(baseFilters,
+    SecurityContext.getPrincipalContext().get(),
+    SecurityContext.getResourceContext().get(),
+    getPersistentClass());
+Query<T> query = datastore.find(getPersistentClass()).filter(filters.toArray(new Filter[0]));
+----
+
+Notes:
+
+- Filters are applied regardless of whether the match decision was ALLOW or DENY; only ALLOW rules contribute filters. DENY rules decide the outcome but do not add filters.
+- finalRule: true stops evaluating later rules for both decision and filter contribution.
+- If no ALLOW rules match, repositories may still execute with caller-provided filters, but upstream permission checks should have DENIED the action; by convention, most endpoints call checkRules and short-circuit DENY before hitting the database.
+
+Example impact per MorphiaRepo method:
+
+- save: no security filters are injected into the insert operation; enforce ownership/tenant fields via model validation and/or postconditionScript.
+- find/findById: adds security filters; if the requested id is outside scope, the result is empty.
+- getList/getListByQuery: adds security filters to user-supplied query; scope cannot be broadened by the client.
+- update/merge: AND the security filters into the update selector; records outside scope are unaffected.
+- delete: AND the security filters into the delete selector; out-of-scope records are not removed.
 
 Example payload:
 
@@ -610,6 +973,33 @@ See also:
 
 
 == Realm override (X-Realm) and Impersonation (X-Impersonate)
+
+[plantuml]
+....
+@startuml
+start
+:Request arrives;
+if (Impersonation header present?) then (yes)
+  :Validate caller's impersonateFilterScript;
+  if (pass) then (yes)
+    :Build PrincipalContext from impersonated user;
+    :Effective realm = impersonated user's defaultRealm;
+  else (no)
+    :403;
+    stop
+  endif
+else (no)
+  :Build PrincipalContext from caller;
+  if (X-Realm provided and allowed by realmRegEx?) then (yes)
+    :Set defaultRealm = X-Realm;
+  else (no)
+    :Use caller's default realm;
+  endif
+endif
+:Proceed to rule evaluation;
+stop
+@enduml
+....
 
 This section explains how to use the request headers X-Realm and X-Impersonate-* alongside permission rule bases. These headers influence which realm (database) a request operates against and, in the case of impersonation, which identity’s roles are evaluated by the rule engine.
 
@@ -786,6 +1176,27 @@ Behavior of the above:
 - All HR records go to a central HR domain.
 - Otherwise, default to the creator’s domain.
 
+[plantuml]
+....
+@startuml
+start
+:Entity without dataDomain;
+:ValidationInterceptor;
+:DefaultDataDomainResolver.resolveForCreate(area, domain);
+if (Principal-attached policy match?) then (yes)
+  :Use principal policy entry;
+else (no)
+  if (Global policy match?) then (yes)
+    :Use global policy entry;
+  else (no)
+    :Use principal credential domain;
+  endif
+endif
+:Persist with chosen DataDomain;
+stop
+@enduml
+....
+
 === How the resolver works
 Interfaces and default implementation:
 
@@ -912,7 +1323,7 @@ Under the hood
 
 - Policy evaluation resolves dstIdOrVar against RuleContext (for example, principal.orgRefName → "OrgP").
 - The list/filter query is rewritten using ListQueryRewriter.rewriteForHasEdge(...), which turns the predicate into a set of source ids and merges it with the base query efficiently.
-- EdgeDao must be indexed on (tenantId, p, dst) and (tenantId, src, p) for performance.
+- OntologyEdgeDao must be indexed on (tenantId, p, dst) and (tenantId, src, p) for performance.
 
 Full end-to-end example (implementation pattern)
 
@@ -922,15 +1333,22 @@ Full end-to-end example (implementation pattern)
 ----
 - name: list-orders-by-org
   priority: 100
-  match:
-    method: [GET]
-    url: /sales/order/list
+  securityURI:
+    header:
+      identity: USER
+      area: sales
+      functionalDomain: order
+      action: list
+    body:
+      realm: '*'
+      accountNumber: '*'
+      tenantId: '*'
+      dataSegment: '*'
+      ownerId: '*'
+      resourceId: '*'
   effect: ALLOW
-  # semantic constraint expressed via hasEdge
-  policy:
-    hasEdge:
-      predicate: placedInOrg
-      dstVar: principal.orgRefName
+  # Semantic constraint expressed via ontology helper in postconditionScript
+  postconditionScript: hasEdge("placedInOrg", pcontext?.dataDomain?.orgRefName) === true
 ----
 
 2) Evaluate policy and apply constraint in the repository/list path
@@ -943,7 +1361,7 @@ import com.mongodb.client.model.Filters;
 import org.bson.conversions.Bson;
 
 // Injected once per service when ontology is enabled (Quarkus CDI)
-@jakarta.inject.Inject EdgeDao edgeDao;
+@jakarta.inject.Inject OntologyEdgeDao edgeDao;
 ListQueryRewriter rewriter = new ListQueryRewriter(edgeDao);
 
 // Inside your list method, after building the base filter
@@ -1064,3 +1482,118 @@ Notes
 - Labels are resolved best‑effort; failures are swallowed to keep policy evaluation robust.
 - If multiple resolvers exist, the first that supports the type wins. Prefer narrow supports() checks.
 - Keep label names stable; treat them as part of your policy contract.
+
+
+[[script-helpers-reference]]
+== Script Helpers reference (when enabled)
+
+[plantuml]
+....
+@startuml
+skinparam packageStyle rectangle
+rectangle "postconditionScript environment" as ScriptEnv {
+  node P as "pcontext (PrincipalContext)"
+  node R as "rcontext (Map)"
+  node H as "helpers\n(hasLabel, hasEdge, hasAnyEdge, hasAllEdges, relatedIds, isA, noViolations)"
+}
+node LBL as "LabelService"
+node ONT as "Ontology bridge"
+
+LBL --> R : resolve labels
+ONT --> R : populate edges/types
+P --> ScriptEnv : direct binding
+H --> ScriptEnv : installed by ScriptHelpers.install
+@enduml
+....
+
+Script helpers are small functions injected into the postconditionScript environment to make common policy checks concise. They are provided by com.e2eq.ontology.policy.ScriptHelpers.install(...) when the optional ontology/label modules are present. In all cases, postconditionScript also has direct access to:
+
+- pcontext: the Java PrincipalContext for the caller
+- rcontext: a lightweight map for resource-related helper data (labels, types, edges, violations) when populated by your application
+
+Availability notes:
+- Labels are made available by RuleContext via LabelService. hasLabel() checks the resource’s labels only.
+- Edges, types, and violations must be populated by your application into the rcontext map before calling RuleContext.runScript (typically via an ontology bridge). If absent, edge/type helpers return false/empty.
+
+Helpers and examples:
+
+- isA(type: String) -> Boolean
+  - Purpose: Check whether the resource has a semantic type in rcontext.types.
+  - Example:
++
+[source,javascript]
+----
+// Allow when the resource is of type "Invoice"
+isA("Invoice")
+----
+
+- hasLabel(label: String) -> Boolean
+  - Purpose: Check whether the resource has a policy label (labels resolved via LabelService).
+  - Example:
++
+[source,javascript]
+----
+// Permit view if resource is labeled PUBLIC
+hasLabel("PUBLIC")
+----
+
+- hasEdge(predicate: String, dst: String|null) -> Boolean
+  - Purpose: True if an ontology edge with property p=predicate exists from the current resource to dst. If dst is null, true if any dst exists for the predicate.
+  - Example:
++
+[source,javascript]
+----
+// Require that this resource is placed in the caller's org
+hasEdge("placedInOrg", pcontext?.dataDomain?.orgRefName)
+----
+
+- hasAnyEdge(predicate: String, dsts: Collection<String>) -> Boolean
+  - Purpose: True if there is at least one edge to any of the destinations.
+  - Example:
++
+[source,javascript]
+----
+// Allow if the order ships to any of the selected regions
+hasAnyEdge("orderShipsToRegion", ["NA", "EU"]) === true
+----
+
+- hasAllEdges(predicate: String, dsts: Collection<String>) -> Boolean
+  - Purpose: True only if there is an edge for every destination in the list.
+  - Example:
++
+[source,javascript]
+----
+// Require all compliance flags to be present
+hasAllEdges("hasComplianceFlag", ["KYC", "AML"]) === true
+----
+
+- relatedIds(predicate: String) -> List<String>
+  - Purpose: Return the list of dst ids for edges with property p=predicate.
+  - Example:
++
+[source,javascript]
+----
+// Use in conjunction with a filter list variable (via AccessListResolver)
+var projectIds = relatedIds("belongsToProject");
+projectIds && projectIds.length > 0
+----
+
+- noViolations() -> Boolean
+  - Purpose: True if rcontext.violations is empty. Helpful when upstream validators populate violations.
+  - Example:
++
+[source,javascript]
+----
+// Deny action if any violations were detected earlier in the pipeline
+noViolations() === true
+----
+
+Best practices:
+- Prefer simple boolean expressions; keep postconditionScript fast and side-effect free.
+- When using ontology helpers, always scope your edge materialization by tenantId to avoid cross-tenant leakage.
+- Combine helpers with SecurityURIBody scoping and repository filters for defense in depth.
+
+Cross‑references:
+- Ontology usage and hasEdge: see xref:permissions.adoc#ontology-permissions[Ontology in Permission Rules].
+- Label SPI and hasLabel: see xref:permissions.adoc#label-resolution-spi[Label resolution SPI].
+- AccessListResolver for list variables in filters: see "AccessListResolvers (SPI) for list-based access" above.
