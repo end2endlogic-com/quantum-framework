@@ -544,36 +544,37 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_validation_lifecycle_and_morphia_interceptors">3. Validation Lifecycle and Morphia Interceptors</a></li>
 <li><a href="#_functional_areadomain_in_rulecontext_permission_language">4. Functional Area/Domain in RuleContext Permission Language</a></li>
 <li><a href="#_stategraphs_on_models">5. StateGraphs on Models</a></li>
-<li><a href="#_completiontasks_and_completiontaskgroups">6. CompletionTasks and CompletionTaskGroups</a></li>
-<li><a href="#_references_and_entityreference">7. References and EntityReference</a></li>
-<li><a href="#_tracking_references_with_trackreferences_and_delete_semantics">8. Tracking References with @TrackReferences and Delete Semantics</a>
+<li><a href="#_state_graph_dot">6. State Graph (DOT)</a></li>
+<li><a href="#_completiontasks_and_completiontaskgroups">7. CompletionTasks and CompletionTaskGroups</a></li>
+<li><a href="#_references_and_entityreference">8. References and EntityReference</a></li>
+<li><a href="#_tracking_references_with_trackreferences_and_delete_semantics">9. Tracking References with @TrackReferences and Delete Semantics</a>
 <ul class="sectlevel2">
-<li><a href="#ontologies-in-quantum">8.1. Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</a>
+<li><a href="#ontologies-in-quantum">9.1. Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</a>
 <ul class="sectlevel3">
-<li><a href="#_what_is_an_ontology">8.1.1. What is an Ontology?</a></li>
-<li><a href="#_ontology_vs_object_model">8.1.2. Ontology vs. Object Model</a></li>
-<li><a href="#_why_prefer_ontology_driven_relationships_over_referenceentityreference">8.1.3. Why prefer Ontology-driven relationships over @Reference/EntityReference</a></li>
-<li><a href="#_how_quantum_supports_ontologies">8.1.4. How Quantum supports Ontologies</a></li>
-<li><a href="#_modeling_guidance_from_object_fields_to_predicates">8.1.5. Modeling guidance: from object fields to predicates</a></li>
-<li><a href="#_querying_with_ontology_edges_vs_direct_references">8.1.6. Querying with ontology edges vs direct references</a></li>
-<li><a href="#_migration_from_reference_to_ontology_edges">8.1.7. Migration: from @Reference to ontology edges</a></li>
-<li><a href="#_performance_and_operational_notes">8.1.8. Performance and operational notes</a></li>
-<li><a href="#_how_this_integrates_with_functional_areasdomains">8.1.9. How this integrates with Functional Areas/Domains</a></li>
-<li><a href="#_summary">8.1.10. Summary</a></li>
-<li><a href="#ontology-ecommerce-example">8.1.11. Concrete example: Sales Orders, Shipments, and evolving to Fulfillment/Returns</a></li>
+<li><a href="#_what_is_an_ontology">9.1.1. What is an Ontology?</a></li>
+<li><a href="#_ontology_vs_object_model">9.1.2. Ontology vs. Object Model</a></li>
+<li><a href="#_why_prefer_ontology_driven_relationships_over_referenceentityreference">9.1.3. Why prefer Ontology-driven relationships over @Reference/EntityReference</a></li>
+<li><a href="#_how_quantum_supports_ontologies">9.1.4. How Quantum supports Ontologies</a></li>
+<li><a href="#_modeling_guidance_from_object_fields_to_predicates">9.1.5. Modeling guidance: from object fields to predicates</a></li>
+<li><a href="#_querying_with_ontology_edges_vs_direct_references">9.1.6. Querying with ontology edges vs direct references</a></li>
+<li><a href="#_migration_from_reference_to_ontology_edges">9.1.7. Migration: from @Reference to ontology edges</a></li>
+<li><a href="#_performance_and_operational_notes">9.1.8. Performance and operational notes</a></li>
+<li><a href="#_how_this_integrates_with_functional_areasdomains">9.1.9. How this integrates with Functional Areas/Domains</a></li>
+<li><a href="#_summary">9.1.10. Summary</a></li>
+<li><a href="#ontology-ecommerce-example">9.1.11. Concrete example: Sales Orders, Shipments, and evolving to Fulfillment/Returns</a></li>
 </ul>
 </li>
-<li><a href="#ontology-integration-morphia-permissions">8.2. Integrating Ontology with Morphia, Permissions, and Multi-tenancy</a>
+<li><a href="#ontology-integration-morphia-permissions">9.2. Integrating Ontology with Morphia, Permissions, and Multi-tenancy</a>
 <ul class="sectlevel3">
-<li><a href="#_big_picture_where_ontology_fits">8.2.1. Big picture: where ontology fits</a></li>
-<li><a href="#_rule_language_add_hasedge">8.2.2. Rule language: add hasEdge()</a></li>
-<li><a href="#_passing_tenantid_correctly">8.2.3. Passing tenantId correctly</a></li>
-<li><a href="#_morphia_repository_integration_patterns">8.2.4. Morphia repository integration patterns</a></li>
-<li><a href="#_where_to_hook_materialization">8.2.5. Where to hook materialization</a></li>
-<li><a href="#_security_and_multi_tenant_considerations">8.2.6. Security and multi-tenant considerations</a></li>
-<li><a href="#_developer_workflow_and_dx_checklist">8.2.7. Developer workflow and DX checklist</a></li>
-<li><a href="#_cookbook_end_to_end_example_with_orders_org">8.2.8. Cookbook: end-to-end example with Orders + Org</a></li>
-<li><a href="#_migration_notes_for_teams_using_reference">8.2.9. Migration notes for teams using @Reference</a></li>
+<li><a href="#_big_picture_where_ontology_fits">9.2.1. Big picture: where ontology fits</a></li>
+<li><a href="#_rule_language_add_hasedge">9.2.2. Rule language: add hasEdge()</a></li>
+<li><a href="#_passing_tenantid_correctly">9.2.3. Passing tenantId correctly</a></li>
+<li><a href="#_morphia_repository_integration_patterns">9.2.4. Morphia repository integration patterns</a></li>
+<li><a href="#_where_to_hook_materialization">9.2.5. Where to hook materialization</a></li>
+<li><a href="#_security_and_multi_tenant_considerations">9.2.6. Security and multi-tenant considerations</a></li>
+<li><a href="#_developer_workflow_and_dx_checklist">9.2.7. Developer workflow and DX checklist</a></li>
+<li><a href="#_cookbook_end_to_end_example_with_orders_org">9.2.8. Cookbook: end-to-end example with Orders + Org</a></li>
+<li><a href="#_migration_notes_for_teams_using_reference">9.2.9. Migration notes for teams using @Reference</a></li>
 </ul>
 </li>
 </ul>
@@ -1024,6 +1025,11 @@ quarkus.jackson.serialization-inclusion=NON_NULL</code></pre>
 <div class="sect1">
 <h2 id="_validation_lifecycle_and_morphia_interceptors">3. Validation Lifecycle and Morphia Interceptors</h2>
 <div class="sectionbody">
+<div class="imageblock">
+<div class="content">
+<img src="diag-plantuml-md5-eb93a6a189c8f862001d90ef83301062.svg" alt="Diagram" width="1332" height="446">
+</div>
+</div>
 <div class="paragraph">
 <p>Morphia interceptors enhance and enforce behavior during persistence. Quantum registers the following for each realm-specific datastore:</p>
 </div>
@@ -1093,6 +1099,11 @@ quarkus.jackson.serialization-inclusion=NON_NULL</code></pre>
 <div class="sect1">
 <h2 id="_functional_areadomain_in_rulecontext_permission_language">4. Functional Area/Domain in RuleContext Permission Language</h2>
 <div class="sectionbody">
+<div class="imageblock">
+<div class="content">
+<img src="diag-plantuml-md5-d1b559d0b5553fa1f33a365251de99a5.svg" alt="Diagram" width="1049" height="350">
+</div>
+</div>
 <div class="paragraph">
 <p>Models express their placement in the business model via:
 - bmFunctionalArea(): returns a broad capability area (e.g., Catalog, Collaboration, Identity)
@@ -1107,7 +1118,7 @@ quarkus.jackson.serialization-inclusion=NON_NULL</code></pre>
 <p>ResourceContext/DomainContext: When a request operates on a model, the framework derives the functional area and domain from the model type (or resource) and places them on the current context alongside the action (CREATE, UPDATE, VIEW, DELETE, ARCHIVE). RuleContext consumes these to evaluate policies.</p>
 </li>
 <li>
-<p>Permission language (path-derived ResourceContext): The framework derives area and functionalDomain from REST path segments using the convention: /{area}/{functionalDomain}/{action}/&#8230;&#8203; . These are placed on the ResourceContext and consumed by RuleContext. Rule bases typically match on HTTP method and URL patterns; no special headers are required.</p>
+<p>Permission language (SecurityURI-based matching): The framework derives area and functionalDomain from REST path segments using the convention: /{area}/{functionalDomain}/{action}/&#8230;&#8203; . These values, together with action and identity, form the SecurityURI (header + body) used by the rule engine. Rules match on SecurityURI fields using wildcard string comparison; there is no HTTP method/URL pattern matching.</p>
 </li>
 <li>
 <p>Permission language (query variables): The ANTLR-based query language exposes variables that can be referenced in filters:</p>
@@ -1128,19 +1139,28 @@ These can be used to author reusable filters or to record audit decisions by are
 <p>Examples</p>
 </div>
 <div class="paragraph">
-<p>1) Path-derived rule matching (Permissions)</p>
+<p>1) SecurityURI-based rule matching (Permissions)</p>
 </div>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="yaml">- <span class="string"><span class="content">name: allow-catalog-product-reads</span></span>
-  <span class="key">priority</span>: <span class="string"><span class="content">300</span></span>
-  <span class="key">match</span>:
-    <span class="key">method</span>: <span class="string"><span class="content">[GET]</span></span>
-    <span class="key">url</span>: <span class="string"><span class="content">/Catalog/Product/**</span></span>
-    <span class="key">rolesAny</span>: <span class="string"><span class="content">[USER, ADMIN]</span></span>
+  <span class="key">description</span>: <span class="string"><span class="content">Allow USER and ADMIN to view products in the Catalog area</span></span>
+  <span class="key">securityURI</span>:
+    <span class="key">header</span>:
+      <span class="key">identity</span>: <span class="string"><span class="content">USER</span></span>            <span class="comment"># role treated as identity; author a second rule for ADMIN if needed</span>
+      <span class="key">area</span>: <span class="string"><span class="content">Catalog</span></span>
+      <span class="key">functionalDomain</span>: <span class="string"><span class="content">Product</span></span>
+      <span class="key">action</span>: <span class="string"><span class="content">view</span></span>
+    <span class="key">body</span>:
+      <span class="key">realm</span>: <span class="string"><span class="content">system-com</span></span>
+      <span class="key">accountNumber</span>: <span class="string"><span class="content">'*'</span></span>
+      <span class="key">tenantId</span>: <span class="string"><span class="content">'*'</span></span>
+      <span class="key">dataSegment</span>: <span class="string"><span class="content">'*'</span></span>
+      <span class="key">ownerId</span>: <span class="string"><span class="content">'*'</span></span>
+      <span class="key">resourceId</span>: <span class="string"><span class="content">'*'</span></span>
   <span class="key">effect</span>: <span class="string"><span class="content">ALLOW</span></span>
-  <span class="key">filters</span>:
-    <span class="key">readScope</span>: <span class="string"><span class="content">{ orgRefName: PUBLIC }</span></span></code></pre>
+  <span class="key">priority</span>: <span class="string"><span class="content">300</span></span>
+  <span class="key">finalRule</span>: <span class="string"><span class="content">false</span></span></code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -1243,6 +1263,16 @@ These can be used to author reusable filters or to record audit decisions by are
 }</code></pre>
 </div>
 </div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_state_graph_dot">6. State Graph (DOT)</h2>
+<div class="sectionbody">
+<div class="imageblock">
+<div class="content">
+<img src="state-graph.svg" alt="state graph" width="1006" height="353">
+</div>
+</div>
 <div class="paragraph">
 <p>Using the graph in a model:</p>
 </div>
@@ -1260,16 +1290,31 @@ These can be used to author reusable filters or to record audit decisions by are
 }</code></pre>
 </div>
 </div>
+<div class="imageblock">
+<div class="content">
+<img src="state-lifecycle.svg" alt="state lifecycle" width="836" height="569">
+</div>
+</div>
 <div class="paragraph">
-<p>How it affects save/update:
-- On create: validateInitialStates ensures the field value is one of the configured initial states. Otherwise, InvalidStateTransitionException is thrown.
-- On update: validateStateTransitions checks each @StateGraph field’s old&#8594;new transition against the graph via StateGraphManager.validateTransition(). If invalid, save/update fails with InvalidStateTransitionException. This applies to full-entity saves and to partial updates via repo.update(&#8230;&#8203;pairs) on that field.
-- Utilities: StateGraphManager.getNextPossibleStates(graphName, current) and printStateGraph(&#8230;&#8203;) can aid UIs.</p>
+<p>How it affects save/update:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>On create: validateInitialStates ensures the field value is one of the configured initial states. Otherwise, InvalidStateTransitionException is thrown.</p>
+</li>
+<li>
+<p>On update: validateStateTransitions checks each @StateGraph field’s old&#8594;new transition against the graph via StateGraphManager.validateTransition(). If invalid, save/update fails with InvalidStateTransitionException. This applies to full-entity saves and to partial updates via repo.update(&#8230;&#8203;pairs) on that field.</p>
+</li>
+<li>
+<p>Utilities: StateGraphManager.getNextPossibleStates(graphName, current) and printStateGraph(&#8230;&#8203;) can aid UIs.</p>
+</li>
+</ul>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_completiontasks_and_completiontaskgroups">6. CompletionTasks and CompletionTaskGroups</h2>
+<h2 id="_completiontasks_and_completiontaskgroups">7. CompletionTasks and CompletionTaskGroups</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>CompletionTasks and CompletionTaskGroups provide a simple, persistent way to track a series of work items that need to be completed, either by background processes or external systems. Use them when you need durable progress tracking across restarts and an auditable record of outcomes.</p>
@@ -1326,6 +1371,11 @@ These can be used to author reusable filters or to record audit decisions by are
 </div>
 <div class="paragraph">
 <p>Typical lifecycle:</p>
+</div>
+<div class="imageblock">
+<div class="content">
+<img src="diag-plantuml-md5-2eeb655becc44b8fa685c07e4ac12e5c.svg" alt="Diagram" width="760" height="738">
+</div>
 </div>
 <div class="ulist">
 <ul>
@@ -1448,7 +1498,7 @@ CompletionTask t = completionTaskRepo.findOneByStatus(CompletionTask.Status.PEND
 </div>
 </div>
 <div class="sect1">
-<h2 id="_references_and_entityreference">7. References and EntityReference</h2>
+<h2 id="_references_and_entityreference">8. References and EntityReference</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Morphia @Reference establishes relationships between entities:
@@ -1506,7 +1556,7 @@ CompletionTask t = completionTaskRepo.findOneByStatus(CompletionTask.Status.PEND
 </div>
 </div>
 <div class="sect1">
-<h2 id="_tracking_references_with_trackreferences_and_delete_semantics">8. Tracking References with @TrackReferences and Delete Semantics</h2>
+<h2 id="_tracking_references_with_trackreferences_and_delete_semantics">9. Tracking References with @TrackReferences and Delete Semantics</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>@TrackReferences on a @Reference field tells the framework to maintain a back-reference set on the parent entity. The back-reference field is UnversionedBaseModel.references (a Set&lt;ReferenceEntry&gt;), which is calculated/maintained by the framework and should not be set by clients.</p>
@@ -1582,7 +1632,7 @@ CompletionTask t = completionTaskRepo.findOneByStatus(CompletionTask.Status.PEND
 </ul>
 </div>
 <div class="sect2">
-<h3 id="ontologies-in-quantum">8.1. Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</h3>
+<h3 id="ontologies-in-quantum">9.1. Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</h3>
 <div class="admonitionblock note">
 <table>
 <tr>
@@ -1599,7 +1649,7 @@ Looking for the short implementation plan? See PROPOSAL.md at the repository roo
 <p>This section explains what an ontology is, how it differs from a traditional object model, and how the Quantum Ontology modules make it practical to apply ontology ideas to your domain models and queries. It also contrasts ontology-driven relationships with direct object references (for example, using @Reference or EntityReference).</p>
 </div>
 <div class="sect3">
-<h4 id="_what_is_an_ontology">8.1.1. What is an Ontology?</h4>
+<h4 id="_what_is_an_ontology">9.1.1. What is an Ontology?</h4>
 <div class="paragraph">
 <p>In software terms, an ontology is a formal, explicit specification of concepts and their relationships.</p>
 </div>
@@ -1624,7 +1674,7 @@ Looking for the short implementation plan? See PROPOSAL.md at the repository roo
 </div>
 </div>
 <div class="sect3">
-<h4 id="_ontology_vs_object_model">8.1.2. Ontology vs. Object Model</h4>
+<h4 id="_ontology_vs_object_model">9.1.2. Ontology vs. Object Model</h4>
 <div class="paragraph">
 <p>A conventional object model focuses on concrete classes, fields, and direct references between objects at implementation time. An ontology focuses on semantic types and relationships, with explicit rules that can derive new knowledge independent of how objects are instantiated.</p>
 </div>
@@ -1645,7 +1695,7 @@ Looking for the short implementation plan? See PROPOSAL.md at the repository roo
 </div>
 </div>
 <div class="sect3">
-<h4 id="_why_prefer_ontology_driven_relationships_over_referenceentityreference">8.1.3. Why prefer Ontology-driven relationships over @Reference/EntityReference</h4>
+<h4 id="_why_prefer_ontology_driven_relationships_over_referenceentityreference">9.1.3. Why prefer Ontology-driven relationships over @Reference/EntityReference</h4>
 <div class="paragraph">
 <p>Direct references (@Reference or custom EntityReference) are simple to start but become restrictive as domains grow:
 - Tight coupling: Code and queries couple to concrete field paths (customer.primaryAddress.id), making refactors risky.
@@ -1663,7 +1713,7 @@ Looking for the short implementation plan? See PROPOSAL.md at the repository roo
 </div>
 </div>
 <div class="sect3">
-<h4 id="_how_quantum_supports_ontologies">8.1.4. How Quantum supports Ontologies</h4>
+<h4 id="_how_quantum_supports_ontologies">9.1.4. How Quantum supports Ontologies</h4>
 <div class="paragraph">
 <p>Quantum provides three cooperating modules that make ontology modeling practical and fast:</p>
 </div>
@@ -1721,7 +1771,7 @@ Looking for the short implementation plan? See PROPOSAL.md at the repository roo
 </div>
 </div>
 <div class="sect3">
-<h4 id="_modeling_guidance_from_object_fields_to_predicates">8.1.5. Modeling guidance: from object fields to predicates</h4>
+<h4 id="_modeling_guidance_from_object_fields_to_predicates">9.1.5. Modeling guidance: from object fields to predicates</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -1764,7 +1814,7 @@ Looking for the short implementation plan? See PROPOSAL.md at the repository roo
 </div>
 </div>
 <div class="sect3">
-<h4 id="_querying_with_ontology_edges_vs_direct_references">8.1.6. Querying with ontology edges vs direct references</h4>
+<h4 id="_querying_with_ontology_edges_vs_direct_references">9.1.6. Querying with ontology edges vs direct references</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -1795,7 +1845,7 @@ Looking for the short implementation plan? See PROPOSAL.md at the repository roo
 </div>
 </div>
 <div class="sect3">
-<h4 id="_migration_from_reference_to_ontology_edges">8.1.7. Migration: from @Reference to ontology edges</h4>
+<h4 id="_migration_from_reference_to_ontology_edges">9.1.7. Migration: from @Reference to ontology edges</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -1814,7 +1864,7 @@ Looking for the short implementation plan? See PROPOSAL.md at the repository roo
 </div>
 </div>
 <div class="sect3">
-<h4 id="_performance_and_operational_notes">8.1.8. Performance and operational notes</h4>
+<h4 id="_performance_and_operational_notes">9.1.8. Performance and operational notes</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -1833,7 +1883,7 @@ Looking for the short implementation plan? See PROPOSAL.md at the repository roo
 </div>
 </div>
 <div class="sect3">
-<h4 id="_how_this_integrates_with_functional_areasdomains">8.1.9. How this integrates with Functional Areas/Domains</h4>
+<h4 id="_how_this_integrates_with_functional_areasdomains">9.1.9. How this integrates with Functional Areas/Domains</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -1846,7 +1896,7 @@ Looking for the short implementation plan? See PROPOSAL.md at the repository roo
 </div>
 </div>
 <div class="sect3">
-<h4 id="_summary">8.1.10. Summary</h4>
+<h4 id="_summary">9.1.10. Summary</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -1862,7 +1912,7 @@ Looking for the short implementation plan? See PROPOSAL.md at the repository roo
 </div>
 </div>
 <div class="sect3">
-<h4 id="ontology-ecommerce-example">8.1.11. Concrete example: Sales Orders, Shipments, and evolving to Fulfillment/Returns</h4>
+<h4 id="ontology-ecommerce-example">9.1.11. Concrete example: Sales Orders, Shipments, and evolving to Fulfillment/Returns</h4>
 <div class="paragraph">
 <p>This example shows how to use an ontology to model relationships around Orders, Customers, and Shipments, and how the model can evolve to include Fulfillment and Returns without breaking existing queries. We will:</p>
 </div>
@@ -2243,12 +2293,12 @@ Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, <span class="string"
 </div>
 </div>
 <div class="sect2">
-<h3 id="ontology-integration-morphia-permissions">8.2. Integrating Ontology with Morphia, Permissions, and Multi-tenancy</h3>
+<h3 id="ontology-integration-morphia-permissions">9.2. Integrating Ontology with Morphia, Permissions, and Multi-tenancy</h3>
 <div class="paragraph">
 <p>This section focuses on integration and developer experience: how ontology edges flow into Morphia-based repositories and the permission rule language, while remaining fully multi-tenant and secure.</p>
 </div>
 <div class="sect3">
-<h4 id="_big_picture_where_ontology_fits">8.2.1. Big picture: where ontology fits</h4>
+<h4 id="_big_picture_where_ontology_fits">9.2.1. Big picture: where ontology fits</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -2279,7 +2329,7 @@ Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, <span class="string"
 </div>
 </div>
 <div class="sect3">
-<h4 id="_rule_language_add_hasedge">8.2.2. Rule language: add hasEdge()</h4>
+<h4 id="_rule_language_add_hasedge">9.2.2. Rule language: add hasEdge()</h4>
 <div class="paragraph">
 <p>We introduce a policy function/operator to reference ontology edges directly from rules:</p>
 </div>
@@ -2326,7 +2376,7 @@ Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, <span class="string"
 </div>
 </div>
 <div class="sect3">
-<h4 id="_passing_tenantid_correctly">8.2.3. Passing tenantId correctly</h4>
+<h4 id="_passing_tenantid_correctly">9.2.3. Passing tenantId correctly</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -2348,7 +2398,7 @@ Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, <span class="string"
 </div>
 </div>
 <div class="sect3">
-<h4 id="_morphia_repository_integration_patterns">8.2.4. Morphia repository integration patterns</h4>
+<h4 id="_morphia_repository_integration_patterns">9.2.4. Morphia repository integration patterns</h4>
 <div class="paragraph">
 <p>The goal is zero-friction usage in existing repos without invasive changes.</p>
 </div>
@@ -2414,7 +2464,7 @@ query.filter(Filters.in(<span class="string"><span class="delimiter">&quot;</spa
 </div>
 </div>
 <div class="sect3">
-<h4 id="_where_to_hook_materialization">8.2.5. Where to hook materialization</h4>
+<h4 id="_where_to_hook_materialization">9.2.5. Where to hook materialization</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -2439,7 +2489,7 @@ query.filter(Filters.in(<span class="string"><span class="delimiter">&quot;</spa
 </div>
 </div>
 <div class="sect3">
-<h4 id="_security_and_multi_tenant_considerations">8.2.6. Security and multi-tenant considerations</h4>
+<h4 id="_security_and_multi_tenant_considerations">9.2.6. Security and multi-tenant considerations</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -2455,7 +2505,7 @@ query.filter(Filters.in(<span class="string"><span class="delimiter">&quot;</spa
 </div>
 </div>
 <div class="sect3">
-<h4 id="_developer_workflow_and_dx_checklist">8.2.7. Developer workflow and DX checklist</h4>
+<h4 id="_developer_workflow_and_dx_checklist">9.2.7. Developer workflow and DX checklist</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -2474,7 +2524,7 @@ query.filter(Filters.in(<span class="string"><span class="delimiter">&quot;</spa
 </div>
 </div>
 <div class="sect3">
-<h4 id="_cookbook_end_to_end_example_with_orders_org">8.2.8. Cookbook: end-to-end example with Orders + Org</h4>
+<h4 id="_cookbook_end_to_end_example_with_orders_org">9.2.8. Cookbook: end-to-end example with Orders + Org</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -2492,7 +2542,7 @@ query.filter(Filters.in(<span class="string"><span class="delimiter">&quot;</spa
 </div>
 </div>
 <div class="sect3">
-<h4 id="_migration_notes_for_teams_using_reference">8.2.9. Migration notes for teams using @Reference</h4>
+<h4 id="_migration_notes_for_teams_using_reference">9.2.9. Migration notes for teams using @Reference</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -2517,7 +2567,7 @@ query.filter(Filters.in(<span class="string"><span class="delimiter">&quot;</spa
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-10-18 20:46:01 -0400
+Last updated 2025-11-02 16:28:17 -0500
 </div>
 </div>
 </body>

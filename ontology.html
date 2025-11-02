@@ -529,7 +529,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-11-02T20:37:40Z</span>
+<span id="revdate">2025-11-02T21:32:23Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -666,37 +666,103 @@ Looking for the short implementation plan? See PROPOSAL.md at the repository roo
 <p>A conventional object model focuses on concrete classes, fields, and direct references between objects at implementation time. An ontology focuses on semantic types and relationships, with explicit rules that can derive new knowledge independent of how objects are instantiated.</p>
 </div>
 <div class="paragraph">
-<p>Key differences:
-- Purpose
-  - Object model: Encapsulate data and behavior for application code generation and persistence.
-  - Ontology: Encode shared meaning, constraints, and inference rules that remain stable as implementation details change.
-- Relationship handling
-  - Object model: Typically uses direct references or foreign keys; traversals are hard-coded and fragile to change.
-  - Ontology: Uses named predicates (properties) and can infer additional relationships by rules (property chains, inverses, transitivity).
-- Polymorphism and evolution
-  - Object model: Polymorphism requires class inheritance in code; cross-cutting categories are awkward to add later.
-  - Ontology: Entities can have multiple types/labels at once. New concepts and properties can be introduced without breaking existing data.
-- Querying
-  - Object model: Queries couple to concrete classes and field paths; changes force query rewrites.
-  - Ontology: Queries target semantic relationships; reasoners can materialize edges that queries reuse, decoupling queries from implementation details.</p>
+<p>Key differences:</p>
+</div>
+<div class="paragraph">
+<p>Purpose</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Object model: Encapsulate data and behavior for application code generation and persistence.</p>
+</li>
+<li>
+<p>Ontology: Encode shared meaning, constraints, and inference rules that remain stable as implementation details change.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Relationship handling</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Object model: Typically uses direct references or foreign keys; traversals are hard-coded and fragile to change.</p>
+</li>
+<li>
+<p>Ontology: Uses named predicates (properties) and can infer additional relationships by rules (property chains, inverses, transitivity).</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Polymorphism and evolution</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Object model: Polymorphism requires class inheritance in code; cross-cutting categories are awkward to add later.</p>
+</li>
+<li>
+<p>Ontology: Entities can have multiple types/labels at once. New concepts and properties can be introduced without breaking existing data.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Querying</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Object model: Queries couple to concrete classes and field paths; changes force query rewrites.</p>
+</li>
+<li>
+<p>Ontology: Queries target semantic relationships; reasoners can materialize edges that queries reuse, decoupling queries from implementation details.</p>
+</li>
+</ul>
 </div>
 </div>
 <div class="sect2">
 <h3 id="_why_prefer_ontology_driven_relationships_over_referenceentityreference">1.3. Why prefer Ontology-driven relationships over @Reference/EntityReference</h3>
 <div class="paragraph">
-<p>Direct references (@Reference or custom EntityReference) are simple to start but become restrictive as domains grow:
-- Tight coupling: Code and queries couple to concrete field paths (customer.primaryAddress.id), making refactors risky.
-- Limited expressivity: Hard to encode and reuse higher-order relationships (e.g., "partners of my supplier&#8217;s parent org").
-- Poor polymorphism: References point to one collection/type; accommodating multiple target types requires extra code.
-- Performance pitfalls: Deep traversals cause extra queries, N+1 selects, or complex $lookup joins.</p>
+<p>Direct references (@Reference or custom EntityReference) are simple to start but become restrictive as domains grow:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Tight coupling: Code and queries couple to concrete field paths (customer.primaryAddress.id), making refactors risky.</p>
+</li>
+<li>
+<p>Limited expressivity: Hard to encode and reuse higher-order relationships (e.g., "partners of my supplier&#8217;s parent org").</p>
+</li>
+<li>
+<p>Poor polymorphism: References point to one collection/type; accommodating multiple target types requires extra code.</p>
+</li>
+<li>
+<p>Performance pitfalls: Deep traversals cause extra queries, N+1 selects, or complex $lookup joins.</p>
+</li>
+</ul>
 </div>
 <div class="paragraph">
-<p>Ontology-driven edges address these issues:
-- Decoupling via predicates: Use named predicates (e.g., hasAddress, memberOf, supplies) that remain stable while internal object fields change.
-- Inference for reachability: Property chains can materialize implied links (A --p-&#8594; B &amp; B --q-&#8594; C &#8658; A --r-&#8594; C), avoiding runtime multi-hop traversals.
-- Polymorphism-first: A predicate can connect heterogeneous types; type inferences (domain/range) remain consistent.
-- Query performance: Pre-materialized edges allow single-hop, index-friendly queries (in or eq filters) instead of ad-hoc multi-collection traversals.
-- Resilience to change: You can add or modify rules without rewriting data structures or touching referencing fields across models.</p>
+<p>Ontology-driven edges address these issues:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Decoupling via predicates: Use named predicates (e.g., hasAddress, memberOf, supplies) that remain stable while internal object fields change.</p>
+</li>
+<li>
+<p>Inference for reachability: Property chains can materialize implied links (A --p-&#8594; B &amp; B --q-&#8594; C &#8658; A --r-&#8594; C), avoiding runtime multi-hop traversals.</p>
+</li>
+<li>
+<p>Polymorphism-first: A predicate can connect heterogeneous types; type inferences (domain/range) remain consistent.</p>
+</li>
+<li>
+<p>Query performance: Pre-materialized edges allow single-hop, index-friendly queries (in or eq filters) instead of ad-hoc multi-collection traversals.</p>
+</li>
+<li>
+<p>Resilience to change: You can add or modify rules without rewriting data structures or touching referencing fields across models.</p>
+</li>
+</ul>
 </div>
 </div>
 <div class="sect2">
@@ -2949,7 +3015,7 @@ Keep overlays additive. If you need to override flags (e.g., mark an existing pr
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-11-02 12:22:59 -0500
+Last updated 2025-11-02 16:16:13 -0500
 </div>
 </div>
 </body>

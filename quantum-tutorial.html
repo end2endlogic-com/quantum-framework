@@ -529,7 +529,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Tutorial: Build a Multi-tenant SaaS with Quantum</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-11-02T20:37:40Z</span>
+<span id="revdate">2025-11-02T21:32:23Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -579,12 +579,13 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_validation_lifecycle_and_morphia_interceptors">3.3. Validation Lifecycle and Morphia Interceptors</a></li>
 <li><a href="#_functional_areadomain_in_rulecontext_permission_language">3.4. Functional Area/Domain in RuleContext Permission Language</a></li>
 <li><a href="#_stategraphs_on_models">3.5. StateGraphs on Models</a></li>
-<li><a href="#_completiontasks_and_completiontaskgroups">3.6. CompletionTasks and CompletionTaskGroups</a></li>
-<li><a href="#_references_and_entityreference">3.7. References and EntityReference</a></li>
-<li><a href="#_tracking_references_with_trackreferences_and_delete_semantics">3.8. Tracking References with @TrackReferences and Delete Semantics</a>
+<li><a href="#_state_graph_dot">3.6. State Graph (DOT)</a></li>
+<li><a href="#_completiontasks_and_completiontaskgroups">3.7. CompletionTasks and CompletionTaskGroups</a></li>
+<li><a href="#_references_and_entityreference">3.8. References and EntityReference</a></li>
+<li><a href="#_tracking_references_with_trackreferences_and_delete_semantics">3.9. Tracking References with @TrackReferences and Delete Semantics</a>
 <ul class="sectlevel3">
-<li><a href="#ontologies-in-quantum">3.8.1. Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</a></li>
-<li><a href="#ontology-integration-morphia-permissions">3.8.2. Integrating Ontology with Morphia, Permissions, and Multi-tenancy</a></li>
+<li><a href="#ontologies-in-quantum">3.9.1. Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</a></li>
+<li><a href="#ontology-integration-morphia-permissions">3.9.2. Integrating Ontology with Morphia, Permissions, and Multi-tenancy</a></li>
 </ul>
 </li>
 </ul>
@@ -871,11 +872,23 @@ Artifacts: The docs can be built as HTML/PDF via Maven; the code snippets compil
 <p>What you&#8217;ll build: A small, tenant-aware service with domain models, REST CRUD, flexible queries, security, migrations, and seed packs for baseline data.</p>
 </div>
 <div class="paragraph">
-<p>Each section starts with:
-- Problem: What we are solving
-- Why for SaaS: Why this matters in multi-tenant systems
-- How Quantum helps: Concepts and features that address the problem
-- Walkthrough: Code and configuration that build on prior sections</p>
+<p>Each section starts with:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Problem: What we are solving</p>
+</li>
+<li>
+<p>Why for SaaS: Why this matters in multi-tenant systems</p>
+</li>
+<li>
+<p>How Quantum helps: Concepts and features that address the problem</p>
+</li>
+<li>
+<p>Walkthrough: Code and configuration that build on prior sections</p>
+</li>
+</ul>
 </div>
 <div class="paragraph">
 <p>Throughout, we reuse and expand the same example to reinforce learning. The reference guide links back to these sections for deeper context.</p>
@@ -1750,6 +1763,11 @@ quarkus.jackson.serialization-inclusion=NON_NULL</code></pre>
 </div>
 <div class="sect2">
 <h3 id="_validation_lifecycle_and_morphia_interceptors">3.3. Validation Lifecycle and Morphia Interceptors</h3>
+<div class="imageblock">
+<div class="content">
+<img src="diag-plantuml-md5-eb93a6a189c8f862001d90ef83301062.svg" alt="Diagram" width="1332" height="446">
+</div>
+</div>
 <div class="paragraph">
 <p>Morphia interceptors enhance and enforce behavior during persistence. Quantum registers the following for each realm-specific datastore:</p>
 </div>
@@ -1817,6 +1835,11 @@ quarkus.jackson.serialization-inclusion=NON_NULL</code></pre>
 </div>
 <div class="sect2">
 <h3 id="_functional_areadomain_in_rulecontext_permission_language">3.4. Functional Area/Domain in RuleContext Permission Language</h3>
+<div class="imageblock">
+<div class="content">
+<img src="diag-plantuml-md5-d1b559d0b5553fa1f33a365251de99a5.svg" alt="Diagram" width="1049" height="350">
+</div>
+</div>
 <div class="paragraph">
 <p>Models express their placement in the business model via:
 - bmFunctionalArea(): returns a broad capability area (e.g., Catalog, Collaboration, Identity)
@@ -1831,7 +1854,7 @@ quarkus.jackson.serialization-inclusion=NON_NULL</code></pre>
 <p>ResourceContext/DomainContext: When a request operates on a model, the framework derives the functional area and domain from the model type (or resource) and places them on the current context alongside the action (CREATE, UPDATE, VIEW, DELETE, ARCHIVE). RuleContext consumes these to evaluate policies.</p>
 </li>
 <li>
-<p>Permission language (path-derived ResourceContext): The framework derives area and functionalDomain from REST path segments using the convention: /{area}/{functionalDomain}/{action}/&#8230;&#8203; . These are placed on the ResourceContext and consumed by RuleContext. Rule bases typically match on HTTP method and URL patterns; no special headers are required.</p>
+<p>Permission language (SecurityURI-based matching): The framework derives area and functionalDomain from REST path segments using the convention: /{area}/{functionalDomain}/{action}/&#8230;&#8203; . These values, together with action and identity, form the SecurityURI (header + body) used by the rule engine. Rules match on SecurityURI fields using wildcard string comparison; there is no HTTP method/URL pattern matching.</p>
 </li>
 <li>
 <p>Permission language (query variables): The ANTLR-based query language exposes variables that can be referenced in filters:</p>
@@ -1852,19 +1875,28 @@ These can be used to author reusable filters or to record audit decisions by are
 <p>Examples</p>
 </div>
 <div class="paragraph">
-<p>1) Path-derived rule matching (Permissions)</p>
+<p>1) SecurityURI-based rule matching (Permissions)</p>
 </div>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="yaml">- <span class="string"><span class="content">name: allow-catalog-product-reads</span></span>
-  <span class="key">priority</span>: <span class="string"><span class="content">300</span></span>
-  <span class="key">match</span>:
-    <span class="key">method</span>: <span class="string"><span class="content">[GET]</span></span>
-    <span class="key">url</span>: <span class="string"><span class="content">/Catalog/Product/**</span></span>
-    <span class="key">rolesAny</span>: <span class="string"><span class="content">[USER, ADMIN]</span></span>
+  <span class="key">description</span>: <span class="string"><span class="content">Allow USER and ADMIN to view products in the Catalog area</span></span>
+  <span class="key">securityURI</span>:
+    <span class="key">header</span>:
+      <span class="key">identity</span>: <span class="string"><span class="content">USER</span></span>            <span class="comment"># role treated as identity; author a second rule for ADMIN if needed</span>
+      <span class="key">area</span>: <span class="string"><span class="content">Catalog</span></span>
+      <span class="key">functionalDomain</span>: <span class="string"><span class="content">Product</span></span>
+      <span class="key">action</span>: <span class="string"><span class="content">view</span></span>
+    <span class="key">body</span>:
+      <span class="key">realm</span>: <span class="string"><span class="content">system-com</span></span>
+      <span class="key">accountNumber</span>: <span class="string"><span class="content">'*'</span></span>
+      <span class="key">tenantId</span>: <span class="string"><span class="content">'*'</span></span>
+      <span class="key">dataSegment</span>: <span class="string"><span class="content">'*'</span></span>
+      <span class="key">ownerId</span>: <span class="string"><span class="content">'*'</span></span>
+      <span class="key">resourceId</span>: <span class="string"><span class="content">'*'</span></span>
   <span class="key">effect</span>: <span class="string"><span class="content">ALLOW</span></span>
-  <span class="key">filters</span>:
-    <span class="key">readScope</span>: <span class="string"><span class="content">{ orgRefName: PUBLIC }</span></span></code></pre>
+  <span class="key">priority</span>: <span class="string"><span class="content">300</span></span>
+  <span class="key">finalRule</span>: <span class="string"><span class="content">false</span></span></code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -1965,6 +1997,14 @@ These can be used to author reusable filters or to record audit decisions by are
 }</code></pre>
 </div>
 </div>
+</div>
+<div class="sect2">
+<h3 id="_state_graph_dot">3.6. State Graph (DOT)</h3>
+<div class="imageblock">
+<div class="content">
+<img src="state-graph.svg" alt="state graph" width="1006" height="353">
+</div>
+</div>
 <div class="paragraph">
 <p>Using the graph in a model:</p>
 </div>
@@ -1982,15 +2022,30 @@ These can be used to author reusable filters or to record audit decisions by are
 }</code></pre>
 </div>
 </div>
+<div class="imageblock">
+<div class="content">
+<img src="state-lifecycle.svg" alt="state lifecycle" width="836" height="569">
+</div>
+</div>
 <div class="paragraph">
-<p>How it affects save/update:
-- On create: validateInitialStates ensures the field value is one of the configured initial states. Otherwise, InvalidStateTransitionException is thrown.
-- On update: validateStateTransitions checks each @StateGraph field’s old&#8594;new transition against the graph via StateGraphManager.validateTransition(). If invalid, save/update fails with InvalidStateTransitionException. This applies to full-entity saves and to partial updates via repo.update(&#8230;&#8203;pairs) on that field.
-- Utilities: StateGraphManager.getNextPossibleStates(graphName, current) and printStateGraph(&#8230;&#8203;) can aid UIs.</p>
+<p>How it affects save/update:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>On create: validateInitialStates ensures the field value is one of the configured initial states. Otherwise, InvalidStateTransitionException is thrown.</p>
+</li>
+<li>
+<p>On update: validateStateTransitions checks each @StateGraph field’s old&#8594;new transition against the graph via StateGraphManager.validateTransition(). If invalid, save/update fails with InvalidStateTransitionException. This applies to full-entity saves and to partial updates via repo.update(&#8230;&#8203;pairs) on that field.</p>
+</li>
+<li>
+<p>Utilities: StateGraphManager.getNextPossibleStates(graphName, current) and printStateGraph(&#8230;&#8203;) can aid UIs.</p>
+</li>
+</ul>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_completiontasks_and_completiontaskgroups">3.6. CompletionTasks and CompletionTaskGroups</h3>
+<h3 id="_completiontasks_and_completiontaskgroups">3.7. CompletionTasks and CompletionTaskGroups</h3>
 <div class="paragraph">
 <p>CompletionTasks and CompletionTaskGroups provide a simple, persistent way to track a series of work items that need to be completed, either by background processes or external systems. Use them when you need durable progress tracking across restarts and an auditable record of outcomes.</p>
 </div>
@@ -2046,6 +2101,11 @@ These can be used to author reusable filters or to record audit decisions by are
 </div>
 <div class="paragraph">
 <p>Typical lifecycle:</p>
+</div>
+<div class="imageblock">
+<div class="content">
+<img src="diag-plantuml-md5-2eeb655becc44b8fa685c07e4ac12e5c.svg" alt="Diagram" width="760" height="738">
+</div>
 </div>
 <div class="ulist">
 <ul>
@@ -2167,7 +2227,7 @@ CompletionTask t = completionTaskRepo.findOneByStatus(CompletionTask.Status.PEND
 </div>
 </div>
 <div class="sect2">
-<h3 id="_references_and_entityreference">3.7. References and EntityReference</h3>
+<h3 id="_references_and_entityreference">3.8. References and EntityReference</h3>
 <div class="paragraph">
 <p>Morphia @Reference establishes relationships between entities:
 - One-to-one: a BaseModel field annotated with @Reference.
@@ -2223,7 +2283,7 @@ CompletionTask t = completionTaskRepo.findOneByStatus(CompletionTask.Status.PEND
 </div>
 </div>
 <div class="sect2">
-<h3 id="_tracking_references_with_trackreferences_and_delete_semantics">3.8. Tracking References with @TrackReferences and Delete Semantics</h3>
+<h3 id="_tracking_references_with_trackreferences_and_delete_semantics">3.9. Tracking References with @TrackReferences and Delete Semantics</h3>
 <div class="paragraph">
 <p>@TrackReferences on a @Reference field tells the framework to maintain a back-reference set on the parent entity. The back-reference field is UnversionedBaseModel.references (a Set&lt;ReferenceEntry&gt;), which is calculated/maintained by the framework and should not be set by clients.</p>
 </div>
@@ -2298,7 +2358,7 @@ CompletionTask t = completionTaskRepo.findOneByStatus(CompletionTask.Status.PEND
 </ul>
 </div>
 <div class="sect3">
-<h4 id="ontologies-in-quantum">3.8.1. Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</h4>
+<h4 id="ontologies-in-quantum">3.9.1. Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</h4>
 <div class="admonitionblock note">
 <table>
 <tr>
@@ -2959,7 +3019,7 @@ Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, <span class="string"
 </div>
 </div>
 <div class="sect3">
-<h4 id="ontology-integration-morphia-permissions">3.8.2. Integrating Ontology with Morphia, Permissions, and Multi-tenancy</h4>
+<h4 id="ontology-integration-morphia-permissions">3.9.2. Integrating Ontology with Morphia, Permissions, and Multi-tenancy</h4>
 <div class="paragraph">
 <p>This section focuses on integration and developer experience: how ontology edges flow into Morphia-based repositories and the permission rule language, while remaining fully multi-tenant and secure.</p>
 </div>
@@ -7243,9 +7303,6 @@ PlannerResult pr = gateway.plan(<span class="string"><span class="delimiter">&qu
 <div class="paragraph">
 <p>This section explains how Quantum evaluates permissions for REST requests using rule bases that match on a SecurityURI composed of a header and a body. The header includes identity, area, functionalDomain, and action. The body includes realm, accountNumber, tenantId, dataSegment, ownerId, and resourceId. It also covers how identities and roles (as found on userProfile or credentialUserIdPassword) are matched, how priority works, and how multiple matching rule bases are evaluated.</p>
 </div>
-<div class="paragraph">
-<p>Note: Rules do not match on raw HTTP method or URL, and there is no rolesAny/rolesAll field. Instead, the engine evaluates rules for the caller&#8217;s userId and each role as separate identities. The terms SecurityURIHeader and SecurityURIBody in this document correspond directly to the model used by the code.</p>
-</div>
 <div class="sect2">
 <h3 id="_introduction_layered_enforcement_overview">12.1. Introduction: Layered Enforcement Overview</h3>
 <div class="paragraph">
@@ -7360,8 +7417,17 @@ PlannerResult pr = gateway.plan(<span class="string"><span class="delimiter">&qu
 </li>
 </ul>
 </div>
-<div class="paragraph">
-<p>Tip: Ontology- and label-aware policy helpers are available to postconditionScript when the optional ontology module is enabled. Helpers include hasEdge, hasAnyEdge, hasAllEdges, relatedIds for graph checks; hasLabel for label checks; and isA/noViolations for type/validation contexts. See the "Script Helpers reference" section for details. When data access must be restricted to lists resolved outside the rule engine (for example, from an external ACL service), use AccessListResolvers (SPI) and reference their outputs from andFilterString/orFilterString.</p>
+<div class="admonitionblock tip">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-tip" title="Tip"></i>
+</td>
+<td class="content">
+Ontology- and label-aware policy helpers are available to postconditionScript when the optional ontology module is enabled. Helpers include hasEdge, hasAnyEdge, hasAllEdges, relatedIds for graph checks; hasLabel for label checks; and isA/noViolations for type/validation contexts. See the "Script Helpers reference" section for details. When data access must be restricted to lists resolved outside the rule engine (for example, from an external ACL service), use AccessListResolvers (SPI) and reference their outputs from andFilterString/orFilterString.
+</td>
+</tr>
+</table>
 </div>
 <div class="imageblock">
 <div class="content">
@@ -12555,7 +12621,7 @@ void cleanup() { com.e2eq.framework.model.securityrules.SecurityContext.clear();
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-10-24 22:36:20 -0400
+Last updated 2025-11-02 15:47:06 -0500
 </div>
 </div>
 </body>

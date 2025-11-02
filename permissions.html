@@ -529,7 +529,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Permissions: Rule Bases, SecurityURIHeader, and SecurityURIBody</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-11-02T20:37:40Z</span>
+<span id="revdate">2025-11-02T21:32:23Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -600,9 +600,6 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div class="sectionbody">
 <div class="paragraph">
 <p>This section explains how Quantum evaluates permissions for REST requests using rule bases that match on a SecurityURI composed of a header and a body. The header includes identity, area, functionalDomain, and action. The body includes realm, accountNumber, tenantId, dataSegment, ownerId, and resourceId. It also covers how identities and roles (as found on userProfile or credentialUserIdPassword) are matched, how priority works, and how multiple matching rule bases are evaluated.</p>
-</div>
-<div class="paragraph">
-<p>Note: Rules do not match on raw HTTP method or URL, and there is no rolesAny/rolesAll field. Instead, the engine evaluates rules for the caller&#8217;s userId and each role as separate identities. The terms SecurityURIHeader and SecurityURIBody in this document correspond directly to the model used by the code.</p>
 </div>
 </div>
 </div>
@@ -721,8 +718,17 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </li>
 </ul>
 </div>
-<div class="paragraph">
-<p>Tip: Ontology- and label-aware policy helpers are available to postconditionScript when the optional ontology module is enabled. Helpers include hasEdge, hasAnyEdge, hasAllEdges, relatedIds for graph checks; hasLabel for label checks; and isA/noViolations for type/validation contexts. See the "Script Helpers reference" section for details. When data access must be restricted to lists resolved outside the rule engine (for example, from an external ACL service), use AccessListResolvers (SPI) and reference their outputs from andFilterString/orFilterString.</p>
+<div class="admonitionblock tip">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-tip" title="Tip"></i>
+</td>
+<td class="content">
+Ontology- and label-aware policy helpers are available to postconditionScript when the optional ontology module is enabled. Helpers include hasEdge, hasAnyEdge, hasAllEdges, relatedIds for graph checks; hasLabel for label checks; and isA/noViolations for type/validation contexts. See the "Script Helpers reference" section for details. When data access must be restricted to lists resolved outside the rule engine (for example, from an external ACL service), use AccessListResolvers (SPI) and reference their outputs from andFilterString/orFilterString.
+</td>
+</tr>
+</table>
 </div>
 <div class="imageblock">
 <div class="content">
@@ -3487,7 +3493,7 @@ noViolations() === <span class="predefined-constant">true</span></code></pre>
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-11-02 15:33:52 -0500
+Last updated 2025-11-02 15:55:41 -0500
 </div>
 </div>
 </body>

@@ -1,0 +1,99 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"><svg height='266pt' preserveAspectRatio='xMidYMid meet' viewBox='0.00 0.00 757.00 266.00' width='757pt' xmlns:xlink='http://www.w3.org/1999/xlink' xmlns='http://www.w3.org/2000/svg'>
+<g class='graph' id='graph0' transform='scale(1 1) rotate(0) translate(4 261.59)'>
+<title>StateGraph</title>
+<polygon fill='white' points='-4,4 -4,-261.59 752.78,-261.59 752.78,4 -4,4' stroke='none'/>
+
+<g class='node' id='node1'>
+<title>state</title>
+<ellipse cx='23.53' cy='-23.53' fill='none' rx='23.53' ry='23.53' stroke='black'/>
+<text font-family='Times,serif' font-size='12.00' xml:space='preserve' text-anchor='middle' x='23.53' y='-19.26'>state</text>
+</g>
+
+<g class='node' id='node2'>
+<title>start</title>
+<ellipse cx='23.53' cy='-66.53' fill='black' rx='1.8' ry='1.8' stroke='black'/>
+</g>
+
+<g class='node' id='node3'>
+<title>PENDING</title>
+<ellipse cx='159.84' cy='-66.53' fill='none' rx='44.52' ry='44.52' stroke='black'/>
+<text font-family='Times,serif' font-size='12.00' xml:space='preserve' text-anchor='middle' x='159.84' y='-62.26'>PENDING</text>
+</g>
+
+<g class='edge' id='edge1'>
+<title>start&#45;&gt;PENDING</title>
+<path d='M25.39,-66.53C31.55,-66.53 69.8,-66.53 103.78,-66.53' fill='none' stroke='black'/>
+<polygon fill='black' points='103.57,-70.03 113.57,-66.53 103.57,-63.03 103.57,-70.03' stroke='black'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='81.19' y='-69.73'>create</text>
+</g>
+
+<g class='node' id='node4'>
+<title>PROCESSING</title>
+<ellipse cx='341.74' cy='-136.53' fill='none' rx='57.88' ry='57.88' stroke='black'/>
+<text font-family='Times,serif' font-size='12.00' xml:space='preserve' text-anchor='middle' x='341.74' y='-132.26'>PROCESSING</text>
+</g>
+
+<g class='edge' id='edge2'>
+<title>PENDING&#45;&gt;PROCESSING</title>
+<path d='M201.66,-82.42C223.88,-91.06 251.88,-101.96 276.92,-111.7' fill='none' stroke='black'/>
+<polygon fill='black' points='275.44,-114.88 286.03,-115.25 277.98,-108.36 275.44,-114.88' stroke='black'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='244.11' y='-108.92'>approve</text>
+</g>
+
+<g class='node' id='node6'>
+<title>CANCELLED</title>
+<ellipse cx='687.86' cy='-62.53' fill='none' rx='56.92' ry='56.92' stroke='black'/>
+<ellipse cx='687.86' cy='-62.53' fill='none' rx='60.92' ry='60.92' stroke='black'/>
+<text font-family='Times,serif' font-size='12.00' xml:space='preserve' text-anchor='middle' x='687.86' y='-58.26'>CANCELLED</text>
+</g>
+
+<g class='edge' id='edge3'>
+<title>PENDING&#45;&gt;CANCELLED</title>
+<path d='M204.78,-66.2C295.64,-65.51 504.91,-63.92 615.45,-63.08' fill='none' stroke='black'/>
+<polygon fill='black' points='615.32,-66.58 625.29,-63 615.27,-59.58 615.32,-66.58' stroke='black'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='434.87' y='-67.78'>cancel</text>
+</g>
+
+<g class='node' id='node5'>
+<title>SHIPPED</title>
+<ellipse cx='511.77' cy='-172.53' fill='none' rx='41.66' ry='41.66' stroke='black'/>
+<text font-family='Times,serif' font-size='12.00' xml:space='preserve' text-anchor='middle' x='511.77' y='-168.26'>SHIPPED</text>
+</g>
+
+<g class='edge' id='edge4'>
+<title>PROCESSING&#45;&gt;SHIPPED</title>
+<path d='M398.69,-148.52C418.4,-152.74 440.45,-157.47 459.73,-161.6' fill='none' stroke='black'/>
+<polygon fill='black' points='458.74,-164.96 469.25,-163.64 460.21,-158.12 458.74,-164.96' stroke='black'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='434.87' y='-163.06'>ship</text>
+</g>
+
+<g class='edge' id='edge5'>
+<title>PROCESSING&#45;&gt;CANCELLED</title>
+<path d='M398.09,-122.22C420.4,-116.61 446.43,-110.28 470.12,-105.03 518.92,-94.22 574.21,-83.4 616.74,-75.38' fill='none' stroke='black'/>
+<polygon fill='black' points='617.15,-78.87 626.33,-73.58 615.86,-71.99 617.15,-78.87' stroke='black'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='511.77' y='-108.23'>cancel</text>
+</g>
+
+<g class='edge' id='edge7'>
+<title>SHIPPED&#45;&gt;CANCELLED</title>
+<path d='M547.58,-150.54C570.12,-136.3 600.07,-117.38 626.41,-100.73' fill='none' stroke='black'/>
+<polygon fill='black' points='628.07,-103.82 634.66,-95.52 624.34,-97.9 628.07,-103.82' stroke='black'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='590.18' y='-137.01'>cancel</text>
+</g>
+
+<g class='node' id='node7'>
+<title>DELIVERED</title>
+<ellipse cx='687.86' cy='-199.53' fill='none' rx='54.06' ry='54.06' stroke='black'/>
+<ellipse cx='687.86' cy='-199.53' fill='none' rx='58.06' ry='58.06' stroke='black'/>
+<text font-family='Times,serif' font-size='12.00' xml:space='preserve' text-anchor='middle' x='687.86' y='-195.26'>DELIVERED</text>
+</g>
+
+<g class='edge' id='edge6'>
+<title>SHIPPED&#45;&gt;DELIVERED</title>
+<path d='M553.15,-178.8C572.74,-181.83 596.81,-185.57 619.1,-189.02' fill='none' stroke='black'/>
+<polygon fill='black' points='618.3,-192.44 628.72,-190.52 619.38,-185.52 618.3,-192.44' stroke='black'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='590.18' y='-190.04'>deliver</text>
+</g>
+</g>
+</svg>
