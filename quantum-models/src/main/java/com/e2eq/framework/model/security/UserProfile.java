@@ -11,6 +11,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 
 @EqualsAndHashCode(callSuper = true)
@@ -41,13 +42,13 @@ public  class UserProfile extends BaseModel {
         }
     }
 
+    @Schema(oneOf = { EntityReference.class, CredentialUserIdPassword.class })
     @Valid
     @JsonProperty(required = true)
     @NotNull (message = "credential reference must not be null")
     @NonNull
     @ReferenceTarget(target = com.e2eq.framework.model.security.CredentialUserIdPassword.class, collection="credentialUserIdPassword")
     protected EntityReference credentialUserIdPasswordRef;
-    protected String userId;
 
     protected String fname;
     protected String lname;
