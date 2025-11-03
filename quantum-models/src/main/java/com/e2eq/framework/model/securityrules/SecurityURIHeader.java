@@ -2,8 +2,14 @@ package com.e2eq.framework.model.securityrules;
 
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.validation.constraints.NotNull;
+import lombok.EqualsAndHashCode;
+import lombok.ToString;
+
+import java.util.Objects;
 
 @RegisterForReflection
+@ToString
+@EqualsAndHashCode
 public final class SecurityURIHeader {
     /**
      * The identity can be a user id or a role name;
@@ -48,7 +54,12 @@ public final class SecurityURIHeader {
      * @param functionalDomain the functional domain that we want to match
      * @param action the action that we want to match
      */
-    public SecurityURIHeader(@NotNull String identity, @NotNull String area, @NotNull String functionalDomain, @NotNull String action) {
+    public SecurityURIHeader( String identity, String area,  String functionalDomain, String action) {
+       Objects.requireNonNull(identity, "identity can not be null");
+       Objects.requireNonNull(area, "area can not be null");
+       Objects.requireNonNull(functionalDomain, "functionalDomain can not be null");
+       Objects.requireNonNull(action, "action can not be null");
+
         this.identity = identity.toLowerCase();
         this.area = area.toLowerCase();
         this.functionalDomain = functionalDomain.toLowerCase();
@@ -95,7 +106,7 @@ public final class SecurityURIHeader {
     }
 
     public void setIdentity(@NotNull String identity) {
-        this.identity = identity;
+        this.identity = identity.toLowerCase();
     }
 
     public String getArea() {
@@ -103,7 +114,7 @@ public final class SecurityURIHeader {
     }
 
     public void setArea(@NotNull String area) {
-        this.area = area;
+        this.area = area.toLowerCase();
     }
 
     public String getFunctionalDomain() {
@@ -111,7 +122,7 @@ public final class SecurityURIHeader {
     }
 
     public void setFunctionalDomain(@NotNull String functionalDomain) {
-        this.functionalDomain = functionalDomain;
+        this.functionalDomain = functionalDomain.toLowerCase();
     }
 
     public String getAction() {
@@ -119,7 +130,7 @@ public final class SecurityURIHeader {
     }
 
     public void setAction(@NotNull String action) {
-        this.action = action;
+        this.action = action.toLowerCase();
     }
 
     public SecurityURIHeader clone() {
@@ -131,28 +142,7 @@ public final class SecurityURIHeader {
                 .build();
     }
 
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (!(o instanceof SecurityURIHeader)) return false;
 
-        SecurityURIHeader that = (SecurityURIHeader) o;
-
-        if (identity != null ? !identity.equals(that.identity) : that.identity != null) return false;
-        if (area != null ? !area.equals(that.area) : that.area != null) return false;
-        if (functionalDomain != null ? !functionalDomain.equals(that.functionalDomain) : that.functionalDomain != null)
-            return false;
-        return action != null ? action.equals(that.action) : that.action == null;
-    }
-
-    @Override
-    public int hashCode() {
-        int result = identity != null ? identity.hashCode() : 0;
-        result = 31 * result + (area != null ? area.hashCode() : 0);
-        result = 31 * result + (functionalDomain != null ? functionalDomain.hashCode() : 0);
-        result = 31 * result + (action != null ? action.hashCode() : 0);
-        return result;
-    }
 
     public String getURIString() {
         return identity + ":" + area + ":" + functionalDomain + ":" + action;

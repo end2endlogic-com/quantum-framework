@@ -58,9 +58,6 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     SecurityIdentity securityIdentity;
 
     @Inject
-    RuleContext ruleContext;
-
-    @Inject
     RealmRepo realmRepo;
 
     @Inject

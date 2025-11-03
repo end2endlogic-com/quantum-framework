@@ -19,12 +19,19 @@ import java.util.Map;
  */
 @RegisterForReflection
 public final class PrincipalContext {
-   @NotNull String defaultRealm;           // The realm that this Principal came from
-   @NotNull
+   @NotNull( message = "defaultRealm must be non null, needs to be the realm that this principal will use by default")
+   String defaultRealm;           // The realm that this Principal came from
+   @NotNull( message = "the data domain must be non null, needs to be the org, account, tenant, ds, or owner for this principal")
    DataDomain dataDomain;  // org, account, tenant, ds, owner
-   @NotNull String userId;          // The userId, of this principal
-   @NotNull String[] roles;         // The roles associated with this principal
-   @NotNull String scope;
+
+   @NotNull(message = "userId must be non null, needs to be the userId of the principal")
+   String userId;          // The userId, of this principal
+   @NotNull(message = "roles must be non null, needs to be the roles of the principal, pass an empty array if there are no roles")
+   @HostAccess.Export
+   @NotNull String[] roles;
+   // The roles associated with this principal
+   @NotNull (message = "scope must be non null, needs to be the scope of the principal")
+   String scope;
    String impersonatedBySubject;// The scope under which this context was built, be that for authentication purposes or refresh purposes
    String impersonatedByUserId; // The scope under which this context was built, be that for authentication purposes or refresh purposes
    String actingOnBehalfOfSubject;

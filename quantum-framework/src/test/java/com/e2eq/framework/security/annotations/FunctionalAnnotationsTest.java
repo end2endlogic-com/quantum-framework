@@ -24,7 +24,7 @@ public class FunctionalAnnotationsTest {
                 .when().get("/annotated/view")
                 .then()
                 .statusCode(200)
-                .body(is("sales:order:VIEW"));
+                .body(is("sales:order:view"));
     }
 
     @Test
@@ -33,6 +33,6 @@ public class FunctionalAnnotationsTest {
                 .when().post("/annotated/create")
                 .then()
                 .statusCode(200)
-                .body(is("sales:order:CREATE"));
+                .body(is("sales:order:create"));
     }
 }
