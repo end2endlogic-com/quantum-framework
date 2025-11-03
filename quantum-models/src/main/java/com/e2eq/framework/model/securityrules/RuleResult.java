@@ -4,8 +4,10 @@ import com.e2eq.framework.model.security.Rule;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 
 import jakarta.validation.constraints.NotNull;
+import lombok.ToString;
 
 @RegisterForReflection
+@ToString
 public class RuleResult {
    protected Rule rule;
    protected RuleDeterminedEffect determinedEffect = RuleDeterminedEffect.NOT_APPLICABLE;

@@ -7,9 +7,12 @@ import com.e2eq.framework.model.securityrules.SecurityURI;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
+import lombok.EqualsAndHashCode;
+import lombok.ToString;
 
 
 @RegisterForReflection
+@EqualsAndHashCode
 public class Rule  {
 
    protected int id=-1;
@@ -231,47 +234,7 @@ public class Rule  {
       this.joinOp = joinOp;
    }
 
-   @Override
-   public boolean equals (Object o) {
-      if (this == o) return true;
-      if (!(o instanceof Rule)) return false;
 
-      Rule rule = (Rule) o;
-
-      if (priority != rule.priority) return false;
-      if (finalRule != rule.finalRule) return false;
-      if (name != null ? !name.equals(rule.name) : rule.name != null) return false;
-      if (description != null ? !description.equals(rule.description) : rule.description != null) return false;
-      if (securityURI != null ? !securityURI.equals(rule.securityURI) : rule.securityURI != null) return false;
-      if (preconditionScript != null ? !preconditionScript.equals(rule.preconditionScript) :
-             rule.preconditionScript != null)
-         return false;
-      if (postconditionScript != null ? !postconditionScript.equals(rule.postconditionScript) :
-             rule.postconditionScript != null)
-         return false;
-      if (andFilterString != null ? !andFilterString.equals(rule.andFilterString) : rule.andFilterString != null)
-         return false;
-      if (orFilterString != null ? !orFilterString.equals(rule.orFilterString) : rule.orFilterString != null)
-         return false;
-      if (joinOp != rule.joinOp) return false;
-      return effect == rule.effect;
-   }
-
-   @Override
-   public int hashCode () {
-      int result = name != null ? name.hashCode() : 0;
-      result = 31 * result + (description != null ? description.hashCode() : 0);
-      result = 31 * result + (securityURI != null ? securityURI.hashCode() : 0);
-      result = 31 * result + (preconditionScript != null ? preconditionScript.hashCode() : 0);
-      result = 31 * result + (postconditionScript != null ? postconditionScript.hashCode() : 0);
-      result = 31 * result + (andFilterString != null ? andFilterString.hashCode() : 0);
-      result = 31 * result + (orFilterString != null ? orFilterString.hashCode() : 0);
-      result = 31 * result + (joinOp != null ? joinOp.hashCode() : 0);
-      result = 31 * result + (effect != null ? effect.hashCode() : 0);
-      result = 31 * result + priority;
-      result = 31 * result + (finalRule ? 1 : 0);
-      return result;
-   }
 
    @Override
    public String toString () {

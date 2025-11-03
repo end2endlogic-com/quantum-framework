@@ -444,7 +444,7 @@ public class RuleContext {
      * @param rcontext the values of area, functional domain, and action to be added to header
      * @return the newly created header
      */
-    SecurityURIHeader createHeaderFor(String identity, ResourceContext rcontext) {
+    public SecurityURIHeader createHeaderFor(String identity, ResourceContext rcontext) {
         // Add principal rules
         return new SecurityURIHeader.Builder()
                 .withIdentity(identity)
@@ -532,6 +532,15 @@ public class RuleContext {
         // the roles associated with the pcontext
         List<Rule> applicableRules = getApplicableRulesForPrincipalAndAssociatedRoles(pcontext, rcontext);
 
+        if (Log.isDebugEnabled()) {
+            Log.debug("Applicable rules:" + applicableRules.size());
+            if (applicableRules.size() > 0) {
+               for (Rule r : applicableRules) {
+                    Log.debug("  " + r.toString());
+               }
+            }
+        }
+
         // expand the set of uri's for this pcontext and rcontext and save it for debug purposes into the response
         // not this is not used in the logic that follows and is just for debug
         // TODO refactor getApplicableRules to take in the expanded set of uri's that way its only calculated once
@@ -540,7 +549,7 @@ public class RuleContext {
 
         if (Log.isDebugEnabled()) {
             Log.debug("");
-            Log.debug("--- Applicable rules:" + applicableRules.size());
+            Log.debug("--- Extended Applicable rules:" + applicableRules.size());
         }
 
         // iterate over all the applicable rules
@@ -601,6 +610,11 @@ public class RuleContext {
                     }
                 } else {
                     String difference = StringUtils.difference(uri.getURIString(), r.getSecurityURI().getURIString());
+                    if (Log.isDebugEnabled()) {
+                       Log.debug("Comparing:");
+                       Log.debug(uri.getURIString());
+                       Log.debug(r.getSecurityURI().getURIString());
+                    }
                     response.getMatchEvents().add(
                             MatchEvent.builder()
                                     .principalUriString(uri.getURIString())
@@ -611,6 +625,8 @@ public class RuleContext {
                                     .build());
                     if (Log.isDebugEnabled()) {
                         Log.debug(" >>>  Difference:" + difference);
+                    } else {
+                       Log.debug(">>> MATCH");
                     }
                 }
 

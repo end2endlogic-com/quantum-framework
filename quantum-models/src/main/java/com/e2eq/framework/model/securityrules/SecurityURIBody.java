@@ -3,8 +3,15 @@ package com.e2eq.framework.model.securityrules;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 
 import jakarta.validation.constraints.NotNull;
+import lombok.EqualsAndHashCode;
+import lombok.ToString;
+
+import java.util.Locale;
+import java.util.Objects;
 
 @RegisterForReflection
+@ToString
+@EqualsAndHashCode
 public final class SecurityURIBody {
   protected @NotNull String realm;
   protected @NotNull String orgRefName;
@@ -30,22 +37,28 @@ public final class SecurityURIBody {
       dataSegment = any;
    }
 
-   public SecurityURIBody (@NotNull String realm, @NotNull String orgRefName, @NotNull String accountNumber,
-                           @NotNull String tenantId, String dataSegment,
-                           @NotNull String ownerId,
+   public SecurityURIBody (String realm,  String orgRefName,  String accountNumber,
+                           String tenantId, String dataSegment,
+                           String ownerId,
                            String resourceId) {
-      this.realm = realm;
-      this.orgRefName = orgRefName;
-      this.accountNumber = accountNumber;
-      this.tenantId = tenantId;
+      Objects.requireNonNull(realm, "realm cannot be null");
+      Objects.requireNonNull(orgRefName, "orgRefName cannot be null");
+      Objects.requireNonNull(accountNumber, "accountNumber cannot be null");
+      Objects.requireNonNull(tenantId, "tenantId cannot be null");
+      Objects.requireNonNull(ownerId, "ownerId cannot be null");
+
+      this.realm = realm.toLowerCase();
+      this.orgRefName = orgRefName.toLowerCase();
+      this.accountNumber = accountNumber.toLowerCase();
+      this.tenantId = tenantId.toLowerCase();
       if (dataSegment == null) {
          this.dataSegment = "*";
       }
       else {
-         this.dataSegment = dataSegment;
+         this.dataSegment = dataSegment.toLowerCase();
       }
-      this.ownerId = ownerId;
-      this.resourceId = resourceId;
+      this.ownerId = ownerId.toLowerCase();
+      this.resourceId = resourceId != null ? resourceId.toLowerCase() : null;
    }
 
    public static class Builder {
@@ -57,38 +70,39 @@ public final class SecurityURIBody {
       String ownerId;
       String resourceId;
 
-      public SecurityURIBody.Builder withRealm (@NotNull String realm) {
-         this.realm = realm;
+      public SecurityURIBody.Builder withRealm ( String realm) {
+         this.realm = realm.toLowerCase();
          return this;
       }
 
-      public SecurityURIBody.Builder withOrgRefName (@NotNull String orgRefName) {
-         this.orgRefName = orgRefName;
+      public SecurityURIBody.Builder withOrgRefName (String orgRefName)
+      {
+         this.orgRefName =  orgRefName.toLowerCase();
          return this;
       }
 
-      public SecurityURIBody.Builder withAccountNumber (@NotNull String accountNumber) {
-         this.accountNumber = accountNumber;
+      public SecurityURIBody.Builder withAccountNumber ( String accountNumber) {
+         this.accountNumber = accountNumber.toLowerCase();
          return this;
       }
 
-      public SecurityURIBody.Builder withTenantId (@NotNull String tenantId) {
-         this.tenantId = tenantId;
+      public SecurityURIBody.Builder withTenantId (String tenantId) {
+         this.tenantId = tenantId.toLowerCase();
          return this;
       }
 
       public SecurityURIBody.Builder withDataSegment (String seg) {
-         this.dataSegment = seg;
+         this.dataSegment = seg != null ? seg.toLowerCase() : null;
          return this;
       }
 
       public SecurityURIBody.Builder withResourceId (String id) {
-         this.resourceId = resourceId;
+         this.resourceId = id != null ? id.toLowerCase() : null;
          return this;
       }
 
       public SecurityURIBody.Builder withOwnerId (String id) {
-         this.ownerId = id;
+         this.ownerId = id != null ? id.toLowerCase() : null;
          return this;
       }
 
@@ -102,45 +116,45 @@ public final class SecurityURIBody {
       return realm;
    }
    public void setRealm (String realm) {
-      this.realm = realm;
+      this.realm = realm.toLowerCase();
    }
 
    public String getOrgRefName () {return orgRefName;}
-   public void setOrgRefName (String orgRefName) {this.orgRefName = orgRefName;}
+   public void setOrgRefName (String orgRefName) {this.orgRefName = orgRefName.toLowerCase();}
 
    public String getAccountNumber () {
       return accountNumber;
    }
    public void setAccountNumber (String accountNumber) {
-      this.accountNumber = accountNumber;
+      this.accountNumber = accountNumber.toLowerCase();
    }
 
    public String getTenantId () {
       return tenantId;
    }
    public void setTenantId (String tenantId) {
-      this.tenantId = tenantId;
+      this.tenantId = tenantId.toLowerCase();
    }
 
    public String getDataSegment () {
       return dataSegment;
    }
    public void setDataSegment (String dataSegment) {
-      this.dataSegment = dataSegment;
+      this.dataSegment = dataSegment.toLowerCase();
    }
 
    public String getOwnerId () {
       return ownerId;
    }
    public void setOwnerId (String ownerId) {
-      this.ownerId = ownerId;
+      this.ownerId = ownerId.toLowerCase();
    }
 
    public String getResourceId () {
       return resourceId;
    }
    public void setResourceId (String resourceId) {
-      this.resourceId = resourceId;
+      this.resourceId = resourceId.toLowerCase();
    }
 
    public SecurityURIBody clone () {
@@ -155,34 +169,6 @@ public final class SecurityURIBody {
          .build();
    }
 
-
-   @Override
-   public boolean equals (Object o) {
-      if (this == o) return true;
-      if (!(o instanceof SecurityURIBody)) return false;
-
-      SecurityURIBody that = (SecurityURIBody) o;
-
-      if (realm != null ? !realm.equals(that.realm) : that.realm != null) return false;
-      if (orgRefName != null ? !orgRefName.equals(that.orgRefName) : that.orgRefName != null) return false;
-      if (accountNumber != null ? !accountNumber.equals(that.accountNumber) : that.accountNumber != null) return false;
-      if (tenantId != null ? !tenantId.equals(that.tenantId) : that.tenantId != null) return false;
-      if (ownerId != null ? !ownerId.equals(that.ownerId) : that.ownerId != null) return false;
-      if (dataSegment != null ? !dataSegment.equals(that.dataSegment) : that.dataSegment != null) return false;
-      return resourceId != null ? resourceId.equals(that.resourceId) : that.resourceId == null;
-   }
-
-   @Override
-   public int hashCode () {
-      int result = realm != null ? realm.hashCode() : 0;
-      result = 31 * result + (orgRefName != null ? orgRefName.hashCode() : 0);
-      result = 31 * result + (accountNumber != null ? accountNumber.hashCode() : 0);
-      result = 31 * result + (tenantId != null ? tenantId.hashCode() : 0);
-      result = 31 * result + (ownerId != null ? ownerId.hashCode() : 0);
-      result = 31 * result + (dataSegment != null ? dataSegment.hashCode() : 0);
-      result = 31 * result + (resourceId != null ? resourceId.hashCode() : 0);
-      return result;
-   }
 
    public String getURIString() {
       String rc = realm + ":" + orgRefName + ":" + accountNumber + ":" + tenantId + ":" + dataSegment + ":" + ownerId;

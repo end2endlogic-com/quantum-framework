@@ -87,7 +87,7 @@ public class TestRuleContext extends BaseRepoTest {
         c.getBindings("js").putMember("pcontext", systemUserIdPC);
         c.getBindings("js").putMember("rcontext", userProfileViewRC);
 
-        boolean allow = c.eval("js", "rcontext.getFunctionalDomain() == 'userProfile' && rcontext.getAction() == 'view'").asBoolean();
+        boolean allow = c.eval("js", "rcontext.getFunctionalDomain() == 'userprofile' && rcontext.getAction() == 'view'").asBoolean();
 
         assertTrue(allow);
 

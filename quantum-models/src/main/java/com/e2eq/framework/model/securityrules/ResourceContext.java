@@ -6,6 +6,8 @@ import org.graalvm.polyglot.HostAccess;
 import jakarta.validation.constraints.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Objects;
+
 /**
  * ResourceContext holds the contextual information about the resource being accessed.
  * The resource is part of a certain realm, area, and functional domain.  An action is being performed on the resource
@@ -31,14 +33,18 @@ public class ResourceContext {
                    @NotNull(message="action can not be null") String action,
                    String resourceId,
                    String ownerId) {
+      Objects.requireNonNull(realm, "realm can not be null");
+      Objects.requireNonNull(area, "area can not be null");
+      Objects.requireNonNull(functionalDomain, "functionalDomain can not be null");
+      Objects.requireNonNull(action, "action can not be null");
 
 
-      this.realm = realm;
-      this.area = area;
-      this.functionalDomain = functionalDomain;
-      this.action = action;
-      this.resourceId = resourceId;
-      this.ownerId = ownerId;
+      this.realm = realm.toLowerCase();
+      this.area = area.toLowerCase();
+      this.functionalDomain = functionalDomain.toLowerCase();
+      this.action = action.toLowerCase();
+      this.resourceId = resourceId != null ? resourceId.toLowerCase() : null;
+      this.ownerId = ownerId!= null ? ownerId.toLowerCase() : null;
    }
 
    public static class Builder {
@@ -52,31 +58,31 @@ public class ResourceContext {
       String ownerId = any;
 
       public Builder withRealm(String realm) {
-         this.realm = realm;
+         this.realm = realm.toLowerCase();
          return this;
       }
 
       public Builder withArea(String area) {
-         this.area = area;
+         this.area = area.toLowerCase();
          return this;
       }
 
       public Builder withFunctionalDomain(String fd) {
-         this.functionalDomain = fd;
+         this.functionalDomain = fd.toLowerCase();
          return this;
       }
 
       public Builder withAction(String action) {
-         this.action = action;
+         this.action = action.toLowerCase();
          return this;
       }
 
       public Builder withResourceId(String id) {
-         this.resourceId = resourceId;
+         this.resourceId = id != null ? id.toLowerCase(): null;
          return this;
       }
        public Builder withOwnerId(String id) {
-           this.ownerId = id;
+           this.ownerId = id != null ? id.toLowerCase(): null;
            return this;
        }
 
@@ -91,7 +97,7 @@ public class ResourceContext {
       return area;
    }
    public void setArea (String area) {
-      this.area = area;
+      this.area = area.toLowerCase();
    }
 
    @HostAccess.Export
@@ -99,7 +105,7 @@ public class ResourceContext {
       return functionalDomain;
    }
    public void setFunctionalDomain (String functionalDomain) {
-      this.functionalDomain = functionalDomain;
+      this.functionalDomain = functionalDomain.toLowerCase();
    }
 
    @HostAccess.Export
@@ -107,7 +113,7 @@ public class ResourceContext {
       return action;
    }
    public void setAction (String action) {
-      this.action = action;
+      this.action = action.toLowerCase();
    }
 
    @HostAccess.Export
@@ -115,12 +121,12 @@ public class ResourceContext {
       return resourceId;
    }
    public void setResourceId (String resourceId) {
-      this.resourceId = resourceId;
+      this.resourceId = resourceId.toLowerCase();
    }
 
    @HostAccess.Export
    public @Nullable String getOwnerId () {return ownerId;}
-   public void setOwnerId (String ownerId) {this.ownerId = ownerId;}
+   public void setOwnerId (String ownerId) {this.ownerId = ownerId.toLowerCase();}
 
    @HostAccess.Export
    @Override

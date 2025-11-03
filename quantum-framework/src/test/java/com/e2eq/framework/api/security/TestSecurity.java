@@ -86,7 +86,7 @@ public class TestSecurity {
       c.getBindings("js").putMember("pcontext", pcontext);
       c.getBindings("js").putMember("rcontext", rcontext);
 
-      boolean allow = c.eval("js", "rcontext.getFunctionalDomain() == 'userProfile' && rcontext.getAction() == 'view'").asBoolean();
+      boolean allow = c.eval("js", "rcontext.getFunctionalDomain() == 'userprofile' && rcontext.getAction() == 'view'").asBoolean();
 
       assertTrue(allow);
 

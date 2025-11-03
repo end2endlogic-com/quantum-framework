@@ -4,8 +4,12 @@ import io.quarkus.runtime.annotations.RegisterForReflection;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
+import lombok.EqualsAndHashCode;
+import lombok.ToString;
 
 @RegisterForReflection
+@ToString
+@EqualsAndHashCode
 public class SecurityURI {
    @Valid @NotNull SecurityURIHeader header;
    @Valid @NotNull SecurityURIBody   body;
@@ -43,24 +47,8 @@ public class SecurityURI {
    }
 
    public String getURIString() {
-      return header.getURIString() + ":" + body.getURIString();
+      return String.format("%s|%s", header.getURIString(), body.getURIString());
    }
 
-   @Override
-   public boolean equals (Object o) {
-      if (this == o) return true;
-      if (!(o instanceof SecurityURI)) return false;
 
-      SecurityURI that = (SecurityURI) o;
-
-      if (!header.equals(that.header)) return false;
-      return body.equals(that.body);
-   }
-
-   @Override
-   public int hashCode () {
-      int result = header.hashCode();
-      result = 31 * result + body.hashCode();
-      return result;
-   }
 }
