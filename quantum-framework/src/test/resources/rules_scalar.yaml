@@ -1,0 +1,18 @@
+rules:
+  - name: allow-singleton
+    identities: admin
+    areas: sales
+    functionalDomains: order
+    actions: read
+    effect: allow
+    priority: 7
+    finalRule: true
+    andFilterString: "status:OPEN"
+    orFilterString: "ownerId:system@system.com"
+    joinOp: OR
+    body:
+      accountNumber: "123"
+      realm: "test-realm"
+      tenantId: "t1"
+      ownerId: "user@example.com"
+      dataSegment: "segA"

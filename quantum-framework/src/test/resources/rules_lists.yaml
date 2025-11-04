@@ -1,0 +1,15 @@
+rules:
+  - name: multi-combo
+    identities: [Admin, manager]
+    areas: [Sales]
+    functionalDomains: [Order, Invoice]
+    actions: [Read, Write]
+    effect: ALLOW
+    priority: 3
+    finalRule: false
+    body:
+      accountNumber: "*"
+      realm: "test-realm"
+      tenantId: "*"
+      ownerId: "*"
+      dataSegment: "*"
