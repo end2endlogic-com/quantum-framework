@@ -50,6 +50,11 @@ public class RuleContext {
      */
     Map<String, List<Rule>> rules = new HashMap<>();
 
+    // Optional compiled discrimination index (off by default)
+    @ConfigProperty(name = "quantum.security.rules.index.enabled", defaultValue = "false")
+    boolean indexEnabled;
+    private volatile RuleIndex compiledIndex;
+
     @ConfigProperty(name = "quantum.realmConfig.defaultRealm", defaultValue = "system-com")
     protected String defaultRealm;
 
@@ -257,6 +262,7 @@ public class RuleContext {
      */
     public void clear() {
         rules.clear();
+        compiledIndex = null;
     }
 
     private volatile long policyVersion = 0L;
@@ -333,6 +339,19 @@ public class RuleContext {
            }
         } catch (Exception ex) {
             Log.error("Failed to load policies into RuleContext; retaining system rules only", ex);
+        }
+        // (Re)build compiled index if enabled
+        if (indexEnabled) {
+            long start = System.nanoTime();
+            List<Rule> all = new ArrayList<>();
+            for (List<Rule> l : rules.values()) all.addAll(l);
+            try {
+                compiledIndex = RuleIndex.build(all);
+                Log.infof("RuleContext: compiled index built in %d µs", (System.nanoTime() - start) / 1000);
+            } catch (Throwable t) {
+                Log.warn("RuleContext: failed to build compiled index; falling back to list scan", t);
+                compiledIndex = null;
+            }
         }
     }
 
@@ -458,7 +477,16 @@ public class RuleContext {
 
 
     List<Rule> getApplicableRulesForPrincipalAndAssociatedRoles(PrincipalContext pcontext, ResourceContext rcontext) {
-        // holder for the applicable rules
+        // If the compiled index is enabled and available, use it to quickly gather candidates
+        if (indexEnabled && compiledIndex != null) {
+            try {
+                return compiledIndex.getApplicableRules(pcontext, rcontext);
+            } catch (Throwable t) {
+                Log.warn("RuleContext: compiled index lookup failed; falling back to list scan", t);
+            }
+        }
+
+        // Legacy behavior: gather rules by identity and roles, then sort by priority
         List<Rule> applicableRules = new ArrayList<Rule>();
         // get the header for this pcontext and rcontext we are going to be comparing.
         SecurityURIHeader h = createHeaderFor(pcontext.getUserId(), rcontext);
