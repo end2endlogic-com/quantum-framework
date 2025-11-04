@@ -1,0 +1,10 @@
+rules:
+  - name: wildcard-missing
+    actions: read
+    effect: ALLOW
+    body:
+      accountNumber: "*"
+      realm: "test-realm"
+      tenantId: "*"
+      ownerId: "*"
+      dataSegment: "*"
