@@ -374,30 +374,32 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         return Optional.empty();
     }
 
+    @jakarta.inject.Inject
+    com.e2eq.framework.security.IdentityRoleResolver identityRoleResolver;
+
     private String[] resolveEffectiveRoles(SecurityIdentity identity, CredentialUserIdPassword credential) {
-        Set<String> rolesSet =  new HashSet<>();
+        // Delegate to centralized resolver to keep logic consistent across endpoints and filter
+        if (identityRoleResolver != null) {
+            return identityRoleResolver.resolveEffectiveRoles(identity, credential);
+        }
+        // Fallback for unit tests that construct SecurityFilter without CDI injection
+        java.util.Set<String> rolesSet = new java.util.LinkedHashSet<>();
         if (identity != null) {
-           // ensure there are no null or empty strings in the roles array
-           for (String role : identity.getRoles()) {
-               if (role != null && !role.isEmpty()) {
-                   rolesSet.add(role);
-               }
-           }
+            for (String role : identity.getRoles()) {
+                if (role != null && !role.isEmpty()) {
+                    rolesSet.add(role);
+                }
+            }
         }
-
-        // get the set of roles from the credential if provided
         if (credential != null && credential.getRoles() != null && credential.getRoles().length > 0) {
-            rolesSet.addAll(Arrays.asList(credential.getRoles()));
+            rolesSet.addAll(java.util.Arrays.asList(credential.getRoles()));
         }
-
-       // look at the userProfile associated with the credential.  If so find what user groups the userProfile is a part of
-       // and union all the roles together to get the effective role
         if (credential != null) {
-            Optional<UserProfile> userProfile = userProfileRepo.getBySubject(credential.getSubject());
+            java.util.Optional<com.e2eq.framework.model.security.UserProfile> userProfile = userProfileRepo.getBySubject(credential.getSubject());
             if (userProfile.isPresent()) {
-                List<UserGroup> userGroups = userGroupRepo.findByUserProfileRef(userProfile.get().createEntityReference());
+                java.util.List<com.e2eq.framework.model.security.UserGroup> userGroups = userGroupRepo.findByUserProfileRef(userProfile.get().createEntityReference());
                 if (!userGroups.isEmpty()) {
-                    userGroups.forEach(userGroup -> rolesSet.addAll(userGroup.getRoles().stream().map(Role::toString).toList()));
+                    userGroups.forEach(userGroup -> rolesSet.addAll(userGroup.getRoles().stream().map(com.e2eq.framework.rest.models.Role::toString).toList()));
                 }
             }
         }

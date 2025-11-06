@@ -74,6 +74,45 @@ public class RuleContext {
         return defaultRealm;
     }
 
+    /**
+     * Export a snapshot of the current rule index and rule set for client-side evaluation.
+     * When the index is disabled or unavailable, enabled=false will be set and version=0.
+     */
+    public com.e2eq.framework.model.securityrules.RuleIndexSnapshot exportIndexSnapshot() {
+        // Full snapshot of all identities
+        return exportIndexSnapshotForIdentities(this.rules.keySet());
+    }
+
+    /**
+     * Export a snapshot of the current rule index, limited to the provided identities.
+     * Identities are keys in the in-memory rules map (userId or role names).
+     */
+    public com.e2eq.framework.model.securityrules.RuleIndexSnapshot exportIndexSnapshotForIdentities(java.util.Collection<String> identities) {
+        com.e2eq.framework.model.securityrules.RuleIndexSnapshot snap = new com.e2eq.framework.model.securityrules.RuleIndexSnapshot();
+        boolean enabled = indexEnabled && compiledIndex != null;
+        snap.setEnabled(enabled);
+        snap.setVersion(enabled ? compiledIndex.getVersion() : 0L);
+        snap.setPolicyVersion(getPolicyVersion());
+        if (identities != null) {
+            for (String id : identities) {
+                java.util.List<Rule> list = rules.get(id);
+                if (list == null) continue;
+                for (Rule r : list) {
+                    snap.getRules().add(com.e2eq.framework.model.securityrules.RuleIndexSnapshot.fromRule(r));
+                }
+            }
+        }
+        // Provide overall stable ordering by priority then name to help clients
+        snap.getRules().sort((a, b) -> {
+            int c = Integer.compare(a.getPriority(), b.getPriority());
+            if (c != 0) return c;
+            String an = a.getName() == null ? "" : a.getName();
+            String bn = b.getName() == null ? "" : b.getName();
+            return an.compareToIgnoreCase(bn);
+        });
+        return snap;
+    }
+
 
     /**
      * this is called only by Quarkus upon startup if you create a rule context outside of injection

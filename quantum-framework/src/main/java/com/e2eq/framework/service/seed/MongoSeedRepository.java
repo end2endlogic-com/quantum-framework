@@ -49,7 +49,10 @@ public final class MongoSeedRepository implements SeedRepository {
             if (dataset.isUpsert()) {
                 collection.replaceOne(filter, document, new ReplaceOptions().upsert(true));
             } else {
-                collection.insertOne(document);
+                // Insert-only mode: skip if a record with the same natural key already exists
+                if (collection.find(filter).limit(1).first() == null) {
+                    collection.insertOne(document);
+                } // else: skip silently
             }
         } catch (MongoException ex) {
             throw new SeedLoadingException("MongoDB write failed for collection " + dataset.getCollection() + ": " + ex.getMessage(), ex);
