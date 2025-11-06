@@ -2,6 +2,7 @@ package com.e2eq.framework.service.seed;
 
 import java.time.Instant;
 import java.util.Objects;
+import java.util.Optional;
 
 import io.quarkus.logging.Log;
 import org.bson.Document;
@@ -39,6 +40,17 @@ public final class MongoSeedRegistry implements SeedRegistry {
             return true;
         }
         return !Objects.equals(existing.getString("checksum"), checksum);
+    }
+
+    @Override
+    public Optional<String> getLastAppliedChecksum(SeedContext context,
+                                                   SeedPackManifest manifest,
+                                                   SeedPackManifest.Dataset dataset) {
+        Document existing = getCollection(context).find(Filters.and(
+                Filters.eq("seedPack", manifest.getSeedPack()),
+                Filters.eq("version", manifest.getVersion()),
+                Filters.eq("dataset", dataset.getCollection()))).first();
+        return Optional.ofNullable(existing == null ? null : existing.getString("checksum"));
     }
 
     @Override

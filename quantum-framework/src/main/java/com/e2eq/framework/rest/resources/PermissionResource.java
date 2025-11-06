@@ -1,5 +1,7 @@
 package com.e2eq.framework.rest.resources;
 
+import com.e2eq.framework.model.persistent.morphia.FunctionalDomainRepo;
+import com.e2eq.framework.model.security.FunctionalDomain;
 import dev.morphia.MorphiaDatastore;
 import dev.morphia.mapping.codec.pojo.EntityModel;
 import jakarta.enterprise.inject.Default;
@@ -23,6 +25,9 @@ public class PermissionResource {
    @Inject
    @Default
    MorphiaDatastore datastore;
+
+   @Inject
+   FunctionalDomainRepo functionalDomainRepo;
 
    static class EntityInfo {
       public String entity;
@@ -94,9 +99,21 @@ public class PermissionResource {
    public Response functionalDomains() {
       List<EntityInfo> infoList = getInfoList();
       Map<String, Set<String>> areaToDomains = new HashMap<>();
+      // from code (entity info)
       for (EntityInfo ei : infoList) {
          if (ei.bmFunctionalArea == null || ei.bmFunctionalDomain == null) continue;
          areaToDomains.computeIfAbsent(ei.bmFunctionalArea, k -> new HashSet<>()).add(ei.bmFunctionalDomain);
+      }
+      // augment with entries from the FunctionalDomain collection
+      List<FunctionalDomain> stored = functionalDomainRepo.getAllList();
+      if (stored != null) {
+         for (FunctionalDomain fd : stored) {
+            if (fd == null) continue;
+            String area = fd.getArea();
+            String domainRef = fd.getRefName();
+            if (area == null || domainRef == null) continue;
+            areaToDomains.computeIfAbsent(area, k -> new HashSet<>()).add(domainRef);
+         }
       }
       // convert to Map<String, List<String>> for JSON, with sorted lists for consistency
       Map<String, List<String>> result = new HashMap<>();

@@ -43,6 +43,7 @@ public final class SeedLoader {
     private final Map<String, SeedTransformFactory> transformFactories;
     private final ObjectMapper objectMapper;
     private final SeedResourceRouter resourceRouter;
+    private final SeedConflictPolicy conflictPolicy;
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
     private SeedLoader(Builder builder) {
@@ -52,6 +53,7 @@ public final class SeedLoader {
         this.transformFactories = Map.copyOf(builder.transformFactories);
         this.objectMapper = builder.objectMapper;
         this.resourceRouter = new SeedResourceRouter(this.seedSources);
+        this.conflictPolicy = builder.conflictPolicy;
     }
 
     public static Builder builder() {
@@ -128,10 +130,36 @@ public final class SeedLoader {
             deriveCollectionIfMissing(dataset);
             Log.infov("Applying seed dataset {0}/{1} into realm {2}", descriptor.getManifest().getSeedPack(), dataset.getCollection(), context.getRealm());
             DatasetPayload payload = readDataset(descriptor, dataset);
-            if (!seedRegistry.shouldApply(context, descriptor.getManifest(), dataset, payload.checksum())) {
-                Log.debugf("Dataset %s already applied with matching checksum", dataset.getCollection());
-                continue;
+
+            // Determine previous checksum if any, to decide conflict handling
+            Optional<String> last = seedRegistry.getLastAppliedChecksum(context, descriptor.getManifest(), dataset);
+            if (last.isPresent()) {
+                String lastChecksum = last.get();
+                if (Objects.equals(lastChecksum, payload.checksum())) {
+                    Log.debugf("Dataset %s already applied with matching checksum", dataset.getCollection());
+                    continue;
+                }
+                // Conflict: previously applied dataset differs from current
+                switch (conflictPolicy) {
+                    case EXISTING_WINS -> {
+                        Log.warnf("Skipping dataset %s because existing checksum %s differs from incoming %s and policy is EXISTING_WINS", dataset.getCollection(), lastChecksum, payload.checksum());
+                        continue;
+                    }
+                    case ERROR -> {
+                        throw new SeedLoadingException(String.format("Conflict applying dataset %s: existing checksum %s differs from incoming %s. Set conflictPolicy=SEED_WINS to override or EXISTING_WINS to skip.", dataset.getCollection(), lastChecksum, payload.checksum()));
+                    }
+                    case SEED_WINS -> {
+                        Log.warnf("Overwriting dataset %s despite checksum conflict (existing %s vs incoming %s) due to policy SEED_WINS", dataset.getCollection(), lastChecksum, payload.checksum());
+                    }
+                }
+            } else {
+                // No prior record; for backward compatibility also respect registry's shouldApply if implemented differently
+                if (!seedRegistry.shouldApply(context, descriptor.getManifest(), dataset, payload.checksum())) {
+                    Log.debugf("Dataset %s already applied with matching checksum", dataset.getCollection());
+                    continue;
+                }
             }
+
             dataset.getRequiredIndexes().forEach(index -> seedRepository.ensureIndexes(context, dataset, index));
             List<SeedTransform> transforms = buildTransforms(dataset);
             int appliedCount = 0;
@@ -329,6 +357,7 @@ public final class SeedLoader {
         private SeedRepository seedRepository;
         private SeedRegistry seedRegistry = SeedRegistry.noop();
         private ObjectMapper objectMapper = new ObjectMapper();
+        private SeedConflictPolicy conflictPolicy = SeedConflictPolicy.SEED_WINS; // default preserves legacy behavior
 
         private Builder() {
             registerTransformFactory("tenantSubstitution", new TenantSubstitutionTransform.Factory());
@@ -356,6 +385,11 @@ public final class SeedLoader {
 
         public Builder registerTransformFactory(String type, SeedTransformFactory factory) {
             transformFactories.put(Objects.requireNonNull(type, "type"), Objects.requireNonNull(factory, "factory"));
+            return this;
+        }
+
+        public Builder conflictPolicy(SeedConflictPolicy policy) {
+            this.conflictPolicy = Objects.requireNonNull(policy, "conflictPolicy");
             return this;
         }
 
