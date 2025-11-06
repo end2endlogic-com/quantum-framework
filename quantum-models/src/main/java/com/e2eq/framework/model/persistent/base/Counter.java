@@ -29,7 +29,7 @@ public @Data class Counter extends BaseModel {
 
    @Override
    public String bmFunctionalArea() {
-      return "APP";
+      return "SYSTEM";
    }
 
    @Override
