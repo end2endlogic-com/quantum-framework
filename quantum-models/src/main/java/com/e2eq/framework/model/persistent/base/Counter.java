@@ -21,7 +21,7 @@ import static dev.morphia.mapping.IndexType.DESC;
 @NoArgsConstructor
 @ToString
 @EqualsAndHashCode ( callSuper = true)
-public @Data class Counter extends BaseModel {
+public @Data class Counter extends UnversionedBaseModel {
 
    long currentValue;
 

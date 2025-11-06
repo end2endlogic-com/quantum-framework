@@ -125,7 +125,8 @@ public final class SeedPackManifest {
         }
 
         public boolean isUpsert() {
-            return upsert == null || upsert;
+            // Default behavior: insert-only (skip existing). Only upsert when explicitly enabled.
+            return upsert != null && upsert;
         }
 
         public void setUpsert(boolean upsert) {

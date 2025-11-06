@@ -98,6 +98,10 @@ public class MorphiaSeedRepository implements SeedRepository {
             }
         }
         if (matched != null) {
+            if (!dataset.isUpsert()) {
+                // Insert-only mode: skip when a record with same natural key already exists
+                return;
+            }
             entity.setId(matched.getId());
         }
 

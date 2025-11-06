@@ -1,6 +1,5 @@
 package com.e2eq.tools;
 
-import com.mongodb.ConnectionString;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.MongoCredential;
 import com.mongodb.ServerAddress;
@@ -19,47 +18,70 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
-import java.util.Arrays;
 import java.util.Collections;
 
 /**
  * CLI tool to export documents from a MongoDB collection to JSONL (one JSON object per line).
  *
- * Usage:
- *   java com.e2eq.tools.CollectionToJsonl <dbName> <collection> <userId> <password> [host=localhost] [port=27017] [filterJson='{}'] [output.jsonl]
+ * Usage (two forms):
+ * <pre>{@code
+ * 1) Without auth (e.g., local dev):
+ *    java com.e2eq.tools.CollectionToJsonl <dbName> <collection> [host=localhost] [port=27017] [filterJson='{}'] [output.jsonl]
+ * 2) With auth:
+ *    java com.e2eq.tools.CollectionToJsonl <dbName> <collection> <userId> <password> [host=localhost] [port=27017] [filterJson='{}'] [output.jsonl]
+ * }</pre>
  *
  * Notes:
  * - The optional filterJson must be a valid JSON object (e.g., '{"status":"ACTIVE"}').
  * - If output.jsonl is omitted, the tool writes to stdout.
- * - Authentication uses SCRAM-SHA-1/256 as negotiated by the server.
+ * - To explicitly skip credentials while still providing host/port, you may pass '-' '-' for user and password.
  */
 public final class CollectionToJsonl {
 
     public static void main(String[] args) throws Exception {
-        if (args.length < 4) {
-            System.err.println("Usage: CollectionToJsonl <dbName> <collection> <userId> <password> [host=localhost] [port=27017] [filterJson='{}'] [output.jsonl]");
+        if (args.length < 2) {
+            System.err.println("Usage (no auth):  CollectionToJsonl <dbName> <collection> [host] [port] [filterJson] [output.jsonl]\n" +
+                    "Usage (with auth): CollectionToJsonl <dbName> <collection> <userId> <password> [host] [port] [filterJson] [output.jsonl]\n" +
+                    "Tip: Use '-' '-' to skip user/password when providing host/port.");
             System.exit(1);
         }
         String dbName = args[0];
         String collectionName = args[1];
-        String user = args[2];
-        String pass = args[3];
-        String hostTmp = (args.length >= 5 && notBlank(args[4])) ? args[4] : "localhost";
-        int portTmp = 27017;
-        if (args.length >= 6 && notBlank(args[5])) {
-            try { portTmp = Integer.parseInt(args[5]); } catch (NumberFormatException ignore) { /* keep default */ }
-        }
-        final String host = hostTmp;
-        final int port = portTmp;
-        String filterJson = (args.length >= 7 && notBlank(args[6])) ? args[6] : "{}";
-        Path outputPath = (args.length >= 8 && notBlank(args[7])) ? Paths.get(args[7]) : null;
 
-        // Build client settings using explicit credentials
-        MongoCredential cred = MongoCredential.createCredential(user, dbName, pass.toCharArray());
-        MongoClientSettings settings = MongoClientSettings.builder()
-                .applyToClusterSettings(b -> b.hosts(Collections.singletonList(new ServerAddress(host, port))))
-                .credential(cred)
-                .build();
+        String user = null;
+        String pass = null;
+        int idx; // current index for optional args
+        if (args.length >= 4 && notBlank(args[2]) && notBlank(args[3]) && !"-".equals(args[2]) && !"-".equals(args[3])) {
+            // Credentials provided
+            user = args[2];
+            pass = args[3];
+            idx = 4;
+        } else {
+            // No credentials; optional args start at index 2
+            idx = 2;
+        }
+
+        String host = (args.length > idx && notBlank(args[idx])) ? args[idx] : "localhost";
+        idx++;
+        int port = 27017;
+        if (args.length > idx && notBlank(args[idx])) {
+            try { port = Integer.parseInt(args[idx]); } catch (NumberFormatException ignore) { /* keep default */ }
+        }
+        idx++;
+        String filterJson = (args.length > idx && notBlank(args[idx])) ? args[idx] : "{}";
+        idx++;
+        Path outputPath = (args.length > idx && notBlank(args[idx])) ? Paths.get(args[idx]) : null;
+
+        // Build client settings; include credentials only if provided
+        final String h = host;
+        final int p = port;
+        MongoClientSettings.Builder builder = MongoClientSettings.builder()
+                .applyToClusterSettings(b -> b.hosts(Collections.singletonList(new ServerAddress(h, p))));
+        if (user != null && pass != null) {
+            MongoCredential cred = MongoCredential.createCredential(user, dbName, pass.toCharArray());
+            builder.credential(cred);
+        }
+        MongoClientSettings settings = builder.build();
 
         try (MongoClient client = MongoClients.create(settings)) {
             export(client, dbName, collectionName, filterJson, outputPath);

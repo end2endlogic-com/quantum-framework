@@ -1,0 +1,21 @@
+seedPack: demo-insert-only
+version: 1.0.0
+datasets:
+  - collection: codeLists-demo
+    file: datasets/codeLists.ndjson
+    naturalKey: [codeListName, code]
+    # upsert omitted on purpose to use default insert-only behavior
+    requiredIndexes:
+      - name: uk_codeLists_name_code
+        unique: true
+        keys:
+          codeListName: 1
+          code: 1
+    transforms:
+      - type: tenantSubstitution
+        config:
+          tenantField: tenantId
+          orgField: orgRefName
+          ownerField: ownerId
+          accountField: accountNum
+          realmField: realmId
