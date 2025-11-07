@@ -164,6 +164,7 @@ public class ResourceContext {
                 ", functionalDomain='" + functionalDomain + '\'' +
                 ", action='" + action + '\'' +
                 ", resourceId='" + resourceId + '\'' +
+                ", ownerId='" + ownerId + '\'' +
                 '}';
    }
 }

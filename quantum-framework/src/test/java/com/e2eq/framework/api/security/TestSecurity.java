@@ -158,7 +158,7 @@ public class TestSecurity {
       Rule.Builder b = new Rule.Builder()
          .withName("view your own userprofile")
          .withSecurityURI(uri)
-         .withPostconditionScript("pcontext.getUserId() == rcontext.getResourceOwnerId()")
+         .withPostconditionScript("pcontext.getUserId() == rcontext.getOwnerId()")
          .withEffect(RuleEffect.ALLOW)
          .withFinalRule(true);
       Rule r = b.build();
