@@ -2,6 +2,7 @@ package com.e2eq.framework.rest.resources;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.morphia.FunctionalDomainRepo;
+import com.e2eq.framework.model.security.FunctionalAction;
 import com.e2eq.framework.model.security.FunctionalDomain;
 import com.e2eq.framework.model.securityrules.*;
 import com.e2eq.framework.security.IdentityRoleResolver;
@@ -186,61 +187,60 @@ public class PermissionResource {
    @Path("/fd")
    @Produces(MediaType.APPLICATION_JSON)
    public Response functionalDomains(@QueryParam("includeActions") @DefaultValue("false") boolean includeActions) {
+      // Unified structure: area -> domain -> actions (case-insensitive)
+      Map<String, Map<String, Set<String>>> areaDomainActions = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+
+      // 1) From model discovery
       List<EntityInfo> infoList = getInfoList(includeActions);
-      Map<String, Set<String>> areaToDomains = new HashMap<>();
-      // from code (entity info)
       for (EntityInfo ei : infoList) {
-         if (ei.bmFunctionalArea == null || ei.bmFunctionalDomain == null) continue;
-         areaToDomains.computeIfAbsent(ei.bmFunctionalArea, k -> new HashSet<>()).add(ei.bmFunctionalDomain);
+         if (ei == null) continue;
+         String area = safe(ei.bmFunctionalArea);
+         String domain = safe(ei.bmFunctionalDomain);
+         if (area.isEmpty() || domain.isEmpty()) continue;
+
+         Set<String> actions = ensureAreaDomain(areaDomainActions, area, domain);
+         if (includeActions) {
+            if (ei.actions != null) actions.addAll(ei.actions);
+            addDefaultActions(actions);
+         }
       }
-      // augment with entries from the FunctionalDomain collection
+
+      // 2) From DB (FunctionalDomain collection)
       List<FunctionalDomain> stored = functionalDomainRepo.getAllList();
       if (stored != null) {
          for (FunctionalDomain fd : stored) {
             if (fd == null) continue;
-            String area = fd.getArea();
-            String domainRef = fd.getRefName();
-            if (area == null || domainRef == null) continue;
-            areaToDomains.computeIfAbsent(area, k -> new HashSet<>()).add(domainRef);
+            String area = safe(fd.getArea());
+            String domain = safe(fd.getRefName());
+            if (area.isEmpty() || domain.isEmpty()) continue;
 
+            Set<String> actions = ensureAreaDomain(areaDomainActions, area, domain);
+            if (includeActions) {
+               if (fd.getFunctionalActions() != null) {
+                  for (FunctionalAction a : fd.getFunctionalActions()) {
+                     if (a == null) continue;
+                     String ref = safe(a.getRefName());
+                     if (!ref.isEmpty()) actions.add(ref);
+                  }
+               }
+               addDefaultActions(actions);
+            }
          }
       }
 
       if (!includeActions) {
-         // convert to Map<String, List<String>> for JSON, with sorted lists for consistency
-         Map<String, List<String>> result = new HashMap<>();
-         for (Map.Entry<String, Set<String>> e : areaToDomains.entrySet()) {
-            List<String> domains = new ArrayList<>(e.getValue());
+         // area -> sorted list of domains (union from both sources)
+         Map<String, List<String>> result = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+         for (Map.Entry<String, Map<String, Set<String>>> e : areaDomainActions.entrySet()) {
+            List<String> domains = new ArrayList<>(e.getValue().keySet());
             domains.sort(String::compareToIgnoreCase);
             result.put(e.getKey(), domains);
          }
          return Response.ok(result).build();
       }
 
-      // Build area -> domain -> actions based on EntityInfo.actions
-      Map<String, Map<String, Set<String>>> areaDomainActions = new HashMap<>();
-      // initialize with known pairs
-      for (Map.Entry<String, Set<String>> e : areaToDomains.entrySet()) {
-         String area = e.getKey();
-         Map<String, Set<String>> dmap = areaDomainActions.computeIfAbsent(area, k -> new HashMap<>());
-         for (String d : e.getValue()) dmap.putIfAbsent(d, new TreeSet<>(String.CASE_INSENSITIVE_ORDER));
-      }
-      // add actions from entity info
-      for (EntityInfo ei : infoList) {
-         if (ei.bmFunctionalArea == null || ei.bmFunctionalDomain == null) continue;
-         Map<String, Set<String>> dmap = areaDomainActions.computeIfAbsent(ei.bmFunctionalArea, k -> new HashMap<>());
-         Set<String> actions = dmap.computeIfAbsent(ei.bmFunctionalDomain, k -> new TreeSet<>(String.CASE_INSENSITIVE_ORDER));
-         if (ei.actions != null) actions.addAll(ei.actions);
-         // ensure defaults are present
-         actions.add("CREATE");
-         actions.add("UPDATE");
-         actions.add("DELETE");
-         actions.add("VIEW");
-         actions.add("LIST");
-      }
-
-      // convert to sorted lists
-      Map<String, Map<String, List<String>>> out = new HashMap<>();
+      // includeActions=true: area -> domain -> sorted list of actions
+      Map<String, Map<String, List<String>>> out = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
       for (Map.Entry<String, Map<String, Set<String>>> e : areaDomainActions.entrySet()) {
          Map<String, List<String>> dom = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
          for (Map.Entry<String, Set<String>> d : e.getValue().entrySet()) {
@@ -253,48 +253,21 @@ public class PermissionResource {
       return Response.ok(out).build();
    }
 
-   private Map<String, Map<String, Set<String>>>  scanAndCollectActions(Map<String, Map<String, Set<String>>> areaDomainActions) {
-      String basePkg = "com.e2eq.framework.rest.resources";
-      Set<Class<?>> classes = listClasses(basePkg);
-      for (Class<?> rc : classes) {
-         if (rc == null) continue;
-         com.e2eq.framework.annotations.FunctionalMapping fm = rc.getAnnotation(com.e2eq.framework.annotations.FunctionalMapping.class);
-         jakarta.ws.rs.Path path = rc.getAnnotation(jakarta.ws.rs.Path.class);
-         if (fm == null || path == null) continue; // only include resource classes that declare mapping
-         String area = safe(fm.area());
-         String domain = safe(fm.domain());
-         if (area.isEmpty() || domain.isEmpty()) continue;
-
-         Map<String, Set<String>> dmap = areaDomainActions.computeIfAbsent(area, k -> new HashMap<>());
-         Set<String> actions = dmap.computeIfAbsent(domain, k -> new TreeSet<>(String.CASE_INSENSITIVE_ORDER));
-
-         for (Method m : rc.getDeclaredMethods()) {
-            String action = null;
-            com.e2eq.framework.annotations.FunctionalAction fa = m.getAnnotation(com.e2eq.framework.annotations.FunctionalAction.class);
-            if (fa != null) {
-               String val = fa.value();
-               action = (val != null && !val.isBlank()) ? val : m.getName();
-               actions.add(action);
-               continue;
-            }
-            // infer from HTTP verb annotations
-            if (m.isAnnotationPresent(jakarta.ws.rs.GET.class)) {
-               actions.add("VIEW");
-               actions.add("LIST");
-            }
-            if (m.isAnnotationPresent(jakarta.ws.rs.POST.class)) {
-               actions.add("CREATE");
-            }
-            if (m.isAnnotationPresent(jakarta.ws.rs.PUT.class) || m.isAnnotationPresent(jakarta.ws.rs.PATCH.class)) {
-               actions.add("UPDATE");
-            }
-            if (m.isAnnotationPresent(jakarta.ws.rs.DELETE.class)) {
-               actions.add("DELETE");
-            }
-         }
-      }
-      return areaDomainActions;
+   private static Set<String> ensureAreaDomain(Map<String, Map<String, Set<String>>> areaDomainActions,
+                                               String area,
+                                               String domain) {
+      Map<String, Set<String>> dmap = areaDomainActions.computeIfAbsent(area, k -> new TreeMap<>(String.CASE_INSENSITIVE_ORDER));
+      return dmap.computeIfAbsent(domain, k -> new TreeSet<>(String.CASE_INSENSITIVE_ORDER));
    }
+
+   private static void addDefaultActions(Set<String> target) {
+      target.add("CREATE");
+      target.add("UPDATE");
+      target.add("DELETE");
+      target.add("VIEW");
+      target.add("LIST");
+   }
+
 
    private String safe(String s) { return (s == null) ? "" : s.trim(); }
 

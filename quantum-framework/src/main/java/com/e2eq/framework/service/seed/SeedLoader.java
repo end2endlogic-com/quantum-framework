@@ -157,6 +157,8 @@ public final class SeedLoader {
                 if (!seedRegistry.shouldApply(context, descriptor.getManifest(), dataset, payload.checksum())) {
                     Log.debugf("Dataset %s already applied with matching checksum", dataset.getCollection());
                     continue;
+                } else {
+                   Log.infof("Applying dataset %s into realm %s", dataset.getCollection(), context.getRealm());
                 }
             }
 
