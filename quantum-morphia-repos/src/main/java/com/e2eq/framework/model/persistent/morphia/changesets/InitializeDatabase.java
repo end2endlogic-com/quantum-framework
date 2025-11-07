@@ -170,7 +170,7 @@ public class InitializeDatabase extends ChangeSetBase {
       Rule.Builder b = new Rule.Builder()
          .withName("view your own resources")
          .withSecurityURI(uri)
-         .withPostconditionScript("pcontext.getUserId() == rcontext.getResourceOwnerId()")
+         .withPostconditionScript("pcontext.getUserId() == rcontext.getOwnerId()")
          .withAndFilterString("dataDomain.ownerId:${principalId}")
          .withEffect(RuleEffect.ALLOW)
          .withFinalRule(true);

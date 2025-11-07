@@ -490,6 +490,9 @@ public class RuleContext {
             if (noViolations != null) jsBindings.putMember("noViolations", noViolations);
         } catch (Throwable ignored) {}
 
+        if (Log.isDebugEnabled()) {
+           Log.debugf("Executing script:%s", script);
+        }
         boolean allow = c.eval("js", script).asBoolean();
         return allow;
 
@@ -576,7 +579,7 @@ public class RuleContext {
      * @param pcontext the context that represents the main user making the request
      * @param rcontext the resource that the user wants to take an action on
      * @param defaultFinalEffect the default effect that we start out with.  This typically can start out with DENY and then rules add
-     *                           permissions, but sometimes we want to assume ALLOW and just remove permissions. This parameeter determins
+     *                           permissions, but sometimes we want to assume ALLOW and just remove permissions. This parameter determines
      *                           this default behavior.
      * @return
      */

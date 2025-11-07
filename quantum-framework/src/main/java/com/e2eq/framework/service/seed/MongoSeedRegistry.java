@@ -34,7 +34,7 @@ public final class MongoSeedRegistry implements SeedRegistry {
         Document existing = getCollection(context).find(Filters.and(
                 Filters.eq("seedPack", manifest.getSeedPack()),
                 Filters.eq("version", manifest.getVersion()),
-                Filters.eq("realmId", context.getRealm()),
+                Filters.eq("appliedToRealm", context.getRealm()),
                 Filters.eq("dataset", dataset.getCollection()))).first();
         if (existing == null) {
             return true;
@@ -49,6 +49,7 @@ public final class MongoSeedRegistry implements SeedRegistry {
         Document existing = getCollection(context).find(Filters.and(
                 Filters.eq("seedPack", manifest.getSeedPack()),
                 Filters.eq("version", manifest.getVersion()),
+                Filters.eq("appliedToRealm", context.getRealm()),
                 Filters.eq("dataset", dataset.getCollection()))).first();
         return Optional.ofNullable(existing == null ? null : existing.getString("checksum"));
     }

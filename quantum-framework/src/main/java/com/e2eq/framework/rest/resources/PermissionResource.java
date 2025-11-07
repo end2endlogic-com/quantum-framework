@@ -301,13 +301,25 @@ public class PermissionResource {
       if (req == null || req.identity == null || req.identity.isBlank()) {
          return Response.status(Response.Status.BAD_REQUEST).entity("identity is required").build();
       }
-      String realm = (req.realm != null && !req.realm.isBlank()) ? req.realm : ruleContext.getDefaultRealm();
-      // Build DataDomain with fallbacks
-      String org = (req.orgRefName != null && !req.orgRefName.isBlank()) ? req.orgRefName : securityUtils.getDefaultDataDomain().getOrgRefName();
-      String acct = (req.accountNumber != null && !req.accountNumber.isBlank()) ? req.accountNumber : securityUtils.getDefaultDataDomain().getAccountNum();
-      String tenant = (req.tenantId != null && !req.tenantId.isBlank()) ? req.tenantId : securityUtils.getDefaultDataDomain().getTenantId();
-      int seg = (req.dataSegment != null) ? req.dataSegment : securityUtils.getDefaultDataDomain().getDataSegment();
-      String ownerId = (req.ownerId != null && !req.ownerId.isBlank()) ? req.ownerId : req.identity;
+      // Prefer explicit realm, then SecurityContext principal realm, then default
+      String realm = (req.realm != null && !req.realm.isBlank()) ? req.realm :
+              SecurityContext.getPrincipalContext().map(PrincipalContext::getDefaultRealm).orElse(ruleContext.getDefaultRealm());
+
+      // Build DataDomain with fallbacks (request -> SecurityContext principal -> framework default)
+      String org = (req.orgRefName != null && !req.orgRefName.isBlank()) ? req.orgRefName :
+              SecurityContext.getPrincipalContext().map(pc -> pc.getDataDomain().getOrgRefName()).orElse(securityUtils.getDefaultDataDomain().getOrgRefName());
+      String acct = (req.accountNumber != null && !req.accountNumber.isBlank()) ? req.accountNumber :
+              SecurityContext.getPrincipalContext().map(pc -> pc.getDataDomain().getAccountNum()).orElse(securityUtils.getDefaultDataDomain().getAccountNum());
+      String tenant = (req.tenantId != null && !req.tenantId.isBlank()) ? req.tenantId :
+              SecurityContext.getPrincipalContext().map(pc -> pc.getDataDomain().getTenantId()).orElse(securityUtils.getDefaultDataDomain().getTenantId());
+      int seg = (req.dataSegment != null) ? req.dataSegment :
+              SecurityContext.getPrincipalContext().map(pc -> pc.getDataDomain().getDataSegment()).orElse(securityUtils.getDefaultDataDomain().getDataSegment());
+
+      // OwnerId: prefer request, then ResourceContext ownerId, then principal userId, finally request identity
+      String ownerId = (req.ownerId != null && !req.ownerId.isBlank()) ? req.ownerId :
+              SecurityContext.getResourceContext().map(ResourceContext::getOwnerId)
+                      .or(() -> SecurityContext.getPrincipalContext().map(PrincipalContext::getUserId))
+                      .orElse(req.identity);
 
       DataDomain dd = new DataDomain(org, acct, tenant, seg, ownerId);
 
@@ -331,6 +343,7 @@ public class PermissionResource {
               .withScope(req.scope != null ? req.scope : "api")
               .build();
 
+      // Do NOT override FunctionalDomain, Area, or Action if scripts supply them; use request or wildcard
       ResourceContext rc = new ResourceContext.Builder()
               .withRealm(realm)
               .withArea(req.area != null ? req.area : "*")
@@ -352,7 +365,8 @@ public class PermissionResource {
       if (req == null || req.identity == null || req.identity.isBlank()) {
          return Response.status(Response.Status.BAD_REQUEST).entity("identity is required").build();
       }
-      String realm = (req.realm != null && !req.realm.isBlank()) ? req.realm : ruleContext.getDefaultRealm();
+      String realm = (req.realm != null && !req.realm.isBlank()) ? req.realm :
+              SecurityContext.getPrincipalContext().map(PrincipalContext::getDefaultRealm).orElse(ruleContext.getDefaultRealm());
 
       // Determine implied identities using centralized resolver. If identity is a role, returned set will just contain it.
       Set<String> identities = identityRoleResolver.resolveRolesForIdentity(req.identity, realm, securityIdentity);
