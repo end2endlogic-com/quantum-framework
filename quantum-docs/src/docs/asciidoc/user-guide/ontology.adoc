@@ -455,11 +455,13 @@ For a transitive example, an O1 --placedInOrg--> OrgParent edge could have:
 
 [source,json]
 ----
-"prov": {
-  "rule": "transitive",
-  "inputs": {
-    "prop": "placedInOrg",
-    "inputs": [ { "src": "O1", "p": "placedInOrg", "dst": "OrgA", "srcType": "Order", "dstType": "Organization" } ]
+{
+  "prov": {
+    "rule": "transitive",
+    "inputs": {
+      "prop": "placedInOrg",
+      "inputs": [ { "src": "O1", "p": "placedInOrg", "dst": "OrgA", "srcType": "Order", "dstType": "Organization" } ]
+    }
   }
 }
 ----
@@ -517,9 +519,9 @@ Option A: Apply ontology constraints in code paths that already construct BSON f
 
 - If your repo method builds a Bson filter before calling find(), wrap it through rewriter:
 
-[source,java]
+[source]
 ----
-Bson base = Filters.and(existingFilters...);
+Bson base = Filters.and(existingFilter1, existingFilter2);
 Bson rewritten = hasEdgeRequested
   ? rewriter.rewriteForHasEdge(base, tenantId, predicate, dst)
   : base;
@@ -530,7 +532,7 @@ Option B: Apply ontology constraints to Morphia Filter/Query via ids.
 
 - When the repo uses Morphia’s typed query API instead of BSON, pre-compute the id set and constrain by _id:
 
-[source,java]
+[source]
 ----
 Set<String> ids = edgeDao.srcIdsByDst(tenantId, predicate, dst);
 if (ids.isEmpty()) {
@@ -1455,3 +1457,109 @@ public class Order extends UnversionedBaseModel {
 ----
 
 These patterns keep your REST and database contracts clear while allowing ontology materialization to happen automatically on writes.
+
+
+
+[[ontology-rest-api]]
+== Exploring the ontology via REST and JointJS
+
+This section shows how to inspect your ontology (TBox) and your instance relationships (ABox) through a small, read‑only REST API and how to render the results in a browser using JointJS. These endpoints are implemented in the quantum-ontology-mongo module and are intended for diagnostics, admin tooling, and lightweight visualization.
+
+TIP: For a complete, copy‑paste friendly reference of every parameter and more examples, see the module guide at quantum-ontology-mongo/README.md. The summary below is intentionally concise to keep this document flowing without duplication.
+
+=== Base info
+
+- Base path: /ontology
+- Media type: application/json
+- Security: Bearer JWT, roles user or admin
+- Multi‑tenancy: pass X-Realm: <tenant-id> header for ABox queries (and for any repo‑backed calls). TBox demos may work without it if your deployment wires an in‑memory registry.
+
+Example (replace token and realm):
+
+[source,shell]
+----
+curl -H "Authorization: Bearer $TOKEN" \
+     -H "X-Realm: demo" \
+     http://localhost:8080/ontology/summary
+----
+
+=== TBox (schema) endpoints
+These expose ontology registry metadata and a JointJS‑ready schema graph.
+
+- GET /ontology/registry — Full TBox snapshot. Depending on your registry producer, classes may be best‑effort.
+- GET /ontology/classes — Lists known classes (often inferred from property domains/ranges).
+- GET /ontology/classes/{name} — Class details by name.
+- GET /ontology/properties — Lists properties.
+- GET /ontology/properties/{name} — Property details by name.
+- GET /ontology/propertyChains — Lists property chains.
+- GET /ontology/graph/jointjs — Returns { cells: [...] } for a quick schema visualization in JointJS.
+- GET /ontology/summary — Small counts summary (classes/properties/chains).
+
+Basic call:
+
+[source,shell]
+----
+curl -H "Authorization: Bearer $TOKEN" \
+     http://localhost:8080/ontology/graph/jointjs | jq '.cells | length'
+----
+
+=== ABox (instances) graph endpoint
+Builds a neighborhood graph around a specific instance (src id + type). Useful for investigating relationships and verifying inferences.
+
+- GET /ontology/graph/instances/jointjs
+  - Headers: X-Realm: <tenant-id> (required)
+  - Query params:
+    - src: source id (required)
+    - type: ontology class/type of the source id (required)
+    - direction: out | in | both (default: out)
+    - p: repeatable predicate filter (optional)
+    - limit: max edges to include (default: 200)
+
+Example:
+
+[source,shell]
+----
+curl -H "Authorization: Bearer $TOKEN" \
+     -H "X-Realm: demo" \
+     "http://localhost:8080/ontology/graph/instances/jointjs?src=O1&type=Order&direction=both&limit=100"
+----
+
+Response shape:
+
+[source,json]
+----
+{ "cells": [] }
+----
+
+- Elements (instances) are rectangles with attrs.root data-type=instance and data-class=<Type>.
+- Links are labeled with the predicate. Inferred links are visually distinguished and marked in data:
+  - Styling: dashed gray stroke (strokeDasharray: "5,5", stroke: "#9e9e9e").
+  - Metadata: data.inferred = true.
+
+=== Rendering with JointJS (quick snippet)
+
+[source,javascript]
+----
+async function renderJointJs(divId, url) {
+  const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + window.token, 'X-Realm': 'demo' } });
+  const { cells } = await res.json();
+  const graph = new joint.dia.Graph();
+  graph.fromJSON({ cells });
+  const paper = new joint.dia.Paper({ el: document.getElementById(divId), model: graph, width: 1400, height: 900, gridSize: 10, drawGrid: true });
+  // Optional: apply a layout here
+}
+// Example: schema graph
+// renderJointJs('paper', '/ontology/graph/jointjs');
+// Example: instance graph around Order O1
+// renderJointJs('paper', '/ontology/graph/instances/jointjs?src=O1&type=Order&direction=both');
+----
+
+NOTE: JointJS will honor the attrs/labels we return. You can add a legend in your UI to explain that dashed gray edges are inferred, while solid edges are explicit.
+
+=== When to use these endpoints
+
+- During development: inspect whether your ontology registry is loaded as expected and whether property chains/inverses are effective.
+- During troubleshooting: confirm that edges exist for the predicates your queries or policies reference (see also xref:ontology-integration-morphia-permissions[Integrating Ontology]).
+- For lightweight admin tools: the JointJS payload can be embedded in a simple HTML page to visualize current relationships.
+
+For deep dives, parameter matrices, and additional examples (including large graph considerations), consult quantum-ontology-mongo/README.md in this repository.
