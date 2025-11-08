@@ -113,6 +113,215 @@ public class RuleContext {
         return snap;
     }
 
+    /**
+     * Export a scoped access matrix for the provided identities and optional requested data domain.
+     * This materializes server-side precedence into a client-usable structure.
+     */
+    public com.e2eq.framework.model.securityrules.RuleIndexSnapshot exportScopedAccessMatrixForIdentities(java.util.Collection<String> identities, com.e2eq.framework.model.persistent.base.DataDomain requested) {
+        com.e2eq.framework.model.securityrules.RuleIndexSnapshot snap = new com.e2eq.framework.model.securityrules.RuleIndexSnapshot();
+        boolean enabled = indexEnabled && compiledIndex != null;
+        snap.setEnabled(enabled);
+        snap.setVersion(enabled ? compiledIndex.getVersion() : 0L);
+        snap.setPolicyVersion(getPolicyVersion());
+        if (identities != null) snap.getSources().addAll(identities);
+
+        // Bucket rules by scope key derived from body
+        java.util.Map<String, java.util.List<Rule>> byScope = new java.util.HashMap<>();
+        if (identities != null) {
+            for (String id : identities) {
+                java.util.List<Rule> list = rules.get(id);
+                if (list == null) continue;
+                for (Rule r : list) {
+                    if (r == null || r.getSecurityURI() == null) continue;
+                    com.e2eq.framework.model.securityrules.SecurityURI suri = r.getSecurityURI();
+                    com.e2eq.framework.model.securityrules.SecurityURIBody body = suri.getBody();
+                    com.e2eq.framework.model.securityrules.SecurityURIHeader header = suri.getHeader();
+                    if (header == null) continue;
+                    // Skip rules that require runtime scripts
+                    if (hasDynamic(r)) {
+                        snap.setRequiresServer(true);
+                        // don't add to materialized buckets
+                        continue;
+                    }
+                    String scopeKey = toScopeKey(body);
+                    if (scopeKey == null) scopeKey = globalScopeKey();
+                    byScope.computeIfAbsent(scopeKey, k -> new java.util.ArrayList<>()).add(r);
+                }
+            }
+        }
+
+        // For each scope, compute matrix winners
+        for (java.util.Map.Entry<String, java.util.List<Rule>> e : byScope.entrySet()) {
+            com.e2eq.framework.model.securityrules.RuleIndexSnapshot.ScopedMatrix sm = new com.e2eq.framework.model.securityrules.RuleIndexSnapshot.ScopedMatrix();
+            materializeHeaderOutcomes(sm.getMatrix(), e.getValue());
+            snap.getScopes().put(e.getKey(), sm);
+        }
+
+        // requested scope + fallback
+        if (requested != null) {
+            String reqKey = toExactOrStarScopeKey(requested);
+            snap.setRequestedScope(reqKey);
+            snap.setRequestedFallback(buildFallbackChain(reqKey));
+        }
+
+        // Preserve legacy rules list (for compatibility)
+        if (identities != null) {
+            for (String id : identities) {
+                java.util.List<Rule> list = rules.get(id);
+                if (list == null) continue;
+                for (Rule r : list) {
+                    snap.getRules().add(com.e2eq.framework.model.securityrules.RuleIndexSnapshot.fromRule(r));
+                }
+            }
+            snap.getRules().sort((a, b) -> {
+                int c = Integer.compare(a.getPriority(), b.getPriority());
+                if (c != 0) return c;
+                String an = a.getName() == null ? "" : a.getName();
+                String bn = b.getName() == null ? "" : b.getName();
+                return an.compareToIgnoreCase(bn);
+            });
+        }
+
+        return snap;
+    }
+
+    private static boolean hasDynamic(Rule r) {
+        try {
+            // Prefer getPostconditionScript if present; fall back to getScript if exists
+            java.lang.reflect.Method m;
+            m = r.getClass().getMethod("getPostconditionScript");
+            Object v = m.invoke(r);
+            if (v != null && v.toString().trim().length() > 0) return true;
+        } catch (Exception ignore) { }
+        try {
+            java.lang.reflect.Method m2 = r.getClass().getMethod("getScript");
+            Object v2 = m2.invoke(r);
+            if (v2 != null && v2.toString().trim().length() > 0) return true;
+        } catch (Exception ignore) { }
+        return false;
+    }
+
+    private static String toScopeKey(com.e2eq.framework.model.securityrules.SecurityURIBody body) {
+        if (body == null) return globalScopeKey();
+        String org = val(body.getOrgRefName());
+        String acct = val(body.getAccountNumber());
+        String tenant = val(body.getTenantId());
+        String seg = val(body.getDataSegment());
+        String owner = val(body.getOwnerId());
+        return String.format("org=%s|acct=%s|tenant=%s|seg=%s|owner=%s", org, acct, tenant, seg, owner);
+    }
+
+    private static String toExactOrStarScopeKey(com.e2eq.framework.model.persistent.base.DataDomain dd) {
+        String org = val(dd.getOrgRefName());
+        String acct = val(dd.getAccountNum());
+        String tenant = val(dd.getTenantId());
+        String seg = val(dd.getDataSegment());
+        String owner = val(dd.getOwnerId());
+        return String.format("org=%s|acct=%s|tenant=%s|seg=%s|owner=%s", org, acct, tenant, seg, owner);
+    }
+
+    private static String val(Object o) {
+        if (o == null) return "*";
+        String s = String.valueOf(o);
+        if (s.trim().isEmpty()) return "*";
+        return s;
+    }
+
+    private static String globalScopeKey() { return "org=*|acct=*|tenant=*|seg=*|owner=*"; }
+
+    private static java.util.List<String> buildFallbackChain(String startKey) {
+        java.util.List<String> chain = new java.util.ArrayList<>();
+        java.util.Map<String,String> p = parseScopeKey(startKey);
+        if (p == null) return chain;
+        String[][] steps = new String[][] {
+                {"owner","*"}, {"seg","*"}, {"tenant","*"}, {"acct","*"}, {"org","*"}
+        };
+        java.util.Map<String,String> cur = new java.util.HashMap<>(p);
+        for (String[] st : steps) {
+            cur.put(st[0], st[1]);
+            chain.add(formatScopeKey(cur));
+        }
+        String g = globalScopeKey();
+        if (chain.isEmpty() || !chain.get(chain.size()-1).equals(g)) chain.add(g);
+        return chain;
+    }
+
+    private static java.util.Map<String,String> parseScopeKey(String key) {
+        if (key == null) return null;
+        String[] parts = key.split("\\|");
+        java.util.Map<String,String> map = new java.util.HashMap<>();
+        for (String p : parts) {
+            String[] kv = p.split("=");
+            if (kv.length != 2) return null;
+            map.put(kv[0], kv[1]);
+        }
+        if (!map.containsKey("org") || !map.containsKey("acct") || !map.containsKey("tenant") || !map.containsKey("seg") || !map.containsKey("owner")) return null;
+        return map;
+    }
+
+    private static String formatScopeKey(java.util.Map<String,String> parts) {
+        return String.format("org=%s|acct=%s|tenant=%s|seg=%s|owner=%s", parts.get("org"), parts.get("acct"), parts.get("tenant"), parts.get("seg"), parts.get("owner"));
+    }
+
+    private static void materializeHeaderOutcomes(java.util.Map<String, java.util.Map<String, java.util.Map<String, com.e2eq.framework.model.securityrules.RuleIndexSnapshot.Outcome>>> matrix,
+                                                  java.util.List<Rule> rules) {
+        // Group candidates by area/domain/action from header (wildcards preserved)
+        java.util.Map<String, java.util.List<Rule>> bucket = new java.util.HashMap<>();
+        for (Rule r : rules) {
+            if (r == null || r.getSecurityURI() == null || r.getSecurityURI().getHeader() == null) continue;
+            com.e2eq.framework.model.securityrules.SecurityURIHeader h = r.getSecurityURI().getHeader();
+            String area = nz(h.getArea());
+            String domain = nz(h.getFunctionalDomain());
+            String action = nz(h.getAction());
+            String key = area + "\u0001" + domain + "\u0001" + action;
+            bucket.computeIfAbsent(key, k -> new java.util.ArrayList<>()).add(r);
+        }
+        for (java.util.Map.Entry<String, java.util.List<Rule>> e : bucket.entrySet()) {
+            java.util.List<Rule> candidates = e.getValue();
+            candidates.sort((a,b) -> {
+                int s = Integer.compare(specificity(b), specificity(a));
+                if (s != 0) return s;
+                int p = Integer.compare(a.getPriority(), b.getPriority());
+                if (p != 0) return p;
+                String an = a.getName() == null ? "" : a.getName();
+                String bn = b.getName() == null ? "" : b.getName();
+                return an.compareToIgnoreCase(bn);
+            });
+            Rule winner = candidates.get(0);
+            putOutcome(matrix, e.getKey(), winner);
+        }
+    }
+
+    private static int specificity(Rule r) {
+        com.e2eq.framework.model.securityrules.SecurityURIHeader h = r.getSecurityURI().getHeader();
+        int s = 0;
+        if (!"*".equals(nz(h.getArea()))) s++;
+        if (!"*".equals(nz(h.getFunctionalDomain()))) s++;
+        if (!"*".equals(nz(h.getAction()))) s++;
+        return s;
+    }
+
+    private static String nz(String s) { return (s == null || s.trim().isEmpty()) ? "*" : s; }
+
+    private static void putOutcome(java.util.Map<String, java.util.Map<String, java.util.Map<String, com.e2eq.framework.model.securityrules.RuleIndexSnapshot.Outcome>>> matrix,
+                                   String compositeKey,
+                                   Rule r) {
+        String[] parts = compositeKey.split("\u0001");
+        String area = parts[0], domain = parts[1], action = parts[2];
+        com.e2eq.framework.model.securityrules.RuleIndexSnapshot.Outcome out = new com.e2eq.framework.model.securityrules.RuleIndexSnapshot.Outcome();
+        out.setEffect(r.getEffect() != null ? r.getEffect().name() : null);
+        out.setRule(r.getName());
+        out.setPriority(r.getPriority());
+        out.setFinalRule(r.isFinalRule());
+        // best-effort source via header identity
+        if (r.getSecurityURI() != null && r.getSecurityURI().getHeader() != null) {
+            out.setSource(r.getSecurityURI().getHeader().getIdentity());
+        }
+        matrix.computeIfAbsent(area, a -> new java.util.HashMap<>())
+                .computeIfAbsent(domain, d -> new java.util.HashMap<>())
+                .put(action, out);
+    }
+
 
     /**
      * this is called only by Quarkus upon startup if you create a rule context outside of injection

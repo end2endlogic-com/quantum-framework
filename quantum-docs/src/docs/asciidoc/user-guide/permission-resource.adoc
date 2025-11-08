@@ -63,7 +63,23 @@ Depending on server version/config, the response can include:
 - A legacy flat list of rules (for backward compatibility)
 - A scoped access matrix (recommended) keyed by data-domain scope → area → domain → action
 
-.Request
+.Request (current servers; send data-domain as top-level fields)
+[source,json]
+----
+{
+  "identity": "user-123",
+  "realm": "b2bi",
+  "orgRefName": "acme",
+  "accountNumber": "A1",
+  "tenantId": "t-001",
+  "dataSegment": 0,
+  "ownerId": "user-123"
+}
+----
+
+[NOTE]
+If your server version supports a nested dataDomain object, you may also send:
+
 [source,json]
 ----
 {
@@ -78,6 +94,8 @@ Depending on server version/config, the response can include:
   }
 }
 ----
+On servers that do not support nested dataDomain, this shape will produce:
+`400 Bad Request: Unrecognized field "dataDomain"`.
 
 .Response: Scoped access matrix (recommended shape)
 [source,json]
@@ -128,6 +146,114 @@ Interpretation:
 - The client should prefer the scope that best matches its current data domain and then look up `area → domain → action` in that scope’s matrix, falling back through `requestedFallback`.
 - Within a matrix, exact values beat wildcards; the matrix already encodes the winning outcome per triple.
 - If `requiresServer` is true (globally or for a specific scope), the client should call `/check` for decisions in those affected areas.
+
+=== Response example (legacy rules present and requiresServer=true)
+[source,json]
+----
+{
+  "enabled": false,
+  "version": 0,
+  "policyVersion": 163044986023000,
+  "rules": [
+    {
+      "name": "users can't delete anything in security area",
+      "uri": "user:security:*:delete|*:*:*:*:*:*:*",
+      "effect": "DENY",
+      "priority": 10,
+      "finalRule": true
+    },
+    {
+      "name": "view your own resources",
+      "uri": "user:*:*:*|system-com:*:*:*:*:*:*",
+      "effect": "ALLOW",
+      "priority": 10,
+      "finalRule": true
+    },
+    {
+      "name": "view your own resources, limit to default dataSegment",
+      "uri": "user:*:*:*|*:*:*:*:*:*:*",
+      "effect": "ALLOW",
+      "priority": 10,
+      "finalRule": false
+    },
+    {
+      "name": "ViewSystemResources",
+      "uri": "user:*:*:view|system-com:*:*:*:*:system@system.com:*",
+      "effect": "ALLOW",
+      "priority": 10,
+      "finalRule": true
+    }
+  ],
+  "sources": [
+    "user"
+  ],
+  "requiresServer": true,
+  "scopes": {
+    "org=*|acct=*|tenant=*|seg=*|owner=system@system.com": {
+      "matrix": {
+        "*": {
+          "*": {
+            "view": {
+              "effect": "ALLOW",
+              "rule": "ViewSystemResources",
+              "priority": 10,
+              "finalRule": true,
+              "source": "user"
+            }
+          }
+        }
+      },
+      "requiresServer": false
+    },
+    "org=*|acct=*|tenant=*|seg=*|owner=*": {
+      "matrix": {
+        "security": {
+          "*": {
+            "delete": {
+              "effect": "DENY",
+              "rule": "users can't delete anything in security area",
+              "priority": 10,
+              "finalRule": true,
+              "source": "user"
+            }
+          }
+        },
+        "*": {
+          "*": {
+            "*": {
+              "effect": "ALLOW",
+              "rule": "view your own resources, limit to default dataSegment",
+              "priority": 10,
+              "finalRule": false,
+              "source": "user"
+            }
+          }
+        }
+      },
+      "requiresServer": false
+    }
+  },
+  "requestedScope": "org=acme|acct=A1|tenant=t-001|seg=0|owner=user-123",
+  "requestedFallback": [
+    "org=acme|acct=A1|tenant=t-001|seg=0|owner=*",
+    "org=acme|acct=A1|tenant=t-001|seg=*|owner=*",
+    "org=acme|acct=A1|tenant=*|seg=*|owner=*",
+    "org=acme|acct=*|tenant=*|seg=*|owner=*",
+    "org=*|acct=*|tenant=*|seg=*|owner=*"
+  ]
+}
+----
+
+Field semantics
+
+- enabled: false indicates the compiled index is disabled or unavailable. Clients should treat the snapshot as non-authoritative and prefer calling /permission/check for critical decisions; the matrix may still be present for some scopes but is not guaranteed complete.
+- version: 0 accompanies enabled=false. When enabled is true, version corresponds to the compiled index version and can be used for caching together with policyVersion.
+- policyVersion: the ruleset/policy timestamp or version for cache invalidation.
+- rules: legacy flat list preserved for backward compatibility. Clients should prefer the scoped matrix when available.
+- sources: identities included when the snapshot was materialized (e.g., user id and/or roles).
+- requiresServer (top-level): true means at least one rule could not be safely materialized (e.g., uses scripts/postconditions or dynamic filters). Clients should be prepared to call /permission/check for affected scopes/decisions.
+- scopes[<key>].requiresServer: per-scope flag. If true, client should not rely on that scope’s matrix for final decisions and should call /permission/check when evaluating in that scope.
+- requestedScope / requestedFallback: convenience keys provided when the request included data-domain values. Clients should attempt lookup starting at requestedScope, then walk requestedFallback in order.
 
 == Data-Domain Scope and Fallback
 
@@ -182,7 +308,7 @@ Allowed effect values are "ALLOW" or "DENY".
     // 1) Get a snapshot for the user
     const res = await fetch('/permission/check-with-index', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ identity: 'user-123', realm: 'b2bi', dataDomain: { orgRefName: 'acme', accountNumber: 'A1', tenantId: 't-001', dataSegment: 0, ownerId: 'user-123' } })
+      body: JSON.stringify({ identity: 'user-123', realm: 'b2bi', orgRefName: 'acme', accountNumber: 'A1', tenantId: 't-001', dataSegment: 0, ownerId: 'user-123' })
     });
     const snapshot = await res.json();
 
@@ -284,7 +410,11 @@ curl -sS -X POST \
   -d '{
     "identity":"user-123",
     "realm":"b2bi",
-    "dataDomain": {"orgRefName":"acme","accountNumber":"A1","tenantId":"t-001","dataSegment":0,"ownerId":"user-123"}
+    "orgRefName":"acme",
+    "accountNumber":"A1",
+    "tenantId":"t-001",
+    "dataSegment":0,
+    "ownerId":"user-123"
   }'
 ----
 

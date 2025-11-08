@@ -150,6 +150,7 @@ public class InitializeDatabase extends ChangeSetBase {
       SecurityURIBody body = new SecurityURIBody.Builder()
          .withAccountNumber("*") // any account
          .withRealm(envConfigUtils.getSystemRealm()) // within just the  realm
+         .withOrgRefName(envConfigUtils.getSystemOrgRefName())
          .withTenantId("*") // any tenant
          .withOwnerId("*") // any owner
          .withDataSegment("*") // any datasegement
@@ -198,6 +199,7 @@ public class InitializeDatabase extends ChangeSetBase {
       body = new SecurityURIBody.Builder()
          .withAccountNumber("*")             // any account
          .withRealm(envConfigUtils.getSystemRealm())     // within just the realm
+         .withOrgRefName(envConfigUtils.getSystemOrgRefName())
          .withTenantId("*")                  // any tenant
          .withOwnerId(envConfigUtils.getSystemUserId())  // system owner
          .withDataSegment("*")               // any data segment

@@ -373,7 +373,21 @@ public class PermissionResource {
       // Ensure the original identity is included
       identities.add(req.identity);
 
-      RuleIndexSnapshot idx = ruleContext.exportIndexSnapshotForIdentities(identities);
+      // Optional requested data-domain: only if client provided all fields explicitly
+      RuleIndexSnapshot idx;
+      boolean hasAllDataDomainFields =
+              (req.orgRefName != null && !req.orgRefName.isBlank()) &&
+              (req.accountNumber != null && !req.accountNumber.isBlank()) &&
+              (req.tenantId != null && !req.tenantId.isBlank()) &&
+              (req.dataSegment != null) &&
+              (req.ownerId != null && !req.ownerId.isBlank());
+
+      if (hasAllDataDomainFields) {
+         DataDomain dd = new DataDomain(req.orgRefName, req.accountNumber, req.tenantId, req.dataSegment, req.ownerId);
+         idx = ruleContext.exportScopedAccessMatrixForIdentities(identities, dd);
+      } else {
+         idx = ruleContext.exportScopedAccessMatrixForIdentities(identities, null);
+      }
       return Response.ok(idx).build();
    }
 }
