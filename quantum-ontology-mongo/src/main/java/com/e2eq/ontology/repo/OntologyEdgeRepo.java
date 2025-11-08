@@ -6,6 +6,7 @@ import com.e2eq.ontology.model.OntologyEdge;
 import dev.morphia.Datastore;
 import dev.morphia.query.Query;
 import dev.morphia.query.filters.Filters;
+import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.bson.conversions.Bson;
 
@@ -39,6 +40,14 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
         }
         if (dstType == null || dstType.isBlank()) {
             throw new IllegalArgumentException("dstType must be provided for edge " + src + "-" + p + "-" + dst);
+        }
+        if (src == null || src.isBlank()) {
+           Log.warn("src id is null or blank can not create edge");
+           return;
+        }
+        if (dst == null || dst.isBlank()) {
+           Log.warn("dst id is null or blank can not create edge");
+           return;
         }
         Datastore d = ds();
         Query<OntologyEdge> q = d.find(OntologyEdge.class)

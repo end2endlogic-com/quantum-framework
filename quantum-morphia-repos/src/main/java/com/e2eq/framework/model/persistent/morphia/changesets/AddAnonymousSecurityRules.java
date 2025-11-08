@@ -106,6 +106,7 @@ public class AddAnonymousSecurityRules extends ChangeSetBase {
                     .withRealm(envConfigUtils.getSystemRealm()) // within just the realm
                     .withTenantId(SecurityUtils.any) // any tenant
                     .withOwnerId(SecurityUtils.any) // any owner
+                    .withOrgRefName(envConfigUtils.getSystemOrgRefName())
                     .withDataSegment(SecurityUtils.any) // any datasegement
                     .build();
 
