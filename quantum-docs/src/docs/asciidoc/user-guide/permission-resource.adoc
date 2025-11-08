@@ -1,0 +1,300 @@
+= Permission Resource: Check APIs and Client Usage
+:toc: macro
+:toclevels: 3
+
+This guide explains how to use the Permission Resource check APIs and how to evaluate the server-produced access decisions on the client using the provided JavaScript library.
+
+It covers:
+
+- The `/check` API (server-evaluated permission)
+- The `/check-with-index` API (client-evaluable snapshot)
+- Request payloads and detailed response structures
+- Scope and data-domain fallback behavior
+- Using the JavaScript client in a browser, React, or Vue
+
+[NOTE]
+This document reflects the current and evolving server behavior. The JavaScript client library is available at runtime from Quarkus as `/security/acl-client.js` and is forward-compatible with the scoped access-matrix format described here.
+
+== APIs
+
+=== POST /permission/check
+Performs a server-side permission check for a single request using the caller identity and an optional data domain (organization/account/tenant/segment/owner).
+
+.Request
+[source,json]
+----
+{
+  "identity": "user-123",
+  "realm": "b2bi",
+  "area": "security",
+  "functionalDomain": "userProfile",
+  "action": "view",
+  "resourceId": "12345",
+  "orgRefName": "acme",
+  "accountNumber": "A1",
+  "tenantId": "t-001",
+  "dataSegment": 0,
+  "ownerId": "user-123",
+  "roles": ["user", "admin"],
+  "scope": "api"
+}
+----
+
+.Response (example)
+[source,json]
+----
+{
+  "finalEffect": "ALLOW",
+  "winningRule": "SysAnyActionSecurity",
+  "explanations": [
+    { "rule": "SysAnyActionSecurity", "effect": "ALLOW" }
+  ]
+}
+----
+
+Notes:
+- This endpoint is authoritative and understands scripts/postconditions and any dynamic runtime evaluation.
+- Use `/check` when you must account for scripts, context-enriched rules, or when you don’t have the precomputed snapshot.
+
+=== POST /permission/check-with-index
+Returns a precomputed permission snapshot for the supplied identity. This snapshot can be cached on the client and used for fast allow/deny decisions without server roundtrips.
+
+Depending on server version/config, the response can include:
+- A legacy flat list of rules (for backward compatibility)
+- A scoped access matrix (recommended) keyed by data-domain scope → area → domain → action
+
+.Request
+[source,json]
+----
+{
+  "identity": "user-123",
+  "realm": "b2bi",
+  "dataDomain": {
+    "orgRefName": "acme",
+    "accountNumber": "A1",
+    "tenantId": "t-001",
+    "dataSegment": 0,
+    "ownerId": "user-123"
+  }
+}
+----
+
+.Response: Scoped access matrix (recommended shape)
+[source,json]
+----
+{
+  "enabled": true,
+  "version": 42,
+  "policyVersion": 123,
+  "sources": ["user:user-123", "role:user", "role:admin"],
+  "requiresServer": false,
+
+  "scopes": {
+    "org=acme|acct=A1|tenant=t-001|seg=0|owner=user-123": {
+      "requiresServer": false,
+      "matrix": {
+        "security": {
+          "userProfile": {
+            "view": { "effect": "ALLOW", "rule": "ViewOwnProfile", "priority": 5, "finalRule": true, "source": "role:user" }
+          },
+          "credential": {
+            "update": { "effect": "DENY", "rule": "NoUpdate", "priority": 10, "finalRule": true, "source": "role:user" }
+          }
+        },
+        "orders": {
+          "manage": { "*": { "effect": "DENY", "rule": "NoManage", "priority": 50, "finalRule": true } }
+        }
+      }
+    },
+
+    "org=acme|acct=A1|tenant=t-001|seg=*|owner=*": { "requiresServer": false, "matrix": { "*": { "*": { "*": { "effect": "DENY", "rule": "DefaultDeny", "priority": 999, "finalRule": false } } } } },
+    "org=*|acct=*|tenant=*|seg=*|owner=*": { "requiresServer": false, "matrix": { "security": { "*": { "*": { "effect": "ALLOW", "rule": "SysRoleAnyActionSecurity", "priority": 1, "finalRule": true } } } } }
+  },
+  "requestedScope": "org=acme|acct=A1|tenant=t-001|seg=0|owner=user-123",
+  "requestedFallback": [
+    "org=acme|acct=A1|tenant=t-001|seg=0|owner=*",
+    "org=acme|acct=A1|tenant=t-001|seg=*|owner=*",
+    "org=acme|acct=A1|tenant=*|seg=*|owner=*",
+    "org=acme|acct=*|tenant=*|seg=*|owner=*",
+    "org=*|acct=*|tenant=*|seg=*|owner=*"
+  ],
+  "rules": [
+    { "name": "SysRoleAnyActionSecurity", "uri": "system:security:*:*:*:*:*:*:*", "effect": "ALLOW", "priority": 1, "finalRule": true }
+  ]
+}
+----
+
+Interpretation:
+- The client should prefer the scope that best matches its current data domain and then look up `area → domain → action` in that scope’s matrix, falling back through `requestedFallback`.
+- Within a matrix, exact values beat wildcards; the matrix already encodes the winning outcome per triple.
+- If `requiresServer` is true (globally or for a specific scope), the client should call `/check` for decisions in those affected areas.
+
+== Data-Domain Scope and Fallback
+
+A scope key is a canonical string combining the data-domain dimensions:
+
+```
+org=<v>|acct=<v>|tenant=<v>|seg=<v>|owner=<v>
+```
+
+- Values are specific strings or `*` for wildcard.
+- Fallback traversal order: owner → segment → tenant → account → org → global.
+
+== JavaScript Client Library
+
+The JavaScript client provides helpers to evaluate the snapshot on the client.
+
+- Served by Quarkus at: `/security/acl-client.js`
+- Path in repo: `quantum-framework/src/main/resources/META-INF/resources/security/acl-client.js`
+
+.Exported API
+[source,js]
+----
+ACLClient.scopeKeyFromDataDomain(dataDomain) // => scope key string
+ACLClient.buildFallbackChain(scopeKey)       // => [less-specific scope keys]
+ACLClient.lookupAreaDomainAction(matrix, area, domain, action) // => Outcome | null
+ACLClient.decide(snapshot, dataDomain, area, domain, action)   // => 'ALLOW' | 'DENY'
+ACLClient.decideOutcome(snapshot, dataDomain, area, domain, action) // => Outcome | null
+----
+
+Outcome structure:
+[source,json]
+----
+{
+  "effect": "ALLOW",
+  "rule": "<winning rule name>",
+  "priority": 0,
+  "finalRule": true,
+  "source": "role:user"
+}
+----
+
+Allowed effect values are "ALLOW" or "DENY".
+
+=== Using in a Browser (no build tools)
+
+.HTML
+[source,html]
+----
+<script src="/security/acl-client.js"></script>
+<script>
+  async function canViewProfile() {
+    // 1) Get a snapshot for the user
+    const res = await fetch('/permission/check-with-index', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identity: 'user-123', realm: 'b2bi', dataDomain: { orgRefName: 'acme', accountNumber: 'A1', tenantId: 't-001', dataSegment: 0, ownerId: 'user-123' } })
+    });
+    const snapshot = await res.json();
+
+    // 2) Evaluate locally
+    const decision = ACLClient.decide(snapshot, { orgRefName: 'acme', accountNumber: 'A1', tenantId: 't-001', dataSegment: 0, ownerId: 'user-123' }, 'security', 'userProfile', 'view');
+    if (decision === 'ALLOW') {
+      // show UI
+    } else {
+      // hide or show alternative
+    }
+  }
+</script>
+----
+
+=== Using in React
+
+.Installation (served by your Quarkus backend)
+- No npm package is required; include as an external script in `public/index.html` or via dynamic import.
+
+.React example
+[source,jsx]
+----
+import { useEffect, useState } from 'react';
+
+export default function ProfileButton() {
+  const [allowed, setAllowed] = useState(false);
+
+  useEffect(() => {
+    async function run() {
+      const res = await fetch('/permission/check-with-index', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identity: 'user-123', realm: 'b2bi' })
+      });
+      const snapshot = await res.json();
+      const effect = window.ACLClient.decide(snapshot, null, 'security', 'userProfile', 'view');
+      setAllowed(effect === 'ALLOW');
+    }
+    run();
+  }, []);
+
+  if (!allowed) return null;
+  return <button>View Profile</button>;
+}
+----
+
+=== Using in Vue
+
+.Vue component example
+[source,vue]
+----
+<template>
+  <button v-if="allowed">View Profile</button>
+</template>
+
+<script>
+export default {
+  data() { return { allowed: false }; },
+  async mounted() {
+    const res = await fetch('/permission/check-with-index', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identity: 'user-123', realm: 'b2bi' })
+    });
+    const snapshot = await res.json();
+    const effect = window.ACLClient.decide(snapshot, null, 'security', 'userProfile', 'view');
+    this.allowed = (effect === 'ALLOW');
+  }
+}
+</script>
+----
+
+== cURL Examples
+
+.Server-evaluated check
+[source,bash]
+----
+curl -sS -X POST \
+  -H 'Content-Type: application/json' \
+  http://localhost:8080/permission/check \
+  -d '{
+    "identity":"user-123",
+    "realm":"b2bi",
+    "area":"security",
+    "functionalDomain":"userProfile",
+    "action":"view",
+    "orgRefName":"acme",
+    "accountNumber":"A1",
+    "tenantId":"t-001",
+    "dataSegment":0,
+    "ownerId":"user-123"
+  }'
+----
+
+.Client-evaluable snapshot
+[source,bash]
+----
+curl -sS -X POST \
+  -H 'Content-Type: application/json' \
+  http://localhost:8080/permission/check-with-index \
+  -d '{
+    "identity":"user-123",
+    "realm":"b2bi",
+    "dataDomain": {"orgRefName":"acme","accountNumber":"A1","tenantId":"t-001","dataSegment":0,"ownerId":"user-123"}
+  }'
+----
+
+== Caching Guidance
+
+- Clients should cache the `/check-with-index` response keyed by `(identity, realm, version, policyVersion)`.
+- Refresh the snapshot when either `version` or `policyVersion` changes.
+
+== Troubleshooting
+
+- If `requiresServer` is `true` (globally or per-scope), call `/check` for affected decisions.
+- If no matrix entry is found in any scope fallback, default to `DENY` for safety.
+- Ensure `effect` comparisons are case-insensitive on the client (`String(effect).toUpperCase()`).
