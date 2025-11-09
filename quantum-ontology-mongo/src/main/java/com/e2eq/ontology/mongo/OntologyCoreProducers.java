@@ -8,10 +8,14 @@ import jakarta.enterprise.inject.Produces;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import io.quarkus.arc.DefaultBean;
+import io.quarkus.logging.Log;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+
+import org.eclipse.microprofile.config.Config;
+import org.eclipse.microprofile.config.ConfigProvider;
 
 @ApplicationScoped
 public class OntologyCoreProducers {
@@ -23,33 +27,52 @@ public class OntologyCoreProducers {
     @DefaultBean
     @Singleton
     public OntologyRegistry ontologyRegistry() {
-        // Base TBox from Morphia annotations, if possible
-        TBox base = new TBox(Map.of(), Map.of(), List.of());
+        Log.info("OntologyCoreProducers: building OntologyRegistry at startup...");
+        // Start with empty
+        TBox accumulated = new TBox(Map.of(), Map.of(), List.of());
+
+        // 1) Optional: scan configured packages for @OntologyClass/@OntologyProperty
         try {
-            if (morphiaDatastore != null && morphiaDatastore.getMapper() != null) {
-                MorphiaOntologyLoader loader = new MorphiaOntologyLoader(morphiaDatastore);
-                base = loader.loadTBox();
+            Config config = ConfigProvider.getConfig();
+            Optional<String> scan = config.getOptionalValue("quantum.ontology.scan.packages", String.class);
+            if (scan.isPresent() && !scan.get().isBlank()) {
+                List<String> pkgs = Arrays.stream(scan.get().split(","))
+                        .map(String::trim).filter(s -> !s.isEmpty()).toList();
+                if (!pkgs.isEmpty()) {
+                    AnnotationOntologyLoader annoLoader = new AnnotationOntologyLoader();
+                    TBox annoTBox = annoLoader.loadFromPackages(pkgs);
+                    accumulated = OntologyMerger.merge(accumulated, annoTBox);
+                }
             }
         } catch (Throwable ignored) { }
 
-        // YAML overlay from configured or conventional locations
-        TBox overlay = null;
+        // 2) Merge in Morphia-derived TBox if available
+        try {
+            if (morphiaDatastore != null && morphiaDatastore.getMapper() != null) {
+                MorphiaOntologyLoader loader = new MorphiaOntologyLoader(morphiaDatastore);
+                TBox base = loader.loadTBox();
+                accumulated = OntologyMerger.merge(accumulated, base);
+            }
+        } catch (Throwable ignored) { }
+
+        // 3) YAML overlay from configured or conventional locations
         try {
             YamlOntologyLoader yaml = new YamlOntologyLoader();
             Optional<Path> path = resolveYamlPath();
             if (path.isPresent() && Files.exists(path.get())) {
-                overlay = yaml.loadFromPath(path.get());
+                TBox overlay = yaml.loadFromPath(path.get());
+                accumulated = OntologyMerger.merge(accumulated, overlay);
             } else {
                 try {
-                    overlay = yaml.loadFromClasspath("/ontology.yaml");
+                    TBox overlay = yaml.loadFromClasspath("/ontology.yaml");
+                    accumulated = OntologyMerger.merge(accumulated, overlay);
                 } catch (Exception ignored) { }
             }
         } catch (Throwable ignored) { }
 
-        TBox merged = (overlay != null) ? OntologyMerger.merge(base, overlay) : base;
         // Validate final TBox
-        try { OntologyValidator.validate(merged); } catch (Exception e) { /* in prod you may want to fail fast */ }
-        return new InMemoryOntologyRegistry(merged);
+        try { OntologyValidator.validate(accumulated); } catch (Exception e) { /* in prod you may want to fail fast */ }
+        return new InMemoryOntologyRegistry(accumulated);
     }
 
     private Optional<Path> resolveYamlPath() {

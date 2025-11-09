@@ -27,4 +27,26 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>io.smallrye</groupId>
+                <artifactId>jandex-maven-plugin</artifactId>
+                <version>3.2.2</version>
+                <executions>
+                    <execution>
+                        <id>make-index</id>
+                        <goals>
+                            <goal>jandex</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <indexName>jandex.idx</indexName>
+                    <verbose>true</verbose>
+                    <jar/>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>

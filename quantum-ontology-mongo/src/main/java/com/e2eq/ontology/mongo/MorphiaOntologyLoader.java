@@ -66,8 +66,13 @@ public final class MorphiaOntologyLoader {
                 String range = null;
                 if (!pa.ref().isEmpty()) {
                     range = pa.ref();
+                } else if (!pa.range().isEmpty()) {
+                    range = pa.range();
                 } else {
-                    range = inferRangeFromField(f, entityClasses).orElse(pa.range().isEmpty() ? null : pa.range());
+                    // Try to infer from @ReferenceTarget on the field first
+                    range = inferRangeFromReferenceTarget(f, entityClasses).orElseGet(
+                            () -> inferRangeFromField(f, entityClasses).orElse(null)
+                    );
                 }
                 Optional<String> rangeOpt = Optional.ofNullable(range);
                 Optional<String> domainOpt = Optional.of(domain);
@@ -134,6 +139,22 @@ public final class MorphiaOntologyLoader {
         if (mapped.contains(type)) {
             return Optional.of(classIdOf(type));
         }
+        return Optional.empty();
+    }
+
+    private Optional<String> inferRangeFromReferenceTarget(Field field, Collection<Class<?>> mapped) {
+        if (field == null) return Optional.empty();
+        try {
+            Class<?> rtAnno = Class.forName("com.e2eq.framework.model.persistent.base.ReferenceTarget");
+            if (!field.isAnnotationPresent((Class) rtAnno)) return Optional.empty();
+            var ann = field.getAnnotation((Class) rtAnno);
+            var targetMethod = rtAnno.getMethod("target");
+            Object targetClassObj = targetMethod.invoke(ann);
+            if (targetClassObj instanceof Class<?> targetClass) {
+                String id = mapped.contains(targetClass) ? classIdOf(targetClass) : targetClass.getSimpleName();
+                return Optional.ofNullable(id);
+            }
+        } catch (Throwable ignored) { }
         return Optional.empty();
     }
 

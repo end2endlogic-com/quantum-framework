@@ -39,7 +39,7 @@ public class OntologyResource {
     @Operation(summary = "Get full TBox")
     @SecurityRequirement(name = "bearerAuth")
     public Response getTBox() {
-        Map<String, ClassDef> classes = new HashMap<>();
+        Map<String, ClassDef> classes = registry.classes();
         Map<String, PropertyDef> props = registry.properties();
         List<PropertyChainDef> chains = registry.propertyChains();
         var tbox = new TBox(classes, props, chains);
