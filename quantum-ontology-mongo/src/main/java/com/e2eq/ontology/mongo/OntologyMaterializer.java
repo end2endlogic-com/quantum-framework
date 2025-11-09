@@ -14,7 +14,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 public class OntologyMaterializer {
 
    @Inject
-   protected Reasoner reasoner;
+   protected ForwardChainingReasoner reasoner;
 
    @Inject
    protected OntologyRegistry registry;
