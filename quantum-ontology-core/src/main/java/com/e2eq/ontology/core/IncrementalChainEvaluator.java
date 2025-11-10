@@ -57,22 +57,41 @@ public final class IncrementalChainEvaluator {
         Map<String, Set<String>> qToZs = new HashMap<>();
 
         List<PropertyChainDef> chains = registry.propertyChains();
+        Set<String> activePredicates = new HashSet<>(changedPredicates);
         if (chains != null) {
             for (PropertyChainDef ch : chains) {
                 List<String> seq = ch.chain();
                 if (seq == null || seq.size() < 2) continue;
-                if (!changedPredicates.isEmpty() && Collections.disjoint(new HashSet<>(seq), changedPredicates)) {
-                    // None of the predicates changed; skip for incremental run
+                if (!activePredicates.isEmpty() && Collections.disjoint(new HashSet<>(seq), activePredicates)) {
+                    // None of the predicates (including newly produced) changed; skip for this pass
                     continue;
                 }
                 String q = ch.implies();
                 // Multi-hop join starting at X = entityId
                 Set<String> frontier = Set.of(entityId);
+                final int MAX_TRANSITIVE_VISITS = 10000;
                 for (String p : seq) {
                     Set<String> next = new HashSet<>();
-                    for (String node : frontier) {
-                        Set<String> dsts = queryOutgoing(store, tenantId, node, p, outCache);
-                        next.addAll(dsts);
+                    boolean isTransitive = registry.propertyOf(p).map(PropertyDef::transitive).orElse(false);
+                    if (isTransitive) {
+                        // Expand closure over p starting from all nodes in current frontier
+                        Deque<String> dq = new ArrayDeque<>(frontier);
+                        Set<String> visited = new HashSet<>(frontier);
+                        int visits = 0;
+                        while (!dq.isEmpty() && visits < MAX_TRANSITIVE_VISITS) {
+                            String node = dq.removeFirst();
+                            visits++;
+                            Set<String> dsts = queryOutgoing(store, tenantId, node, p, outCache);
+                            for (String y : dsts) {
+                                if (visited.add(y)) dq.addLast(y);
+                                next.add(y);
+                            }
+                        }
+                    } else {
+                        for (String node : frontier) {
+                            Set<String> dsts = queryOutgoing(store, tenantId, node, p, outCache);
+                            next.addAll(dsts);
+                        }
                     }
                     if (next.isEmpty()) { frontier = Set.of(); break; }
                     frontier = next;
@@ -80,8 +99,16 @@ public final class IncrementalChainEvaluator {
                 if (!frontier.isEmpty()) {
                     Set<String> zs = qToZs.computeIfAbsent(q, __ -> new HashSet<>());
                     for (String z : frontier) {
-                        if (!z.equals(entityId)) zs.add(z);
+                        if (!z.equals(entityId)) {
+                            zs.add(z);
+                            // Make q(X,z) visible for subsequent chain evaluations in this run
+                            NodePred key = new NodePred(entityId, q);
+                            Set<String> curr = outCache.computeIfAbsent(key, __ -> new HashSet<>());
+                            curr.add(z);
+                        }
                     }
+                    // Mark q as updated so downstream chains that depend on it will be considered
+                    activePredicates.add(q);
                 }
             }
         }
