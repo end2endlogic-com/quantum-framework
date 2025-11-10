@@ -9,6 +9,8 @@ import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -45,7 +47,11 @@ public class OntologyReindexer {
         new Thread(() -> {
             try {
                 runInternal(realmId);
-                metaService.clearReindexRequired();
+                // After successful reindex, mark the observed YAML hash as applied
+                Optional<String> src = metaService.getMeta().map(m -> m.getSource());
+                Optional<Path> p = src.filter(s -> s != null && !s.equals("<none>")).map(Path::of).filter(Files::exists);
+                var res = metaService.observeYaml(p, "/ontology.yaml");
+                metaService.markApplied(res.currentHash());
                 status = "COMPLETED";
             } catch (Throwable t) {
                 status = "FAILED: " + t.getMessage();

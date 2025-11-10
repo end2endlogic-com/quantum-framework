@@ -21,10 +21,11 @@ import java.util.Date;
 })
 public class OntologyMeta extends UnversionedBaseModel {
 
-    private String yamlHash;      // SHA-256 of YAML source (if present)
+    private String yamlHash;      // SHA-256 of YAML source (last applied)
     private Integer yamlVersion;  // optional: version number from YAML, if provided
-    private String source;        // classpath or file path used
-    private Date updatedAt;
+    private String source;        // classpath or file path used (last observed)
+    private Date updatedAt;       // last observed time
+    private Date appliedAt;       // when yamlHash was last applied
     private boolean reindexRequired; // flag indicating edges should be recomputed due to ontology change
 
     @Override
