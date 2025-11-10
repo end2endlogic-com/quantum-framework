@@ -1,17 +1,13 @@
 package com.e2eq.ontology.model;
 
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
-import dev.morphia.annotations.Entity;
-import dev.morphia.annotations.Field;
-import dev.morphia.annotations.Index;
-import dev.morphia.annotations.IndexOptions;
-import dev.morphia.annotations.Indexes;
-import dev.morphia.annotations.Indexed;
+import dev.morphia.annotations.*;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 
 import java.util.Date;
+import java.util.List;
 import java.util.Map;
 
 @Data
@@ -22,7 +18,9 @@ import java.util.Map;
     @Index(options = @IndexOptions(name = "idx_tenant_p_dst"),
            fields = { @Field("dataDomain.tenantId"), @Field("p"), @Field("dst") }),
     @Index(options = @IndexOptions(name = "idx_tenant_src_p"),
-           fields = { @Field("dataDomain.tenantId"), @Field("src"), @Field("p") })
+           fields = { @Field("dataDomain.tenantId"), @Field("src"), @Field("p") }),
+    @Index(options = @IndexOptions(name = "idx_tenant_derived"),
+           fields = { @Field("dataDomain.tenantId"), @Field("derived") })
 })
 public class OntologyEdge extends UnversionedBaseModel {
 
@@ -32,8 +30,17 @@ public class OntologyEdge extends UnversionedBaseModel {
     protected String dst;
     protected String dstType;
     protected boolean inferred;
+    protected boolean derived; // true for implied edges
     protected Map<String, Object> prov;
+    protected List<Support> support; // provenance support for derived edges
     protected Date ts;
+
+    @Data
+    @NoArgsConstructor
+    public static class Support {
+        private String ruleId;
+        private List<String> pathEdgeIds;
+    }
 
     @Override
     public String bmFunctionalArea() {

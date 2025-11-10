@@ -1,6 +1,7 @@
 package com.e2eq.ontology.core;
 
 import java.util.Date;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -14,8 +15,10 @@ public class EdgeRecord {
     private String p;
     private String dst;
     private String dstType;
-    private boolean inferred;
+    private boolean inferred; // legacy flag used by existing materializer
+    private boolean derived;  // new flag for implied/derived edges
     private Map<String, Object> prov;
+    private List<Support> support; // provenance support: list of rules and path edge ids
     private Date ts;
 
     public EdgeRecord() { }
@@ -28,7 +31,22 @@ public class EdgeRecord {
         this.dstType = dstType;
         this.dst = dst;
         this.inferred = inferred;
+        this.derived = inferred; // keep in sync by default for backward compatibility
         this.prov = prov;
+        this.ts = ts;
+    }
+
+    public EdgeRecord(String tenantId, String srcType, String src, String p, String dstType, String dst, boolean derived, Map<String, Object> prov, List<Support> support, Date ts) {
+        this.tenantId = tenantId;
+        this.srcType = srcType;
+        this.src = src;
+        this.p = p;
+        this.dstType = dstType;
+        this.dst = dst;
+        this.derived = derived;
+        this.inferred = derived; // map derived to inferred for legacy code paths
+        this.prov = prov;
+        this.support = support;
         this.ts = ts;
     }
 
@@ -46,8 +64,27 @@ public class EdgeRecord {
     public void setDstType(String dstType) { this.dstType = dstType; }
     public boolean isInferred() { return inferred; }
     public void setInferred(boolean inferred) { this.inferred = inferred; }
+    public boolean isDerived() { return derived; }
+    public void setDerived(boolean derived) { this.derived = derived; }
     public Map<String, Object> getProv() { return prov; }
     public void setProv(Map<String, Object> prov) { this.prov = prov; }
+    public List<Support> getSupport() { return support; }
+    public void setSupport(List<Support> support) { this.support = support; }
     public Date getTs() { return ts; }
     public void setTs(Date ts) { this.ts = ts; }
+
+    public static class Support {
+        private String ruleId;
+        private List<String> pathEdgeIds;
+
+        public Support() {}
+        public Support(String ruleId, List<String> pathEdgeIds) {
+            this.ruleId = ruleId;
+            this.pathEdgeIds = pathEdgeIds;
+        }
+        public String getRuleId() { return ruleId; }
+        public void setRuleId(String ruleId) { this.ruleId = ruleId; }
+        public List<String> getPathEdgeIds() { return pathEdgeIds; }
+        public void setPathEdgeIds(List<String> pathEdgeIds) { this.pathEdgeIds = pathEdgeIds; }
+    }
 }
