@@ -47,7 +47,10 @@ public final class ForwardChainingReasoner implements Reasoner {
                     .computeIfAbsent(e.dstId(), k -> new HashSet<>()).add(e.srcId());
         }
 
-        // 2) Property chains of length N >= 2 using simple forward chaining bounded to snapshot graph
+        // 2) Property chains of length N >= 2 using forward chaining bounded to snapshot graph
+        //    Integrate transitive expansion for predicates marked transitive and make newly implied
+        //    edges available to subsequent chain evaluations within this pass by updating adjacency.
+        final int MAX_TRANSITIVE_STEP_VISITS = 10_000;
         for (PropertyChainDef ch : reg.propertyChains()) {
             List<String> chain = ch.chain();
             if (chain == null || chain.size() < 2) continue;
@@ -61,23 +64,55 @@ public final class ForwardChainingReasoner implements Reasoner {
             // iterate along chain predicates
             for (int i = 0; i < chain.size(); i++) {
                 String p = chain.get(i);
+                boolean isTransitive = reg.propertyOf(p).map(PropertyDef::transitive).orElse(false);
                 Set<String> nextFrontier = new HashSet<>();
-                for (String x : frontier) {
-                    Set<String> ys = outByP.getOrDefault(p, Map.of()).getOrDefault(x, Set.of());
-                    for (String y : ys) {
-                        nextFrontier.add(y);
-                        // capture hop for provenance (include type information if available)
-                        Map<String, Object> hop = new HashMap<>();
-                        hop.put("src", x);
-                        hop.put("p", p);
-                        hop.put("dst", y);
-                        String hopSrcType = resolveSourceTypeOptional(reg, nodeTypes, p, x, x.equals(snap.entityId()) ? snap.entityType() : null);
-                        String hopDstType = resolveDestinationTypeOptional(reg, nodeTypes, p, y, null);
-                        if (hopSrcType != null) hop.put("srcType", hopSrcType);
-                        if (hopDstType != null) hop.put("dstType", hopDstType);
-                        contributingHops.add(hop);
+
+                if (isTransitive) {
+                    // BFS closure over p starting from current frontier
+                    Deque<String> dq = new ArrayDeque<>(frontier);
+                    Set<String> visited = new HashSet<>(frontier);
+                    int visits = 0;
+                    while (!dq.isEmpty() && visits < MAX_TRANSITIVE_STEP_VISITS) {
+                        String x = dq.removeFirst();
+                        visits++;
+                        Set<String> ys = outByP.getOrDefault(p, Map.of()).getOrDefault(x, Set.of());
+                        for (String y : ys) {
+                            // capture hop for provenance
+                            Map<String, Object> hop = new HashMap<>();
+                            hop.put("src", x);
+                            hop.put("p", p);
+                            hop.put("dst", y);
+                            String hopSrcType = resolveSourceTypeOptional(reg, nodeTypes, p, x, x.equals(snap.entityId()) ? snap.entityType() : null);
+                            String hopDstType = resolveDestinationTypeOptional(reg, nodeTypes, p, y, null);
+                            if (hopSrcType != null) hop.put("srcType", hopSrcType);
+                            if (hopDstType != null) hop.put("dstType", hopDstType);
+                            contributingHops.add(hop);
+
+                            if (visited.add(y)) {
+                                dq.addLast(y);
+                            }
+                            nextFrontier.add(y);
+                        }
+                    }
+                } else {
+                    for (String x : frontier) {
+                        Set<String> ys = outByP.getOrDefault(p, Map.of()).getOrDefault(x, Set.of());
+                        for (String y : ys) {
+                            nextFrontier.add(y);
+                            // capture hop for provenance (include type information if available)
+                            Map<String, Object> hop = new HashMap<>();
+                            hop.put("src", x);
+                            hop.put("p", p);
+                            hop.put("dst", y);
+                            String hopSrcType = resolveSourceTypeOptional(reg, nodeTypes, p, x, x.equals(snap.entityId()) ? snap.entityType() : null);
+                            String hopDstType = resolveDestinationTypeOptional(reg, nodeTypes, p, y, null);
+                            if (hopSrcType != null) hop.put("srcType", hopSrcType);
+                            if (hopDstType != null) hop.put("dstType", hopDstType);
+                            contributingHops.add(hop);
+                        }
                     }
                 }
+
                 frontier = nextFrontier;
                 if (frontier.isEmpty()) break;
                 if (i == chain.size() - 1) {
@@ -92,7 +127,12 @@ public final class ForwardChainingReasoner implements Reasoner {
                 Provenance prov = new Provenance("chain", inputs);
                 String srcType = resolveSourceType(reg, nodeTypes, implies, snap.entityId(), snap.entityType());
                 String dstType = resolveDestinationType(reg, nodeTypes, implies, z, null);
+                // Add inferred edge
                 edges.add(new Edge(snap.entityId(), srcType, implies, z, dstType, true, Optional.of(prov)));
+                // Make it available to subsequent chain evaluations in this pass
+                outByP.computeIfAbsent(implies, k -> new HashMap<>())
+                      .computeIfAbsent(snap.entityId(), k -> new HashSet<>())
+                      .add(z);
             }
         }
 
