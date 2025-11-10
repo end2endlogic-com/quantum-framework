@@ -18,17 +18,36 @@ public class OntologyMetaRepo extends MorphiaRepo<OntologyMeta> {
         return Optional.ofNullable(q.first());
     }
 
-    public OntologyMeta upsert(String yamlHash, Integer yamlVersion, String source, boolean reindexRequired) {
+    /**
+     * Record an observation of the current ontology YAML state without changing the applied yamlHash.
+     */
+    public OntologyMeta upsertObservation(Integer yamlVersion, String source, boolean reindexRequired) {
+        OntologyMeta meta = getSingleton().orElseGet(() -> {
+            OntologyMeta m = new OntologyMeta();
+            m.setRefName("global");
+            return m;
+        });
+        meta.setYamlVersion(yamlVersion);
+        meta.setSource(source);
+        meta.setUpdatedAt(new Date());
+        meta.setReindexRequired(reindexRequired);
+        save(ds(), meta);
+        return meta;
+    }
+
+    /**
+     * Mark that the current YAML has been applied: set yamlHash and appliedAt and clear reindexRequired.
+     */
+    public OntologyMeta markApplied(String yamlHash) {
         OntologyMeta meta = getSingleton().orElseGet(() -> {
             OntologyMeta m = new OntologyMeta();
             m.setRefName("global");
             return m;
         });
         meta.setYamlHash(yamlHash);
-        meta.setYamlVersion(yamlVersion);
-        meta.setSource(source);
+        meta.setAppliedAt(new Date());
         meta.setUpdatedAt(new Date());
-        meta.setReindexRequired(reindexRequired);
+        meta.setReindexRequired(false);
         save(ds(), meta);
         return meta;
     }

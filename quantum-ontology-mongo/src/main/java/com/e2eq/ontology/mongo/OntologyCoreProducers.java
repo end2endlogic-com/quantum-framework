@@ -61,30 +61,30 @@ public class OntologyCoreProducers {
 
         // 3) YAML overlay from configured or conventional locations and compute/store hash
         Optional<Path> path = Optional.empty();
+        String currentHash = "unknown";
+        boolean needsReindex = false;
         try {
             YamlOntologyLoader yaml = new YamlOntologyLoader();
             path = resolveYamlPath();
+            TBox overlay = null;
             if (path.isPresent() && Files.exists(path.get())) {
-                TBox overlay = yaml.loadFromPath(path.get());
-                accumulated = OntologyMerger.merge(accumulated, overlay);
+                overlay = yaml.loadFromPath(path.get());
             } else {
-                try {
-                    TBox overlay = yaml.loadFromClasspath("/ontology.yaml");
-                    accumulated = OntologyMerger.merge(accumulated, overlay);
-                } catch (Exception ignored) { }
+                try { overlay = yaml.loadFromClasspath("/ontology.yaml"); } catch (Exception ignored) { }
             }
-        } catch (Throwable ignored) { }
-
-        // Update ontology meta/hash and mark reindexRequired if changed
-        try {
-            metaService.updateFromYaml(path, "/ontology.yaml");
+            if (overlay != null) {
+                accumulated = OntologyMerger.merge(accumulated, overlay);
+            }
+            var result = metaService.observeYaml(path, "/ontology.yaml");
+            currentHash = result.currentHash();
+            needsReindex = metaService.getMeta().map(m -> m.isReindexRequired()).orElse(false);
         } catch (Throwable t) {
-            Log.warn("Failed to update ontology meta from YAML: " + t.getMessage());
+            Log.warn("Failed to observe/update ontology meta from YAML: " + t.getMessage());
         }
 
         // Validate final TBox
         try { OntologyValidator.validate(accumulated); } catch (Exception e) { /* in prod you may want to fail fast */ }
-        return new InMemoryOntologyRegistry(accumulated);
+        return new YamlBackedOntologyRegistry(accumulated, currentHash, needsReindex);
     }
 
     private Optional<Path> resolveYamlPath() {

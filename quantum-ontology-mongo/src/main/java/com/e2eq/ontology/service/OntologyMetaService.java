@@ -21,38 +21,30 @@ public class OntologyMetaService {
 
     public Optional<OntologyMeta> getMeta() { return metaRepo.getSingleton(); }
 
-    public OntologyMeta updateFromYaml(Optional<Path> path, String classpathFallback) {
+    /**
+     * Observe current YAML on disk or classpath, compute its SHA-256, and update metadata reindex flag
+     * if it differs from the last applied yamlHash. Does not overwrite yamlHash.
+     * Returns a pair-like holder with the metadata and the computed current hash.
+     */
+    public Result observeYaml(Optional<Path> path, String classpathFallback) {
         try {
-            byte[] bytes;
-            String source;
-            Integer version = null;
-            if (path.isPresent() && Files.exists(path.get())) {
-                bytes = Files.readAllBytes(path.get());
-                source = path.get().toAbsolutePath().toString();
-            } else {
-                try (InputStream in = getClass().getResourceAsStream(classpathFallback)) {
-                    if (in == null) {
-                        Log.warn("OntologyMetaService: YAML not found at " + classpathFallback);
-                        bytes = new byte[0];
-                        source = "<none>";
-                    } else {
-                        bytes = in.readAllBytes();
-                        source = classpathFallback;
-                    }
-                }
-            }
-            String hash = sha256(bytes);
+            Observed observed = readYamlBytes(path, classpathFallback);
+            String currentHash = sha256(observed.bytes);
             boolean changed = metaRepo.getSingleton()
-                    .map(m -> m.getYamlHash() == null || !m.getYamlHash().equals(hash))
+                    .map(m -> m.getYamlHash() == null || !m.getYamlHash().equals(currentHash))
                     .orElse(true);
-            OntologyMeta meta = metaRepo.upsert(hash, version, source, changed);
+            OntologyMeta meta = metaRepo.upsertObservation(null, observed.source, changed);
             if (changed) {
-                Log.infof("Ontology YAML changed; new hash=%s, source=%s. Marking reindexRequired=true.", hash, source);
+                Log.infof("Ontology YAML changed; new hash=%s, source=%s. Marking reindexRequired=true.", currentHash, observed.source);
             }
-            return meta;
+            return new Result(meta, currentHash);
         } catch (Exception e) {
             throw new RuntimeException("Failed to compute ontology YAML hash", e);
         }
+    }
+
+    public void markApplied(String appliedHash) {
+        metaRepo.markApplied(appliedHash);
     }
 
     public void clearReindexRequired() {
@@ -62,9 +54,33 @@ public class OntologyMetaService {
         });
     }
 
+    private Observed readYamlBytes(Optional<Path> path, String classpathFallback) throws Exception {
+        byte[] bytes;
+        String source;
+        if (path.isPresent() && Files.exists(path.get())) {
+            bytes = Files.readAllBytes(path.get());
+            source = path.get().toAbsolutePath().toString();
+        } else {
+            try (InputStream in = getClass().getResourceAsStream(classpathFallback)) {
+                if (in == null) {
+                    Log.warn("OntologyMetaService: YAML not found at " + classpathFallback);
+                    bytes = new byte[0];
+                    source = "<none>";
+                } else {
+                    bytes = in.readAllBytes();
+                    source = classpathFallback;
+                }
+            }
+        }
+        return new Observed(bytes, source);
+    }
+
     private static String sha256(byte[] data) throws Exception {
         MessageDigest md = MessageDigest.getInstance("SHA-256");
         md.update(data);
         return HexFormat.of().formatHex(md.digest());
     }
+
+    public record Result(OntologyMeta meta, String currentHash) {}
+    private record Observed(byte[] bytes, String source) {}
 }
