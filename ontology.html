@@ -529,7 +529,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-11-08T20:59:18Z</span>
+<span id="revdate">2025-11-10T13:42:37Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -611,6 +611,15 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_troubleshooting">7.9. Troubleshooting</a></li>
 <li><a href="#_migration_strategy">7.10. Migration strategy</a></li>
 <li><a href="#_modeling_guidance_annotate_existing_idreference_getters_keep_api_and_db_clean">7.11. Modeling guidance: annotate existing id/reference getters (keep API and DB clean)</a></li>
+</ul>
+</li>
+<li><a href="#ontology-rest-api">8. Exploring the ontology via REST and JointJS</a>
+<ul class="sectlevel2">
+<li><a href="#_base_info">8.1. Base info</a></li>
+<li><a href="#_tbox_schema_endpoints">8.2. TBox (schema) endpoints</a></li>
+<li><a href="#_abox_instances_graph_endpoint">8.3. ABox (instances) graph endpoint</a></li>
+<li><a href="#_rendering_with_jointjs_quick_snippet">8.4. Rendering with JointJS (quick snippet)</a></li>
+<li><a href="#_when_to_use_these_endpoints">8.5. When to use these endpoints</a></li>
 </ul>
 </li>
 </ul>
@@ -1439,11 +1448,13 @@ Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, <span class="string"
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="json"><span class="key"><span class="delimiter">&quot;</span><span class="content">prov</span><span class="delimiter">&quot;</span></span>: {
-  <span class="key"><span class="delimiter">&quot;</span><span class="content">rule</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">transitive</span><span class="delimiter">&quot;</span></span>,
-  <span class="key"><span class="delimiter">&quot;</span><span class="content">inputs</span><span class="delimiter">&quot;</span></span>: {
-    <span class="key"><span class="delimiter">&quot;</span><span class="content">prop</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">placedInOrg</span><span class="delimiter">&quot;</span></span>,
-    <span class="key"><span class="delimiter">&quot;</span><span class="content">inputs</span><span class="delimiter">&quot;</span></span>: [ { <span class="key"><span class="delimiter">&quot;</span><span class="content">src</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">O1</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">p</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">placedInOrg</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">dst</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">OrgA</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">srcType</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Order</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">dstType</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Organization</span><span class="delimiter">&quot;</span></span> } ]
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">prov</span><span class="delimiter">&quot;</span></span>: {
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">rule</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">transitive</span><span class="delimiter">&quot;</span></span>,
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">inputs</span><span class="delimiter">&quot;</span></span>: {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">prop</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">placedInOrg</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">inputs</span><span class="delimiter">&quot;</span></span>: [ { <span class="key"><span class="delimiter">&quot;</span><span class="content">src</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">O1</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">p</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">placedInOrg</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">dst</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">OrgA</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">srcType</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Order</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">dstType</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Organization</span><span class="delimiter">&quot;</span></span> } ]
+    }
   }
 }</code></pre>
 </div>
@@ -1586,11 +1597,11 @@ Provenance is for explanation and maintenance. The runtime edges you query on re
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="java">Bson base = Filters.and(existingFilters...);
+<pre class="CodeRay highlight"><code>Bson base = Filters.and(existingFilter1, existingFilter2);
 Bson rewritten = hasEdgeRequested
   ? rewriter.rewriteForHasEdge(base, tenantId, predicate, dst)
   : base;
-<span class="type">var</span> cursor = datastore.getDatabase().getCollection(coll).find(rewritten);</code></pre>
+var cursor = datastore.getDatabase().getCollection(coll).find(rewritten);</code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -1605,11 +1616,11 @@ Bson rewritten = hasEdgeRequested
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="predefined-type">Set</span>&lt;<span class="predefined-type">String</span>&gt; ids = edgeDao.srcIdsByDst(tenantId, predicate, dst);
-<span class="keyword">if</span> (ids.isEmpty()) {
-  <span class="keyword">return</span> <span class="predefined-type">List</span>.of(); <span class="comment">// short-circuit</span>
+<pre class="CodeRay highlight"><code>Set&lt;String&gt; ids = edgeDao.srcIdsByDst(tenantId, predicate, dst);
+if (ids.isEmpty()) {
+  return List.of(); // short-circuit
 }
-query.filter(Filters.in(<span class="string"><span class="delimiter">&quot;</span><span class="content">_id</span><span class="delimiter">&quot;</span></span>, ids));</code></pre>
+query.filter(Filters.in(&quot;_id&quot;, ids));</code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -3011,11 +3022,221 @@ Keep overlays additive. If you need to override flags (e.g., mark an existing pr
 </div>
 </div>
 </div>
+<div class="sect1">
+<h2 id="ontology-rest-api">8. Exploring the ontology via REST and JointJS</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>This section shows how to inspect your ontology (TBox) and your instance relationships (ABox) through a small, read‑only REST API and how to render the results in a browser using JointJS. These endpoints are implemented in the quantum-ontology-mongo module and are intended for diagnostics, admin tooling, and lightweight visualization.</p>
+</div>
+<div class="admonitionblock tip">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-tip" title="Tip"></i>
+</td>
+<td class="content">
+For a complete, copy‑paste friendly reference of every parameter and more examples, see the module guide at quantum-ontology-mongo/README.md. The summary below is intentionally concise to keep this document flowing without duplication.
+</td>
+</tr>
+</table>
+</div>
+<div class="sect2">
+<h3 id="_base_info">8.1. Base info</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Base path: /ontology</p>
+</li>
+<li>
+<p>Media type: application/json</p>
+</li>
+<li>
+<p>Security: Bearer JWT, roles user or admin</p>
+</li>
+<li>
+<p>Multi‑tenancy: pass X-Realm: &lt;tenant-id&gt; header for ABox queries (and for any repo‑backed calls). TBox demos may work without it if your deployment wires an in‑memory registry.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Example (replace token and realm):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="shell">curl -H &quot;Authorization: Bearer $TOKEN&quot; \
+     -H &quot;X-Realm: demo&quot; \
+     http://localhost:8080/ontology/summary</code></pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_tbox_schema_endpoints">8.2. TBox (schema) endpoints</h3>
+<div class="paragraph">
+<p>These expose ontology registry metadata and a JointJS‑ready schema graph.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>GET /ontology/registry — Full TBox snapshot. Depending on your registry producer, classes may be best‑effort.</p>
+</li>
+<li>
+<p>GET /ontology/classes — Lists known classes (often inferred from property domains/ranges).</p>
+</li>
+<li>
+<p>GET /ontology/classes/{name} — Class details by name.</p>
+</li>
+<li>
+<p>GET /ontology/properties — Lists properties.</p>
+</li>
+<li>
+<p>GET /ontology/properties/{name} — Property details by name.</p>
+</li>
+<li>
+<p>GET /ontology/propertyChains — Lists property chains.</p>
+</li>
+<li>
+<p>GET /ontology/graph/jointjs — Returns { cells: [&#8230;&#8203;] } for a quick schema visualization in JointJS.</p>
+</li>
+<li>
+<p>GET /ontology/summary — Small counts summary (classes/properties/chains).</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Basic call:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="shell">curl -H &quot;Authorization: Bearer $TOKEN&quot; \
+     http://localhost:8080/ontology/graph/jointjs | jq '.cells | length'</code></pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_abox_instances_graph_endpoint">8.3. ABox (instances) graph endpoint</h3>
+<div class="paragraph">
+<p>Builds a neighborhood graph around a specific instance (src id + type). Useful for investigating relationships and verifying inferences.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>GET /ontology/graph/instances/jointjs</p>
+</li>
+<li>
+<p>Headers: X-Realm: &lt;tenant-id&gt; (required)</p>
+</li>
+<li>
+<p>Query params:</p>
+</li>
+<li>
+<p>src: source id (required)</p>
+</li>
+<li>
+<p>type: ontology class/type of the source id (required)</p>
+</li>
+<li>
+<p>direction: out | in | both (default: out)</p>
+</li>
+<li>
+<p>p: repeatable predicate filter (optional)</p>
+</li>
+<li>
+<p>limit: max edges to include (default: 200)</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Example:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="shell">curl -H &quot;Authorization: Bearer $TOKEN&quot; \
+     -H &quot;X-Realm: demo&quot; \
+     &quot;http://localhost:8080/ontology/graph/instances/jointjs?src=O1&amp;type=Order&amp;direction=both&amp;limit=100&quot;</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Response shape:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{ <span class="key"><span class="delimiter">&quot;</span><span class="content">cells</span><span class="delimiter">&quot;</span></span>: [] }</code></pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Elements (instances) are rectangles with attrs.root data-type=instance and data-class=&lt;Type&gt;.</p>
+</li>
+<li>
+<p>Links are labeled with the predicate. Inferred links are visually distinguished and marked in data:</p>
+</li>
+<li>
+<p>Styling: dashed gray stroke (strokeDasharray: "5,5", stroke: "#9e9e9e").</p>
+</li>
+<li>
+<p>Metadata: data.inferred = true.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_rendering_with_jointjs_quick_snippet">8.4. Rendering with JointJS (quick snippet)</h3>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="javascript">async <span class="keyword">function</span> <span class="function">renderJointJs</span>(divId, url) {
+  const res = await fetch(url, { <span class="key">headers</span>: { <span class="key"><span class="delimiter">'</span><span class="content">Authorization</span><span class="delimiter">'</span></span>: <span class="string"><span class="delimiter">'</span><span class="content">Bearer </span><span class="delimiter">'</span></span> + window.token, <span class="key"><span class="delimiter">'</span><span class="content">X-Realm</span><span class="delimiter">'</span></span>: <span class="string"><span class="delimiter">'</span><span class="content">demo</span><span class="delimiter">'</span></span> } });
+  const { cells } = await res.json();
+  const graph = <span class="keyword">new</span> joint.dia.Graph();
+  graph.fromJSON({ cells });
+  const paper = <span class="keyword">new</span> joint.dia.Paper({ <span class="key">el</span>: document.getElementById(divId), <span class="key">model</span>: graph, <span class="key">width</span>: <span class="integer">1400</span>, <span class="key">height</span>: <span class="integer">900</span>, <span class="key">gridSize</span>: <span class="integer">10</span>, <span class="key">drawGrid</span>: <span class="predefined-constant">true</span> });
+  <span class="comment">// Optional: apply a layout here</span>
+}
+<span class="comment">// Example: schema graph</span>
+<span class="comment">// renderJointJs('paper', '/ontology/graph/jointjs');</span>
+<span class="comment">// Example: instance graph around Order O1</span>
+<span class="comment">// renderJointJs('paper', '/ontology/graph/instances/jointjs?src=O1&amp;type=Order&amp;direction=both');</span></code></pre>
+</div>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+JointJS will honor the attrs/labels we return. You can add a legend in your UI to explain that dashed gray edges are inferred, while solid edges are explicit.
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_when_to_use_these_endpoints">8.5. When to use these endpoints</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>During development: inspect whether your ontology registry is loaded as expected and whether property chains/inverses are effective.</p>
+</li>
+<li>
+<p>During troubleshooting: confirm that edges exist for the predicates your queries or policies reference (see also <a href="#ontology-integration-morphia-permissions">Integrating Ontology</a>).</p>
+</li>
+<li>
+<p>For lightweight admin tools: the JointJS payload can be embedded in a simple HTML page to visualize current relationships.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>For deep dives, parameter matrices, and additional examples (including large graph considerations), consult quantum-ontology-mongo/README.md in this repository.</p>
+</div>
+</div>
+</div>
+</div>
 </div>
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-11-02 16:16:13 -0500
+Last updated 2025-11-08 18:18:02 -0500
 </div>
 </div>
 </body>
