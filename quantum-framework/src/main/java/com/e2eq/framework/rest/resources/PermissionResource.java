@@ -93,6 +93,30 @@ public class PermissionResource {
       public RuleIndexSnapshot index;
    }
 
+   // Request and response for evaluating full access landscape for an identity
+   public static class EvaluateRequest {
+      public String identity;         // userId or role (required)
+      public String realm;            // optional
+      public String[] roles;          // optional extra roles
+      // DataDomain scope (optional; falls back like /check)
+      public String orgRefName;
+      public String accountNumber;
+      public String tenantId;
+      public Integer dataSegment;
+      public String ownerId;
+      public String scope;            // optional, defaults to "api"
+      // Optional narrowing filters
+      public String area;
+      public String functionalDomain;
+      public String action;
+   }
+
+   public static class EvaluationResult {
+      // area -> domain -> actions
+      public Map<String, Map<String, List<String>>> allow;
+      public Map<String, Map<String, List<String>>> deny;
+   }
+
    protected List<EntityInfo> getInfoList() {
       return getInfoList(false);
    }
@@ -389,5 +413,201 @@ public class PermissionResource {
          idx = ruleContext.exportScopedAccessMatrixForIdentities(identities, null);
       }
       return Response.ok(idx).build();
+   }
+
+   // Lookup outcome in a scoped matrix using wildcard resolution and fallback chain
+   private static RuleIndexSnapshot.Outcome lookupOutcome(RuleIndexSnapshot snap, String area, String domain, String action) {
+      if (snap == null) return null;
+      String startKey = snap.getRequestedScope() != null ? snap.getRequestedScope() : "org=*|acct=*|tenant=*|seg=*|owner=*";
+      List<String> fallback = snap.getRequestedFallback() != null ? snap.getRequestedFallback() : List.of("org=*|acct=*|tenant=*|seg=*|owner=*");
+      List<String> tryScopes = new ArrayList<>();
+      tryScopes.add(startKey);
+      tryScopes.addAll(fallback);
+      Map<String, RuleIndexSnapshot.ScopedMatrix> scopes = snap.getScopes();
+      if (scopes == null) return null;
+      for (String key : tryScopes) {
+         RuleIndexSnapshot.ScopedMatrix sm = scopes.get(key);
+         if (sm == null || sm.isRequiresServer()) continue;
+         Map<String, Map<String, Map<String, RuleIndexSnapshot.Outcome>>> m = sm.getMatrix();
+         if (m == null) continue;
+         RuleIndexSnapshot.Outcome out = lookupInMatrix(m, area, domain, action);
+         if (out != null) return out;
+      }
+      return null;
+   }
+
+   private static RuleIndexSnapshot.Outcome lookupInMatrix(Map<String, Map<String, Map<String, RuleIndexSnapshot.Outcome>>> m,
+                                                           String area, String domain, String action) {
+      String[][] tries = new String[][]{
+              {area, domain, action},
+              {area, domain, "*"},
+              {area, "*", action},
+              {area, "*", "*"},
+              {"*", domain, action},
+              {"*", domain, "*"},
+              {"*", "*", action},
+              {"*", "*", "*"}
+      };
+      for (String[] t : tries) {
+         Map<String, Map<String, RuleIndexSnapshot.Outcome>> dmap = m.get(t[0]);
+         if (dmap == null) continue;
+         Map<String, RuleIndexSnapshot.Outcome> amap = dmap.get(t[1]);
+         if (amap == null) continue;
+         RuleIndexSnapshot.Outcome out = amap.get(t[2]);
+         if (out != null) return out;
+      }
+      return null;
+   }
+
+   private static Map<String, Map<String, List<String>>> ensureOutMap(Map<String, Map<String, List<String>>> root, String area, String domain) {
+      Map<String, List<String>> dom = root.computeIfAbsent(area, k -> new TreeMap<>(String.CASE_INSENSITIVE_ORDER));
+      dom.computeIfAbsent(domain, k -> new ArrayList<>());
+      return root;
+   }
+
+   @POST
+   @Path("/fd/evaluate")
+   @Consumes(MediaType.APPLICATION_JSON)
+   @Produces(MediaType.APPLICATION_JSON)
+   public Response evaluateFunctionalAccess(@QueryParam("useIndex") @DefaultValue("true") boolean useIndex, EvaluateRequest req) {
+      if (req == null || req.identity == null || req.identity.isBlank()) {
+         return Response.status(Response.Status.BAD_REQUEST).entity("identity is required").build();
+      }
+      // Realm resolution (same as /check)
+      String realm = (req.realm != null && !req.realm.isBlank()) ? req.realm :
+              SecurityContext.getPrincipalContext().map(PrincipalContext::getDefaultRealm).orElse(ruleContext.getDefaultRealm());
+
+      // Build DataDomain with fallbacks
+      String org = (req.orgRefName != null && !req.orgRefName.isBlank()) ? req.orgRefName :
+              SecurityContext.getPrincipalContext().map(pc -> pc.getDataDomain().getOrgRefName()).orElse(securityUtils.getDefaultDataDomain().getOrgRefName());
+      String acct = (req.accountNumber != null && !req.accountNumber.isBlank()) ? req.accountNumber :
+              SecurityContext.getPrincipalContext().map(pc -> pc.getDataDomain().getAccountNum()).orElse(securityUtils.getDefaultDataDomain().getAccountNum());
+      String tenant = (req.tenantId != null && !req.tenantId.isBlank()) ? req.tenantId :
+              SecurityContext.getPrincipalContext().map(pc -> pc.getDataDomain().getTenantId()).orElse(securityUtils.getDefaultDataDomain().getTenantId());
+      int seg = (req.dataSegment != null) ? req.dataSegment :
+              SecurityContext.getPrincipalContext().map(pc -> pc.getDataDomain().getDataSegment()).orElse(securityUtils.getDefaultDataDomain().getDataSegment());
+      String ownerId = (req.ownerId != null && !req.ownerId.isBlank()) ? req.ownerId :
+              SecurityContext.getResourceContext().map(ResourceContext::getOwnerId)
+                      .or(() -> SecurityContext.getPrincipalContext().map(PrincipalContext::getUserId))
+                      .orElse(req.identity);
+      DataDomain dd = new DataDomain(org, acct, tenant, seg, ownerId);
+
+      // Resolve identities (roles) and include the original identity
+      Set<String> identities = identityRoleResolver.resolveRolesForIdentity(req.identity, realm, securityIdentity);
+      if (identities == null) identities = new HashSet<>();
+      // Remove the userId if present so set holds only roles; but we will still add identity explicitly below for index completeness
+      identities.remove(req.identity);
+      if (req.roles != null) identities.addAll(Arrays.asList(req.roles));
+      identities.add(req.identity);
+
+      // Build PrincipalContext for fallback evaluation when index is disabled or incomplete
+      Set<String> roleSetForPc = new HashSet<>(identities);
+      roleSetForPc.remove(req.identity);
+      String[] rolesArr = roleSetForPc.isEmpty() ? new String[0] : roleSetForPc.toArray(new String[0]);
+      PrincipalContext pc = new PrincipalContext.Builder()
+              .withDefaultRealm(realm)
+              .withDataDomain(dd)
+              .withUserId(req.identity)
+              .withRoles(rolesArr)
+              .withScope(req.scope != null ? req.scope : "api")
+              .build();
+
+      // Discover area->domain->actions the same way as /fd?includeActions=true
+      Map<String, Map<String, Set<String>>> discovered = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+      // 1) From model discovery
+      List<EntityInfo> infoList = getInfoList(true);
+      for (EntityInfo ei : infoList) {
+         if (ei == null) continue;
+         String area = safe(ei.bmFunctionalArea);
+         String domain = safe(ei.bmFunctionalDomain);
+         if (area.isEmpty() || domain.isEmpty()) continue;
+         Set<String> actions = ensureAreaDomain(discovered, area, domain);
+         if (ei.actions != null) actions.addAll(ei.actions);
+         addDefaultActions(actions);
+      }
+      // 2) From DB FunctionalDomain collection
+      List<FunctionalDomain> stored = functionalDomainRepo.getAllList();
+      if (stored != null) {
+         for (FunctionalDomain fd : stored) {
+            if (fd == null) continue;
+            String a = safe(fd.getArea());
+            String d = safe(fd.getRefName());
+            if (a.isEmpty() || d.isEmpty()) continue;
+            Set<String> actions = ensureAreaDomain(discovered, a, d);
+            if (fd.getFunctionalActions() != null) {
+               for (FunctionalAction fa : fd.getFunctionalActions()) {
+                  if (fa == null) continue;
+                  String ref = safe(fa.getRefName());
+                  if (!ref.isEmpty()) actions.add(ref);
+               }
+            }
+            addDefaultActions(actions);
+         }
+      }
+
+      // Optional filtering
+      if (req.area != null && !req.area.isBlank()) {
+         discovered.keySet().removeIf(a -> !a.equalsIgnoreCase(req.area));
+      }
+      if (req.functionalDomain != null && !req.functionalDomain.isBlank()) {
+         for (Map.Entry<String, Map<String, Set<String>>> e : discovered.entrySet()) {
+            e.getValue().keySet().removeIf(d -> !d.equalsIgnoreCase(req.functionalDomain));
+         }
+      }
+      if (req.action != null && !req.action.isBlank()) {
+         for (Map.Entry<String, Map<String, Set<String>>> e : discovered.entrySet()) {
+            for (Map.Entry<String, Set<String>> d : e.getValue().entrySet()) {
+               d.getValue().removeIf(act -> !act.equalsIgnoreCase(req.action));
+            }
+         }
+      }
+
+      // Export optimized index snapshot for these identities scoped to dd
+      RuleIndexSnapshot snap = ruleContext.exportScopedAccessMatrixForIdentities(identities, dd);
+
+      Map<String, Map<String, List<String>>> allow = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+      Map<String, Map<String, List<String>>> deny = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+
+      // Classify each discovered action using index first (if enabled), then fall back to server evaluation
+      for (Map.Entry<String, Map<String, Set<String>>> areaEntry : discovered.entrySet()) {
+         String areaKey = areaEntry.getKey();
+         for (Map.Entry<String, Set<String>> domEntry : areaEntry.getValue().entrySet()) {
+            String domainKey = domEntry.getKey();
+            for (String action : domEntry.getValue()) {
+               Boolean isAllow;
+               RuleIndexSnapshot.Outcome out = null;
+               if (useIndex && snap != null && snap.isEnabled()) {
+                  out = lookupOutcome(snap, areaKey, domainKey, action);
+               }
+               if (out != null) {
+                  isAllow = "ALLOW".equalsIgnoreCase(out.getEffect());
+               } else {
+                  // Fallback to server-side evaluation for exact combination
+                  ResourceContext rc = new ResourceContext.Builder()
+                          .withRealm(realm)
+                          .withArea(areaKey)
+                          .withFunctionalDomain(domainKey)
+                          .withAction(action)
+                          .withOwnerId(ownerId)
+                          .build();
+                  SecurityCheckResponse resp = ruleContext.checkRules(pc, rc);
+                  isAllow = resp.getFinalEffect() == RuleEffect.ALLOW;
+               }
+               Map<String, Map<String, List<String>>> target = isAllow ? allow : deny;
+               Map<String, List<String>> domMap = target.computeIfAbsent(areaKey, k -> new TreeMap<>(String.CASE_INSENSITIVE_ORDER));
+               List<String> acts = domMap.computeIfAbsent(domainKey, k -> new ArrayList<>());
+               acts.add(action);
+            }
+         }
+      }
+
+      // Sort actions for stable output
+      allow.values().forEach(m -> m.values().forEach(list -> list.sort(String::compareToIgnoreCase)));
+      deny.values().forEach(m -> m.values().forEach(list -> list.sort(String::compareToIgnoreCase)));
+
+      EvaluationResult res = new EvaluationResult();
+      res.allow = allow;
+      res.deny = deny;
+      return Response.ok(res).build();
    }
 }

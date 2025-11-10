@@ -1381,25 +1381,26 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
 
     @Override
-    @SafeVarargs
-    public final long update(@NotNull String id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+    public long update(@NotNull String id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
         ObjectId oid = new ObjectId(id);
         return update(oid, pairs);
     }
 
    @Override
-   public long update (String realmId, @NotNull String id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+   @SafeVarargs
+   public final long update (String realmId, @NotNull String id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
       return update(morphiaDataStore.getDataStore(realmId), id, pairs);
    }
 
    @Override
-   public long update ( @NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+   public long update (@NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
        return update(morphiaDataStore.getDataStore(getSecurityContextRealmId()), id, pairs);
    }
 
 
     @Override
-    public long update (String realmId, @NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+    @SafeVarargs
+    public final long update (String realmId, @NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
         return update(morphiaDataStore.getDataStore(realmId), id, pairs);
     }
 
@@ -1463,13 +1464,15 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
     @Override
-    public long update(Datastore datastore, @NotNull String id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+    @SafeVarargs
+    public final long update(Datastore datastore, @NotNull String id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
         ObjectId oid = new ObjectId(id);
         return update(datastore, oid, pairs);
     }
 
     @Override
-    public long update(Datastore datastore, @NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+    @SafeVarargs
+    public final long update(Datastore datastore, @NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
        List<UpdateOperator> updateOperators = new ArrayList<>();
        List<String> reservedFields = List.of("refName", "id", "version", "references", "auditInfo", "persistentEvents");
 
@@ -1561,7 +1564,8 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
 
    @Override
-    public long update(MorphiaSession session, @NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) {
+   @SafeVarargs
+    public final long update(MorphiaSession session, @NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) {
         List<UpdateOperator> updateOperators = new ArrayList<>();
         for (Pair<String, Object> pair : pairs) {
             // check that the pair key corresponds to a field in the persistent class that is an enum
@@ -1604,22 +1608,26 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     // --- Bulk update implementations ---
     @Override
-    public long updateManyByQuery(@Nullable String query, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+    @SafeVarargs
+    public final long updateManyByQuery(@Nullable String query, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
         return updateManyByQuery(morphiaDataStore.getDataStore(getSecurityContextRealmId()), query, false, pairs);
     }
 
     @Override
-    public long updateManyByQuery(@NotNull String realmId, @Nullable String query, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+    @SafeVarargs
+    public final long updateManyByQuery(@NotNull String realmId, @Nullable String query, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
         return updateManyByQuery(morphiaDataStore.getDataStore(realmId), query, false, pairs);
     }
 
     @Override
-    public long updateManyByQuery(@NotNull Datastore datastore, @Nullable String query, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+    @SafeVarargs
+    public final long updateManyByQuery(@NotNull Datastore datastore, @Nullable String query, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
         return updateManyByQuery(datastore, query, false, pairs);
     }
 
     @Override
-    public long updateManyByQuery(@NotNull Datastore datastore, @Nullable String query, boolean ignoreRules, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+    @SafeVarargs
+    public final long updateManyByQuery(@NotNull Datastore datastore, @Nullable String query, boolean ignoreRules, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
         List<Filter> filters = new ArrayList<>();
         if (query != null && !query.trim().isEmpty()) {
             Filter qf = MorphiaUtils.convertToFilter(query, getPersistentClass());
@@ -1648,22 +1656,26 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
     @Override
-    public long updateManyByIds(@NotNull List<ObjectId> ids, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+    @SafeVarargs
+    public final long updateManyByIds(@NotNull List<ObjectId> ids, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
         return updateManyByIds(morphiaDataStore.getDataStore(getSecurityContextRealmId()), ids, false, pairs);
     }
 
     @Override
-    public long updateManyByIds(@NotNull String realmId, @NotNull List<ObjectId> ids, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+    @SafeVarargs
+    public final long updateManyByIds(@NotNull String realmId, @NotNull List<ObjectId> ids, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
         return updateManyByIds(morphiaDataStore.getDataStore(realmId), ids, false, pairs);
     }
 
     @Override
-    public long updateManyByIds(@NotNull Datastore datastore, @NotNull List<ObjectId> ids, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+    @SafeVarargs
+    public final long updateManyByIds(@NotNull Datastore datastore, @NotNull List<ObjectId> ids, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
         return updateManyByIds(datastore, ids, false, pairs);
     }
 
     @Override
-    public long updateManyByIds(@NotNull Datastore datastore, @NotNull List<ObjectId> ids, boolean ignoreRules, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
+    @SafeVarargs
+    public final long updateManyByIds(@NotNull Datastore datastore, @NotNull List<ObjectId> ids, boolean ignoreRules, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
         Objects.requireNonNull(ids, "ids must not be null");
         if (ids.isEmpty()) return 0;
         List<Filter> filters = new ArrayList<>();
@@ -1691,27 +1703,31 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
     @Override
-    public long updateManyByRefAndDomain(@NotNull List<Pair<String, com.e2eq.framework.model.persistent.base.DataDomain>> items,
+    @SafeVarargs
+    public final long updateManyByRefAndDomain(@NotNull List<Pair<String, com.e2eq.framework.model.persistent.base.DataDomain>> items,
                                          @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
         return updateManyByRefAndDomain(morphiaDataStore.getDataStore(getSecurityContextRealmId()), items, false, pairs);
     }
 
     @Override
-    public long updateManyByRefAndDomain(@NotNull String realmId,
+    @SafeVarargs
+    public final long updateManyByRefAndDomain(@NotNull String realmId,
                                          @NotNull List<Pair<String, com.e2eq.framework.model.persistent.base.DataDomain>> items,
                                          @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
         return updateManyByRefAndDomain(morphiaDataStore.getDataStore(realmId), items, false, pairs);
     }
 
     @Override
-    public long updateManyByRefAndDomain(@NotNull Datastore datastore,
+    @SafeVarargs
+    public final long updateManyByRefAndDomain(@NotNull Datastore datastore,
                                          @NotNull List<Pair<String, com.e2eq.framework.model.persistent.base.DataDomain>> items,
                                          @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
         return updateManyByRefAndDomain(datastore, items, false, pairs);
     }
 
     @Override
-    public long updateManyByRefAndDomain(@NotNull Datastore datastore,
+    @SafeVarargs
+    public final long updateManyByRefAndDomain(@NotNull Datastore datastore,
                                          @NotNull List<Pair<String, com.e2eq.framework.model.persistent.base.DataDomain>> items,
                                          boolean ignoreRules,
                                          @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
@@ -1751,7 +1767,8 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         return res.getModifiedCount();
     }
 
-    private List<UpdateOperator> buildValidatedUpdateOperators(@NotNull Pair<String, Object>... pairs) {
+   @SafeVarargs
+    private  List<UpdateOperator> buildValidatedUpdateOperators(@NotNull Pair<String, Object>... pairs) {
         Objects.requireNonNull(pairs, "update pairs must not be null");
         List<UpdateOperator> updateOperators = new ArrayList<>();
         List<String> reservedFields = List.of("refName", "id", "version", "references", "auditInfo", "persistentEvents");

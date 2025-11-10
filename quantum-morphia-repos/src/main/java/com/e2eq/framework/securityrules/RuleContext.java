@@ -730,6 +730,7 @@ public class RuleContext {
     List<Rule> getApplicableRulesForPrincipalAndAssociatedRoles(PrincipalContext pcontext, ResourceContext rcontext) {
         // If the compiled index is enabled and available, use it to quickly gather candidates
         if (indexEnabled && compiledIndex != null) {
+           Log.warn("<< checking with index enabled >>");
             try {
                 return compiledIndex.getApplicableRules(pcontext, rcontext);
             } catch (Throwable t) {
@@ -780,7 +781,9 @@ public class RuleContext {
      * @param rcontext the resource context
      * @return
      */
-    public SecurityCheckResponse checkRules(@Valid @NotNull PrincipalContext pcontext, @Valid @NotNull ResourceContext rcontext) {
+    public SecurityCheckResponse checkRules( PrincipalContext pcontext,  ResourceContext rcontext) {
+       Objects.requireNonNull(pcontext, "pcontext is required to be non null ");
+       Objects.requireNonNull(rcontext, "rcontext is required to be non null ");
         return checkRules(pcontext, rcontext, RuleEffect.DENY);
     }
 
@@ -817,6 +820,8 @@ public class RuleContext {
                for (Rule r : applicableRules) {
                     Log.debug("  " + r.toString());
                }
+            } else {
+               Log.warnf("No rules found for pcontext:%s and rcontext:%s", pcontext.toString(), rcontext.toString());
             }
         }
 
