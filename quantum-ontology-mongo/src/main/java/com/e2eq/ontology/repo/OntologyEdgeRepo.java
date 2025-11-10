@@ -318,4 +318,13 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
                 ));
         ds().getCollection(OntologyEdge.class).deleteMany(filter);
     }
+
+    /**
+     * Delete all derived edges for the given tenant. Used by force reindex.
+     */
+    public void deleteDerivedByTenant(String tenantId) {
+        org.bson.Document filter = new org.bson.Document("dataDomain.tenantId", tenantId)
+                .append("derived", true);
+        ds().getCollection(OntologyEdge.class).deleteMany(filter);
+    }
 }

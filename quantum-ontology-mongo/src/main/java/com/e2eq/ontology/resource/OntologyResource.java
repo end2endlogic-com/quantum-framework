@@ -102,6 +102,47 @@ public class OntologyResource {
         return Response.ok(registry.propertyChains()).build();
     }
 
+    @POST
+    @Path("reindex")
+    @RolesAllowed({"admin"})
+    @Consumes(MediaType.WILDCARD)
+    @Operation(summary = "Trigger full ontology reindex")
+    @SecurityRequirement(name = "bearerAuth")
+    public Response triggerReindex(@QueryParam("realm") @DefaultValue("default") String realm,
+                                   @QueryParam("force") @DefaultValue("false") boolean force) {
+        try {
+            // Delegate to service
+            com.e2eq.ontology.service.OntologyReindexer reindexer = io.quarkus.arc.Arc.container().instance(com.e2eq.ontology.service.OntologyReindexer.class).get();
+            reindexer.runAsync(realm, force);
+            Map<String, Object> body = Map.of(
+                    "accepted", true,
+                    "running", reindexer.isRunning(),
+                    "status", reindexer.status()
+            );
+            return Response.accepted(body).build();
+        } catch (Exception e) {
+            return Response.serverError().entity(Map.of("error", e.getMessage())).build();
+        }
+    }
+
+    @GET
+    @Path("version")
+    @Operation(summary = "Get current ontology YAML version metadata")
+    @SecurityRequirement(name = "bearerAuth")
+    public Response getVersion() {
+        try {
+            com.e2eq.ontology.repo.OntologyMetaRepo metaRepo = io.quarkus.arc.Arc.container().instance(com.e2eq.ontology.repo.OntologyMetaRepo.class).get();
+            var metaOpt = metaRepo.getSingleton();
+            Map<String, Object> body = metaOpt.<Map<String, Object>>map(m -> Map.of(
+                            "yamlHash", m.getYamlHash(),
+                            "appliedAt", m.getAppliedAt()))
+                    .orElse(Map.of("yamlHash", null, "appliedAt", null));
+            return Response.ok(body).build();
+        } catch (Exception e) {
+            return Response.serverError().entity(Map.of("error", e.getMessage())).build();
+        }
+    }
+
     @GET
     @Path("graph/jointjs")
     @Operation(summary = "Graph view as JointJS cells[]")
