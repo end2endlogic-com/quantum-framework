@@ -107,9 +107,23 @@ public class CascadeExecutor {
         Log.debugf("[DEBUG_LOG] CascadeExecutor.onAfterDelete type=%s id=%s tenant=%s", entityType, entityId, tenantId);
         try {
             Class<?> srcClass = ontologyTypeToClass.getOrDefault(entityType, null);
-            if (srcClass == null) return;
+            if (srcClass == null) {
+                // Attempt lazy refresh to resolve class mapping in test/runtime envs
+                refreshOntologyTypeMappings();
+                srcClass = ontologyTypeToClass.getOrDefault(entityType, null);
+            }
+            if (srcClass == null) {
+                Log.infof("[DEBUG_LOG] onAfterDelete: no class mapping for %s; running best-effort orphan removal", entityType);
+                bestEffortDeleteOutgoingTargets(tenantId, entityId);
+                return;
+            }
             Map<String, CascadeSpec> specs = buildCascadeSpecs(srcClass);
-            if (specs.isEmpty()) return;
+            if (specs.isEmpty()) {
+                Log.infof("[DEBUG_LOG] onAfterDelete: no cascade specs for %s; running best-effort orphan removal", entityType);
+                bestEffortDeleteOutgoingTargets(tenantId, entityId);
+                return;
+            }
+            Log.infof("[DEBUG_LOG] onAfterDelete specs for %s: %s", entityType, specs.keySet());
             Set<String> visited = new HashSet<>();
             recursiveDelete(tenantId, entityType, entityId, specs, visited, 0);
         } catch (Throwable t) {
@@ -224,54 +238,134 @@ public class CascadeExecutor {
         if (refType == null || refType.isEmpty()) return;
         Class<?> clazz = ontologyTypeToClass.get(refType);
         if (clazz == null) {
-            Log.debugf("[DEBUG_LOG] CascadeExecutor.deleteTarget unknown refType=%s", refType);
-            return;
+            // Lazy refresh of ontology type -> class mappings, then retry
+            refreshOntologyTypeMappings();
+            clazz = ontologyTypeToClass.get(refType);
         }
         try {
             Datastore ds = morphiaDatastore;
-            // Try delete by refName first
-            Query<?> q = ds.find(clazz).filter(Filters.eq("refName", targetId));
-            long count = q.count();
-            if (count == 0) {
-                // Try by _id as ObjectId
-                try {
-                    org.bson.types.ObjectId oid = new org.bson.types.ObjectId(targetId);
-                    q = ds.find(clazz).filter(Filters.eq("_id", oid));
-                    count = q.count();
-                } catch (IllegalArgumentException iae) {
-                    // not an ObjectId string; try as raw string
-                    q = ds.find(clazz).filter(Filters.eq("_id", targetId));
-                    count = q.count();
+            long del = 0L;
+            if (clazz != null) {
+                // Try delete by refName first using typed query
+                Query<?> q = ds.find(clazz).filter(Filters.eq("refName", targetId));
+                long count = q.count();
+                if (count == 0) {
+                    // Try by _id as ObjectId or String
+                    try {
+                        org.bson.types.ObjectId oid = new org.bson.types.ObjectId(targetId);
+                        q = ds.find(clazz).filter(Filters.eq("_id", oid));
+                    } catch (IllegalArgumentException iae) {
+                        q = ds.find(clazz).filter(Filters.eq("_id", targetId));
+                    }
                 }
-            }
-            var res = q.delete();
-            long del = res.getDeletedCount();
-            if (del == 0) {
-                // Fallback: raw collection delete using @Entity collection name
-                dev.morphia.annotations.Entity ent = clazz.getAnnotation(dev.morphia.annotations.Entity.class);
-                if (ent != null) {
-                    String coll = ent.value();
-                    if (coll != null && !coll.isBlank()) {
-                        org.bson.Document filter = new org.bson.Document("refName", targetId);
-                        var rawRes = ds.getDatabase().getCollection(coll).deleteOne(filter);
-                        del = rawRes.getDeletedCount();
-                        if (del == 0) {
-                            // Try _id as ObjectId or String
-                            try {
-                                org.bson.types.ObjectId oid = new org.bson.types.ObjectId(targetId);
-                                rawRes = ds.getDatabase().getCollection(coll).deleteOne(new org.bson.Document("_id", oid));
-                                del = rawRes.getDeletedCount();
-                            } catch (IllegalArgumentException iae) {
-                                rawRes = ds.getDatabase().getCollection(coll).deleteOne(new org.bson.Document("_id", targetId));
-                                del = rawRes.getDeletedCount();
+                var res = q.delete();
+                del = res.getDeletedCount();
+                if (del == 0) {
+                    // Fallback: raw collection delete using @Entity collection name
+                    dev.morphia.annotations.Entity ent = clazz.getAnnotation(dev.morphia.annotations.Entity.class);
+                    if (ent != null) {
+                        String coll = ent.value();
+                        if (coll != null && !coll.isBlank()) {
+                            org.bson.Document filter = new org.bson.Document("refName", targetId);
+                            var rawRes = ds.getDatabase().getCollection(coll).deleteOne(filter);
+                            del = rawRes.getDeletedCount();
+                            if (del == 0) {
+                                // Try _id as ObjectId or String
+                                try {
+                                    org.bson.types.ObjectId oid = new org.bson.types.ObjectId(targetId);
+                                    rawRes = ds.getDatabase().getCollection(coll).deleteOne(new org.bson.Document("_id", oid));
+                                    del = rawRes.getDeletedCount();
+                                } catch (IllegalArgumentException iae) {
+                                    var rawRes2 = ds.getDatabase().getCollection(coll).deleteOne(new org.bson.Document("_id", targetId));
+                                    del = rawRes2.getDeletedCount();
+                                }
                             }
                         }
                     }
+                }
+            } else {
+                Log.debugf("[DEBUG_LOG] CascadeExecutor.deleteTarget unknown refType=%s even after refresh; attempting raw scan delete", refType);
+                // As last resort, scan all collections and delete any doc with matching refName or _id
+                try {
+                    for (String coll : ds.getDatabase().listCollectionNames()) {
+                        long del1 = ds.getDatabase().getCollection(coll)
+                                .deleteOne(new org.bson.Document("refName", targetId)).getDeletedCount();
+                        if (del1 > 0) { del = del1; break; }
+                        try {
+                            org.bson.types.ObjectId oid = new org.bson.types.ObjectId(targetId);
+                            del1 = ds.getDatabase().getCollection(coll)
+                                    .deleteOne(new org.bson.Document("_id", oid)).getDeletedCount();
+                            if (del1 > 0) { del = del1; break; }
+                        } catch (IllegalArgumentException iae) {
+                            del1 = ds.getDatabase().getCollection(coll)
+                                    .deleteOne(new org.bson.Document("_id", targetId)).getDeletedCount();
+                            if (del1 > 0) { del = del1; break; }
+                        }
+                    }
+                } catch (Throwable scanErr) {
+                    Log.debugf("[DEBUG_LOG] raw scan delete failed: %s", scanErr.getMessage());
                 }
             }
             Log.debugf("[DEBUG_LOG] CascadeExecutor.deleteTarget refType=%s id=%s deleted=%s", refType, targetId, del);
         } catch (Throwable t) {
             Log.warn("CascadeExecutor.deleteTarget error: " + t.getMessage());
         }
+    }
+
+    private void bestEffortDeleteOutgoingTargets(String tenantId, String srcId) {
+        try {
+            List<OntologyEdge> edges = edgeRepo.findBySrc(tenantId, srcId);
+            for (OntologyEdge e : edges) {
+                if (e.isInferred()) continue; // only explicit relations drive cascade
+                // Use dstType as a best-effort refType for deletion
+                deleteTarget(tenantId, e.getDstType(), e.getDst());
+            }
+        } catch (Throwable t) {
+            Log.debugf("[DEBUG_LOG] bestEffortDeleteOutgoingTargets error: %s", t.getMessage());
+        }
+    }
+
+    private void refreshOntologyTypeMappings() {
+        try {
+            // Try the actively injected Morphia datastore first
+            MorphiaOntologyLoader loader = new MorphiaOntologyLoader(morphiaDatastore);
+            java.lang.reflect.Method m = MorphiaOntologyLoader.class.getDeclaredMethod("discoverEntityClasses");
+            m.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            Collection<Class<?>> classes = (Collection<Class<?>>) m.invoke(loader);
+            io.quarkus.logging.Log.infof("[DEBUG_LOG] refreshOntologyTypeMappings via injected DS -> discovered=%s", (classes==null?0:classes.size()));
+            if (classes != null && !classes.isEmpty()) {
+                for (Class<?> c : classes) {
+                    OntologyClass oc = c.getAnnotation(OntologyClass.class);
+                    if (oc != null) {
+                        String id = oc.id().isEmpty() ? c.getSimpleName() : oc.id();
+                        ontologyTypeToClass.put(id, c);
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            io.quarkus.logging.Log.debug("[DEBUG_LOG] refreshOntologyTypeMappings injected DS failed: " + t.getMessage());
+        }
+        // As a fallback, try using the default system datastore if available
+        try {
+            var ds = morphiaDataStore.getDefaultSystemDataStore();
+            dev.morphia.MorphiaDatastore md = (dev.morphia.MorphiaDatastore) ds;
+            MorphiaOntologyLoader loader = new MorphiaOntologyLoader(md);
+            java.lang.reflect.Method m = MorphiaOntologyLoader.class.getDeclaredMethod("discoverEntityClasses");
+            m.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            Collection<Class<?>> classes = (Collection<Class<?>>) m.invoke(loader);
+            io.quarkus.logging.Log.infof("[DEBUG_LOG] refreshOntologyTypeMappings via default DS -> discovered=%s", (classes==null?0:classes.size()));
+            if (classes != null) {
+                for (Class<?> c : classes) {
+                    OntologyClass oc = c.getAnnotation(OntologyClass.class);
+                    if (oc != null) {
+                        String id = oc.id().isEmpty() ? c.getSimpleName() : oc.id();
+                        ontologyTypeToClass.put(id, c);
+                    }
+                }
+            }
+        } catch (Throwable ignored) { }
+        io.quarkus.logging.Log.infof("[DEBUG_LOG] ontologyTypeToClass keys now: %s", ontologyTypeToClass.keySet());
     }
 }

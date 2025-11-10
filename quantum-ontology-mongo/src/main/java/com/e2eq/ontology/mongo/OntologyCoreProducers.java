@@ -2,6 +2,7 @@ package com.e2eq.ontology.mongo;
 
 import com.e2eq.ontology.core.*;
 import com.e2eq.ontology.core.OntologyRegistry.*;
+import com.e2eq.ontology.service.OntologyMetaService;
 import dev.morphia.MorphiaDatastore;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Produces;
@@ -22,6 +23,9 @@ public class OntologyCoreProducers {
 
     @Inject
     MorphiaDatastore morphiaDatastore;
+
+    @Inject
+    OntologyMetaService metaService;
 
     @Produces
     @DefaultBean
@@ -55,10 +59,11 @@ public class OntologyCoreProducers {
             }
         } catch (Throwable ignored) { }
 
-        // 3) YAML overlay from configured or conventional locations
+        // 3) YAML overlay from configured or conventional locations and compute/store hash
+        Optional<Path> path = Optional.empty();
         try {
             YamlOntologyLoader yaml = new YamlOntologyLoader();
-            Optional<Path> path = resolveYamlPath();
+            path = resolveYamlPath();
             if (path.isPresent() && Files.exists(path.get())) {
                 TBox overlay = yaml.loadFromPath(path.get());
                 accumulated = OntologyMerger.merge(accumulated, overlay);
@@ -69,6 +74,13 @@ public class OntologyCoreProducers {
                 } catch (Exception ignored) { }
             }
         } catch (Throwable ignored) { }
+
+        // Update ontology meta/hash and mark reindexRequired if changed
+        try {
+            metaService.updateFromYaml(path, "/ontology.yaml");
+        } catch (Throwable t) {
+            Log.warn("Failed to update ontology meta from YAML: " + t.getMessage());
+        }
 
         // Validate final TBox
         try { OntologyValidator.validate(accumulated); } catch (Exception e) { /* in prod you may want to fail fast */ }
