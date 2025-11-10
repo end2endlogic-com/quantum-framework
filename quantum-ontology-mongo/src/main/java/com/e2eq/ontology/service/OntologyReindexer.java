@@ -30,6 +30,9 @@ public class OntologyReindexer {
     OntologyMaterializer materializer;
 
     @Inject
+    com.e2eq.ontology.repo.OntologyEdgeRepo edgeRepo;
+
+    @Inject
     OntologyMetaService metaService;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -39,6 +42,10 @@ public class OntologyReindexer {
     public String status() { return status; }
 
     public void runAsync(String realmId) {
+        runAsync(realmId, false);
+    }
+
+    public void runAsync(String realmId, boolean force) {
         if (!running.compareAndSet(false, true)) {
             Log.info("OntologyReindexer: already running; ignoring new request");
             return;
@@ -46,7 +53,7 @@ public class OntologyReindexer {
         status = "RUNNING";
         new Thread(() -> {
             try {
-                runInternal(realmId);
+                runInternal(realmId, force);
                 // After successful reindex, mark the observed YAML hash as applied
                 Optional<String> src = metaService.getMeta().map(m -> m.getSource());
                 Optional<Path> p = src.filter(s -> s != null && !s.equals("<none>")).map(Path::of).filter(Files::exists);
@@ -62,7 +69,16 @@ public class OntologyReindexer {
         }, "ontology-reindexer").start();
     }
 
-    private void runInternal(String realmId) {
+    private void runInternal(String realmId, boolean force) {
+        // Optionally purge existing derived edges before recomputation
+        if (force) {
+            try {
+                status = "PURGE_DERIVED";
+                edgeRepo.deleteDerivedByTenant(realmId);
+            } catch (Throwable t) {
+                Log.warn("Failed to purge derived edges before reindex: " + t.getMessage());
+            }
+        }
         // Discover ontology participant classes from Morphia mapper
         var datastore = morphiaDataStore.getDataStore(realmId);
         Collection<Class<?>> entityClasses = discoverEntityClasses(datastore.getMapper());
