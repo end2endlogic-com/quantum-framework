@@ -10,6 +10,11 @@ import dev.morphia.query.filters.Filters;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
 
+import com.mongodb.client.model.BulkWriteOptions;
+import com.mongodb.client.model.UpdateOneModel;
+import com.mongodb.client.model.UpdateOptions;
+import com.mongodb.client.model.WriteModel;
+import org.bson.Document;
 
 import java.util.*;
 
@@ -80,6 +85,47 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
         edge.setProv(prov);
         edge.setTs(new Date());
         save(d, edge);
+    }
+
+    public void bulkUpsertEdgeRecords(Collection<EdgeRecord> edges) {
+        if (edges == null || edges.isEmpty()) return;
+        List<WriteModel<OntologyEdge>> ops = new ArrayList<>(edges.size());
+        Date now = new Date();
+        for (EdgeRecord e : edges) {
+            if (e.getTenantId() == null || e.getSrc() == null || e.getP() == null || e.getDst() == null) continue;
+            Document filter = new Document("dataDomain.tenantId", e.getTenantId())
+                    .append("src", e.getSrc())
+                    .append("p", e.getP())
+                    .append("dst", e.getDst());
+            Document setOnInsert = new Document("refName", e.getSrc() + "|" + e.getP() + "|" + e.getDst())
+                    .append("dataDomain", new Document("tenantId", e.getTenantId())
+                            .append("orgRefName", "ontology")
+                            .append("accountNum", "0000000000")
+                            .append("ownerId", "system"))
+                    .append("src", e.getSrc())
+                    .append("srcType", e.getSrcType())
+                    .append("p", e.getP())
+                    .append("dst", e.getDst())
+                    .append("dstType", e.getDstType());
+            Document update = new Document("$setOnInsert", setOnInsert)
+                    .append("$set", new Document("inferred", e.isInferred())
+                            .append("derived", e.isDerived())
+                            .append("prov", e.getProv() == null ? new Document() : new Document(e.getProv()))
+                            .append("ts", e.getTs() == null ? now : e.getTs()));
+            if (e.getSupport() != null) {
+                List<Document> sup = new ArrayList<>();
+                for (EdgeRecord.Support s : e.getSupport()) {
+                    sup.add(new Document("ruleId", s.getRuleId()).append("pathEdgeIds", s.getPathEdgeIds()));
+                }
+                ((Document)update.get("$set")).append("support", sup);
+                ((Document)update.get("$set")).append("derived", true);
+                ((Document)update.get("$set")).append("inferred", true);
+            }
+            ops.add(new UpdateOneModel<>(filter, update, new UpdateOptions().upsert(true)));
+        }
+        if (!ops.isEmpty()) {
+            ds().getCollection(OntologyEdge.class).bulkWrite(ops, new BulkWriteOptions().ordered(false));
+        }
     }
 
     public void upsertMany(Collection<?> edgesOrDocs) {

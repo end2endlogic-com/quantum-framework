@@ -37,11 +37,16 @@ public class MongoEdgeStore implements EdgeStore {
     @Override
     public void upsertMany(Collection<EdgeRecord> edges) {
         if (edges == null || edges.isEmpty()) return;
-        for (EdgeRecord e : edges) {
-            if (e.isDerived()) {
-                upsertDerived(e.getTenantId(), e.getSrcType(), e.getSrc(), e.getP(), e.getDstType(), e.getDst(), e.getSupport(), e.getProv());
-            } else {
-                upsert(e.getTenantId(), e.getSrcType(), e.getSrc(), e.getP(), e.getDstType(), e.getDst(), e.isInferred(), e.getProv());
+        try {
+            edgeRepo.bulkUpsertEdgeRecords(edges);
+        } catch (Throwable t) {
+            // Fallback to per-item upsert to preserve behavior if bulk fails for any reason
+            for (EdgeRecord e : edges) {
+                if (e.isDerived()) {
+                    upsertDerived(e.getTenantId(), e.getSrcType(), e.getSrc(), e.getP(), e.getDstType(), e.getDst(), e.getSupport(), e.getProv());
+                } else {
+                    upsert(e.getTenantId(), e.getSrcType(), e.getSrc(), e.getP(), e.getDstType(), e.getDst(), e.isInferred(), e.getProv());
+                }
             }
         }
     }
