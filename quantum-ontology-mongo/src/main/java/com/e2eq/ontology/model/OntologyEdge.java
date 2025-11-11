@@ -20,7 +20,9 @@ import java.util.Map;
     @Index(options = @IndexOptions(name = "idx_tenant_src_p"),
            fields = { @Field("dataDomain.tenantId"), @Field("src"), @Field("p") }),
     @Index(options = @IndexOptions(name = "idx_tenant_derived"),
-           fields = { @Field("dataDomain.tenantId"), @Field("derived") })
+           fields = { @Field("dataDomain.tenantId"), @Field("derived") }),
+    @Index(options = @IndexOptions(name = "uniq_tenant_src_p_dst", unique = true),
+           fields = { @Field("dataDomain.tenantId"), @Field("src"), @Field("p"), @Field("dst") })
 })
 public class OntologyEdge extends UnversionedBaseModel {
 

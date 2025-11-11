@@ -31,8 +31,16 @@ public final class IncrementalChainEvaluator {
 
     public static class Result {
         private final List<EdgeRecord> derived;
-        public Result(List<EdgeRecord> derived) { this.derived = derived; }
+        private final int cacheHits;
+        private final int cacheMisses;
+        public Result(List<EdgeRecord> derived, int cacheHits, int cacheMisses) {
+            this.derived = derived;
+            this.cacheHits = cacheHits;
+            this.cacheMisses = cacheMisses;
+        }
         public List<EdgeRecord> derivedEdges() { return derived; }
+        public int cacheHits() { return cacheHits; }
+        public int cacheMisses() { return cacheMisses; }
     }
 
     /**
@@ -50,8 +58,8 @@ public final class IncrementalChainEvaluator {
         Objects.requireNonNull(store, "store");
         if (changedPredicates == null) changedPredicates = Set.of();
 
-        // Cache of (node, p) -> dsts to avoid repeated queries; limits queries to local neighborhood.
-        Map<NodePred, Set<String>> outCache = new HashMap<>();
+        // Cache of (node, p) -> dsts to avoid repeated queries; LRU to cap memory
+        LruCache<NodePred, Set<String>> outCache = new LruCache<>(512);
 
         // Collect all candidate q(Z) for this X, along with the implied property name
         Map<String, Set<String>> qToZs = new HashMap<>();
@@ -162,7 +170,7 @@ public final class IncrementalChainEvaluator {
 
         // Deduplicate across properties as safety (q,X,Z unique)
         out = dedup(out);
-        return new Result(out);
+        return new Result(out, outCache.hits(), outCache.misses());
     }
 
     private static List<EdgeRecord> dedup(List<EdgeRecord> list) {
@@ -204,4 +212,27 @@ public final class IncrementalChainEvaluator {
     }
 
     private record NodePred(String node, String p) {}
+
+    // Simple LRU cache with hit/miss tracking for (node,p) -> dsts
+    private static final class LruCache<K,V> extends LinkedHashMap<K,V> {
+        private final int maxSize;
+        private int hits;
+        private int misses;
+        LruCache(int maxSize) {
+            super(16, 0.75f, true);
+            this.maxSize = Math.max(1, maxSize);
+        }
+        @Override
+        public V get(Object key) {
+            V v = super.get(key);
+            if (v != null) hits++; else misses++;
+            return v;
+        }
+        int hits() { return hits; }
+        int misses() { return misses; }
+        @Override
+        protected boolean removeEldestEntry(java.util.Map.Entry<K,V> eldest) {
+            return size() > maxSize;
+        }
+    }
 }
