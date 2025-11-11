@@ -1563,3 +1563,224 @@ NOTE: JointJS will honor the attrs/labels we return. You can add a legend in you
 - For lightweight admin tools: the JointJS payload can be embedded in a simple HTML page to visualize current relationships.
 
 For deep dives, parameter matrices, and additional examples (including large graph considerations), consult quantum-ontology-mongo/README.md in this repository.
+
+
+
+[[dev-howto-ontology-yaml-materialization-reindex-provenance]]
+== Developer how-to: YAML properties, chains, write-time materialization, reindex, and provenance
+
+This section is a concise, task-focused guide for developers. It shows how to declare properties and chains in YAML, how write-time materialization works and how to toggle it, how to reindex after YAML changes, and how edge provenance is stored and how deletions are handled. Examples use the Order/Shipment/Address/Org model.
+
+=== Declare properties and chains in YAML
+
+Place an ontology.yaml in your classpath (src/main/resources) or supply a path via environment variable ONTOLOGY_YAML or system property ontology.yaml.path. The loader supports classes, properties, and property chains.
+
+[source,yaml]
+----
+version: 1
+classes:
+  - id: Order
+  - id: Customer
+  - id: Organization
+  - id: Shipment
+  - id: Address
+  - id: Region
+
+properties:
+  - id: placedBy
+    domain: Order
+    range: Customer
+    functional: true
+  - id: memberOf
+    domain: Customer
+    range: Organization
+  - id: orderHasShipment
+    domain: Order
+    range: Shipment
+  - id: shipsTo
+    domain: Shipment
+    range: Address
+  - id: locatedIn
+    domain: Address
+    range: Region
+  - id: ancestorOf
+    domain: Organization
+    range: Organization
+    transitive: true
+  # implied predicates materialized by chains
+  - id: placedInOrg
+    domain: Order
+    range: Organization
+  - id: orderShipsTo
+    domain: Order
+    range: Address
+  - id: orderShipsToRegion
+    domain: Order
+    range: Region
+
+chains:
+  - chain: [placedBy, memberOf]
+    implies: placedInOrg
+  - chain: [orderHasShipment, shipsTo]
+    implies: orderShipsTo
+  - chain: [orderShipsTo, locatedIn]
+    implies: orderShipsToRegion
+  - chain: [placedInOrg, ancestorOf]
+    implies: placedInOrg
+----
+
+Notes:
+- Chains are ordered. The last predicate referenced must already exist as a property id.
+- You may chain an implied property (e.g., placedInOrg) with another property (ancestorOf) to re-imply itself (useful with transitivity on ancestorOf).
+- Domain and range help with type checking and tooling; they are optional but recommended.
+
+See also: <<Defining an ontology with YAML (YamlOntologyLoader)>> for a broader introduction.
+
+=== Write-time materialization: what runs and how to toggle
+
+When an entity annotated with @OntologyClass is persisted, the framework:
+- Extracts explicit edges from fields/getters annotated with @OntologyProperty on that entity.
+- Merges any additional explicit edges from SPI providers (beans implementing com.e2eq.ontology.spi.OntologyEdgeProvider).
+- Calls OntologyMaterializer, which runs the forward-chaining reasoner and writes the inferred/derived edges. It also prunes stale explicit and inferred edges for that source.
+
+Global toggle
+
+[source,properties]
+----
+# default is true
+ontology.auto-materialize=true
+----
+
+- Set ontology.auto-materialize=false to temporarily disable the write hook (useful for bulk loads or tests).
+
+Per-property toggle
+
+[source,java]
+----
+@OntologyProperty(id = "orderHasShipment", materializeEdge = false)
+private List<String> shipmentRefNames;
+----
+
+- materializeEdge=false skips extracting explicit edges for that property only. This does not disable derived edges that might arise from other explicit inputs.
+
+Provider-based edges
+
+- Implement OntologyEdgeProvider to contribute explicit edges not backed by fields. The extractor merges these before materialization. See <<Where ontology materialization happens>> for a full example.
+
+=== Reindex after YAML changes
+
+If you change ontology.yaml (add properties, mark a property transitive, add chains), you should trigger a tenant-wide re-materialization so derived edges reflect the new rules.
+
+REST endpoints (admin-only):
+
+[source,shell]
+----
+# Start reindex for a realm (tenant)
+curl -X POST "http://localhost:8080/ontology/admin/reindex?realm=default"
+
+# Check status
+curl -s "http://localhost:8080/ontology/admin/reindex/status"
+----
+
+Tips:
+- Reindex discovers all @OntologyClass entities via Morphia and re-applies write-time materialization to each instance.
+- For large tenants, consider running during off-hours. The service streams per class; status shows progress.
+- If you need to purge previously derived edges before recomputing, use a force mode if exposed by your deployment (some environments wire runAsync(realm, force=true)).
+
+Related: Drift-repair job
+
+- For targeted repair, use the drift-repair endpoint to prune unsupported derived edges and re-derive per entity class with pagination:
+
+[source,shell]
+----
+# Run prune+derive for Orders (page size 100)
+curl -X POST "http://localhost:8080/ontology/admin/drift-repair?realm=default&entityClass=com.yourpkg.Order&pageSize=100"
+
+# Continue from a page token
+curl -X POST "http://localhost:8080/ontology/admin/drift-repair?realm=default&entityClass=com.yourpkg.Order&pageToken=6543210abcdef..."
+
+# Only prune (no derive)
+curl -X POST "http://localhost:8080/ontology/admin/drift-repair?realm=default&entityClass=com.yourpkg.Order&derive=false"
+
+# Dry-run (no writes)
+curl -X POST "http://localhost:8080/ontology/admin/drift-repair?realm=default&entityClass=com.yourpkg.Order&dryRun=true"
+----
+
+=== Edge provenance format and deletions
+
+Storage model (Mongo edges collection):
+- Each edge document stores: tenantId, src, srcType, p (predicate), dst, dstType, inferred, derived, prov (map), support (list), ts.
+- Derived edges include structured support:
+
+[source,json]
+----
+{
+  "dataDomain": { "tenantId": "default" },
+  "src": "ORD-1", "srcType": "Order",
+  "p": "orderShipsToRegion",
+  "dst": "US-WEST", "dstType": "Region",
+  "inferred": true, "derived": true,
+  "prov": { "rule": "chain(orderShipsTo,locatedIn)", "inputs": ["ORD-1|orderShipsTo|ADDR-9", "ADDR-9|locatedIn|US-WEST"] },
+  "support": [ { "ruleId": "chain:orderShipsTo>locatedIn", "pathEdgeIds": ["ORD-1|orderShipsTo|ADDR-9", "ADDR-9|locatedIn|US-WEST"] } ],
+  "ts": "2025-11-10T20:22:00Z"
+}
+----
+
+Deletion and pruning rules
+- Explicit edges: Re-computed on each write. For each predicate p on the source, any previous explicit dst not present in the new explicit set is deleted (deleteExplicitBySrcNotIn).
+- Inferred/derived edges: After recomputation, any prior inferred edge for p whose dst is not in the newly inferred set is deleted (deleteInferredBySrcNotIn).
+- Safety cleanup: A periodic or manual prune removes derived edges that have no support recorded (pruneDerivedWithoutSupport). Use the drift-repair job or a scheduled task to keep storage clean when inputs are removed out-of-band.
+
+Worked examples (source Order = O, Customer = C, Organization = G, Shipment = S, Address = A, Region = R)
+
+1) [placedBy, memberOf] ⇒ placedInOrg
+
+- Inputs: O --placedBy--> C, C --memberOf--> G
+- Implied: O --placedInOrg--> G
+
+[source,json]
+----
+{"src":"O","srcType":"Order","p":"placedInOrg","dst":"G","dstType":"Organization","inferred":true,"derived":true,
+ "prov":{"rule":"chain(placedBy,memberOf)","inputs":["O|placedBy|C","C|memberOf|G"]},
+ "support":[{"ruleId":"chain:placedBy>memberOf","pathEdgeIds":["O|placedBy|C","C|memberOf|G"]}]}
+----
+
+2) [orderHasShipment, shipsTo] ⇒ orderShipsTo
+
+- Inputs: O --orderHasShipment--> S, S --shipsTo--> A
+- Implied: O --orderShipsTo--> A
+
+[source=json]
+----
+{"src":"O","srcType":"Order","p":"orderShipsTo","dst":"A","dstType":"Address","inferred":true,"derived":true,
+ "prov":{"rule":"chain(orderHasShipment,shipsTo)","inputs":["O|orderHasShipment|S","S|shipsTo|A"]},
+ "support":[{"ruleId":"chain:orderHasShipment>shipsTo","pathEdgeIds":["O|orderHasShipment|S","S|shipsTo|A"]}]}
+----
+
+3) [orderShipsTo, locatedIn] ⇒ orderShipsToRegion
+
+- Inputs: O --orderShipsTo--> A, A --locatedIn--> R
+- Implied: O --orderShipsToRegion--> R
+
+[source=json]
+----
+{"src":"O","srcType":"Order","p":"orderShipsToRegion","dst":"R","dstType":"Region","inferred":true,"derived":true,
+ "prov":{"rule":"chain(orderShipsTo,locatedIn)","inputs":["O|orderShipsTo|A","A|locatedIn|R"]},
+ "support":[{"ruleId":"chain:orderShipsTo>locatedIn","pathEdgeIds":["O|orderShipsTo|A","A|locatedIn|R"]}]}
+----
+
+4) [placedInOrg, ancestorOf] ⇒ placedInOrg
+
+- Inputs: O --placedInOrg--> G1, G1 --ancestorOf--> G2 (ancestorOf is transitive)
+- Implied: O --placedInOrg--> G2 (can repeat over the ancestor chain)
+
+[source=json]
+----
+{"src":"O","srcType":"Order","p":"placedInOrg","dst":"G2","dstType":"Organization","inferred":true,"derived":true,
+ "prov":{"rule":"chain(placedInOrg,ancestorOf)","inputs":["O|placedInOrg|G1","G1|ancestorOf|G2"]},
+ "support":[{"ruleId":"chain:placedInOrg>ancestorOf","pathEdgeIds":["O|placedInOrg|G1","G1|ancestorOf|G2"]}]}
+----
+
+Operational notes
+- If you delete inputs (e.g., remove C.memberOf=G), the next write of O (or a reindex) will prune stale placedInOrg edges. If inputs are removed out-of-band, run drift-repair to prune unsupported derived edges.
+- Always scope operations by realm/tenant. Edges are partitioned by dataDomain.tenantId and indexed accordingly.
