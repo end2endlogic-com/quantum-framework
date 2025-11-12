@@ -17,6 +17,11 @@ public interface ChangeSetBean {
     * Default implementation returns 1 for backward compatibility.
     */
    public default int getChangeSetVersion() { return 1; }
+   /**
+    * Checksum of the changeSet implementation to detect code changes.
+    * Default implementation returns null for backward compatibility.
+    */
+   public default String getChecksum() { return null; }
    public int getDbFromVersionInt();
    public int getDbToVersionInt();
    public String getDbFromVersion();

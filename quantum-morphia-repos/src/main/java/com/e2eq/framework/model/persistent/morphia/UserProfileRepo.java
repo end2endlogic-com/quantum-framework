@@ -85,29 +85,40 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
       return getByUserId(  morphiaDataStore.getDataStore(realm), userId );
    }
 
-   public Optional<UserProfile> getByUserId(Datastore datastore,@NotNull String userId) {
-      // find the credentail for the user
-      Optional<CredentialUserIdPassword> ocred = credRepo.findByUserId(userId);
-
-      if (!ocred.isPresent()) {
-         Log.warnf("No credential found for user: %s", userId);
-         return Optional.empty();
+   @Override
+   protected void setDefaultValues (UserProfile model) {
+      if (model.getUserId() == null ) {
+         model.setUserId(model.getEmail());
       }
-      String credRefName = ocred.get().getRefName();
+      super.setDefaultValues(model);
+   }
 
+   public Optional<UserProfile> getByUserId(Datastore datastore, @NotNull String userId) {
       List<Filter> filters = new ArrayList<>();
-      filters.add(Filters.and(
-         Filters.eq("credentialUserIdPasswordRef.entityRefName", credRefName)
-         ));
-
-      // build filters calling getFilterArray then add the filter: Filters.eq("credentialUserIdPasswordRef.entityRefName", credRefName)
       Filter[] filtersArray = getFilterArray(filters, getPersistentClass());
-      // find the userprofile by the credentialUserIdPasswordReference.entityRefName passing in the credRefName
-      Query<UserProfile> q = datastore.find(this.getPersistentClass()).filter(
-         filtersArray
-      );
+      Filter f;
+      if (filtersArray.length > 0) {
+         Filter and = Filters.and(filtersArray);
+
+         Filter or = Filters.or(
+            Filters.eq("userId", userId),
+            Filters.eq("credentialUserIdPasswordRef.entityRefName", userId),
+            Filters.eq("email", userId));
+
+         f = Filters.and(and, or);
+      } else {
+         f = Filters.or(
+            Filters.eq("userId", userId),
+            Filters.eq("credentialUserIdPasswordRef.entityRefName", userId),
+            Filters.eq("email", userId));
+      }
+
+      // look for the user profile by the userId field first or by the credentialRefName, or by the email field
+      Query<UserProfile> q = datastore.find(this.getPersistentClass()).filter(f);
       UserProfile p = q.first();
       return Optional.ofNullable(p);
+
+
    }
 
    public UserProfile createUser(

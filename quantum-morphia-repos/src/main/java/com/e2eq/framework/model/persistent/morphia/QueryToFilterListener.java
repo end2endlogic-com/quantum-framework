@@ -183,15 +183,16 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         complete = false;
     }
 
-    @Override
-    public void exitQuery(BIAPIQueryParser.QueryContext ctx) {
-        // Only finalize at top-level
-        queryDepth--;
-        if (queryDepth == 0) {
+   @Override
+   public void exitQuery(BIAPIQueryParser.QueryContext ctx) {
+      queryDepth--;
+      if (queryDepth == 0) {
+         if (!opTypeStack.isEmpty() || filterStack.size() > 1) {
             buildComposite();
-            checkDone();
-        }
-    }
+         }
+         checkDone();
+      }
+   }
 
     protected void checkDone() {
         // the only remaining thing in the stack should be what we want to return

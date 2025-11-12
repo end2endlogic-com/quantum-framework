@@ -180,6 +180,8 @@ public class SeedStartupRunner {
             if (descriptors.isEmpty()) {
                 Log.infof("SeedStartupRunner: no seed packs found under %s for realm %s", root.toAbsolutePath(), realm);
                 return;
+            } else {
+               Log.infof("SeedStartupRunner: found %d seed pack(s) to realm %s from %s", descriptors.size(), realm, root.toAbsolutePath());
             }
             // Optional: filter by allowed seed pack names from configuration (csv)
             if (seedFilterCsv.isPresent() && !seedFilterCsv.get().isBlank()) {
@@ -210,11 +212,13 @@ public class SeedStartupRunner {
             if (refs.isEmpty()) {
                 Log.infof("SeedStartupRunner: no applicable seed packs for realm %s", realm);
                 return;
+            } else {
+               Log.infof("SeedStartupRunner: applying %d seed pack(s) to realm %s from %s", refs.size(), realm, root.toAbsolutePath());
+
+               SecurityCallScope.runWithContexts(principalContext, resourceContext, () -> {
+                  loader.apply(refs, context);
+               });
             }
-            Log.infof("SeedStartupRunner: applying %d seed pack(s) to realm %s from %s", refs.size(), realm, root.toAbsolutePath());
-            SecurityCallScope.runWithContexts(principalContext, resourceContext, () -> {
-              loader.apply(refs, context);
-              });
         } finally {
             // Always clear any thread-local security contexts we may have set
             try { com.e2eq.framework.model.securityrules.SecurityContext.clear(); } catch (Exception ignored) {}

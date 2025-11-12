@@ -5,7 +5,7 @@ public enum Role {
     admin ("admin"),
     developer ("developer"),
     system ("system"),
-    systemadmin("systemadmin");
+    sysadmin("sysadmin");
 
     String value;
 

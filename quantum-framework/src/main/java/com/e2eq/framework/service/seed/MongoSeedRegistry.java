@@ -37,9 +37,16 @@ public final class MongoSeedRegistry implements SeedRegistry {
                 Filters.eq("appliedToRealm", context.getRealm()),
                 Filters.eq("dataset", dataset.getCollection()))).first();
         if (existing == null) {
+           Log.warnf("Seed registry: no existing record for %s %s %s %s should execute true",
+                   manifest.getSeedPack(), manifest.getVersion(), context.getRealm(), dataset.getCollection());
             return true;
         }
-        return !Objects.equals(existing.getString("checksum"), checksum);
+        boolean rc = !Objects.equals(existing.getString("checksum"), checksum);
+        if (rc) {
+           Log.warnf("Seed registry: checksum did match existing ck %s, calculated ch %s for %s %s %s %s",
+              existing.getString("checksum"),  checksum, manifest.getSeedPack(), manifest.getVersion(), context.getRealm(), dataset.getCollection());
+        }
+        return rc;
     }
 
     @Override

@@ -37,8 +37,6 @@ public class SecurityTest extends BaseRepoTest {
     @ConfigProperty(name = "auth.provider", defaultValue = "custom")
     String authProvider;
 
-
-
     @Inject
     CredentialRepo credRepo;
 
