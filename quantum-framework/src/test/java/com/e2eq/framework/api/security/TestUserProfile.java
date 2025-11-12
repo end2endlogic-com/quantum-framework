@@ -122,6 +122,7 @@ public class TestUserProfile extends BaseRepoTest {
                     Log.info("About to execute");
                     UserProfile profile = new UserProfile();
                     profile.setCredentialUserIdPasswordRef(opCreds.get().createEntityReference());
+                    profile.setUserId(testUtils.getTestUserId());
                     profile.setEmail(testUtils.getTestEmail());
                     profile.setRefName(testUtils.getTestUserId());
                     profile.setDataDomain(testUtils.getTestDataDomain());

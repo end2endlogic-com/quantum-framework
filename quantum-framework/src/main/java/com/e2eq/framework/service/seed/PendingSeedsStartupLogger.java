@@ -53,6 +53,7 @@ public class PendingSeedsStartupLogger {
     }
 
     private int countPending(String realm) throws IOException {
+       Log.info("== START Count PENDING SEEDS ===");
         java.nio.file.Path root = SeedPathResolver.resolveSeedRoot();
         FileSeedSource source = new FileSeedSource("files", root);
         SeedContext context = SeedContext.builder(realm).build();
@@ -86,6 +87,7 @@ public class PendingSeedsStartupLogger {
             }
             if (any) count++;
         }
+       Log.infof("== END Count PENDING SEEDS Result: %d===", count);
         return count;
     }
 

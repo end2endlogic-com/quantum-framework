@@ -50,6 +50,12 @@ public  class UserProfile extends BaseModel {
     @ReferenceTarget(target = com.e2eq.framework.model.security.CredentialUserIdPassword.class, collection="credentialUserIdPassword")
     protected EntityReference credentialUserIdPasswordRef;
 
+    protected String userId; // used to look up the credentialUserIdPassword by userId if need be
+   // in most cases the refName of the credential should match the userId but in the case where the credentialUserIdPasswordRef is null
+   // or points to a different value this field can be used as a way to reconcile to the right credential
+   // most of the time this will be the user's email address
+
+    protected Status status = Status.ACTIVE;
     protected String fname;
     protected String lname;
 
@@ -78,6 +84,8 @@ public  class UserProfile extends BaseModel {
     public String bmFunctionalDomain() {
         return "USER_PROFILE";
     }
+
+
 
 
 

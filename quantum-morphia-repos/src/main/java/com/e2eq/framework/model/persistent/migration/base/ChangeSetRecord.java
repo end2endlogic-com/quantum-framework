@@ -41,6 +41,10 @@ public class ChangeSetRecord extends BaseModel {
     * Version of the changeSet definition applied.
     */
    protected int changeSetVersion = 1;
+   /**
+    * Checksum of the changeSet implementation.
+    */
+   protected String checksum;
    @NotNull
    protected String author;
    protected String description;

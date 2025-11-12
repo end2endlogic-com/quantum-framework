@@ -1,5 +1,7 @@
 package com.e2eq.framework.model.persistent.morphia.changesets;
 
+import com.e2eq.framework.model.auth.AuthProviderFactory;
+import com.e2eq.framework.model.auth.UserManagement;
 import com.e2eq.framework.model.persistent.migration.base.ChangeSetBase;
 import com.e2eq.framework.model.persistent.morphia.*;
 import com.e2eq.framework.model.security.*;
@@ -53,7 +55,16 @@ public class InitializeDatabase extends ChangeSetBase {
    FunctionalDomainRepo fdRepo;
 
    @Inject
+   CredentialRepo credRepo;
+
+
+   @Inject
    UserProfileRepo userProfileRepo;
+
+   @Inject
+   AuthProviderFactory authProviderFactory;
+
+
 
    @Inject
    CounterRepo counterRepo;
@@ -70,8 +81,23 @@ public class InitializeDatabase extends ChangeSetBase {
    @Execution
    public void execute(MorphiaSession session, MongoClient mongoClient, MultiEmitter<? super String> emitter) throws Exception{
       // get flag from app config
-              Log.infof("Initializing Database: %s", session.getDatabase().getName());
+              Log.infof("===>>> EXECUTING Initializing Database: %s", session.getDatabase().getName());
               emitter.emit(String.format("Initializing Database: %s", session.getDatabase().getName()));
+
+              // Clean up duplicate counters before re-creating indexes
+              try {
+                 var counterColl = mongoClient.getDatabase(session.getDatabase().getName()).getCollection("counter");
+                 var seen = new java.util.HashSet<String>();
+                 counterColl.find().forEach(doc -> {
+                    String refName = doc.getString("refName");
+                    if (refName != null && !seen.add(refName)) {
+                       counterColl.deleteOne(new org.bson.Document("_id", doc.get("_id")));
+                       Log.infof("Deleted duplicate counter with refName: %s", refName);
+                    }
+                 });
+              } catch (Exception e) {
+                 Log.warnf("Error cleaning up duplicate counters: %s", e.getMessage());
+              }
 
                ensureCounter(session, "accountNumber", 2000);
                Organization org = ensureOrganization(session, envConfigUtils.getSystemOrgRefName(),
@@ -238,40 +264,63 @@ public class InitializeDatabase extends ChangeSetBase {
    public void createInitialUserProfiles(Datastore datastore) throws CloneNotSupportedException {
 
       Log.infof("Checking to create initial user profiles in realm: %s", datastore.getDatabase().getName());
-      if (!userProfileRepo.getByUserId( datastore.getDatabase().getName(), envConfigUtils.getSystemUserId()).isPresent()) {
-         Log.infof("UserProfile:%s not found creating ", envConfigUtils.getSystemUserId());
-         Set<Role> roles = new HashSet<>();
-         roles.add(Role.admin);
-         roles.add(Role.user);
-
-         int i = 0;
-         String[] rolesArray = new String[roles.size()];
-
-         for (Role r : roles) {
-            rolesArray[i++] = r.name();
-         }
-
-         userProfileRepo.createUser( envConfigUtils.getSystemUserId(),
-            "Generic","Admin", null, rolesArray, defaultSystemPassword);
-
-         DataDomain upDataDomain = securityUtils.getSystemDataDomain().clone();
-         upDataDomain.setOwnerId(envConfigUtils.getSystemUserId());
-
-         UserProfile up = new UserProfile();
-
-         up.setDataDomain(upDataDomain);
-         up.setEmail(envConfigUtils.getSystemUserId());
-         up.setRefName(envConfigUtils.getSystemUserId());
-         up.setDisplayName("Generic Admin");
-         up.setFname("Generic");
-         up.setLname("Admin");
+      UserManagement userManager = authProviderFactory.getUserManager();
+      if (!userManager.userIdExists(envConfigUtils.getSystemUserId())) {
+         Log.infof("Creating system user: %s in realm: %s", envConfigUtils.getSystemUserId(), datastore.getDatabase().getName());
+         Set<String> roles = new HashSet<>();
+         roles.add(Role.admin.toString());
+         roles.add(Role.user.toString());
+         roles.add(Role.sysadmin.toString());
 
 
+         userManager.createUser(envConfigUtils.getSystemUserId(), defaultSystemPassword, roles, securityUtils.getDefaultDomainContext());
 
       } else {
-         Log.infof("UserProfile:%s already exists in realm: %s", envConfigUtils.getSystemUserId(), envConfigUtils.getSystemRealm());
-      }
+         Log.infof("UserProfile:%s already exists in realm: %s checking credential relationship", envConfigUtils.getSystemUserId(), envConfigUtils.getSystemRealm());
+        Optional<UserProfile> oup = userProfileRepo.getByUserId(datastore.getDatabase().getName(), envConfigUtils.getSystemUserId());
+        if (oup.isPresent()) {
+           UserProfile up = oup.get();
+           if (up.getCredentialUserIdPasswordRef() == null) {
+              Optional<CredentialUserIdPassword> ocred = credRepo.findByUserId(envConfigUtils.getSystemUserId(), envConfigUtils.getSystemRealm(), true);
+              if (ocred.isPresent()) {
+                 Log.infof("Creating credential relationship for user: %s in realm: %s", envConfigUtils.getSystemUserId(), envConfigUtils.getSystemRealm());
+                 up.setCredentialUserIdPasswordRef(ocred.get().createEntityReference());
+              } else {
+                 String text = String.format("Could not find credential for userId %s in realm %s", envConfigUtils.getSystemUserId(), envConfigUtils.getSystemRealm());
+                 Log.error(text);
+                 throw new IllegalStateException(text);
+              }
 
+              try {
+                 userProfileRepo.save(datastore, up);
+              } catch (Exception e) {
+                 Log.errorf("Failed to save user profile: %s", e.getMessage());
+              }
+           } else {
+              Log.infof("Credential relationship for user: %s in realm: %s already exists", envConfigUtils.getSystemUserId(), envConfigUtils.getSystemRealm());
+           }
+        } else {
+           Optional<CredentialUserIdPassword> ocred = credRepo.findByUserId(envConfigUtils.getSystemUserId(), envConfigUtils.getSystemRealm(), true);
+           if (ocred.isPresent()) {
+              // we need to create the initial system user profile
+              Log.infof("Creating initial user profile: %s in realm: %s", envConfigUtils.getSystemUserId(), datastore.getDatabase().getName());
+              UserProfile up = new UserProfile();
+              up.setUserId(envConfigUtils.getSystemUserId());
+              up.setDisplayName(envConfigUtils.getSystemUserId());
+              up.setEmail(envConfigUtils.getSystemUserId() + "@example.com");
+              up.setCredentialUserIdPasswordRef(null);
+              up.setDataDomain(securityUtils.getSystemDataDomain());
+              up.setCredentialUserIdPasswordRef(ocred.get().createEntityReference());
+              userProfileRepo.save(datastore, up);
+           } else {
+              String text = String.format("Could not find credential for userId %s in realm %s even though userManager found userId config / data corruption", envConfigUtils.getSystemUserId(), envConfigUtils.getSystemRealm());
+              Log.error(text);
+              throw new IllegalStateException(text);
+           }
+
+
+        }
+      }
    }
 
    public void createSecurityModel(Datastore datastore) throws IOException {
@@ -336,5 +385,10 @@ public class InitializeDatabase extends ChangeSetBase {
    @Override
    public String getScope () {
       return "ALL";
+   }
+
+   @Override
+   public String getChecksum() {
+      return "v1.0.1-cleanup-duplicates";
    }
 }

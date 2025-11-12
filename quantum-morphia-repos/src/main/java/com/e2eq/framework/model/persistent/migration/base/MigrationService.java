@@ -55,9 +55,6 @@ public class MigrationService {
    @ConfigProperty(name = "quantum.realmConfig.systemRealm")
    protected String systemRealm;
 
-   @ConfigProperty(name = "quantum.database.migration.changeset.package")
-   protected String changeSetPackage;
-
    @ConfigProperty(name = "quantum.database.migration.enabled")
    protected boolean enabled;
 
@@ -81,6 +78,30 @@ public class MigrationService {
 
    @PostConstruct
    public void ensureSystemRealmInitialized () {
+      if (!enabled) {
+         Log.warn("!!!! >>>> Database migration is disabled by configuration (quantum.database.migration.enabled=false)");
+         return;
+      } else {
+         Log.info(">> Migration Service enabled");
+      }
+
+      // Drop all indexes to avoid conflicts when re-running migrations
+      try {
+         for (String dbName : List.of(systemRealm, defaultRealm, testRealm)) {
+            if (mongoClient.listDatabaseNames().into(new ArrayList<>()).contains(dbName)) {
+               mongoClient.getDatabase(dbName).listCollectionNames().forEach(collName -> {
+                  try {
+                     mongoClient.getDatabase(dbName).getCollection(collName).dropIndexes();
+                  } catch (Exception e) {
+                     Log.debugf("Could not drop indexes on %s.%s: %s", dbName, collName, e.getMessage());
+                  }
+               });
+            }
+         }
+      } catch (Exception e) {
+         Log.warnf("Error dropping indexes: %s", e.getMessage());
+      }
+
       Log.infof(">> ### Checking if system realm %s is initialized ###", systemRealm);
       // using the mongoClient check if the system realm exists
       // if not, create it
@@ -126,10 +147,22 @@ public class MigrationService {
       Semver requiredSemVersion = Semver.parse(targetDatabaseVersion);
       if (currentSemVersion.compareTo(requiredSemVersion) < 0) {
          throw new DatabaseMigrationException(realm, currentVersion.getCurrentVersionString(), targetDatabaseVersion);
-      } else if (currentSemVersion.compareTo(requiredSemVersion) > 0) {
+      }
+
+      // Check for pending changesets with mismatched checksums
+      Datastore datastore = morphiaDataStore.getDataStore(realm);
+      List<ChangeSetBean> allChangeSets = getAllChangeSetBeans();
+      for (ChangeSetBean chb : allChangeSets) {
+         Optional<ChangeSetRecord> record = changesetRecordRepo.findLatestByChangeSetName(datastore, chb.getName());
+         if (record.isPresent() && chb.getChecksum() != null && !chb.getChecksum().equals(record.get().getChecksum())) {
+            throw new DatabaseMigrationException(String.format("Database %s has changeset %s with mismatched checksum. Please run migrations.", realm, chb.getName()));
+         }
+      }
+
+      if (currentSemVersion.compareTo(requiredSemVersion) > 0) {
          Log.warnf("Database %s version is higher than required. Current version: %s, required version: %s", realm, currentVersion.getCurrentVersionString(), targetDatabaseVersion);
       } else {
-         Log.infof("Database %s version is up to date. Current version: %s, required version: %s", realm, currentVersion.getCurrentVersionString(), targetDatabaseVersion);
+         Log.infof("Database %s version is up to date. Current version: %s, required version: %s and all checksums match", realm, currentVersion.getCurrentVersionString(), targetDatabaseVersion);
       }
    }
 
@@ -249,11 +282,13 @@ public class MigrationService {
    }
 
    public List<ChangeSetBean> getAllChangeSetBeans () {
+      Log.info("== Finding changeSetBeans ===============");
       List<ChangeSetBean> changeSetBeans = new ArrayList<>();
       Set<Bean<?>> changeSets = beanManager.getBeans(ChangeSetBean.class);
       for (Bean bean : changeSets) {
          CreationalContext<?> creationalContext = beanManager.createCreationalContext(bean);
          ChangeSetBean chb = (ChangeSetBean) beanManager.getReference(bean, bean.getBeanClass(), creationalContext);
+         Log.infof("Found ChangeSetBean: %s", chb.getName());
          changeSetBeans.add(chb);
       }
 
@@ -294,18 +329,27 @@ public class MigrationService {
       for (ChangeSetBean chb : changeSets) {
          Semver toVersion = new Semver(chb.getDbToVersion());
          Semver currentVersion = new Semver(currentSemDatabaseVersion.getVersion());
+
+         Optional<ChangeSetRecord> record = changesetRecordRepo.findLatestByChangeSetName(datastore, chb.getName());
+         boolean shouldRun = !record.isPresent() ||
+                             record.get().getChangeSetVersion() < chb.getChangeSetVersion() ||
+                             (chb.getChecksum() != null && !chb.getChecksum().equals(record.get().getChecksum()));
+
          if (toVersion.isGreaterThanOrEqualTo(currentVersion)) {
             log(String.format("ToVersion:%s, is greater than or equal to current version:%s", toVersion.getVersion(), currentVersion.getVersion()), emitter);
-
-            Optional<ChangeSetRecord> record = changesetRecordRepo.findLatestByChangeSetName(datastore, chb.getName());
-            if (!record.isPresent() || record.get().getChangeSetVersion() < chb.getChangeSetVersion()) {
-               log(String.format(">> Executing Change Set: %s (v%d) in realm %s", chb.getName(), chb.getChangeSetVersion(), datastore.getDatabase().getName()), emitter);
+            if (shouldRun) {
+               String reason = !record.isPresent() ? "no record" :
+                              (record.get().getChangeSetVersion() < chb.getChangeSetVersion() ? "version changed" : "checksum changed");
+               log(String.format(">> Adding Change Set: %s (v%d) in realm %s - reason: %s", chb.getName(), chb.getChangeSetVersion(), datastore.getDatabase().getName(), reason), emitter);
                pendingChangeSetBeans.add(chb);
             } else {
                log(String.format(">> Already executed change set: %s (latest applied v%d) in realm %s on %tc ", chb.getName(), record.get().getChangeSetVersion(), datastore.getDatabase().getName(), record.get().getLastExecutedDate()), emitter);
             }
+         } else if (shouldRun) {
+            log(String.format(">> Adding Change Set: %s (v%d) in realm %s - reason: checksum changed (older version) or change record not found", chb.getName(), chb.getChangeSetVersion(), datastore.getDatabase().getName()), emitter);
+            pendingChangeSetBeans.add(chb);
          } else {
-            log(String.format(">> Ignoring Change Set:%s  because it is not for the current database version:%s", chb.getName(), currentSemDatabaseVersion), emitter);
+            log(String.format(">> Skipping Change Set:%s (already applied, toVersion:%s < currentVersion:%s)", chb.getName(), toVersion.getVersion(), currentSemDatabaseVersion), emitter);
          }
       }
       return pendingChangeSetBeans;
@@ -337,6 +381,7 @@ public class MigrationService {
       record.setDbToVersion(changeSetBean.getDbToVersion());
       record.setDbToVersionInt(changeSetBean.getDbToVersionInt());
       record.setChangeSetVersion(changeSetBean.getChangeSetVersion());
+      record.setChecksum(changeSetBean.getChecksum());
       record.setLastExecutedDate(new Date());
       record.setScope(changeSetBean.getScope());
       record.setSuccessful(true);
@@ -407,10 +452,18 @@ public class MigrationService {
                log(String.format("    checking for previous execution of Change Set: %s, in database %s", changeSetBean.getName(), realm ), emitter);
                // first check if this change set has run already or not
                Optional<ChangeSetRecord> changeSetRec = changesetRecordRepo.findLatestByChangeSetName(morphiaDataStore.getDataStore(realm), changeSetBean.getName());
-               if (!changeSetRec.isPresent() || changeSetRec.get().getChangeSetVersion() < changeSetBean.getChangeSetVersion()) {
+               boolean shouldRun = !changeSetRec.isPresent() ||
+                                   changeSetRec.get().getChangeSetVersion() < changeSetBean.getChangeSetVersion() ||
+                                   (changeSetBean.getChecksum() != null && !changeSetBean.getChecksum().equals(changeSetRec.get().getChecksum()));
+               if (changeSetRec.isPresent()) {
+                  log(String.format("    Found existing record for %s: version=%d, checksum=%s; Bean: version=%d, checksum=%s",
+                     changeSetBean.getName(), changeSetRec.get().getChangeSetVersion(), changeSetRec.get().getChecksum(),
+                     changeSetBean.getChangeSetVersion(), changeSetBean.getChecksum()), emitter);
+               }
+               if (shouldRun) {
 
                   if ((changeSetBean.getApplicableDatabases() == null) ||
-                         (changeSetBean.getApplicableDatabases() != null && !changeSetBean.getApplicableDatabases().contains(realm))
+                         (changeSetBean.getApplicableDatabases() != null && changeSetBean.getApplicableDatabases().contains(realm))
                   ) {
                      Log.infof("Executing Change Set:%s", changeSetBean.getName());
                      emitter.emit(String.format("Executing Change Set:%s", changeSetBean.getName()));
@@ -421,7 +474,7 @@ public class MigrationService {
                         MorphiaSession ods = morphiaDataStore.getDataStore(changeSetBean.getOverrideDatabaseName()).startSession();
 
                         DistributedLock olock = getMigrationLock(changeSetBean.getOverrideDatabaseName());
-                        lock.runLocked(() -> {
+                        olock.runLocked(() -> {
                            try {
                               Log.infof("        Starting Transaction for Change Set:%s on database: %s", changeSetBean.getName(), changeSetBean.getOverrideDatabaseName());
                               emitter.emit(String.format("        Starting Transaction for Change Set:%s", changeSetBean.getName()));
