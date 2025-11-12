@@ -71,6 +71,7 @@ public class ProductResource extends BaseResource<Product, ProductRepo> {
 
 For detailed rule-base matching (URL, headers, body predicates, priorities), see the Permissions section.
 
+[[querying]]
 === Querying
 
 - Use query parameters or a request body (depending on your API convention) to express filters.

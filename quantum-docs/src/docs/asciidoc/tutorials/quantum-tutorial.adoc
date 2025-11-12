@@ -203,6 +203,9 @@ include::../user-guide/auth.adoc[leveloffset=+1]
 include::../user-guide/permissions.adoc[leveloffset=+1]
 include::../user-guide/security-annotations.adoc[leveloffset=+1]
 
+// Additional deep dive: Permission Resource APIs and client usage
+See also: xref:../user-guide/permission-resource.adoc[Permission Resource: Check APIs and Client Usage].
+
 [[sec-seed-packs]]
 == 9. Seed packs: Declarative tenant seeding
 

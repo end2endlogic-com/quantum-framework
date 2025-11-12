@@ -51,7 +51,7 @@ The following MicroProfile config properties influence migrations:
 
 - Discovery: MigrationService#getAllChangeSetBeans locates all CDI beans implementing ChangeSetBean.
 - Ordering: change sets are sorted by dbToVersionInt, then by priority (ascending). That ensures lower target versions apply before higher ones; priority resolves ties.
-- Pending selection: For the target realm, MigrationService#getAllPendingChangeSetBeans compares each change set’s dbToVersion against the stored DatabaseVersion and ignores already executed ones (tracked in ChangeSetRecord).
+- Pending selection: For the target realm, MigrationService#getAllPendingChangeSetBeans considers a change set pending if either (a) it has never run, (b) the bean’s changeSetVersion is greater than the last recorded one, or (c) the bean’s checksum is non-null and differs from the last recorded checksum in ChangeSetRecord. It also compares each change set’s dbToVersion against the stored DatabaseVersion.
 - Locking: A distributed lock (Mongo‑backed Sherlock) is acquired per realm before applying change sets to prevent concurrent execution.
 - Transactions: Each change set runs within a MorphiaSession transaction; on success the change is recorded in ChangeSetRecord and DatabaseVersion is advanced (if higher). On failure the transaction is aborted and the error returned.
 - Realms: Migrations run per realm (Mongo database). A change set can optionally be restricted to certain database names or even override the realm it executes against (see below).
@@ -67,6 +67,8 @@ Required metadata methods:
 - getDbToVersion() / getDbToVersionInt(): target version after running this change (SemVer and int)
 - getPriority(): integer priority when multiple change sets have same toVersion
 - getAuthor(), getName(), getDescription(), getScope(): informational fields recorded in ChangeSetRecord
+- getChangeSetVersion() [optional]: an integer you bump when the definition/logic of this change set evolves but its target database version does not. Defaults to 1.
+- getChecksum() [optional]: a stable checksum string representing the content/logic of the change set. If provided and it changes, the change set will re-run even if versions did not change.
 
 Execution method:
 
@@ -166,3 +168,33 @@ MigrationService also exposes programmatic index utilities used by the Migration
 - Use the MultiEmitter in execute(...) to provide progress to operators consuming the SSE endpoint.
 - Apply new indexes with applyIndexes after deploying models with new @Indexed annotations; optionally dropAllIndexes then applyIndexes when changing index definitions across the board.
 - Limit scope: use getApplicableDatabases() to constrain execution to specific databases, or isOverrideDatabase/getOverrideDatabaseName to target a different database when appropriate.
+
+=== Checksum vs. from/to versions
+
+ChangeSetBean introduces two optional mechanisms that influence whether a change set runs again after it has already executed:
+
+- changeSetVersion (int): A manual counter you increment when you intentionally want the same change set (same to-version) to run again because its logic changed or needs to reapply. Defaults to 1.
+- checksum (String): A content-derived fingerprint of the change set’s implementation. If provided, the framework will re-run the change set whenever the checksum differs from the last recorded value, even if versions and changeSetVersion are unchanged.
+
+How they complement getDbFromVersion/getDbToVersion:
+
+- getDbFromVersion/getDbToVersion define the database version boundary the change set moves the realm across. They control ordering and whether the database version should advance on success.
+- changeSetVersion/checksum control repeatability of a change set at a fixed to-version. They do not change ordering; they only indicate that the change set should be applied again.
+
+Typical usage patterns:
+
+- Minor logic refactor that should re-apply: bump changeSetVersion, or update checksum if you compute it from code/resources.
+- Data or index definition tweaked without a version bump: provide getChecksum() that reflects the relevant definitions (e.g., hash of DDL/index specs or embedded dataset), so the system auto-detects changes and re-runs.
+- Actual schema version change: bump getDbToVersion (and possibly from) as usual; you may leave changeSetVersion and checksum alone.
+
+Recording and behavior in ChangeSetRecord:
+
+- On each execution, MigrationService stores changeSetVersion and checksum alongside from/to versions.
+- A change set is considered pending if no record exists, or the bean’s changeSetVersion is greater than the recorded one, or the bean’s checksum is non-null and differs from the recorded checksum.
+- After a successful run, DatabaseVersion is updated to dbToVersion if it is higher than current.
+
+Caveats:
+
+- If you return null from getChecksum(), only first-run and changeSetVersion increases can trigger re-execution.
+- Ensure your checksum is stable across processes and deterministic for the same logic; do not include timestamps or environment-specific data.
+- When migrating large datasets, prefer idempotent logic so repeated runs are safe even if checksum forces a re-run.
