@@ -529,7 +529,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Framework Documentation</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-11-12T01:44:46Z</span>
+<span id="revdate">2025-11-12T02:29:02Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -843,16 +843,17 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_validating_versions_at_startup">72. Validating versions at startup</a></li>
 <li><a href="#_notes_and_best_practices">73. Notes and best practices</a>
 <ul class="sectlevel2">
-<li><a href="#_testing_framework">73.1. Testing Framework</a></li>
-<li><a href="#_prerequisites_and_glossary">73.2. Prerequisites and glossary</a></li>
-<li><a href="#_pattern_1_extend_baserepotest">73.3. Pattern 1 — Extend BaseRepoTest</a></li>
-<li><a href="#_pattern_2_try_with_resources_securitysession">73.4. Pattern 2 — Try-with-resources SecuritySession</a></li>
-<li><a href="#_pattern_3_scoped_call_wrapper_scopedcallscope">73.5. Pattern 3 — Scoped-call wrapper (ScopedCallScope)</a></li>
-<li><a href="#_pattern_4_testsecurity_annotation_quarkus">73.6. Pattern 4 — @TestSecurity annotation (Quarkus)</a></li>
-<li><a href="#_testing_rest_apis_vs_repository_logic">73.7. Testing REST APIs vs. Repository Logic</a></li>
-<li><a href="#_useful_quarkus_test_features">73.8. Useful Quarkus Test features</a></li>
-<li><a href="#_real_world_tips">73.9. Real-world tips</a></li>
-<li><a href="#_summary_2">73.10. Summary</a></li>
+<li><a href="#_checksum_vs_fromto_versions">73.1. Checksum vs. from/to versions</a></li>
+<li><a href="#_testing_framework">73.2. Testing Framework</a></li>
+<li><a href="#_prerequisites_and_glossary">73.3. Prerequisites and glossary</a></li>
+<li><a href="#_pattern_1_extend_baserepotest">73.4. Pattern 1 — Extend BaseRepoTest</a></li>
+<li><a href="#_pattern_2_try_with_resources_securitysession">73.5. Pattern 2 — Try-with-resources SecuritySession</a></li>
+<li><a href="#_pattern_3_scoped_call_wrapper_scopedcallscope">73.6. Pattern 3 — Scoped-call wrapper (ScopedCallScope)</a></li>
+<li><a href="#_pattern_4_testsecurity_annotation_quarkus">73.7. Pattern 4 — @TestSecurity annotation (Quarkus)</a></li>
+<li><a href="#_testing_rest_apis_vs_repository_logic">73.8. Testing REST APIs vs. Repository Logic</a></li>
+<li><a href="#_useful_quarkus_test_features">73.9. Useful Quarkus Test features</a></li>
+<li><a href="#_real_world_tips">73.10. Real-world tips</a></li>
+<li><a href="#_summary_2">73.11. Summary</a></li>
 </ul>
 </li>
 <li><a href="#_tutorials">74. Tutorials</a></li>
@@ -11090,7 +11091,7 @@ noViolations() === <span class="predefined-constant">true</span></code></pre>
 <p>Ordering: change sets are sorted by dbToVersionInt, then by priority (ascending). That ensures lower target versions apply before higher ones; priority resolves ties.</p>
 </li>
 <li>
-<p>Pending selection: For the target realm, MigrationService#getAllPendingChangeSetBeans compares each change set’s dbToVersion against the stored DatabaseVersion and ignores already executed ones (tracked in ChangeSetRecord).</p>
+<p>Pending selection: For the target realm, MigrationService#getAllPendingChangeSetBeans considers a change set pending if either (a) it has never run, (b) the bean’s changeSetVersion is greater than the last recorded one, or (c) the bean’s checksum is non-null and differs from the last recorded checksum in ChangeSetRecord. It also compares each change set’s dbToVersion against the stored DatabaseVersion.</p>
 </li>
 <li>
 <p>Locking: A distributed lock (Mongo‑backed Sherlock) is acquired per realm before applying change sets to prevent concurrent execution.</p>
@@ -11130,6 +11131,12 @@ noViolations() === <span class="predefined-constant">true</span></code></pre>
 </li>
 <li>
 <p>getAuthor(), getName(), getDescription(), getScope(): informational fields recorded in ChangeSetRecord</p>
+</li>
+<li>
+<p>getChangeSetVersion() [optional]: an integer you bump when the definition/logic of this change set evolves but its target database version does not. Defaults to 1.</p>
+</li>
+<li>
+<p>getChecksum() [optional]: a stable checksum string representing the content/logic of the change set. If provided and it changes, the change set will re-run even if versions did not change.</p>
 </li>
 </ul>
 </div>
@@ -11368,13 +11375,90 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 <p>Apply new indexes with applyIndexes after deploying models with new @Indexed annotations; optionally dropAllIndexes then applyIndexes when changing index definitions across the board.</p>
 </li>
 <li>
-<p>Limit scope: use getApplicableDatabases() to constrain execution to specific databases, or isOverrideDatabase/getOverrideDatabaseName to target a different database when appropriate.
-== Testing in Quantum: Security Contexts, Repos, and REST APIs</p>
+<p>Limit scope: use getApplicableDatabases() to constrain execution to specific databases, or isOverrideDatabase/getOverrideDatabaseName to target a different database when appropriate.</p>
 </li>
 </ul>
 </div>
 <div class="sect2">
-<h3 id="_testing_framework">73.1. Testing Framework</h3>
+<h3 id="_checksum_vs_fromto_versions">73.1. Checksum vs. from/to versions</h3>
+<div class="paragraph">
+<p>ChangeSetBean introduces two optional mechanisms that influence whether a change set runs again after it has already executed:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>changeSetVersion (int): A manual counter you increment when you intentionally want the same change set (same to-version) to run again because its logic changed or needs to reapply. Defaults to 1.</p>
+</li>
+<li>
+<p>checksum (String): A content-derived fingerprint of the change set’s implementation. If provided, the framework will re-run the change set whenever the checksum differs from the last recorded value, even if versions and changeSetVersion are unchanged.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>How they complement getDbFromVersion/getDbToVersion:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>getDbFromVersion/getDbToVersion define the database version boundary the change set moves the realm across. They control ordering and whether the database version should advance on success.</p>
+</li>
+<li>
+<p>changeSetVersion/checksum control repeatability of a change set at a fixed to-version. They do not change ordering; they only indicate that the change set should be applied again.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Typical usage patterns:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Minor logic refactor that should re-apply: bump changeSetVersion, or update checksum if you compute it from code/resources.</p>
+</li>
+<li>
+<p>Data or index definition tweaked without a version bump: provide getChecksum() that reflects the relevant definitions (e.g., hash of DDL/index specs or embedded dataset), so the system auto-detects changes and re-runs.</p>
+</li>
+<li>
+<p>Actual schema version change: bump getDbToVersion (and possibly from) as usual; you may leave changeSetVersion and checksum alone.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Recording and behavior in ChangeSetRecord:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>On each execution, MigrationService stores changeSetVersion and checksum alongside from/to versions.</p>
+</li>
+<li>
+<p>A change set is considered pending if no record exists, or the bean’s changeSetVersion is greater than the recorded one, or the bean’s checksum is non-null and differs from the recorded checksum.</p>
+</li>
+<li>
+<p>After a successful run, DatabaseVersion is updated to dbToVersion if it is higher than current.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Caveats:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>If you return null from getChecksum(), only first-run and changeSetVersion increases can trigger re-execution.</p>
+</li>
+<li>
+<p>Ensure your checksum is stable across processes and deterministic for the same logic; do not include timestamps or environment-specific data.</p>
+</li>
+<li>
+<p>When migrating large datasets, prefer idempotent logic so repeated runs are safe even if checksum forces a re-run.
+== Testing in Quantum: Security Contexts, Repos, and REST APIs</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_testing_framework">73.2. Testing Framework</h3>
 <div class="paragraph">
 <p>This guide explains how to write effective tests in the Quantum framework, with a focus on setting the security context and choosing the right Quarkus testing patterns for repository logic vs. REST APIs.</p>
 </div>
@@ -11390,7 +11474,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect2">
-<h3 id="_prerequisites_and_glossary">73.2. Prerequisites and glossary</h3>
+<h3 id="_prerequisites_and_glossary">73.3. Prerequisites and glossary</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -11412,7 +11496,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect2">
-<h3 id="_pattern_1_extend_baserepotest">73.3. Pattern 1 — Extend BaseRepoTest</h3>
+<h3 id="_pattern_1_extend_baserepotest">73.4. Pattern 1 — Extend BaseRepoTest</h3>
 <div class="paragraph">
 <p>For repository tests (no HTTP), the simplest approach is to extend BaseRepoTest.</p>
 </div>
@@ -11453,7 +11537,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect2">
-<h3 id="_pattern_2_try_with_resources_securitysession">73.4. Pattern 2 — Try-with-resources SecuritySession</h3>
+<h3 id="_pattern_2_try_with_resources_securitysession">73.5. Pattern 2 — Try-with-resources SecuritySession</h3>
 <div class="paragraph">
 <p>Use SecuritySession explicitly to scope work that should run under a specific PrincipalContext and ResourceContext. This is the most explicit pattern and works in both repository and service-level tests.</p>
 </div>
@@ -11486,7 +11570,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 </div>
 <div class="sect2">
-<h3 id="_pattern_3_scoped_call_wrapper_scopedcallscope">73.5. Pattern 3 — Scoped-call wrapper (ScopedCallScope)</h3>
+<h3 id="_pattern_3_scoped_call_wrapper_scopedcallscope">73.6. Pattern 3 — Scoped-call wrapper (ScopedCallScope)</h3>
 <div class="paragraph">
 <p>If you prefer not to repeat try-with-resources blocks, wrap your work in a helper that creates a SecuritySession, runs your logic, and ensures cleanup. This is sometimes called a “scoped call” pattern, often referred to as a ScopedCallScope.</p>
 </div>
@@ -11535,7 +11619,7 @@ SecurityScopes.run(pContext, rContext, () -&gt; repo.save(realm, entity));</code
 </div>
 </div>
 <div class="sect2">
-<h3 id="_pattern_4_testsecurity_annotation_quarkus">73.6. Pattern 4 — @TestSecurity annotation (Quarkus)</h3>
+<h3 id="_pattern_4_testsecurity_annotation_quarkus">73.7. Pattern 4 — @TestSecurity annotation (Quarkus)</h3>
 <div class="paragraph">
 <p>For tests that run through HTTP (and in some repo tests), you can use Quarkus’ @io.quarkus.test.security.TestSecurity to set the SecurityIdentity without creating a SecuritySession.</p>
 </div>
@@ -11595,7 +11679,7 @@ SecurityScopes.run(pContext, rContext, () -&gt; repo.save(realm, entity));</code
 </div>
 </div>
 <div class="sect2">
-<h3 id="_testing_rest_apis_vs_repository_logic">73.7. Testing REST APIs vs. Repository Logic</h3>
+<h3 id="_testing_rest_apis_vs_repository_logic">73.8. Testing REST APIs vs. Repository Logic</h3>
 <div class="paragraph">
 <p>When to prefer REST (HTTP) tests:
 - End-to-end authorization: validate request filters, identity mapping, realm headers, and JWT handling.
@@ -11627,7 +11711,7 @@ SecurityScopes.run(pContext, rContext, () -&gt; repo.save(realm, entity));</code
 </div>
 </div>
 <div class="sect2">
-<h3 id="_useful_quarkus_test_features">73.8. Useful Quarkus Test features</h3>
+<h3 id="_useful_quarkus_test_features">73.9. Useful Quarkus Test features</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -11652,7 +11736,7 @@ SecurityScopes.run(pContext, rContext, () -&gt; repo.save(realm, entity));</code
 </div>
 </div>
 <div class="sect2">
-<h3 id="_real_world_tips">73.9. Real-world tips</h3>
+<h3 id="_real_world_tips">73.10. Real-world tips</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -11676,7 +11760,7 @@ void cleanup() { com.e2eq.framework.model.securityrules.SecurityContext.clear();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_summary_2">73.10. Summary</h3>
+<h3 id="_summary_2">73.11. Summary</h3>
 <div class="ulist">
 <ul>
 <li>

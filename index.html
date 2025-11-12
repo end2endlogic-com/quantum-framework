@@ -529,7 +529,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Framework Documentation</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-11-12T01:44:46Z</span>
+<span id="revdate">2025-11-12T02:29:02Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -853,7 +853,11 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_perentity_index_management_baseresource">26.8. Per‑entity index management (BaseResource)</a></li>
 <li><a href="#_global_index_management_migrationservice">26.9. Global index management (MigrationService)</a></li>
 <li><a href="#_validating_versions_at_startup">26.10. Validating versions at startup</a></li>
-<li><a href="#_notes_and_best_practices">26.11. Notes and best practices</a></li>
+<li><a href="#_notes_and_best_practices">26.11. Notes and best practices</a>
+<ul class="sectlevel3">
+<li><a href="#_checksum_vs_fromto_versions">26.11.1. Checksum vs. from/to versions</a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li><a href="#sec-testing">27. 11. Testing</a>
@@ -12395,7 +12399,7 @@ s3://my-seeds/seed-packs/customer/1.0.0/roles.json</code></pre>
 <p>Ordering: change sets are sorted by dbToVersionInt, then by priority (ascending). That ensures lower target versions apply before higher ones; priority resolves ties.</p>
 </li>
 <li>
-<p>Pending selection: For the target realm, MigrationService#getAllPendingChangeSetBeans compares each change set’s dbToVersion against the stored DatabaseVersion and ignores already executed ones (tracked in ChangeSetRecord).</p>
+<p>Pending selection: For the target realm, MigrationService#getAllPendingChangeSetBeans considers a change set pending if either (a) it has never run, (b) the bean’s changeSetVersion is greater than the last recorded one, or (c) the bean’s checksum is non-null and differs from the last recorded checksum in ChangeSetRecord. It also compares each change set’s dbToVersion against the stored DatabaseVersion.</p>
 </li>
 <li>
 <p>Locking: A distributed lock (Mongo‑backed Sherlock) is acquired per realm before applying change sets to prevent concurrent execution.</p>
@@ -12433,6 +12437,12 @@ s3://my-seeds/seed-packs/customer/1.0.0/roles.json</code></pre>
 </li>
 <li>
 <p>getAuthor(), getName(), getDescription(), getScope(): informational fields recorded in ChangeSetRecord</p>
+</li>
+<li>
+<p>getChangeSetVersion() [optional]: an integer you bump when the definition/logic of this change set evolves but its target database version does not. Defaults to 1.</p>
+</li>
+<li>
+<p>getChecksum() [optional]: a stable checksum string representing the content/logic of the change set. If provided and it changes, the change set will re-run even if versions did not change.</p>
 </li>
 </ul>
 </div>
@@ -12662,6 +12672,83 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 <p>Limit scope: use getApplicableDatabases() to constrain execution to specific databases, or isOverrideDatabase/getOverrideDatabaseName to target a different database when appropriate.</p>
 </li>
 </ul>
+</div>
+<div class="sect3">
+<h4 id="_checksum_vs_fromto_versions">26.11.1. Checksum vs. from/to versions</h4>
+<div class="paragraph">
+<p>ChangeSetBean introduces two optional mechanisms that influence whether a change set runs again after it has already executed:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>changeSetVersion (int): A manual counter you increment when you intentionally want the same change set (same to-version) to run again because its logic changed or needs to reapply. Defaults to 1.</p>
+</li>
+<li>
+<p>checksum (String): A content-derived fingerprint of the change set’s implementation. If provided, the framework will re-run the change set whenever the checksum differs from the last recorded value, even if versions and changeSetVersion are unchanged.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>How they complement getDbFromVersion/getDbToVersion:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>getDbFromVersion/getDbToVersion define the database version boundary the change set moves the realm across. They control ordering and whether the database version should advance on success.</p>
+</li>
+<li>
+<p>changeSetVersion/checksum control repeatability of a change set at a fixed to-version. They do not change ordering; they only indicate that the change set should be applied again.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Typical usage patterns:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Minor logic refactor that should re-apply: bump changeSetVersion, or update checksum if you compute it from code/resources.</p>
+</li>
+<li>
+<p>Data or index definition tweaked without a version bump: provide getChecksum() that reflects the relevant definitions (e.g., hash of DDL/index specs or embedded dataset), so the system auto-detects changes and re-runs.</p>
+</li>
+<li>
+<p>Actual schema version change: bump getDbToVersion (and possibly from) as usual; you may leave changeSetVersion and checksum alone.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Recording and behavior in ChangeSetRecord:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>On each execution, MigrationService stores changeSetVersion and checksum alongside from/to versions.</p>
+</li>
+<li>
+<p>A change set is considered pending if no record exists, or the bean’s changeSetVersion is greater than the recorded one, or the bean’s checksum is non-null and differs from the recorded checksum.</p>
+</li>
+<li>
+<p>After a successful run, DatabaseVersion is updated to dbToVersion if it is higher than current.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Caveats:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>If you return null from getChecksum(), only first-run and changeSetVersion increases can trigger re-execution.</p>
+</li>
+<li>
+<p>Ensure your checksum is stable across processes and deterministic for the same logic; do not include timestamps or environment-specific data.</p>
+</li>
+<li>
+<p>When migrating large datasets, prefer idempotent logic so repeated runs are safe even if checksum forces a re-run.</p>
+</li>
+</ul>
+</div>
 </div>
 </div>
 </div>
