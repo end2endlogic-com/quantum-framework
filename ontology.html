@@ -529,7 +529,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-11-10T13:42:37Z</span>
+<span id="revdate">2025-11-12T01:44:46Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -620,6 +620,14 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_abox_instances_graph_endpoint">8.3. ABox (instances) graph endpoint</a></li>
 <li><a href="#_rendering_with_jointjs_quick_snippet">8.4. Rendering with JointJS (quick snippet)</a></li>
 <li><a href="#_when_to_use_these_endpoints">8.5. When to use these endpoints</a></li>
+</ul>
+</li>
+<li><a href="#dev-howto-ontology-yaml-materialization-reindex-provenance">9. Developer how-to: YAML properties, chains, write-time materialization, reindex, and provenance</a>
+<ul class="sectlevel2">
+<li><a href="#_declare_properties_and_chains_in_yaml">9.1. Declare properties and chains in YAML</a></li>
+<li><a href="#_write_time_materialization_what_runs_and_how_to_toggle">9.2. Write-time materialization: what runs and how to toggle</a></li>
+<li><a href="#_reindex_after_yaml_changes">9.3. Reindex after YAML changes</a></li>
+<li><a href="#_edge_provenance_format_and_deletions">9.4. Edge provenance format and deletions</a></li>
 </ul>
 </li>
 </ul>
@@ -3232,11 +3240,304 @@ JointJS will honor the attrs/labels we return. You can add a legend in your UI t
 </div>
 </div>
 </div>
+<div class="sect1">
+<h2 id="dev-howto-ontology-yaml-materialization-reindex-provenance">9. Developer how-to: YAML properties, chains, write-time materialization, reindex, and provenance</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>This section is a concise, task-focused guide for developers. It shows how to declare properties and chains in YAML, how write-time materialization works and how to toggle it, how to reindex after YAML changes, and how edge provenance is stored and how deletions are handled. Examples use the Order/Shipment/Address/Org model.</p>
+</div>
+<div class="sect2">
+<h3 id="_declare_properties_and_chains_in_yaml">9.1. Declare properties and chains in YAML</h3>
+<div class="paragraph">
+<p>Place an ontology.yaml in your classpath (src/main/resources) or supply a path via environment variable ONTOLOGY_YAML or system property ontology.yaml.path. The loader supports classes, properties, and property chains.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml"><span class="key">version</span>: <span class="string"><span class="content">1</span></span>
+<span class="key">classes</span>:
+  - <span class="string"><span class="content">id: Order</span></span>
+  - <span class="string"><span class="content">id: Customer</span></span>
+  - <span class="string"><span class="content">id: Organization</span></span>
+  - <span class="string"><span class="content">id: Shipment</span></span>
+  - <span class="string"><span class="content">id: Address</span></span>
+  - <span class="string"><span class="content">id: Region</span></span>
+
+<span class="key">properties</span>:
+  - <span class="string"><span class="content">id: placedBy</span></span>
+    <span class="key">domain</span>: <span class="string"><span class="content">Order</span></span>
+    <span class="key">range</span>: <span class="string"><span class="content">Customer</span></span>
+    <span class="key">functional</span>: <span class="string"><span class="content">true</span></span>
+  - <span class="string"><span class="content">id: memberOf</span></span>
+    <span class="key">domain</span>: <span class="string"><span class="content">Customer</span></span>
+    <span class="key">range</span>: <span class="string"><span class="content">Organization</span></span>
+  - <span class="string"><span class="content">id: orderHasShipment</span></span>
+    <span class="key">domain</span>: <span class="string"><span class="content">Order</span></span>
+    <span class="key">range</span>: <span class="string"><span class="content">Shipment</span></span>
+  - <span class="string"><span class="content">id: shipsTo</span></span>
+    <span class="key">domain</span>: <span class="string"><span class="content">Shipment</span></span>
+    <span class="key">range</span>: <span class="string"><span class="content">Address</span></span>
+  - <span class="string"><span class="content">id: locatedIn</span></span>
+    <span class="key">domain</span>: <span class="string"><span class="content">Address</span></span>
+    <span class="key">range</span>: <span class="string"><span class="content">Region</span></span>
+  - <span class="string"><span class="content">id: ancestorOf</span></span>
+    <span class="key">domain</span>: <span class="string"><span class="content">Organization</span></span>
+    <span class="key">range</span>: <span class="string"><span class="content">Organization</span></span>
+    <span class="key">transitive</span>: <span class="string"><span class="content">true</span></span>
+  <span class="comment"># implied predicates materialized by chains</span>
+  - <span class="string"><span class="content">id: placedInOrg</span></span>
+    <span class="key">domain</span>: <span class="string"><span class="content">Order</span></span>
+    <span class="key">range</span>: <span class="string"><span class="content">Organization</span></span>
+  - <span class="string"><span class="content">id: orderShipsTo</span></span>
+    <span class="key">domain</span>: <span class="string"><span class="content">Order</span></span>
+    <span class="key">range</span>: <span class="string"><span class="content">Address</span></span>
+  - <span class="string"><span class="content">id: orderShipsToRegion</span></span>
+    <span class="key">domain</span>: <span class="string"><span class="content">Order</span></span>
+    <span class="key">range</span>: <span class="string"><span class="content">Region</span></span>
+
+<span class="key">chains</span>:
+  - <span class="string"><span class="content">chain: [placedBy, memberOf]</span></span>
+    <span class="key">implies</span>: <span class="string"><span class="content">placedInOrg</span></span>
+  - <span class="string"><span class="content">chain: [orderHasShipment, shipsTo]</span></span>
+    <span class="key">implies</span>: <span class="string"><span class="content">orderShipsTo</span></span>
+  - <span class="string"><span class="content">chain: [orderShipsTo, locatedIn]</span></span>
+    <span class="key">implies</span>: <span class="string"><span class="content">orderShipsToRegion</span></span>
+  - <span class="string"><span class="content">chain: [placedInOrg, ancestorOf]</span></span>
+    <span class="key">implies</span>: <span class="string"><span class="content">placedInOrg</span></span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Notes:
+- Chains are ordered. The last predicate referenced must already exist as a property id.
+- You may chain an implied property (e.g., placedInOrg) with another property (ancestorOf) to re-imply itself (useful with transitivity on ancestorOf).
+- Domain and range help with type checking and tooling; they are optional but recommended.</p>
+</div>
+<div class="paragraph">
+<p>See also: <a href="#_defining_an_ontology_with_yaml_yamlontologyloader">Defining an ontology with YAML (YamlOntologyLoader)</a> for a broader introduction.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_write_time_materialization_what_runs_and_how_to_toggle">9.2. Write-time materialization: what runs and how to toggle</h3>
+<div class="paragraph">
+<p>When an entity annotated with @OntologyClass is persisted, the framework:
+- Extracts explicit edges from fields/getters annotated with @OntologyProperty on that entity.
+- Merges any additional explicit edges from SPI providers (beans implementing com.e2eq.ontology.spi.OntologyEdgeProvider).
+- Calls OntologyMaterializer, which runs the forward-chaining reasoner and writes the inferred/derived edges. It also prunes stale explicit and inferred edges for that source.</p>
+</div>
+<div class="paragraph">
+<p>Global toggle</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="properties"># default is true
+ontology.auto-materialize=true</code></pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Set ontology.auto-materialize=false to temporarily disable the write hook (useful for bulk loads or tests).</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Per-property toggle</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@OntologyProperty</span>(id = <span class="string"><span class="delimiter">&quot;</span><span class="content">orderHasShipment</span><span class="delimiter">&quot;</span></span>, materializeEdge = <span class="predefined-constant">false</span>)
+<span class="directive">private</span> <span class="predefined-type">List</span>&lt;<span class="predefined-type">String</span>&gt; shipmentRefNames;</code></pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>materializeEdge=false skips extracting explicit edges for that property only. This does not disable derived edges that might arise from other explicit inputs.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Provider-based edges</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Implement OntologyEdgeProvider to contribute explicit edges not backed by fields. The extractor merges these before materialization. See <a href="#_where_ontology_materialization_happens">Where ontology materialization happens</a> for a full example.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_reindex_after_yaml_changes">9.3. Reindex after YAML changes</h3>
+<div class="paragraph">
+<p>If you change ontology.yaml (add properties, mark a property transitive, add chains), you should trigger a tenant-wide re-materialization so derived edges reflect the new rules.</p>
+</div>
+<div class="paragraph">
+<p>REST endpoints (admin-only):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="shell"># Start reindex for a realm (tenant)
+curl -X POST &quot;http://localhost:8080/ontology/admin/reindex?realm=default&quot;
+
+# Check status
+curl -s &quot;http://localhost:8080/ontology/admin/reindex/status&quot;</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Tips:
+- Reindex discovers all @OntologyClass entities via Morphia and re-applies write-time materialization to each instance.
+- For large tenants, consider running during off-hours. The service streams per class; status shows progress.
+- If you need to purge previously derived edges before recomputing, use a force mode if exposed by your deployment (some environments wire runAsync(realm, force=true)).</p>
+</div>
+<div class="paragraph">
+<p>Related: Drift-repair job</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>For targeted repair, use the drift-repair endpoint to prune unsupported derived edges and re-derive per entity class with pagination:</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="shell"># Run prune+derive for Orders (page size 100)
+curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=default&amp;entityClass=com.yourpkg.Order&amp;pageSize=100&quot;
+
+# Continue from a page token
+curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=default&amp;entityClass=com.yourpkg.Order&amp;pageToken=6543210abcdef...&quot;
+
+# Only prune (no derive)
+curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=default&amp;entityClass=com.yourpkg.Order&amp;derive=false&quot;
+
+# Dry-run (no writes)
+curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=default&amp;entityClass=com.yourpkg.Order&amp;dryRun=true&quot;</code></pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_edge_provenance_format_and_deletions">9.4. Edge provenance format and deletions</h3>
+<div class="paragraph">
+<p>Storage model (Mongo edges collection):
+- Each edge document stores: tenantId, src, srcType, p (predicate), dst, dstType, inferred, derived, prov (map), support (list), ts.
+- Derived edges include structured support:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">dataDomain</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">tenantId</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">default</span><span class="delimiter">&quot;</span></span> },
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">src</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">ORD-1</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">srcType</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Order</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">p</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">orderShipsToRegion</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">dst</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">US-WEST</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">dstType</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Region</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">inferred</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">derived</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">prov</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">rule</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">chain(orderShipsTo,locatedIn)</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">inputs</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">ORD-1|orderShipsTo|ADDR-9</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">ADDR-9|locatedIn|US-WEST</span><span class="delimiter">&quot;</span></span>] },
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">support</span><span class="delimiter">&quot;</span></span>: [ { <span class="key"><span class="delimiter">&quot;</span><span class="content">ruleId</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">chain:orderShipsTo&gt;locatedIn</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">pathEdgeIds</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">ORD-1|orderShipsTo|ADDR-9</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">ADDR-9|locatedIn|US-WEST</span><span class="delimiter">&quot;</span></span>] } ],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">ts</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">2025-11-10T20:22:00Z</span><span class="delimiter">&quot;</span></span>
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Deletion and pruning rules
+- Explicit edges: Re-computed on each write. For each predicate p on the source, any previous explicit dst not present in the new explicit set is deleted (deleteExplicitBySrcNotIn).
+- Inferred/derived edges: After recomputation, any prior inferred edge for p whose dst is not in the newly inferred set is deleted (deleteInferredBySrcNotIn).
+- Safety cleanup: A periodic or manual prune removes derived edges that have no support recorded (pruneDerivedWithoutSupport). Use the drift-repair job or a scheduled task to keep storage clean when inputs are removed out-of-band.</p>
+</div>
+<div class="paragraph">
+<p>Worked examples (source Order = O, Customer = C, Organization = G, Shipment = S, Address = A, Region = R)</p>
+</div>
+<div class="paragraph">
+<p>1) [placedBy, memberOf] ⇒ placedInOrg</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Inputs: O --placedBy-&#8594; C, C --memberOf-&#8594; G</p>
+</li>
+<li>
+<p>Implied: O --placedInOrg-&#8594; G</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{<span class="key"><span class="delimiter">&quot;</span><span class="content">src</span><span class="delimiter">&quot;</span></span>:<span class="string"><span class="delimiter">&quot;</span><span class="content">O</span><span class="delimiter">&quot;</span></span>,<span class="key"><span class="delimiter">&quot;</span><span class="content">srcType</span><span class="delimiter">&quot;</span></span>:<span class="string"><span class="delimiter">&quot;</span><span class="content">Order</span><span class="delimiter">&quot;</span></span>,<span class="key"><span class="delimiter">&quot;</span><span class="content">p</span><span class="delimiter">&quot;</span></span>:<span class="string"><span class="delimiter">&quot;</span><span class="content">placedInOrg</span><span class="delimiter">&quot;</span></span>,<span class="key"><span class="delimiter">&quot;</span><span class="content">dst</span><span class="delimiter">&quot;</span></span>:<span class="string"><span class="delimiter">&quot;</span><span class="content">G</span><span class="delimiter">&quot;</span></span>,<span class="key"><span class="delimiter">&quot;</span><span class="content">dstType</span><span class="delimiter">&quot;</span></span>:<span class="string"><span class="delimiter">&quot;</span><span class="content">Organization</span><span class="delimiter">&quot;</span></span>,<span class="key"><span class="delimiter">&quot;</span><span class="content">inferred</span><span class="delimiter">&quot;</span></span>:<span class="value">true</span>,<span class="key"><span class="delimiter">&quot;</span><span class="content">derived</span><span class="delimiter">&quot;</span></span>:<span class="value">true</span>,
+ <span class="key"><span class="delimiter">&quot;</span><span class="content">prov</span><span class="delimiter">&quot;</span></span>:{<span class="key"><span class="delimiter">&quot;</span><span class="content">rule</span><span class="delimiter">&quot;</span></span>:<span class="string"><span class="delimiter">&quot;</span><span class="content">chain(placedBy,memberOf)</span><span class="delimiter">&quot;</span></span>,<span class="key"><span class="delimiter">&quot;</span><span class="content">inputs</span><span class="delimiter">&quot;</span></span>:[<span class="string"><span class="delimiter">&quot;</span><span class="content">O|placedBy|C</span><span class="delimiter">&quot;</span></span>,<span class="string"><span class="delimiter">&quot;</span><span class="content">C|memberOf|G</span><span class="delimiter">&quot;</span></span>]},
+ <span class="key"><span class="delimiter">&quot;</span><span class="content">support</span><span class="delimiter">&quot;</span></span>:[{<span class="key"><span class="delimiter">&quot;</span><span class="content">ruleId</span><span class="delimiter">&quot;</span></span>:<span class="string"><span class="delimiter">&quot;</span><span class="content">chain:placedBy&gt;memberOf</span><span class="delimiter">&quot;</span></span>,<span class="key"><span class="delimiter">&quot;</span><span class="content">pathEdgeIds</span><span class="delimiter">&quot;</span></span>:[<span class="string"><span class="delimiter">&quot;</span><span class="content">O|placedBy|C</span><span class="delimiter">&quot;</span></span>,<span class="string"><span class="delimiter">&quot;</span><span class="content">C|memberOf|G</span><span class="delimiter">&quot;</span></span>]}]}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>2) [orderHasShipment, shipsTo] ⇒ orderShipsTo</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Inputs: O --orderHasShipment-&#8594; S, S --shipsTo-&#8594; A</p>
+</li>
+<li>
+<p>Implied: O --orderShipsTo-&#8594; A</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>{"src":"O","srcType":"Order","p":"orderShipsTo","dst":"A","dstType":"Address","inferred":true,"derived":true,
+ "prov":{"rule":"chain(orderHasShipment,shipsTo)","inputs":["O|orderHasShipment|S","S|shipsTo|A"]},
+ "support":[{"ruleId":"chain:orderHasShipment&gt;shipsTo","pathEdgeIds":["O|orderHasShipment|S","S|shipsTo|A"]}]}</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>3) [orderShipsTo, locatedIn] ⇒ orderShipsToRegion</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Inputs: O --orderShipsTo-&#8594; A, A --locatedIn-&#8594; R</p>
+</li>
+<li>
+<p>Implied: O --orderShipsToRegion-&#8594; R</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>{"src":"O","srcType":"Order","p":"orderShipsToRegion","dst":"R","dstType":"Region","inferred":true,"derived":true,
+ "prov":{"rule":"chain(orderShipsTo,locatedIn)","inputs":["O|orderShipsTo|A","A|locatedIn|R"]},
+ "support":[{"ruleId":"chain:orderShipsTo&gt;locatedIn","pathEdgeIds":["O|orderShipsTo|A","A|locatedIn|R"]}]}</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>4) [placedInOrg, ancestorOf] ⇒ placedInOrg</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Inputs: O --placedInOrg-&#8594; G1, G1 --ancestorOf-&#8594; G2 (ancestorOf is transitive)</p>
+</li>
+<li>
+<p>Implied: O --placedInOrg-&#8594; G2 (can repeat over the ancestor chain)</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>{"src":"O","srcType":"Order","p":"placedInOrg","dst":"G2","dstType":"Organization","inferred":true,"derived":true,
+ "prov":{"rule":"chain(placedInOrg,ancestorOf)","inputs":["O|placedInOrg|G1","G1|ancestorOf|G2"]},
+ "support":[{"ruleId":"chain:placedInOrg&gt;ancestorOf","pathEdgeIds":["O|placedInOrg|G1","G1|ancestorOf|G2"]}]}</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Operational notes
+- If you delete inputs (e.g., remove C.memberOf=G), the next write of O (or a reindex) will prune stale placedInOrg edges. If inputs are removed out-of-band, run drift-repair to prune unsupported derived edges.
+- Always scope operations by realm/tenant. Edges are partitioned by dataDomain.tenantId and indexed accordingly.</p>
+</div>
+</div>
+</div>
+</div>
 </div>
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-11-08 18:18:02 -0500
+Last updated 2025-11-10 20:25:14 -0500
 </div>
 </div>
 </body>
