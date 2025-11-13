@@ -1,9 +1,8 @@
 package com.e2eq.tools;
 
 import com.e2eq.framework.model.security.Rule;
+import com.e2eq.framework.securityrules.io.YamlRuleLoader;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.type.CollectionType;
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -12,7 +11,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -46,12 +44,10 @@ public final class RulesYamlToJsonl {
         }
 
         // 1) Read YAML into List<Rule>
-        ObjectMapper yamlMapper = new ObjectMapper(new YAMLFactory());
-        CollectionType listType = yamlMapper.getTypeFactory()
-                .constructCollectionType(ArrayList.class, Rule.class);
         List<Rule> rules;
         try {
-            rules = yamlMapper.readValue(Files.newInputStream(input), listType);
+            YamlRuleLoader loader = new YamlRuleLoader();
+            rules = loader.load(input);
         } catch (IOException e) {
             System.err.printf("Failed to read/parse YAML from %s: %s%n", input.toAbsolutePath(), e.getMessage());
             throw e;
