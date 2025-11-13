@@ -282,13 +282,18 @@ public class MigrationService {
    }
 
    public List<ChangeSetBean> getAllChangeSetBeans () {
-      Log.info("== Finding changeSetBeans ===============");
+      if (Log.isDebugEnabled())
+       Log.debug("== Finding changeSetBeans ===============");
+      else {
+         Log.info("Scanning for changeSet Beans - should only be seen on startup");
+      }
       List<ChangeSetBean> changeSetBeans = new ArrayList<>();
       Set<Bean<?>> changeSets = beanManager.getBeans(ChangeSetBean.class);
       for (Bean bean : changeSets) {
          CreationalContext<?> creationalContext = beanManager.createCreationalContext(bean);
          ChangeSetBean chb = (ChangeSetBean) beanManager.getReference(bean, bean.getBeanClass(), creationalContext);
-         Log.infof("Found ChangeSetBean: %s", chb.getName());
+         if (Log.isDebugEnabled()) {}
+            Log.debugf("Found ChangeSetBean: %s", chb.getName());
          changeSetBeans.add(chb);
       }
 
