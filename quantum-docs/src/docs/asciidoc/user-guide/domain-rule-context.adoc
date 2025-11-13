@@ -127,7 +127,31 @@ Notes:
 
 At query time, RuleContext discovers all AccessListResolver beans and calls supports(...). For those that apply, it invokes resolve(...) and publishes the result into the variable bundle under the provided key(). Variables are available to the BIAPI query via ${...}.
 
-Internally this uses MorphiaUtils.VariableBundle and QueryToFilterListener to carry both strings and typed objects/collections.
+Internally this uses `MorphiaUtils.VariableBundle` and `QueryToFilterListener` to carry both strings and typed objects/collections.
+Starting with this release you can reuse the exact same variable bundle for custom evaluation paths. The
+`RuleContext.resolveVariableBundle(...)` helper runs all matching `AccessListResolver` beans and returns the
+maps you can feed directly into `QueryPredicates` (for in-memory rules) or any other component that understands
+`${var}` tokens.
+
+[source,java]
+----
+PrincipalContext pc = ...; // build from request
+ResourceContext rc = ...;
+
+MorphiaUtils.VariableBundle vars = ruleContext.resolveVariableBundle(pc, rc, UserProfile.class);
+
+Predicate<JsonNode> predicate = QueryPredicates.compilePredicate(
+    "customerId:^[${accessibleCustomerIds}]",
+    vars.strings,
+    vars.objects
+);
+
+JsonNode order = QueryPredicates.toJsonNode(Map.of("customerId", "5f1e1a5e5e5e5e5e5e5e5e51"));
+boolean allowed = predicate.test(order); // true when resolver returned that ObjectId
+----
+
+This allows the same resolver outputs to drive Morphia queries and client-side predicate checks without
+duplicating resolver logic.
 
 === 3) Author a rule that consumes the variable
 
