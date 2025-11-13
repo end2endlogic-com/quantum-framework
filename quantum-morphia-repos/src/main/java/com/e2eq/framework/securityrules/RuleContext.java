@@ -989,6 +989,11 @@ public class RuleContext {
      * Resolves the variable bundle (string and object variables) for the given request context by invoking
      * all AccessListResolver beans that apply. The resulting maps can be used for Morphia filters and in-memory
      * predicate compilation.
+     *
+     * @param pcontext the principal context containing user identity and permissions
+     * @param rcontext the resource context describing the target resource
+     * @param modelClass the model class being queried
+     * @return a VariableBundle containing resolved string and object variables from all applicable resolvers
      */
     public MorphiaUtils.VariableBundle resolveVariableBundle(
             @Valid @NotNull(message = "Principal Context can not be null") PrincipalContext pcontext,
