@@ -485,6 +485,140 @@ assert rx.test(ticket);
 
 Both listeners aim to maintain parity with the grammar. If you observe mismatches, please file an issue with the query string, the evaluated data sample, and the expected vs actual results.
 
+===== Query Field Validation
+
+Quantum provides validation capabilities to detect references to non-existent fields before query execution, preventing runtime errors and providing early feedback.
+
+====== Validating Listeners
+
+Two validating listener implementations extend the standard listeners:
+
+- ValidatingQueryToFilterListener: extends QueryToFilterListener for Morphia queries
+- ValidatingQueryToPredicateJsonListener: extends QueryToPredicateJsonListener for in-memory predicates
+
+Both validate field references against a model class during parsing and accumulate errors.
+
+Example usage:
+
+[source,java]
+----
+import com.e2eq.framework.model.persistent.morphia.ValidatingQueryToFilterListener;
+import com.e2eq.framework.grammar.*;
+import org.antlr.v4.runtime.*;
+import org.antlr.v4.runtime.tree.ParseTreeWalker;
+
+String query = "name:John AND invalidField:test";
+
+BIAPIQueryLexer lexer = new BIAPIQueryLexer(CharStreams.fromString(query));
+CommonTokenStream tokens = new CommonTokenStream(lexer);
+BIAPIQueryParser parser = new BIAPIQueryParser(tokens);
+
+ValidatingQueryToFilterListener listener = 
+    new ValidatingQueryToFilterListener(UserProfile.class);
+ParseTreeWalker.DEFAULT.walk(listener, parser.query());
+
+if (listener.hasValidationErrors()) {
+    List<String> errors = listener.getValidationErrors();
+    throw new IllegalArgumentException("Invalid query: " + errors);
+}
+
+Filter filter = listener.getFilter();
+----
+
+====== @ValidQueryFilter Annotation
+
+For automatic validation in DTOs and models, use the `@ValidQueryFilter` annotation:
+
+[source,java]
+----
+import com.e2eq.framework.annotations.ValidQueryFilter;
+import jakarta.validation.constraints.NotNull;
+
+public class SearchRequest {
+    @NotNull
+    @ValidQueryFilter(modelClass = UserProfile.class)
+    private String filterQuery;
+    
+    // getters/setters
+}
+----
+
+The annotation integrates with Jakarta Bean Validation and is automatically enforced by the ValidationInterceptor during entity persistence.
+
+REST endpoint example:
+
+[source,java]
+----
+@Path("/users")
+public class UserResource {
+    
+    @GET
+    public Response searchUsers(@Valid @BeanParam SearchParams params) {
+        // filterQuery is validated before this method executes
+        return Response.ok(userService.search(params.getFilterQuery())).build();
+    }
+}
+
+public class SearchParams {
+    @QueryParam("filter")
+    @ValidQueryFilter(modelClass = UserProfile.class)
+    private String filterQuery;
+}
+----
+
+Persisted filter example:
+
+[source,java]
+----
+public class SavedSearch extends BaseModel {
+    private String name;
+    
+    @ValidQueryFilter(modelClass = Order.class)
+    private String filterExpression;
+    
+    // When saved, ValidationInterceptor validates the filter
+}
+----
+
+====== QueryFieldValidator Utility
+
+For programmatic validation without listeners:
+
+[source,java]
+----
+import com.e2eq.framework.query.QueryFieldValidator;
+
+// Validate against a model class
+QueryFieldValidator validator = QueryFieldValidator.forModelClass(UserProfile.class);
+
+boolean isValid = validator.validateField("email");  // true
+boolean isInvalid = validator.validateField("nonExistentField");  // false
+
+if (validator.hasErrors()) {
+    List<String> errors = validator.getErrors();
+    // Handle validation errors
+}
+
+// Validate against aggregation pipeline schema
+Map<String, Class<?>> schema = Map.of(
+    "totalAmount", Double.class,
+    "orderCount", Long.class,
+    "customerName", String.class
+);
+
+QueryFieldValidator aggValidator = QueryFieldValidator.forAggregationSchema(schema);
+aggValidator.validateField("totalAmount");  // true
+aggValidator.validateField("invalidField");  // false
+----
+
+====== Benefits
+
+- Early error detection: catch field reference errors before query execution
+- Better error messages: specific feedback about which fields are invalid
+- Development safety: prevent typos and refactoring issues
+- API validation: validate user-provided query strings in REST endpoints
+- Data integrity: prevent saving invalid filter expressions to the database
+
 
 
 [[ontology-query-language]]
