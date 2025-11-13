@@ -58,7 +58,7 @@ class QueryFieldValidatorTest {
 
     @Test
     void testValidatingListenerDetectsInvalidFields() {
-        String query = "name:John && invalidField:test";
+        String query = "name:John&&invalidField:test";
 
         BIAPIQueryLexer lexer = new BIAPIQueryLexer(CharStreams.fromString(query));
         CommonTokenStream tokens = new CommonTokenStream(lexer);
@@ -74,7 +74,7 @@ class QueryFieldValidatorTest {
 
     @Test
     void testValidatingListenerPassesValidFields() {
-        String query = "name:John AND email:test@example.com";
+        String query = "name:John&&email:test@example.com";
 
         BIAPIQueryLexer lexer = new BIAPIQueryLexer(CharStreams.fromString(query));
         CommonTokenStream tokens = new CommonTokenStream(lexer);

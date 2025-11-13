@@ -48,14 +48,14 @@ class ValidQueryFilterTest {
 
     @Test
     void testValidQueryPasses() {
-        TestDTO dto = new TestDTO("name:John AND email:test@example.com");
+        TestDTO dto = new TestDTO("name:John&&email:test@example.com");
         Set<ConstraintViolation<TestDTO>> violations = validator.validate(dto);
         assertTrue(violations.isEmpty());
     }
 
     @Test
     void testInvalidFieldFails() {
-        TestDTO dto = new TestDTO("name:John AND invalidField:test");
+        TestDTO dto = new TestDTO("name:John&&invalidField:test");
         Set<ConstraintViolation<TestDTO>> violations = validator.validate(dto);
         assertFalse(violations.isEmpty());
         assertTrue(violations.stream()
