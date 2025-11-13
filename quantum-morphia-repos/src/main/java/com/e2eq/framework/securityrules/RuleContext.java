@@ -986,6 +986,36 @@ public class RuleContext {
     }
 
     /**
+     * Resolves the variable bundle (string and object variables) for the given request context by invoking
+     * all AccessListResolver beans that apply. The resulting maps can be used for Morphia filters and in-memory
+     * predicate compilation.
+     *
+     * @param pcontext the principal context containing user identity and permissions
+     * @param rcontext the resource context describing the target resource
+     * @param modelClass the model class being queried
+     * @return a VariableBundle containing resolved string and object variables from all applicable resolvers
+     */
+    public MorphiaUtils.VariableBundle resolveVariableBundle(
+            @Valid @NotNull(message = "Principal Context can not be null") PrincipalContext pcontext,
+            @Valid @NotNull(message = "Resource Context can not be null") ResourceContext rcontext,
+            Class<? extends UnversionedBaseModel> modelClass
+    ) {
+        Map<String, Object> extraObjects = new HashMap<>();
+        if (resolvers != null) {
+            for (AccessListResolver r : resolvers) {
+                try {
+                    if (r.supports(pcontext, rcontext, modelClass)) {
+                        extraObjects.put(r.key(), r.resolve(pcontext, rcontext, modelClass));
+                    }
+                } catch (Exception e) {
+                    Log.warnf(e, "AccessListResolver '%s' failed; continuing without it", r.getClass().getName());
+                }
+            }
+        }
+        return MorphiaUtils.buildVariableBundle(pcontext, rcontext, extraObjects);
+    }
+
+    /**
      * Get the list of filters that are applicable for the given principal and resource context.
      * @param ifilters
      * @param pcontext
@@ -1001,19 +1031,7 @@ public class RuleContext {
         List<Filter> andFilters = new ArrayList<>();
         List<Filter> orFilters = new ArrayList<>();
 
-        Map<String, Object> extraObjects = new HashMap<>();
-        if (resolvers != null) {
-            for (AccessListResolver r : resolvers) {
-                try {
-                    if (r.supports(pcontext, rcontext, modelClass)) {
-                        extraObjects.put(r.key(), r.resolve(pcontext, rcontext, modelClass));
-                    }
-                } catch (Exception e) {
-                    Log.warnf(e, "AccessListResolver '%s' failed; continuing without it", r.getClass().getName());
-                }
-            }
-        }
-        MorphiaUtils.VariableBundle vars = MorphiaUtils.buildVariableBundle(pcontext, rcontext, extraObjects);
+        MorphiaUtils.VariableBundle vars = resolveVariableBundle(pcontext, rcontext, modelClass);
 
         for (RuleResult result : response.getMatchedRuleResults()) {
             // ignore Not Applicable rules

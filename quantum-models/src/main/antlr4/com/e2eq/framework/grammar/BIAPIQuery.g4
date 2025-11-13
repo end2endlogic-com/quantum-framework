@@ -37,12 +37,12 @@ nullExpr: field=STRING op=(EQ | NEQ) value=NULL;
 elemMatchExpr: field=STRING op=EQ lp=LBRCE nested=query rp=RBRCE;
 
 // Ontology function
-hasEdgeExpr: HASEDGE LPAREN predicate=(STRING|QUOTED_STRING) COMMA dst=(STRING|QUOTED_STRING|VARIABLE|OID|REFERENCE) RPAREN;
+hasEdgeExpr: HASEDGE LPAREN predicate=(STRING|QUOTED_STRING|VARIABLE) COMMA dst=(STRING|QUOTED_STRING|VARIABLE|OID|REFERENCE) RPAREN;
 
 // Expansion directive (parsed but evaluation is handled elsewhere)
 // Support simple dotted paths and optional array wildcards [*] between segments.
 // Tokens come in as: STRING ('[' '*' ']')? (STRING ('[' '*' ']')? )*
-expandExpr: EXPAND LPAREN head=STRING (LBRKT WILDCARD RBRKT)? (seg=STRING (LBRKT WILDCARD RBRKT)? )* RPAREN;
+expandExpr: EXPAND LPAREN head=(STRING|VARIABLE) (LBRKT WILDCARD RBRKT)? ((seg=(STRING|VARIABLE)) (LBRKT WILDCARD RBRKT)? )* RPAREN;
 
 HASEDGE: 'hasEdge';
 EXPAND: 'expand';
