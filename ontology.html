@@ -529,7 +529,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-11-12T02:29:02Z</span>
+<span id="revdate">2025-11-13T18:20:58Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -626,18 +626,8 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <ul class="sectlevel2">
 <li><a href="#_declare_properties_and_chains_in_yaml">9.1. Declare properties and chains in YAML</a></li>
 <li><a href="#_write_time_materialization_what_runs_and_how_to_toggle">9.2. Write-time materialization: what runs and how to toggle</a></li>
-<li><a href="#_reindex_after_yaml_changes">9.3. Reindex after YAML changes</a>
-<ul class="sectlevel3">
-<li><a href="#_how_drift_repair_works">9.3.1. How drift-repair works</a></li>
-</ul>
-</li>
-<li><a href="#_administration_apis_ontologyadminresource">9.4. Administration APIs (OntologyAdminResource)</a></li>
-<li><a href="#_ontologymeta_and_ontologymetarepo">9.5. OntologyMeta and OntologyMetaRepo</a>
-<ul class="sectlevel3">
-<li><a href="#_business_scenarios_solved_by_reindex_and_drift_repair">9.5.1. Business scenarios solved by reindex and drift-repair</a></li>
-</ul>
-</li>
-<li><a href="#_edge_provenance_format_and_deletions">9.6. Edge provenance format and deletions</a></li>
+<li><a href="#_reindex_after_yaml_changes">9.3. Reindex after YAML changes</a></li>
+<li><a href="#_edge_provenance_format_and_deletions">9.4. Edge provenance format and deletions</a></li>
 </ul>
 </li>
 </ul>
@@ -3424,157 +3414,9 @@ curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=defau
 curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=default&amp;entityClass=com.yourpkg.Order&amp;dryRun=true&quot;</code></pre>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_how_drift_repair_works">9.3.1. How drift-repair works</h4>
-<div class="ulist">
-<ul>
-<li>
-<p>The DriftRepairJob scans instances of the given entity class in the specified realm.</p>
-</li>
-<li>
-<p>If prune=true (default), it removes derived/inferred edges that no longer have recorded support/provenance (e.g., inputs were deleted out-of-band).</p>
-</li>
-<li>
-<p>If derive=true (default), it re-extracts explicit edges via AnnotatedEdgeExtractor and re-applies OntologyMaterializer to recompute derived edges.</p>
-</li>
-<li>
-<p>Pagination is supported with pageSize and pageToken so long-running repairs can be chunked and resumed.</p>
-</li>
-<li>
-<p>dryRun=true computes the plan and returns counts without performing writes.</p>
-</li>
-</ul>
-</div>
-</div>
 </div>
 <div class="sect2">
-<h3 id="_administration_apis_ontologyadminresource">9.4. Administration APIs (OntologyAdminResource)</h3>
-<div class="paragraph">
-<p>Base path: /ontology/admin (admin-only)</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>GET /ontology/admin/meta</p>
-</li>
-<li>
-<p>Returns the singleton OntologyMeta document for the deployment. Useful to see the last observed YAML version/hash and whether a reindex is required.</p>
-</li>
-<li>
-<p>Example:</p>
-</li>
-</ul>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre>curl -s "http://localhost:8080/ontology/admin/meta"</pre>
-</div>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>POST /ontology/admin/reindex?realm={realm}</p>
-</li>
-<li>
-<p>Triggers an asynchronous full re-materialization for all @OntologyClass entities in the realm. Returns 202 with a status snapshot.</p>
-</li>
-<li>
-<p>Example:</p>
-</li>
-</ul>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre>curl -X POST "http://localhost:8080/ontology/admin/reindex?realm=default"</pre>
-</div>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>GET /ontology/admin/reindex/status</p>
-</li>
-<li>
-<p>Returns { running: boolean, status: string } showing whether a job is in progress and the latest progress message (e.g., "Materialized 300 Order").</p>
-</li>
-<li>
-<p>Example:</p>
-</li>
-</ul>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre>curl -s "http://localhost:8080/ontology/admin/reindex/status"</pre>
-</div>
-</div>
-<div class="paragraph">
-<p>Notes on OntologyReindexer
-- Only one reindex runs at a time; concurrent requests are ignored while running.
-- Status values include IDLE, RUNNING, per-class progress messages, COMPLETED, or FAILED: &lt;reason&gt;.
-- After successful completion, the service observes the current ontology.yaml and marks its hash as applied in OntologyMeta (see below).</p>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_ontologymeta_and_ontologymetarepo">9.5. OntologyMeta and OntologyMetaRepo</h3>
-<div class="paragraph">
-<p>OntologyMeta captures deployment-level state about your ontology YAML:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>yamlHash (String): SHA-256 of the last-applied ontology.yaml content.</p>
-</li>
-<li>
-<p>yamlVersion (Integer): Optional version from YAML, if your file declares one.</p>
-</li>
-<li>
-<p>source (String): Classpath or file path of the observed YAML source.</p>
-</li>
-<li>
-<p>updatedAt (Date): When the YAML was last observed.</p>
-</li>
-<li>
-<p>appliedAt (Date): When the yamlHash was last marked as applied (typically after a successful reindex).</p>
-</li>
-<li>
-<p>reindexRequired (boolean): Flag indicating edges should be recomputed due to an ontology change.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Singleton behavior
-- OntologyMetaRepo.getSingleton() returns the single document (refName="global").
-- upsertObservation(yamlVersion, source, reindexRequired) records a new observation without changing yamlHash.
-- markApplied(yamlHash) sets the applied hash and clears reindexRequired.</p>
-</div>
-<div class="paragraph">
-<p>Business impact
-- Operators and CI/CD can poll /ontology/admin/meta to detect when a new YAML was deployed but not yet re-materialized (reindexRequired=true).
-- After running a reindex, OntologyReindexer updates OntologyMeta so dashboards and alerts can clear.</p>
-</div>
-<div class="sect3">
-<h4 id="_business_scenarios_solved_by_reindex_and_drift_repair">9.5.1. Business scenarios solved by reindex and drift-repair</h4>
-<div class="paragraph">
-<p>1) Product taxonomy change (e-commerce)
-- Change: Category hierarchy is reorganized; new property chains derive product visibility to new parent categories.
-- Problem without tools: Old derived edges make search facets and recommendations inconsistent.
-- Solution: Deploy updated ontology.yaml, observe reindexRequired=true in /ontology/admin/meta, trigger POST /ontology/admin/reindex?realm=shop-1. If some collections were bulk-edited out-of-band, run drift-repair on Product to prune stale edges and re-derive.</p>
-</div>
-<div class="paragraph">
-<p>2) Compliance visibility update (regulated data)
-- Change: New rule adds chain(ownerOf, belongsToBU) ⇒ hasAccessToBU to compute which ComplianceOfficer can see a record.
-- Problem without tools: Access reviews show incorrect reachability; inconsistent inferred edges remain.
-- Solution: Reindex the tenant(s) to materialize the new hasAccessToBU edges. Use drift-repair on the sensitive entity class to prune unsupported edges if source links were cleaned manually.</p>
-</div>
-<div class="paragraph">
-<p>3) Partner hierarchy realignment (B2B)
-- Change: Organizations move under different parent accounts; ancestorOf relationships change.
-- Problem without tools: Dashboards still roll up KPIs to old parents; cross-sell policies misfire.
-- Solution: After data migration, run drift-repair on Order and Opportunity to prune and re-derive placedInOrg across the new ancestorOf chain. For a full reset, run reindex during a maintenance window.</p>
-</div>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_edge_provenance_format_and_deletions">9.6. Edge provenance format and deletions</h3>
+<h3 id="_edge_provenance_format_and_deletions">9.4. Edge provenance format and deletions</h3>
 <div class="paragraph">
 <p>Storage model (Mongo edges collection):
 - Each edge document stores: tenantId, src, srcType, p (predicate), dst, dstType, inferred, derived, prov (map), support (list), ts.
@@ -3695,7 +3537,7 @@ curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=defau
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-11-11 20:56:46 -0500
+Last updated 2025-11-12 11:08:48 -0500
 </div>
 </div>
 </body>

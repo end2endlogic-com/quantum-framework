@@ -1427,11 +1427,17 @@ id:^${idsByPlacedInOrg}</code></pre>
 <p>Path: a dotted path; array segments may use <code>[*]</code> to indicate an array of references.</p>
 </li>
 <li>
+<p>Variables: segments may be literal field names or <code>${var}</code> placeholders that are substituted before planning.</p>
+</li>
+<li>
 <p>Examples:</p>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code># Single reference
 expand(customer)
+
+# Parameterized segment (for tenant-specific collections)
+expand(${tenantRoot}.sites[*])
 
 # Array of references
 expand(items[*].product)
@@ -1479,6 +1485,9 @@ expand(customer) &amp;&amp; status:active</code></pre>
 <li>
 <p>Errors: unknown projection paths (when using <code>fields:[…]</code>) are hard errors.</p>
 </li>
+<li>
+<p>Variables: <code>${var}</code> placeholders in expand paths leverage the same substitution map (request variables plus resolver outputs) as other filter expressions.</p>
+</li>
 </ul>
 </div>
 <div class="paragraph">
@@ -1506,7 +1515,7 @@ expand(customer) &amp;&amp; status:active</code></pre>
 <p>Syntax: <code>hasEdge(predicate, dst)</code> where</p>
 </li>
 <li>
-<p><code>predicate</code> is a string (unquoted or quoted)</p>
+<p><code>predicate</code> can be an unquoted string, a quoted string, or a <code>${var}</code> placeholder supplied by the caller</p>
 </li>
 <li>
 <p><code>dst</code> can be a literal id, a variable like <code>${principalId}</code>, an ObjectId, or a reference literal <code>@@&#8230;&#8203;</code></p>
@@ -1538,6 +1547,9 @@ hasEdge(&quot;routedToRegion&quot;, 507f1f77bcf86cd799439011)</code></pre>
 </li>
 <li>
 <p>Tenancy: edge resolution is always scoped by tenant/realm per your configuration.</p>
+</li>
+<li>
+<p>Variables: both arguments participate in the standard substitution flow, so resolver output such as <code>${accessibleOrgPredicate}</code> and <code>${orgIds}</code> can drive ontology constraints without manual string building.</p>
 </li>
 </ul>
 </div>
@@ -1599,7 +1611,7 @@ expand(customer) &amp;&amp; fields:[+_id,+customer,+total]</code></pre>
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-10-24 22:34:16 -0400
+Last updated 2025-11-13 11:01:55 -0500
 </div>
 </div>
 </body>

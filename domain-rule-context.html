@@ -529,7 +529,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>DomainContext, RuleContext, and DataDomain</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-11-12T02:29:02Z</span>
+<span id="revdate">2025-11-13T18:20:58Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -779,7 +779,32 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <p>At query time, RuleContext discovers all AccessListResolver beans and calls supports(&#8230;&#8203;). For those that apply, it invokes resolve(&#8230;&#8203;) and publishes the result into the variable bundle under the provided key(). Variables are available to the BIAPI query via ${&#8230;&#8203;}.</p>
 </div>
 <div class="paragraph">
-<p>Internally this uses MorphiaUtils.VariableBundle and QueryToFilterListener to carry both strings and typed objects/collections.</p>
+<p>Internally this uses <code>MorphiaUtils.VariableBundle</code> and <code>QueryToFilterListener</code> to carry both strings and typed objects/collections.
+Starting with this release you can reuse the exact same variable bundle for custom evaluation paths. The
+<code>RuleContext.resolveVariableBundle(&#8230;&#8203;)</code> helper runs all matching <code>AccessListResolver</code> beans and returns the
+maps you can feed directly into <code>QueryPredicates</code> (for in-memory rules) or any other component that understands
+<code>${var}</code> tokens.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java">PrincipalContext pc = ...; <span class="comment">// build from request</span>
+ResourceContext rc = ...;
+
+MorphiaUtils.VariableBundle vars = ruleContext.resolveVariableBundle(pc, rc, UserProfile.class);
+
+<span class="predefined-type">Predicate</span>&lt;JsonNode&gt; predicate = QueryPredicates.compilePredicate(
+    <span class="string"><span class="delimiter">&quot;</span><span class="content">customerId:^[${accessibleCustomerIds}]</span><span class="delimiter">&quot;</span></span>,
+    vars.strings,
+    vars.objects
+);
+
+JsonNode order = QueryPredicates.toJsonNode(<span class="predefined-type">Map</span>.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">customerId</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">5f1e1a5e5e5e5e5e5e5e5e51</span><span class="delimiter">&quot;</span></span>));
+<span class="type">boolean</span> allowed = predicate.test(order); <span class="comment">// true when resolver returned that ObjectId</span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This allows the same resolver outputs to drive Morphia queries and client-side predicate checks without
+duplicating resolver logic.</p>
 </div>
 </div>
 <div class="sect2">
@@ -993,7 +1018,7 @@ customerId:^[${accessibleCustomerIds}]</code></pre>
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-10-18 20:01:07 -0400
+Last updated 2025-11-13 11:01:55 -0500
 </div>
 </div>
 </body>

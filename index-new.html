@@ -529,7 +529,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Framework Documentation</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-11-12T02:29:02Z</span>
+<span id="revdate">2025-11-13T18:20:58Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -639,7 +639,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_base_concepts">21.1. Base Concepts</a></li>
 <li><a href="#_example_resource">21.2. Example Resource</a></li>
 <li><a href="#_authorization_layers_in_rest_crud">21.3. Authorization Layers in REST CRUD</a></li>
-<li><a href="#_querying">21.4. Querying</a></li>
+<li><a href="#querying">21.4. Querying</a></li>
 <li><a href="#_responses_and_schemas">21.5. Responses and Schemas</a></li>
 <li><a href="#_error_handling">21.6. Error Handling</a>
 <ul class="sectlevel3">
@@ -1640,7 +1640,32 @@ quarkus.http.cors.origins=http://localhost:3000</code></pre>
 <p>At query time, RuleContext discovers all AccessListResolver beans and calls supports(&#8230;&#8203;). For those that apply, it invokes resolve(&#8230;&#8203;) and publishes the result into the variable bundle under the provided key(). Variables are available to the BIAPI query via ${&#8230;&#8203;}.</p>
 </div>
 <div class="paragraph">
-<p>Internally this uses MorphiaUtils.VariableBundle and QueryToFilterListener to carry both strings and typed objects/collections.</p>
+<p>Internally this uses <code>MorphiaUtils.VariableBundle</code> and <code>QueryToFilterListener</code> to carry both strings and typed objects/collections.
+Starting with this release you can reuse the exact same variable bundle for custom evaluation paths. The
+<code>RuleContext.resolveVariableBundle(&#8230;&#8203;)</code> helper runs all matching <code>AccessListResolver</code> beans and returns the
+maps you can feed directly into <code>QueryPredicates</code> (for in-memory rules) or any other component that understands
+<code>${var}</code> tokens.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java">PrincipalContext pc = ...; <span class="comment">// build from request</span>
+ResourceContext rc = ...;
+
+MorphiaUtils.VariableBundle vars = ruleContext.resolveVariableBundle(pc, rc, UserProfile.class);
+
+<span class="predefined-type">Predicate</span>&lt;JsonNode&gt; predicate = QueryPredicates.compilePredicate(
+    <span class="string"><span class="delimiter">&quot;</span><span class="content">customerId:^[${accessibleCustomerIds}]</span><span class="delimiter">&quot;</span></span>,
+    vars.strings,
+    vars.objects
+);
+
+JsonNode order = QueryPredicates.toJsonNode(<span class="predefined-type">Map</span>.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">customerId</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">5f1e1a5e5e5e5e5e5e5e5e51</span><span class="delimiter">&quot;</span></span>));
+<span class="type">boolean</span> allowed = predicate.test(order); <span class="comment">// true when resolver returned that ObjectId</span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This allows the same resolver outputs to drive Morphia queries and client-side predicate checks without
+duplicating resolver logic.</p>
 </div>
 </div>
 <div class="sect2">
@@ -3976,7 +4001,7 @@ query.filter(Filters.in(<span class="string"><span class="delimiter">&quot;</spa
 </div>
 </div>
 <div class="sect2">
-<h3 id="_querying">21.4. Querying</h3>
+<h3 id="querying">21.4. Querying</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -6164,11 +6189,17 @@ id:^${idsByPlacedInOrg}</code></pre>
 <p>Path: a dotted path; array segments may use <code>[*]</code> to indicate an array of references.</p>
 </li>
 <li>
+<p>Variables: segments may be literal field names or <code>${var}</code> placeholders that are substituted before planning.</p>
+</li>
+<li>
 <p>Examples:</p>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code># Single reference
 expand(customer)
+
+# Parameterized segment (for tenant-specific collections)
+expand(${tenantRoot}.sites[*])
 
 # Array of references
 expand(items[*].product)
@@ -6216,6 +6247,9 @@ expand(customer) &amp;&amp; status:active</code></pre>
 <li>
 <p>Errors: unknown projection paths (when using <code>fields:[…]</code>) are hard errors.</p>
 </li>
+<li>
+<p>Variables: <code>${var}</code> placeholders in expand paths leverage the same substitution map (request variables plus resolver outputs) as other filter expressions.</p>
+</li>
 </ul>
 </div>
 <div class="paragraph">
@@ -6243,7 +6277,7 @@ expand(customer) &amp;&amp; status:active</code></pre>
 <p>Syntax: <code>hasEdge(predicate, dst)</code> where</p>
 </li>
 <li>
-<p><code>predicate</code> is a string (unquoted or quoted)</p>
+<p><code>predicate</code> can be an unquoted string, a quoted string, or a <code>${var}</code> placeholder supplied by the caller</p>
 </li>
 <li>
 <p><code>dst</code> can be a literal id, a variable like <code>${principalId}</code>, an ObjectId, or a reference literal <code>@@&#8230;&#8203;</code></p>
@@ -6275,6 +6309,9 @@ hasEdge(&quot;routedToRegion&quot;, 507f1f77bcf86cd799439011)</code></pre>
 </li>
 <li>
 <p>Tenancy: edge resolution is always scoped by tenant/realm per your configuration.</p>
+</li>
+<li>
+<p>Variables: both arguments participate in the standard substitution flow, so resolver output such as <code>${accessibleOrgPredicate}</code> and <code>${orgIds}</code> can drive ontology constraints without manual string building.</p>
 </li>
 </ul>
 </div>
@@ -11933,7 +11970,7 @@ void cleanup() { com.e2eq.framework.model.securityrules.SecurityContext.clear();
 - Request details (headers/body, like a shipment id or tenant)</p>
 </div>
 <div class="paragraph">
-<p>Rules then allow or deny the action and can add filters so the user only sees data they’re permitted to see. See the Permissions guide for authoring details (<a href="../user-guide/permissions.html#permissions">../user-guide/permissions.html</a>).</p>
+<p>Rules then allow or deny the action and can add filters so the user only sees data they’re permitted to see. See the Permissions guide for authoring details (<a href="../user-guide/permissions.html#permissions">Permissions Guide</a>).</p>
 </div>
 <div class="paragraph">
 <p>Write‑time data placement (where a new record belongs)
@@ -12153,7 +12190,7 @@ void cleanup() { com.e2eq.framework.model.securityrules.SecurityContext.clear();
 <p>Use CSV imports and Completion Tasks to operationalize data stewardship.</p>
 </li>
 <li>
-<p>Deep dive: Permissions and Rule Language (<a href="../user-guide/permissions.html#permissions">../user-guide/permissions.html</a>), and Data domain assignment on create (<a href="../user-guide/permissions.html#_data_domain_assignment">../user-guide/permissions.html</a>).</p>
+<p>Deep dive: Permissions and Rule Language (<a href="../user-guide/permissions.html#permissions">Permissions Guide</a>), and Data domain assignment on create (<a href="../user-guide/permissions.html#_data_domain_assignment">Data domain assignment on create</a>).</p>
 </li>
 </ul>
 </div>
