@@ -6,7 +6,9 @@ import com.e2eq.framework.model.security.Rule;
 import com.e2eq.framework.model.security.UserProfile;
 import com.e2eq.framework.model.securityrules.*;
 import com.e2eq.framework.model.persistent.morphia.PolicyRepo;
+import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
 import com.e2eq.framework.persistent.BaseRepoTest;
+import com.e2eq.framework.query.QueryPredicates;
 import com.e2eq.framework.securityrules.RuleContext;
 import com.e2eq.framework.securityrules.TestCustomerAccessResolver;
 import com.e2eq.framework.util.SecurityUtils;
@@ -15,12 +17,15 @@ import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
 import jakarta.enterprise.context.control.ActivateRequestContext;
 import jakarta.inject.Inject;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Predicate;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -113,5 +118,47 @@ public class AccessListResolverRuleTest extends BaseRepoTest {
         );
         List<String> actual = vals.stream().map(v -> ((ObjectId) v).toHexString()).toList();
         assertTrue(actual.containsAll(hexes) && hexes.containsAll(actual), "$in list should match resolver-provided ObjectIds");
+    }
+
+    @Test
+    @ActivateRequestContext
+    @TestSecurity(user = "alice@end2endlogic.com", roles = {"user"})
+    public void testResolverVariablesForInMemoryPredicate() {
+        String realm = testUtils.getTestRealm();
+
+        // Ensure the rule context is aligned with repository state (mirrors filter test setup)
+        ruleContext.reloadFromRepo(realm);
+
+        PrincipalContext pc = new PrincipalContext.Builder()
+                .withDefaultRealm(realm)
+                .withUserId("alice@end2endlogic.com")
+                .withRoles(new String[]{"user"})
+                .withDataDomain(new DataDomain("end2endlogic", "0000000001", "tenant-1", 0, "alice"))
+                .withScope("AUTHENTICATED")
+                .build();
+
+        ResourceContext rc = new ResourceContext.Builder()
+                .withArea("sales").withFunctionalDomain("order").withAction("view")
+                .withOwnerId("alice").withResourceId("ORD-1").build();
+
+        MorphiaUtils.VariableBundle vars = ruleContext.resolveVariableBundle(pc, rc, UserProfile.class);
+        assertNotNull(vars, "Variable bundle should never be null");
+        assertNotNull(vars.objects.get("accessibleCustomerIds"), "Resolver output should populate object variables");
+
+        Predicate<JsonNode> predicate = QueryPredicates.compilePredicate(
+                "customerId:^[${accessibleCustomerIds}]",
+                vars.strings,
+                vars.objects
+        );
+
+        JsonNode allowed = QueryPredicates.toJsonNode(Map.of(
+                "customerId", TestCustomerAccessResolver.ID1.toHexString()
+        ));
+        JsonNode denied = QueryPredicates.toJsonNode(Map.of(
+                "customerId", "ffffffffffffffffffffffff"
+        ));
+
+        assertTrue(predicate.test(allowed), "Resolver-backed predicate should include customerId from resolver");
+        assertFalse(predicate.test(denied), "Resolver-backed predicate should exclude unrelated customerId");
     }
 }
