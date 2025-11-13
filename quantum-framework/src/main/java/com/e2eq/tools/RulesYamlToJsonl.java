@@ -45,7 +45,7 @@ public final class RulesYamlToJsonl {
 
         boolean useExpander = false;
         int argOffset = 0;
-        
+
         if (args[0].equals("--expand")) {
             useExpander = true;
             argOffset = 1;
