@@ -307,8 +307,8 @@ public class InitializeDatabase extends ChangeSetBase {
               UserProfile up = new UserProfile();
               up.setUserId(envConfigUtils.getSystemUserId());
               up.setDisplayName(envConfigUtils.getSystemUserId());
-              up.setEmail(envConfigUtils.getSystemUserId() + "@example.com");
-              up.setCredentialUserIdPasswordRef(null);
+              up.setEmail("system@" + envConfigUtils.getSystemEmailDomainFromTenantId());
+              up.setCredentialUserIdPasswordRef(ocred.get().createEntityReference());
               up.setDataDomain(securityUtils.getSystemDataDomain());
               up.setCredentialUserIdPasswordRef(ocred.get().createEntityReference());
               userProfileRepo.save(datastore, up);
