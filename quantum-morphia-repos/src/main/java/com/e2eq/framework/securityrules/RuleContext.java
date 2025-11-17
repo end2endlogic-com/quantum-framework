@@ -10,7 +10,6 @@ import com.e2eq.framework.util.IOCase;
 import com.e2eq.framework.util.SecurityUtils;
 import com.e2eq.framework.util.WildCardMatcher;
 import com.google.common.collect.Ordering;
-import java.util.function.Function;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
 import io.quarkus.logging.Log;
@@ -22,7 +21,6 @@ import jakarta.enterprise.inject.Instance;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.text.StringSubstitutor;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.graalvm.polyglot.Context;
 
@@ -850,23 +848,23 @@ public class RuleContext {
             for (SecurityURI uri : expandedUris) {
 
                 if (Log.isDebugEnabled()) {
-                    Log.debug("Comparing:" + uri.getURIString());
-                    Log.debug("To ruleName:" + r.getName() + " URI:" + r.getSecurityURI().getURIString());
+                    Log.debug("Comparing:" + uri.uriString());
+                    Log.debug("To ruleName:" + r.getName() + " URI:" + r.getSecurityURI().uriString());
                     Log.debug("");
                 }
 
                 // compare the uri to the rule uri to see if it matches ie. the rule is applicable
-                if (WildCardMatcher.wildcardMatch(uri.getURIString(), r.getSecurityURI().getURIString(),
+                if (WildCardMatcher.wildcardMatch(uri.uriString(), r.getSecurityURI().uriString(),
                         IOCase.INSENSITIVE)) {
                     // the rule is applicable.  Check the precondition and post conditions scripts
                     RuleResult result = new RuleResult(r);
                     MatchEvent matchEvent =
                             MatchEvent.builder()
-                                    .principalUriString(uri.getURIString())
-                                    .ruleUriString(r.getSecurityURI().getURIString())
+                                    .principalUriString(uri.uriString())
+                                    .ruleUriString(r.getSecurityURI().uriString())
                                     .ruleName(r.getName())
                                     .matched(true)
-                                    .difference(StringUtils.difference(uri.getURIString(), r.getSecurityURI().getURIString()))
+                                    .difference(StringUtils.difference(uri.uriString(), r.getSecurityURI().uriString()))
                                     .build();
 
 
@@ -893,16 +891,16 @@ public class RuleContext {
                         break;
                     }
                 } else {
-                    String difference = StringUtils.difference(uri.getURIString(), r.getSecurityURI().getURIString());
+                    String difference = StringUtils.difference(uri.uriString(), r.getSecurityURI().uriString());
                     if (Log.isDebugEnabled()) {
                        Log.debug("Comparing:");
-                       Log.debug(uri.getURIString());
-                       Log.debug(r.getSecurityURI().getURIString());
+                       Log.debug(uri.uriString());
+                       Log.debug(r.getSecurityURI().uriString());
                     }
                     response.getMatchEvents().add(
                             MatchEvent.builder()
-                                    .principalUriString(uri.getURIString())
-                                    .ruleUriString(r.getSecurityURI().getURIString())
+                                    .principalUriString(uri.uriString())
+                                    .ruleUriString(r.getSecurityURI().uriString())
                                     .ruleName(r.getName())
                                     .matched(false)
                                     .difference(difference)
