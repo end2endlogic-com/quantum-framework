@@ -46,7 +46,7 @@ public class SecurityURI {
       return new SecurityURI(nh, nb);
    }
 
-   public String getURIString() {
+   public String uriString () {
       return String.format("%s|%s", header.getURIString(), body.getURIString());
    }
 

@@ -65,7 +65,7 @@ public class RuleIndexSnapshot {
     public static RuleEntry fromRule(Rule r) {
         RuleEntry e = new RuleEntry();
         e.setName(r.getName());
-        e.setUri(r.getSecurityURI() != null ? r.getSecurityURI().getURIString() : null);
+        e.setUri(r.getSecurityURI() != null ? r.getSecurityURI().uriString() : null);
         e.setEffect(r.getEffect() != null ? r.getEffect().name() : null);
         e.setPriority(r.getPriority());
         e.setFinalRule(r.isFinalRule());

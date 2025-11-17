@@ -132,7 +132,7 @@ final class RuleIndex {
                             for (Rule r : actNode.rules) {
                                 try {
                                     String lhs = buildPrincipalUri(identity, area, domain, action, pc, rc);
-                                    String rhs = r.getSecurityURI().getURIString();
+                                    String rhs = r.getSecurityURI().uriString();
                                     if (WildCardMatcher.wildcardMatch(lhs, rhs, IOCase.INSENSITIVE)) {
                                         out.add(r);
                                     }
