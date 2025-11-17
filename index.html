@@ -529,7 +529,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Framework Documentation</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-11-13T18:20:58Z</span>
+<span id="revdate">2025-11-17T14:48:12Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -6518,6 +6518,174 @@ assert rx.test(ticket);</pre>
 </div>
 <div class="paragraph">
 <p>Both listeners aim to maintain parity with the grammar. If you observe mismatches, please file an issue with the query string, the evaluated data sample, and the expected vs actual results.</p>
+</div>
+</div>
+<div class="sect5">
+<h6 id="_query_field_validation">Query Field Validation</h6>
+<div class="paragraph">
+<p>Quantum provides validation capabilities to detect references to non-existent fields before query execution, preventing runtime errors and providing early feedback.</p>
+</div>
+<div class="sect6">
+<h7 id="_validating_listeners">Validating Listeners</h7>
+<div class="paragraph">
+<p>Two validating listener implementations extend the standard listeners:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>ValidatingQueryToFilterListener: extends QueryToFilterListener for Morphia queries</p>
+</li>
+<li>
+<p>ValidatingQueryToPredicateJsonListener: extends QueryToPredicateJsonListener for in-memory predicates</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Both validate field references against a model class during parsing and accumulate errors.</p>
+</div>
+<div class="paragraph">
+<p>Example usage:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">com.e2eq.framework.model.persistent.morphia.ValidatingQueryToFilterListener</span>;
+<span class="keyword">import</span> <span class="include">com.e2eq.framework.grammar</span>.*;
+<span class="keyword">import</span> <span class="include">org.antlr.v4.runtime</span>.*;
+<span class="keyword">import</span> <span class="include">org.antlr.v4.runtime.tree.ParseTreeWalker</span>;
+
+<span class="predefined-type">String</span> query = <span class="string"><span class="delimiter">&quot;</span><span class="content">name:John AND invalidField:test</span><span class="delimiter">&quot;</span></span>;
+
+BIAPIQueryLexer lexer = <span class="keyword">new</span> BIAPIQueryLexer(CharStreams.fromString(query));
+CommonTokenStream tokens = <span class="keyword">new</span> CommonTokenStream(lexer);
+BIAPIQueryParser parser = <span class="keyword">new</span> BIAPIQueryParser(tokens);
+
+ValidatingQueryToFilterListener listener =
+    <span class="keyword">new</span> ValidatingQueryToFilterListener(UserProfile.class);
+ParseTreeWalker.DEFAULT.walk(listener, parser.query());
+
+<span class="keyword">if</span> (listener.hasValidationErrors()) {
+    <span class="predefined-type">List</span>&lt;<span class="predefined-type">String</span>&gt; errors = listener.getValidationErrors();
+    <span class="keyword">throw</span> <span class="keyword">new</span> <span class="exception">IllegalArgumentException</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">Invalid query: </span><span class="delimiter">&quot;</span></span> + errors);
+}
+
+<span class="predefined-type">Filter</span> filter = listener.getFilter();</code></pre>
+</div>
+</div>
+</div>
+<div class="sect6">
+<h7 id="_validqueryfilter_annotation">@ValidQueryFilter Annotation</h7>
+<div class="paragraph">
+<p>For automatic validation in DTOs and models, use the <code>@ValidQueryFilter</code> annotation:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">com.e2eq.framework.annotations.ValidQueryFilter</span>;
+<span class="keyword">import</span> <span class="include">jakarta.validation.constraints.NotNull</span>;
+
+<span class="directive">public</span> <span class="type">class</span> <span class="class">SearchRequest</span> {
+    <span class="annotation">@NotNull</span>
+    <span class="annotation">@ValidQueryFilter</span>(modelClass = UserProfile.class)
+    <span class="directive">private</span> <span class="predefined-type">String</span> filterQuery;
+
+    <span class="comment">// getters/setters</span>
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The annotation integrates with Jakarta Bean Validation and is automatically enforced by the ValidationInterceptor during entity persistence.</p>
+</div>
+<div class="paragraph">
+<p>REST endpoint example:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@Path</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">/users</span><span class="delimiter">&quot;</span></span>)
+<span class="directive">public</span> <span class="type">class</span> <span class="class">UserResource</span> {
+
+    <span class="annotation">@GET</span>
+    <span class="directive">public</span> Response searchUsers(<span class="annotation">@Valid</span> <span class="annotation">@BeanParam</span> SearchParams params) {
+        <span class="comment">// filterQuery is validated before this method executes</span>
+        <span class="keyword">return</span> Response.ok(userService.search(params.getFilterQuery())).build();
+    }
+}
+
+<span class="directive">public</span> <span class="type">class</span> <span class="class">SearchParams</span> {
+    <span class="annotation">@QueryParam</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">filter</span><span class="delimiter">&quot;</span></span>)
+    <span class="annotation">@ValidQueryFilter</span>(modelClass = UserProfile.class)
+    <span class="directive">private</span> <span class="predefined-type">String</span> filterQuery;
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Persisted filter example:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="directive">public</span> <span class="type">class</span> <span class="class">SavedSearch</span> <span class="directive">extends</span> BaseModel {
+    <span class="directive">private</span> <span class="predefined-type">String</span> name;
+
+    <span class="annotation">@ValidQueryFilter</span>(modelClass = Order.class)
+    <span class="directive">private</span> <span class="predefined-type">String</span> filterExpression;
+
+    <span class="comment">// When saved, ValidationInterceptor validates the filter</span>
+}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect6">
+<h7 id="_queryfieldvalidator_utility">QueryFieldValidator Utility</h7>
+<div class="paragraph">
+<p>For programmatic validation without listeners:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">com.e2eq.framework.query.QueryFieldValidator</span>;
+
+<span class="comment">// Validate against a model class</span>
+QueryFieldValidator validator = QueryFieldValidator.forModelClass(UserProfile.class);
+
+<span class="type">boolean</span> isValid = validator.validateField(<span class="string"><span class="delimiter">&quot;</span><span class="content">email</span><span class="delimiter">&quot;</span></span>);  <span class="comment">// true</span>
+<span class="type">boolean</span> isInvalid = validator.validateField(<span class="string"><span class="delimiter">&quot;</span><span class="content">nonExistentField</span><span class="delimiter">&quot;</span></span>);  <span class="comment">// false</span>
+
+<span class="keyword">if</span> (validator.hasErrors()) {
+    <span class="predefined-type">List</span>&lt;<span class="predefined-type">String</span>&gt; errors = validator.getErrors();
+    <span class="comment">// Handle validation errors</span>
+}
+
+<span class="comment">// Validate against aggregation pipeline schema</span>
+<span class="predefined-type">Map</span>&lt;<span class="predefined-type">String</span>, <span class="predefined-type">Class</span>&lt;?&gt;&gt; schema = <span class="predefined-type">Map</span>.of(
+    <span class="string"><span class="delimiter">&quot;</span><span class="content">totalAmount</span><span class="delimiter">&quot;</span></span>, <span class="predefined-type">Double</span>.class,
+    <span class="string"><span class="delimiter">&quot;</span><span class="content">orderCount</span><span class="delimiter">&quot;</span></span>, <span class="predefined-type">Long</span>.class,
+    <span class="string"><span class="delimiter">&quot;</span><span class="content">customerName</span><span class="delimiter">&quot;</span></span>, <span class="predefined-type">String</span>.class
+);
+
+QueryFieldValidator aggValidator = QueryFieldValidator.forAggregationSchema(schema);
+aggValidator.validateField(<span class="string"><span class="delimiter">&quot;</span><span class="content">totalAmount</span><span class="delimiter">&quot;</span></span>);  <span class="comment">// true</span>
+aggValidator.validateField(<span class="string"><span class="delimiter">&quot;</span><span class="content">invalidField</span><span class="delimiter">&quot;</span></span>);  <span class="comment">// false</span></code></pre>
+</div>
+</div>
+</div>
+<div class="sect6">
+<h7 id="_benefits">Benefits</h7>
+<div class="ulist">
+<ul>
+<li>
+<p>Early error detection: catch field reference errors before query execution</p>
+</li>
+<li>
+<p>Better error messages: specific feedback about which fields are invalid</p>
+</li>
+<li>
+<p>Development safety: prevent typos and refactoring issues</p>
+</li>
+<li>
+<p>API validation: validate user-provided query strings in REST endpoints</p>
+</li>
+<li>
+<p>Data integrity: prevent saving invalid filter expressions to the database</p>
+</li>
+</ul>
+</div>
 </div>
 </div>
 </div>
@@ -14114,7 +14282,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 <div class="sect3">
 <h4 id="_native_compilation_with_graalvm">56.1.9. Native Compilation with GraalVM</h4>
 <div class="sect4">
-<h5 id="_benefits">Benefits</h5>
+<h5 id="_benefits_2">Benefits</h5>
 <div class="ulist">
 <ul>
 <li>
