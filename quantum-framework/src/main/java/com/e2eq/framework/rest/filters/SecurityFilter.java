@@ -399,7 +399,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             if (userProfile.isPresent()) {
                 java.util.List<com.e2eq.framework.model.security.UserGroup> userGroups = userGroupRepo.findByUserProfileRef(userProfile.get().createEntityReference());
                 if (!userGroups.isEmpty()) {
-                    userGroups.forEach(userGroup -> rolesSet.addAll(userGroup.getRoles().stream().map(com.e2eq.framework.rest.models.Role::toString).toList()));
+                    userGroups.forEach(userGroup -> rolesSet.addAll(userGroup.getRoles().stream().toList()));
                 }
             }
         }

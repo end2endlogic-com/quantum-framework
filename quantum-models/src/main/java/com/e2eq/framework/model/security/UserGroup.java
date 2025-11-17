@@ -2,7 +2,6 @@ package com.e2eq.framework.model.security;
 
 import com.e2eq.framework.model.persistent.base.BaseModel;
 import com.e2eq.framework.model.persistent.base.EntityReference;
-import com.e2eq.framework.rest.models.Role;
 import dev.morphia.annotations.Entity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import lombok.Data;
@@ -21,7 +20,7 @@ import java.util.List;
 public class UserGroup extends BaseModel {
 
    protected List<EntityReference> userProfiles;
-   protected List<Role> roles;
+   protected List<String> roles;
 
    @Override
    public String bmFunctionalArea () {
