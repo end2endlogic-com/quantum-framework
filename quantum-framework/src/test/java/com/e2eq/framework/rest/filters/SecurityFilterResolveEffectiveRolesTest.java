@@ -114,9 +114,9 @@ public class SecurityFilterResolveEffectiveRolesTest {
 
         // UserGroups that include this profile with their roles
         UserGroup group1 = new UserGroup();
-        group1.setRoles(Arrays.asList(Role.user, Role.admin));
+        group1.setRoles(Arrays.asList("user", "admin"));
         UserGroup group2 = new UserGroup();
-        group2.setRoles(Arrays.asList(Role.developer));
+        group2.setRoles(Arrays.asList("developer"));
 
         // Stub repos wired with data
         StubUserProfileRepo upr = new StubUserProfileRepo();

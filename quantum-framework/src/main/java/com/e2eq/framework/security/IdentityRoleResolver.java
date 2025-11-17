@@ -60,8 +60,8 @@ public class IdentityRoleResolver {
                     if (groups != null) {
                         for (UserGroup g : groups) {
                             if (g != null && g.getRoles() != null) {
-                                for (Role r : g.getRoles()) {
-                                    if (r != null) rolesSet.add(r.toString());
+                                for (String r : g.getRoles()) {
+                                    if (r != null) rolesSet.add(r);
                                 }
                             }
                         }
