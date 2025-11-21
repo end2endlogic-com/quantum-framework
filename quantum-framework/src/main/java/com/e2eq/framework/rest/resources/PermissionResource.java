@@ -5,7 +5,7 @@ import com.e2eq.framework.model.persistent.morphia.FunctionalDomainRepo;
 import com.e2eq.framework.model.security.FunctionalAction;
 import com.e2eq.framework.model.security.FunctionalDomain;
 import com.e2eq.framework.model.securityrules.*;
-import com.e2eq.framework.security.IdentityRoleResolver;
+import com.e2eq.framework.model.persistent.morphia.IdentityRoleResolver;
 import com.e2eq.framework.securityrules.RuleContext;
 import com.e2eq.framework.util.SecurityUtils;
 import dev.morphia.MorphiaDatastore;
@@ -378,8 +378,27 @@ public class PermissionResource {
               .build();
 
       SecurityCheckResponse resp = ruleContext.checkRules(pc, rc);
+
+      // Enrich roleAssignments with provenance (IDP, CREDENTIAL, USERGROUP)
+      try {
+         Map<String, java.util.EnumSet<com.e2eq.framework.model.auth.RoleSource>> provenance =
+                 identityRoleResolver.resolveRoleSources(req.identity, realm, securityIdentity);
+
+         // Ensure all final roles are covered in the assignments, even if no sources are known
+         for (String r : roles) {
+            if (r == null || r.isBlank()) continue;
+            provenance.computeIfAbsent(r, k -> java.util.EnumSet.noneOf(com.e2eq.framework.model.auth.RoleSource.class));
+         }
+
+         var roleAssignments = identityRoleResolver.toAssignments(provenance);
+         resp.setRoleAssignments(roleAssignments);
+      } catch (Exception e) {
+         // keep default assignments on failure
+         e.printStackTrace();
+      }
+
       return Response.ok(resp).build();
-   }
+  }
 
    @POST
    @Path("/check-with-index")

@@ -30,12 +30,35 @@ public interface AuthProvider {
             @JsonProperty("userId") String userId,
             @JsonProperty("identity") SecurityIdentity identity,
             @JsonProperty("roles") Set<String> roles,
+            @JsonProperty("roleAssignments") java.util.List<RoleAssignment> roleAssignments,
             @JsonProperty("accessToken") String accessToken,
             @JsonProperty("refreshToken") String refreshToken,
             @JsonProperty("expirationTime") long expirationTime,
             @JsonProperty("mongodbUrl") String mongodbUrl,
             @JsonProperty("realm") String realm
-            ) {};
+            ) {
+        public LoginPositiveResponse(String userId,
+                                     SecurityIdentity identity,
+                                     Set<String> roles,
+                                     String accessToken,
+                                     String refreshToken,
+                                     long expirationTime,
+                                     String mongodbUrl,
+                                     String realm) {
+            this(userId,
+                 identity,
+                 roles,
+                 // default roleAssignments derived from roles as CREDENTIAL source
+                 roles == null ? java.util.List.of() : roles.stream()
+                        .map(r -> new RoleAssignment(r, java.util.EnumSet.of(RoleSource.CREDENTIAL)))
+                        .toList(),
+                 accessToken,
+                 refreshToken,
+                 expirationTime,
+                 mongodbUrl,
+                 realm);
+        }
+    };
 
     @RegisterForReflection
     record LoginResponse(
