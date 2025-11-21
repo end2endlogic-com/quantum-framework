@@ -1,9 +1,13 @@
 package com.e2eq.framework.rest.resources;
 
+import com.e2eq.framework.model.auth.AuthProviderFactory;
 import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.auth.RoleAssignment;
+import com.e2eq.framework.model.auth.RoleSource;
+import com.e2eq.framework.model.persistent.morphia.UserGroupRepo;
+import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
+import com.e2eq.framework.model.security.*;
 import com.e2eq.framework.model.persistent.morphia.FunctionalDomainRepo;
-import com.e2eq.framework.model.security.FunctionalAction;
-import com.e2eq.framework.model.security.FunctionalDomain;
 import com.e2eq.framework.model.securityrules.*;
 import com.e2eq.framework.model.persistent.morphia.IdentityRoleResolver;
 import com.e2eq.framework.securityrules.RuleContext;
@@ -50,6 +54,15 @@ public class PermissionResource {
 
    @Inject
    SecurityIdentity securityIdentity;
+
+   @Inject
+   UserProfileRepo userProfileRepo;
+
+   @Inject
+   UserGroupRepo userGroupRepo;
+
+   @Inject
+   AuthProviderFactory authProviderFactory;
 
    static class EntityInfo {
       public String entity;
@@ -115,6 +128,156 @@ public class PermissionResource {
       // area -> domain -> actions
       public Map<String, Map<String, List<String>>> allow;
       public Map<String, Map<String, List<String>>> deny;
+   }
+
+   // ===== Role Provenance API =====
+   public static class RoleProvenanceRequest {
+      public String userId;  // required
+      public String realm;   // optional
+   }
+
+   public static class GroupInfo {
+      public String refName;
+      public List<String> roles;
+   }
+
+   public static class RoleProvenanceResponse {
+      public String userId;
+      public String realm;
+      public boolean credentialFound;
+      public List<String> credentialRoles;
+      public boolean userProfileFound;
+      public List<GroupInfo> userProfileGroups;          // groups linked via user profile membership
+      public List<String> tokenRoles;                    // roles/groups present in current token (if principal matches userId)
+      public List<GroupInfo> tokenMappedUserGroups;      // token roles mapped to user groups (if any)
+      public Set<String> netRoles;                       // union of all discovered roles
+      public List<RoleAssignment> assignments;           // role -> sources breakdown
+      public Map<String, List<String>> notes;            // optional informational notes
+   }
+
+   @POST
+   @Path("/role-provenance")
+   @Consumes(MediaType.APPLICATION_JSON)
+   @Produces(MediaType.APPLICATION_JSON)
+   public Response roleProvenance(RoleProvenanceRequest req) {
+      if (req == null || req.userId == null || req.userId.isBlank()) {
+         return Response.status(Response.Status.BAD_REQUEST).entity("userId is required").build();
+      }
+
+      String realm = (req.realm != null && !req.realm.isBlank())
+              ? req.realm
+              : ruleContext.getDefaultRealm();
+
+      RoleProvenanceResponse resp = new RoleProvenanceResponse();
+      resp.userId = req.userId;
+      resp.realm = realm;
+      resp.credentialFound = false;
+      resp.userProfileFound = false;
+      resp.credentialRoles = new ArrayList<>();
+      resp.userProfileGroups = new ArrayList<>();
+      resp.tokenRoles = new ArrayList<>();
+      resp.tokenMappedUserGroups = new ArrayList<>();
+      resp.notes = new LinkedHashMap<>();
+
+      // Build provenance using centralized resolver (handles TOKEN, CREDENTIAL, USERGROUP via profile)
+      Map<String, java.util.EnumSet<RoleSource>> provenance = identityRoleResolver.resolveRoleSources(req.userId, realm, securityIdentity);
+
+      // Credential and profile/group exploration for display
+      CredentialUserIdPassword cred=null;
+      try {
+         var ocreds = credentialRepo.findByUserId(req.userId, realm, true);
+         if (ocreds.isPresent()) {
+            resp.credentialFound = true;
+            cred = ocreds.get();
+            if (cred.getRoles() != null) resp.credentialRoles = Arrays.asList(cred.getRoles());
+
+            try {
+               Optional<UserProfile> userProfileOpt = userProfileRepo.getBySubject(cred.getSubject());
+               if (userProfileOpt.isPresent()) {
+                  resp.userProfileFound = true;
+                  var groups = userGroupRepo.findByUserProfileRef(userProfileOpt.get().createEntityReference());
+                  if (groups != null) {
+                     for (UserGroup g : groups) {
+                        if (g == null) continue;
+                        GroupInfo gi = new GroupInfo();
+                        gi.refName = g.getRefName();
+                        gi.roles = (g.getRoles() != null) ? new ArrayList<>(g.getRoles()) : List.of();
+                        resp.userProfileGroups.add(gi);
+                     }
+                  }
+               }
+            } catch (Exception e) {
+               resp.notes.computeIfAbsent("warnings", k -> new ArrayList<>()).add("Failed to expand user profile groups: " + e.getMessage());
+            }
+         }
+      } catch (Exception e) {
+         resp.notes.computeIfAbsent("errors", k -> new ArrayList<>()).add("Error reading credential/profile: " + e.getMessage());
+      }
+
+      // Token roles (only when the principal matches the checked userId)
+      boolean principalMatches = false;
+      if (securityIdentity != null) {
+         String principalName = (securityIdentity.getPrincipal() != null) ? securityIdentity.getPrincipal().getName() : null;
+         String attrUserId = null;
+         try {
+            Object attr = securityIdentity.getAttribute("userId");
+            if (attr instanceof String s) attrUserId = s;
+         } catch (Throwable ignored) {}
+         principalMatches = (req.userId != null) && (
+                 (principalName != null && req.userId.equals(principalName)) ||
+                 (attrUserId != null && req.userId.equals(attrUserId))
+         );
+      }
+      if (principalMatches) {
+         for (String r : securityIdentity.getRoles()) {
+            if (r != null && !r.isBlank()) resp.tokenRoles.add(r);
+         }
+         // Map token roles to UserGroups (if such groups exist), and include their roles for display
+         for (String tokenRole : resp.tokenRoles) {
+            try {
+               userGroupRepo.findByRefName(tokenRole, realm).ifPresent(ug -> {
+                  GroupInfo gi = new GroupInfo();
+                  gi.refName = ug.getRefName();
+                  gi.roles = (ug.getRoles() != null) ? new ArrayList<>(ug.getRoles()) : List.of();
+                  resp.tokenMappedUserGroups.add(gi);
+                  // Also reflect these roles in provenance as originating from USERGROUPs tied to IDP group mapping
+                  if (ug.getRoles() != null) {
+                     for (String r : ug.getRoles()) {
+                        if (r == null || r.isBlank()) continue;
+                        provenance.computeIfAbsent(r, k -> java.util.EnumSet.noneOf(RoleSource.class)).add(RoleSource.USERGROUP);
+                     }
+                  }
+               });
+            } catch (Exception ex) {
+               resp.notes.computeIfAbsent("warnings", k -> new ArrayList<>()).add("Failed mapping token role '" + tokenRole + "' to UserGroup: " + ex.getMessage());
+            }
+         }
+      } else {
+         // goto the authProvider and call the getUserGroupsForSubject to get the list of groups the idp has
+         // mapped the user to.  This is not a security issue, but it is a way to show the user the groups
+         // the idp has mapped the user to.
+         if (authProviderFactory.getUserManager() != null && cred != null) {
+            List<String> idpGroups = new ArrayList<>(authProviderFactory.getUserManager().getUserRolesForSubject(cred.getSubject()));
+            if (idpGroups != null && !idpGroups.isEmpty()) {
+               for (String idpGroup : idpGroups) {
+                  GroupInfo gi = new GroupInfo();
+                  gi.refName = idpGroup;
+                  gi.roles = List.of();
+                  resp.tokenMappedUserGroups.add(gi);
+               }
+            }
+         }
+      }
+
+      // Final union and assignments
+      java.util.LinkedHashSet<String> net = new java.util.LinkedHashSet<>();
+      for (String r : provenance.keySet()) {
+         if (r != null && !r.isBlank()) net.add(r);
+      }
+      resp.netRoles = net;
+      resp.assignments = identityRoleResolver.toAssignments(provenance);
+
+      return Response.ok(resp).build();
    }
 
    protected List<EntityInfo> getInfoList() {

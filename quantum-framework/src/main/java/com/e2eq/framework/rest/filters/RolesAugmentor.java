@@ -13,6 +13,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.context.ContextNotActiveException;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.core.HttpHeaders;
+
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
@@ -40,7 +41,7 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
         }
 
         QuarkusSecurityIdentity.Builder builder = QuarkusSecurityIdentity.builder(identity);
-        String principal = identity.getPrincipal().getName();
+        String originalPrincipal = identity.getPrincipal().getName();
         String contextRealm = null;
 
         // Check if HTTP request context is active
@@ -56,11 +57,27 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
             contextRealm = envConfigUtils.getSystemRealm();
         }
 
-        Optional<CredentialUserIdPassword> ocred = credentialRepo.findBySubject(principal, contextRealm, true);
+        Optional<CredentialUserIdPassword> ocred = credentialRepo.findBySubject(originalPrincipal, contextRealm, true);
         if (ocred.isPresent()) {
-            builder.addRoles(new HashSet<>(List.of(ocred.get().getRoles())));
+            CredentialUserIdPassword cred = ocred.get();
+            // 1) Add roles from credential
+            builder.addRoles(new HashSet<>(List.of(cred.getRoles())));
+
+            // 2) Expose preferred identity (userId) as an attribute without altering the JWT principal
+            String userId = cred.getUserId();
+            if (userId != null && !userId.isBlank()) {
+                builder.addAttribute("userId", userId);
+            }
+
+            // 3) Preserve subjectId as an attribute/claim for downstream access
+            // Also keep track of the original principal value for diagnostics
+            if (cred.getSubject() != null && !cred.getSubject().isBlank()) {
+                builder.addAttribute("subjectId", cred.getSubject());
+                builder.addAttribute("sub", cred.getSubject());
+            }
+            builder.addAttribute("originalPrincipal", originalPrincipal);
         } else {
-            Log.warnf("Could not find user %s in realm %s to augment roles", principal, contextRealm);
+            Log.warnf("Could not find user %s in realm %s to augment roles", originalPrincipal, contextRealm);
         }
 
         // Add user role by default if not present

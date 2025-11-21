@@ -7,6 +7,7 @@ import jakarta.enterprise.inject.Instance;
 
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import io.quarkus.security.identity.SecurityIdentity;
 
 @ApplicationScoped
 public class AuthProviderFactory {
@@ -16,6 +17,8 @@ public class AuthProviderFactory {
 
     @Inject
     Instance<AuthProvider> authProviders;
+
+    // Note: Do NOT inject framework services here to avoid cross-module coupling.
 
     public AuthProvider getAuthProvider() {
         for (AuthProvider authProvider : authProviders) {
@@ -37,5 +40,7 @@ public class AuthProviderFactory {
             }
 
     }
+
+    // Canonical validation is implemented in quantum-framework CanonicalIdentityService to keep module boundaries clean.
 
 }

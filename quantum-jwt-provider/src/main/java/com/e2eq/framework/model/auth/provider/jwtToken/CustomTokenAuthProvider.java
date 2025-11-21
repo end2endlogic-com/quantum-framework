@@ -6,6 +6,8 @@ import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.auth.AuthProvider;
+import com.e2eq.framework.model.auth.ClaimsAuthProvider;
+import com.e2eq.framework.model.auth.ProviderClaims;
 import com.e2eq.framework.model.auth.RoleAssignment;
 import com.e2eq.framework.model.auth.RoleSource;
 import com.e2eq.framework.model.auth.UserManagement;
@@ -40,7 +42,7 @@ import java.util.*;
 import java.util.Arrays;
 
 @ApplicationScoped
-public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthProvider, UserManagement{
+public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthProvider, ClaimsAuthProvider, UserManagement{
 
    @ConfigProperty(name = "auth.jwt.secret")
    String secretKey;
@@ -493,7 +495,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                           .filter(Objects::nonNull)
                           .map(role -> {
                              java.util.EnumSet<RoleSource> src = java.util.EnumSet.noneOf(RoleSource.class);
-                             if (idpRoles.contains(role)) src.add(RoleSource.IDP);
+                             if (idpRoles.contains(role)) src.add(RoleSource.TOKEN);
                              if (credentialRoles.contains(role)) src.add(RoleSource.CREDENTIAL);
                              if (userGroupRoles.contains(role)) src.add(RoleSource.USERGROUP);
                              return new RoleAssignment(role, src);
@@ -601,7 +603,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                  .filter(Objects::nonNull)
                  .map(role -> {
                     java.util.EnumSet<RoleSource> src = java.util.EnumSet.noneOf(RoleSource.class);
-                    if (idpRoles.contains(role)) src.add(RoleSource.IDP);
+                    if (idpRoles.contains(role)) src.add(RoleSource.TOKEN);
                     if (credentialRoles.contains(role)) src.add(RoleSource.CREDENTIAL);
                     if (userGroupRoles.contains(role)) src.add(RoleSource.USERGROUP);
                     return new RoleAssignment(role, src);
@@ -642,6 +644,29 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
          return identity;
       } catch (ParseException e) {
          Log.error("Token validation failed", e);
+         throw new SecurityException("Invalid token");
+      }
+   }
+
+   @Override
+   public ProviderClaims validateTokenToClaims(String token) {
+      try {
+         var jwt = jwtParser.parse(token);
+         String subject = jwt.getSubject();
+         Set<String> roles = new HashSet<>(jwt.getGroups());
+         ProviderClaims.Builder b = ProviderClaims.builder(subject)
+            .tokenRoles(roles)
+            .issuer(issuer);
+         // pass through some common attributes if present
+         String username = jwt.getClaim("username");
+         if (username != null) b.username(username).putAttribute("username", username);
+         String email = jwt.getClaim("email");
+         if (email != null) b.putAttribute("email", email);
+         String iss = jwt.getIssuer();
+         if (iss != null) b.putAttribute("iss", iss);
+         return b.build();
+      } catch (ParseException e) {
+         Log.error("Token validation to claims failed", e);
          throw new SecurityException("Invalid token");
       }
    }
