@@ -1,17 +1,14 @@
 package com.e2eq.framework.rest.filters;
 
 
+import com.e2eq.framework.model.persistent.morphia.IdentityRoleResolver;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.morphia.UserGroupRepo;
 import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import com.e2eq.framework.model.security.Realm;
-import com.e2eq.framework.model.security.UserGroup;
-import com.e2eq.framework.model.security.UserProfile;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
-import com.e2eq.framework.rest.models.Role;
-import com.e2eq.framework.securityrules.RuleContext;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.RealmRepo;
@@ -375,7 +372,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     }
 
     @jakarta.inject.Inject
-    com.e2eq.framework.security.IdentityRoleResolver identityRoleResolver;
+    IdentityRoleResolver identityRoleResolver;
 
     private String[] resolveEffectiveRoles(SecurityIdentity identity, CredentialUserIdPassword credential) {
         // Delegate to centralized resolver to keep logic consistent across endpoints and filter

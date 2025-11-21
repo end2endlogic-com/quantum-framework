@@ -459,6 +459,137 @@ Cross-references:
 * Context: `com.e2eq.framework.model.securityrules.PrincipalContext.getRoles()`
 * Filter logic: `com.e2eq.framework.rest.filters.SecurityFilter.determinePrincipalContext`
 
+==== Populating `RoleSource` and `roleAssignments`
+
+Quantum exposes structured provenance for each role via:
+
+* `com.e2eq.framework.model.auth.RoleSource` enum with values: `USERGROUP`, `IDP`, `CREDENTIAL`
+* `com.e2eq.framework.model.auth.RoleAssignment` record: `role` + `Set<RoleSource> sources`
+* Login response model `com.e2eq.framework.model.auth.AuthProvider.LoginPositiveResponse` now includes
+  a `roleAssignments` field next to plain `roles`.
+* `com.e2eq.framework.model.securityrules.SecurityCheckResponse` also includes `roleAssignments`.
+
+Defaults and compatibility:
+
+* If you do nothing, both login and security check responses automatically derive `roleAssignments`
+  from the flat `roles` set and mark each role with `CREDENTIAL`. This preserves backward compatibility.
+* To provide accurate provenance, populate `roleAssignments` explicitly where you already know role sources.
+
+JSON example (login success):
+
+```json
+{
+  "userId": "alice",
+  "roles": ["user", "admin"],
+  "roleAssignments": [
+    {"role": "user",  "sources": ["idp", "credential"]},
+    {"role": "admin", "sources": ["usergroup"]}
+  ],
+  "accessToken": "...",
+  "refreshToken": "...",
+  "expirationTime": 1732100000,
+  "mongodbUrl": "...",
+  "realm": "system"
+}
+```
+
+==== AuthProviders: what you need to do
+
+Auth providers (for example, `CustomTokenAuthProvider`) should add provenance at two points:
+
+1. During login (`login(userId, password)`)
+2. During token refresh (`refreshTokens(refreshToken)`)
+
+At each point build three role sets and then compute per-role sources:
+
+* IDP roles → from `io.quarkus.security.identity.SecurityIdentity.getRoles()` for the current access/refresh token
+* Credential roles → from `com.e2eq.framework.model.security.CredentialUserIdPassword.getRoles()` in the DB
+* User group roles → gathered by resolving the user's `UserProfile` and its `UserGroup` memberships
+
+Then build `List<RoleAssignment>` and pass the full constructor of `LoginPositiveResponse`.
+
+Example (inside `CustomTokenAuthProvider.login(...)` after you create `identity` and locate the `credential`):
+
+```java
+// 1) Collect source role sets
+Set<String> idpRoles = (identity != null) ? new java.util.LinkedHashSet<>(identity.getRoles()) : java.util.Set.of();
+Set<String> credentialRoles = new java.util.LinkedHashSet<>(java.util.Arrays.asList(credential.getRoles()));
+Set<String> userGroupRoles = new java.util.LinkedHashSet<>();
+try {
+    var userProfileOpt = userProfileRepo.getBySubject(credential.getSubject());
+    if (userProfileOpt.isPresent()) {
+        var groups = userGroupRepo.findByUserProfileRef(userProfileOpt.get().createEntityReference());
+        if (groups != null) {
+            for (com.e2eq.framework.model.security.UserGroup g : groups) {
+                if (g != null && g.getRoles() != null) {
+                    java.util.Collections.addAll(userGroupRoles, g.getRoles());
+                }
+            }
+        }
+    }
+} catch (Exception e) {
+    io.quarkus.logging.Log.warn("Group role expansion failed; continuing without group roles", e);
+}
+
+// 2) Union of all roles for the response
+java.util.Set<String> allRoles = new java.util.LinkedHashSet<>();
+allRoles.addAll(idpRoles);
+allRoles.addAll(credentialRoles);
+allRoles.addAll(userGroupRoles);
+
+// 3) Build per-role source assignments
+java.util.List<com.e2eq.framework.model.auth.RoleAssignment> roleAssignments = allRoles.stream()
+    .filter(java.util.Objects::nonNull)
+    .map(role -> {
+        java.util.EnumSet<com.e2eq.framework.model.auth.RoleSource> src =
+            java.util.EnumSet.noneOf(com.e2eq.framework.model.auth.RoleSource.class);
+        if (idpRoles.contains(role)) src.add(com.e2eq.framework.model.auth.RoleSource.IDP);
+        if (credentialRoles.contains(role)) src.add(com.e2eq.framework.model.auth.RoleSource.CREDENTIAL);
+        if (userGroupRoles.contains(role)) src.add(com.e2eq.framework.model.auth.RoleSource.USERGROUP);
+        return new com.e2eq.framework.model.auth.RoleAssignment(role, src);
+    })
+    .toList();
+
+// 4) Use the full constructor that accepts roleAssignments
+return new com.e2eq.framework.model.auth.AuthProvider.LoginResponse(
+    true,
+    new com.e2eq.framework.model.auth.AuthProvider.LoginPositiveResponse(
+        userId,
+        identity,
+        allRoles,               // Set<String>
+        roleAssignments,        // List<RoleAssignment>
+        accessToken,
+        refreshToken,
+        expirationTime,
+        mongodbUrl,
+        realm
+    )
+);
+```
+
+Notes and tips:
+
+* You may centralize this logic in `IdentityRoleResolver` by adding a method that returns `Map<String, EnumSet<RoleSource>>` (role → sources) and reuse it across login and `/check`.
+* If you cannot resolve a user record (for example, token-only identities), populate only `IDP` sources.
+* Avoid adding synthetic roles like `ANONYMOUS` to `roleAssignments`—the structure should cover actual grants.
+* Consider caching group-derived roles per user/request if lookups are expensive.
+
+==== Security Check responses: enriching `roleAssignments`
+
+`SecurityCheckResponse` defaults to marking all roles as `CREDENTIAL`. To provide accurate provenance during permission checks:
+
+1. Near `PermissionResource.check(...)`, where roles are resolved, compute the same three source sets as above.
+2. Build `List<RoleAssignment>` from the final role set used for `PrincipalContext`.
+3. After calling the rule engine, overwrite the response’s assignments:
+
+```java
+SecurityCheckResponse resp = ruleContext.checkRules(pc, rc);
+resp.setRoleAssignments(roleAssignments);
+return Response.ok(resp).build();
+```
+
+This keeps the default behavior (no breaking changes) while enabling clients to see precisely how each role was granted.
+
 == Example Scenarios
 
 . Public catalog browsing

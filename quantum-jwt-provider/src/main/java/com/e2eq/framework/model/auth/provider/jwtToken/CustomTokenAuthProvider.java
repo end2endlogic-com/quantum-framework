@@ -6,12 +6,17 @@ import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.auth.AuthProvider;
+import com.e2eq.framework.model.auth.RoleAssignment;
+import com.e2eq.framework.model.auth.RoleSource;
 import com.e2eq.framework.model.auth.UserManagement;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
+import com.e2eq.framework.model.persistent.morphia.UserGroupRepo;
+import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import com.e2eq.framework.model.security.CredentialRefreshToken;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.plugins.BaseAuthProvider;
+import com.e2eq.framework.model.security.UserGroup;
 import com.e2eq.framework.util.EncryptionUtils;
 import com.e2eq.framework.util.EnvConfigUtils;
 
@@ -63,6 +68,14 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
 
    @Inject
    CredentialRepo credentialRepo;
+
+   @Inject
+   UserProfileRepo userProfileRepo;
+
+   @Inject
+   UserGroupRepo userGroupRepo;
+
+   // Note: Union of userGroup roles is handled centrally by the framework during permission checks.
 
 
 
@@ -449,7 +462,43 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                   String refreshToken = generateRefreshToken(credential.getUserId(), authToken,
                      TokenUtils.currentTimeInSecs() + durationInSeconds + TokenUtils.REFRESH_ADDITIONAL_DURATION_SECONDS);
                   SecurityIdentity identity = validateAccessToken(authToken);
-                  Set<String> rolesSet = new HashSet<>(Arrays.asList(credential.getRoles()));
+                  // Compute role provenance locally for login response: IDP + CREDENTIAL + USERGROUP
+                  // Auth plugins do NOT need to do this; it's optional for login response only.
+                  String realm = envConfigUtils.getSystemRealm();
+                  java.util.Set<String> idpRoles = (identity != null) ? new java.util.LinkedHashSet<>(identity.getRoles()) : java.util.Set.of();
+                  java.util.Set<String> credentialRoles = new java.util.LinkedHashSet<>(Arrays.asList(credential.getRoles()));
+                  java.util.Set<String> userGroupRoles = new java.util.LinkedHashSet<>();
+                  try {
+                     var userProfileOpt = userProfileRepo.getBySubject(credential.getSubject());
+                     if (userProfileOpt.isPresent()) {
+                        var userGroups = userGroupRepo.findByUserProfileRef(userProfileOpt.get().createEntityReference());
+                        if (userGroups != null) {
+                           for (UserGroup g : userGroups) {
+                              if (g != null && g.getRoles() != null) {
+                                 userGroupRoles.addAll(new java.util.LinkedHashSet<>(g.getRoles()));
+                              }
+                           }
+                        }
+                     }
+                  } catch (Exception e) {
+                     Log.warn("Failed to expand roles via user groups; continuing without group roles", e);
+                  }
+
+                  java.util.Set<String> rolesSet = new java.util.LinkedHashSet<>();
+                  rolesSet.addAll(idpRoles);
+                  rolesSet.addAll(credentialRoles);
+                  rolesSet.addAll(userGroupRoles);
+
+                  java.util.List<RoleAssignment> roleAssignments = rolesSet.stream()
+                          .filter(Objects::nonNull)
+                          .map(role -> {
+                             java.util.EnumSet<RoleSource> src = java.util.EnumSet.noneOf(RoleSource.class);
+                             if (idpRoles.contains(role)) src.add(RoleSource.IDP);
+                             if (credentialRoles.contains(role)) src.add(RoleSource.CREDENTIAL);
+                             if (userGroupRoles.contains(role)) src.add(RoleSource.USERGROUP);
+                             return new RoleAssignment(role, src);
+                          })
+                          .toList();
 
                   return new LoginResponse(
                      true,
@@ -457,11 +506,12 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                         userId,
                         identity,
                         rolesSet,
+                        roleAssignments,
                         authToken,
                         refreshToken,
                         TokenUtils.currentTimeInSecs() + durationInSeconds,
                         mongodbConnectionString,
-                        envConfigUtils.getSystemRealm())
+                        realm)
                   );
                } else {
                   return new LoginResponse(false,
@@ -510,11 +560,60 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
       String newRefreshToken = null;
       try {
          newRefreshToken = generateRefreshToken(userId, newAuthToken, durationInSeconds);
+         // Recompute provenance for refresh; optional for plugins, framework handles groups for checks
+         java.util.Set<String> idpRoles = (identity != null) ? new java.util.LinkedHashSet<>(identity.getRoles()) : java.util.Set.of();
+         java.util.Set<String> credentialRoles = new java.util.LinkedHashSet<>();
+         java.util.Set<String> userGroupRoles = new java.util.LinkedHashSet<>();
+         try {
+            credentialRepo.findByUserId(userId).ifPresent(cred -> {
+               if (cred.getRoles() != null) {
+                   for (String r : cred.getRoles()) {
+                       if (r != null) credentialRoles.add(r);
+                   }
+               }
+               try {
+                  userProfileRepo.getBySubject(cred.getSubject()).ifPresent(profile -> {
+                     var userGroups = userGroupRepo.findByUserProfileRef(profile.createEntityReference());
+                     if (userGroups != null) {
+                        for (UserGroup g : userGroups) {
+                           if (g != null && g.getRoles() != null) {
+                               for (String r : g.getRoles()) {
+                                   if (r != null) userGroupRoles.add(r);
+                               }
+                           }
+                        }
+                     }
+                  });
+               } catch (Exception e) {
+                  Log.warn("Failed to expand user-group roles during refresh; continuing", e);
+               }
+            });
+         } catch (Exception e) {
+            Log.warn("Credential lookup failed during refresh; proceeding with IDP roles only", e);
+         }
+
+         java.util.Set<String> allRoles = new java.util.LinkedHashSet<>();
+         allRoles.addAll(idpRoles);
+         allRoles.addAll(credentialRoles);
+         allRoles.addAll(userGroupRoles);
+
+         java.util.List<RoleAssignment> roleAssignments = allRoles.stream()
+                 .filter(Objects::nonNull)
+                 .map(role -> {
+                    java.util.EnumSet<RoleSource> src = java.util.EnumSet.noneOf(RoleSource.class);
+                    if (idpRoles.contains(role)) src.add(RoleSource.IDP);
+                    if (credentialRoles.contains(role)) src.add(RoleSource.CREDENTIAL);
+                    if (userGroupRoles.contains(role)) src.add(RoleSource.USERGROUP);
+                    return new RoleAssignment(role, src);
+                 })
+                 .toList();
+
          return new LoginResponse(true,
            new LoginPositiveResponse(
               userId,
               identity,
-              identity.getRoles(),
+              allRoles,
+              roleAssignments,
               newAuthToken,
               newRefreshToken,
               TokenUtils.currentTimeInSecs() + durationInSeconds,
