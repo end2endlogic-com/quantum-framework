@@ -529,7 +529,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Permissions: Rule Bases, SecurityURIHeader, and SecurityURIBody</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-11-17T14:48:12Z</span>
+<span id="revdate">2025-11-21T04:35:44Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -544,7 +544,13 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_multiple_matching_rulebases">8. Multiple Matching RuleBases</a></li>
 <li><a href="#_identity_and_role_matching">9. Identity and Role Matching</a>
 <ul class="sectlevel2">
-<li><a href="#_how_roles_are_defined_for_an_identity_role_sources_and_resolution">9.1. How roles are defined for an identity (role sources and resolution)</a></li>
+<li><a href="#_how_roles_are_defined_for_an_identity_role_sources_and_resolution">9.1. How roles are defined for an identity (role sources and resolution)</a>
+<ul class="sectlevel3">
+<li><a href="#_populating_rolesource_and_roleassignments">9.1.1. Populating <code>RoleSource</code> and <code>roleAssignments</code></a></li>
+<li><a href="#_authproviders_what_you_need_to_do">9.1.2. AuthProviders: what you need to do</a></li>
+<li><a href="#_security_check_responses_enriching_roleassignments">9.1.3. Security Check responses: enriching <code>roleAssignments</code></a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li><a href="#_example_scenarios">10. Example Scenarios</a></li>
@@ -1491,6 +1497,207 @@ Ontology- and label-aware policy helpers are available to postconditionScript wh
 <p>Filter logic: <code>com.e2eq.framework.rest.filters.SecurityFilter.determinePrincipalContext</code></p>
 </li>
 </ul>
+</div>
+<div class="sect3">
+<h4 id="_populating_rolesource_and_roleassignments">9.1.1. Populating <code>RoleSource</code> and <code>roleAssignments</code></h4>
+<div class="paragraph">
+<p>Quantum exposes structured provenance for each role via:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>com.e2eq.framework.model.auth.RoleSource</code> enum with values: <code>USERGROUP</code>, <code>IDP</code>, <code>CREDENTIAL</code></p>
+</li>
+<li>
+<p><code>com.e2eq.framework.model.auth.RoleAssignment</code> record: <code>role</code> + <code>Set&lt;RoleSource&gt; sources</code></p>
+</li>
+<li>
+<p>Login response model <code>com.e2eq.framework.model.auth.AuthProvider.LoginPositiveResponse</code> now includes
+a <code>roleAssignments</code> field next to plain <code>roles</code>.</p>
+</li>
+<li>
+<p><code>com.e2eq.framework.model.securityrules.SecurityCheckResponse</code> also includes <code>roleAssignments</code>.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Defaults and compatibility:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>If you do nothing, both login and security check responses automatically derive <code>roleAssignments</code>
+from the flat <code>roles</code> set and mark each role with <code>CREDENTIAL</code>. This preserves backward compatibility.</p>
+</li>
+<li>
+<p>To provide accurate provenance, populate <code>roleAssignments</code> explicitly where you already know role sources.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>JSON example (login success):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">userId</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">alice</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">roles</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">user</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">admin</span><span class="delimiter">&quot;</span></span>],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">roleAssignments</span><span class="delimiter">&quot;</span></span>: [
+    {<span class="key"><span class="delimiter">&quot;</span><span class="content">role</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">user</span><span class="delimiter">&quot;</span></span>,  <span class="key"><span class="delimiter">&quot;</span><span class="content">sources</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">idp</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">credential</span><span class="delimiter">&quot;</span></span>]},
+    {<span class="key"><span class="delimiter">&quot;</span><span class="content">role</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">admin</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">sources</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">usergroup</span><span class="delimiter">&quot;</span></span>]}
+  ],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">accessToken</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">...</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">refreshToken</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">...</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">expirationTime</span><span class="delimiter">&quot;</span></span>: <span class="integer">1732100000</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">mongodbUrl</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">...</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">realm</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">system</span><span class="delimiter">&quot;</span></span>
+}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_authproviders_what_you_need_to_do">9.1.2. AuthProviders: what you need to do</h4>
+<div class="paragraph">
+<p>Auth providers (for example, <code>CustomTokenAuthProvider</code>) should add provenance at two points:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>During login (<code>login(userId, password)</code>)</p>
+</li>
+<li>
+<p>During token refresh (<code>refreshTokens(refreshToken)</code>)</p>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p>At each point build three role sets and then compute per-role sources:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>IDP roles → from <code>io.quarkus.security.identity.SecurityIdentity.getRoles()</code> for the current access/refresh token</p>
+</li>
+<li>
+<p>Credential roles → from <code>com.e2eq.framework.model.security.CredentialUserIdPassword.getRoles()</code> in the DB</p>
+</li>
+<li>
+<p>User group roles → gathered by resolving the user&#8217;s <code>UserProfile</code> and its <code>UserGroup</code> memberships</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Then build <code>List&lt;RoleAssignment&gt;</code> and pass the full constructor of <code>LoginPositiveResponse</code>.</p>
+</div>
+<div class="paragraph">
+<p>Example (inside <code>CustomTokenAuthProvider.login(&#8230;&#8203;)</code> after you create <code>identity</code> and locate the <code>credential</code>):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="comment">// 1) Collect source role sets</span>
+<span class="predefined-type">Set</span>&lt;<span class="predefined-type">String</span>&gt; idpRoles = (identity != <span class="predefined-constant">null</span>) ? <span class="keyword">new</span> java.util.LinkedHashSet&lt;&gt;(identity.getRoles()) : java.util.Set.of();
+<span class="predefined-type">Set</span>&lt;<span class="predefined-type">String</span>&gt; credentialRoles = <span class="keyword">new</span> java.util.LinkedHashSet&lt;&gt;(java.util.Arrays.asList(credential.getRoles()));
+<span class="predefined-type">Set</span>&lt;<span class="predefined-type">String</span>&gt; userGroupRoles = <span class="keyword">new</span> java.util.LinkedHashSet&lt;&gt;();
+<span class="keyword">try</span> {
+    <span class="type">var</span> userProfileOpt = userProfileRepo.getBySubject(credential.getSubject());
+    <span class="keyword">if</span> (userProfileOpt.isPresent()) {
+        <span class="type">var</span> groups = userGroupRepo.findByUserProfileRef(userProfileOpt.get().createEntityReference());
+        <span class="keyword">if</span> (groups != <span class="predefined-constant">null</span>) {
+            <span class="keyword">for</span> (com.e2eq.framework.model.security.UserGroup g : groups) {
+                <span class="keyword">if</span> (g != <span class="predefined-constant">null</span> &amp;&amp; g.getRoles() != <span class="predefined-constant">null</span>) {
+                    java.util.Collections.addAll(userGroupRoles, g.getRoles());
+                }
+            }
+        }
+    }
+} <span class="keyword">catch</span> (<span class="exception">Exception</span> e) {
+    io.quarkus.logging.Log.warn(<span class="string"><span class="delimiter">&quot;</span><span class="content">Group role expansion failed; continuing without group roles</span><span class="delimiter">&quot;</span></span>, e);
+}
+
+<span class="comment">// 2) Union of all roles for the response</span>
+java.util.Set&lt;<span class="predefined-type">String</span>&gt; allRoles = <span class="keyword">new</span> java.util.LinkedHashSet&lt;&gt;();
+allRoles.addAll(idpRoles);
+allRoles.addAll(credentialRoles);
+allRoles.addAll(userGroupRoles);
+
+<span class="comment">// 3) Build per-role source assignments</span>
+java.util.List&lt;com.e2eq.framework.model.auth.RoleAssignment&gt; roleAssignments = allRoles.stream()
+    .filter(java.util.Objects::nonNull)
+    .map(role -&gt; {
+        java.util.EnumSet&lt;com.e2eq.framework.model.auth.RoleSource&gt; src =
+            java.util.EnumSet.noneOf(com.e2eq.framework.model.auth.RoleSource.class);
+        <span class="keyword">if</span> (idpRoles.contains(role)) src.add(com.e2eq.framework.model.auth.RoleSource.IDP);
+        <span class="keyword">if</span> (credentialRoles.contains(role)) src.add(com.e2eq.framework.model.auth.RoleSource.CREDENTIAL);
+        <span class="keyword">if</span> (userGroupRoles.contains(role)) src.add(com.e2eq.framework.model.auth.RoleSource.USERGROUP);
+        <span class="keyword">return</span> <span class="keyword">new</span> com.e2eq.framework.model.auth.RoleAssignment(role, src);
+    })
+    .toList();
+
+<span class="comment">// 4) Use the full constructor that accepts roleAssignments</span>
+<span class="keyword">return</span> <span class="keyword">new</span> com.e2eq.framework.model.auth.AuthProvider.LoginResponse(
+    <span class="predefined-constant">true</span>,
+    <span class="keyword">new</span> com.e2eq.framework.model.auth.AuthProvider.LoginPositiveResponse(
+        userId,
+        identity,
+        allRoles,               <span class="comment">// Set&lt;String&gt;</span>
+        roleAssignments,        <span class="comment">// List&lt;RoleAssignment&gt;</span>
+        accessToken,
+        refreshToken,
+        expirationTime,
+        mongodbUrl,
+        realm
+    )
+);</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Notes and tips:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>You may centralize this logic in <code>IdentityRoleResolver</code> by adding a method that returns <code>Map&lt;String, EnumSet&lt;RoleSource&gt;&gt;</code> (role → sources) and reuse it across login and <code>/check</code>.</p>
+</li>
+<li>
+<p>If you cannot resolve a user record (for example, token-only identities), populate only <code>IDP</code> sources.</p>
+</li>
+<li>
+<p>Avoid adding synthetic roles like <code>ANONYMOUS</code> to <code>roleAssignments</code>—the structure should cover actual grants.</p>
+</li>
+<li>
+<p>Consider caching group-derived roles per user/request if lookups are expensive.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_security_check_responses_enriching_roleassignments">9.1.3. Security Check responses: enriching <code>roleAssignments</code></h4>
+<div class="paragraph">
+<p><code>SecurityCheckResponse</code> defaults to marking all roles as <code>CREDENTIAL</code>. To provide accurate provenance during permission checks:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Near <code>PermissionResource.check(&#8230;&#8203;)</code>, where roles are resolved, compute the same three source sets as above.</p>
+</li>
+<li>
+<p>Build <code>List&lt;RoleAssignment&gt;</code> from the final role set used for <code>PrincipalContext</code>.</p>
+</li>
+<li>
+<p>After calling the rule engine, overwrite the response’s assignments:</p>
+</li>
+</ol>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java">SecurityCheckResponse resp = ruleContext.checkRules(pc, rc);
+resp.setRoleAssignments(roleAssignments);
+<span class="keyword">return</span> Response.ok(resp).build();</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This keeps the default behavior (no breaking changes) while enabling clients to see precisely how each role was granted.</p>
+</div>
 </div>
 </div>
 </div>
@@ -3493,7 +3700,7 @@ noViolations() === <span class="predefined-constant">true</span></code></pre>
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-11-02 15:55:41 -0500
+Last updated 2025-11-20 13:25:16 -0500
 </div>
 </div>
 </body>
