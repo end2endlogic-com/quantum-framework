@@ -3,6 +3,7 @@ package com.e2eq.framework.rest.resources;
 
 import com.e2eq.framework.model.auth.AuthProvider;
 import com.e2eq.framework.model.auth.AuthProviderFactory;
+import com.e2eq.framework.model.auth.RoleAssignment;
 import com.e2eq.framework.rest.models.*;
 import com.e2eq.framework.model.securityrules.SecurityCheckException;
 import com.e2eq.framework.model.security.ApplicationRegistration;
@@ -47,6 +48,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @OpenAPIDefinition(
         tags = {
@@ -267,7 +269,8 @@ public class SecurityResource {
                                         loginResponse.positiveResponse().refreshToken(),
                                         loginResponse.positiveResponse().expirationTime(),
                                         loginResponse.positiveResponse().mongodbUrl(),
-                                        loginResponse.positiveResponse().realm()
+                                        loginResponse.positiveResponse().realm(),
+                                        loginResponse.positiveResponse().roleAssignments().stream().map(RoleAssignment::toString).collect(Collectors.toList())
                                 )).build();
             }
             else {

@@ -6,6 +6,6 @@ import io.quarkus.runtime.annotations.RegisterForReflection;
 @RegisterForReflection
 public enum RoleSource {
     @JsonProperty("usergroup") USERGROUP,
-    @JsonProperty("idp") IDP,
+    @JsonProperty("token") TOKEN,
     @JsonProperty("credential") CREDENTIAL
 }

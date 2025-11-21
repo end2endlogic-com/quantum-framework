@@ -4,6 +4,7 @@ import com.e2eq.framework.model.auth.RoleAssignment;
 import com.e2eq.framework.model.auth.RoleSource;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.UserGroup;
+import com.e2eq.framework.model.security.UserProfile;
 import io.quarkus.logging.Log;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -33,44 +34,70 @@ public class IdentityRoleResolver {
 
     /**
      * Resolve the effective roles for an already resolved credential, also considering the access token roles
-     * and user group memberships.
+     * and user group memberships. This delegates to the centralized provenance builder to avoid duplicated logic.
+     * Note: This method does not perform a realm lookup by userId; callers should ensure the identity corresponds
+     * to the current principal when intending to include TOKEN roles.
      */
     public String[] resolveEffectiveRoles(SecurityIdentity identity, CredentialUserIdPassword credential) {
-        Set<String> rolesSet = new LinkedHashSet<>();
-        // roles from access token
-        if (identity != null) {
-            for (String role : identity.getRoles()) {
-                if (role != null && !role.isEmpty()) rolesSet.add(role);
+        // Best-effort identity value for provenance: prefer principal name; otherwise credential userId
+        String identityValue = null;
+        if (identity != null && identity.getPrincipal() != null) {
+            identityValue = identity.getPrincipal().getName();
+        }
+        if ((identityValue == null || identityValue.isBlank()) && credential != null) {
+            identityValue = credential.getUserId();
+        }
+
+        // We do not have realm here; group/credential expansion below uses the subject from the provided credential.
+        // Build provenance inline to ensure RoleSource is constructed while roles are aggregated.
+        LinkedHashMap<String, EnumSet<RoleSource>> provenance = new LinkedHashMap<>();
+
+        // TOKEN roles: included only if identityValue equals the principal (i.e., checking current user)
+        if (identity != null && identityValue != null && identity.getPrincipal() != null
+                && identityValue.equals(identity.getPrincipal().getName())) {
+            for (String r : identity.getRoles()) {
+                if (r == null || r.isBlank()) continue;
+                provenance.computeIfAbsent(r, k -> EnumSet.noneOf(RoleSource.class)).add(RoleSource.TOKEN);
             }
         }
-        // roles from credential
+
+        // CREDENTIAL roles
         if (credential != null && credential.getRoles() != null) {
             for (String r : credential.getRoles()) {
-                if (r != null && !r.isEmpty()) rolesSet.add(r);
+                if (r == null || r.isBlank()) continue;
+                provenance.computeIfAbsent(r, k -> EnumSet.noneOf(RoleSource.class)).add(RoleSource.CREDENTIAL);
             }
         }
-        // roles from user groups via user profile
+
+        // USERGROUP roles via UserProfile -> UserGroup definitions
         try {
             if (credential != null) {
-                var userProfileOpt = userProfileRepo.getBySubject(credential.getSubject());
+                // Try realm-aware lookup first if the credential's userId matches current principal realm context is unknown here
+                // We do NOT have a realm parameter in this overload; callers that know the realm should use resolveRoleSources
+                Optional<UserProfile> userProfileOpt = userProfileRepo.getBySubject(credential.getSubject());
                 if (userProfileOpt.isPresent()) {
                     var groups = userGroupRepo.findByUserProfileRef(userProfileOpt.get().createEntityReference());
                     if (groups != null) {
                         for (UserGroup g : groups) {
-                            if (g != null && g.getRoles() != null) {
-                                for (String r : g.getRoles()) {
-                                    if (r != null) rolesSet.add(r);
-                                }
+                            if (g == null || g.getRoles() == null) continue;
+                            for (String r : g.getRoles()) {
+                                if (r == null || r.isBlank()) continue;
+                                provenance.computeIfAbsent(r, k -> EnumSet.noneOf(RoleSource.class)).add(RoleSource.USERGROUP);
                             }
                         }
                     }
+                } else {
+                    // No matching UserProfile found, assume anonymous
+                    Log.warnf("No matching UserProfile found for subject %s", credential.getSubject());
                 }
             }
         } catch (Exception e) {
-            Log.warn("Failed to expand roles via user groups; continuing with token/credential roles", e);
+            Log.warn("Failed to expand roles via user groups; continuing", e);
         }
-        if (rolesSet.isEmpty()) return new String[]{"ANONYMOUS"};
-        return rolesSet.toArray(new String[0]);
+
+        // Return the union
+        if (provenance.isEmpty()) return new String[]{"ANONYMOUS"};
+        return provenance.keySet().toArray(new String[0]);
     }
 
     /**
@@ -82,11 +109,11 @@ public class IdentityRoleResolver {
         if (identity == null || identity.isBlank()) return out;
         out.add(identity);
         try {
-            var ocreds = credentialRepo.findByUserId(identity, realm, true);
-            if (ocreds.isPresent()) {
-                String[] roles = resolveEffectiveRoles(securityIdentity, ocreds.get());
-                if (roles != null) Collections.addAll(out, roles);
-            } // else: treat as role, no expansion
+            // Build provenance centrally and reuse for union to avoid duplicated logic and inconsistent conditions
+            Map<String, EnumSet<RoleSource>> provenance = resolveRoleSources(identity, realm, securityIdentity);
+            if (!provenance.isEmpty()) {
+                out.addAll(provenance.keySet());
+            }
         } catch (Exception e) {
             Log.warnf(e, "Error resolving roles for identity %s in realm %s", identity, realm);
         }
@@ -101,11 +128,25 @@ public class IdentityRoleResolver {
     public Map<String, EnumSet<RoleSource>> resolveRoleSources(String identity, String realm, SecurityIdentity securityIdentity) {
         LinkedHashMap<String, EnumSet<RoleSource>> out = new LinkedHashMap<>();
 
-        // IDP roles from the current security identity (token)
+        // TOKEN roles from the current security identity (include when the current identity matches by principal name or augmented userId attribute)
         if (securityIdentity != null) {
-            for (String r : securityIdentity.getRoles()) {
-                if (r == null || r.isEmpty()) continue;
-                out.computeIfAbsent(r, k -> EnumSet.noneOf(RoleSource.class)).add(RoleSource.IDP);
+            String principalName = (securityIdentity.getPrincipal() != null) ? securityIdentity.getPrincipal().getName() : null;
+            String attrUserId = null;
+            try {
+                Object attr = securityIdentity.getAttribute("userId");
+                if (attr instanceof String s) attrUserId = s;
+            } catch (Throwable ignored) {}
+
+            boolean matches = (identity != null) && (
+                    (principalName != null && identity.equals(principalName)) ||
+                    (attrUserId != null && identity.equals(attrUserId))
+            );
+
+            if (matches) {
+                for (String r : securityIdentity.getRoles()) {
+                    if (r == null || r.isEmpty()) continue;
+                    out.computeIfAbsent(r, k -> EnumSet.noneOf(RoleSource.class)).add(RoleSource.TOKEN);
+                }
             }
         }
 
@@ -120,9 +161,10 @@ public class IdentityRoleResolver {
                         out.computeIfAbsent(r, k -> EnumSet.noneOf(RoleSource.class)).add(RoleSource.CREDENTIAL);
                     }
                 }
-                // User group roles via profile
+                // User group roles via profile (always unioned when credential exists)
                 try {
-                    var userProfileOpt = userProfileRepo.getBySubject(cred.getSubject());
+                    // Use the provided realm to ensure we read the profile from the correct datastore
+                    var userProfileOpt = userProfileRepo.getBySubject(realm, cred.getSubject());
                     if (userProfileOpt.isPresent()) {
                         var groups = userGroupRepo.findByUserProfileRef(userProfileOpt.get().createEntityReference());
                         if (groups != null) {

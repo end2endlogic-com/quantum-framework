@@ -5,6 +5,8 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 @Data
 @EqualsAndHashCode
 @NoArgsConstructor
@@ -16,6 +18,7 @@ public class AuthResponse {
     protected long expires_at;
     protected String mongodburl;
     protected String realm;
+    protected List<String> roles;
 
     // Backward-compatible constructor
     public AuthResponse(String access_token, String refresh_token, long expires_at) {
