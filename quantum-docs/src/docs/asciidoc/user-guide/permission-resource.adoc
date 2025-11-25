@@ -282,6 +282,7 @@ ACLClient.lookupAreaDomainAction(matrix, area, domain, action) // => Outcome | n
 ACLClient.decide(snapshot, dataDomain, area, domain, action)   // => 'ALLOW' | 'DENY'
 ACLClient.decideOutcome(snapshot, dataDomain, area, domain, action) // => Outcome | null
 ACLClient.interpretCheckResponse(check)  // => { decision, scope, constraints, filterConstraintsPresent, filterConstraints }
+ACLClient.interpretEvaluateResponse(res) // => { allow, deny, decisions, evalModeUsed, getDecision(area, domain, action) }
 ----
 
 Outcome structure:
@@ -300,8 +301,10 @@ Allowed effect values are "ALLOW" or "DENY".
 
 == Single-resource check API: evalMode and SCOPED decisions
 
-The `/system/permissions/check` endpoint now accepts an optional `evalMode` parameter to control
-how the server evaluates filter strings and postcondition scripts in single-resource checks.
+The `/system/permissions/check` endpoint accepts an optional `evalMode` parameter to control
+how the server evaluates filter strings and postcondition scripts in single-resource checks. It also
+supports sending a shallow snapshot of a concrete resource instance so that filters can be evaluated
+in-memory when appropriate.
 
 Eval modes:
 
@@ -321,6 +324,15 @@ Eval modes:
     instead of being silently allowed/denied. Postconditions are not executed in-memory in this case.
   * LIST is never suppressed; constraints are surfaced.
 
+Request fields (additive):
+
+* `identity` (string, required)
+* `realm` (string, optional)
+* `area`, `functionalDomain`, `action`, `resourceId` (optional; may be wildcard `*` unless doing a specific check)
+* `modelClass` (string, optional): fully qualified class name or resolvable entity name
+* `resource` (object, optional): shallow JSON snapshot of the domain resource
+* `evalMode` (string, optional): `LEGACY` | `AUTO` | `STRICT` (defaults to `LEGACY`)
+
 Response fields (additive and backward compatible):
 
 - `decision` — canonical decision string, mirrors `finalEffect` ("ALLOW"|"DENY").
@@ -332,6 +344,9 @@ Response fields (additive and backward compatible):
 - `scopedConstraintsPresent` and `scopedConstraints[]` — present when `decisionScope=SCOPED`.
 - `filterConstraintsPresent` and `filterConstraints[]` — legacy-compatible constraint listing; kept for LIST and transition.
 - `notApplicable[]` — rules that were considered but did not apply (with phase and reason).
+* Winning rule metadata (additive):
+  - `winningRuleName`, `winningRulePriority`, `winningRuleFinal` — the rule that produced the decision
+    (for `EXACT`), or the selected candidate (for `SCOPED`). These are null for `DEFAULT`.
 
 Example request enabling evaluator:
 
@@ -364,6 +379,114 @@ if (out.scope === 'EXACT' && out.decision === 'ALLOW') {
   // denied or default; inspect check.naLabel / check.notApplicable as needed
 }
 ```
+
+== Evaluate API: per-action decisions with SCOPED semantics
+
+The `/system/permissions/fd/evaluate` endpoint classifies an identity’s permissions across discovered
+areas/domains/actions and now supports the same `evalMode` and optional `modelClass`/`resource` parameters as `/check`.
+When the server cannot fully evaluate constraints for a given action (e.g., no resource supplied), it returns a
+`SCOPED` decision for that action along with the enumerated constraints.
+
+Request (additive parity with `/check`):
+
+```
+POST /system/permissions/fd/evaluate?useIndex=true
+{
+  "identity": "alice@end2endlogic.com",
+  "realm": "b2bi",
+  // Optional narrowing
+  "area": "sales",
+  "functionalDomain": "order",
+  "action": "view",
+  // Optional single-resource evaluation controls
+  "modelClass": "com.example.domain.Order",
+  "resource": { "id": "ORD-123", "customerId": "5f1e1a5e5e5e5e5e5e5e5e51" },
+  "evalMode": "STRICT"
+}
+```
+
+Response (additive):
+
+```
+{
+  "allow": { ... },
+  "deny": { ... },
+  "decisions": {
+    "sales": {
+      "order": {
+        "view": {
+          "effect": "ALLOW",
+          "decisionScope": "SCOPED",
+          "scopedConstraintsPresent": true,
+          "scopedConstraints": [
+            { "type": "FILTER", "detail": "customerId:^[${accessibleCustomerIds}]", "joinOp": "AND" }
+          ],
+          "naLabel": null,
+          "rule": "user-sales-order-view-filter",
+          "priority": 100,
+          "finalRule": false,
+          "source": null
+        }
+      }
+    }
+  },
+  "evalModeUsed": "STRICT"
+}
+```
+
+Client usage:
+
+```
+const res = await fetch('/system/permissions/fd/evaluate?useIndex=true', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req) });
+const body = await res.json();
+const ev = ACLClient.interpretEvaluateResponse(body);
+const decision = ev.getDecision('sales', 'order', 'view');
+if (decision && decision.decisionScope === 'EXACT' && decision.effect === 'ALLOW') {
+  // fully allowed
+} else if (decision && decision.decisionScope === 'SCOPED' && decision.effect === 'ALLOW') {
+  // allowed subject to constraints
+  console.log(decision.scopedConstraints);
+}
+```
+
+=== Which rule produced the decision?
+
+For actions resolved by the optimized index, `decisions[area][domain][action]` includes `rule`, `priority`,
+`finalRule`, and `source` from the index outcome. For server-evaluated fallbacks (when index is disabled or does not
+cover the specific combination), the server maps the winning rule metadata from the underlying check result, so
+`rule/priority/finalRule` are also present for parity.
+
+== Behavior matrix (summary)
+
+* With resource present (any mode): evaluator runs. Filters=true and postcondition=true/absent ⇒ `EXACT`.
+  Filters=false ⇒ rule is `NOT_APPLICABLE`. Failures to evaluate ⇒ fallback to SCOPED in STRICT, legacy-compatible otherwise.
+* Without resource:
+  - `LEGACY`/`AUTO`: matching rules with filters/scripts surface as `SCOPED` candidates; constraints listed.
+  - `STRICT` (non-LIST): also returns `SCOPED`; postconditions are skipped; constraints listed.
+  - LIST is never suppressed; DB-side filters continue via `getFilters(...)`; constraints surfaced for transparency.
+
+== Migration notes
+
+* Prefer `evalMode` over the deprecated `enableFilterEval`. If `enableFilterEval=true` and both `modelClass` and `resource`
+  are supplied, the server treats it as `AUTO` for backward compatibility.
+* Existing clients that only use `finalEffect` remain compatible. To opt in to richer semantics, read `decision`,
+  `decisionScope`, and `scopedConstraints`.
+* For list/search pages, continue to rely on DB-side `getFilters(...)` or `check-with-index`; do not pass a resource
+  snapshot to `/check` for lists.
+
+== Troubleshooting / FAQs
+
+Q: Why do I get `SCOPED` instead of `EXACT`?
+  * A: The server did not have a concrete resource to evaluate, or the predicate engine was not available. Use `STRICT`
+     with `modelClass` + `resource` for a fully evaluated decision when applicable.
+
+Q: What is `NA-ALLOW` / `NA-DENY`?
+  * A: They are labels for default fallbacks when no rule could make a decision (`decisionScope=DEFAULT`). The value
+     mirrors the `finalEffect` chosen as the default.
+
+Q: How do I know which rule produced the result?
+  * A: Inspect `winningRuleName`, `winningRulePriority`, `winningRuleFinal` on `/check` responses, or per-action
+     `rule/priority/finalRule` in `/fd/evaluate` responses.
 
 === Using in a Browser (no build tools)
 
