@@ -142,6 +142,38 @@
     buildFallbackChain,
     lookupAreaDomainAction,
     decide,
-    decideOutcome
+    decideOutcome,
+    // New helper: interpret SecurityCheckResponse from /system/permissions/check
+    interpretCheckResponse: function (check) {
+      if (!check) return { decision: 'DENY', scope: 'DEFAULT', constraints: [] };
+      const decision = (check.decision || (check.finalEffect ? String(check.finalEffect).toUpperCase() : 'DENY'));
+      const scope = (check.decisionScope || 'DEFAULT');
+      const constraints = Array.isArray(check.scopedConstraints) ? check.scopedConstraints : [];
+      return {
+        decision,
+        scope,
+        constraints,
+        // Back-compat: filterConstraints for older clients
+        filterConstraintsPresent: !!check.filterConstraintsPresent,
+        filterConstraints: Array.isArray(check.filterConstraints) ? check.filterConstraints : []
+      };
+    },
+    // New helper: interpret /system/permissions/fd/evaluate response
+    // Returns a lightweight accessor for per-action decisions with scope/constraints
+    interpretEvaluateResponse: function (res) {
+      if (!res) return { allow: {}, deny: {}, decisions: {}, evalModeUsed: 'LEGACY' };
+      const allow = res.allow || {};
+      const deny = res.deny || {};
+      const decisions = res.decisions || {};
+      const evalModeUsed = res.evalModeUsed || 'LEGACY';
+      function getDecision(area, domain, action) {
+        const dom = decisions && decisions[area];
+        if (!dom) return null;
+        const actMap = dom[domain];
+        if (!actMap) return null;
+        return actMap[action] || null; // { effect, decisionScope, scopedConstraintsPresent, scopedConstraints, naLabel, rule, priority, finalRule, source }
+      }
+      return { allow, deny, decisions, evalModeUsed, getDecision };
+    }
   };
 }));

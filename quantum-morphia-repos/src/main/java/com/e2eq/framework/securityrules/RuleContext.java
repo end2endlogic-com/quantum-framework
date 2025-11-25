@@ -21,8 +21,13 @@ import jakarta.enterprise.inject.Instance;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import org.apache.commons.lang3.StringUtils;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.graalvm.polyglot.Context;
+import org.graalvm.polyglot.Engine;
+import org.graalvm.polyglot.HostAccess;
+import org.graalvm.polyglot.Value;
 
 
 import java.util.*;
@@ -30,6 +35,22 @@ import java.util.*;
 
 @ApplicationScoped
 public class RuleContext {
+
+    // Thread-local to propagate EvalMode into the core rule evaluation loop without changing broad method signatures
+    private static final ThreadLocal<com.e2eq.framework.model.securityrules.EvalMode> TL_EVAL_MODE = new ThreadLocal<>();
+
+    private static com.e2eq.framework.model.securityrules.EvalMode getEvalModeForThread() {
+        com.e2eq.framework.model.securityrules.EvalMode m = TL_EVAL_MODE.get();
+        return (m != null) ? m : com.e2eq.framework.model.securityrules.EvalMode.LEGACY;
+    }
+
+    private static void setEvalModeForThread(com.e2eq.framework.model.securityrules.EvalMode m) {
+        if (m == null) TL_EVAL_MODE.remove(); else TL_EVAL_MODE.set(m);
+    }
+
+    private static void clearEvalModeForThread() {
+        TL_EVAL_MODE.remove();
+    }
 
     @Inject
     Instance<AccessListResolver> resolvers;
@@ -56,6 +77,23 @@ public class RuleContext {
     @ConfigProperty(name = "quantum.realmConfig.defaultRealm", defaultValue = "system-com")
     protected String defaultRealm;
 
+    // Scripting controls (sandbox & timeout)
+    @ConfigProperty(name = "quantum.security.scripting.enabled", defaultValue = "true")
+    boolean scriptingEnabled;
+
+    @ConfigProperty(name = "quantum.security.scripting.timeout.millis", defaultValue = "250")
+    long scriptingTimeoutMillis;
+
+    @ConfigProperty(name = "quantum.security.scripting.allowAllAccess", defaultValue = "false")
+    boolean scriptingAllowAllAccess;
+
+    // Policy for handling rules with filters when no concrete resource is provided on single-resource checks
+    // Values: DEFER (legacy-compatible, default), CONSERVATIVE_NA (strict)
+    @ConfigProperty(name = "security.rules.noResourceFilterPolicy", defaultValue = "DEFER")
+    String noResourceFilterPolicy;
+
+    private static final java.util.concurrent.atomic.AtomicBoolean WARNED_PERMISSIVE = new java.util.concurrent.atomic.AtomicBoolean(false);
+
     public RuleContext(SecurityUtils securityUtils, EnvConfigUtils envConfigUtils) {
         this.securityUtils = securityUtils;
         this.envConfigUtils = envConfigUtils;
@@ -65,6 +103,16 @@ public class RuleContext {
         // load rules
         //TODO: Need to understand how to determine tenant, account etc on initialization
         Log.debug("Creating ruleContext");
+    }
+
+    private String getNoResourceFilterPolicy() {
+        try {
+            return (noResourceFilterPolicy != null && !noResourceFilterPolicy.isBlank())
+                    ? noResourceFilterPolicy
+                    : "DEFER";
+        } catch (Throwable t) {
+            return "DEFER";
+        }
     }
 
 
@@ -650,17 +698,98 @@ public class RuleContext {
     LabelService labelService;
 
     boolean runScript(PrincipalContext pcontext, ResourceContext rcontext, String script) {
-        Context c = Context.newBuilder().allowAllAccess(true).build();
-        // Keep existing object bindings for backward compatibility
-        var jsBindings = c.getBindings("js");
-        jsBindings.putMember("pcontext", pcontext);
-        jsBindings.putMember("rcontext", rcontext);
+        if (script == null || script.isBlank()) return false;
 
-        // Prepare helper bindings: rcontext map with labels/types/edges if available
+        // Resolve scripting config with fallback for non-CDI constructed instances
+        boolean enabled = scriptingEnabled;
+        boolean allowAll = scriptingAllowAllAccess;
+        long timeoutMs = scriptingTimeoutMillis;
+        try {
+            org.eclipse.microprofile.config.Config cfg = org.eclipse.microprofile.config.ConfigProvider.getConfig();
+            if (cfg != null) {
+                enabled = cfg.getOptionalValue("quantum.security.scripting.enabled", Boolean.class).orElse(Boolean.TRUE);
+                allowAll = cfg.getOptionalValue("quantum.security.scripting.allowAllAccess", Boolean.class).orElse(Boolean.FALSE);
+                timeoutMs = cfg.getOptionalValue("quantum.security.scripting.timeout.millis", Long.class).orElse(1500L);
+            }
+        } catch (Throwable ignored) {
+            // fallback to injected fields which may be default-initialized when constructed manually
+            if (timeoutMs <= 0) timeoutMs = 1500L;
+        }
+        // Ensure a reasonable minimum to account for engine warm-up
+        if (timeoutMs < 500L) timeoutMs = 1500L;
+
+        if (!enabled) {
+            Log.warn("Security scripting is disabled via config; returning false");
+            return false;
+        }
+
+        // Fallback legacy mode if explicitly allowed
+        if (allowAll) {
+            if (WARNED_PERMISSIVE.compareAndSet(false, true)) {
+                Log.warn("quantum.security.scripting.allowAllAccess=true — running scripts with full host access (UNSAFE). This should only be used for compatibility.");
+            }
+            try (Context c = Context.newBuilder("js").allowAllAccess(true).build()) {
+                var jsBindings = c.getBindings("js");
+                jsBindings.putMember("pcontext", pcontext);
+                jsBindings.putMember("rcontext", rcontext);
+                installHelpersAndBindings(c, pcontext, rcontext);
+                if (Log.isDebugEnabled()) Log.debugf("Executing script (permissive): %s", script);
+                return c.eval("js", script).asBoolean();
+            } catch (Throwable t) {
+                Log.warn("Script execution failed in permissive mode; returning false", t);
+                return false;
+            }
+        }
+
+        // Hardened mode with timeout
+        java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+            Thread th = new Thread(r, "rule-script-worker");
+            th.setDaemon(true);
+            return th;
+        });
+        try {
+            java.util.concurrent.Future<Boolean> fut = executor.submit(() -> {
+                Engine eng = Engine.newBuilder().build();
+                try (Context c = Context.newBuilder("js")
+                        .engine(eng)
+                        .allowAllAccess(false)
+                        .allowHostAccess(HostAccess.newBuilder().allowPublicAccess(true).build())
+                        .allowHostClassLookup(s -> false)
+                        .allowIO(false)
+                        .option("js.ecmascript-version", "2021")
+                        .build()) {
+                    var jsBindings = c.getBindings("js");
+                    // Only expose simple data; avoid reflective Java method access
+                    jsBindings.putMember("pcontext", pcontext);
+                    jsBindings.putMember("rcontext", rcontext);
+                    installHelpersAndBindings(c, pcontext, rcontext);
+                    if (Log.isDebugEnabled()) Log.debugf("Executing script: %s", script);
+                    Value v = c.eval("js", script);
+                    return v.isBoolean() ? v.asBoolean() : false;
+                }
+            });
+            return fut.get(Math.max(1L, timeoutMs), java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.TimeoutException te) {
+            Log.warnf("Script timed out after %d ms; returning false", (timeoutMs <= 0 ? 250L : timeoutMs));
+            return false;
+        } catch (Throwable t) {
+            Log.warn("Script execution failed; returning false", t);
+            return false;
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    /**
+     * Prepare helper bindings and safe maps for use inside scripts.
+     */
+    private void installHelpersAndBindings(Context c, PrincipalContext pcontext, ResourceContext rcontext) {
+        var jsBindings = c.getBindings("js");
+
+        // Prepare helper data structures
         Map<String,Object> sb = new HashMap<>();
         Map<String,Object> rctx = new HashMap<>();
         Map<String,Object> pctx = new HashMap<>();
-        // Resolve labels via LabelService for both contexts (resolvers may consider type)
         try {
             Set<String> labels = labelService != null ? labelService.labelsFor(rcontext) : Set.of();
             rctx.put("labels", new ArrayList<>(labels));
@@ -672,37 +801,21 @@ public class RuleContext {
         sb.put("rcontext", rctx);
         sb.put("pcontext", pctx);
 
-        // Install script helpers into the same map and then export helper functions to JS
+        // Try to install helper functions (e.g., isA, hasLabel, ...)
         try {
-            // reflectively call ScriptHelpers.install(Map) if available to avoid hard module dependency
             try {
                 Class<?> cls = Class.forName("com.e2eq.ontology.policy.ScriptHelpers");
                 java.lang.reflect.Method m = cls.getMethod("install", Map.class);
                 m.invoke(null, sb);
             } catch (Throwable ignoredInner) {}
-            // Export known helpers if present
-            Object isA = sb.get("isA");
-            if (isA != null) jsBindings.putMember("isA", isA);
-            Object hasLabel = sb.get("hasLabel");
-            if (hasLabel != null) jsBindings.putMember("hasLabel", hasLabel);
-            Object hasEdge = sb.get("hasEdge");
-            if (hasEdge != null) jsBindings.putMember("hasEdge", hasEdge);
-            Object hasAnyEdge = sb.get("hasAnyEdge");
-            if (hasAnyEdge != null) jsBindings.putMember("hasAnyEdge", hasAnyEdge);
-            Object hasAllEdges = sb.get("hasAllEdges");
-            if (hasAllEdges != null) jsBindings.putMember("hasAllEdges", hasAllEdges);
-            Object relatedIds = sb.get("relatedIds");
-            if (relatedIds != null) jsBindings.putMember("relatedIds", relatedIds);
-            Object noViolations = sb.get("noViolations");
-            if (noViolations != null) jsBindings.putMember("noViolations", noViolations);
+            Object isA = sb.get("isA"); if (isA != null) jsBindings.putMember("isA", isA);
+            Object hasLabel = sb.get("hasLabel"); if (hasLabel != null) jsBindings.putMember("hasLabel", hasLabel);
+            Object hasEdge = sb.get("hasEdge"); if (hasEdge != null) jsBindings.putMember("hasEdge", hasEdge);
+            Object hasAnyEdge = sb.get("hasAnyEdge"); if (hasAnyEdge != null) jsBindings.putMember("hasAnyEdge", hasAnyEdge);
+            Object hasAllEdges = sb.get("hasAllEdges"); if (hasAllEdges != null) jsBindings.putMember("hasAllEdges", hasAllEdges);
+            Object relatedIds = sb.get("relatedIds"); if (relatedIds != null) jsBindings.putMember("relatedIds", relatedIds);
+            Object noViolations = sb.get("noViolations"); if (noViolations != null) jsBindings.putMember("noViolations", noViolations);
         } catch (Throwable ignored) {}
-
-        if (Log.isDebugEnabled()) {
-           Log.debugf("Executing script:%s", script);
-        }
-        boolean allow = c.eval("js", script).asBoolean();
-        return allow;
-
     }
 
     /**
@@ -782,7 +895,7 @@ public class RuleContext {
     public SecurityCheckResponse checkRules( PrincipalContext pcontext,  ResourceContext rcontext) {
        Objects.requireNonNull(pcontext, "pcontext is required to be non null ");
        Objects.requireNonNull(rcontext, "rcontext is required to be non null ");
-        return checkRules(pcontext, rcontext, RuleEffect.DENY);
+        return checkRules(pcontext, rcontext, null, null, RuleEffect.DENY);
     }
 
     /**
@@ -794,6 +907,19 @@ public class RuleContext {
      * @return
      */
     public SecurityCheckResponse checkRules(@Valid @NotNull PrincipalContext pcontext, @Valid @NotNull ResourceContext rcontext, @NotNull RuleEffect defaultFinalEffect) {
+        return checkRules(pcontext, rcontext, null, null, defaultFinalEffect);
+    }
+
+    /**
+     * New overload that allows in-memory filter applicability evaluation for a concrete resource instance.
+     * Existing signatures delegate to this with nulls to preserve behavior when modelClass/resource are not supplied.
+     */
+    public SecurityCheckResponse checkRules(
+            @Valid @NotNull PrincipalContext pcontext,
+            @Valid @NotNull ResourceContext rcontext,
+            Class<? extends UnversionedBaseModel> modelClass,
+            Object resourceInstance,
+            @NotNull RuleEffect defaultFinalEffect) {
 
         if (Log.isDebugEnabled()) {
             Log.debug("####  checking Permissions for pcontext:" + pcontext.toString() + " resource context:" + rcontext.toString());
@@ -835,6 +961,14 @@ public class RuleContext {
         }
 
         // iterate over all the applicable rules
+        // Track a SCOPED candidate when rules match but constraints (filters/scripts) are not evaluated
+        RuleEffect scopedCandidateEffect = null;
+        List<com.e2eq.framework.model.securityrules.SecurityCheckResponse.RuleFilterInfo> scopedFilterInfos = new ArrayList<>();
+        String scopedScriptDetail = null;
+        String scopedCandidateRuleName = null;
+        Integer scopedCandidateRulePriority = null;
+        Boolean scopedCandidateRuleFinal = null;
+        int scopedCandidateScore = -1; // prefer filters(2) > script(1) > none(0)
         boolean complete = false;
         for (Rule r : applicableRules) {
             // record the rule we are evaluating for debug purposes
@@ -867,20 +1001,286 @@ public class RuleContext {
                                     .difference(StringUtils.difference(uri.uriString(), r.getSecurityURI().uriString()))
                                     .build();
 
+                    // Capture eval mode (may be provided by evalMode overload via TL)
+                    com.e2eq.framework.model.securityrules.EvalMode evalMode = getEvalModeForThread();
 
-                    if (r.getPostconditionScript() != null) {
-                        boolean scriptResult = runScript(pcontext, rcontext, r.getPostconditionScript());
+                    // 1) Evaluate precondition if present; a false result makes this rule NOT_APPLICABLE
+                    if (r.getPreconditionScript() != null && !r.getPreconditionScript().isBlank()) {
+                        boolean preOk = false;
+                        try {
+                            preOk = runScript(pcontext, rcontext, r.getPreconditionScript());
+                        } catch (Throwable t) {
+                            // Treat failures as false and continue; script engines can throw
+                            Log.warnf(t, "Precondition script failed for rule '%s'", r.getName());
+                            preOk = false;
+                        }
+                        matchEvent.setPreScript(r.getPreconditionScript());
+                        matchEvent.setPreScriptResult(preOk);
+                        if (!preOk) {
+                            // Mark this rule as not applicable and move on to next rule (skip effect/postcondition)
+                            result.setDeterminedEffect(RuleDeterminedEffect.NOT_APPLICABLE);
+                            // Record NA reason (precondition)
+                            response.getNotApplicable().add(
+                                    new com.e2eq.framework.model.securityrules.SecurityCheckResponse.NotApplicableInfo(
+                                            r.getName(), "PRECONDITION", "Precondition evaluated to false or failed"));
+                            response.getMatchedRuleResults().add(result);
+                            response.getMatchEvents().add(matchEvent);
+                            // Move to next rule entirely
+                            // Break out of URI loop and signal outer loop to continue
+                            complete = false; // no finality triggered
+                            // break inner loop and proceed to next rule
+                            break;
+                        }
+                    }
+
+                    // 2) Policy-driven handling when no resource provided for non-LIST actions and rule has filters
+                    boolean noResourceProvided = (resourceInstance == null);
+                    boolean ruleHasFilters = StringUtils.isNotBlank(r.getAndFilterString()) || StringUtils.isNotBlank(r.getOrFilterString());
+                    boolean ruleHasPostScript = (r.getPostconditionScript() != null && !r.getPostconditionScript().isBlank());
+                    boolean isListAction = "list".equalsIgnoreCase(rcontext.getAction());
+                    boolean strictSkipPost = false;
+                    if (noResourceProvided && ruleHasFilters && !isListAction) {
+                        // Determine policy from configuration; default is DEFER to preserve legacy behavior in tests
+                        String policy = getNoResourceFilterPolicy();
+                        boolean conservativeNA = "CONSERVATIVE_NA".equalsIgnoreCase(policy);
+
+                        matchEvent.setFilterAndString(r.getAndFilterString());
+                        matchEvent.setFilterOrString(r.getOrFilterString());
+                        matchEvent.setFilterJoinOp(r.getJoinOp() != null ? r.getJoinOp().name() : "AND");
+                        matchEvent.setFilterEvaluated(false);
+                        matchEvent.setFilterResult(null);
+
+                        // STRICT mode overrides conservative/DEFER behavior to surface SCOPED instead of NA
+                        if (evalMode == com.e2eq.framework.model.securityrules.EvalMode.STRICT) {
+                            matchEvent.setFilterReason("No resource provided; STRICT mode ⇒ SCOPED candidate");
+                            response.setFilterConstraintsPresent(true);
+                            response.getFilterConstraints().add(
+                                    new SecurityCheckResponse.RuleFilterInfo(
+                                            r.getName(),
+                                            r.getAndFilterString(),
+                                            r.getOrFilterString(),
+                                            r.getJoinOp() != null ? r.getJoinOp().name() : "AND"
+                                    )
+                            );
+                            // Record/upgrade SCOPED candidate (prefer richer constraints then priority)
+                            {
+                                int score = ruleHasFilters ? 2 : (ruleHasPostScript ? 1 : 0);
+                                boolean replace = (scopedCandidateRuleName == null)
+                                        || (score > scopedCandidateScore)
+                                        || (score == scopedCandidateScore && r.getPriority() < (scopedCandidateRulePriority != null ? scopedCandidateRulePriority : Integer.MAX_VALUE));
+                                if (replace) {
+                                    scopedCandidateEffect = r.getEffect();
+                                    scopedFilterInfos.clear();
+                                    scopedFilterInfos.add(new SecurityCheckResponse.RuleFilterInfo(
+                                            r.getName(), r.getAndFilterString(), r.getOrFilterString(),
+                                            r.getJoinOp() != null ? r.getJoinOp().name() : "AND"));
+                                    scopedScriptDetail = ruleHasPostScript ? r.getPostconditionScript() : null;
+                                    scopedCandidateRuleName = r.getName();
+                                    scopedCandidateRulePriority = r.getPriority();
+                                    scopedCandidateRuleFinal = r.isFinalRule();
+                                    scopedCandidateScore = score;
+                                }
+                            }
+                            // In STRICT with no resource, do not evaluate postconditions for this rule
+                            strictSkipPost = true;
+                        } else if (conservativeNA) {
+                            // Mark NOT_APPLICABLE to err on the side of safety when we cannot evaluate filters
+                            matchEvent.setFilterReason("No resource provided; policy=CONSERVATIVE_NA");
+                            result.setDeterminedEffect(RuleDeterminedEffect.NOT_APPLICABLE);
+                            // Record NA reason (policy / filter without resource)
+                            response.getNotApplicable().add(
+                                    new com.e2eq.framework.model.securityrules.SecurityCheckResponse.NotApplicableInfo(
+                                            r.getName(), "FILTER", "No resource provided; conservative NA policy"));
+                            response.getMatchedRuleResults().add(result);
+                            response.getMatchEvents().add(matchEvent);
+                            complete = false;
+                            break;
+                        } else {
+                            // DEFER policy: do not suppress; surface constraints and proceed as legacy behavior
+                            matchEvent.setFilterReason("No resource provided; policy=DEFER");
+                            response.setFilterConstraintsPresent(true);
+                            response.getFilterConstraints().add(
+                                    new SecurityCheckResponse.RuleFilterInfo(
+                                            r.getName(),
+                                            r.getAndFilterString(),
+                                            r.getOrFilterString(),
+                                            r.getJoinOp() != null ? r.getJoinOp().name() : "AND"
+                                    )
+                            );
+                            // Consider SCOPED candidate with selection heuristic
+                            {
+                                int score = ruleHasFilters ? 2 : (ruleHasPostScript ? 1 : 0);
+                                boolean replace = (scopedCandidateRuleName == null)
+                                        || (score > scopedCandidateScore)
+                                        || (score == scopedCandidateScore && r.getPriority() < (scopedCandidateRulePriority != null ? scopedCandidateRulePriority : Integer.MAX_VALUE));
+                                if (replace) {
+                                    scopedCandidateEffect = r.getEffect();
+                                    scopedFilterInfos.clear();
+                                    scopedFilterInfos.add(new SecurityCheckResponse.RuleFilterInfo(
+                                            r.getName(), r.getAndFilterString(), r.getOrFilterString(),
+                                            r.getJoinOp() != null ? r.getJoinOp().name() : "AND"));
+                                    scopedScriptDetail = ruleHasPostScript ? r.getPostconditionScript() : null;
+                                    scopedCandidateRuleName = r.getName();
+                                    scopedCandidateRulePriority = r.getPriority();
+                                    scopedCandidateRuleFinal = r.isFinalRule();
+                                    scopedCandidateScore = score;
+                                }
+                            }
+                            // continue without breaking; postconditions/effects apply
+                        }
+                    }
+
+                    // For LIST without a resource, do not suppress; signal constraints on the response
+                    if (noResourceProvided && ruleHasFilters && isListAction) {
+                        response.setFilterConstraintsPresent(true);
+                        response.getFilterConstraints().add(
+                                new SecurityCheckResponse.RuleFilterInfo(
+                                        r.getName(),
+                                        r.getAndFilterString(),
+                                        r.getOrFilterString(),
+                                        r.getJoinOp() != null ? r.getJoinOp().name() : "AND"
+                                )
+                        );
+                        {
+                            int score = ruleHasFilters ? 2 : (ruleHasPostScript ? 1 : 0);
+                            boolean replace = (scopedCandidateRuleName == null)
+                                    || (score > scopedCandidateScore)
+                                    || (score == scopedCandidateScore && r.getPriority() < (scopedCandidateRulePriority != null ? scopedCandidateRulePriority : Integer.MAX_VALUE));
+                            if (replace) {
+                                scopedCandidateEffect = r.getEffect();
+                                scopedFilterInfos.clear();
+                                scopedFilterInfos.add(new SecurityCheckResponse.RuleFilterInfo(
+                                        r.getName(), r.getAndFilterString(), r.getOrFilterString(),
+                                        r.getJoinOp() != null ? r.getJoinOp().name() : "AND"));
+                                scopedScriptDetail = ruleHasPostScript ? r.getPostconditionScript() : null;
+                                scopedCandidateRuleName = r.getName();
+                                scopedCandidateRulePriority = r.getPriority();
+                                scopedCandidateRuleFinal = r.isFinalRule();
+                                scopedCandidateScore = score;
+                            }
+                        }
+                        // Continue as usual (postcondition/effect)
+                    }
+
+                    // 3) NEW: Filter applicability evaluation (optional, non-blocking)
+                    // If modelClass/resourceInstance are provided, attempt in-memory evaluation of rule filter strings.
+                    Optional<Boolean> filterOk = Optional.empty();
+                    try {
+                        // Only run evaluator when a concrete resource instance is provided.
+                        if (resourceInstance != null) {
+                            filterOk = evaluateFilterApplicability(pcontext, rcontext, r, modelClass, resourceInstance, matchEvent);
+                            // STRICT mode: if evaluator could not run (empty) for a rule with filters, treat as SCOPED candidate
+                            if (evalMode == com.e2eq.framework.model.securityrules.EvalMode.STRICT
+                                    && ruleHasFilters && filterOk.isEmpty()) {
+                                if (matchEvent != null && matchEvent.getFilterReason() == null) {
+                                    matchEvent.setFilterReason("STRICT: evaluator unavailable ⇒ SCOPED candidate");
+                                }
+                                int score = ruleHasFilters ? 2 : (ruleHasPostScript ? 1 : 0);
+                                boolean replace = (scopedCandidateRuleName == null)
+                                        || (score > scopedCandidateScore)
+                                        || (score == scopedCandidateScore && r.getPriority() < (scopedCandidateRulePriority != null ? scopedCandidateRulePriority : Integer.MAX_VALUE));
+                                if (replace) {
+                                    scopedCandidateEffect = r.getEffect();
+                                    scopedFilterInfos.clear();
+                                    scopedFilterInfos.add(new SecurityCheckResponse.RuleFilterInfo(
+                                            r.getName(), r.getAndFilterString(), r.getOrFilterString(),
+                                            r.getJoinOp() != null ? r.getJoinOp().name() : "AND"));
+                                    scopedScriptDetail = ruleHasPostScript ? r.getPostconditionScript() : null;
+                                    scopedCandidateRuleName = r.getName();
+                                    scopedCandidateRulePriority = r.getPriority();
+                                    scopedCandidateRuleFinal = r.isFinalRule();
+                                    scopedCandidateScore = score;
+                                }
+                                // In STRICT mode treat this rule as inconclusive: skip postcondition
+                                strictSkipPost = true;
+                            }
+                        } else {
+                            // Evaluator skipped in no-resource context; preserve legacy behavior
+                            if (matchEvent != null) {
+                                matchEvent.setFilterEvaluated(false);
+                                matchEvent.setFilterResult(null);
+                                if (matchEvent.getFilterReason() == null) {
+                                    matchEvent.setFilterReason("Evaluator skipped: no resource instance");
+                                }
+                            }
+                        }
+                    } catch (Throwable t) {
+                        // Never block; treat as not evaluated
+                        if (Log.isDebugEnabled()) {
+                            Log.debugf(t, "Filter applicability evaluation failed for rule '%s'", r.getName());
+                        }
+                    }
+
+                    if (filterOk.isPresent() && !filterOk.get()) {
+                        // Mark NOT_APPLICABLE due to filter mismatch; proceed to next rule
+                        result.setDeterminedEffect(RuleDeterminedEffect.NOT_APPLICABLE);
+                        response.getNotApplicable().add(
+                                new com.e2eq.framework.model.securityrules.SecurityCheckResponse.NotApplicableInfo(
+                                        r.getName(), "FILTER", "Filter evaluation returned false"));
+                        response.getMatchedRuleResults().add(result);
+                        response.getMatchEvents().add(matchEvent);
+                        complete = false;
+                        break;
+                    }
+
+                    // 4) Postcondition (as previously implemented, but guard against script errors)
+                    if (strictSkipPost) {
+                        // In STRICT + no-resource (or evaluator unavailable), treat as inconclusive: mark NA for rule result
+                        result.setDeterminedEffect(RuleDeterminedEffect.NOT_APPLICABLE);
+                        response.getMatchedRuleResults().add(result);
+                        response.getMatchEvents().add(matchEvent);
+                        // Do not apply effect or finality; continue scanning for EXACT decisions
+                        continue;
+                    }
+                    if (r.getPostconditionScript() != null && !r.getPostconditionScript().isBlank()) {
+                        boolean scriptResult = false;
+                        try {
+                            scriptResult = runScript(pcontext, rcontext, r.getPostconditionScript());
+                        } catch (Throwable t) {
+                            // Treat failures as false and continue; likely due to missing resource-only data
+                            if (Log.isDebugEnabled()) {
+                                Log.debugf(t, "Postcondition script failed for rule '%s'", r.getName());
+                            }
+                            scriptResult = false;
+                            // If we could not execute postcondition (e.g., missing resource), capture a SCOPED candidate
+                            if (noResourceProvided) {
+                                int score = ruleHasFilters ? 2 : (ruleHasPostScript ? 1 : 0);
+                                boolean replace = (scopedCandidateRuleName == null)
+                                        || (score > scopedCandidateScore)
+                                        || (score == scopedCandidateScore && r.getPriority() < (scopedCandidateRulePriority != null ? scopedCandidateRulePriority : Integer.MAX_VALUE));
+                                if (replace) {
+                                    scopedCandidateEffect = r.getEffect();
+                                    scopedScriptDetail = r.getPostconditionScript();
+                                    scopedCandidateRuleName = r.getName();
+                                    scopedCandidateRulePriority = r.getPriority();
+                                    scopedCandidateRuleFinal = r.isFinalRule();
+                                    scopedCandidateScore = score;
+                                    // filters might be absent here; keep existing list (script-only)
+                                }
+                            }
+                        }
                         matchEvent.setPostScript(r.getPostconditionScript());
                         matchEvent.setPostScriptResult(scriptResult);
                         if (scriptResult) {
                             result.setDeterminedEffect(RuleDeterminedEffect.valueOf(r.getEffect()));
                             response.setFinalEffect(r.getEffect());
+                            // EXACT: record winning rule metadata
+                            response.setWinningRuleName(r.getName());
+                            response.setWinningRulePriority(r.getPriority());
+                            response.setWinningRuleFinal(r.isFinalRule());
                         } else {
                             result.setDeterminedEffect(RuleDeterminedEffect.NOT_APPLICABLE);
+                            response.getNotApplicable().add(
+                                    new com.e2eq.framework.model.securityrules.SecurityCheckResponse.NotApplicableInfo(
+                                            r.getName(), "POSTCONDITION", "Postcondition evaluated to false or failed"));
                         }
                     } else {
                         result.setDeterminedEffect(RuleDeterminedEffect.valueOf(r.getEffect()));
                         response.setFinalEffect(r.getEffect());
+                        // EXACT (no post script): record winning rule
+                        response.setWinningRuleName(r.getName());
+                        response.setWinningRulePriority(r.getPriority());
+                        response.setWinningRuleFinal(r.isFinalRule());
                     }
 
                     response.getMatchedRuleResults().add(result);
@@ -924,7 +1324,369 @@ public class RuleContext {
                 break;
             }
         }
+
+        // If no EXACT decision was produced but we recorded a SCOPED candidate, surface it
+        try {
+            boolean anyMatchedNonNA = false;
+            if (response.getMatchedRuleResults() != null && !response.getMatchedRuleResults().isEmpty()) {
+                for (RuleResult rr : response.getMatchedRuleResults()) {
+                    if (rr.getDeterminedEffect() != RuleDeterminedEffect.NOT_APPLICABLE) {
+                        anyMatchedNonNA = true;
+                        break;
+                    }
+                }
+            }
+            if (!anyMatchedNonNA && scopedCandidateEffect != null) {
+                // Determine current eval mode to maintain backward compatibility
+                com.e2eq.framework.model.securityrules.EvalMode mode = getEvalModeForThread();
+                // Always set a SCOPED decision view for clients
+                response.setDecision(scopedCandidateEffect.name());
+                response.setDecisionScope("SCOPED");
+                response.setScopedConstraintsPresent(true);
+                // Populate scoped constraints from captured filter infos
+                if (scopedFilterInfos != null) {
+                    for (com.e2eq.framework.model.securityrules.SecurityCheckResponse.RuleFilterInfo info : scopedFilterInfos) {
+                        response.getScopedConstraints().add(new com.e2eq.framework.model.securityrules.SecurityCheckResponse.ScopedConstraint(
+                                "FILTER",
+                                (info.getAndFilterString() != null && !info.getAndFilterString().isBlank()) ? info.getAndFilterString() : info.getOrFilterString(),
+                                info.getJoinOp()
+                        ));
+                    }
+                }
+                // Add SCRIPT constraint if present
+                if (scopedScriptDetail != null && !scopedScriptDetail.isBlank()) {
+                    response.getScopedConstraints().add(new com.e2eq.framework.model.securityrules.SecurityCheckResponse.ScopedConstraint(
+                            "SCRIPT", scopedScriptDetail, null
+                    ));
+                }
+                // Record winning rule metadata for SCOPED
+                response.setWinningRuleName(scopedCandidateRuleName);
+                response.setWinningRulePriority(scopedCandidateRulePriority);
+                response.setWinningRuleFinal(scopedCandidateRuleFinal);
+                // In LEGACY mode, do NOT change finalEffect (preserve historical behavior expected by tests)
+                // In AUTO/STRICT modes, promote SCOPED effect to finalEffect so callers relying only on finalEffect see it.
+                if (mode != com.e2eq.framework.model.securityrules.EvalMode.LEGACY) {
+                    response.setFinalEffect(scopedCandidateEffect);
+                }
+            }
+        } catch (Throwable ignored) { }
+
+        // Decorate decision fields for callers that use legacy overloads
+        try {
+            if (response.getDecision() == null && response.getFinalEffect() != null) {
+                response.setDecision(response.getFinalEffect().name());
+            }
+            if (response.getEvalModeUsed() == null) {
+                response.setEvalModeUsed(com.e2eq.framework.model.securityrules.EvalMode.LEGACY.name());
+            }
+            // Determine a simple scope: if any matched rule applied (not NA), mark EXACT; otherwise DEFAULT
+            boolean anyMatchedNonNA = false;
+            if (response.getMatchedRuleResults() != null && !response.getMatchedRuleResults().isEmpty()) {
+                for (RuleResult rr : response.getMatchedRuleResults()) {
+                    if (rr.getDeterminedEffect() != RuleDeterminedEffect.NOT_APPLICABLE) {
+                        anyMatchedNonNA = true;
+                        break;
+                    }
+                }
+            }
+            if (anyMatchedNonNA) {
+                // If constraints were surfaced (e.g., LIST without resource), treat as SCOPED; else EXACT
+                if (response.isFilterConstraintsPresent()) {
+                    response.setDecisionScope("SCOPED");
+                    if (response.getFilterConstraints() != null && !response.getFilterConstraints().isEmpty()) {
+                        response.setScopedConstraintsPresent(true);
+                        List<com.e2eq.framework.model.securityrules.SecurityCheckResponse.ScopedConstraint> sc = new ArrayList<>();
+                        for (com.e2eq.framework.model.securityrules.SecurityCheckResponse.RuleFilterInfo info : response.getFilterConstraints()) {
+                            String joined = info.getJoinOp();
+                            if (info.getAndFilterString() != null && !info.getAndFilterString().isBlank()) {
+                                sc.add(new com.e2eq.framework.model.securityrules.SecurityCheckResponse.ScopedConstraint(
+                                        "FILTER", info.getAndFilterString(), joined));
+                            }
+                            if (info.getOrFilterString() != null && !info.getOrFilterString().isBlank()) {
+                                sc.add(new com.e2eq.framework.model.securityrules.SecurityCheckResponse.ScopedConstraint(
+                                        "FILTER", info.getOrFilterString(), joined));
+                            }
+                        }
+                        response.getScopedConstraints().addAll(sc);
+                    }
+                } else {
+                    // Respect any pre-set SCOPED scope from candidate promotion; else mark EXACT
+                    if (response.getDecisionScope() == null || response.getDecisionScope().isBlank()) {
+                        response.setDecisionScope("EXACT");
+                    }
+                }
+            } else {
+                // If a SCOPED candidate was promoted, keep SCOPED; else DEFAULT
+                if (response.getDecisionScope() == null || response.getDecisionScope().isBlank()) {
+                    response.setDecisionScope("DEFAULT");
+                }
+                if (response.getFinalEffect() != null) {
+                    String label = (response.getFinalEffect() == RuleEffect.ALLOW) ? "NA-ALLOW" : "NA-DENY";
+                    response.setNaLabel(label);
+                }
+            }
+        } catch (Throwable ignored) { }
+
         return response;
+    }
+
+    /**
+     * New overload that accepts an EvalMode to control evaluator usage and response scoping semantics.
+     * Legacy overloads default to LEGACY.
+     */
+    public SecurityCheckResponse checkRules(
+            @Valid @NotNull PrincipalContext pcontext,
+            @Valid @NotNull ResourceContext rcontext,
+            Class<? extends UnversionedBaseModel> modelClass,
+            Object resourceInstance,
+            @NotNull RuleEffect defaultFinalEffect,
+            com.e2eq.framework.model.securityrules.EvalMode evalMode) {
+        // Set eval mode for this thread so core evaluation can react to it
+        setEvalModeForThread(evalMode != null ? evalMode : com.e2eq.framework.model.securityrules.EvalMode.LEGACY);
+        try {
+            SecurityCheckResponse resp = checkRules(pcontext, rcontext, modelClass, resourceInstance, defaultFinalEffect);
+
+            // Stamp eval mode used
+            resp.setEvalModeUsed(getEvalModeForThread().name());
+
+            // Ensure decision string present
+            if (resp.getFinalEffect() != null && (resp.getDecision() == null || resp.getDecision().isBlank())) {
+                resp.setDecision(resp.getFinalEffect().name());
+            }
+
+            // Ensure NA label for DEFAULT
+            if ("DEFAULT".equals(resp.getDecisionScope()) && resp.getNaLabel() == null && resp.getFinalEffect() != null) {
+                String label = (resp.getFinalEffect() == RuleEffect.ALLOW) ? "NA-ALLOW" : "NA-DENY";
+                resp.setNaLabel(label);
+            }
+
+            // Backfill scopedConstraints from filterConstraints when SCOPED and empty (compat path)
+            if ("SCOPED".equals(resp.getDecisionScope()) && (resp.getScopedConstraints() == null || resp.getScopedConstraints().isEmpty())) {
+                if (resp.getFilterConstraints() != null && !resp.getFilterConstraints().isEmpty()) {
+                    resp.setScopedConstraintsPresent(true);
+                    List<com.e2eq.framework.model.securityrules.SecurityCheckResponse.ScopedConstraint> sc = new ArrayList<>();
+                    for (com.e2eq.framework.model.securityrules.SecurityCheckResponse.RuleFilterInfo info : resp.getFilterConstraints()) {
+                        String joined = info.getJoinOp();
+                        if (info.getAndFilterString() != null && !info.getAndFilterString().isBlank()) {
+                            sc.add(new com.e2eq.framework.model.securityrules.SecurityCheckResponse.ScopedConstraint(
+                                    "FILTER", info.getAndFilterString(), joined));
+                        }
+                        if (info.getOrFilterString() != null && !info.getOrFilterString().isBlank()) {
+                            sc.add(new com.e2eq.framework.model.securityrules.SecurityCheckResponse.ScopedConstraint(
+                                    "FILTER", info.getOrFilterString(), joined));
+                        }
+                    }
+                    resp.getScopedConstraints().addAll(sc);
+                }
+            }
+
+            return resp;
+        } finally {
+            clearEvalModeForThread();
+        }
+    }
+
+
+    /**
+     * Attempt to evaluate rule filter strings as applicability constraints against a concrete resource.
+     * This initial implementation is a safe stub that records trace fields and returns Optional.empty()
+     * to preserve current behavior. A future iteration will compile predicates using QueryPredicates.
+     *
+     * Note: We intentionally keep this non-throwing. Any failure or missing context results in Optional.empty().
+     */
+    public Optional<Boolean> evaluateFilterApplicability(
+            PrincipalContext pcontext,
+            ResourceContext rcontext,
+            Rule rule,
+            Class<? extends UnversionedBaseModel> modelClass,
+            Object resourceInstance,
+            com.e2eq.framework.model.securityrules.MatchEvent matchEvent) {
+
+        // Populate basic trace fields (additive)
+        if (matchEvent != null && rule != null) {
+            matchEvent.setFilterAndString(rule.getAndFilterString());
+            matchEvent.setFilterOrString(rule.getOrFilterString());
+            matchEvent.setFilterJoinOp(rule.getJoinOp() != null ? rule.getJoinOp().name() : "AND");
+            matchEvent.setFilterEvaluated(false);
+            matchEvent.setFilterResult(null);
+            matchEvent.setFilterReason(null);
+        }
+
+        // Evaluator only runs when a concrete resource instance is provided. In no-resource contexts,
+        // we cannot safely evaluate resource-dependent filters; defer to DB-side filtering.
+        if (resourceInstance == null) {
+            if (matchEvent != null) {
+                matchEvent.setFilterEvaluated(false);
+                matchEvent.setFilterResult(null);
+                matchEvent.setFilterReason("No resource provided; evaluator disabled");
+            }
+            return Optional.empty();
+        }
+
+        // If the rule has no filters, we treat it as not needing evaluation
+        boolean hasAnd = rule != null && org.apache.commons.lang3.StringUtils.isNotBlank(rule.getAndFilterString());
+        boolean hasOr = rule != null && org.apache.commons.lang3.StringUtils.isNotBlank(rule.getOrFilterString());
+        if (!hasAnd && !hasOr) {
+            return Optional.of(true);
+        }
+
+        // resourceInstance is non-null past this point
+
+        // Build facts JSON. We require at least ResourceContext and PrincipalContext; resourceInstance is optional.
+        Map<String, Object> facts = new HashMap<>();
+        try {
+            // rcontext section (shallow)
+            Map<String, Object> rcMap = new HashMap<>();
+            rcMap.put("area", rcontext != null ? rcontext.getArea() : null);
+            rcMap.put("functionalDomain", rcontext != null ? rcontext.getFunctionalDomain() : null);
+            rcMap.put("action", rcontext != null ? rcontext.getAction() : null);
+            rcMap.put("resourceId", rcontext != null ? rcontext.getResourceId() : null);
+            facts.put("rcontext", rcMap);
+
+            // dataDomain section (from principal)
+            Map<String, Object> ddMap = new HashMap<>();
+            if (pcontext != null && pcontext.getDataDomain() != null) {
+                ddMap.put("orgRefName", pcontext.getDataDomain().getOrgRefName());
+                ddMap.put("accountNum", pcontext.getDataDomain().getAccountNum());
+                ddMap.put("tenantId", pcontext.getDataDomain().getTenantId());
+                ddMap.put("dataSegment", pcontext.getDataDomain().getDataSegment());
+                ddMap.put("ownerId", pcontext.getDataDomain().getOwnerId());
+            }
+            facts.put("dataDomain", ddMap);
+
+            // resource section (optional, shallow)
+            if (resourceInstance != null) {
+                if (resourceInstance instanceof Map) {
+                    @SuppressWarnings("unchecked") Map<String, Object> rm = (Map<String, Object>) resourceInstance;
+                    facts.put("resource", rm);
+                } else {
+                    // Convert POJO to a map-like JSON structure using Jackson
+                    ObjectMapper mapper = new ObjectMapper();
+                    JsonNode node = mapper.valueToTree(resourceInstance);
+                    facts.put("resource", node);
+                }
+            }
+        } catch (Throwable t) {
+            if (Log.isDebugEnabled()) {
+                Log.debugf(t, "[Evaluator] Failed to build facts for rule '%s'", rule != null ? rule.getName() : "<null>");
+            }
+            if (matchEvent != null) {
+                matchEvent.setFilterEvaluated(false);
+                matchEvent.setFilterResult(null);
+                matchEvent.setFilterReason("Facts building failed");
+            }
+            return Optional.empty();
+        }
+
+        // Resolve variables used by filters (strings and objects)
+        MorphiaUtils.VariableBundle vars;
+        try {
+            vars = resolveVariableBundle(pcontext, rcontext, modelClass);
+        } catch (Throwable t) {
+            if (Log.isDebugEnabled()) {
+                Log.debugf(t, "[Evaluator] Failed to resolve variable bundle for rule '%s'", rule != null ? rule.getName() : "<null>");
+            }
+            if (matchEvent != null) {
+                matchEvent.setFilterEvaluated(false);
+                matchEvent.setFilterResult(null);
+                matchEvent.setFilterReason("Variable resolution failed");
+            }
+            return Optional.empty();
+        }
+
+        // Compile predicates using the shared BIAPI compiler via reflection to avoid hard module dependency
+        java.util.function.Predicate<com.fasterxml.jackson.databind.JsonNode> andPred = null;
+        java.util.function.Predicate<com.fasterxml.jackson.databind.JsonNode> orPred = null;
+        try {
+            if (hasAnd) {
+                andPred = tryCompilePredicate(rule.getAndFilterString(), vars.strings, vars.objects)
+                        .orElse(null);
+            }
+            if (hasOr) {
+                orPred = tryCompilePredicate(rule.getOrFilterString(), vars.strings, vars.objects)
+                        .orElse(null);
+            }
+        } catch (Throwable t) {
+            if (Log.isDebugEnabled()) {
+                Log.debugf(t, "[Evaluator] Predicate compilation failed for rule '%s'", rule != null ? rule.getName() : "<null>");
+            }
+            if (matchEvent != null) {
+                matchEvent.setFilterEvaluated(false);
+                matchEvent.setFilterResult(null);
+                matchEvent.setFilterReason("Predicate compilation failed");
+            }
+            return Optional.empty();
+        }
+
+        // Evaluate predicates against facts
+        boolean andOk = true; // identity for AND when missing
+        boolean orOk = true;  // identity when only one present and join=AND; will be overridden when used
+        ObjectMapper mapper = new ObjectMapper();
+        com.fasterxml.jackson.databind.JsonNode factsNode = mapper.valueToTree(facts);
+        try {
+            if (andPred != null) {
+                andOk = andPred.test(factsNode);
+            }
+            if (orPred != null) {
+                orOk = orPred.test(factsNode);
+            }
+        } catch (Throwable t) {
+            if (Log.isDebugEnabled()) {
+                Log.debugf(t, "[Evaluator] Predicate evaluation failed for rule '%s'", rule != null ? rule.getName() : "<null>");
+            }
+            if (matchEvent != null) {
+                matchEvent.setFilterEvaluated(false);
+                matchEvent.setFilterResult(null);
+                matchEvent.setFilterReason("Predicate evaluation failed");
+            }
+            return Optional.empty();
+        }
+
+        // Combine results according to joinOp when both present
+        boolean result;
+        if (hasAnd && hasOr) {
+            FilterJoinOp op = rule.getJoinOp() != null ? rule.getJoinOp() : FilterJoinOp.AND;
+            if (op == FilterJoinOp.OR) {
+                result = andOk || orOk;
+            } else {
+                result = andOk && orOk;
+            }
+        } else if (hasAnd) {
+            result = andOk;
+        } else { // hasOr only
+            result = orOk;
+        }
+
+        if (matchEvent != null) {
+            matchEvent.setFilterEvaluated(true);
+            matchEvent.setFilterResult(result);
+            matchEvent.setFilterReason(null);
+        }
+
+        return Optional.of(result);
+    }
+
+    /**
+     * Attempts to call QueryPredicates.compilePredicate(query, vars, objectVars) via reflection to avoid
+     * creating a direct compile-time dependency from the morphia-repos module to quantum-framework.
+     * If the class or method is unavailable, returns Optional.empty().
+     */
+    @SuppressWarnings("unchecked")
+    private Optional<java.util.function.Predicate<com.fasterxml.jackson.databind.JsonNode>> tryCompilePredicate(
+            String query,
+            Map<String, String> vars,
+            Map<String, Object> objectVars) {
+        try {
+            Class<?> qp = Class.forName("com.e2eq.framework.query.QueryPredicates");
+            java.lang.reflect.Method m = qp.getMethod("compilePredicate", String.class, Map.class, Map.class);
+            Object pred = m.invoke(null, query, vars, objectVars);
+            return Optional.of((java.util.function.Predicate<com.fasterxml.jackson.databind.JsonNode>) pred);
+        } catch (Throwable t) {
+            if (Log.isDebugEnabled()) {
+                Log.debugf(t, "[Evaluator] QueryPredicates not available or invocation failed; falling back");
+            }
+            return Optional.empty();
+        }
     }
 
 
@@ -1058,7 +1820,8 @@ public class RuleContext {
                     filters.add(Filters.and(andFilters.toArray(new Filter[andFilters.size()])));
                 } else {
                     orFilters.add(Filters.and(andFilters.toArray(new Filter[andFilters.size()])));
-                    filters.add(Filters.and(orFilters.toArray(new Filter[orFilters.size()])));
+                    // Correct OR combination should use Filters.or
+                    filters.add(Filters.or(orFilters.toArray(new Filter[orFilters.size()])));
                 }
             } else {
                 if (!andFilters.isEmpty()) {
