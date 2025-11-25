@@ -27,6 +27,9 @@ import jakarta.ws.rs.ext.Provider;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.graalvm.polyglot.Context;
+import org.graalvm.polyglot.Engine;
+import org.graalvm.polyglot.HostAccess;
+import org.graalvm.polyglot.Value;
 import org.jboss.logging.Logger;
 
 import java.io.*;
@@ -74,6 +77,18 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
     @Inject
     SecurityUtils securityUtils;
+
+    // Scripting controls (sandbox & timeout)
+    @ConfigProperty(name = "quantum.security.scripting.enabled", defaultValue = "true")
+    boolean scriptingEnabled;
+
+    @ConfigProperty(name = "quantum.security.scripting.timeout.millis", defaultValue = "250")
+    long scriptingTimeoutMillis;
+
+    @ConfigProperty(name = "quantum.security.scripting.allowAllAccess", defaultValue = "false")
+    boolean scriptingAllowAllAccess;
+
+    private static final java.util.concurrent.atomic.AtomicBoolean WARNED_PERMISSIVE = new java.util.concurrent.atomic.AtomicBoolean(false);
 
 
     @Override
@@ -185,17 +200,19 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                     Log.debug("Resource Context set");
 
             } else if (tokenCount == 3) {
+                // Correct mapping for /area/domain/action
+                area = tokenizer.nextToken();
                 functionalDomain = tokenizer.nextToken();
                 action = tokenizer.nextToken();
                 rcontext = new ResourceContext.Builder()
                         .withAction(action)
-                        .withArea(functionalDomain)
+                        .withArea(area)
                         .withFunctionalDomain(functionalDomain)
                         .build();
                 SecurityContext.setResourceContext(rcontext);
 
                 if (Log.isDebugEnabled()) {
-                    Log.debug("Resource Context set");
+                    Log.debugf("Resource Context set from path (3 segments): area=%s, domain=%s, action=%s", area, functionalDomain, action);
                 }
 
             } else {
@@ -225,17 +242,80 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         Objects.requireNonNull(realm, "Realm cannot be null");
         Objects.requireNonNull(script, "Script cannot be null");
 
-        Log.debugf("Running impersonation filter script:%s for user:%s, userId:%s, realm:%s", script, subject, userId, realm);
+        Log.debugf("Running impersonation filter script for user:%s, userId:%s, realm:%s", subject, userId, realm);
 
-        // Context c = Context.newBuilder().allowAllAccess(true).build();
-        Context c = Context.newBuilder().allowAllAccess(true).build();
-        c.getBindings("js").putMember("subject", subject);
-        c.getBindings("js").putMember("userId", userId);
-        c.getBindings("js").putMember("realm", realm);
+        // Resolve scripting config with runtime fallback (when not CDI-injected)
+        boolean enabled = scriptingEnabled;
+        boolean allowAll = scriptingAllowAllAccess;
+        long timeoutMs = scriptingTimeoutMillis;
+        try {
+            org.eclipse.microprofile.config.Config cfg = org.eclipse.microprofile.config.ConfigProvider.getConfig();
+            if (cfg != null) {
+                enabled = cfg.getOptionalValue("quantum.security.scripting.enabled", Boolean.class).orElse(Boolean.TRUE);
+                allowAll = cfg.getOptionalValue("quantum.security.scripting.allowAllAccess", Boolean.class).orElse(Boolean.FALSE);
+                timeoutMs = cfg.getOptionalValue("quantum.security.scripting.timeout.millis", Long.class).orElse(1500L);
+            }
+        } catch (Throwable ignored) {
+            if (timeoutMs <= 0) timeoutMs = 1500L;
+        }
+        if (timeoutMs < 500L) timeoutMs = 1500L;
 
-        boolean allow = c.eval("js", script).asBoolean();
-        Log.debugf("returning allow: %s", allow ? "true" : "false");
-        return allow;
+        if (!enabled) {
+            Log.warn("Security scripting is disabled via config; returning false");
+            return false;
+        }
+
+        // Backward-compatible permissive mode (unsafe)
+        if (allowAll) {
+            if (WARNED_PERMISSIVE.compareAndSet(false, true)) {
+                Log.warn("quantum.security.scripting.allowAllAccess=true — running scripts with full host access (UNSAFE). This should only be used for compatibility.");
+            }
+            try (Context c = Context.newBuilder("js").allowAllAccess(true).build()) {
+                c.getBindings("js").putMember("subject", subject);
+                c.getBindings("js").putMember("userId", userId);
+                c.getBindings("js").putMember("realm", realm);
+                Value v = c.eval("js", script);
+                return v.isBoolean() ? v.asBoolean() : false;
+            } catch (Throwable t) {
+                Log.warn("Script execution failed in permissive mode; returning false", t);
+                return false;
+            }
+        }
+
+        // Hardened mode with timeout
+        java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+            Thread th = new Thread(r, "impersonation-script-worker");
+            th.setDaemon(true);
+            return th;
+        });
+        try {
+            java.util.concurrent.Future<Boolean> fut = executor.submit(() -> {
+                Engine eng = Engine.newBuilder().build();
+                try (Context c = Context.newBuilder("js")
+                        .engine(eng)
+                        .allowAllAccess(false)
+                        .allowHostAccess(HostAccess.newBuilder().allowPublicAccess(true).build())
+                        .allowHostClassLookup(s -> false)
+                        .allowIO(false)
+                        .option("js.ecmascript-version", "2021")
+                        .build()) {
+                    c.getBindings("js").putMember("subject", subject);
+                    c.getBindings("js").putMember("userId", userId);
+                    c.getBindings("js").putMember("realm", realm);
+                    Value v = c.eval("js", script);
+                    return v.isBoolean() ? v.asBoolean() : false;
+                }
+            });
+            return fut.get(Math.max(1L, timeoutMs), java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.TimeoutException te) {
+            Log.warnf("Impersonation script timed out after %d ms; returning false", (timeoutMs <= 0 ? 1500L : timeoutMs));
+            return false;
+        } catch (Throwable t) {
+            Log.warn("Impersonation script execution failed; returning false", t);
+            return false;
+        } finally {
+            executor.shutdownNow();
+        }
 
     }
 

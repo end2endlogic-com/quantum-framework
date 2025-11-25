@@ -99,6 +99,12 @@ public class PermissionResource {
       public String functionalDomain;
       public String action;
       public String resourceId;
+
+      // --- Optional fields to enable in-memory filter applicability on single-resource checks ---
+      public String modelClass;                 // fully qualified class name or entity name
+      public java.util.Map<String, Object> resource; // shallow JSON snapshot of the resource instance
+      public Boolean enableFilterEval;          // explicit opt-in/out; defaults to true when both modelClass & resource provided
+      public String evalMode;                   // optional: LEGACY | AUTO | STRICT (preferred over enableFilterEval)
    }
 
    public static class CheckWithIndexResponse {
@@ -122,12 +128,34 @@ public class PermissionResource {
       public String area;
       public String functionalDomain;
       public String action;
+
+      // --- Parity with /check: optional single-resource evaluation controls ---
+      // When provided, allows the server to run in-memory evaluator per action where applicable
+      public String modelClass;                 // fully qualified class name or entity name
+      public java.util.Map<String, Object> resource; // shallow JSON snapshot
+      public String evalMode;                   // LEGACY | AUTO | STRICT (default LEGACY)
    }
 
    public static class EvaluationResult {
       // area -> domain -> actions
       public Map<String, Map<String, List<String>>> allow;
       public Map<String, Map<String, List<String>>> deny;
+      // New: detailed per-action decisions with SCOPED semantics (additive, backward-compatible)
+      // decisions[area][domain][action] => EvaluationActionDecision
+      public Map<String, Map<String, Map<String, EvaluationActionDecision>>> decisions;
+      public String evalModeUsed;
+   }
+
+   public static class EvaluationActionDecision {
+      public String effect;              // "ALLOW" | "DENY"
+      public String decisionScope;       // "EXACT" | "SCOPED" | "DEFAULT"
+      public boolean scopedConstraintsPresent;
+      public List<SecurityCheckResponse.ScopedConstraint> scopedConstraints;
+      public String naLabel;             // when DEFAULT
+      public String rule;                // optional: winning rule name when available
+      public Integer priority;           // optional
+      public Boolean finalRule;          // optional
+      public String source;              // optional (index source or identity)
    }
 
    // ===== Role Provenance API =====
@@ -540,7 +568,33 @@ public class PermissionResource {
               .withOwnerId(ownerId)
               .build();
 
-      SecurityCheckResponse resp = ruleContext.checkRules(pc, rc);
+      // Map eval mode (request param preferred over deprecated enableFilterEval)
+      com.e2eq.framework.model.securityrules.EvalMode mode = com.e2eq.framework.model.securityrules.EvalMode.LEGACY;
+      if (req != null && req.evalMode != null && !req.evalMode.isBlank()) {
+         try {
+            mode = com.e2eq.framework.model.securityrules.EvalMode.valueOf(req.evalMode.trim().toUpperCase());
+         } catch (IllegalArgumentException ignored) { /* keep LEGACY */ }
+      } else if (req != null && req.enableFilterEval != null && req.enableFilterEval) {
+         // Deprecated shim: treat enableFilterEval=true as AUTO when resource+modelClass provided
+         mode = com.e2eq.framework.model.securityrules.EvalMode.AUTO;
+      }
+
+      // Always route through the evalMode overload to centralize behavior and tracing.
+      Class<?> mc = null;
+      if (req.modelClass != null && !req.modelClass.isBlank()) {
+         try {
+            mc = Class.forName(req.modelClass.trim());
+         } catch (Throwable t) {
+            if (io.quarkus.logging.Log.isDebugEnabled()) {
+               io.quarkus.logging.Log.debugf(t, "PermissionResource: modelClass '%s' could not be resolved; proceeding without", req.modelClass);
+            }
+            mc = null;
+         }
+      }
+      @SuppressWarnings("unchecked")
+      Class<? extends com.e2eq.framework.model.persistent.base.UnversionedBaseModel> typed = (Class<? extends com.e2eq.framework.model.persistent.base.UnversionedBaseModel>) mc;
+      java.util.Map<String, Object> resourceMap = (req.resource != null ? req.resource : null);
+      SecurityCheckResponse resp = ruleContext.checkRules(pc, rc, typed, resourceMap, com.e2eq.framework.model.securityrules.RuleEffect.DENY, mode);
 
       // Enrich roleAssignments with provenance (IDP, CREDENTIAL, USERGROUP)
       try {
@@ -561,7 +615,7 @@ public class PermissionResource {
       }
 
       return Response.ok(resp).build();
-  }
+   }
 
    @POST
    @Path("/check-with-index")
@@ -749,20 +803,52 @@ public class PermissionResource {
 
       Map<String, Map<String, List<String>>> allow = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
       Map<String, Map<String, List<String>>> deny = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+      Map<String, Map<String, Map<String, EvaluationActionDecision>>> decisions = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+
+      // Parse evalMode and resolve modelClass/resource (parity with /check)
+      com.e2eq.framework.model.securityrules.EvalMode mode = com.e2eq.framework.model.securityrules.EvalMode.LEGACY;
+      if (req != null && req.evalMode != null && !req.evalMode.isBlank()) {
+         try {
+            mode = com.e2eq.framework.model.securityrules.EvalMode.valueOf(req.evalMode.trim().toUpperCase());
+         } catch (IllegalArgumentException ignored) { /* keep LEGACY */ }
+      }
+      Class<?> mc = null;
+      if (req != null && req.modelClass != null && !req.modelClass.isBlank()) {
+         try {
+            mc = Class.forName(req.modelClass.trim());
+         } catch (Throwable t) {
+            if (io.quarkus.logging.Log.isDebugEnabled()) {
+               io.quarkus.logging.Log.debugf(t, "PermissionResource.evaluate: modelClass '%s' could not be resolved; proceeding without", req.modelClass);
+            }
+            mc = null;
+         }
+      }
+      @SuppressWarnings("unchecked")
+      Class<? extends com.e2eq.framework.model.persistent.base.UnversionedBaseModel> typed = (Class<? extends com.e2eq.framework.model.persistent.base.UnversionedBaseModel>) mc;
+      java.util.Map<String, Object> resourceMap = (req != null ? req.resource : null);
 
       // Classify each discovered action using index first (if enabled), then fall back to server evaluation
       for (Map.Entry<String, Map<String, Set<String>>> areaEntry : discovered.entrySet()) {
          String areaKey = areaEntry.getKey();
+         Map<String, Map<String, EvaluationActionDecision>> domDecisions = decisions.computeIfAbsent(areaKey, k -> new TreeMap<>(String.CASE_INSENSITIVE_ORDER));
          for (Map.Entry<String, Set<String>> domEntry : areaEntry.getValue().entrySet()) {
             String domainKey = domEntry.getKey();
+            Map<String, EvaluationActionDecision> actDecisions = domDecisions.computeIfAbsent(domainKey, k -> new TreeMap<>(String.CASE_INSENSITIVE_ORDER));
             for (String action : domEntry.getValue()) {
                Boolean isAllow;
                RuleIndexSnapshot.Outcome out = null;
                if (useIndex && snap != null && snap.isEnabled()) {
                   out = lookupOutcome(snap, areaKey, domainKey, action);
                }
+               EvaluationActionDecision actionDecision = new EvaluationActionDecision();
                if (out != null) {
                   isAllow = "ALLOW".equalsIgnoreCase(out.getEffect());
+                  actionDecision.effect = isAllow ? "ALLOW" : "DENY";
+                  actionDecision.decisionScope = "EXACT"; // index outcome is treated as exact for client purposes
+                  actionDecision.rule = out.getRule();
+                  actionDecision.priority = out.getPriority();
+                  actionDecision.finalRule = out.isFinalRule();
+                  actionDecision.source = out.getSource();
                } else {
                   // Fallback to server-side evaluation for exact combination
                   ResourceContext rc = new ResourceContext.Builder()
@@ -772,13 +858,24 @@ public class PermissionResource {
                           .withAction(action)
                           .withOwnerId(ownerId)
                           .build();
-                  SecurityCheckResponse resp = ruleContext.checkRules(pc, rc);
-                  isAllow = resp.getFinalEffect() == RuleEffect.ALLOW;
-               }
+                  SecurityCheckResponse resp = ruleContext.checkRules(pc, rc, typed, resourceMap, RuleEffect.DENY, mode);
+                  String effect = (resp.getDecision() != null ? resp.getDecision() : (resp.getFinalEffect() != null ? resp.getFinalEffect().name() : "DENY"));
+                  isAllow = "ALLOW".equalsIgnoreCase(effect);
+                  actionDecision.effect = effect;
+                  actionDecision.decisionScope = (resp.getDecisionScope() != null ? resp.getDecisionScope() : "DEFAULT");
+                  actionDecision.scopedConstraintsPresent = resp.isScopedConstraintsPresent();
+                  actionDecision.scopedConstraints = (resp.getScopedConstraints() != null ? resp.getScopedConstraints() : java.util.Collections.emptyList());
+                  actionDecision.naLabel = resp.getNaLabel();
+                  // Map winning rule metadata when available (non-index path)
+                  actionDecision.rule = resp.getWinningRuleName();
+                  actionDecision.priority = resp.getWinningRulePriority();
+                  actionDecision.finalRule = resp.getWinningRuleFinal();
+                }
                Map<String, Map<String, List<String>>> target = isAllow ? allow : deny;
                Map<String, List<String>> domMap = target.computeIfAbsent(areaKey, k -> new TreeMap<>(String.CASE_INSENSITIVE_ORDER));
                List<String> acts = domMap.computeIfAbsent(domainKey, k -> new ArrayList<>());
                acts.add(action);
+               actDecisions.put(action, actionDecision);
             }
          }
       }
@@ -790,6 +887,8 @@ public class PermissionResource {
       EvaluationResult res = new EvaluationResult();
       res.allow = allow;
       res.deny = deny;
+      res.decisions = decisions;
+      res.evalModeUsed = (req != null && req.evalMode != null && !req.evalMode.isBlank()) ? req.evalMode.trim().toUpperCase() : com.e2eq.framework.model.securityrules.EvalMode.LEGACY.name();
       return Response.ok(res).build();
    }
 }
