@@ -1,0 +1,54 @@
+rules:
+  - name: allow-areas
+    description: Allow user role access to entire areas sales and inventory
+    identities: user
+    areas: [sales, inventory]
+    functionalDomains: "*"
+    actions: "*"
+    effect: ALLOW
+    priority: 5
+    finalRule: false
+    body:
+      orgRefName: "*"
+      accountNumber: "*"
+      realm: "*"
+      tenantId: "*"
+      ownerId: "*"
+      dataSegment: "*"
+      resourceId: "*"
+
+  - name: allow-userprofile-view-list
+    description: Allow user role to view and list user profiles
+    identities: user
+    areas: security
+    functionalDomains: userProfile
+    actions: [view, list]
+    effect: ALLOW
+    priority: 10
+    finalRule: false
+    body:
+      orgRefName: "*"
+      accountNumber: "*"
+      realm: "*"
+      tenantId: "*"
+      ownerId: "*"
+      dataSegment: "*"
+      resourceId: "*"
+
+  - name: allow-billing-invoice-view-list
+    description: Allow user role to view and list invoices in billing area
+    identities: user
+    areas: billing
+    functionalDomains: invoice
+    actions: [view, list]
+    effect: ALLOW
+    priority: 10
+    finalRule: false
+    body:
+      orgRefName: "*"
+      accountNumber: "*"
+      realm: "*"
+      tenantId: "*"
+      ownerId: "*"
+      dataSegment: "*"
+      resourceId: "*"
