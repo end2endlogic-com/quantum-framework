@@ -1,0 +1,14 @@
+{"refName":"defaultUserPolicy","displayName":"default user policy","description":"users can do anything they want to their own data","principalId":"user",
+ "rules":[
+   {"name":"view your own resources",
+    "securityURI":{"header":{"identity":"user","area":"*","functionalDomain":"*","action":"*"},
+                   "body":{"realm":"${realmId}","orgRefName":"${orgRefName}","accountNumber":"*","tenantId":"*","ownerId":"*","dataSegment":"*","resourceId":"*"}},
+    "postconditionScript":"pcontext.getUserId() == rcontext.getOwnerId()",
+    "andFilterString":"dataDomain.ownerId:${principalId}",
+    "effect":"ALLOW","finalRule":true},
+   {"name":"ViewSystemResources",
+    "securityURI":{"header":{"identity":"user","area":"*","functionalDomain":"*","action":"view"},
+                   "body":{"realm":"${realmId}","orgRefName":"${orgRefName}","accountNumber":"*","tenantId":"*","ownerId":"${ownerId}","dataSegment":"*","resourceId":"*"}},
+    "orFilterString":"dataDomain.ownerId:${ownerId}",
+    "effect":"ALLOW","finalRule":true}
+ ]}
