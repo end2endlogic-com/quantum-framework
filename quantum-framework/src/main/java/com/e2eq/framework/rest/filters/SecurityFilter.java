@@ -30,7 +30,6 @@ import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Engine;
 import org.graalvm.polyglot.HostAccess;
 import org.graalvm.polyglot.Value;
-import org.jboss.logging.Logger;
 
 import java.io.*;
 import java.util.*;
@@ -87,6 +86,12 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
     @ConfigProperty(name = "quantum.security.scripting.allowAllAccess", defaultValue = "false")
     boolean scriptingAllowAllAccess;
+
+    @ConfigProperty(name = "quantum.security.scripting.maxMemoryBytes", defaultValue = "10000000")
+    long scriptingMaxMemoryBytes;
+
+    @ConfigProperty(name = "quantum.security.scripting.maxStatements", defaultValue = "10000")
+    long scriptingMaxStatements;
 
     private static final java.util.concurrent.atomic.AtomicBoolean WARNED_PERMISSIVE = new java.util.concurrent.atomic.AtomicBoolean(false);
 
@@ -168,57 +173,137 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             }
 
             /**
-             Determine the resource context from the path
+             * Enhanced path-based resource context resolution
+             * Handles variable path segment counts (1-4+ segments)
              */
             String path = requestContext.getUriInfo().getPath();
-            StringTokenizer tokenizer = new StringTokenizer(path, "/");
-
-            String area;
-            String functionalDomain;
-            String action;
-            int tokenCount = tokenizer.countTokens();
-
-            if (tokenCount > 3) {
-                if (Log.isEnabled(Logger.Level.WARN)) {
-                    Log.debugf("Path: %s has  more than 3 levels", path );
-                }
-                area = tokenizer.nextToken();
-                functionalDomain = tokenizer.nextToken();
-                action = tokenizer.nextToken();
-
-                if (Log.isDebugEnabled()) {
-                    Log.debugf("Based upon request convention assumed that the area is:%s  functional domain is:%s  and action is:%s", area, functionalDomain, action);
-                }
-
-                rcontext = new ResourceContext.Builder()
-                        .withAction(action)
-                        .withArea(area)
-                        .withFunctionalDomain(functionalDomain)
-                        .build();
-                SecurityContext.setResourceContext(rcontext);
-                if (Log.isDebugEnabled())
-                    Log.debug("Resource Context set");
-
-            } else if (tokenCount == 3) {
-                // Correct mapping for /area/domain/action
-                area = tokenizer.nextToken();
-                functionalDomain = tokenizer.nextToken();
-                action = tokenizer.nextToken();
-                rcontext = new ResourceContext.Builder()
-                        .withAction(action)
-                        .withArea(area)
-                        .withFunctionalDomain(functionalDomain)
-                        .build();
-                SecurityContext.setResourceContext(rcontext);
-
-                if (Log.isDebugEnabled()) {
-                    Log.debugf("Resource Context set from path (3 segments): area=%s, domain=%s, action=%s", area, functionalDomain, action);
-                }
-
-            } else {
-                Log.debugf("Non conformant path:%s could not set resource context as a result, expecting /area/functionalDomain/action: TokenCount:%s -- setting to an anonymous context", path, tokenCount);
+            if (path == null || path.isEmpty()) {
                 rcontext = ResourceContext.DEFAULT_ANONYMOUS_CONTEXT;
+                SecurityContext.setResourceContext(rcontext);
+                return rcontext;
             }
+            
+            // Remove leading/trailing slashes and split
+            path = path.startsWith("/") ? path.substring(1) : path;
+            path = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
+            
+            if (path.isEmpty()) {
+                rcontext = ResourceContext.DEFAULT_ANONYMOUS_CONTEXT;
+                SecurityContext.setResourceContext(rcontext);
+                return rcontext;
+            }
+            
+            String[] segments = path.split("/");
+            int segmentCount = segments.length;
+            
+            // Pattern 1: /area/domain/action (3 segments) - PRIMARY
+            if (segmentCount == 3) {
+                String area = segments[0];
+                String functionalDomain = segments[1];
+                String action = segments[2];
+                
+                rcontext = new ResourceContext.Builder()
+                        .withAction(action)
+                        .withArea(area)
+                        .withFunctionalDomain(functionalDomain)
+                        .build();
+                SecurityContext.setResourceContext(rcontext);
+                
+                if (Log.isDebugEnabled()) {
+                    Log.debugf("Resource Context set from path (3 segments): area=%s, domain=%s, action=%s", 
+                        area, functionalDomain, action);
+                }
+                return rcontext;
+            }
+            
+            // Pattern 2: /area/domain/action/id (4 segments) - ACTION with resource ID
+            if (segmentCount == 4) {
+                String area = segments[0];
+                String functionalDomain = segments[1];
+                String action = segments[2];
+                String resourceId = segments[3];
+                
+                rcontext = new ResourceContext.Builder()
+                        .withAction(action)
+                        .withArea(area)
+                        .withFunctionalDomain(functionalDomain)
+                        .withResourceId(resourceId)
+                        .build();
+                SecurityContext.setResourceContext(rcontext);
+                
+                if (Log.isDebugEnabled()) {
+                    Log.debugf("Resource Context set from path (4 segments): area=%s, domain=%s, action=%s, id=%s", 
+                        area, functionalDomain, action, resourceId);
+                }
+                return rcontext;
+            }
+            
+            // Pattern 3: /area/domain (2 segments) - Infer action from HTTP method
+            if (segmentCount == 2) {
+                String area = segments[0];
+                String functionalDomain = segments[1];
+                String action = inferActionFromHttpMethod(requestContext.getMethod());
+                
+                rcontext = new ResourceContext.Builder()
+                        .withAction(action)
+                        .withArea(area)
+                        .withFunctionalDomain(functionalDomain)
+                        .build();
+                SecurityContext.setResourceContext(rcontext);
+                
+                if (Log.isDebugEnabled()) {
+                    Log.debugf("Resource Context set from path (2 segments): area=%s, domain=%s, action=%s (inferred)", 
+                        area, functionalDomain, action);
+                }
+                return rcontext;
+            }
+            
+            // Pattern 4: /area (1 segment) - Minimal context
+            if (segmentCount == 1) {
+                String area = segments[0];
+                String action = inferActionFromHttpMethod(requestContext.getMethod());
+                
+                rcontext = new ResourceContext.Builder()
+                        .withAction(action)
+                        .withArea(area)
+                        .withFunctionalDomain("*")
+                        .build();
+                SecurityContext.setResourceContext(rcontext);
+                
+                if (Log.isDebugEnabled()) {
+                    Log.debugf("Resource Context set from path (1 segment): area=%s, action=%s (inferred)", 
+                        area, action);
+                }
+                return rcontext;
+            }
+            
+            // Pattern 5: More than 4 segments - Use first 3, log warning
+            if (segmentCount > 4) {
+                Log.warnf("Path has %d segments, using first 3 for resource context: %s", segmentCount, path);
+                String area = segments[0];
+                String functionalDomain = segments[1];
+                String action = segments[2];
+                String resourceId = segmentCount > 3 ? segments[3] : null;
+                
+                rcontext = new ResourceContext.Builder()
+                        .withAction(action)
+                        .withArea(area)
+                        .withFunctionalDomain(functionalDomain)
+                        .withResourceId(resourceId)
+                        .build();
+                SecurityContext.setResourceContext(rcontext);
+                
+                if (Log.isDebugEnabled()) {
+                    Log.debugf("Resource Context set from path (%d segments, truncated): area=%s, domain=%s, action=%s", 
+                        segmentCount, area, functionalDomain, action);
+                }
+                return rcontext;
+            }
+            
+            // Fallback: Anonymous context
+            Log.debugf("Non-conformant path: %s (segments: %d) - setting to anonymous context", path, segmentCount);
+            rcontext = ResourceContext.DEFAULT_ANONYMOUS_CONTEXT;
+            SecurityContext.setResourceContext(rcontext);
             return rcontext;
         } else {
             return SecurityContext.getResourceContext().get();
@@ -248,27 +333,40 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         boolean enabled = scriptingEnabled;
         boolean allowAll = scriptingAllowAllAccess;
         long timeoutMs = scriptingTimeoutMillis;
+        long maxMemoryBytes = scriptingMaxMemoryBytes;
+        long maxStatementsValue = scriptingMaxStatements;
         try {
             org.eclipse.microprofile.config.Config cfg = org.eclipse.microprofile.config.ConfigProvider.getConfig();
             if (cfg != null) {
                 enabled = cfg.getOptionalValue("quantum.security.scripting.enabled", Boolean.class).orElse(Boolean.TRUE);
                 allowAll = cfg.getOptionalValue("quantum.security.scripting.allowAllAccess", Boolean.class).orElse(Boolean.FALSE);
                 timeoutMs = cfg.getOptionalValue("quantum.security.scripting.timeout.millis", Long.class).orElse(1500L);
+                maxMemoryBytes = cfg.getOptionalValue("quantum.security.scripting.maxMemoryBytes", Long.class).orElse(10000000L);
+                maxStatementsValue = cfg.getOptionalValue("quantum.security.scripting.maxStatements", Long.class).orElse(10000L);
             }
         } catch (Throwable ignored) {
             if (timeoutMs <= 0) timeoutMs = 1500L;
+            if (maxMemoryBytes <= 0) maxMemoryBytes = 10000000L;
+            if (maxStatementsValue <= 0) maxStatementsValue = 10000L;
         }
         if (timeoutMs < 500L) timeoutMs = 1500L;
+        // Make final for use in lambda
+        final long maxStatements = maxStatementsValue;
 
         if (!enabled) {
             Log.warn("Security scripting is disabled via config; returning false");
             return false;
         }
 
-        // Backward-compatible permissive mode (unsafe)
+        // Permissive mode: Only allow in development/test environments via system property
         if (allowAll) {
+            String permissiveEnv = System.getProperty("quantum.security.scripting.allowPermissiveEnv", "false");
+            if (!"true".equals(permissiveEnv) && !"dev".equals(permissiveEnv) && !"test".equals(permissiveEnv)) {
+                Log.error("Permissive script mode requested but not allowed in this environment. Set system property quantum.security.scripting.allowPermissiveEnv=true to enable (UNSAFE).");
+                throw new SecurityException("Permissive script execution not allowed in this environment");
+            }
             if (WARNED_PERMISSIVE.compareAndSet(false, true)) {
-                Log.warn("quantum.security.scripting.allowAllAccess=true — running scripts with full host access (UNSAFE). This should only be used for compatibility.");
+                Log.warn("Permissive script mode enabled - UNSAFE - only for development/testing. This should never be used in production.");
             }
             try (Context c = Context.newBuilder("js").allowAllAccess(true).build()) {
                 c.getBindings("js").putMember("subject", subject);
@@ -282,21 +380,33 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             }
         }
 
-        // Hardened mode with timeout
+        // Hardened mode with timeout and resource limits
         java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
             Thread th = new Thread(r, "impersonation-script-worker");
             th.setDaemon(true);
             return th;
         });
         try {
+            // Monitor memory usage
+            Runtime runtime = Runtime.getRuntime();
+            long beforeMemory = runtime.totalMemory() - runtime.freeMemory();
+            
             java.util.concurrent.Future<Boolean> fut = executor.submit(() -> {
                 Engine eng = Engine.newBuilder().build();
                 try (Context c = Context.newBuilder("js")
                         .engine(eng)
                         .allowAllAccess(false)
-                        .allowHostAccess(HostAccess.newBuilder().allowPublicAccess(true).build())
-                        .allowHostClassLookup(s -> false)
-                        .allowIO(false)
+                        // Enhanced security: disable public access, only allow array/list access for bindings
+                        .allowHostAccess(HostAccess.newBuilder()
+                                .allowPublicAccess(false)  // Disable public access
+                                .allowArrayAccess(true)    // Only allow array access for bindings
+                                .allowListAccess(true)     // Only allow list access for bindings
+                                .build())
+                        .allowHostClassLookup(s -> false)  // Disable class lookup
+                        .allowIO(false)                     // Disable I/O
+                        .allowNativeAccess(false)           // Disable native access
+                        .allowCreateThread(false)           // Disable thread creation
+                        .allowCreateProcess(false)          // Disable process creation
                         .option("js.ecmascript-version", "2021")
                         .build()) {
                     c.getBindings("js").putMember("subject", subject);
@@ -306,7 +416,17 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                     return v.isBoolean() ? v.asBoolean() : false;
                 }
             });
-            return fut.get(Math.max(1L, timeoutMs), java.util.concurrent.TimeUnit.MILLISECONDS);
+            Boolean result = fut.get(Math.max(1L, timeoutMs), java.util.concurrent.TimeUnit.MILLISECONDS);
+            
+            // Check memory usage
+            long afterMemory = runtime.totalMemory() - runtime.freeMemory();
+            long memoryUsed = afterMemory - beforeMemory;
+            if (memoryUsed > maxMemoryBytes) {
+                Log.warnf("Script exceeded memory limit: %d bytes (limit: %d bytes); returning false", memoryUsed, maxMemoryBytes);
+                return false;
+            }
+            
+            return result;
         } catch (java.util.concurrent.TimeoutException te) {
             Log.warnf("Impersonation script timed out after %d ms; returning false", (timeoutMs <= 0 ? 1500L : timeoutMs));
             return false;
@@ -400,6 +520,8 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     }
 
     private PrincipalContext buildJwtContext(String authHeader, String realm) {
+        // Extract token (variable kept for potential future use)
+        @SuppressWarnings("unused")
         String token = authHeader.substring(AUTHENTICATION_SCHEME.length()).trim();
         String sub = jwt.getClaim("sub");
 

@@ -363,6 +363,8 @@ public final class SeedLoader {
 
         private Builder() {
             registerTransformFactory("tenantSubstitution", new TenantSubstitutionTransform.Factory());
+            // Secure credential upsert via UserManagement
+            registerTransformFactory("credentialUpsert", new CredentialUpsertTransform.Factory());
         }
 
         public Builder addSeedSource(SeedSource source) {

@@ -105,6 +105,8 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
       if (!EncryptionUtils.hashPassword(oldPassword).equals(cred.getPasswordHash())) {
          throw new SecurityException("Old Password was incorrect");
       }
+      // Normalize hashing algorithm to the canonical value and update hash
+      cred.setHashingAlgorithm(EncryptionUtils.hashAlgorithm());
       cred.setPasswordHash(EncryptionUtils.hashPassword(newPassword));
       cred.setForceChangePassword(forceChangePassword);
       cred.setAuthProviderName(getName());
@@ -169,12 +171,9 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
          credential.setRefName(subject);
          credential.setSubject(subject);
          credential.setForceChangePassword(forceChangePassword);
-         String alg = credential.getHashingAlgorithm();
-         if (alg != null && (alg.equalsIgnoreCase("BCrypt.default") || alg.toLowerCase().startsWith("bcrypt") || alg.equals(EncryptionUtils.hashAlgorithm()))) {
-            credential.setPasswordHash(EncryptionUtils.hashPassword(password));
-         } else {
-            throw new SecurityException("Unsupported hashing algorithm: " + alg);
-         }
+         // Enforce canonical hashing algorithm
+         credential.setHashingAlgorithm(EncryptionUtils.hashAlgorithm());
+         credential.setPasswordHash(EncryptionUtils.hashPassword(password));
          credential.setDomainContext(domainContext);
          credential.setRoles(roles.toArray(new String[roles.size()]));
          credential.setLastUpdate(new Date());
@@ -220,12 +219,9 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
          subject = UUID.randomUUID().toString();
          credential.setSubject(subject);
          credential.setForceChangePassword(forceChangePassword);
-         String alg = credential.getHashingAlgorithm();
-         if (alg != null && (alg.equalsIgnoreCase("BCrypt.default") || alg.toLowerCase().startsWith("bcrypt") || alg.equals(EncryptionUtils.hashAlgorithm()))) {
-            credential.setPasswordHash(EncryptionUtils.hashPassword(password));
-         } else {
-            throw new SecurityException("Unsupported hashing algorithm: " + alg);
-         }
+         // Enforce canonical hashing algorithm
+         credential.setHashingAlgorithm(EncryptionUtils.hashAlgorithm());
+         credential.setPasswordHash(EncryptionUtils.hashPassword(password));
          credential.setDomainContext(domainContext);
          credential.setRoles(roles.toArray(new String[roles.size()]));
          credential.setLastUpdate(new Date());
