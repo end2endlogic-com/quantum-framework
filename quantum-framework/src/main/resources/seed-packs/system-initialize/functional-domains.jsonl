@@ -1,0 +1,19 @@
+{"displayName":"UserProfile","refName":"USER_PROFILE","area":"SECURITY","functionalActions":[
+  {"displayName":"Change Password","refName":"CHANGE_PASSWORD"},
+  {"displayName":"Disable","refName":"DISABLE"},
+  {"displayName":"Enable","refName":"ENABLE"},
+  {"displayName":"View","refName":"VIEW"},
+  {"displayName":"Create","refName":"CREATE"},
+  {"displayName":"Update","refName":"UPDATE"},
+  {"displayName":"Archive","refName":"ARCHIVE"},
+  {"displayName":"Delete","refName":"DELETE"}
+]}
+{"displayName":"Registration","refName":"REGISTRATION","area":"SECURITY","functionalActions":[
+  {"displayName":"Approve","refName":"APPROVE","tags":["brief"]},
+  {"displayName":"Reject","refName":"REJECT","tags":["brief","default"]},
+  {"displayName":"View","refName":"VIEW","tags":["default"]},
+  {"displayName":"Create","refName":"CREATE","tags":["default"]},
+  {"displayName":"Update","refName":"UPDATE","tags":["default"]},
+  {"displayName":"Archive","refName":"ARCHIVE","tags":["default"]},
+  {"displayName":"Delete","refName":"DELETE","tags":["admin"]}
+]}
