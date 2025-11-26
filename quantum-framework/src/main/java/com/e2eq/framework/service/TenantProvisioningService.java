@@ -10,6 +10,9 @@ import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.model.auth.AuthProviderFactory;
 import com.e2eq.framework.model.auth.UserManagement;
 import com.e2eq.framework.service.seed.*;
+import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.ResourceContext;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.util.EnvConfigUtils;
 import com.mongodb.client.MongoClient;
 import io.quarkus.logging.Log;
@@ -181,7 +184,27 @@ public class TenantProvisioningService {
                     return null;
                 }
         );
-        migrationService.runAllUnRunMigrations(realmId, emitter);
+
+        // Build a principal/resource context for the newly created tenant to ensure
+        // that migrations and seeds operate on the correct tenant database.
+        PrincipalContext tenantPrincipal = new PrincipalContext.Builder()
+                .withDefaultRealm(realmId)
+                .withDataDomain(dataDomain)
+                .withUserId(adminUserId)
+                .withRoles(new String[]{"admin"})
+                .withScope("TenantProvisioning")
+                .build();
+
+        ResourceContext migrationResource = new ResourceContext.Builder()
+                .withRealm(realmId)
+                .withArea("MIGRATION")
+                .withFunctionalDomain("DB")
+                .withAction("APPLY")
+                .build();
+
+        SecurityCallScope.runWithContexts(tenantPrincipal, migrationResource, () -> {
+            migrationService.runAllUnRunMigrations(realmId, emitter);
+        });
 
         // 4) Ensure initial tenant admin credentials inside the realm
         Set<String> desiredRoles = Set.of("admin", "user");
@@ -282,7 +305,16 @@ public class TenantProvisioningService {
                                        .toList();
        if (!baseRefs.isEmpty()) {
           Log.infof("Applying %d base seed pack(s) (GLOBAL/unscoped/per-tenant) to realm %s", baseRefs.size(), realmId);
-          loader.apply(baseRefs, ctx);
+          // Run seeds under tenant security context
+          ResourceContext seedResource = new ResourceContext.Builder()
+                  .withRealm(realmId)
+                  .withArea("SEED")
+                  .withFunctionalDomain("SEED")
+                  .withAction("APPLY")
+                  .build();
+          SecurityCallScope.runWithContexts(tenantPrincipal, seedResource, () -> {
+              loader.apply(baseRefs, ctx);
+          });
        }
 
 
@@ -304,15 +336,25 @@ public class TenantProvisioningService {
                 String at = archetype == null ? null : archetype.trim();
                 if (at == null || at.isEmpty()) continue;
                 Log.infof("Applying seed archetype '%s' to realm %s", at, realmId);
-                loader.applyArchetype(at, ctx); // will throw if not found
+                ResourceContext seedResource = new ResourceContext.Builder()
+                        .withRealm(realmId)
+                        .withArea("SEED")
+                        .withFunctionalDomain("SEED")
+                        .withAction("APPLY")
+                        .build();
+                SecurityCallScope.runWithContexts(tenantPrincipal, seedResource, () -> {
+                    loader.applyArchetype(at, ctx); // will throw if not found
+                });
             }
         } else {
            Log.info("No Archetypes applicable");
         }
 
-        // 6) Idempotent: Apply indexes and verify
-        migrationService.applyIndexes(realmId);
-        migrationService.checkInitialized(realmId);
+        // 6) Idempotent: Apply indexes and verify (under tenant migration context)
+        SecurityCallScope.runWithContexts(tenantPrincipal, migrationResource, () -> {
+            migrationService.applyIndexes(realmId);
+            migrationService.checkInitialized(realmId);
+        });
 
         return result;
     }

@@ -78,8 +78,16 @@ public class InitializeDatabase extends ChangeSetBase {
    @ConfigProperty( name="quantum.defaultSystemPassword")
    String defaultSystemPassword;
 
+   @ConfigProperty(name = "quantum.database.initialize.viaSeeds", defaultValue = "true")
+   boolean initializeViaSeeds;
+
    @Execution
    public void execute(MorphiaSession session, MongoClient mongoClient, MultiEmitter<? super String> emitter) throws Exception{
+      if (initializeViaSeeds) {
+         Log.warnf("===>>> Skipping InitializeDatabase changeset for realm %s because quantum.database.initialize.viaSeeds=true", session.getDatabase().getName());
+         emitter.emit(String.format("InitializeDatabase skipped for %s due to viaSeeds flag", session.getDatabase().getName()));
+         return;
+      }
       // get flag from app config
               Log.infof("===>>> EXECUTING Initializing Database: %s", session.getDatabase().getName());
               emitter.emit(String.format("Initializing Database: %s", session.getDatabase().getName()));

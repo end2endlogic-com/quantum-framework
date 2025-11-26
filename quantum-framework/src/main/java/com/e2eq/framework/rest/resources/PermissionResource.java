@@ -11,6 +11,7 @@ import com.e2eq.framework.model.persistent.morphia.FunctionalDomainRepo;
 import com.e2eq.framework.model.securityrules.*;
 import com.e2eq.framework.model.persistent.morphia.IdentityRoleResolver;
 import com.e2eq.framework.securityrules.RuleContext;
+import com.e2eq.framework.util.ExceptionLoggingUtils;
 import com.e2eq.framework.util.SecurityUtils;
 import dev.morphia.MorphiaDatastore;
 import dev.morphia.mapping.codec.pojo.EntityModel;
@@ -611,7 +612,7 @@ public class PermissionResource {
          resp.setRoleAssignments(roleAssignments);
       } catch (Exception e) {
          // keep default assignments on failure
-         e.printStackTrace();
+         ExceptionLoggingUtils.logWarn(e, "Failed to resolve role assignments, using defaults");
       }
 
       return Response.ok(resp).build();

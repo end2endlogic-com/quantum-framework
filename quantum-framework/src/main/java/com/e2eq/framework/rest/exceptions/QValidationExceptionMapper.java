@@ -1,14 +1,12 @@
 package com.e2eq.framework.rest.exceptions;
 
 import com.e2eq.framework.exceptions.E2eqValidationException;
-
 import com.e2eq.framework.rest.models.RestError;
+import com.e2eq.framework.util.ExceptionLoggingUtils;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.ExceptionMapper;
 import jakarta.ws.rs.ext.Provider;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
 import java.util.Set;
 
 @Provider
@@ -16,10 +14,10 @@ public class QValidationExceptionMapper implements ExceptionMapper<E2eqValidatio
 
     @Override
     public Response toResponse(E2eqValidationException exception) {
-        StringWriter sw = new StringWriter();
-        PrintWriter pw = new PrintWriter(sw);
-        exception.printStackTrace(pw);
-        String stackTrace = sw.toString();
+        // Log validation errors at WARN level (not ERROR, as these are expected client errors)
+        ExceptionLoggingUtils.logWarn(exception, "Validation exception occurred");
+        
+        String stackTrace = ExceptionLoggingUtils.getStackTrace(exception);
 
         Set<String> violations = exception.getViolationSet().stream()
                 .map(violation -> violation.getPropertyPath().toString() + " " + violation.getMessage())
