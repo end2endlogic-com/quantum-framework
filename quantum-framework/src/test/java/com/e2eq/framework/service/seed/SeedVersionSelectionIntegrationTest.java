@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @QuarkusTest
 @QuarkusTestResource(MongoDbInitResource.class)
+@io.quarkus.test.junit.TestProfile(SeedNoHttpTestProfile.class)
 public class SeedVersionSelectionIntegrationTest {
 
     private static final Path SEED_ROOT = Path.of("src", "test", "resources", "seed-packs");

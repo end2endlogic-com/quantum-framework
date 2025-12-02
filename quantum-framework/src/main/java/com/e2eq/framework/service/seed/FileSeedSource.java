@@ -3,6 +3,7 @@ package com.e2eq.framework.service.seed;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -22,6 +23,9 @@ public class FileSeedSource implements SeedSource, SchemeAware {
 
     @Inject
     SeedPathResolver seedPathResolver;
+
+    @ConfigProperty(name = "quantum.seed.file-uri.enabled", defaultValue = "false")
+    boolean fileUriEnabled;
 
     private String id = "files";
     private Path root;
@@ -121,8 +125,18 @@ public class FileSeedSource implements SeedSource, SchemeAware {
         if (!supportsScheme(uri.getScheme())) {
             throw new IOException("Unsupported scheme for FileSeedSource: " + uri.getScheme());
         }
-        java.nio.file.Path path = java.nio.file.Path.of(uri);
-        return java.nio.file.Files.newInputStream(path);
+        if (!fileUriEnabled) {
+            throw new IOException("file: URI access is disabled by configuration (quantum.seed.file-uri.enabled=false)");
+        }
+
+        Path rootPath = getRoot();
+        // Resolve and normalize both root and target paths using real paths to prevent symlink escapes
+        Path targetReal = Path.of(uri).toRealPath();
+        Path rootReal = rootPath.toRealPath();
+        if (!targetReal.startsWith(rootReal)) {
+            throw new IOException("URI path " + targetReal + " is outside seed source root " + rootReal);
+        }
+        return Files.newInputStream(targetReal);
     }
 
     private static final class SeedSourceIOException extends RuntimeException {

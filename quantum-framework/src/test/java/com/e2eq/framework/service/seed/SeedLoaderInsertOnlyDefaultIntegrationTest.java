@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 
 @QuarkusTest
 @QuarkusTestResource(MongoDbInitResource.class)
+@io.quarkus.test.junit.TestProfile(SeedNoHttpTestProfile.class)
 class SeedLoaderInsertOnlyDefaultIntegrationTest {
 
     private static final Path SEED_ROOT = Path.of("src", "test", "resources", "seed-packs");
