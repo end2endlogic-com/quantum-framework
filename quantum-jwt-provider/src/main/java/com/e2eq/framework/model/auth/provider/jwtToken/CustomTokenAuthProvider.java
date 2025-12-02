@@ -451,8 +451,25 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                if (isCredentialValid) {
                   // String authToken = generateAuthToken(userId);
                   Set<String> groups = new HashSet<>(Arrays.asList(credential.getRoles()));
+                  
+                  // Handle missing subject: use userId as fallback or generate one
+                  String subject = credential.getSubject();
+                  if (subject == null || subject.isEmpty()) {
+                     Log.warnf("Credential for userId:%s has null or empty subject, using userId as fallback", userId);
+                     // Use userId as fallback, or generate UUID if userId is also null/empty
+                     if (credential.getUserId() != null && !credential.getUserId().isEmpty()) {
+                        subject = credential.getUserId();
+                     } else {
+                        subject = java.util.UUID.randomUUID().toString();
+                        Log.warnf("Both subject and userId are null/empty for credential, generated new subject: %s", subject);
+                     }
+                     // Update the credential with the generated subject to fix it for future logins
+                     credential.setSubject(subject);
+                     credentialRepo.save(credential);
+                  }
+                  
                   String authToken = TokenUtils.generateUserToken(
-                     credential.getSubject(),
+                     subject,
                      groups,
                      TokenUtils.expiresAt(durationInSeconds),
                      issuer);
@@ -467,7 +484,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                   java.util.Set<String> credentialRoles = new java.util.LinkedHashSet<>(Arrays.asList(credential.getRoles()));
                   java.util.Set<String> userGroupRoles = new java.util.LinkedHashSet<>();
                   try {
-                     var userProfileOpt = userProfileRepo.getBySubject(credential.getSubject());
+                     var userProfileOpt = userProfileRepo.getBySubject(subject);
                      if (userProfileOpt.isPresent()) {
                         var userGroups = userGroupRepo.findByUserProfileRef(userProfileOpt.get().createEntityReference());
                         if (userGroups != null) {

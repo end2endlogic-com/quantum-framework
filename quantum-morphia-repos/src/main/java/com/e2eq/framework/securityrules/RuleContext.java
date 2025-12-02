@@ -32,6 +32,7 @@ import org.graalvm.polyglot.Value;
 
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 
 @ApplicationScoped
@@ -391,178 +392,11 @@ public class RuleContext {
         try {
             reloadFromRepo(defaultRealm);
         } catch (Exception e) {
-            // Fallback to system rules only if repo hydration fails
-            Log.warn("Policy hydration failed during startup; using system rules only", e);
-            if (rules.isEmpty() || rulesForIdentity(securityUtils.getSystemSecurityHeader().getIdentity()).isEmpty()) {
-                addSystemRules();
-            }
+            // System rules are now loaded from seed data via PolicyRepo
+            Log.warn("Policy hydration failed during startup; system rules should be loaded from seed data", e);
         }
     }
 
-    /**
-     * Adds in the system rules regardless of any configuration that may be present and later added in
-     */
-    protected void addSystemRules() {
-        // add default rules for the system
-        // first explicitly add the "system"
-        // to operate with in the security area
-        SecurityURI suri = new SecurityURI(securityUtils.getSystemSecurityHeader(), securityUtils.getSystemSecurityBody());
-
-        Rule systemRule = new Rule.Builder()
-                .withName("SysAnyActionSecurity")
-                .withDescription("System can take any action with in security")
-                .withSecurityURI(suri)
-                .withEffect(RuleEffect.ALLOW)
-                .withPriority(0)
-                .withFinalRule(true).build();
-
-        this.addRule(securityUtils.getSystemSecurityHeader(), systemRule);
-
-        SecurityURIHeader header = securityUtils.getSystemSecurityHeader().clone();
-        header.setIdentity("system");
-        suri = new SecurityURI(header, securityUtils.getSystemSecurityBody());
-
-        Rule systemRoleRule = new Rule.Builder()
-                .withName("SysRoleAnyActionSecurity")
-                .withDescription("system role can take any action with in security")
-                .withSecurityURI(suri)
-                .withEffect(RuleEffect.ALLOW)
-                .withPriority(1)
-                .withFinalRule(true).build();
-        this.addRule(header, systemRoleRule);
-
-        // So this will match any user that has the role "user"
-        // for "any area, any domain, and any action i.e. all areas, domains, and actions
-        header = new SecurityURIHeader.Builder()
-                .withIdentity("user")      // with the role "user"
-                .withArea("*")             // any area
-                .withFunctionalDomain("*") // any domain
-                .withAction("*")           // any action
-                .build();
-
-        // This will match the resources
-        // from "any" account, in the "b2bi" realm, any tenant, any owner, any datasegment
-        SecurityURIBody body = new SecurityURIBody.Builder()
-                .withOrgRefName("*")       // any organization
-                .withAccountNumber("*")    // any account
-                .withRealm("*")            // within just the b2bi realm
-                .withTenantId("*")         // any tenant
-                .withOwnerId("*")          // any owner
-                .withDataSegment("*")      // any datasegement
-                .build();
-
-        // Create the URI that represents this "rule" where by
-        // for any one with the role "user", we want to consider this rule base for
-        // all resources in the b2bi realm
-        SecurityURI uri = new SecurityURI(header, body);
-
-        // Create the first rule which will be a rule that
-        // compares the userId of the principal, with the resource's ownerId
-        // if they match then we allow the user to do what ever they are asking
-        // we however can not allow them to delete themselves, so they can't
-        // delete their credentials ( but can modify it ) and can't delete their
-        // userProfile.
-
-        // in this case
-        // In the case we are reading we have a filter that constrains the result set
-        // to where the ownerId is the same as the principalId
-        Rule.Builder b = new Rule.Builder()
-                .withName("view your own resources, limit to default dataSegment")
-                .withSecurityURI(uri)
-                .withAndFilterString("dataDomain.ownerId:${principalId}&&dataDomain.dataSegment:#0")
-                .withEffect(RuleEffect.ALLOW)
-                .withFinalRule(false);
-        Rule r = b.build();
-
-        this.addRule(header, r);
-
-        header = new SecurityURIHeader.Builder()
-                .withIdentity("user")         // with the role "admin"
-                .withArea("Security")                 // any area
-                .withFunctionalDomain("*") // any domain
-                .withAction("DELETE")               // any action
-                .build();
-
-        uri = new SecurityURI(header, body);
-        Rule.Builder userDenySecurityArea = new Rule.Builder()
-                .withName("users can't delete anything in security area")
-                .withSecurityURI(uri)
-                .withAndFilterString("dataDomain.ownerId:${principalId}&&dataDomain.dataSegment:#0")
-                .withEffect(RuleEffect.DENY)
-                .withFinalRule(true);
-        r = userDenySecurityArea.build();
-        this.addRule(header, r);
-
-
-        header = new SecurityURIHeader.Builder()
-                .withIdentity("admin")         // with the role "admin"
-                .withArea("*")                 // any area
-                .withFunctionalDomain("*") // any domain
-                .withAction("*")               // any action
-                .build();
-
-        // Now add one for a tenant level admin
-        uri = new SecurityURI(header, body);
-        Rule.Builder tenantAdminbuilder = new Rule.Builder()
-                .withName("tenant admin can administer the tenant records")
-                .withSecurityURI(uri)
-                .withAndFilterString("dataDomain.tenantId:${pTenantId}")
-                .withEffect(RuleEffect.ALLOW)
-                .withFinalRule(true);
-        r = tenantAdminbuilder.build();
-        this.addRule(header, r);
-
-        // set up anonymous actions
-        header = new SecurityURIHeader.Builder()
-                .withIdentity("ANONYMOUS")
-                .withArea("onboarding")
-                .withFunctionalDomain("registrationRequest")
-                .withAction("create")
-                .build();
-        body = new SecurityURIBody.Builder()
-                .withRealm(envConfigUtils.getSystemRealm())
-                .withTenantId(envConfigUtils.getSystemTenantId())
-                .withAccountNumber(envConfigUtils.getSystemAccountNumber())
-                .withDataSegment("*")
-                .withOwnerId("*")
-                .withOrgRefName("*")
-                .build();
-        uri = new SecurityURI(header, body);
-
-        Rule.Builder anonymousbuilder = new Rule.Builder()
-                .withName("anonymous user can call register")
-                .withSecurityURI(uri)
-                .withAndFilterString("dataDomain.tenantId:${pTenantId}")
-                .withEffect(RuleEffect.ALLOW)
-                .withFinalRule(true);
-        r = anonymousbuilder.build();
-        this.addRule(header, r);
-
-        header = new SecurityURIHeader.Builder()
-                .withIdentity("ANONYMOUS")
-                .withArea("website")
-                .withFunctionalDomain("contactus")
-                .withAction("create")
-                .build();
-        body = new SecurityURIBody.Builder()
-                .withRealm(envConfigUtils.getSystemRealm())
-                .withTenantId(envConfigUtils.getSystemTenantId())
-                .withAccountNumber(envConfigUtils.getSystemAccountNumber())
-                .withDataSegment("*")
-                .withOwnerId("*")
-                .withOrgRefName("*")
-                .build();
-        uri = new SecurityURI(header, body);
-
-        anonymousbuilder = new Rule.Builder()
-                .withName("anonymous user can call contactus")
-                .withSecurityURI(uri)
-                .withAndFilterString("dataDomain.tenantId:${pTenantId}")
-                .withEffect(RuleEffect.ALLOW)
-                .withFinalRule(true);
-        r = anonymousbuilder.build();
-        this.addRule(header, r);
-    }
 
     /**
      * clears the rule base
@@ -575,6 +409,14 @@ public class RuleContext {
 
     private volatile long policyVersion = 0L;
     private volatile long lastReloadTimestamp = 0L;
+    // Track which realm the in-memory rules were last loaded for
+    private volatile String lastLoadedRealm = null;
+
+    // Diagnostics controls
+    @ConfigProperty(name = "quantum.securityrules.ruleContext.debugAutoReload", defaultValue = "false")
+    boolean debugAutoReload;
+
+    private static final AtomicBoolean WARNED_NULL_REPO = new AtomicBoolean(false);
 
     public long getPolicyVersion() { return policyVersion; }
 
@@ -582,16 +424,26 @@ public class RuleContext {
 
     /**
      * Reloads the in-memory rule base from the persistent PolicyRepo for the given realm.
-     * Keeps built-in system rules and then incorporates all rules from policies.
+     * System rules are now loaded from seed data via PolicyRepo.
      * Uses immutable snapshots with atomic swap for thread-safe concurrent access.
      */
     public synchronized void reloadFromRepo(@NotNull String realm) {
         try {
+            // If this instance was constructed outside CDI, repositories may be null.
+            // In that case, skipping reload prevents wiping out rules that tests might have added programmatically.
+            if (policyRepo == null) {
+                // Log once at DEBUG by default; at INFO when debugAutoReload is enabled
+                if (debugAutoReload) {
+                    Log.infof("RuleContext: policyRepo unavailable (likely non-CDI construction). Skipping reload for realm %s", realm);
+                } else if (WARNED_NULL_REPO.compareAndSet(false, true)) {
+                    if (Log.isDebugEnabled()) {
+                        Log.debugf("RuleContext: policyRepo unavailable (likely non-CDI construction). Skipping reload for realm %s (suppressing further logs)", realm);
+                    }
+                }
+                return;
+            }
             // Build new map off-thread (but synchronized for consistency)
             Map<String, List<Rule>> newRules = new HashMap<>();
-
-            // Add system rules first
-            addSystemRulesToMap(newRules);
 
             // Establish a minimal SecurityContext to satisfy repo filters during hydration
             try {
@@ -615,28 +467,26 @@ public class RuleContext {
             }
 
             // Fetch all policies in realm (bypass permission filters)
-            if (policyRepo != null) {
-                java.util.List<com.e2eq.framework.model.security.Policy> policies = policyRepo.getAllListIgnoreRules(realm);
-                if (policies != null) {
-                    for (com.e2eq.framework.model.security.Policy p : policies) {
-                        if (p.getRules() == null) continue;
-                        for (Rule r : p.getRules()) {
-                            String identity = null;
-                            if (r.getSecurityURI() != null && r.getSecurityURI().getHeader() != null) {
-                                identity = r.getSecurityURI().getHeader().getIdentity();
-                            }
-                            if (identity == null || identity.isBlank()) {
-                                identity = p.getPrincipalId();
-                            }
-                            if (identity == null || identity.isBlank()) {
-                                Log.warnf("Rule:%s does not have an identity specified:", r.toString());
-                                // skip malformed entries
-                                continue;
-                            }
-                            // NORMALIZE: Convert to lowercase and trim
-                            String normalizedIdentity = identity.toLowerCase(Locale.ROOT).trim();
-                            newRules.computeIfAbsent(normalizedIdentity, k -> new ArrayList<>()).add(r);
+            java.util.List<com.e2eq.framework.model.security.Policy> policies = policyRepo.getAllListIgnoreRules(realm);
+            if (policies != null) {
+                for (com.e2eq.framework.model.security.Policy p : policies) {
+                    if (p.getRules() == null) continue;
+                    for (Rule r : p.getRules()) {
+                        String identity = null;
+                        if (r.getSecurityURI() != null && r.getSecurityURI().getHeader() != null) {
+                            identity = r.getSecurityURI().getHeader().getIdentity();
                         }
+                        if (identity == null || identity.isBlank()) {
+                            identity = p.getPrincipalId();
+                        }
+                        if (identity == null || identity.isBlank()) {
+                            Log.warnf("Rule:%s does not have an identity specified:", r.toString());
+                            // skip malformed entries
+                            continue;
+                        }
+                        // NORMALIZE: Convert to lowercase and trim
+                        String normalizedIdentity = identity.toLowerCase(Locale.ROOT).trim();
+                        newRules.computeIfAbsent(normalizedIdentity, k -> new ArrayList<>()).add(r);
                     }
                 }
             }
@@ -658,6 +508,7 @@ public class RuleContext {
             this.rules = immutableRules;
             this.policyVersion = System.nanoTime();
             this.lastReloadTimestamp = System.currentTimeMillis();
+            this.lastLoadedRealm = realm;
 
             Log.infof("RuleContext: loaded %d rules for %d identities from repo for realm %s",
                 immutableRules.values().stream().mapToInt(List::size).sum(),
@@ -678,162 +529,12 @@ public class RuleContext {
                 }
             }
         } catch (Exception ex) {
-            Log.errorf(ex, "Failed to load policies into RuleContext for realm %s; retaining system rules only", realm);
-            // On error, ensure we have at least system rules
-            Map<String, List<Rule>> systemRules = new HashMap<>();
-            addSystemRulesToMap(systemRules);
-            for (Map.Entry<String, List<Rule>> e : systemRules.entrySet()) {
-                systemRules.put(e.getKey(), Collections.unmodifiableList(e.getValue()));
-            }
-            this.rules = Collections.unmodifiableMap(systemRules);
+            Log.errorf(ex, "Failed to load policies into RuleContext for realm %s; system rules should be loaded from seed data", realm);
+            // On error, leave rules empty - system rules should be loaded from seed data via PolicyRepo
+            this.rules = Collections.unmodifiableMap(new HashMap<>());
         }
     }
 
-    /**
-     * Helper method to add system rules to a map (used during reload)
-     * This duplicates the logic from addSystemRules() but adds to targetMap instead of this.rules
-     */
-    private void addSystemRulesToMap(Map<String, List<Rule>> targetMap) {
-        // Add default rules for the system
-        // First explicitly add the "system" to operate with in the security area
-        SecurityURI suri = new SecurityURI(securityUtils.getSystemSecurityHeader(), securityUtils.getSystemSecurityBody());
-
-        Rule systemRule = new Rule.Builder()
-                .withName("SysAnyActionSecurity")
-                .withDescription("System can take any action with in security")
-                .withSecurityURI(suri)
-                .withEffect(RuleEffect.ALLOW)
-                .withPriority(0)
-                .withFinalRule(true).build();
-
-        this.addRuleToMap(securityUtils.getSystemSecurityHeader(), systemRule, targetMap);
-
-        SecurityURIHeader header = securityUtils.getSystemSecurityHeader().clone();
-        header.setIdentity("system");
-        suri = new SecurityURI(header, securityUtils.getSystemSecurityBody());
-
-        Rule systemRoleRule = new Rule.Builder()
-                .withName("SysRoleAnyActionSecurity")
-                .withDescription("system role can take any action with in security")
-                .withSecurityURI(suri)
-                .withEffect(RuleEffect.ALLOW)
-                .withPriority(1)
-                .withFinalRule(true).build();
-        this.addRuleToMap(header, systemRoleRule, targetMap);
-
-        // So this will match any user that has the role "user"
-        header = new SecurityURIHeader.Builder()
-                .withIdentity("user")
-                .withArea("*")
-                .withFunctionalDomain("*")
-                .withAction("*")
-                .build();
-
-        SecurityURIBody body = new SecurityURIBody.Builder()
-                .withOrgRefName("*")
-                .withAccountNumber("*")
-                .withRealm("*")
-                .withTenantId("*")
-                .withOwnerId("*")
-                .withDataSegment("*")
-                .build();
-
-        SecurityURI uri = new SecurityURI(header, body);
-
-        Rule.Builder b = new Rule.Builder()
-                .withName("view your own resources, limit to default dataSegment")
-                .withSecurityURI(uri)
-                .withAndFilterString("dataDomain.ownerId:${principalId}&&dataDomain.dataSegment:#0")
-                .withEffect(RuleEffect.ALLOW)
-                .withFinalRule(false);
-        Rule r = b.build();
-        this.addRuleToMap(header, r, targetMap);
-
-        header = new SecurityURIHeader.Builder()
-                .withIdentity("user")
-                .withArea("Security")
-                .withFunctionalDomain("*")
-                .withAction("DELETE")
-                .build();
-
-        uri = new SecurityURI(header, body);
-        Rule.Builder userDenySecurityArea = new Rule.Builder()
-                .withName("users can't delete anything in security area")
-                .withSecurityURI(uri)
-                .withAndFilterString("dataDomain.ownerId:${principalId}&&dataDomain.dataSegment:#0")
-                .withEffect(RuleEffect.DENY)
-                .withFinalRule(true);
-        r = userDenySecurityArea.build();
-        this.addRuleToMap(header, r, targetMap);
-
-        header = new SecurityURIHeader.Builder()
-                .withIdentity("admin")
-                .withArea("*")
-                .withFunctionalDomain("*")
-                .withAction("*")
-                .build();
-
-        uri = new SecurityURI(header, body);
-        Rule.Builder tenantAdminbuilder = new Rule.Builder()
-                .withName("tenant admin can administer the tenant records")
-                .withSecurityURI(uri)
-                .withAndFilterString("dataDomain.tenantId:${pTenantId}")
-                .withEffect(RuleEffect.ALLOW)
-                .withFinalRule(true);
-        r = tenantAdminbuilder.build();
-        this.addRuleToMap(header, r, targetMap);
-
-        // set up anonymous actions
-        header = new SecurityURIHeader.Builder()
-                .withIdentity("ANONYMOUS")
-                .withArea("onboarding")
-                .withFunctionalDomain("registrationRequest")
-                .withAction("create")
-                .build();
-        body = new SecurityURIBody.Builder()
-                .withRealm(envConfigUtils.getSystemRealm())
-                .withTenantId(envConfigUtils.getSystemTenantId())
-                .withAccountNumber(envConfigUtils.getSystemAccountNumber())
-                .withDataSegment("*")
-                .withOwnerId("*")
-                .withOrgRefName("*")
-                .build();
-        uri = new SecurityURI(header, body);
-
-        Rule.Builder anonymousbuilder = new Rule.Builder()
-                .withName("anonymous user can call register")
-                .withSecurityURI(uri)
-                .withAndFilterString("dataDomain.tenantId:${pTenantId}")
-                .withEffect(RuleEffect.ALLOW)
-                .withFinalRule(true);
-        r = anonymousbuilder.build();
-        this.addRuleToMap(header, r, targetMap);
-
-        header = new SecurityURIHeader.Builder()
-                .withIdentity("ANONYMOUS")
-                .withArea("website")
-                .withFunctionalDomain("contactus")
-                .withAction("create")
-                .build();
-        body = new SecurityURIBody.Builder()
-                .withRealm(envConfigUtils.getSystemRealm())
-                .withTenantId(envConfigUtils.getSystemTenantId())
-                .withAccountNumber(envConfigUtils.getSystemAccountNumber())
-                .withDataSegment("*")
-                .withOwnerId("*")
-                .withOrgRefName("*")
-                .build();
-        uri = new SecurityURI(header, body);
-
-        anonymousbuilder = new Rule.Builder()
-                .withName("anonymous user can call contactus")
-                .withSecurityURI(uri)
-                .withAndFilterString("dataDomain.tenantId:${pTenantId}")
-                .withEffect(RuleEffect.ALLOW)
-                .withFinalRule(true);
-        r = anonymousbuilder.build();
-        this.addRuleToMap(header, r, targetMap);
-    }
 
     /**
      * Adds a rule to the rule base
@@ -1235,6 +936,25 @@ public class RuleContext {
 
         if (Log.isDebugEnabled()) {
             Log.debug("####  checking Permissions for pcontext:" + pcontext.toString() + " resource context:" + rcontext.toString());
+        }
+
+        // Ensure policies are loaded for the effective realm before evaluating
+        try {
+            String effectiveRealm = getRealmId(pcontext, rcontext);
+            // If not yet loaded or loaded for a different realm, reload now
+            if (effectiveRealm != null && !effectiveRealm.isBlank()) {
+                String last = this.lastLoadedRealm;
+                if (last == null || !last.equals(effectiveRealm)) {
+                    if (debugAutoReload) {
+                        Log.infof("RuleContext: auto-reloading policies for realm %s (previous realm: %s)", effectiveRealm, last);
+                    } else if (Log.isDebugEnabled()) {
+                        Log.debugf("RuleContext: auto-reloading policies for realm %s (previous realm: %s)", effectiveRealm, last);
+                    }
+                    reloadFromRepo(effectiveRealm);
+                }
+            }
+        } catch (Throwable t) {
+            Log.debug("RuleContext: auto-reload skipped due to exception; proceeding with current rules", t);
         }
 
         // Create a response to show how we came to the conclusion

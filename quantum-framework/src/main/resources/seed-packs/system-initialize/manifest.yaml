@@ -54,17 +54,24 @@ datasets:
 
   # Default user policy equivalent to InitializeDatabase.createInitialRules()
   - collection: policy
-    modelClass: com.e2eq.framework.model.security.Policy
     naturalKey: [ "refName" ]
     upsert: true
     file: policies-default-user.jsonl
     transforms:
       - type: tenantSubstitution
 
+  # System rules (previously hardcoded in RuleContext.addSystemRules())
+  - collection: policy
+    naturalKey: [ "refName" ]
+    upsert: true
+    file: policies-system-rules.jsonl
+    transforms:
+      - type: tenantSubstitution
+
   # System user profile (without enforcing credential link to avoid hashing concerns)
   - collection: userProfile
     modelClass: com.e2eq.framework.model.security.UserProfile
-    naturalKey: [ "userId" ]
+    naturalKey: [ "refName" ]
     upsert: true
     file: system-userProfile.jsonl
     transforms:

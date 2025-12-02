@@ -21,6 +21,7 @@ public class OntologyContextEnricherMongo {
             edgeSummaries.add(Map.of(
                     "p", e.getP(),
                     "dst", e.getDst(),
+                    "dstType", e.getDstType(),
                     "inferred", e.isInferred()
             ));
         }

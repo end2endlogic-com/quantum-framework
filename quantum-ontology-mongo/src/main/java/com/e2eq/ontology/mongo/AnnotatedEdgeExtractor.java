@@ -1,5 +1,6 @@
 package com.e2eq.ontology.mongo;
 
+import com.e2eq.framework.model.persistent.base.EntityReference;
 import com.e2eq.ontology.annotations.OntologyClass;
 import com.e2eq.ontology.annotations.OntologyProperty;
 import com.e2eq.ontology.core.Reasoner;
@@ -256,6 +257,14 @@ public class AnnotatedEdgeExtractor {
             if (entity == null) return null;
             // If the target is already a CharSequence (e.g., String id), use it directly
             if (entity instanceof CharSequence cs) return cs.toString();
+            if (entity instanceof EntityReference ref) {
+                if (ref.getEntityId() != null) {
+                    return ref.getEntityId().toHexString();
+                }
+                if (ref.getEntityRefName() != null) {
+                    return ref.getEntityRefName();
+                }
+            }
             try {
                 Method m = entity.getClass().getMethod("getRefName");
                 Object v = m.invoke(entity);

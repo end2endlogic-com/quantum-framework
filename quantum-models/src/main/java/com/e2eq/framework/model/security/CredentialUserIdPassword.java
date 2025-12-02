@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.e2eq.framework.util.EncryptionUtils;
+import com.e2eq.ontology.annotations.OntologyClass;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.mongodb.client.model.CollationStrength;
 import dev.morphia.annotations.*;
@@ -26,6 +27,7 @@ import lombok.experimental.SuperBuilder;
 @RegisterForReflection
 @SuperBuilder
 @NoArgsConstructor
+@OntologyClass(id = "Credential")
 public class CredentialUserIdPassword extends BaseModel {
 
    @Data

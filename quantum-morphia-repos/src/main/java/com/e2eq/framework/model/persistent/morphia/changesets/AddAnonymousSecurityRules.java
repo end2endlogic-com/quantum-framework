@@ -128,7 +128,6 @@ public class AddAnonymousSecurityRules extends ChangeSetBase {
             defaultAnonymousPolicy.setDescription("anonymous users can register and fill out a contact us form");
             defaultAnonymousPolicy.getRules().add(r);
             defaultAnonymousPolicy.setRefName("defaultAnonymousPolicy");
-            defaultAnonymousPolicy.setDataDomain(securityUtils.getSystemDataDomain());
 
             policyRepo.save(session, defaultAnonymousPolicy);
         }

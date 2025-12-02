@@ -17,6 +17,7 @@ import com.e2eq.framework.util.SecurityUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.logging.Log;
 import io.quarkus.security.identity.SecurityIdentity;
+import jakarta.annotation.security.PermitAll;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.container.ContainerRequestContext;
@@ -114,6 +115,13 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             return;
         }
 
+        // Check if the endpoint is annotated with @PermitAll
+        boolean isPermitAll = isPermitAllEndpoint();
+        if (isPermitAll && Log.isDebugEnabled()) {
+            Log.debugf("@PermitAll endpoint detected: %s - setting contexts but bypassing policy checks", 
+                requestContext.getUriInfo().getPath());
+        }
+
         if (requestContext.getUriInfo().getPath().contains("/system/migration") && securityIdentity != null && securityIdentity.getRoles().contains("admin")) {
            Log.warnf("System migration detected, setting up system principal context");
            resourceContext = determineResourceContext(requestContext);
@@ -123,14 +131,17 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             principalContext = determinePrincipalContext(requestContext);
         }
 
-
         if (principalContext == null) {
             throw new IllegalStateException("Principal context came back null and should not be null");
         }
 
+        // Always set the contexts - they may be needed by other parts of the application
+        // even for @PermitAll endpoints. The policy checks will be bypassed elsewhere.
         SecurityContext.setPrincipalContext(principalContext);
         SecurityContext.setResourceContext(resourceContext);
 
+        // Note: @PermitAll endpoints bypass policy checks at the Jakarta Security level,
+        // but we still set up the contexts here for consistency and potential use by other filters/components.
     }
 
         @Override
@@ -714,6 +725,43 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
     private PrincipalContext applyRealmOverride(PrincipalContext context, String realm) {
         return context;
+    }
+
+    /**
+     * Checks if the current endpoint is annotated with @PermitAll.
+     * @PermitAll endpoints bypass all policy checks and are handled entirely by Jakarta Security.
+     * 
+     * @return true if the method or class is annotated with @PermitAll, false otherwise
+     */
+    private boolean isPermitAllEndpoint() {
+        if (resourceInfo == null) {
+            return false;
+        }
+
+        try {
+            // Check method-level annotation first (takes precedence)
+            if (resourceInfo.getResourceMethod() != null) {
+                PermitAll methodAnnotation = resourceInfo.getResourceMethod().getAnnotation(PermitAll.class);
+                if (methodAnnotation != null) {
+                    return true;
+                }
+            }
+
+            // Check class-level annotation
+            if (resourceInfo.getResourceClass() != null) {
+                PermitAll classAnnotation = resourceInfo.getResourceClass().getAnnotation(PermitAll.class);
+                if (classAnnotation != null) {
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            // If we can't determine the annotation, err on the side of security and proceed with checks
+            if (Log.isDebugEnabled()) {
+                Log.debugf("Error checking @PermitAll annotation: %s", e.getMessage());
+            }
+        }
+
+        return false;
     }
     public boolean matchesRealmFilter(String realm, String filterPattern) {
         if (filterPattern == null || realm == null)
