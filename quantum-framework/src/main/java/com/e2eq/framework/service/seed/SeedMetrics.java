@@ -9,7 +9,7 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * Simple metrics collector for seed framework operations.
  * Tracks execution times, success/failure counts, and record counts.
- * 
+ *
  * In a production environment, this could be replaced with Micrometer metrics.
  */
 @ApplicationScoped
@@ -18,6 +18,11 @@ public class SeedMetrics {
     private final ConcurrentHashMap<String, AtomicLong> counters = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, AtomicLong> timers = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, AtomicLong> recordCounts = new ConcurrentHashMap<>();
+
+    // Helper to build dataset-scoped keys
+    private static String dsKey(String seedPack, String dataset, String realm) {
+        return String.format("%s/%s:%s", seedPack, dataset, realm);
+    }
 
     /**
      * Records the execution of a seed pack application.
@@ -32,16 +37,16 @@ public class SeedMetrics {
     public void recordSeedApplication(String seedPack, String version, String realm,
                                      boolean success, long durationMs, int recordsApplied) {
         String key = String.format("%s@%s:%s", seedPack, version, realm);
-        
+
         if (success) {
             incrementCounter("seed.applications.success", key);
             recordCounts.computeIfAbsent(key, k -> new AtomicLong(0)).addAndGet(recordsApplied);
         } else {
             incrementCounter("seed.applications.failure", key);
         }
-        
+
         timers.computeIfAbsent(key, k -> new AtomicLong(0)).addAndGet(durationMs);
-        
+
         Log.debugf("SeedMetrics: recorded %s application for %s (duration: %dms, records: %d)",
                 success ? "successful" : "failed", key, durationMs, recordsApplied);
     }
@@ -57,11 +62,59 @@ public class SeedMetrics {
      */
     public void recordDatasetApplication(String seedPack, String dataset, String realm,
                                         boolean success, int recordsApplied) {
-        String key = String.format("%s/%s:%s", seedPack, dataset, realm);
+        String key = dsKey(seedPack, dataset, realm);
         incrementCounter(success ? "seed.datasets.success" : "seed.datasets.failure", key);
         if (success) {
             recordCounts.computeIfAbsent(key, k -> new AtomicLong(0)).addAndGet(recordsApplied);
         }
+    }
+
+    /**
+     * Records dataset parsing duration and number of records read.
+     */
+    public void recordDatasetParse(String seedPack, String dataset, String realm,
+                                   long durationMs, int recordsRead) {
+        String key = dsKey(seedPack, dataset, realm);
+        timers.computeIfAbsent("seed.dataset.parse." + key, k -> new AtomicLong(0)).addAndGet(durationMs);
+        recordCounts.computeIfAbsent("seed.dataset.recordsRead." + key, k -> new AtomicLong(0)).addAndGet(recordsRead);
+        Log.debugf("SeedMetrics: parsed %s in %dms (%d records)", key, durationMs, recordsRead);
+    }
+
+    /**
+     * Records that a dataset application was skipped and why.
+     */
+    public void recordDatasetSkipped(String seedPack, String dataset, String realm, String reason) {
+        String key = dsKey(seedPack, dataset, realm);
+        incrementCounter("seed.datasets.skipped." + reason, key);
+        Log.debugf("SeedMetrics: skipped %s (reason=%s)", key, reason);
+    }
+
+    /**
+     * Increments the count of records dropped by transforms.
+     */
+    public void incrementTransformDrops(String seedPack, String dataset, String realm, int count) {
+        String key = dsKey(seedPack, dataset, realm);
+        recordCounts.computeIfAbsent("seed.dataset.drops." + key, k -> new AtomicLong(0)).addAndGet(count);
+    }
+
+    /**
+     * Records time spent ensuring a single index for a dataset.
+     */
+    public void recordIndexEnsureTime(String seedPack, String dataset, String realm, String indexName, long durationMs) {
+        String key = dsKey(seedPack, dataset, realm) + "/" + indexName;
+        timers.computeIfAbsent("seed.dataset.indexEnsure." + key, k -> new AtomicLong(0)).addAndGet(durationMs);
+    }
+
+    /**
+     * Records a batch write operation (insert or upsert) for a dataset.
+     */
+    public void recordBatchWrite(String seedPack, String dataset, String realm,
+                                 boolean upsert, long durationMs, int batchSize) {
+        String key = dsKey(seedPack, dataset, realm);
+        String base = upsert ? "seed.dataset.batch.upsert." : "seed.dataset.batch.insert.";
+        timers.computeIfAbsent(base + key, k -> new AtomicLong(0)).addAndGet(durationMs);
+        counters.computeIfAbsent(base + "count." + key, k -> new AtomicLong(0)).incrementAndGet();
+        recordCounts.computeIfAbsent(base + "rows." + key, k -> new AtomicLong(0)).addAndGet(batchSize);
     }
 
     /**
@@ -132,4 +185,3 @@ public class SeedMetrics {
                 .sum();
     }
 }
-

@@ -1,10 +1,14 @@
 package com.e2eq.framework.service.seed;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.security.DigestInputStream;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -23,6 +27,8 @@ import java.util.Set;
 import com.e2eq.framework.service.seed.SeedPackManifest.Archetype;
 import com.e2eq.framework.service.seed.SeedPackManifest.Dataset;
 import com.e2eq.framework.service.seed.SeedPackManifest.Transform;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -44,6 +50,8 @@ public final class SeedLoader {
     private final ObjectMapper objectMapper;
     private final SeedResourceRouter resourceRouter;
     private final SeedConflictPolicy conflictPolicy;
+    private final int batchSize;
+    private final SeedMetrics seedMetrics;
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
     private SeedLoader(Builder builder) {
@@ -54,6 +62,8 @@ public final class SeedLoader {
         this.objectMapper = builder.objectMapper;
         this.resourceRouter = new SeedResourceRouter(this.seedSources);
         this.conflictPolicy = builder.conflictPolicy;
+        this.batchSize = builder.batchSize;
+        this.seedMetrics = builder.seedMetrics;
     }
 
     public static Builder builder() {
@@ -80,11 +90,12 @@ public final class SeedLoader {
         Objects.requireNonNull(context, "context");
 
         Log.infof("Seed context realm %s, applying %s seed pack(s)", context.getRealm(), packRefs.size());
-        Log.infof("Seed context.tenantId: %s, orgRefName: %s, accountId: %s, ownerId: %s",
-           context.getTenantId().isPresent() ? context.getTenantId().get() : "null",
-           context.getOrgRefName().isPresent()?  context.getOrgRefName().get(): "null",
-           context.getAccountId().isPresent() ?  context.getAccountId().get() : "null",
-           context.getOwnerId().isPresent() ?  context.getOwnerId().get() : "null");
+        // Avoid logging potentially sensitive identifiers at info level; use debug instead
+        Log.debugf("Seed context.tenantId: %s, orgRefName: %s, accountId: %s, ownerId: %s",
+           context.getTenantId().orElse("null"),
+           context.getOrgRefName().orElse("null"),
+           context.getAccountId().orElse("null"),
+           context.getOwnerId().orElse("null"));
 
         if (packRefs.isEmpty()) {
             Log.infov("No seed packs requested for realm {0}", context.getRealm());
@@ -128,8 +139,22 @@ public final class SeedLoader {
         for (Dataset dataset : datasets) {
             // Ensure collection is set; when modelClass is provided, derive collection name from @Entity or class simple name
             deriveCollectionIfMissing(dataset);
+            if (dataset.getCollection() == null || dataset.getCollection().isBlank()) {
+                throw new SeedLoadingException("Dataset collection is not specified and could not be derived for seed pack "
+                        + descriptor.identity());
+            }
             Log.infov("Applying seed dataset {0}/{1} into realm {2}", descriptor.getManifest().getSeedPack(), dataset.getCollection(), context.getRealm());
+            long parseStart = System.currentTimeMillis();
             DatasetPayload payload = readDataset(descriptor, dataset);
+            long parseDur = System.currentTimeMillis() - parseStart;
+            if (seedMetrics != null) {
+                seedMetrics.recordDatasetParse(
+                        descriptor.getManifest().getSeedPack(),
+                        dataset.getCollection(),
+                        context.getRealm(),
+                        parseDur,
+                        payload.records().size());
+            }
 
             // Determine previous checksum if any, to decide conflict handling
             Optional<String> last = seedRegistry.getLastAppliedChecksum(context, descriptor.getManifest(), dataset);
@@ -137,12 +162,26 @@ public final class SeedLoader {
                 String lastChecksum = last.get();
                 if (Objects.equals(lastChecksum, payload.checksum())) {
                     Log.debugf("Dataset %s already applied with matching checksum", dataset.getCollection());
+                    if (seedMetrics != null) {
+                        seedMetrics.recordDatasetSkipped(
+                                descriptor.getManifest().getSeedPack(),
+                                dataset.getCollection(),
+                                context.getRealm(),
+                                "checksumEqual");
+                    }
                     continue;
                 }
                 // Conflict: previously applied dataset differs from current
                 switch (conflictPolicy) {
                     case EXISTING_WINS -> {
                         Log.warnf("Skipping dataset %s because existing checksum %s differs from incoming %s and policy is EXISTING_WINS", dataset.getCollection(), lastChecksum, payload.checksum());
+                        if (seedMetrics != null) {
+                            seedMetrics.recordDatasetSkipped(
+                                    descriptor.getManifest().getSeedPack(),
+                                    dataset.getCollection(),
+                                    context.getRealm(),
+                                    "policyExistingWins");
+                        }
                         continue;
                     }
                     case ERROR -> {
@@ -156,15 +195,47 @@ public final class SeedLoader {
                 // No prior record; for backward compatibility also respect registry's shouldApply if implemented differently
                 if (!seedRegistry.shouldApply(context, descriptor.getManifest(), dataset, payload.checksum())) {
                     Log.debugf("Dataset %s already applied with matching checksum", dataset.getCollection());
+                    if (seedMetrics != null) {
+                        seedMetrics.recordDatasetSkipped(
+                                descriptor.getManifest().getSeedPack(),
+                                dataset.getCollection(),
+                                context.getRealm(),
+                                "registrySaysNo");
+                    }
                     continue;
                 } else {
                    Log.infof("!! > should apply came back true, Applying dataset %s into realm %s", dataset.getCollection(), context.getRealm());
                 }
             }
 
-            dataset.getRequiredIndexes().forEach(index -> seedRepository.ensureIndexes(context, dataset, index));
+            // Validate natural key presence in insert-only mode to avoid accidental duplicates
+            if (!dataset.isUpsert()) {
+                List<String> nk = dataset.getNaturalKey();
+                if (nk == null || nk.isEmpty()) {
+                    throw new SeedLoadingException("Insert-only dataset '" + dataset.getCollection() + "' is missing naturalKey definition");
+                }
+            }
+
+            // Ensure indexes with timing per index
+            dataset.getRequiredIndexes().forEach(index -> {
+                long idxStart = System.currentTimeMillis();
+                seedRepository.ensureIndexes(context, dataset, index);
+                long idxDur = System.currentTimeMillis() - idxStart;
+                if (seedMetrics != null) {
+                    try {
+                        seedMetrics.recordIndexEnsureTime(
+                                descriptor.getManifest().getSeedPack(),
+                                dataset.getCollection(),
+                                context.getRealm(),
+                                index.getName(),
+                                idxDur);
+                    } catch (Exception ignore) { }
+                }
+            });
             List<SeedTransform> transforms = buildTransforms(dataset);
             int appliedCount = 0;
+            int dropCount = 0;
+            List<Map<String, Object>> buffer = new ArrayList<>(Math.max(16, batchSize));
             for (Map<String, Object> record : payload.records()) {
                 Map<String, Object> current = new LinkedHashMap<>(record);
                 for (SeedTransform transform : transforms) {
@@ -172,15 +243,79 @@ public final class SeedLoader {
                         break;
                     }
                     current = transform.apply(current, context, dataset);
+                    if (current == null) {
+                        // A transform decided to drop the record; log warning with minimal context
+                        Log.warnf("Seed record dropped by transform %s for collection %s (seedPack=%s)",
+                                transform.getClass().getSimpleName(),
+                                dataset.getCollection(),
+                                descriptor.getManifest().getSeedPack());
+                        dropCount++;
+                    }
                 }
                 if (current == null || current.isEmpty()) {
                     continue;
                 }
-                seedRepository.upsertRecord(context, dataset, current);
-                appliedCount++;
+                buffer.add(current);
+                if (buffer.size() >= batchSize) {
+                    long bwStart = System.currentTimeMillis();
+                    boolean up = dataset.isUpsert();
+                    if (up) {
+                        seedRepository.upsertBatch(context, dataset, buffer);
+                    } else {
+                        seedRepository.insertBatch(context, dataset, buffer);
+                    }
+                    long bwDur = System.currentTimeMillis() - bwStart;
+                    if (seedMetrics != null) {
+                        seedMetrics.recordBatchWrite(
+                                descriptor.getManifest().getSeedPack(),
+                                dataset.getCollection(),
+                                context.getRealm(),
+                                up,
+                                bwDur,
+                                buffer.size());
+                    }
+                    appliedCount += buffer.size();
+                    buffer.clear();
+                }
+            }
+            if (!buffer.isEmpty()) {
+                long bwStart = System.currentTimeMillis();
+                boolean up = dataset.isUpsert();
+                if (up) {
+                    seedRepository.upsertBatch(context, dataset, buffer);
+                } else {
+                    seedRepository.insertBatch(context, dataset, buffer);
+                }
+                long bwDur = System.currentTimeMillis() - bwStart;
+                if (seedMetrics != null) {
+                    seedMetrics.recordBatchWrite(
+                            descriptor.getManifest().getSeedPack(),
+                            dataset.getCollection(),
+                            context.getRealm(),
+                            up,
+                            bwDur,
+                            buffer.size());
+                }
+                appliedCount += buffer.size();
+                buffer.clear();
             }
             seedRegistry.recordApplied(context, descriptor.getManifest(), dataset, payload.checksum(), appliedCount);
             Log.infov("Applied {0} records to {1}", appliedCount, dataset.getCollection());
+            if (seedMetrics != null) {
+                seedMetrics.recordDatasetApplication(
+                        descriptor.getManifest().getSeedPack(),
+                        dataset.getCollection(),
+                        context.getRealm(),
+                        true,
+                        appliedCount);
+                if (dropCount > 0) {
+                    seedMetrics.incrementTransformDrops(
+                            descriptor.getManifest().getSeedPack(),
+                            dataset.getCollection(),
+                            context.getRealm(),
+                            dropCount);
+                }
+            }
         }
     }
 
@@ -200,51 +335,61 @@ public final class SeedLoader {
     }
 
     private DatasetPayload readDataset(SeedPackDescriptor descriptor, Dataset dataset) {
-        try (InputStream in = resourceRouter.open(descriptor, dataset.getFile())) {
-            byte[] bytes = in.readAllBytes();
-            String checksum = checksum(bytes);
-            List<Map<String, Object>> records = parseDataset(bytes, dataset);
-            return new DatasetPayload(checksum, records);
-        } catch (IOException e) {
+        try (InputStream raw = resourceRouter.open(descriptor, dataset.getFile())) {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            try (DigestInputStream din = new DigestInputStream(new BufferedInputStream(raw), digest)) {
+                List<Map<String, Object>> records = parseDatasetStream(din, dataset);
+                String checksum = HexFormat.of().formatHex(digest.digest());
+                return new DatasetPayload(checksum, records);
+            }
+        } catch (IOException | NoSuchAlgorithmException e) {
             throw new SeedLoadingException("Failed to read dataset " + dataset.getFile() + " for seed pack " + descriptor.identity(), e);
         }
     }
 
-    private List<Map<String, Object>> parseDataset(byte[] bytes, Dataset dataset) {
-        String content = new String(bytes, StandardCharsets.UTF_8);
+    private List<Map<String, Object>> parseDatasetStream(InputStream in, Dataset dataset) {
         try {
-            String trimmed = content.trim();
-            if (trimmed.isEmpty()) {
+            // Peek first non-whitespace byte to detect JSON array ('[') vs JSONL
+            in.mark(1);
+            int first;
+            do {
+                in.mark(1);
+                first = in.read();
+            } while (first != -1 && Character.isWhitespace(first));
+            if (first == -1) {
                 return List.of();
             }
-            if (trimmed.startsWith("[")) {
-                ArrayNode arrayNode = (ArrayNode) objectMapper.readTree(trimmed);
-                List<Map<String, Object>> records = new ArrayList<>(arrayNode.size());
-                for (JsonNode node : arrayNode) {
-                    records.add(objectMapper.convertValue(node, MAP_TYPE));
+            // Reset to the start of the detected token
+            in.reset();
+
+            if (first == '[') {
+                // Stream parse JSON array
+                List<Map<String, Object>> records = new ArrayList<>();
+                try (JsonParser parser = objectMapper.getFactory().createParser(in)) {
+                    if (parser.nextToken() != JsonToken.START_ARRAY) {
+                        throw new SeedLoadingException("Expected JSON array for dataset '" + dataset.getCollection() + "'");
+                    }
+                    while (parser.nextToken() != JsonToken.END_ARRAY) {
+                        Map<String, Object> rec = parser.readValueAs(MAP_TYPE);
+                        records.add(rec);
+                    }
+                }
+                return records;
+            } else {
+                // Treat as JSONL: one JSON object per line
+                List<Map<String, Object>> records = new ArrayList<>();
+                try (BufferedReader br = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = br.readLine()) != null) {
+                        if (line.isBlank()) continue;
+                        JsonNode node = objectMapper.readTree(line);
+                        records.add(objectMapper.convertValue(node, MAP_TYPE));
+                    }
                 }
                 return records;
             }
-            List<Map<String, Object>> records = new ArrayList<>();
-            for (String line : content.split("\r?\n")) {
-                if (line.isBlank()) {
-                    continue;
-                }
-                JsonNode node = objectMapper.readTree(line);
-                records.add(objectMapper.convertValue(node, MAP_TYPE));
-            }
-            return records;
         } catch (IOException e) {
             throw new SeedLoadingException("Invalid dataset format for collection " + dataset.getCollection() + ": " + e.getMessage(), e);
-        }
-    }
-
-    private String checksum(byte[] bytes) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(bytes));
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 not available", e);
         }
     }
 
@@ -359,7 +504,10 @@ public final class SeedLoader {
         private SeedRepository seedRepository;
         private SeedRegistry seedRegistry = SeedRegistry.noop();
         private ObjectMapper objectMapper = new ObjectMapper();
-        private SeedConflictPolicy conflictPolicy = SeedConflictPolicy.SEED_WINS; // default preserves legacy behavior
+        // Safer default: avoid silent overwrites unless explicitly configured by caller
+        private SeedConflictPolicy conflictPolicy = SeedConflictPolicy.ERROR;
+        private int batchSize = 200;
+        private SeedMetrics seedMetrics;
 
         private Builder() {
             registerTransformFactory("tenantSubstitution", new TenantSubstitutionTransform.Factory());
@@ -394,6 +542,19 @@ public final class SeedLoader {
 
         public Builder conflictPolicy(SeedConflictPolicy policy) {
             this.conflictPolicy = Objects.requireNonNull(policy, "conflictPolicy");
+            return this;
+        }
+
+        public Builder batchSize(int batchSize) {
+            if (batchSize <= 0) {
+                throw new IllegalArgumentException("batchSize must be positive");
+            }
+            this.batchSize = batchSize;
+            return this;
+        }
+
+        public Builder seedMetrics(SeedMetrics seedMetrics) {
+            this.seedMetrics = seedMetrics;
             return this;
         }
 

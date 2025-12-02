@@ -14,7 +14,7 @@ import java.util.Objects;
 /**
  * CDI-managed service for seed loading operations.
  * Provides dependency injection for SeedLoader and auto-discovers seed sources.
- * 
+ *
  * This service replaces manual SeedLoader.builder() construction throughout the codebase.
  */
 @ApplicationScoped
@@ -41,6 +41,9 @@ public class SeedLoaderService {
     @ConfigProperty(name = "quantum.seed.conflict-policy", defaultValue = "SEED_WINS")
     SeedConflictPolicy conflictPolicy;
 
+    @ConfigProperty(name = "quantum.seed.batch.size", defaultValue = "1000")
+    int batchSize;
+
     /**
      * Creates a SeedLoader instance with all configured dependencies.
      * Auto-discovers CDI-managed seed sources (FileSeedSource and ClasspathSeedSource are now CDI beans).
@@ -49,11 +52,17 @@ public class SeedLoaderService {
      * @return a configured SeedLoader instance
      */
     public SeedLoader createLoader(SeedContext context) {
+        if (conflictPolicy == SeedConflictPolicy.SEED_WINS) {
+            Log.warn("SeedLoaderService: conflict policy is SEED_WINS — this may overwrite existing data when checksums differ. Use only in dev/test.");
+        }
+
         SeedLoader.Builder builder = SeedLoader.builder()
                 .seedRepository(seedRepository)
                 .seedRegistry(seedRegistry)
                 .objectMapper(objectMapper)
-                .conflictPolicy(conflictPolicy);
+                .conflictPolicy(conflictPolicy)
+                .batchSize(batchSize)
+                .seedMetrics(seedMetrics);
 
         // Add auto-discovered CDI-managed seed sources
         // FileSeedSource and ClasspathSeedSource are now @ApplicationScoped beans
@@ -105,7 +114,7 @@ public class SeedLoaderService {
             throw e;
         } finally {
             long duration = System.currentTimeMillis() - startTime;
-            
+
             // Record metrics for each pack (simplified - in practice, loader would provide per-pack metrics)
             for (SeedPackRef ref : packRefs) {
                 seedMetrics.recordSeedApplication(
@@ -157,4 +166,3 @@ public class SeedLoaderService {
         return seedRegistry;
     }
 }
-
