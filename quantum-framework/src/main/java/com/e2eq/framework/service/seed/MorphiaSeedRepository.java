@@ -2,7 +2,17 @@ package com.e2eq.framework.service.seed;
 
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
+import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.IndexOptions;
+import com.mongodb.client.model.ReplaceOptions;
+import dev.morphia.Datastore;
+import dev.morphia.query.Query;
+import dev.morphia.query.filters.Filter;
+import dev.morphia.query.filters.Filters;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
@@ -12,9 +22,11 @@ import org.bson.types.ObjectId;
 import java.util.*;
 
 /**
- * SeedRepository implementation that leverages Morphia repositories when a modelClass is provided
- * in the SeedPackManifest.Dataset. Falls back to MongoSeedRepository behavior when modelClass
- * is not specified (for backward compatibility with existing seed packs).
+ * SeedRepository implementation that leverages Morphia repositories.
+ * Requires modelClass to be specified in SeedPackManifest.Dataset.
+ *
+ * This implementation uses repository query methods for efficient natural key lookups
+ * instead of loading all entities into memory.
  */
 @ApplicationScoped
 public class MorphiaSeedRepository implements SeedRepository {
@@ -26,37 +38,39 @@ public class MorphiaSeedRepository implements SeedRepository {
     ObjectMapper objectMapper;
 
     @Inject
-    com.mongodb.client.MongoClient mongoClient; // for fallback path
+    MorphiaDataStore morphiaDataStore;
 
-    private volatile MongoSeedRepository fallback; // lazily initialized
-
-    private MongoSeedRepository fallback() {
-        if (fallback == null) {
-            synchronized (this) {
-                if (fallback == null) {
-                    fallback = new MongoSeedRepository(mongoClient);
-                }
-            }
-        }
-        return fallback;
-    }
+    @Inject
+    MongoClient mongoClient;
 
     @Override
     public void ensureIndexes(SeedContext context, SeedPackManifest.Dataset dataset, SeedPackManifest.Index index) {
         Optional<BaseMorphiaRepo<? extends UnversionedBaseModel>> repoOpt = resolveRepo(dataset);
+
+        // Ensure collection is set based on either repo or modelClass hint
         ensureCollectionSet(dataset, repoOpt);
+
         if (repoOpt.isPresent()) {
             try {
                 // Let Morphia ensure mapped indexes for the model in the target realm
                 repoOpt.get().ensureIndexes(context.getRealm(), dataset.getCollection());
+                return;
             } catch (Exception e) {
                 Log.warnf("Failed ensuring indexes via Morphia for %s: %s", dataset.getCollection(), e.getMessage());
+                throw new SeedLoadingException("Failed to ensure indexes for " + dataset.getCollection(), e);
             }
-            // Note: explicit index definitions in dataset are primarily for Mongo fallback; Morphia
-            // ensures indexes based on model annotations.
-        } else {
-            // No modelClass provided; use legacy Mongo repository behavior
-            fallback().ensureIndexes(context, dataset, index);
+        }
+
+        // Fallback: Generic Mongo index creation when modelClass is not provided
+        try {
+            MongoDatabase database = mongoClient.getDatabase(context.getRealm());
+            MongoCollection<org.bson.Document> collection = database.getCollection(dataset.getCollection());
+            org.bson.Document keysDoc = new org.bson.Document();
+            index.getKeys().forEach(keysDoc::append);
+            IndexOptions options = new IndexOptions().name(index.getName()).unique(index.isUnique());
+            collection.createIndex(keysDoc, options);
+        } catch (Exception e) {
+            throw new SeedLoadingException("Failed to ensure indexes for " + dataset.getCollection() + " (generic Mongo): " + e.getMessage(), e);
         }
     }
 
@@ -64,86 +78,128 @@ public class MorphiaSeedRepository implements SeedRepository {
     @SuppressWarnings({"unchecked", "rawtypes"})
     public void upsertRecord(SeedContext context, SeedPackManifest.Dataset dataset, Map<String, Object> record) {
         Optional<BaseMorphiaRepo<? extends UnversionedBaseModel>> repoOpt = resolveRepo(dataset);
+
+        // Ensure collection is set based on either repo or modelClass hint
         ensureCollectionSet(dataset, repoOpt);
-        if (repoOpt.isEmpty()) {
-            // Backward compatibility
-            fallback().upsertRecord(context, dataset, record);
-            return;
-        }
-        BaseMorphiaRepo repo = (BaseMorphiaRepo) repoOpt.get();
-        Class<? extends UnversionedBaseModel> modelClass = repo.getPersistentClass();
-        // Convert record map to model instance (sanitize and adapt known fields)
-        Map<String, Object> adapted = adaptForModel(record, modelClass);
-        UnversionedBaseModel entity = (UnversionedBaseModel) objectMapper.convertValue(adapted, modelClass);
 
-        // Implement upsert semantics based on dataset.naturalKey
-        List<String> naturalKey = dataset.getNaturalKey();
-        if (naturalKey == null || naturalKey.isEmpty()) {
-            // If no natural key, just save (Morphia Repo applies security/data domain/audit)
-            repo.save(context.getRealm(), entity);
-            return;
-        }
+        if (repoOpt.isPresent()) {
+            BaseMorphiaRepo<? extends UnversionedBaseModel> repo = repoOpt.get();
+            Class<? extends UnversionedBaseModel> modelClass = repo.getPersistentClass();
+            // Convert record map to model instance (sanitize and adapt known fields)
+            Map<String, Object> adapted = adaptForModel(record, modelClass);
+            @SuppressWarnings("unchecked")
+            UnversionedBaseModel entity = (UnversionedBaseModel) objectMapper.convertValue(adapted, modelClass);
 
-        // Find existing entity by matching natural key fields. For simplicity and to avoid
-        // depending on the repo's query language here, load a small list and filter in-memory.
-        // Seed datasets are typically small.
-        List existingList = repo.getAllList(context.getRealm());
-        UnversionedBaseModel matched = null;
-        for (Object o : existingList) {
-            if (o instanceof UnversionedBaseModel e) {
-                if (matchesNaturalKey(e, record, naturalKey)) {
-                    matched = e;
-                    break;
-                }
-            }
-        }
-        if (matched != null) {
-            if (!dataset.isUpsert()) {
-                // Insert-only mode: skip when a record with same natural key already exists
+            // Implement upsert semantics based on dataset.naturalKey
+            List<String> naturalKey = dataset.getNaturalKey();
+            if (naturalKey == null || naturalKey.isEmpty()) {
+                @SuppressWarnings("unchecked")
+                BaseMorphiaRepo<UnversionedBaseModel> typedRepo = (BaseMorphiaRepo<UnversionedBaseModel>) repo;
+                typedRepo.save(context.getRealm(), entity);
                 return;
             }
-            entity.setId(matched.getId());
+
+            Optional<UnversionedBaseModel> existing = findExistingByNaturalKey(
+                    repo, context.getRealm(), modelClass, record, naturalKey);
+
+            if (existing.isPresent()) {
+                if (!dataset.isUpsert()) {
+                    Log.debugf("Skipping insert-only record for %s (natural key already exists)", dataset.getCollection());
+                    return;
+                }
+                // Update existing entity
+                entity.setId(existing.get().getId());
+            }
+
+            @SuppressWarnings("unchecked")
+            BaseMorphiaRepo<UnversionedBaseModel> typedRepo = (BaseMorphiaRepo<UnversionedBaseModel>) repo;
+            typedRepo.save(context.getRealm(), entity);
+            return;
         }
 
-        // Save will insert or replace based on presence of id
-        try {
-            repo.save(context.getRealm(), entity);
-        } catch (RuntimeException ex) {
-            Log.warnf("Morphia save failed for model %s in realm %s: %s. Falling back to Mongo write.",
-                    modelClass.getSimpleName(), context.getRealm(), ex.getMessage());
-            // Fallback to direct Mongo write using original record (already adapted but may miss Morphia-only fields)
-            fallback().upsertRecord(context, dataset, record);
+        // Fallback path: no modelClass => use generic Mongo collection operations
+        MongoDatabase database = mongoClient.getDatabase(context.getRealm());
+        MongoCollection<org.bson.Document> collection = database.getCollection(dataset.getCollection());
+        org.bson.Document document = new org.bson.Document();
+        // Copy fields preserving order
+        for (Map.Entry<String, Object> e : record.entrySet()) {
+            document.append(e.getKey(), convertScalar(e.getValue()));
         }
-    }
 
-    private boolean matchesNaturalKey(UnversionedBaseModel entity, Map<String, Object> record, List<String> keys) {
-        for (String key : keys) {
-            Object rv = record.get(key);
-            Object ev = readProperty(entity, key);
-            if (!Objects.equals(normalizeValue(ev), normalizeValue(rv))) {
-                return false;
+        List<String> naturalKey = dataset.getNaturalKey();
+        if (naturalKey == null || naturalKey.isEmpty()) {
+            // No natural key => insert or replace by _id if provided
+            if (document.containsKey("_id")) {
+                org.bson.Document filter = new org.bson.Document("_id", document.get("_id"));
+                collection.replaceOne(filter, document, new ReplaceOptions().upsert(true));
+            } else {
+                collection.insertOne(document);
+            }
+            return;
+        }
+
+        org.bson.Document filter = new org.bson.Document();
+        for (String key : naturalKey) {
+            Object v = document.get(key);
+            if (v == null) {
+                // Cannot match; in insert-only mode skip; in upsert mode insert
+                if (dataset.isUpsert()) {
+                    collection.insertOne(document);
+                }
+                return;
+            }
+            filter.append(key, v);
+        }
+
+        if (dataset.isUpsert()) {
+            collection.replaceOne(filter, document, new ReplaceOptions().upsert(true));
+        } else {
+            if (collection.find(filter).limit(1).first() == null) {
+                collection.insertOne(document);
             }
         }
-        return true;
     }
 
-    private Object normalizeValue(Object v) {
-        if (v instanceof ObjectId oid) {
-            return oid.toHexString();
+    /**
+     * Finds an existing entity by natural key using a database query.
+     * This is much more efficient than loading all entities into memory.
+     *
+     * @param repo the repository to use
+     * @param realm the realm identifier
+     * @param modelClass the model class
+     * @param record the record containing natural key values
+     * @param naturalKey the list of natural key field names
+     * @return Optional containing the existing entity if found
+     */
+    @SuppressWarnings("unchecked")
+    private Optional<UnversionedBaseModel> findExistingByNaturalKey(
+            BaseMorphiaRepo<? extends UnversionedBaseModel> repo,
+            String realm,
+            Class<? extends UnversionedBaseModel> modelClass,
+            Map<String, Object> record,
+            List<String> naturalKey) {
+
+        // Build filters for natural key fields
+        List<Filter> filters = new ArrayList<>();
+        for (String key : naturalKey) {
+            Object value = record.get(key);
+            if (value == null) {
+                // If any natural key field is null, we can't match
+                return Optional.empty();
+            }
+            filters.add(Filters.eq(key, value));
         }
-        return v;
+
+        // Use datastore directly to query (bypassing security rules for seed operations)
+        // Seeds run with system/admin context, so this is safe
+        Datastore datastore = morphiaDataStore.getDataStore(realm);
+        Query<? extends UnversionedBaseModel> query = datastore.find(modelClass)
+                .filter(filters.toArray(new Filter[0]));
+
+        UnversionedBaseModel existing = query.first();
+        return Optional.ofNullable(existing);
     }
 
-    private Object readProperty(UnversionedBaseModel entity, String key) {
-        try {
-            var fld = findField(entity.getClass(), key);
-            if (fld == null) return null;
-            fld.setAccessible(true);
-            return fld.get(entity);
-        } catch (Exception e) {
-            return null;
-        }
-    }
 
     private Map<String, Object> adaptForModel(Map<String, Object> record, Class<? extends UnversionedBaseModel> modelClass) {
         Map<String, Object> adapted = new LinkedHashMap<>(record);
@@ -226,6 +282,30 @@ public class MorphiaSeedRepository implements SeedRepository {
         } catch (ClassNotFoundException e) {
             throw new IllegalStateException("Model class not found: " + modelClassName, e);
         }
+    }
+
+    // Minimal value conversion similar to MongoSeedRepository
+    @SuppressWarnings("unchecked")
+    private Object convertScalar(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> nested = new LinkedHashMap<>();
+            map.forEach((k, v) -> nested.put(String.valueOf(k), convertScalar(v)));
+            return new org.bson.Document(nested);
+        }
+        if (value instanceof List<?> list) {
+            return list.stream().map(this::convertScalar).toList();
+        }
+        // Convert string ObjectId like values into ObjectId if appropriate
+        if (value instanceof String s) {
+            // simple heuristic: 24-hex string
+            if (s.length() == 24) {
+                try {
+                    return new ObjectId(s);
+                } catch (Exception ignore) {
+                }
+            }
+        }
+        return value;
     }
 
     private void ensureCollectionSet(SeedPackManifest.Dataset dataset,

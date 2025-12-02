@@ -1,6 +1,7 @@
 package com.e2eq.framework.service.seed;
 
 import io.quarkus.logging.Log;
+import jakarta.enterprise.context.ApplicationScoped;
 
 import java.io.File;
 import java.io.IOException;
@@ -23,17 +24,29 @@ import java.util.jar.JarFile;
  * Loads seed packs from the application classpath under the directory
  * "seed-packs". This allows framework-provided seeds to be discovered by
  * applications without copying files into the app project.
+ * 
+ * Now a CDI bean that is auto-discovered.
  */
-public final class ClasspathSeedSource implements SeedSource, SchemeAware {
+@ApplicationScoped
+public class ClasspathSeedSource implements SeedSource, SchemeAware {
 
     private static final String SEED_ROOT = "seed-packs";
     private final ClassLoader cl;
-    private final String id;
+    private String id = "classpath";
 
+    /**
+     * Default constructor for CDI.
+     */
     public ClasspathSeedSource() {
-        this(Thread.currentThread().getContextClassLoader(), "classpath");
+        this.cl = Thread.currentThread().getContextClassLoader();
     }
 
+    /**
+     * Constructor for manual instantiation (tests, backward compatibility).
+     *
+     * @param cl the class loader to use
+     * @param id the source identifier
+     */
     public ClasspathSeedSource(ClassLoader cl, String id) {
         this.cl = Objects.requireNonNull(cl, "classLoader");
         this.id = Objects.requireNonNull(id, "id");

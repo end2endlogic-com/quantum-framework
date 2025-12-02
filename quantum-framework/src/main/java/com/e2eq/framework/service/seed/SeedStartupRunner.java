@@ -18,7 +18,7 @@ import jakarta.inject.Inject;
 import org.bson.Document;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
-import java.nio.file.Path;
+import java.io.IOException;
 import java.util.*;
 
 import com.e2eq.framework.util.EnvConfigUtils;
@@ -39,7 +39,10 @@ public class SeedStartupRunner {
     CredentialRepo credRepo;
 
     @Inject
-    MorphiaSeedRepository morphiaSeedRepository;
+    SeedLoaderService seedLoaderService;
+
+    @Inject
+    SeedDiscoveryService seedDiscoveryService;
 
     @Inject
     EnvConfigUtils envConfigUtils;
@@ -128,10 +131,6 @@ public class SeedStartupRunner {
         DistributedLock lock = getSeedLock(realm);
         lock.acquire();
         try {
-            Path root = SeedPathResolver.resolveSeedRoot();
-            FileSeedSource fileSource = new FileSeedSource("files", root);
-            ClasspathSeedSource classpathSource = new ClasspathSeedSource();
-
             // Derive tenantId from realm (replace the last '-' with '.') and resolve admin userId
             String tenantId = realmToTenantId(realm);
             String adminUserId = String.format("admin@%s", tenantId);
@@ -139,9 +138,6 @@ public class SeedStartupRunner {
             // Lookup admin user profile in the target realm to obtain its dataDomain without requiring SecurityContext
             CredentialUserIdPassword adminCred = null;
             try {
-               // var db = mongoClient.getDatabase(realm);
-               // var upColl = db.getCollection("userProfile");
-               // adminDoc = upColl.find(new org.bson.Document("email", adminUserId)).first();
                Optional<CredentialUserIdPassword> oAdminCred = credRepo.findByUserId(adminUserId, envConfigUtils.getSystemRealm(), true);
                if (!oAdminCred.isPresent()) {
                    Log.warnf("SeedStartupRunner: admin user %s not found in realm %s. Seeding will proceed with system context",
@@ -200,8 +196,6 @@ public class SeedStartupRunner {
                         .withFunctionalDomain("SEED")
                         .withAction("APPLY")
                         .build();
-          //      com.e2eq.framework.model.securityrules.SecurityContext.setPrincipalContext(principalContext);
-          //      com.e2eq.framework.model.securityrules.SecurityContext.setResourceContext(resourceContext);
             } else {
                 Log.warnf("SeedStartupRunner: failed to establish SecurityContext for admin user %s in realm %s attempting to use system@system.com", adminUserId, realm);
                 principalContext = securityUtils.getSystemPrincipalContext();
@@ -214,65 +208,30 @@ public class SeedStartupRunner {
                   .build();
             }
 
-            // Discover packs from both filesystem and classpath, and select latest per name
-            List<SeedPackDescriptor> descriptors = new ArrayList<>();
+            // Use SeedDiscoveryService to discover, filter, and resolve latest versions
+            Map<String, SeedPackDescriptor> latestByName;
             try {
-                List<SeedPackDescriptor> fileDescriptors = fileSource.loadSeedPacks(context);
-                Log.infof("SeedStartupRunner: scanned file seed root %s for realm %s and found %d manifest(s)", root.toAbsolutePath(), realm, fileDescriptors.size());
-                descriptors.addAll(fileDescriptors);
-            } catch (Exception e) {
-                Log.warnf("SeedStartupRunner: error scanning file seed root %s: %s", root.toAbsolutePath(), e.getMessage());
-            }
-            try {
-                List<SeedPackDescriptor> cpDescriptors = classpathSource.loadSeedPacks(context);
-                Log.infof("SeedStartupRunner: scanned classpath seed root '%s' for realm %s and found %d manifest(s)", "seed-packs", realm, cpDescriptors.size());
-                descriptors.addAll(cpDescriptors);
-            } catch (Exception e) {
-                Log.warnf("SeedStartupRunner: error scanning classpath seeds: %s", e.getMessage());
-            }
-            if (descriptors.isEmpty()) {
-                Log.infof("SeedStartupRunner: no seed packs found from either filesystem or classpath for realm %s", realm);
+                latestByName = seedDiscoveryService.discoverLatestApplicable(
+                        context,
+                        seedFilterCsv.orElse(null));
+            } catch (IOException e) {
+                Log.warnf("SeedStartupRunner: failed to discover seed packs for realm %s: %s", realm, e.getMessage());
                 return;
-            } else {
-               Log.infof("SeedStartupRunner: found %d total seed pack manifest(s) for realm %s", descriptors.size(), realm);
             }
-            // Optional: filter by allowed seed pack names from configuration (csv)
-            if (seedFilterCsv.isPresent() && !seedFilterCsv.get().isBlank()) {
-                java.util.Set<String> allowed = new java.util.LinkedHashSet<>();
-                for (String part : seedFilterCsv.get().split(",")) {
-                    String name = part.trim();
-                    if (!name.isEmpty()) allowed.add(name);
-                }
-                if (!allowed.isEmpty()) {
-                    descriptors.removeIf(d -> !allowed.contains(d.getManifest().getSeedPack()));
-                }
-            }
-            // Filter by scope applicability (gated by feature flag)
-            descriptors.removeIf(d -> !ScopeMatcher.isApplicable(d, context));
-            Map<String, SeedPackDescriptor> latestByName = new LinkedHashMap<>();
-            for (SeedPackDescriptor d : descriptors) {
-                String name = d.getManifest().getSeedPack();
-                latestByName.merge(name, d, (a, b) -> compareSemver(a.getManifest().getVersion(), b.getManifest().getVersion()) >= 0 ? a : b);
-            }
-            // Apply via SeedLoader. MongoSeedRegistry ensures idempotency/skip per dataset checksum.
-            SeedLoader loader = SeedLoader.builder()
-                    .addSeedSource(fileSource)
-                    .addSeedSource(classpathSource)
-                    .seedRepository(morphiaSeedRepository)
-                    .seedRegistry(new MongoSeedRegistry(mongoClient))
-                    .build();
-            List<SeedPackRef> refs = new ArrayList<>();
-            latestByName.values().forEach(d -> refs.add(SeedPackRef.exact(d.getManifest().getSeedPack(), d.getManifest().getVersion())));
-            if (refs.isEmpty()) {
+
+            if (latestByName.isEmpty()) {
                 Log.infof("SeedStartupRunner: no applicable seed packs for realm %s", realm);
                 return;
-            } else {
-               Log.infof("SeedStartupRunner: applying %d seed pack(s) to realm %s", refs.size(), realm);
-
-               SecurityCallScope.runWithContexts(principalContext, resourceContext, () -> {
-                  loader.apply(refs, context);
-               });
             }
+
+            // Apply via SeedLoaderService (CDI-managed, uses MorphiaSeedRegistry for idempotency)
+            List<SeedPackRef> refs = new ArrayList<>();
+            latestByName.values().forEach(d -> refs.add(SeedPackRef.exact(d.getManifest().getSeedPack(), d.getManifest().getVersion())));
+            Log.infof("SeedStartupRunner: applying %d seed pack(s) to realm %s", refs.size(), realm);
+
+            SecurityCallScope.runWithContexts(principalContext, resourceContext, () -> {
+                seedLoaderService.applySeeds(context, refs);
+            });
         } finally {
             // Always clear any thread-local security contexts we may have set
             try { com.e2eq.framework.model.securityrules.SecurityContext.clear(); } catch (Exception ignored) {}
@@ -287,17 +246,6 @@ public class SeedStartupRunner {
         return realm.substring(0, idx) + "." + realm.substring(idx + 1);
     }
 
-    private static int compareSemver(String a, String b) {
-        String[] as = a.split("\\.");
-        String[] bs = b.split("\\.");
-        for (int i = 0; i < Math.max(as.length, bs.length); i++) {
-            int ai = i < as.length ? parseInt(as[i]) : 0;
-            int bi = i < bs.length ? parseInt(bs[i]) : 0;
-            if (ai != bi) return Integer.compare(ai, bi);
-        }
-        return 0;
-    }
-    private static int parseInt(String s) { try { return Integer.parseInt(s); } catch (NumberFormatException e) { return 0; } }
 
     private DistributedLock getSeedLock(String realm) {
         MongoCollection<Document> collection = mongoClient
