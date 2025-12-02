@@ -1,6 +1,5 @@
 package com.e2eq.framework.service.seed;
 
-import com.mongodb.client.MongoClient;
 import io.quarkus.logging.Log;
 import io.quarkus.runtime.Startup;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -10,7 +9,6 @@ import java.io.IOException;
 import java.util.*;
 
 import com.e2eq.framework.util.EnvConfigUtils;
-import com.e2eq.framework.service.seed.SeedPathResolver;
 
 /**
  * Logs a summary of pending seed packs at application startup for key realms.
@@ -20,7 +18,10 @@ import com.e2eq.framework.service.seed.SeedPathResolver;
 public class PendingSeedsStartupLogger {
 
     @Inject
-    MongoClient mongoClient;
+    SeedDiscoveryService seedDiscoveryService;
+
+    @Inject
+    SeedRegistry seedRegistry;
 
     @Inject
     EnvConfigUtils envConfigUtils;
@@ -53,57 +54,26 @@ public class PendingSeedsStartupLogger {
     }
 
     private int countPending(String realm) throws IOException {
-       Log.info("== START Count PENDING SEEDS ===");
-        java.nio.file.Path root = SeedPathResolver.resolveSeedRoot();
-        FileSeedSource source = new FileSeedSource("files", root);
+        Log.info("== START Count PENDING SEEDS ===");
         SeedContext context = SeedContext.builder(realm).build();
-        MongoSeedRegistry registry = new MongoSeedRegistry(mongoClient);
-        List<SeedPackDescriptor> descriptors = source.loadSeedPacks(context);
-        // Filter by scope applicability (gated by feature flag)
-        descriptors.removeIf(d -> !com.e2eq.framework.service.seed.ScopeMatcher.isApplicable(d, context));
-        Map<String, SeedPackDescriptor> latestByPack = new LinkedHashMap<>();
-        for (SeedPackDescriptor d : descriptors) {
-            String name = d.getManifest().getSeedPack();
-            latestByPack.merge(name, d, (a, b) -> compareSemver(a.getManifest().getVersion(), b.getManifest().getVersion()) >= 0 ? a : b);
-        }
+        
+        // Use SeedDiscoveryService to discover and resolve latest versions
+        Map<String, SeedPackDescriptor> latestByPack = seedDiscoveryService.discoverLatestApplicable(context, null);
+        
         int count = 0;
         for (SeedPackDescriptor d : latestByPack.values()) {
             SeedPackManifest m = d.getManifest();
             boolean any = false;
             for (SeedPackManifest.Dataset ds : m.getDatasets()) {
-                String checksum = ""; // minimal: presence indicates change; content checksum would require IO
-                // Use repository checksum method from SeedAdminResource approach for accuracy
-                try (var in = source.openDataset(d, ds.getFile())) {
-                    java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
-                    byte[] bytes = in.readAllBytes();
-                    checksum = java.util.HexFormat.of().formatHex(digest.digest(bytes));
-                } catch (Exception e) {
-                    // If checksum fails, assume pending as a safe default
-                    checksum = "";
-                }
-                if (registry.shouldApply(context, m, ds, checksum)) {
-                    any = true; break;
+                String checksum = seedDiscoveryService.calculateChecksum(d, ds);
+                if (seedRegistry.shouldApply(context, m, ds, checksum)) {
+                    any = true;
+                    break;
                 }
             }
             if (any) count++;
         }
-       Log.infof("== END Count PENDING SEEDS Result: %d===", count);
+        Log.infof("== END Count PENDING SEEDS Result: %d===", count);
         return count;
-    }
-
-
-    private static int compareSemver(String a, String b) {
-        String[] as = a.split("\\.");
-        String[] bs = b.split("\\.");
-        for (int i = 0; i < Math.max(as.length, bs.length); i++) {
-            int ai = i < as.length ? parseInt(as[i]) : 0;
-            int bi = i < bs.length ? parseInt(bs[i]) : 0;
-            if (ai != bi) return Integer.compare(ai, bi);
-        }
-        return 0;
-    }
-
-    private static int parseInt(String s) {
-        try { return Integer.parseInt(s); } catch (NumberFormatException e) { return 0; }
     }
 }

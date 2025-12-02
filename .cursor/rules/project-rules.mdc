@@ -1,0 +1,14 @@
+---
+description: Project-level coding standards and best practices for the Quantum Framework
+alwaysApply: true
+---
+
+- favor using existing repos over direct access to mongodb
+- break problems down into subproblems for easier maintainability and testing
+- include integrate tests that ensure behavior of subproblems and main problems
+- update documentation as you go to ensure its up to date
+- paint both sides of the fence in other words do what is the best practice even when your not asked to and complete the through all the way through
+- abstract away complexity if you can and make your code and functions take arguments keeping in mind if may be used generically and by more than the problem your working on if its broadly applicable conceptually.
+- remove redundant code, and refactor inefficient code as you come across it.  Don't become to distracted by it but if its easy to take care of, take care of it.
+- ensure javadoc is part of what your coding so that the javadoc plugin passes
+- run your tests that test behavior in the current phase before you move on the next phase.

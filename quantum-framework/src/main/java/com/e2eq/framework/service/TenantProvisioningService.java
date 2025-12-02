@@ -19,7 +19,6 @@ import io.quarkus.logging.Log;
 import io.smallrye.mutiny.subscription.MultiEmitter;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import com.e2eq.framework.service.seed.SeedPathResolver;
 
 import java.io.IOException;
 import java.util.*;
@@ -37,7 +36,9 @@ public class TenantProvisioningService {
     @Inject EnvConfigUtils envConfigUtils;
     @Inject CredentialRepo credentialRepo;
 
-    @Inject MongoClient mongoClient;
+    @Inject SeedLoaderService seedLoaderService;
+
+    @Inject SeedDiscoveryService seedDiscoveryService;
 
     public static class ProvisionResult {
         public String realmId;
@@ -260,14 +261,8 @@ public class TenantProvisioningService {
             result.addWarning("Admin user already exists; no user changes were made.");
         }
 
-        // first apply any seed that does not have a aarchetype but
+        // first apply any seed that does not have a archetype but
        // is a perTenant Seed.
-       SeedLoader loader = SeedLoader.builder()
-                              .addSeedSource(new FileSeedSource("files", SeedPathResolver.resolveSeedRoot()))
-                              .seedRepository(new MongoSeedRepository(mongoClient))
-                              .seedRegistry(new MongoSeedRegistry(mongoClient))
-                              .build();
-
        SeedContext ctx = SeedContext.builder(realmId)
                             .tenantId(dc.getTenantId())
                             .orgRefName(dc.getOrgRefName())
@@ -275,28 +270,12 @@ public class TenantProvisioningService {
                             .ownerId(adminUserId)
                             .build();
 
-       // Discover latest applicable packs for this context
-       FileSeedSource source = new FileSeedSource("files", SeedPathResolver.resolveSeedRoot());
-       List<SeedPackDescriptor> descriptors;
+       // Discover latest applicable packs for this context using SeedDiscoveryService
+       Map<String, SeedPackDescriptor> latestByPack;
        try {
-          descriptors = source.loadSeedPacks(ctx);
+          latestByPack = seedDiscoveryService.discoverLatestApplicable(ctx, null);
        } catch (IOException e) {
-          throw new IllegalStateException("Failed to load seed packs: " + e.getMessage(), e);
-       }
-
-       // Keep only packs applicable to this tenant context (includes GLOBAL and unspecified)
-       descriptors.removeIf(d -> !com.e2eq.framework.service.seed.ScopeMatcher.isApplicable(d, ctx));
-
-       // Take the latest version per seedPack
-       Map<String, SeedPackDescriptor> latestByPack = new HashMap<>();
-       for (SeedPackDescriptor d : descriptors) {
-          String name = d.getManifest().getSeedPack();
-          latestByPack.merge(
-             name,
-             d,
-             (a, b) -> com.e2eq.framework.rest.resources.SeedAdminResource
-                          .compareSemver(a.getManifest().getVersion(), b.getManifest().getVersion()) >= 0 ? a : b
-          );
+          throw new IllegalStateException("Failed to discover seed packs: " + e.getMessage(), e);
        }
 
        // Apply all applicable (GLOBAL/unscoped and any per-tenant that match)
@@ -313,7 +292,7 @@ public class TenantProvisioningService {
                   .withAction("APPLY")
                   .build();
           SecurityCallScope.runWithContexts(tenantPrincipal, seedResource, () -> {
-              loader.apply(baseRefs, ctx);
+              seedLoaderService.applySeeds(ctx, baseRefs);
           });
        }
 
@@ -343,7 +322,8 @@ public class TenantProvisioningService {
                         .withAction("APPLY")
                         .build();
                 SecurityCallScope.runWithContexts(tenantPrincipal, seedResource, () -> {
-                    loader.applyArchetype(at, ctx); // will throw if not found
+                    // Apply requested archetype via SeedLoaderService
+                    seedLoaderService.applyArchetype(ctx, at); // will throw if not found
                 });
             }
         } else {

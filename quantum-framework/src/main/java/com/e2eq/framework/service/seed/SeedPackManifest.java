@@ -1,5 +1,8 @@
 package com.e2eq.framework.service.seed;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+
 import java.io.InputStream;
 import java.util.Collections;
 import java.util.List;
@@ -17,6 +20,7 @@ import org.yaml.snakeyaml.error.YAMLException;
 
 /**
  * Represents the declarative manifest that describes a seed pack.
+ * Enhanced with Bean Validation annotations for better validation.
  */
 @Data
 @EqualsAndHashCode
@@ -25,11 +29,18 @@ import org.yaml.snakeyaml.error.YAMLException;
 public final class SeedPackManifest {
 
     private static final String DEFAULT_MANIFEST = "manifest.yaml";
+    
+    @NotBlank(message = "seedPack name is required")
     private String seedPack;
 
+    @NotBlank(message = "version is required")
     private String version;
+    
+    @Valid
     private List<Dataset> datasets;
     private List<String> includes;
+    
+    @Valid
     private List<Archetype> archetypes;
     // Optional scope block to control applicability
     private SeedScope scope;
@@ -68,13 +79,25 @@ public final class SeedPackManifest {
         this.sourceDescription = sourceDescription;
     }
 
+    /**
+     * Validates the manifest using both programmatic checks and Bean Validation.
+     * 
+     * @throws IllegalStateException if validation fails
+     */
     public void validate() {
-        if (seedPack == null || seedPack.isBlank()) {
-            throw new IllegalStateException("seedPack name is required in manifest " + getSourceDescription());
+        // Bean Validation checks (basic constraints)
+        jakarta.validation.Validator validator = jakarta.validation.Validation
+                .buildDefaultValidatorFactory()
+                .getValidator();
+        
+        java.util.Set<jakarta.validation.ConstraintViolation<SeedPackManifest>> violations = validator.validate(this);
+        if (!violations.isEmpty()) {
+            StringBuilder sb = new StringBuilder("Validation failed for manifest " + getSourceDescription() + ": ");
+            violations.forEach(v -> sb.append(v.getPropertyPath()).append(" ").append(v.getMessage()).append("; "));
+            throw new IllegalStateException(sb.toString());
         }
-        if (version == null || version.isBlank()) {
-            throw new IllegalStateException("version is required in manifest " + getSourceDescription());
-        }
+        
+        // Additional programmatic validation
         if (datasets != null) {
             datasets.forEach(dataset -> dataset.validate(getSourceDescription()));
         }

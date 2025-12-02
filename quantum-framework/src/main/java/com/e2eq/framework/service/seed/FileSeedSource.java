@@ -1,5 +1,9 @@
 package com.e2eq.framework.service.seed;
 
+import io.quarkus.logging.Log;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -10,22 +14,59 @@ import java.util.Objects;
 import java.util.stream.Stream;
 
 /**
- * Loads seed packs from a directory structure on the filesystem or classpath.
+ * Loads seed packs from a directory structure on the filesystem.
+ * Now a CDI bean that auto-discovers via SeedPathResolver.
  */
-public final class FileSeedSource implements SeedSource, SchemeAware {
+@ApplicationScoped
+public class FileSeedSource implements SeedSource, SchemeAware {
 
-    private final String id;
-    private final Path root;
-    private final String manifestFileName;
+    @Inject
+    SeedPathResolver seedPathResolver;
 
+    private String id = "files";
+    private Path root;
+    private String manifestFileName = "manifest.yaml";
+
+    /**
+     * Default constructor for CDI.
+     * Root path will be resolved from SeedPathResolver on first use.
+     */
+    public FileSeedSource() {
+        // CDI will inject SeedPathResolver
+    }
+
+    /**
+     * Constructor for manual instantiation (tests, backward compatibility).
+     *
+     * @param id the source identifier
+     * @param root the root path
+     */
     public FileSeedSource(String id, Path root) {
         this(id, root, "manifest.yaml");
     }
 
+    /**
+     * Constructor for manual instantiation (tests, backward compatibility).
+     *
+     * @param id the source identifier
+     * @param root the root path
+     * @param manifestFileName the manifest file name
+     */
     public FileSeedSource(String id, Path root, String manifestFileName) {
         this.id = Objects.requireNonNull(id, "id");
         this.root = Objects.requireNonNull(root, "root");
         this.manifestFileName = Objects.requireNonNull(manifestFileName, "manifestFileName");
+    }
+
+    private Path getRoot() {
+        if (root == null && seedPathResolver != null) {
+            root = seedPathResolver.resolveSeedRoot();
+            Log.debugf("FileSeedSource: resolved root path: %s", root);
+        }
+        if (root == null) {
+            throw new IllegalStateException("FileSeedSource root path not set and SeedPathResolver not available");
+        }
+        return root;
     }
 
     @Override
@@ -35,11 +76,12 @@ public final class FileSeedSource implements SeedSource, SchemeAware {
 
     @Override
     public List<SeedPackDescriptor> loadSeedPacks(SeedContext context) throws IOException {
-        if (!Files.exists(root)) {
+        Path rootPath = getRoot();
+        if (!Files.exists(rootPath)) {
             return List.of();
         }
         List<SeedPackDescriptor> descriptors = new ArrayList<>();
-        try (Stream<Path> stream = Files.walk(root)) {
+        try (Stream<Path> stream = Files.walk(rootPath)) {
             stream.filter(path -> Files.isRegularFile(path) && path.getFileName().toString().equals(manifestFileName))
                     .forEach(path -> {
                         try (InputStream in = Files.newInputStream(path)) {
@@ -60,9 +102,10 @@ public final class FileSeedSource implements SeedSource, SchemeAware {
 
     @Override
     public InputStream openDataset(SeedPackDescriptor descriptor, String relativePath) throws IOException {
+        Path rootPath = getRoot();
         Path datasetPath = descriptor.getManifestPath().getParent().resolve(relativePath).normalize();
-        if (!datasetPath.startsWith(root)) {
-            throw new IOException("Dataset path " + datasetPath + " is outside seed source root " + root);
+        if (!datasetPath.startsWith(rootPath)) {
+            throw new IOException("Dataset path " + datasetPath + " is outside seed source root " + rootPath);
         }
         return Files.newInputStream(datasetPath);
     }
