@@ -4,6 +4,8 @@ package com.e2eq.framework.model.security;
 import com.e2eq.framework.model.persistent.base.BaseModel;
 import com.e2eq.framework.model.persistent.base.EntityReference;
 import com.e2eq.framework.model.persistent.base.ReferenceTarget;
+import com.e2eq.ontology.annotations.OntologyClass;
+import com.e2eq.ontology.annotations.OntologyProperty;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import dev.morphia.annotations.Entity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
@@ -21,6 +23,7 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 @SuperBuilder
 @Data
 @ToString(callSuper = true)
+@OntologyClass(id = "UserProfile")
 public  class UserProfile extends BaseModel {
     public enum Status {
         ACTIVE("ACTIVE"),
@@ -48,8 +51,10 @@ public  class UserProfile extends BaseModel {
     @NotNull (message = "credential reference must not be null")
     @NonNull
     @ReferenceTarget(target = com.e2eq.framework.model.security.CredentialUserIdPassword.class, collection="credentialUserIdPassword")
+    @OntologyProperty(id = "hasCredential", ref = "Credential", materializeEdge = true)
     protected EntityReference credentialUserIdPasswordRef;
 
+    @OntologyProperty(id = "hasUserId", materializeEdge = false) // userId is a string, handled by provider
     protected String userId; // used to look up the credentialUserIdPassword by userId if need be
    // in most cases the refName of the credential should match the userId but in the case where the credentialUserIdPasswordRef is null
    // or points to a different value this field can be used as a way to reconcile to the right credential

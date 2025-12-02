@@ -1,6 +1,7 @@
 package com.e2eq.framework.rest.resources;
 
 import com.e2eq.framework.service.seed.FileSeedSource;
+import com.e2eq.framework.service.seed.ClasspathSeedSource;
 import com.e2eq.framework.service.seed.MongoSeedRegistry;
 import com.e2eq.framework.service.seed.SeedContext;
 import com.e2eq.framework.service.seed.SeedLoader;
@@ -49,13 +50,19 @@ public class SeedAdminResource {
                                              @QueryParam("filter") String filterCsv) {
         java.nio.file.Path root = SeedPathResolver.resolveSeedRoot();
         SeedContext context = SeedContext.builder(realm).build();
-        FileSeedSource source = new FileSeedSource("files", root);
+        FileSeedSource fileSource = new FileSeedSource("files", root);
+        ClasspathSeedSource classpathSource = new ClasspathSeedSource();
         MongoSeedRegistry registry = new MongoSeedRegistry(mongoClient);
-        List<SeedPackDescriptor> descriptors;
+        List<SeedPackDescriptor> descriptors = new ArrayList<>();
         try {
-            descriptors = source.loadSeedPacks(context);
+            descriptors.addAll(fileSource.loadSeedPacks(context));
         } catch (IOException e) {
-            throw new InternalServerErrorException("Failed to load seed packs: " + e.getMessage());
+            throw new InternalServerErrorException("Failed to load file seed packs: " + e.getMessage());
+        }
+        try {
+            descriptors.addAll(classpathSource.loadSeedPacks(context));
+        } catch (IOException e) {
+            throw new InternalServerErrorException("Failed to load classpath seed packs: " + e.getMessage());
         }
         if (descriptors.isEmpty()) {
            Log.infof("No seed packs found in realm %s ", realm);
@@ -70,7 +77,7 @@ public class SeedAdminResource {
         Map<String, SeedPackDescriptor> latestByPack = latestByPack(descriptors);
         List<PendingSeedPack> pending = new ArrayList<>();
         for (SeedPackDescriptor d : latestByPack.values()) {
-            PendingSeedPack p = computePendingForDescriptor(source, registry, context, d);
+            PendingSeedPack p = computePendingForDescriptor(registry, context, d);
             if (p != null) pending.add(p);
         }
         // stable order by seedId
@@ -109,18 +116,25 @@ public class SeedAdminResource {
         java.nio.file.Path root = SeedPathResolver.resolveSeedRoot();
         SeedLoader loader = SeedLoader.builder()
                 .addSeedSource(new FileSeedSource("files", root))
+                .addSeedSource(new ClasspathSeedSource())
                 .seedRepository(morphiaSeedRepository)
                 .seedRegistry(new MongoSeedRegistry(mongoClient))
                 .build();
         SeedContext context = SeedContext.builder(realm).build();
 
         // Discover latest by pack and optionally filter
-        FileSeedSource source = new FileSeedSource("files", root);
-        List<SeedPackDescriptor> descriptors;
+        FileSeedSource fileSource = new FileSeedSource("files", root);
+        ClasspathSeedSource classpathSource = new ClasspathSeedSource();
+        List<SeedPackDescriptor> descriptors = new ArrayList<>();
         try {
-            descriptors = source.loadSeedPacks(context);
+            descriptors.addAll(fileSource.loadSeedPacks(context));
         } catch (IOException e) {
-            throw new InternalServerErrorException("Failed to load seed packs: " + e.getMessage());
+            throw new InternalServerErrorException("Failed to load file seed packs: " + e.getMessage());
+        }
+        try {
+            descriptors.addAll(classpathSource.loadSeedPacks(context));
+        } catch (IOException e) {
+            throw new InternalServerErrorException("Failed to load classpath seed packs: " + e.getMessage());
         }
         Set<String> allowed = parseFilter(filterCsv);
         if (!allowed.isEmpty()) {
@@ -145,18 +159,25 @@ public class SeedAdminResource {
         java.nio.file.Path root = com.e2eq.framework.service.seed.SeedPathResolver.resolveSeedRoot();
         SeedLoader loader = SeedLoader.builder()
                 .addSeedSource(new FileSeedSource("files", root))
+                .addSeedSource(new ClasspathSeedSource())
                 .seedRepository(morphiaSeedRepository)
                 .seedRegistry(new MongoSeedRegistry(mongoClient))
                 .build();
         SeedContext context = SeedContext.builder(realm).build();
 
         // Find latest version of the given pack
-        FileSeedSource source = new FileSeedSource("files", root);
-        List<SeedPackDescriptor> descriptors;
+        FileSeedSource fileSource = new FileSeedSource("files", root);
+        ClasspathSeedSource classpathSource = new ClasspathSeedSource();
+        List<SeedPackDescriptor> descriptors = new ArrayList<>();
         try {
-            descriptors = source.loadSeedPacks(context);
+            descriptors.addAll(fileSource.loadSeedPacks(context));
         } catch (IOException e) {
-            throw new NotFoundException("Failed to load seed packs: " + e.getMessage());
+            throw new NotFoundException("Failed to load file seed packs: " + e.getMessage());
+        }
+        try {
+            descriptors.addAll(classpathSource.loadSeedPacks(context));
+        } catch (IOException e) {
+            throw new NotFoundException("Failed to load classpath seed packs: " + e.getMessage());
         }
         // Apply scope filtering first
         descriptors.removeIf(d -> !com.e2eq.framework.service.seed.ScopeMatcher.isApplicable(d, context));
@@ -172,15 +193,14 @@ public class SeedAdminResource {
 
     // ----- Helpers -----
 
-    private PendingSeedPack computePendingForDescriptor(FileSeedSource source,
-                                                        MongoSeedRegistry registry,
+    private PendingSeedPack computePendingForDescriptor(MongoSeedRegistry registry,
                                                         SeedContext context,
                                                         SeedPackDescriptor d) {
         SeedPackManifest m = d.getManifest();
         boolean anyPending = false;
         List<PendingDataset> datasets = new ArrayList<>();
         for (SeedPackManifest.Dataset ds : m.getDatasets()) {
-            String checksum = checksumOf(source, d, ds);
+            String checksum = checksumOf(d, ds);
             boolean should = registry.shouldApply(context, m, ds, checksum);
             if (should) {
                 anyPending = true;
@@ -231,10 +251,10 @@ public class SeedAdminResource {
         try { return Integer.parseInt(s); } catch (NumberFormatException e) { return 0; }
     }
 
-    private static String checksumOf(FileSeedSource source, SeedPackDescriptor descriptor, SeedPackManifest.Dataset dataset) {
+    private static String checksumOf(SeedPackDescriptor descriptor, SeedPackManifest.Dataset dataset) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            try (InputStream in = source.openDataset(descriptor, dataset.getFile())) {
+            try (InputStream in = descriptor.getSource().openDataset(descriptor, dataset.getFile())) {
                 byte[] bytes = in.readAllBytes();
                 return java.util.HexFormat.of().formatHex(digest.digest(bytes));
             }

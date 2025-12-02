@@ -5,7 +5,6 @@ import com.coditory.sherlock.Sherlock;
 import com.coditory.sherlock.mongo.MongoSherlock;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
-import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.util.SecurityUtils;
@@ -32,8 +31,6 @@ import com.e2eq.framework.util.EnvConfigUtils;
 @Startup
 @ApplicationScoped
 public class SeedStartupRunner {
-
-    private static final String DEFAULT_SEED_ROOT = "src/main/resources/seed-packs";
 
     @Inject
     MongoClient mongoClient;
@@ -63,9 +60,9 @@ public class SeedStartupRunner {
     Optional<String> seedFilterCsv;
 
     @PostConstruct
-    void onStart() {
+    public void onStart() {
         if (!enabled || !applyOnStartup) {
-            Log.info("SeedStartupRunner disabled by configuration (quantum.seeds.enabled / quantum.seeds.apply.on-startup)");
+            Log.info("SeedStartupRunner disabled by configuration (quantum.seed-pack.enabled / quantum.seed-pack.apply.on-startup)");
             return;
         }
         // Run for system realm, and if distinct, also default and test
@@ -78,6 +75,8 @@ public class SeedStartupRunner {
         if (!Objects.equals(system, test) && !Objects.equals(def, test)) realms.add(test);
         for (String realm : realms) {
             try {
+                // Wait for database to be ready before applying seeds
+                waitForDatabase(realm);
                 applySeedsIfNeeded(realm);
             } catch (Exception e) {
                 Log.warnf("SeedStartupRunner: failed applying seeds for realm %s: %s", realm, e.getMessage());
@@ -85,12 +84,53 @@ public class SeedStartupRunner {
         }
     }
 
+    /**
+     * Wait for the database to be created and ready.
+     * This ensures migrations have had a chance to create the database before seeds run.
+     */
+    private void waitForDatabase(String realm) {
+        int maxRetries = 10;
+        int retryDelayMs = 500;
+        for (int i = 0; i < maxRetries; i++) {
+            try {
+                List<String> databaseNames = mongoClient.listDatabaseNames().into(new ArrayList<>());
+                if (databaseNames.contains(realm)) {
+                    // Database exists, check if it has any collections (indicating it's been initialized)
+                    var db = mongoClient.getDatabase(realm);
+                    var collections = db.listCollectionNames().into(new ArrayList<>());
+                    if (!collections.isEmpty() || i >= maxRetries - 1) {
+                        // Database exists and has collections, or we've exhausted retries
+                        Log.debugf("SeedStartupRunner: database %s is ready", realm);
+                        return;
+                    }
+                }
+                // Database doesn't exist yet, wait and retry
+                if (i < maxRetries - 1) {
+                    Log.debugf("SeedStartupRunner: waiting for database %s to be created (attempt %d/%d)", realm, i + 1, maxRetries);
+                    Thread.sleep(retryDelayMs);
+                }
+            } catch (Exception e) {
+                Log.debugf("SeedStartupRunner: error checking database %s: %s (attempt %d/%d)", realm, e.getMessage(), i + 1, maxRetries);
+                if (i < maxRetries - 1) {
+                    try {
+                        Thread.sleep(retryDelayMs);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                }
+            }
+        }
+        Log.warnf("SeedStartupRunner: database %s may not be ready, proceeding anyway", realm);
+    }
+
     private void applySeedsIfNeeded(String realm) throws Exception {
         DistributedLock lock = getSeedLock(realm);
         lock.acquire();
         try {
             Path root = SeedPathResolver.resolveSeedRoot();
-            FileSeedSource source = new FileSeedSource("files", root);
+            FileSeedSource fileSource = new FileSeedSource("files", root);
+            ClasspathSeedSource classpathSource = new ClasspathSeedSource();
 
             // Derive tenantId from realm (replace the last '-' with '.') and resolve admin userId
             String tenantId = realmToTenantId(realm);
@@ -174,14 +214,27 @@ public class SeedStartupRunner {
                   .build();
             }
 
-            // Discover packs and select latest per name
-            List<SeedPackDescriptor> descriptors = source.loadSeedPacks(context);
-            Log.infof("SeedStartupRunner: scanned seed root %s for realm %s and found %d manifest(s)", root.toAbsolutePath(), realm, descriptors.size());
+            // Discover packs from both filesystem and classpath, and select latest per name
+            List<SeedPackDescriptor> descriptors = new ArrayList<>();
+            try {
+                List<SeedPackDescriptor> fileDescriptors = fileSource.loadSeedPacks(context);
+                Log.infof("SeedStartupRunner: scanned file seed root %s for realm %s and found %d manifest(s)", root.toAbsolutePath(), realm, fileDescriptors.size());
+                descriptors.addAll(fileDescriptors);
+            } catch (Exception e) {
+                Log.warnf("SeedStartupRunner: error scanning file seed root %s: %s", root.toAbsolutePath(), e.getMessage());
+            }
+            try {
+                List<SeedPackDescriptor> cpDescriptors = classpathSource.loadSeedPacks(context);
+                Log.infof("SeedStartupRunner: scanned classpath seed root '%s' for realm %s and found %d manifest(s)", "seed-packs", realm, cpDescriptors.size());
+                descriptors.addAll(cpDescriptors);
+            } catch (Exception e) {
+                Log.warnf("SeedStartupRunner: error scanning classpath seeds: %s", e.getMessage());
+            }
             if (descriptors.isEmpty()) {
-                Log.infof("SeedStartupRunner: no seed packs found under %s for realm %s", root.toAbsolutePath(), realm);
+                Log.infof("SeedStartupRunner: no seed packs found from either filesystem or classpath for realm %s", realm);
                 return;
             } else {
-               Log.infof("SeedStartupRunner: found %d seed pack(s) to realm %s from %s", descriptors.size(), realm, root.toAbsolutePath());
+               Log.infof("SeedStartupRunner: found %d total seed pack manifest(s) for realm %s", descriptors.size(), realm);
             }
             // Optional: filter by allowed seed pack names from configuration (csv)
             if (seedFilterCsv.isPresent() && !seedFilterCsv.get().isBlank()) {
@@ -203,7 +256,8 @@ public class SeedStartupRunner {
             }
             // Apply via SeedLoader. MongoSeedRegistry ensures idempotency/skip per dataset checksum.
             SeedLoader loader = SeedLoader.builder()
-                    .addSeedSource(source)
+                    .addSeedSource(fileSource)
+                    .addSeedSource(classpathSource)
                     .seedRepository(morphiaSeedRepository)
                     .seedRegistry(new MongoSeedRegistry(mongoClient))
                     .build();
@@ -213,7 +267,7 @@ public class SeedStartupRunner {
                 Log.infof("SeedStartupRunner: no applicable seed packs for realm %s", realm);
                 return;
             } else {
-               Log.infof("SeedStartupRunner: applying %d seed pack(s) to realm %s from %s", refs.size(), realm, root.toAbsolutePath());
+               Log.infof("SeedStartupRunner: applying %d seed pack(s) to realm %s", refs.size(), realm);
 
                SecurityCallScope.runWithContexts(principalContext, resourceContext, () -> {
                   loader.apply(refs, context);
@@ -231,21 +285,6 @@ public class SeedStartupRunner {
         int idx = realm.lastIndexOf('-');
         if (idx < 0) return realm; // fallback
         return realm.substring(0, idx) + "." + realm.substring(idx + 1);
-    }
-
-    private Path resolveSeedRoot() {
-        String configured = seedRootConfig.orElse(DEFAULT_SEED_ROOT);
-        Path primary = Path.of(configured);
-        if (java.nio.file.Files.exists(primary)) {
-            return primary;
-        }
-        // Try module-relative fallback when running from monorepo root
-        Path fallback = Path.of("quantum-framework").resolve(configured);
-        if (java.nio.file.Files.exists(fallback)) {
-            return fallback;
-        }
-        // As a last resort, return the primary path (will likely lead to no seeds found)
-        return primary;
     }
 
     private static int compareSemver(String a, String b) {
