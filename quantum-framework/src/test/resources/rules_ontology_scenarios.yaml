@@ -1,0 +1,74 @@
+rules:
+  # Scenario 1: Broad deny for orders area, but specific allow for order_line view
+  - name: deny-orders-area
+    identities: user
+    areas: orders
+    functionalDomains: "*"
+    actions: "*"
+    effect: DENY
+    priority: 5
+    finalRule: false
+    body:
+      orgRefName: "*"
+      accountNumber: "*"
+      realm: "*"
+      tenantId: "*"
+      ownerId: "*"
+      dataSegment: "*"
+      resourceId: "*"
+
+  - name: allow-order-line-view
+    identities: user
+    areas: orders
+    functionalDomains: order_line
+    actions: [view, list]
+    effect: ALLOW
+    priority: 10
+    finalRule: false
+    body:
+      orgRefName: "*"
+      accountNumber: "*"
+      realm: "*"
+      tenantId: "*"
+      ownerId: "*"
+      dataSegment: "*"
+      resourceId: "*"
+
+  # Scenario 2: Allow on customer view; shipment remains denied (same area logistics)
+  - name: allow-customer-view
+    identities: user
+    areas: logistics
+    functionalDomains: customer
+    actions: [view]
+    effect: ALLOW
+    priority: 10
+    finalRule: false
+    body:
+      orgRefName: "*"
+      accountNumber: "*"
+      realm: "*"
+      tenantId: "*"
+      ownerId: "*"
+      dataSegment: "*"
+      resourceId: "*"
+
+  # Scenario 3: Script-guarded allow (simulates ontology/helper usage access gate)
+  - name: scripted-allow-order-view
+    identities: user
+    areas: orders
+    functionalDomains: order
+    actions: [view]
+    effect: ALLOW
+    priority: 9
+    finalRule: false
+    preconditionScript: |
+      // Allow only when identityInfo and rcontext exist (baseline helper availability)
+      identityInfo != null && rcontext != null;
+    body:
+      orgRefName: "*"
+      accountNumber: "*"
+      realm: "*"
+      tenantId: "*"
+      ownerId: "*"
+      dataSegment: "*"
+      resourceId: "*"

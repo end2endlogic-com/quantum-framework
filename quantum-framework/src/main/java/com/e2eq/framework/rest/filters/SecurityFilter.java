@@ -118,7 +118,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         // Check if the endpoint is annotated with @PermitAll
         boolean isPermitAll = isPermitAllEndpoint();
         if (isPermitAll && Log.isDebugEnabled()) {
-            Log.debugf("@PermitAll endpoint detected: %s - setting contexts but bypassing policy checks", 
+            Log.debugf("@PermitAll endpoint detected: %s - setting contexts but bypassing policy checks",
                 requestContext.getUriInfo().getPath());
         }
 
@@ -151,9 +151,9 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         }
 
 
-        protected ResourceContext determineResourceContext(ContainerRequestContext requestContext) {
-
-        if (!SecurityContext.getResourceContext().isPresent()) {
+        public ResourceContext determineResourceContext (ContainerRequestContext requestContext) {
+            // Always determine the resource context from the current request and overwrite any prior value
+            // to avoid leaking/caching context across multiple requests within the same thread/test.
             ResourceContext rcontext = null;
 
             // First, prefer annotations if available on the matched resource and method
@@ -193,47 +193,47 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 SecurityContext.setResourceContext(rcontext);
                 return rcontext;
             }
-            
+
             // Remove leading/trailing slashes and split
             path = path.startsWith("/") ? path.substring(1) : path;
             path = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
-            
+
             if (path.isEmpty()) {
                 rcontext = ResourceContext.DEFAULT_ANONYMOUS_CONTEXT;
                 SecurityContext.setResourceContext(rcontext);
                 return rcontext;
             }
-            
+
             String[] segments = path.split("/");
             int segmentCount = segments.length;
-            
+
             // Pattern 1: /area/domain/action (3 segments) - PRIMARY
             if (segmentCount == 3) {
                 String area = segments[0];
                 String functionalDomain = segments[1];
                 String action = segments[2];
-                
+
                 rcontext = new ResourceContext.Builder()
                         .withAction(action)
                         .withArea(area)
                         .withFunctionalDomain(functionalDomain)
                         .build();
                 SecurityContext.setResourceContext(rcontext);
-                
+
                 if (Log.isDebugEnabled()) {
-                    Log.debugf("Resource Context set from path (3 segments): area=%s, domain=%s, action=%s", 
+                    Log.debugf("Resource Context set from path (3 segments): area=%s, domain=%s, action=%s",
                         area, functionalDomain, action);
                 }
                 return rcontext;
             }
-            
+
             // Pattern 2: /area/domain/action/id (4 segments) - ACTION with resource ID
             if (segmentCount == 4) {
                 String area = segments[0];
                 String functionalDomain = segments[1];
                 String action = segments[2];
                 String resourceId = segments[3];
-                
+
                 rcontext = new ResourceContext.Builder()
                         .withAction(action)
                         .withArea(area)
@@ -241,53 +241,53 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                         .withResourceId(resourceId)
                         .build();
                 SecurityContext.setResourceContext(rcontext);
-                
+
                 if (Log.isDebugEnabled()) {
-                    Log.debugf("Resource Context set from path (4 segments): area=%s, domain=%s, action=%s, id=%s", 
+                    Log.debugf("Resource Context set from path (4 segments): area=%s, domain=%s, action=%s, id=%s",
                         area, functionalDomain, action, resourceId);
                 }
                 return rcontext;
             }
-            
+
             // Pattern 3: /area/domain (2 segments) - Infer action from HTTP method
             if (segmentCount == 2) {
                 String area = segments[0];
                 String functionalDomain = segments[1];
                 String action = inferActionFromHttpMethod(requestContext.getMethod());
-                
+
                 rcontext = new ResourceContext.Builder()
                         .withAction(action)
                         .withArea(area)
                         .withFunctionalDomain(functionalDomain)
                         .build();
                 SecurityContext.setResourceContext(rcontext);
-                
+
                 if (Log.isDebugEnabled()) {
-                    Log.debugf("Resource Context set from path (2 segments): area=%s, domain=%s, action=%s (inferred)", 
+                    Log.debugf("Resource Context set from path (2 segments): area=%s, domain=%s, action=%s (inferred)",
                         area, functionalDomain, action);
                 }
                 return rcontext;
             }
-            
+
             // Pattern 4: /area (1 segment) - Minimal context
             if (segmentCount == 1) {
                 String area = segments[0];
                 String action = inferActionFromHttpMethod(requestContext.getMethod());
-                
+
                 rcontext = new ResourceContext.Builder()
                         .withAction(action)
                         .withArea(area)
                         .withFunctionalDomain("*")
                         .build();
                 SecurityContext.setResourceContext(rcontext);
-                
+
                 if (Log.isDebugEnabled()) {
-                    Log.debugf("Resource Context set from path (1 segment): area=%s, action=%s (inferred)", 
+                    Log.debugf("Resource Context set from path (1 segment): area=%s, action=%s (inferred)",
                         area, action);
                 }
                 return rcontext;
             }
-            
+
             // Pattern 5: More than 4 segments - Use first 3, log warning
             if (segmentCount > 4) {
                 Log.warnf("Path has %d segments, using first 3 for resource context: %s", segmentCount, path);
@@ -295,7 +295,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 String functionalDomain = segments[1];
                 String action = segments[2];
                 String resourceId = segmentCount > 3 ? segments[3] : null;
-                
+
                 rcontext = new ResourceContext.Builder()
                         .withAction(action)
                         .withArea(area)
@@ -303,23 +303,20 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                         .withResourceId(resourceId)
                         .build();
                 SecurityContext.setResourceContext(rcontext);
-                
+
                 if (Log.isDebugEnabled()) {
-                    Log.debugf("Resource Context set from path (%d segments, truncated): area=%s, domain=%s, action=%s", 
+                    Log.debugf("Resource Context set from path (%d segments, truncated): area=%s, domain=%s, action=%s",
                         segmentCount, area, functionalDomain, action);
                 }
                 return rcontext;
             }
-            
+
             // Fallback: Anonymous context
             Log.debugf("Non-conformant path: %s (segments: %d) - setting to anonymous context", path, segmentCount);
             rcontext = ResourceContext.DEFAULT_ANONYMOUS_CONTEXT;
             SecurityContext.setResourceContext(rcontext);
             return rcontext;
-        } else {
-            return SecurityContext.getResourceContext().get();
         }
-    }
 
     private String inferActionFromHttpMethod(String http) {
         if (http == null) return "*";
@@ -401,7 +398,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             // Monitor memory usage
             Runtime runtime = Runtime.getRuntime();
             long beforeMemory = runtime.totalMemory() - runtime.freeMemory();
-            
+
             java.util.concurrent.Future<Boolean> fut = executor.submit(() -> {
                 Engine eng = Engine.newBuilder().build();
                 try (Context c = Context.newBuilder("js")
@@ -428,7 +425,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 }
             });
             Boolean result = fut.get(Math.max(1L, timeoutMs), java.util.concurrent.TimeUnit.MILLISECONDS);
-            
+
             // Check memory usage
             long afterMemory = runtime.totalMemory() - runtime.freeMemory();
             long memoryUsed = afterMemory - beforeMemory;
@@ -436,7 +433,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 Log.warnf("Script exceeded memory limit: %d bytes (limit: %d bytes); returning false", memoryUsed, maxMemoryBytes);
                 return false;
             }
-            
+
             return result;
         } catch (java.util.concurrent.TimeoutException te) {
             Log.warnf("Impersonation script timed out after %d ms; returning false", (timeoutMs <= 0 ? 1500L : timeoutMs));
@@ -730,7 +727,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     /**
      * Checks if the current endpoint is annotated with @PermitAll.
      * @PermitAll endpoints bypass all policy checks and are handled entirely by Jakarta Security.
-     * 
+     *
      * @return true if the method or class is annotated with @PermitAll, false otherwise
      */
     private boolean isPermitAllEndpoint() {

@@ -1,9 +1,8 @@
-package com.e2eq.framework.persistent;
+package com.e2eq.framework.model.persistent.morphia;
 
-import com.e2eq.framework.model.persistent.morphia.HierarchicalRepo;
-import com.e2eq.framework.test.MenuHierarchyModel;
-import com.e2eq.framework.test.MenuItemModel;
-import com.e2eq.framework.test.MenuItemStaticDynamicList;
+import com.e2eq.framework.model.general.MenuHierarchyModel;
+import com.e2eq.framework.model.general.MenuItemModel;
+import com.e2eq.framework.model.general.MenuItemStaticDynamicList;
 import jakarta.enterprise.context.ApplicationScoped;
 
 @ApplicationScoped

@@ -1,0 +1,114 @@
+rules:
+  # Enterprise role matrix for tests
+  # - admin: full access to everything (areas/domains/actions)
+  # - hr_manager: broad access to people/location/job hubs (area-level)
+  # - readonly_ops: read-only access (VIEW, LIST) to operational areas
+  # - orgs_jobs_mgr: manage organizations, associates, jobs, and job plans
+  # - tenant_admin: full access but scoped to a specific test realm via body.realm
+
+  # Admin — full access
+  - name: admin-all
+    identities: admin
+    areas: "*"
+    functionalDomains: "*"
+    actions: "*"
+    effect: ALLOW
+    priority: 5
+    finalRule: false
+    body:
+      orgRefName: "*"
+      accountNumber: "*"
+      realm: "*"
+      tenantId: "*"
+      ownerId: "*"
+      dataSegment: "*"
+      resourceId: "*"
+
+  # HR Manager — broad access to People, LocationHub, JobHub (area-level)
+  - name: hr-manager-areas
+    identities: hr_manager
+    areas: [PEOPLE_HUB, LocationHub, JobHub]
+    functionalDomains: "*"
+    actions: "*"
+    effect: ALLOW
+    priority: 7
+    finalRule: false
+    body:
+      orgRefName: "*"
+      accountNumber: "*"
+      realm: "*"
+      tenantId: "*"
+      ownerId: "*"
+      dataSegment: "*"
+      resourceId: "*"
+
+  # Readonly Ops — VIEW/LIST only on operational areas
+  - name: readonly-ops-areas
+    identities: readonly_ops
+    areas: [WORK_HUB, WORKHUB, WORKLOG, INTEGRATION, LOCATION_HUB, SYSTEM]
+    functionalDomains: "*"
+    actions: [VIEW, LIST]
+    effect: ALLOW
+    priority: 6
+    finalRule: false
+    body:
+      orgRefName: "*"
+      accountNumber: "*"
+      realm: "*"
+      tenantId: "*"
+      ownerId: "*"
+      dataSegment: "*"
+      resourceId: "*"
+
+  # Orgs/Jobs Manager — targeted management across specific domains
+  - name: orgs-jobs-manager-people-orgs
+    identities: orgs_jobs_mgr
+    areas: PEOPLE_HUB
+    functionalDomains: [ORGANIZATIONS, ASSOCIATES]
+    actions: "*"
+    effect: ALLOW
+    priority: 8
+    finalRule: false
+    body:
+      orgRefName: "*"
+      accountNumber: "*"
+      realm: "*"
+      tenantId: "*"
+      ownerId: "*"
+      dataSegment: "*"
+      resourceId: "*"
+
+  - name: orgs-jobs-manager-jobhub
+    identities: orgs_jobs_mgr
+    areas: JobHub
+    functionalDomains: [JOB, JOB_Plan]
+    actions: "*"
+    effect: ALLOW
+    priority: 8
+    finalRule: false
+    body:
+      orgRefName: "*"
+      accountNumber: "*"
+      realm: "*"
+      tenantId: "*"
+      ownerId: "*"
+      dataSegment: "*"
+      resourceId: "*"
+
+  # Tenant Admin — full access but SCOPED to a single realm via body.realm
+  - name: tenant-admin-scoped
+    identities: tenant_admin
+    areas: "*"
+    functionalDomains: "*"
+    actions: "*"
+    effect: ALLOW
+    priority: 9
+    finalRule: false
+    body:
+      orgRefName: "*"
+      accountNumber: "*"
+      realm: "test-security"
+      tenantId: "*"
+      ownerId: "*"
+      dataSegment: "*"
+      resourceId: "*"
