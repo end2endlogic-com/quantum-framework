@@ -1,5 +1,8 @@
 package com.e2eq.framework.test;
 
+import com.e2eq.framework.model.general.MenuHierarchyModel;
+import com.e2eq.framework.model.general.MenuItemModel;
+import com.e2eq.framework.model.general.MenuItemStaticDynamicList;
 import com.e2eq.framework.model.persistent.base.Coordinate;
 import com.e2eq.framework.model.persistent.base.MailingAddress;
 import com.e2eq.framework.model.persistent.migration.base.DatabaseVersion;

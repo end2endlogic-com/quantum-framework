@@ -1,9 +1,12 @@
 package com.e2eq.framework.persistent;
 
+import com.e2eq.framework.model.persistent.morphia.MenuHierarchyRepo;
+import com.e2eq.framework.model.persistent.morphia.MenuItemRepo;
+import com.e2eq.framework.model.persistent.morphia.MenuItemStaticDynamicListRepo;
 import com.e2eq.framework.securityrules.SecuritySession;
-import com.e2eq.framework.test.MenuHierarchyModel;
-import com.e2eq.framework.test.MenuItemModel;
-import com.e2eq.framework.test.MenuItemStaticDynamicList;
+import com.e2eq.framework.model.general.MenuHierarchyModel;
+import com.e2eq.framework.model.general.MenuItemModel;
+import com.e2eq.framework.model.general.MenuItemStaticDynamicList;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 

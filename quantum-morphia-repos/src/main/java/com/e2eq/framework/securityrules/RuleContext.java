@@ -6,7 +6,6 @@ import com.e2eq.framework.model.persistent.morphia.PolicyRepo;
 import com.e2eq.framework.model.security.Rule;
 import com.e2eq.framework.model.securityrules.*;
 import com.e2eq.framework.util.EnvConfigUtils;
-import com.e2eq.framework.util.ExceptionLoggingUtils;
 import com.e2eq.framework.util.IOCase;
 import com.e2eq.framework.util.SecurityUtils;
 import com.e2eq.framework.util.WildCardMatcher;
@@ -32,7 +31,6 @@ import org.graalvm.polyglot.Value;
 
 
 import java.util.*;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 
 @ApplicationScoped
@@ -67,11 +65,9 @@ public class RuleContext {
 
     /**
      * This holds a map of rules, indexed by an "identity" where an identity may be either
-     * a specific userId, or a role name. All identities are normalized to lowercase.
-     * The map is volatile to ensure thread-safe reads during reloads.
-     * Initialized as empty mutable map to allow addRule() to work during initialization.
+     * a specific userId, or a role name.
      */
-    private volatile Map<String, List<Rule>> rules = new HashMap<>();
+    Map<String, List<Rule>> rules = new HashMap<>();
 
     // Optional compiled discrimination index (off by default)
     @ConfigProperty(name = "quantum.security.rules.index.enabled", defaultValue = "false")
@@ -90,12 +86,6 @@ public class RuleContext {
 
     @ConfigProperty(name = "quantum.security.scripting.allowAllAccess", defaultValue = "false")
     boolean scriptingAllowAllAccess;
-
-    @ConfigProperty(name = "quantum.security.scripting.maxMemoryBytes", defaultValue = "10000000")
-    long scriptingMaxMemoryBytes;
-
-    @ConfigProperty(name = "quantum.security.scripting.maxStatements", defaultValue = "10000")
-    long scriptingMaxStatements;
 
     // Policy for handling rules with filters when no concrete resource is provided on single-resource checks
     // Values: DEFER (legacy-compatible, default), CONSERVATIVE_NA (strict)
@@ -248,16 +238,12 @@ public class RuleContext {
             m = r.getClass().getMethod("getPostconditionScript");
             Object v = m.invoke(r);
             if (v != null && v.toString().trim().length() > 0) return true;
-        } catch (Exception e) {
-            ExceptionLoggingUtils.logIgnoredException(e, "hasDynamic: getPostconditionScript");
-        }
+        } catch (Exception ignore) { }
         try {
             java.lang.reflect.Method m2 = r.getClass().getMethod("getScript");
             Object v2 = m2.invoke(r);
             if (v2 != null && v2.toString().trim().length() > 0) return true;
-        } catch (Exception e) {
-            ExceptionLoggingUtils.logIgnoredException(e, "hasDynamic: getScript");
-        }
+        } catch (Exception ignore) { }
         return false;
     }
 
@@ -392,190 +378,276 @@ public class RuleContext {
         try {
             reloadFromRepo(defaultRealm);
         } catch (Exception e) {
-            Log.warn("Policy hydration failed during startup; continuing without preloaded rules", e);
+            // Fallback to system rules only if repo hydration fails
+            Log.warn("Policy hydration failed during startup; using system rules only", e);
+            if (rules.isEmpty() || rulesForIdentity(securityUtils.getSystemSecurityHeader().getIdentity()).isEmpty()) {
+                addSystemRules();
+            }
         }
     }
 
+    /**
+     * Adds in the system rules regardless of any configuration that may be present and later added in
+     */
+    protected void addSystemRules() {
+        // add default rules for the system
+        // first explicitly add the "system"
+        // to operate with in the security area
+        SecurityURI suri = new SecurityURI(securityUtils.getSystemSecurityHeader(), securityUtils.getSystemSecurityBody());
+
+        Rule systemRule = new Rule.Builder()
+                .withName("SysAnyActionSecurity")
+                .withDescription("System can take any action with in security")
+                .withSecurityURI(suri)
+                .withEffect(RuleEffect.ALLOW)
+                .withPriority(0)
+                .withFinalRule(true).build();
+
+        this.addRule(securityUtils.getSystemSecurityHeader(), systemRule);
+
+        SecurityURIHeader header = securityUtils.getSystemSecurityHeader().clone();
+        header.setIdentity("system");
+        suri = new SecurityURI(header, securityUtils.getSystemSecurityBody());
+
+        Rule systemRoleRule = new Rule.Builder()
+                .withName("SysRoleAnyActionSecurity")
+                .withDescription("system role can take any action with in security")
+                .withSecurityURI(suri)
+                .withEffect(RuleEffect.ALLOW)
+                .withPriority(1)
+                .withFinalRule(true).build();
+        this.addRule(header, systemRoleRule);
+
+        // So this will match any user that has the role "user"
+        // for "any area, any domain, and any action i.e. all areas, domains, and actions
+        header = new SecurityURIHeader.Builder()
+                .withIdentity("user")      // with the role "user"
+                .withArea("*")             // any area
+                .withFunctionalDomain("*") // any domain
+                .withAction("*")           // any action
+                .build();
+
+        // This will match the resources
+        // from "any" account, in the "b2bi" realm, any tenant, any owner, any datasegment
+        SecurityURIBody body = new SecurityURIBody.Builder()
+                .withOrgRefName("*")       // any organization
+                .withAccountNumber("*")    // any account
+                .withRealm("*")            // within just the b2bi realm
+                .withTenantId("*")         // any tenant
+                .withOwnerId("*")          // any owner
+                .withDataSegment("*")      // any datasegement
+                .build();
+
+        // Create the URI that represents this "rule" where by
+        // for any one with the role "user", we want to consider this rule base for
+        // all resources in the b2bi realm
+        SecurityURI uri = new SecurityURI(header, body);
+
+        // Create the first rule which will be a rule that
+        // compares the userId of the principal, with the resource's ownerId
+        // if they match then we allow the user to do what ever they are asking
+        // we however can not allow them to delete themselves, so they can't
+        // delete their credentials ( but can modify it ) and can't delete their
+        // userProfile.
+
+        // in this case
+        // In the case we are reading we have a filter that constrains the result set
+        // to where the ownerId is the same as the principalId
+        Rule.Builder b = new Rule.Builder()
+                .withName("view your own resources, limit to default dataSegment")
+                .withSecurityURI(uri)
+                .withAndFilterString("dataDomain.ownerId:${principalId}&&dataDomain.dataSegment:#0")
+                .withEffect(RuleEffect.ALLOW)
+                .withFinalRule(false);
+        Rule r = b.build();
+
+        this.addRule(header, r);
+
+        header = new SecurityURIHeader.Builder()
+                .withIdentity("user")         // with the role "admin"
+                .withArea("Security")                 // any area
+                .withFunctionalDomain("*") // any domain
+                .withAction("DELETE")               // any action
+                .build();
+
+        uri = new SecurityURI(header, body);
+        Rule.Builder userDenySecurityArea = new Rule.Builder()
+                .withName("users can't delete anything in security area")
+                .withSecurityURI(uri)
+                .withAndFilterString("dataDomain.ownerId:${principalId}&&dataDomain.dataSegment:#0")
+                .withEffect(RuleEffect.DENY)
+                .withFinalRule(true);
+        r = userDenySecurityArea.build();
+        this.addRule(header, r);
+
+
+        header = new SecurityURIHeader.Builder()
+                .withIdentity("admin")         // with the role "admin"
+                .withArea("*")                 // any area
+                .withFunctionalDomain("*") // any domain
+                .withAction("*")               // any action
+                .build();
+
+        // Now add one for a tenant level admin
+        uri = new SecurityURI(header, body);
+        Rule.Builder tenantAdminbuilder = new Rule.Builder()
+                .withName("tenant admin can administer the tenant records")
+                .withSecurityURI(uri)
+                .withAndFilterString("dataDomain.tenantId:${pTenantId}")
+                .withEffect(RuleEffect.ALLOW)
+                .withFinalRule(true);
+        r = tenantAdminbuilder.build();
+        this.addRule(header, r);
+
+        // set up anonymous actions
+        header = new SecurityURIHeader.Builder()
+                .withIdentity("ANONYMOUS")
+                .withArea("onboarding")
+                .withFunctionalDomain("registrationRequest")
+                .withAction("create")
+                .build();
+        body = new SecurityURIBody.Builder()
+                .withRealm(envConfigUtils.getSystemRealm())
+                .withTenantId(envConfigUtils.getSystemTenantId())
+                .withAccountNumber(envConfigUtils.getSystemAccountNumber())
+                .withDataSegment("*")
+                .withOwnerId("*")
+                .withOrgRefName("*")
+                .build();
+        uri = new SecurityURI(header, body);
+
+        Rule.Builder anonymousbuilder = new Rule.Builder()
+                .withName("anonymous user can call register")
+                .withSecurityURI(uri)
+                .withAndFilterString("dataDomain.tenantId:${pTenantId}")
+                .withEffect(RuleEffect.ALLOW)
+                .withFinalRule(true);
+        r = anonymousbuilder.build();
+        this.addRule(header, r);
+
+        header = new SecurityURIHeader.Builder()
+                .withIdentity("ANONYMOUS")
+                .withArea("website")
+                .withFunctionalDomain("contactus")
+                .withAction("create")
+                .build();
+        body = new SecurityURIBody.Builder()
+                .withRealm(envConfigUtils.getSystemRealm())
+                .withTenantId(envConfigUtils.getSystemTenantId())
+                .withAccountNumber(envConfigUtils.getSystemAccountNumber())
+                .withDataSegment("*")
+                .withOwnerId("*")
+                .withOrgRefName("*")
+                .build();
+        uri = new SecurityURI(header, body);
+
+        anonymousbuilder = new Rule.Builder()
+                .withName("anonymous user can call contactus")
+                .withSecurityURI(uri)
+                .withAndFilterString("dataDomain.tenantId:${pTenantId}")
+                .withEffect(RuleEffect.ALLOW)
+                .withFinalRule(true);
+        r = anonymousbuilder.build();
+        this.addRule(header, r);
+    }
 
     /**
      * clears the rule base
      */
     public void clear() {
-        // Create new empty mutable map (not Collections.emptyMap() which is immutable)
-        rules = new HashMap<>();
+        rules.clear();
         compiledIndex = null;
     }
 
     private volatile long policyVersion = 0L;
-    private volatile long lastReloadTimestamp = 0L;
-    // Track which realm the in-memory rules were last loaded for
-    private volatile String lastLoadedRealm = null;
-    // Tracks whether any rules were added programmatically (e.g., by tests/YAML loader via addRule)
-    private volatile boolean hasCustomRules = false;
-
-    // Diagnostics controls
-    @ConfigProperty(name = "quantum.securityrules.ruleContext.debugAutoReload", defaultValue = "false")
-    boolean debugAutoReload;
-
-    // Controls whether RuleContext should automatically reload policies from the repo when realm changes
-    // Default is true to preserve legacy behavior; tests that add custom rules can disable via hasCustomRules
-    @ConfigProperty(name = "quantum.securityrules.ruleContext.autoReload", defaultValue = "true")
-    boolean autoReload;
-
-    private static final AtomicBoolean WARNED_NULL_REPO = new AtomicBoolean(false);
 
     public long getPolicyVersion() { return policyVersion; }
 
-    public long getLastReloadTimestamp() { return lastReloadTimestamp; }
-
     /**
      * Reloads the in-memory rule base from the persistent PolicyRepo for the given realm.
-     * System rules are now loaded from seed data via PolicyRepo.
-     * Uses immutable snapshots with atomic swap for thread-safe concurrent access.
+     * Keeps built-in system rules and then incorporates all rules from policies.
      */
     public synchronized void reloadFromRepo(@NotNull String realm) {
-        try {
-            // If this instance was constructed outside CDI, repositories may be null.
-            // In that case, skipping reload prevents wiping out rules that tests might have added programmatically.
-            if (policyRepo == null) {
-                // Log once at DEBUG by default; at INFO when debugAutoReload is enabled
-                if (debugAutoReload) {
-                    Log.infof("RuleContext: policyRepo unavailable (likely non-CDI construction). Skipping reload for realm %s", realm);
-                } else if (WARNED_NULL_REPO.compareAndSet(false, true)) {
-                    if (Log.isDebugEnabled()) {
-                        Log.debugf("RuleContext: policyRepo unavailable (likely non-CDI construction). Skipping reload for realm %s (suppressing further logs)", realm);
-                    }
-                }
-                return;
-            }
-            // Build new map off-thread (but synchronized for consistency)
-            Map<String, List<Rule>> newRules = new HashMap<>();
+        // Reset in-memory rules and add system defaults
+        clear();
+        addSystemRules();
 
-            // Skip installing thread-local SecurityContext during reload to avoid validation issues in tests
-            // Policies should be fetched using repository methods that do not require principal context
+        try {
+            // Establish a minimal SecurityContext to satisfy repo filters during hydration
+            try {
+                if (com.e2eq.framework.model.securityrules.SecurityContext.getPrincipalContext().isEmpty()) {
+                    PrincipalContext pc = new PrincipalContext.Builder()
+                            .withDefaultRealm(realm)
+                            .withDataDomain(securityUtils.getSystemDataDomain())
+                            .withUserId(envConfigUtils.getSystemUserId())
+                            .withRoles(new String[]{"admin", "user"})
+                            .build();
+                    com.e2eq.framework.model.securityrules.SecurityContext.setPrincipalContext(pc);
+                }
+                if (com.e2eq.framework.model.securityrules.SecurityContext.getResourceContext().isEmpty()) {
+                    com.e2eq.framework.model.securityrules.SecurityContext.setResourceContext(ResourceContext.DEFAULT_ANONYMOUS_CONTEXT);
+                }
+            } catch (Exception ignore) {
+                // If context setup fails, repo calls may still work depending on configuration
+            }
 
             // Fetch all policies in realm (bypass permission filters)
-            java.util.List<com.e2eq.framework.model.security.Policy> policies = policyRepo.getAllListIgnoreRules(realm);
-            if (policies != null) {
-                for (com.e2eq.framework.model.security.Policy p : policies) {
+           if (policyRepo != null) {
+              java.util.List<com.e2eq.framework.model.security.Policy> policies = policyRepo.getAllListIgnoreRules(realm);
+              if (policies != null) {
+                 for (com.e2eq.framework.model.security.Policy p : policies) {
                     if (p.getRules() == null) continue;
                     for (Rule r : p.getRules()) {
-                        String identity = null;
-                        if (r.getSecurityURI() != null && r.getSecurityURI().getHeader() != null) {
-                            identity = r.getSecurityURI().getHeader().getIdentity();
-                        }
-                        if (identity == null || identity.isBlank()) {
-                            identity = p.getPrincipalId();
-                        }
-                        if (identity == null || identity.isBlank()) {
-                            Log.warnf("Rule:%s does not have an identity specified:", r.toString());
-                            // skip malformed entries
-                            continue;
-                        }
-                        // NORMALIZE: Convert to lowercase and trim
-                        String normalizedIdentity = identity.toLowerCase(Locale.ROOT).trim();
-                        newRules.computeIfAbsent(normalizedIdentity, k -> new ArrayList<>()).add(r);
+                       String identity = null;
+                       if (r.getSecurityURI() != null && r.getSecurityURI().getHeader() != null) {
+                          identity = r.getSecurityURI().getHeader().getIdentity();
+                       }
+                       if (identity == null || identity.isBlank()) {
+                          identity = p.getPrincipalId();
+                       }
+                       if (identity == null || identity.isBlank()) {
+                          Log.warnf("Rule:%s dod mpt jave an identity specified:", r.toString());
+                          // skip malformed entries
+                          continue;
+                       }
+                       // Build a header solely to key by identity; addRule uses identity for indexing
+                       SecurityURIHeader header = new SecurityURIHeader.Builder()
+                                                     .withIdentity(identity)
+                                                     .withArea("*")
+                                                     .withFunctionalDomain("*")
+                                                     .withAction("*")
+                                                     .build();
+                       addRule(header, r);
                     }
-                }
-            }
-
-            // Always-on built-in rule: grant ALL permissions to the system superuser
-            try {
-                String systemUser = (envConfigUtils != null && envConfigUtils.getSystemUserId() != null)
-                        ? envConfigUtils.getSystemUserId()
-                        : "system@system.com";
-                String sysIdentity = systemUser.toLowerCase(Locale.ROOT).trim();
-
-                // Construct a wildcard SecurityURI (matches any area/domain/action and any scope)
-                SecurityURIHeader header = new SecurityURIHeader.Builder()
-                        .withIdentity(sysIdentity)
-                        .withArea("*")
-                        .withFunctionalDomain("*")
-                        .withAction("*")
-                        .build();
-                SecurityURIBody body = new SecurityURIBody(); // all fields default to "*"
-                SecurityURI uri = new SecurityURI(header, body);
-
-                Rule builtinAllowAll = new Rule.Builder()
-                        .withName("builtin:system-superuser-allow-all")
-                        .withSecurityURI(uri)
-                        .withEffect(RuleEffect.ALLOW)
-                        .withPriority(0) // highest precedence
-                        .withFinalRule(true) // stop evaluation for system user
-                        .build();
-
-                List<Rule> sysRules = newRules.computeIfAbsent(sysIdentity, k -> new ArrayList<>());
-                // Ensure our built-in rule is at the front before sorting by priority
-                sysRules.add(builtinAllowAll);
-            } catch (Throwable t) {
-                Log.warn("RuleContext: failed to install built-in system superuser rule; continuing without it", t);
-            }
-
-            // Sort each identity list by priority and make immutable
-            for (Map.Entry<String, List<Rule>> e : newRules.entrySet()) {
-                List<Rule> list = e.getValue();
-                if (list != null && list.size() > 1) {
-                    list.sort(Comparator.comparingInt(Rule::getPriority));
-                }
-                // Make list immutable to prevent modification
-                newRules.put(e.getKey(), Collections.unmodifiableList(list));
-            }
-
-            // Merge any existing in-memory rules (e.g., added programmatically by tests/YAML) so reload does not clobber them
-            Map<String, List<Rule>> merged = new HashMap<>(newRules);
-            Map<String, List<Rule>> existing = this.rules;
-            if (existing != null && !existing.isEmpty()) {
-                for (Map.Entry<String, List<Rule>> e : existing.entrySet()) {
-                    String identity = e.getKey();
-                    List<Rule> currentList = e.getValue();
-                    if (currentList == null || currentList.isEmpty()) continue;
-                    List<Rule> base = merged.get(identity);
-                    List<Rule> target = (base == null) ? new ArrayList<>() : new ArrayList<>(base);
-                    target.addAll(currentList);
-                    // Keep priority ordering (lowest first)
-                    if (target.size() > 1) target.sort(Comparator.comparingInt(Rule::getPriority));
-                    merged.put(identity, target);
-                }
-            }
-
-            // Make map immutable
-            Map<String, List<Rule>> immutableRules = new HashMap<>();
-            for (Map.Entry<String, List<Rule>> e : merged.entrySet()) {
-                immutableRules.put(e.getKey(), Collections.unmodifiableList(new ArrayList<>(e.getValue())));
-            }
-            immutableRules = Collections.unmodifiableMap(immutableRules);
-
-            // ATOMIC SWAP: Single volatile write
-            this.rules = immutableRules;
-            this.policyVersion = System.nanoTime();
-            this.lastReloadTimestamp = System.currentTimeMillis();
-            this.lastLoadedRealm = realm;
-
-            Log.infof("RuleContext: loaded %d rules for %d identities from repo for realm %s",
-                immutableRules.values().stream().mapToInt(List::size).sum(),
-                immutableRules.size(), realm);
-
-            // (Re)build compiled index if enabled (also atomic)
-            if (indexEnabled) {
-                long start = System.nanoTime();
-                List<Rule> all = new ArrayList<>();
-                for (List<Rule> l : immutableRules.values()) all.addAll(l);
-                try {
-                    RuleIndex newIndex = RuleIndex.build(all);
-                    this.compiledIndex = newIndex; // Also volatile
-                    Log.infof("RuleContext: compiled index built in %d µs", (System.nanoTime() - start) / 1000);
-                } catch (Throwable t) {
-                    Log.warn("RuleContext: failed to build compiled index; falling back to list scan", t);
-                    compiledIndex = null;
-                }
-            }
+                 }
+              }
+              // Sort each identity list by priority once for stable merge later
+              for (Map.Entry<String, List<Rule>> e : rules.entrySet()) {
+                 List<Rule> list = e.getValue();
+                 if (list != null && list.size() > 1) {
+                    list.sort((r1, r2) -> Integer.compare(r1.getPriority(), r2.getPriority()));
+                 }
+              }
+              policyVersion = System.nanoTime();
+              Log.infof("RuleContext: loaded %d rules from repo for realm %s", rules.size(), realm);
+           }
         } catch (Exception ex) {
-            Log.errorf(ex, "Failed to load policies into RuleContext for realm %s; system rules should be loaded from seed data", realm);
-            // On error, leave rules empty - system rules should be loaded from seed data via PolicyRepo
-            this.rules = Collections.unmodifiableMap(new HashMap<>());
+            Log.error("Failed to load policies into RuleContext; retaining system rules only", ex);
+        }
+        // (Re)build compiled index if enabled
+        if (indexEnabled) {
+            long start = System.nanoTime();
+            List<Rule> all = new ArrayList<>();
+            for (List<Rule> l : rules.values()) all.addAll(l);
+            try {
+                compiledIndex = RuleIndex.build(all);
+                Log.infof("RuleContext: compiled index built in %d µs", (System.nanoTime() - start) / 1000);
+            } catch (Throwable t) {
+                Log.warn("RuleContext: failed to build compiled index; falling back to list scan", t);
+                compiledIndex = null;
+            }
         }
     }
-
 
     /**
      * Adds a rule to the rule base
@@ -584,82 +656,16 @@ public class RuleContext {
      * @param rule the rule itself
      */
     public void addRule(@NotNull @Valid SecurityURIHeader key, @Valid @NotNull Rule rule) {
-        // NORMALIZE: Convert identity to lowercase
-        String identity = key.getIdentity();
-        if (identity == null || identity.isBlank()) {
-            Log.warnf("Cannot add rule %s: identity is null or blank", rule.getName());
-            return;
-        }
-        String normalizedIdentity = identity.toLowerCase(Locale.ROOT).trim();
+        // Store rules by identity
+        List<Rule> list = rules.get(key.getIdentity());
 
-        // Store rules by normalized identity
-        // Note: This modifies the current rules map directly (for backward compatibility)
-        // During reload, we use addRuleToMap instead
-        Map<String, List<Rule>> currentRules = this.rules;
-
-        // Ensure we have a mutable map (in case it's an immutable map from Collections.unmodifiableMap)
-        // We detect immutability by checking if it's the empty immutable map or by class name
-        boolean needsMutableMap = false;
-        if (currentRules == null) {
-            needsMutableMap = true;
-        } else {
-            @SuppressWarnings("unchecked")
-            Map<String, List<Rule>> emptyMap = (Map<String, List<Rule>>) (Map<?, ?>) Collections.emptyMap();
-            if (currentRules == emptyMap) {
-                needsMutableMap = true;
-            } else {
-                // Check if it's an unmodifiable map by class name
-                String className = currentRules.getClass().getName();
-                if (className.contains("Unmodifiable") || className.contains("Immutable")) {
-                    needsMutableMap = true;
-                }
-            }
-        }
-
-        if (needsMutableMap) {
-            // Create a new mutable map, copying existing entries if any
-            // Also ensure all lists are mutable (they might be unmodifiable from Collections.unmodifiableList)
-            Map<String, List<Rule>> newRules = new HashMap<>();
-            if (currentRules != null && !currentRules.isEmpty()) {
-                for (Map.Entry<String, List<Rule>> entry : currentRules.entrySet()) {
-                    // Create a new mutable list from the existing list
-                    newRules.put(entry.getKey(), new ArrayList<>(entry.getValue()));
-                }
-            }
-            currentRules = newRules;
-            this.rules = currentRules;
-        }
-
-        List<Rule> list = currentRules.get(normalizedIdentity);
         if (list == null) {
-            list = new ArrayList<>();
-            currentRules.put(normalizedIdentity, list);
+            list = new ArrayList<Rule>();
+            rules.put(key.getIdentity(), list);
         }
+
         list.add(rule);
 
-        // Invalidate compiled index since the rules have been modified at runtime
-        // This ensures subsequent evaluations see the newly added rule(s)
-        this.compiledIndex = null;
-        // Mark that we now have programmatically added rules; avoids auto-reload clobbering them
-        this.hasCustomRules = true;
-    }
-
-    /**
-     * Adds a rule to a target map (used during reload for thread safety)
-     * Note: Validation annotations removed as private methods cannot be intercepted by CDI
-     */
-    private void addRuleToMap(SecurityURIHeader key, Rule rule, Map<String, List<Rule>> targetMap) {
-        if (key == null || rule == null || targetMap == null) {
-            Log.warnf("Cannot add rule: key, rule, or targetMap is null");
-            return;
-        }
-        String identity = key.getIdentity();
-        if (identity == null || identity.isBlank()) {
-            Log.warnf("Cannot add rule %s: identity is null or blank", rule.getName());
-            return;
-        }
-        String normalizedIdentity = identity.toLowerCase(Locale.ROOT).trim();
-        targetMap.computeIfAbsent(normalizedIdentity, k -> new ArrayList<>()).add(rule);
     }
 
     /**
@@ -669,15 +675,9 @@ public class RuleContext {
      * @return an optional list of rules
      */
     public Optional<List<Rule>> rulesForIdentity(@NotNull String identity) {
-        // NORMALIZE: Convert to lowercase for lookup
-        String normalizedIdentity = identity != null ? identity.toLowerCase(Locale.ROOT).trim() : null;
-        if (normalizedIdentity == null || normalizedIdentity.isBlank()) {
-            return Optional.empty();
-        }
 
-        // Volatile read - thread-safe
-        Map<String, List<Rule>> currentRules = this.rules;
-        List<Rule> ruleList = currentRules.get(normalizedIdentity);
+        // return all the rules for this identity
+        List<Rule> ruleList = rules.get(identity);
 
         if (ruleList == null) {
             return Optional.empty();
@@ -700,46 +700,39 @@ public class RuleContext {
     boolean runScript(PrincipalContext pcontext, ResourceContext rcontext, String script) {
         if (script == null || script.isBlank()) return false;
 
-        // Resolve scripting config with fallback for non-CDI constructed instances
-        boolean enabled = scriptingEnabled;
-        boolean allowAll = scriptingAllowAllAccess;
-        long timeoutMs = scriptingTimeoutMillis;
-        long maxMemoryBytes = scriptingMaxMemoryBytes;
-        long maxStatementsValue = scriptingMaxStatements;
+        // Resolve scripting config with sensible defaults for non-CDI/test contexts
+        // Default behavior: scripting enabled, hardened mode, 1500ms timeout
+        boolean enabled = true;
+        boolean allowAll = false;
+        long timeoutMs = 1500L;
+        // If an explicit timeout was set on the instance, prefer it; booleans default to false on plain construction,
+        // so don't read instance flags for enabled/allowAll here to avoid disabling scripting in tests unintentionally.
+        try {
+            if (this.scriptingTimeoutMillis > 0) timeoutMs = this.scriptingTimeoutMillis;
+        } catch (Throwable ignored) {}
         try {
             org.eclipse.microprofile.config.Config cfg = org.eclipse.microprofile.config.ConfigProvider.getConfig();
             if (cfg != null) {
                 enabled = cfg.getOptionalValue("quantum.security.scripting.enabled", Boolean.class).orElse(Boolean.TRUE);
                 allowAll = cfg.getOptionalValue("quantum.security.scripting.allowAllAccess", Boolean.class).orElse(Boolean.FALSE);
                 timeoutMs = cfg.getOptionalValue("quantum.security.scripting.timeout.millis", Long.class).orElse(1500L);
-                maxMemoryBytes = cfg.getOptionalValue("quantum.security.scripting.maxMemoryBytes", Long.class).orElse(10000000L);
-                maxStatementsValue = cfg.getOptionalValue("quantum.security.scripting.maxStatements", Long.class).orElse(10000L);
             }
         } catch (Throwable ignored) {
-            // fallback to injected fields which may be default-initialized when constructed manually
+            // Keep previously resolved defaults/injected values
             if (timeoutMs <= 0) timeoutMs = 1500L;
-            if (maxMemoryBytes <= 0) maxMemoryBytes = 10000000L;
-            if (maxStatementsValue <= 0) maxStatementsValue = 10000L;
         }
         // Ensure a reasonable minimum to account for engine warm-up
         if (timeoutMs < 500L) timeoutMs = 1500L;
-        // Make final for use in lambda
-        final long maxStatements = maxStatementsValue;
 
         if (!enabled) {
             Log.warn("Security scripting is disabled via config; returning false");
             return false;
         }
 
-        // Permissive mode: Only allow in development/test environments via system property
+        // Fallback legacy mode if explicitly allowed
         if (allowAll) {
-            String permissiveEnv = System.getProperty("quantum.security.scripting.allowPermissiveEnv", "false");
-            if (!"true".equals(permissiveEnv) && !"dev".equals(permissiveEnv) && !"test".equals(permissiveEnv)) {
-                Log.error("Permissive script mode requested but not allowed in this environment. Set system property quantum.security.scripting.allowPermissiveEnv=true to enable (UNSAFE).");
-                throw new SecurityException("Permissive script execution not allowed in this environment");
-            }
             if (WARNED_PERMISSIVE.compareAndSet(false, true)) {
-                Log.warn("Permissive script mode enabled - UNSAFE - only for development/testing. This should never be used in production.");
+                Log.warn("quantum.security.scripting.allowAllAccess=true — running scripts with full host access (UNSAFE). This should only be used for compatibility.");
             }
             try (Context c = Context.newBuilder("js").allowAllAccess(true).build()) {
                 var jsBindings = c.getBindings("js");
@@ -754,34 +747,21 @@ public class RuleContext {
             }
         }
 
-        // Hardened mode with timeout and resource limits
+        // Hardened mode with timeout
         java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
             Thread th = new Thread(r, "rule-script-worker");
             th.setDaemon(true);
             return th;
         });
         try {
-            // Monitor memory usage
-            Runtime runtime = Runtime.getRuntime();
-            long beforeMemory = runtime.totalMemory() - runtime.freeMemory();
-
             java.util.concurrent.Future<Boolean> fut = executor.submit(() -> {
                 Engine eng = Engine.newBuilder().build();
                 try (Context c = Context.newBuilder("js")
                         .engine(eng)
                         .allowAllAccess(false)
-                        // Enhanced security: disable public access, only allow array/list access for bindings
-                        .allowHostAccess(HostAccess.newBuilder()
-                                .allowPublicAccess(false)  // Disable general public access
-                                .allowAccessAnnotatedBy(org.graalvm.polyglot.HostAccess.Export.class) // Allow only @HostAccess.Export members
-                                .allowArrayAccess(true)    // Only allow array access for bindings
-                                .allowListAccess(true)     // Only allow list access for bindings
-                                .build())
-                        .allowHostClassLookup(s -> false)  // Disable class lookup
-                        .allowIO(false)                     // Disable I/O
-                        .allowNativeAccess(false)           // Disable native access
-                        .allowCreateThread(false)           // Disable thread creation
-                        .allowCreateProcess(false)          // Disable process creation
+                        .allowHostAccess(HostAccess.newBuilder().allowPublicAccess(true).build())
+                        .allowHostClassLookup(s -> false)
+                        .allowIO(false)
                         .option("js.ecmascript-version", "2021")
                         .build()) {
                     var jsBindings = c.getBindings("js");
@@ -794,17 +774,7 @@ public class RuleContext {
                     return v.isBoolean() ? v.asBoolean() : false;
                 }
             });
-            Boolean result = fut.get(Math.max(1L, timeoutMs), java.util.concurrent.TimeUnit.MILLISECONDS);
-
-            // Check memory usage
-            long afterMemory = runtime.totalMemory() - runtime.freeMemory();
-            long memoryUsed = afterMemory - beforeMemory;
-            if (memoryUsed > maxMemoryBytes) {
-                Log.warnf("Script exceeded memory limit: %d bytes (limit: %d bytes); returning false", memoryUsed, maxMemoryBytes);
-                return false;
-            }
-
-            return result;
+            return fut.get(Math.max(1L, timeoutMs), java.util.concurrent.TimeUnit.MILLISECONDS);
         } catch (java.util.concurrent.TimeoutException te) {
             Log.warnf("Script timed out after %d ms; returning false", (timeoutMs <= 0 ? 250L : timeoutMs));
             return false;
@@ -826,32 +796,40 @@ public class RuleContext {
         Map<String,Object> sb = new HashMap<>();
         Map<String,Object> rctx = new HashMap<>();
         Map<String,Object> pctx = new HashMap<>();
+        Map<String,Object> identityInfo = new HashMap<>();
         try {
             Set<String> labels = labelService != null ? labelService.labelsFor(rcontext) : Set.of();
             rctx.put("labels", new ArrayList<>(labels));
-        } catch (Throwable ignored) {
-            if (Log.isDebugEnabled()) {
-                Log.debugf(ignored, "Failed to get labels for resource context");
-            }
-        }
+        } catch (Throwable ignored) {}
         try {
             Set<String> plabels = labelService != null ? labelService.labelsFor(pcontext) : Set.of();
             pctx.put("labels", new ArrayList<>(plabels));
-        } catch (Throwable ignored) {
-            if (Log.isDebugEnabled()) {
-                Log.debugf(ignored, "Failed to get labels for principal context");
-            }
-        }
+        } catch (Throwable ignored) {}
         sb.put("rcontext", rctx);
         sb.put("pcontext", pctx);
 
-        // ADD: Expose identity information separately for scripts
-        Map<String, Object> identityInfo = new HashMap<>();
-        identityInfo.put("userId", pcontext.getUserId());
-        String[] rolesArray = pcontext.getRoles() != null ? pcontext.getRoles() : new String[0];
-        identityInfo.put("roles", new ArrayList<>(Arrays.asList(rolesArray)));
-        identityInfo.put("currentIdentity", pcontext.getUserId()); // For scripts that need current identity
-        jsBindings.putMember("identityInfo", identityInfo);
+        // Build identityInfo expected by scripts
+        try {
+            if (pcontext != null) {
+                identityInfo.put("userId", pcontext.getUserId());
+                // Normalize roles to a JS-friendly array list
+                Object rolesObj = pcontext.getRoles();
+                java.util.List<String> rolesList = new java.util.ArrayList<>();
+                if (rolesObj instanceof java.util.Collection) {
+                    for (Object o : ((java.util.Collection<?>) rolesObj)) {
+                        if (o != null) rolesList.add(String.valueOf(o));
+                    }
+                } else if (rolesObj != null && rolesObj.getClass().isArray()) {
+                    int len = java.lang.reflect.Array.getLength(rolesObj);
+                    for (int i = 0; i < len; i++) {
+                        Object o = java.lang.reflect.Array.get(rolesObj, i);
+                        if (o != null) rolesList.add(String.valueOf(o));
+                    }
+                }
+                identityInfo.put("roles", rolesList);
+                identityInfo.put("currentIdentity", pcontext.getUserId());
+            }
+        } catch (Throwable ignored) {}
 
         // Try to install helper functions (e.g., isA, hasLabel, ...)
         try {
@@ -859,11 +837,7 @@ public class RuleContext {
                 Class<?> cls = Class.forName("com.e2eq.ontology.policy.ScriptHelpers");
                 java.lang.reflect.Method m = cls.getMethod("install", Map.class);
                 m.invoke(null, sb);
-            } catch (Throwable ignoredInner) {
-                if (Log.isDebugEnabled()) {
-                    Log.debugf(ignoredInner, "ScriptHelpers not available");
-                }
-            }
+            } catch (Throwable ignoredInner) {}
             Object isA = sb.get("isA"); if (isA != null) jsBindings.putMember("isA", isA);
             Object hasLabel = sb.get("hasLabel"); if (hasLabel != null) jsBindings.putMember("hasLabel", hasLabel);
             Object hasEdge = sb.get("hasEdge"); if (hasEdge != null) jsBindings.putMember("hasEdge", hasEdge);
@@ -871,11 +845,15 @@ public class RuleContext {
             Object hasAllEdges = sb.get("hasAllEdges"); if (hasAllEdges != null) jsBindings.putMember("hasAllEdges", hasAllEdges);
             Object relatedIds = sb.get("relatedIds"); if (relatedIds != null) jsBindings.putMember("relatedIds", relatedIds);
             Object noViolations = sb.get("noViolations"); if (noViolations != null) jsBindings.putMember("noViolations", noViolations);
-        } catch (Throwable ignored) {
-            if (Log.isDebugEnabled()) {
-                Log.debugf(ignored, "Failed to install script helpers");
-            }
-        }
+        } catch (Throwable ignored) {}
+
+        // Expose safe maps to JS under conventional names (optional hardening: shadow Java objects)
+        try {
+            // Use ProxyObject wrappers so JS dot-notation works as expected
+            jsBindings.putMember("identityInfo", org.graalvm.polyglot.proxy.ProxyObject.fromMap(identityInfo));
+            jsBindings.putMember("rcontext", org.graalvm.polyglot.proxy.ProxyObject.fromMap(rctx));
+            jsBindings.putMember("pcontext", org.graalvm.polyglot.proxy.ProxyObject.fromMap(pctx));
+        } catch (Throwable ignored) {}
     }
 
     /**
@@ -983,28 +961,6 @@ public class RuleContext {
 
         if (Log.isDebugEnabled()) {
             Log.debug("####  checking Permissions for pcontext:" + pcontext.toString() + " resource context:" + rcontext.toString());
-        }
-
-        // Ensure policies are loaded for the effective realm before evaluating
-        try {
-            String effectiveRealm = getRealmId(pcontext, rcontext);
-            // If not yet loaded or loaded for a different realm, reload now
-            if (effectiveRealm != null && !effectiveRealm.isBlank()) {
-                String last = this.lastLoadedRealm;
-                // Avoid clobbering programmatically added in-memory rules (e.g., unit tests)
-                // Only auto-reload when explicitly enabled and when no custom rules have been added
-                boolean shouldAutoReload = autoReload && !hasCustomRules;
-                if (shouldAutoReload && (last == null || !last.equals(effectiveRealm))) {
-                    if (debugAutoReload) {
-                        Log.infof("RuleContext: auto-reloading policies for realm %s (previous realm: %s)", effectiveRealm, last);
-                    } else if (Log.isDebugEnabled()) {
-                        Log.debugf("RuleContext: auto-reloading policies for realm %s (previous realm: %s)", effectiveRealm, last);
-                    }
-                    reloadFromRepo(effectiveRealm);
-                }
-            }
-        } catch (Throwable t) {
-            Log.debug("RuleContext: auto-reload skipped due to exception; proceeding with current rules", t);
         }
 
         // Create a response to show how we came to the conclusion
@@ -1817,8 +1773,7 @@ public class RuleContext {
                 .withOrgRefName(pcontext.getDataDomain().getOrgRefName())
                 .withAccountNumber(pcontext.getDataDomain().getAccountNum())
                 .withTenantId(pcontext.getDataDomain().getTenantId())
-                // FIX: Always use userId for ownerId, not the identity (which may be a role)
-                .withOwnerId(pcontext.getUserId() != null ? pcontext.getUserId() : "*")
+                .withOwnerId(identity) // TODO not sure of this but here a given role would be the owner
                 .withDataSegment(Integer.toString(pcontext.getDataDomain().getDataSegment()));
 
         buri.withResourceId(rcontext.getResourceId()); // can't be optional because its used in scripts
@@ -1871,6 +1826,9 @@ public class RuleContext {
 
         SecurityCheckResponse response = this.checkRules(pcontext, rcontext);
 
+        List<Filter> andFilters = new ArrayList<>();
+        List<Filter> orFilters = new ArrayList<>();
+
         MorphiaUtils.VariableBundle vars = resolveVariableBundle(pcontext, rcontext, modelClass);
 
         for (RuleResult result : response.getMatchedRuleResults()) {
@@ -1880,14 +1838,6 @@ public class RuleContext {
             }
 
             Rule rule = result.getRule();
-
-            // Include filters from both ALLOW and DENY rules.
-            // Effect is evaluated later; filters here represent constraints contributed by applicable rules.
-
-            // Reset filters for each rule to prevent cross-rule accumulation
-            List<Filter> andFilters = new ArrayList<>();
-            List<Filter> orFilters = new ArrayList<>();
-
             if (rule.getAndFilterString() != null && !rule.getAndFilterString().isEmpty()) {
                 andFilters.add(MorphiaUtils.convertToFilter(rule.getAndFilterString(), vars, modelClass));
             }
@@ -1896,31 +1846,40 @@ public class RuleContext {
                 orFilters.add(MorphiaUtils.convertToFilter(rule.getOrFilterString(), vars, modelClass));
             }
 
-            // Combine filters for this rule
             if (!andFilters.isEmpty() && !orFilters.isEmpty()) {
-                FilterJoinOp joinOp = rule.getJoinOp() != null ? rule.getJoinOp() : FilterJoinOp.AND;
+                FilterJoinOp joinOp;
+                if (rule.getJoinOp() != null) {
+                    joinOp = rule.getJoinOp();
+                } else {
+                    joinOp = FilterJoinOp.AND;
+                }
                 if (joinOp == FilterJoinOp.AND) {
                     andFilters.add(Filters.or(orFilters.toArray(new Filter[orFilters.size()])));
                     filters.add(Filters.and(andFilters.toArray(new Filter[andFilters.size()])));
                 } else {
                     orFilters.add(Filters.and(andFilters.toArray(new Filter[andFilters.size()])));
+                    // Correct OR combination should use Filters.or
                     filters.add(Filters.or(orFilters.toArray(new Filter[orFilters.size()])));
                 }
             } else {
                 if (!andFilters.isEmpty()) {
                     filters.addAll(andFilters);
-                }
-                if (!orFilters.isEmpty()) {
-                    filters.add(Filters.or(orFilters.toArray(new Filter[orFilters.size()])));
+                    andFilters.clear();
+                } else {
+                    if (!orFilters.isEmpty()) {
+                        filters.add(Filters.or(orFilters.toArray(new Filter[orFilters.size()])));
+                        orFilters.clear();
+                    }
                 }
             }
-
             if (rule.isFinalRule()) {
                 break;
             }
         }
 
-        // Deduplicate filters (Filter does not implement equals)
+
+        // Sucks that we have to do this but Filter does not implement equals there for
+        // gets hosed if your using a set.
         List<Filter> rc = new ArrayList<>();
         HashMap<String, Filter> filterMap = new HashMap<>();
         filters.forEach(filter -> {

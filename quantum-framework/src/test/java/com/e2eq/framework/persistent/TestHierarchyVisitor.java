@@ -1,7 +1,8 @@
 package com.e2eq.framework.persistent;
 
+import com.e2eq.framework.model.persistent.morphia.MenuHierarchyRepo;
 import com.e2eq.framework.securityrules.SecuritySession;
-import com.e2eq.framework.test.MenuHierarchyModel;
+import com.e2eq.framework.model.general.MenuHierarchyModel;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import org.bson.types.ObjectId;

@@ -1,4 +1,4 @@
-package com.e2eq.framework.test;
+package com.e2eq.framework.model.general;
 
 import com.e2eq.framework.model.persistent.base.StaticDynamicList;
 import dev.morphia.annotations.Entity;

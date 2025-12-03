@@ -1,0 +1,36 @@
+rules:
+  # Role-based allow for finance/ledger view only
+  - name: allow-admin-finance-ledger-view
+    identities: admin
+    areas: finance
+    functionalDomains: ledger
+    actions: [view]
+    effect: ALLOW
+    priority: 10
+    finalRule: false
+    body:
+      orgRefName: "*"
+      accountNumber: "*"
+      realm: "*"
+      tenantId: "*"
+      ownerId: "*"
+      dataSegment: "*"
+      resourceId: "*"
+
+  # Explicit allow for security/userProfile list for role admin
+  - name: allow-admin-userprofile-list
+    identities: admin
+    areas: security
+    functionalDomains: userProfile
+    actions: [list]
+    effect: ALLOW
+    priority: 9
+    finalRule: false
+    body:
+      orgRefName: "*"
+      accountNumber: "*"
+      realm: "*"
+      tenantId: "*"
+      ownerId: "*"
+      dataSegment: "*"
+      resourceId: "*"
