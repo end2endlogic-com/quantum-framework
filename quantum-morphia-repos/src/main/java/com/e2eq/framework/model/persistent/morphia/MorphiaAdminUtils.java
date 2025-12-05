@@ -3,7 +3,6 @@ package com.e2eq.framework.model.persistent.morphia;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import dev.morphia.MorphiaDatastore;
-import dev.morphia.Datastore;
 import dev.morphia.mapping.codec.pojo.EntityModel;
 import dev.morphia.query.FindOptions;
 import dev.morphia.query.MorphiaCursor;
@@ -15,7 +14,6 @@ import jakarta.annotation.Nullable;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
-import java.util.Collection;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
@@ -32,7 +30,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class MorphiaAdminUtils {
 
     @Inject
-    MorphiaDataStore morphiaDataStore;
+    MorphiaDataStoreWrapper morphiaDataStoreWrapper;
 
     /**
      * Delete all documents for the provided data domain either in a specific collection (entity) or across all collections.
@@ -44,7 +42,7 @@ public class MorphiaAdminUtils {
     public long deleteByDataDomain(String realm, DataDomain dataDomain, @Nullable String collectionName) {
         Objects.requireNonNull(realm, "realm must not be null");
         Objects.requireNonNull(dataDomain, "dataDomain must not be null");
-        MorphiaDatastore ds = morphiaDataStore.getDataStore(realm);
+        MorphiaDatastore ds = morphiaDataStoreWrapper.getDataStore(realm);
 
         AtomicLong total = new AtomicLong(0);
         for (EntityModel em : ds.getMapper().getMappedEntities()) {
@@ -96,8 +94,8 @@ public class MorphiaAdminUtils {
         Objects.requireNonNull(from, "from dataDomain must not be null");
         Objects.requireNonNull(to, "to dataDomain must not be null");
 
-        MorphiaDatastore src = morphiaDataStore.getDataStore(fromRealm);
-        MorphiaDatastore dst = morphiaDataStore.getDataStore(toRealm);
+        MorphiaDatastore src = morphiaDataStoreWrapper.getDataStore(fromRealm);
+        MorphiaDatastore dst = morphiaDataStoreWrapper.getDataStore(toRealm);
 
         AtomicLong totalCopied = new AtomicLong(0);
 

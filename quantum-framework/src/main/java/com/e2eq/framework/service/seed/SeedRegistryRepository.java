@@ -37,7 +37,7 @@ public class SeedRegistryRepository extends MorphiaRepo<SeedRegistryEntry> {
         // Bypass security rules for seed registry (system-level tracking)
         Filter[] qfilters = filters.toArray(new Filter[0]);
 
-        Query<SeedRegistryEntry> query = morphiaDataStore.getDataStore(realm)
+        Query<SeedRegistryEntry> query = morphiaDataStoreWrapper.getDataStore(realm)
                 .find(getPersistentClass())
                 .filter(qfilters);
 
@@ -45,4 +45,3 @@ public class SeedRegistryRepository extends MorphiaRepo<SeedRegistryEntry> {
         return Optional.ofNullable(entry);
     }
 }
-

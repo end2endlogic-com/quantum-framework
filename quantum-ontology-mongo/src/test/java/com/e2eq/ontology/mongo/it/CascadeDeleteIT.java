@@ -1,6 +1,6 @@
 package com.e2eq.ontology.mongo.it;
 
-import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
+import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.ontology.mongo.OntologyWriteHook;
 import com.e2eq.ontology.mongo.OntologyDeleteHook;
 import com.e2eq.ontology.mongo.CascadeExecutor;
@@ -20,7 +20,8 @@ public class CascadeDeleteIT {
     private static final String TENANT = "test-system-com";
 
     @Inject MorphiaDatastore datastore;
-    @Inject MorphiaDataStore morphiaDataStore;
+    @Inject
+    MorphiaDataStoreWrapper morphiaDataStoreWrapper;
     @Inject OntologyEdgeRepo edgeRepo;
     @Inject OntologyWriteHook writeHook;
     @Inject OntologyDeleteHook deleteHook;

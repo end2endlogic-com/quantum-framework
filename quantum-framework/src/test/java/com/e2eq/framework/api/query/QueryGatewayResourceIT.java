@@ -1,13 +1,10 @@
 package com.e2eq.framework.api.query;
 
-import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
-import com.e2eq.framework.model.persistent.morphia.MorphiaRepo;
+import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.framework.model.security.UserProfile;
-import dev.morphia.Datastore;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
 import jakarta.inject.Inject;
-import org.bson.types.ObjectId;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -21,7 +18,7 @@ import static org.hamcrest.Matchers.*;
 public class QueryGatewayResourceIT {
 
     @Inject
-    MorphiaDataStore morphiaDataStore;
+    MorphiaDataStoreWrapper morphiaDataStoreWrapper;
 
     private String realm;
 
@@ -30,7 +27,7 @@ public class QueryGatewayResourceIT {
         // Determine test realm; do not rely on data presence
         realm = System.getProperty("quantum.realm.testRealm", "test-quantum-com");
         // Ensure datastore can be obtained (will create if needed)
-        morphiaDataStore.getDataStore(realm);
+        morphiaDataStoreWrapper.getDataStore(realm);
     }
 
     @Test

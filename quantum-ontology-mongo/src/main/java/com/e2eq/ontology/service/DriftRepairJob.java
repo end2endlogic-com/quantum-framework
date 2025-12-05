@@ -1,7 +1,7 @@
 package com.e2eq.ontology.service;
 
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
-import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
+import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.ontology.annotations.OntologyClass;
 import com.e2eq.ontology.core.EdgeStore;
 import com.e2eq.ontology.core.Reasoner;
@@ -28,7 +28,7 @@ import java.util.*;
 public class DriftRepairJob {
 
     @Inject
-    MorphiaDataStore morphiaDataStore;
+    MorphiaDataStoreWrapper morphiaDataStoreWrapper;
     @Inject
     AnnotatedEdgeExtractor extractor;
     @Inject
@@ -98,7 +98,7 @@ public class DriftRepairJob {
         }
 
         // Phase 2: re-derive edges for this entity class page-by-page
-        Datastore ds = morphiaDataStore.getDataStore(req.realmId);
+        Datastore ds = morphiaDataStoreWrapper.getDataStore(req.realmId);
         @SuppressWarnings("unchecked")
         Class<? extends UnversionedBaseModel> modelClass = (Class<? extends UnversionedBaseModel>) clazz;
         Query<? extends UnversionedBaseModel> q = ds.find(modelClass);

@@ -27,7 +27,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
 
     private Datastore ds() {
         // Use the default realm configured for the service; MorphiaRepo injects it.
-        return morphiaDataStore.getDataStore(defaultRealm);
+        return morphiaDataStoreWrapper.getDataStore(defaultRealm);
     }
 
     public void upsert(String tenantId,

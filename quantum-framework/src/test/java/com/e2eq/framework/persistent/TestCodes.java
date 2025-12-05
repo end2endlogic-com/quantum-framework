@@ -3,7 +3,7 @@ package com.e2eq.framework.persistent;
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.base.CodeList;
 import com.e2eq.framework.model.persistent.morphia.CodeListRepo;
-import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
+import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.framework.securityrules.RuleContext;
 import com.e2eq.framework.securityrules.SecuritySession;
 import com.e2eq.framework.util.TestUtils;
@@ -19,7 +19,7 @@ public class TestCodes extends BaseRepoTest {
     CodeListRepo codeListRepo;
 
     @Inject
-    MorphiaDataStore dataStore;
+    MorphiaDataStoreWrapper dataStore;
 
     @Inject
     RuleContext ruleContext;

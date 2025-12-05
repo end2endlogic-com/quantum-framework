@@ -27,7 +27,7 @@ public class CounterRepo extends MorphiaRepo<Counter> {
     }
 
     public long getAndIncrement(String name) {
-        Datastore ds = morphiaDataStore.getDataStore(getSecurityContextRealmId());
+        Datastore ds = morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId());
         return getAndIncrement(ds, name, SecurityContext.getPrincipalDataDomain().get(), 1);
     }
 
@@ -76,7 +76,7 @@ public class CounterRepo extends MorphiaRepo<Counter> {
 
    public long getAndIncrement(@NotNull @NotEmpty  String name, @Valid DataDomain dataDomain,
                                long incrementAmount){
-      Datastore ds = morphiaDataStore.getDataStore(getSecurityContextRealmId());
+      Datastore ds = morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId());
       return getAndIncrement(ds, name, dataDomain, incrementAmount);
    }
 
@@ -84,7 +84,7 @@ public class CounterRepo extends MorphiaRepo<Counter> {
                                               @Valid DataDomain dataDomain,
                                               long incrementAmount,
                                               Integer base) {
-      Datastore ds = morphiaDataStore.getDataStore(getSecurityContextRealmId());
+      Datastore ds = morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId());
       long value = getAndIncrement(ds, name, dataDomain, incrementAmount);
       if (base == null) {
          return new CounterValue(value);

@@ -65,7 +65,7 @@ public class TenantProvisioningService {
                                            String adminUserId,
                                            String adminSubject,
                                            String adminPassword) {
-        return provisionTenant(tenantEmailDomain, orgRefName, accountId, adminUserId, adminSubject, adminPassword, java.util.List.of());
+        return provisionTenant(tenantEmailDomain, orgRefName, accountId, adminUserId, adminSubject, adminPassword, java.util.List.of(), true);
     }
 
     /**
@@ -78,7 +78,8 @@ public class TenantProvisioningService {
                                            String adminUserId,
                                            String adminSubject,
                                            String adminPassword,
-                                           List<String> archetypes) {
+                                           List<String> archetypes,
+                                           boolean overwriteAll) {
         Objects.requireNonNull(tenantEmailDomain, "tenantEmailDomain cannot be null");
         Objects.requireNonNull(orgRefName, "orgRefName cannot be null");
         Objects.requireNonNull(accountId, "accountId cannot be null");
@@ -232,7 +233,7 @@ public class TenantProvisioningService {
                     && Objects.equals(storedRoles, desiredRoles)
                     && Objects.equals(Boolean.FALSE, cred.getForceChangePassword())
                     && Objects.equals(cred.getDomainContext(), dc);
-            if (!attributesMatch) {
+            if (!attributesMatch ) {
                List<String> diffs = new ArrayList<>();
                if (!Objects.equals(cred.getSubject(), adminSubject)) {
                   diffs.add(String.format("subject: existing='%s', requested='%s'",
@@ -254,8 +255,13 @@ public class TenantProvisioningService {
                for (String diff : diffs) {
                   btext.append(diff).append("\n");
                }
+
                String text = String.format("Admin user already exists with different attributes. Diffs:%s", btext.toString());
-                throw new IllegalStateException(text);
+               if (!overwriteAll)
+                 throw new IllegalStateException(text);
+               else {
+                  Log.warn(text);
+               }
             }
             Log.warnf("Admin user %s already exists in realm %s; proceeding idempotently.", adminUserId, realmId);
             result.addWarning("Admin user already exists; no user changes were made.");

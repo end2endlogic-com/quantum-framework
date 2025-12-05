@@ -1,6 +1,6 @@
 package com.e2eq.ontology.service;
 
-import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
+import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.ontology.annotations.OntologyClass;
 import com.e2eq.ontology.core.Reasoner;
 import com.e2eq.ontology.mongo.AnnotatedEdgeExtractor;
@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class OntologyReindexer {
 
     @Inject
-    MorphiaDataStore morphiaDataStore;
+    MorphiaDataStoreWrapper morphiaDataStoreWrapper;
 
     @Inject
     AnnotatedEdgeExtractor extractor;
@@ -80,7 +80,7 @@ public class OntologyReindexer {
             }
         }
         // Discover ontology participant classes from Morphia mapper
-        var datastore = morphiaDataStore.getDataStore(realmId);
+        var datastore = morphiaDataStoreWrapper.getDataStore(realmId);
         Collection<Class<?>> entityClasses = discoverEntityClasses(datastore.getMapper());
         List<Class<?>> participants = new ArrayList<>();
         for (Class<?> c : entityClasses) if (c.isAnnotationPresent(OntologyClass.class)) participants.add(c);
@@ -89,7 +89,7 @@ public class OntologyReindexer {
         // For each class, load all instances (ids only if possible) and recompute edges
         for (Class<?> clazz : participants) {
             status = "Scanning " + clazz.getSimpleName();
-            var ds = morphiaDataStore.getDataStore(realmId);
+            var ds = morphiaDataStoreWrapper.getDataStore(realmId);
             var q = ds.find(clazz);
             int processed = 0;
             var list = q.iterator().toList();

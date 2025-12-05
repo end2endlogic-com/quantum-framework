@@ -81,7 +81,7 @@ public abstract class HierarchicalRepo<
     public T save(@Valid T value) {
         T saved;
         // create a transactional session
-        try (MorphiaSession session = morphiaDataStore.getDataStore(getSecurityContextRealmId()).startSession()) {
+        try (MorphiaSession session = morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()).startSession()) {
             // if updating, and parent changed, remove from old parent's descendants
             if (value.getId() != null) {
                 T existing = this.findById(value.getId()).orElse(null);
@@ -168,7 +168,7 @@ public abstract class HierarchicalRepo<
     public List<T> getAllChildren(ObjectId nodeId) {
         // Start the pipeline on the hierarchy collection for this entity class
         Class<T> entityClass = getPersistentClass();
-        Aggregation<T> pipeline = morphiaDataStore
+        Aggregation<T> pipeline = morphiaDataStoreWrapper
                 .getDataStore(getSecurityContextRealmId())
                 .aggregate(entityClass)
                 .match(eq("_id", nodeId))

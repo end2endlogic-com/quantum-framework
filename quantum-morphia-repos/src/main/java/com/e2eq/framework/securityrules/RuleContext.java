@@ -847,12 +847,15 @@ public class RuleContext {
             Object noViolations = sb.get("noViolations"); if (noViolations != null) jsBindings.putMember("noViolations", noViolations);
         } catch (Throwable ignored) {}
 
-        // Expose safe maps to JS under conventional names (optional hardening: shadow Java objects)
+        // Expose safe maps to JS under distinct names so we don't shadow the Java objects
         try {
             // Use ProxyObject wrappers so JS dot-notation works as expected
             jsBindings.putMember("identityInfo", org.graalvm.polyglot.proxy.ProxyObject.fromMap(identityInfo));
-            jsBindings.putMember("rcontext", org.graalvm.polyglot.proxy.ProxyObject.fromMap(rctx));
-            jsBindings.putMember("pcontext", org.graalvm.polyglot.proxy.ProxyObject.fromMap(pctx));
+            // IMPORTANT: keep original Java objects bound under "pcontext" and "rcontext" so existing
+            // scripts that use Java-style getters (e.g., pcontext.getUserId()) continue to work.
+            // Bind the safe maps under different names to provide JS-friendly property access.
+            jsBindings.putMember("rctx", org.graalvm.polyglot.proxy.ProxyObject.fromMap(rctx));
+            jsBindings.putMember("pctx", org.graalvm.polyglot.proxy.ProxyObject.fromMap(pctx));
         } catch (Throwable ignored) {}
     }
 

@@ -13,7 +13,7 @@ public class CodeListRepo extends MorphiaRepo<CodeList> {
 
 
     public Optional<CodeList> findByCategoryAndKey(String category, String key) {
-            Query<CodeList> query = morphiaDataStore.getDataStore(getSecurityContextRealmId())
+            Query<CodeList> query = morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId())
                     .find(CodeList.class)
                     .filter(Filters.eq("category", category))
                     .filter(Filters.eq("key", key));

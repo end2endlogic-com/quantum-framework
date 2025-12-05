@@ -16,7 +16,7 @@ public class RealmRepo extends MorphiaRepo<Realm> {
 
 
    public java.util.List<Realm> getAllListWithIgnoreRules (String realmId) {
-      MorphiaDatastore ds = morphiaDataStore.getDataStore(realmId);
+      MorphiaDatastore ds = morphiaDataStoreWrapper.getDataStore(realmId);
       String dataBase = ds.getDatabase().getName();
       String collectionName = ds.getMapper().getEntityModel(Realm.class).collectionName();
       dev.morphia.query.MorphiaCursor<Realm> cursor = ds.find(getPersistentClass()).iterator();
@@ -46,7 +46,7 @@ public class RealmRepo extends MorphiaRepo<Realm> {
          qfilters = filters.toArray(qfilters);
       }
 
-      Query<Realm> query = morphiaDataStore.getDataStore(realm).find(getPersistentClass()).filter(qfilters);
+      Query<Realm> query = morphiaDataStoreWrapper.getDataStore(realm).find(getPersistentClass()).filter(qfilters);
       Realm obj = query.first();
       return Optional.ofNullable(obj);
    }
@@ -61,7 +61,7 @@ public class RealmRepo extends MorphiaRepo<Realm> {
          qfilters = filters.toArray(qfilters);
       }
 
-      Query<Realm> query = morphiaDataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass()).filter(qfilters);
+      Query<Realm> query = morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()).find(getPersistentClass()).filter(qfilters);
       Realm obj = query.first();
       return Optional.ofNullable(obj);
    }

@@ -17,7 +17,7 @@ import io.quarkus.logging.Log;
 import io.quarkus.test.junit.QuarkusTest;
 import com.e2eq.framework.model.security.ApplicationRegistration;
 import com.e2eq.framework.model.security.UserProfile;
-import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
+import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
 import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import org.junit.jupiter.api.Assertions;
@@ -33,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @QuarkusTest
 public class TestBasicRepo extends BaseRepoTest{
    @Inject
-   MorphiaDataStore dataStore;
+   MorphiaDataStoreWrapper dataStore;
 
    @Inject
    UserProfileRepo userProfileRepo;

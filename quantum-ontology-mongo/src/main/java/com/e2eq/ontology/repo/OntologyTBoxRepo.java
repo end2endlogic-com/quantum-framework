@@ -13,7 +13,7 @@ import java.util.Optional;
 
 @ApplicationScoped
 public class OntologyTBoxRepo extends MorphiaRepo<OntologyTBox> {
-    
+
     /**
      * Get the most recently applied TBox
      */
@@ -25,7 +25,7 @@ public class OntologyTBoxRepo extends MorphiaRepo<OntologyTBox> {
         List<OntologyTBox> results = q.iterator(options).toList();
         return results.isEmpty() ? Optional.empty() : Optional.of(results.get(0));
     }
-    
+
     /**
      * Find TBox by hash
      */
@@ -37,7 +37,7 @@ public class OntologyTBoxRepo extends MorphiaRepo<OntologyTBox> {
                 .filter(Filters.eq("tboxHash", tboxHash));
         return Optional.ofNullable(q.first());
     }
-    
+
     /**
      * Find TBox by YAML hash (for correlation)
      */
@@ -53,9 +53,8 @@ public class OntologyTBoxRepo extends MorphiaRepo<OntologyTBox> {
         List<OntologyTBox> results = q.iterator(options).toList();
         return results.isEmpty() ? Optional.empty() : Optional.of(results.get(0));
     }
-    
+
     private dev.morphia.Datastore ds() {
-        return morphiaDataStore.getDataStore(defaultRealm);
+        return morphiaDataStoreWrapper.getDataStore(defaultRealm);
     }
 }
-

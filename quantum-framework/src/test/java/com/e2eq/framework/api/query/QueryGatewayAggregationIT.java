@@ -4,12 +4,11 @@ import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.base.EntityReference;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.UserProfile;
-import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
+import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import dev.morphia.Datastore;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
 import jakarta.inject.Inject;
-import org.bson.types.ObjectId;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -23,14 +22,14 @@ import static org.hamcrest.Matchers.*;
 public class QueryGatewayAggregationIT {
 
     @Inject
-    MorphiaDataStore morphiaDataStore;
+    MorphiaDataStoreWrapper morphiaDataStoreWrapper;
 
     private String realm;
 
     @BeforeEach
     public void setUp() {
         realm = System.getProperty("quantum.realm.testRealm", "test-quantum-com");
-        morphiaDataStore.getDataStore(realm);
+        morphiaDataStoreWrapper.getDataStore(realm);
     }
 
     private void seedOneUserWithCredential(Datastore ds) {
@@ -61,7 +60,7 @@ public class QueryGatewayAggregationIT {
 
     @Test
     public void find_endpoint_executes_aggregation_when_flag_enabled_and_hydrates_single_ref() {
-        Datastore ds = morphiaDataStore.getDataStore(realm);
+        Datastore ds = morphiaDataStoreWrapper.getDataStore(realm);
         seedOneUserWithCredential(ds);
 
         Map<String,Object> body = new HashMap<>();

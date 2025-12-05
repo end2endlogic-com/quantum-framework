@@ -2,15 +2,13 @@ package com.e2eq.ontology.mongo;
 
 import com.e2eq.framework.model.persistent.morphia.PostDeleteHook;
 import com.e2eq.framework.model.persistent.morphia.PreDeleteHook;
-import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
+import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.ontology.annotations.OntologyClass;
 import com.e2eq.ontology.annotations.OntologyProperty;
 import com.e2eq.ontology.annotations.CascadeType;
 import com.e2eq.ontology.model.OntologyEdge;
 import com.e2eq.ontology.repo.OntologyEdgeRepo;
 import dev.morphia.Datastore;
-import dev.morphia.query.Query;
-import dev.morphia.query.filters.Filters;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -34,7 +32,7 @@ public class OntologyDeleteHook implements PreDeleteHook, PostDeleteHook {
     CascadeExecutor cascadeExecutor;
 
     @Inject
-    MorphiaDataStore morphiaDataStore;
+    MorphiaDataStoreWrapper morphiaDataStoreWrapper;
 
     @Override
     public void beforeDelete(String realmId, Object entity) throws RuntimeException {
@@ -87,7 +85,7 @@ public class OntologyDeleteHook implements PreDeleteHook, PostDeleteHook {
         Set<String> out = new HashSet<>();
         try {
             // Discover entity classes via MorphiaOntologyLoader utility
-            Datastore ds = morphiaDataStore.getDefaultSystemDataStore();
+            Datastore ds = morphiaDataStoreWrapper.getDefaultSystemDataStore();
             dev.morphia.MorphiaDatastore md = (dev.morphia.MorphiaDatastore) ds;
             MorphiaOntologyLoader loader = new MorphiaOntologyLoader(md);
             java.lang.reflect.Method discover = MorphiaOntologyLoader.class.getDeclaredMethod("discoverEntityClasses");

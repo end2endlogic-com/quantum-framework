@@ -18,7 +18,7 @@ public class TestOrderRepo extends MorphiaRepo<TestOrder> {
         // Compute ids via ontology and constrain Morphia query using Morphia Filters
         Set<String> ids = edgeDao.srcIdsByDst(realmId, predicate, dstId);
         if (ids.isEmpty()) return java.util.List.of();
-        MorphiaDatastore datastore = morphiaDataStore.getDataStore(realmId);
+        MorphiaDatastore datastore = morphiaDataStoreWrapper.getDataStore(realmId);
         // Use raw collection to avoid mapping issues in tests
         var coll = datastore.getDatabase().getCollection("orders");
         List<TestOrder> out = new ArrayList<>();
