@@ -387,6 +387,46 @@ public class RuleContext {
     }
 
     /**
+     * Returns the default system rules as Policy objects for API exposure.
+     */
+    public List<com.e2eq.framework.model.security.Policy> getDefaultSystemPolicies() {
+        List<com.e2eq.framework.model.security.Policy> policies = new ArrayList<>();
+        
+        // Group rules by identity to create policies
+        Map<String, List<Rule>> rulesByIdentity = new HashMap<>();
+        
+        // Temporarily store current rules and rebuild system rules
+        Map<String, List<Rule>> savedRules = new HashMap<>(this.rules);
+        this.rules.clear();
+        addSystemRules();
+        
+        // Extract system rules grouped by identity
+        for (Map.Entry<String, List<Rule>> entry : this.rules.entrySet()) {
+            String identity = entry.getKey();
+            List<Rule> ruleList = entry.getValue();
+            
+            com.e2eq.framework.model.security.Policy policy = new com.e2eq.framework.model.security.Policy();
+            policy.setPrincipalId(identity);
+            policy.setRefName("system-default-" + identity);
+            policy.setDisplayName("System Default: " + identity);
+            policy.setDescription("Default system rules for " + identity);
+            policy.setPrincipalType("system".equals(identity) ? 
+                com.e2eq.framework.model.security.Policy.PrincipalType.USER : 
+                com.e2eq.framework.model.security.Policy.PrincipalType.ROLE);
+            policy.setRules(new ArrayList<>(ruleList));
+            policy.setPolicySource("SYSTEM_DEFAULT");
+            policy.setDataDomain(securityUtils.getSystemDataDomain());
+            
+            policies.add(policy);
+        }
+        
+        // Restore original rules
+        this.rules = savedRules;
+        
+        return policies;
+    }
+
+    /**
      * Adds in the system rules regardless of any configuration that may be present and later added in
      */
     protected void addSystemRules() {
@@ -596,6 +636,8 @@ public class RuleContext {
               java.util.List<com.e2eq.framework.model.security.Policy> policies = policyRepo.getAllListIgnoreRules(realm);
               if (policies != null) {
                  for (com.e2eq.framework.model.security.Policy p : policies) {
+                    // Mark policy source as database collection
+                    p.setPolicySource("POLICY_COLLECTION");
                     if (p.getRules() == null) continue;
                     for (Rule r : p.getRules()) {
                        String identity = null;
