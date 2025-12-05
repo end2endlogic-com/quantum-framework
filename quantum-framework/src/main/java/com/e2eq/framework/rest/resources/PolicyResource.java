@@ -25,6 +25,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 
 @Path("/security/permission/policies")
 public class PolicyResource extends BaseResource<Policy, PolicyRepo>{
@@ -36,6 +38,79 @@ public class PolicyResource extends BaseResource<Policy, PolicyRepo>{
 
    protected PolicyResource (PolicyRepo repo) {
       super(repo);
+   }
+
+   @Override
+   public com.e2eq.framework.rest.models.Collection<Policy> getList(
+           jakarta.ws.rs.core.HttpHeaders headers,
+           int skip,
+           int limit,
+           String filter,
+           String sort,
+           String projection) {
+
+      // Get default system policies
+      List<Policy> defaultPolicies = ruleContext.getDefaultSystemPolicies();
+
+      // Apply filtering to default policies using QueryPredicates if filter is present
+      List<Policy> filteredDefaults = new ArrayList<>();
+      if (filter != null && !filter.isEmpty()) {
+         filteredDefaults = applyFilterToPolicies(defaultPolicies, filter);
+      } else {
+         filteredDefaults = new ArrayList<>(defaultPolicies);
+      }
+
+      // Get database policies using parent implementation
+      com.e2eq.framework.rest.models.Collection<Policy> dbCollection = super.getList(headers, skip, limit, filter, sort, projection);
+
+      // Merge: default policies first, then database policies
+      List<Policy> mergedList = new ArrayList<>();
+      mergedList.addAll(filteredDefaults);
+      mergedList.addAll(dbCollection.getRows());
+
+      // Adjust count to include default policies
+      long totalCount = filteredDefaults.size() + dbCollection.getTotalCount();
+
+      // Create merged collection
+      com.e2eq.framework.rest.models.Collection<Policy> mergedCollection =
+         new com.e2eq.framework.rest.models.Collection<>(mergedList, skip, limit, filter, totalCount);
+
+      mergedCollection.setFilter(filter);
+      String realmId = headers.getHeaderString("X-Realm");
+      mergedCollection.setRealm(realmId == null ? repo.getDatabaseName() : realmId);
+
+      return mergedCollection;
+   }
+
+   private List<Policy> applyFilterToPolicies(List<Policy> policies, String filter) {
+      if (filter == null || filter.isEmpty()) {
+         return new ArrayList<>(policies);
+      }
+
+      List<Policy> filtered = new ArrayList<>();
+      try {
+         // Use QueryPredicates to compile filter
+         Class<?> qp = Class.forName("com.e2eq.framework.query.QueryPredicates");
+         java.lang.reflect.Method m = qp.getMethod("compilePredicate", String.class, Map.class, Map.class);
+
+         @SuppressWarnings("unchecked")
+         java.util.function.Predicate<com.fasterxml.jackson.databind.JsonNode> predicate =
+            (java.util.function.Predicate<com.fasterxml.jackson.databind.JsonNode>) m.invoke(null, filter, Collections.emptyMap(), Collections.emptyMap());
+
+         com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+         for (Policy policy : policies) {
+            com.fasterxml.jackson.databind.JsonNode node = mapper.valueToTree(policy);
+            if (predicate.test(node)) {
+               filtered.add(policy);
+            }
+         }
+      } catch (Exception e) {
+         // If filtering fails, return all policies
+         io.quarkus.logging.Log.warnf(e, "Failed to apply filter to default policies: %s", filter);
+         return new ArrayList<>(policies);
+      }
+
+      return filtered;
    }
 
    @POST
