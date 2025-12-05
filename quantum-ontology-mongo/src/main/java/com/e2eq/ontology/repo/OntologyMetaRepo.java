@@ -57,6 +57,6 @@ public class OntologyMetaRepo extends MorphiaRepo<OntologyMeta> {
     }
 
     private dev.morphia.Datastore ds() {
-        return morphiaDataStore.getDataStore(defaultRealm);
+        return morphiaDataStoreWrapper.getDataStore(defaultRealm);
     }
 }

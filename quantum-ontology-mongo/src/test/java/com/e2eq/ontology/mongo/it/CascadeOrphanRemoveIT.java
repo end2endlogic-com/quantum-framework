@@ -2,8 +2,7 @@ package com.e2eq.ontology.mongo.it;
 
 import com.e2eq.ontology.mongo.OntologyWriteHook;
 import com.e2eq.ontology.repo.OntologyEdgeRepo;
-import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
-import dev.morphia.Datastore;
+import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import dev.morphia.MorphiaDatastore;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
@@ -26,7 +25,7 @@ public class CascadeOrphanRemoveIT {
     @Inject
     MorphiaDatastore datastore;
     @Inject
-    MorphiaDataStore morphiaDataStore;
+    MorphiaDataStoreWrapper morphiaDataStoreWrapper;
 
     @Inject
     OntologyEdgeRepo edgeRepo;

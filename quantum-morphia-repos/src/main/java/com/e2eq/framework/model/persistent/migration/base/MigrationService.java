@@ -3,11 +3,10 @@ package com.e2eq.framework.model.persistent.migration.base;
 import com.coditory.sherlock.DistributedLock;
 import com.coditory.sherlock.Sherlock;
 import com.coditory.sherlock.mongo.MongoSherlock;
-import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.ChangeSetRecordRepo;
 import com.e2eq.framework.model.persistent.morphia.DatabaseVersionRepo;
 
-import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
+import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.framework.exceptions.DatabaseMigrationException;
 import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.util.SecurityUtils;
@@ -27,7 +26,6 @@ import jakarta.enterprise.inject.spi.Bean;
 import jakarta.enterprise.inject.spi.BeanManager;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.NotFoundException;
-import lombok.Data;
 import org.bson.Document;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jetbrains.annotations.NotNull;
@@ -74,7 +72,7 @@ public class MigrationService {
    MongoClient mongoClient;
 
    @Inject
-   MorphiaDataStore morphiaDataStore;
+   MorphiaDataStoreWrapper morphiaDataStoreWrapper;
 
    @PostConstruct
    public void ensureSystemRealmInitialized () {
@@ -150,7 +148,7 @@ public class MigrationService {
       }
 
       // Check for pending changesets with mismatched checksums
-      Datastore datastore = morphiaDataStore.getDataStore(realm);
+      Datastore datastore = morphiaDataStoreWrapper.getDataStore(realm);
       List<ChangeSetBean> allChangeSets = getAllChangeSetBeans();
       for (ChangeSetBean chb : allChangeSets) {
          Optional<ChangeSetRecord> record = changesetRecordRepo.findLatestByChangeSetName(datastore, chb.getName());
@@ -172,21 +170,21 @@ public class MigrationService {
 
    public void applyIndexes (String realmId) {
       Objects.requireNonNull(realmId, "RealmId cannot be null");
-      morphiaDataStore.getDataStore(realmId).applyIndexes();
+      morphiaDataStoreWrapper.getDataStore(realmId).applyIndexes();
    }
 
    public void applyIndexes (String realmId, String collection) {
       Objects.requireNonNull(realmId, "RealmId cannot be null");
-      Optional<EntityModel> em = morphiaDataStore.getDataStore(realmId).getMapper().getMappedEntities().stream().filter(entity -> entity.collectionName().equals(collection)).findFirst();
+      Optional<EntityModel> em = morphiaDataStoreWrapper.getDataStore(realmId).getMapper().getMappedEntities().stream().filter(entity -> entity.collectionName().equals(collection)).findFirst();
       if (!em.isPresent()) {
          throw new NotFoundException(String.format("Collection %s not found in realm %s", collection, realmId));
       }
-      morphiaDataStore.getDataStore(realmId).ensureIndexes(em.get().getType());
+      morphiaDataStoreWrapper.getDataStore(realmId).ensureIndexes(em.get().getType());
    }
 
    public void dropAllIndexes (String realmId) {
       Objects.requireNonNull(realmId, "RealmId cannot be null");
-      morphiaDataStore.getDataStore(realmId).getMapper().getMappedEntities().forEach(entity -> {
+      morphiaDataStoreWrapper.getDataStore(realmId).getMapper().getMappedEntities().forEach(entity -> {
          mongoClient.getDatabase(realmId).getCollection(entity.collectionName()).dropIndexes();
       });
    }
@@ -211,9 +209,9 @@ public class MigrationService {
       DistributedLock lock = getMigrationLock(systemRealm);
       lock.acquire();
       try {
-         migrationRequired(morphiaDataStore.getDataStore(defaultRealm), targetDatabaseVersion);
-         migrationRequired(morphiaDataStore.getDataStore(systemRealm), targetDatabaseVersion);
-         migrationRequired(morphiaDataStore.getDataStore(testRealm), targetDatabaseVersion);
+         migrationRequired(morphiaDataStoreWrapper.getDataStore(defaultRealm), targetDatabaseVersion);
+         migrationRequired(morphiaDataStoreWrapper.getDataStore(systemRealm), targetDatabaseVersion);
+         migrationRequired(morphiaDataStoreWrapper.getDataStore(testRealm), targetDatabaseVersion);
       } finally {
          lock.release();
       }
@@ -231,7 +229,7 @@ public class MigrationService {
    }
 
    public Optional<DatabaseVersion> getCurrentDatabaseVersion (String realm) {
-      return getCurrentDatabaseVersion(morphiaDataStore.getDataStore(realm));
+      return getCurrentDatabaseVersion(morphiaDataStoreWrapper.getDataStore(realm));
    }
 
    public Optional<DatabaseVersion> getCurrentDatabaseVersion (Datastore datastore) {
@@ -305,7 +303,7 @@ public class MigrationService {
    }
 
    public List<ChangeSetBean> getAllPendingChangeSetBeans (String realm, MultiEmitter<? super String> emitter) {
-      Datastore datastore = morphiaDataStore.getDataStore(realm);
+      Datastore datastore = morphiaDataStoreWrapper.getDataStore(realm);
       Optional<DatabaseVersion> oCurrentDbVersion = this.getCurrentDatabaseVersion(datastore);
       DatabaseVersion currentDbVersion;
       if (!oCurrentDbVersion.isPresent()) {
@@ -424,7 +422,7 @@ public class MigrationService {
       DistributedLock lock = getMigrationLock(realm);
       log(String.format("-- Got Migration Lock Executing change sets on database / realm:%s --", realm), emitter);
       lock.runLocked(() -> {
-         MorphiaSession ds = morphiaDataStore.getDataStore(realm).startSession();
+         MorphiaSession ds = morphiaDataStoreWrapper.getDataStore(realm).startSession();
          log(String.format("        Executing Change Set: %s in realm %s", changeSetBean.getName(), realm), emitter);
          emitter.emit(String.format("        Executing Change Set: %s in realm %s", changeSetBean.getName(), realm));
          try {
@@ -456,7 +454,7 @@ public class MigrationService {
             changeSetList.forEach(changeSetBean -> {
                log(String.format("    checking for previous execution of Change Set: %s, in database %s", changeSetBean.getName(), realm ), emitter);
                // first check if this change set has run already or not
-               Optional<ChangeSetRecord> changeSetRec = changesetRecordRepo.findLatestByChangeSetName(morphiaDataStore.getDataStore(realm), changeSetBean.getName());
+               Optional<ChangeSetRecord> changeSetRec = changesetRecordRepo.findLatestByChangeSetName(morphiaDataStoreWrapper.getDataStore(realm), changeSetBean.getName());
                boolean shouldRun = !changeSetRec.isPresent() ||
                                    changeSetRec.get().getChangeSetVersion() < changeSetBean.getChangeSetVersion() ||
                                    (changeSetBean.getChecksum() != null && !changeSetBean.getChecksum().equals(changeSetRec.get().getChecksum()));
@@ -476,7 +474,7 @@ public class MigrationService {
                      if (changeSetBean.isOverrideDatabase() && changeSetBean.getOverrideDatabaseName() != null &&
                             !changeSetBean.getOverrideDatabaseName().isEmpty() && !changeSetBean.getOverrideDatabaseName().equalsIgnoreCase(realm)) {
                         log(String.format("Overridden Database for changeSetBean:%s, to database:%s from default:%s", changeSetBean.getName(), changeSetBean.getOverrideDatabaseName(), realm), emitter);
-                        MorphiaSession ods = morphiaDataStore.getDataStore(changeSetBean.getOverrideDatabaseName()).startSession();
+                        MorphiaSession ods = morphiaDataStoreWrapper.getDataStore(changeSetBean.getOverrideDatabaseName()).startSession();
 
                         DistributedLock olock = getMigrationLock(changeSetBean.getOverrideDatabaseName());
                         olock.runLocked(() -> {
@@ -501,7 +499,7 @@ public class MigrationService {
                            }
                         });
                      } else {
-                        MorphiaSession ds = morphiaDataStore.getDataStore(realm).startSession();
+                        MorphiaSession ds = morphiaDataStoreWrapper.getDataStore(realm).startSession();
                         try {
                            log(String.format("        Starting Transaction for Change Set:%s on database", changeSetBean.getName(), realm), emitter);
 

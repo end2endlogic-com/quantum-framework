@@ -4,7 +4,9 @@ import com.e2eq.framework.model.persistent.InvalidStateTransitionException;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
+import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import dev.morphia.Datastore;
+import dev.morphia.MorphiaDatastore;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import org.apache.commons.lang3.tuple.Pair;
@@ -54,6 +56,16 @@ public class CSVImportHelperTest {
         @Override public TestItem fillUIActions(TestItem model) { throw new UnsupportedOperationException(); }
         @Override public void ensureIndexes(String realmId, String collection) { }
         @Override public java.util.Optional<TestItem> findById(String id) { throw new UnsupportedOperationException(); }
+
+       @Override
+       public MorphiaDataStoreWrapper getMorphiaDataStoreWrapper () {
+          return null;
+       }
+
+       @Override
+       public MorphiaDatastore getMorphiaDataStore () {
+          return null;
+       }
 
        @Override
        public Optional<TestItem> findById (@NotNull String id, boolean ignoreRules) {return Optional.empty();}

@@ -2,7 +2,7 @@ seedPack: morphia-demo
 version: 1.0.0
 datasets:
   - collection: CodeList
-    file: datasets/codeList.ndjson
+    file: classpath:seed-packs/morphia-demo/datasets/codeList.ndjson
     naturalKey: [category, key]
     upsert: true
     # Using Morphia model class so repository will use MorphiaRepo

@@ -1,11 +1,10 @@
 package com.e2eq.framework.service.seed;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
+import java.io.*;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.DigestInputStream;
@@ -53,6 +52,7 @@ public final class SeedLoader {
     private final int batchSize;
     private final SeedMetrics seedMetrics;
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
+    private final SeedDatasetValidator seedDatasetValidator;
 
     private SeedLoader(Builder builder) {
         this.seedSources = List.copyOf(builder.seedSources);
@@ -64,10 +64,45 @@ public final class SeedLoader {
         this.conflictPolicy = builder.conflictPolicy;
         this.batchSize = builder.batchSize;
         this.seedMetrics = builder.seedMetrics;
+        this.seedDatasetValidator = builder.seedDatasetValidator;
     }
 
     public static Builder builder() {
         return new Builder();
+    }
+
+    InputStream open(SeedPackDescriptor descriptor, String pathOrUri) throws IOException {
+        if (isClasspath(pathOrUri)) {
+            String cp = pathOrUri.substring("classpath:".length());
+            ClassLoader cl = Thread.currentThread().getContextClassLoader();
+            InputStream in = cl.getResourceAsStream(cp);
+            if (in == null) {
+                throw new IOException("Classpath resource not found: " + cp);
+            }
+            return in;
+        }
+        if (isUri(pathOrUri)) {
+            URI uri = URI.create(pathOrUri);
+            String scheme = uri.getScheme();
+            for (SeedSource s : seedSources) {
+                if (s instanceof SchemeAware sa && sa.supportsScheme(scheme)) {
+                    return sa.openUri(uri, descriptor);
+                }
+            }
+            throw new IOException("No SeedSource found for URI scheme '" + scheme + "'");
+        }
+        // Backward compatible relative path resolution via owning source
+        return descriptor.getSource().openDataset(descriptor, pathOrUri);
+    }
+
+    private static boolean isUri(String value) {
+        if (value == null) return false;
+        int i = value.indexOf(":");
+        return i > 1 && value.contains("://");
+    }
+
+    private static boolean isClasspath(String value) {
+        return value != null && value.startsWith("classpath:");
     }
 
     public void applyArchetype(String archetypeName, SeedContext context) {
@@ -334,18 +369,31 @@ public final class SeedLoader {
         return transforms;
     }
 
-    private DatasetPayload readDataset(SeedPackDescriptor descriptor, Dataset dataset) {
-        try (InputStream raw = resourceRouter.open(descriptor, dataset.getFile())) {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            try (DigestInputStream din = new DigestInputStream(new BufferedInputStream(raw), digest)) {
-                List<Map<String, Object>> records = parseDatasetStream(din, dataset);
-                String checksum = HexFormat.of().formatHex(digest.digest());
-                return new DatasetPayload(checksum, records);
-            }
-        } catch (IOException | NoSuchAlgorithmException e) {
-            throw new SeedLoadingException("Failed to read dataset " + dataset.getFile() + " for seed pack " + descriptor.identity(), e);
-        }
-    }
+   private DatasetPayload readDataset(SeedPackDescriptor descriptor, Dataset dataset) {
+       // check if the dataset.getFile() actually exists or not
+
+      /*if (!Files.exists(Path.of(dataset.getFile()))) {
+            throw new SeedLoadingException("Dataset file '" + dataset.getFile() + "' does not exist in seed pack " + descriptor.identity());
+         } */
+
+       // Read all bytes from the dataset file, compute the SHA-256 checksum, and parse the dataset into records
+       // The stream is read only once and the original dataset file is not touched again.
+      try (InputStream raw = resourceRouter.open(descriptor, dataset.getFile())) {
+         // Read all bytes once
+         byte[] data = raw.readAllBytes();
+
+         // Compute SHA-256
+         MessageDigest md = MessageDigest.getInstance("SHA-256");
+         String checksum = HexFormat.of().formatHex(md.digest(data));
+
+         // Parse from the same bytes without touching the original stream again
+         List<Map<String, Object>> records = parseDatasetStream(new ByteArrayInputStream(data), dataset);
+
+         return new DatasetPayload(checksum, records);
+      } catch (IOException | NoSuchAlgorithmException e) {
+         throw new SeedLoadingException("Failed to read dataset " + dataset.getFile() + " for seed pack " + descriptor.identity(), e);
+      }
+   }
 
     private List<Map<String, Object>> parseDatasetStream(InputStream in, Dataset dataset) {
         try {
@@ -508,6 +556,7 @@ public final class SeedLoader {
         private SeedConflictPolicy conflictPolicy = SeedConflictPolicy.ERROR;
         private int batchSize = 200;
         private SeedMetrics seedMetrics;
+        private SeedDatasetValidator seedDatasetValidator;
 
         private Builder() {
             registerTransformFactory("tenantSubstitution", new TenantSubstitutionTransform.Factory());
@@ -555,6 +604,11 @@ public final class SeedLoader {
 
         public Builder seedMetrics(SeedMetrics seedMetrics) {
             this.seedMetrics = seedMetrics;
+            return this;
+        }
+
+        public Builder seedDatasetValidator(SeedDatasetValidator seedDatasetValidator) {
+            this.seedDatasetValidator = seedDatasetValidator;
             return this;
         }
 

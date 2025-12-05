@@ -1,6 +1,7 @@
 package com.e2eq.framework.api.query;
 
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
+import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
 import com.e2eq.framework.model.persistent.morphia.planner.LogicalPlan;
 import com.e2eq.framework.model.persistent.morphia.planner.PlannedQuery;
@@ -24,7 +25,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
 
 /**
  * REST facade for the planner-driven query path.
@@ -41,7 +41,7 @@ public class QueryGatewayResource {
     private final QueryGateway gateway = new QueryGatewayImpl();
 
     @Inject
-    MorphiaDataStore morphiaDataStore;
+    MorphiaDataStoreWrapper morphiaDataStoreWrapper;
 
     @ConfigProperty(name = "quantum.realm.testRealm", defaultValue = "defaultRealm")
     String defaultRealm;
@@ -100,7 +100,7 @@ public class QueryGatewayResource {
             }
             // Execute aggregation pipeline against the root collection
             String realm = (req.realm == null || req.realm.isBlank()) ? defaultRealm : req.realm;
-            Datastore ds = morphiaDataStore.getDataStore(realm);
+            Datastore ds = morphiaDataStoreWrapper.getDataStore(realm);
             String rootCollection = resolveCollectionName(root);
 
             // Strip out non-executable marker stages and build a clean pipeline
@@ -126,7 +126,7 @@ public class QueryGatewayResource {
         }
         // FILTER path using Morphia
         String realm = (req.realm == null || req.realm.isBlank()) ? defaultRealm : req.realm;
-        Datastore ds = morphiaDataStore.getDataStore(realm);
+        Datastore ds = morphiaDataStoreWrapper.getDataStore(realm);
         Query<? extends UnversionedBaseModel> q = ds.find(root);
         if (planned.getFilter() != null) {
             q = q.filter(planned.getFilter());

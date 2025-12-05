@@ -9,7 +9,6 @@ import com.e2eq.framework.model.auth.AuthProviderFactory;
 import com.e2eq.framework.model.auth.UserManagement;
 
 import com.e2eq.framework.util.SecurityUtils;
-import com.e2eq.framework.util.ValidateUtils;
 import com.mongodb.client.model.ReturnDocument;
 import dev.morphia.Datastore;
 import dev.morphia.ModifyOptions;
@@ -17,11 +16,9 @@ import dev.morphia.query.Query;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
 import dev.morphia.query.updates.UpdateOperators;
-import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.validation.ValidationException;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -49,7 +46,7 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
    }
 
    public Optional<UserProfile> updateStatus(String realm, @NotNull String userId, @NotNull UserProfile.Status status) {
-     UserProfile p = this.morphiaDataStore.getDataStore(realm)
+     UserProfile p = this.morphiaDataStoreWrapper.getDataStore(realm)
              .find(UserProfile.class)
              .filter(Filters.eq("userId", userId)).modify(new ModifyOptions().returnDocument(ReturnDocument.AFTER), UpdateOperators.set("status", status.value()));
 
@@ -61,7 +58,7 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
    }
 
    public Optional<UserProfile> getBySubject(String realm, @NotNull String subject) {
-      return getBySubject(  morphiaDataStore.getDataStore(realm), subject);
+      return getBySubject(  morphiaDataStoreWrapper.getDataStore(realm), subject);
    }
 
    public Optional<UserProfile> getBySubject(Datastore datastore,@NotNull String subject) {
@@ -78,11 +75,11 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
 
 
    public Optional<UserProfile> getByUserId(@NotNull String userId) {
-      return getByUserId(  morphiaDataStore.getDataStore(getSecurityContextRealmId()), userId );
+      return getByUserId(  morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()), userId );
    }
 
    public Optional<UserProfile> getByUserId(@NotNull String realm, @NotNull String userId) {
-      return getByUserId(  morphiaDataStore.getDataStore(realm), userId );
+      return getByUserId(  morphiaDataStoreWrapper.getDataStore(realm), userId );
    }
 
    @Override

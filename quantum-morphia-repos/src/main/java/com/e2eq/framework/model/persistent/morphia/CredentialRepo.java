@@ -1,7 +1,6 @@
 package com.e2eq.framework.model.persistent.morphia;
 
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
-import com.e2eq.framework.model.auth.AuthProviderFactory;
 import com.e2eq.framework.model.persistent.InvalidStateTransitionException;
 import com.e2eq.framework.model.persistent.base.CloseableIterator;
 import com.e2eq.framework.model.persistent.base.EntityReference;
@@ -21,7 +20,6 @@ import jakarta.inject.Inject;
 import jakarta.validation.constraints.NotNull;
 import org.apache.commons.lang3.tuple.Pair;
 import org.bson.types.ObjectId;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -100,7 +98,7 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
    }
 
    public Optional<CredentialUserIdPassword> findBySubject(@NotNull String subject, @NotNull String realmId, boolean ignoreRules) {
-      Datastore ds = morphiaDataStore.getDataStore(realmId);
+      Datastore ds = morphiaDataStoreWrapper.getDataStore(realmId);
       if (Log.isDebugEnabled()) {
          Log.debug("DataStore: dataBaseName:" + ds.getDatabase().getName() + " retrieved via realmId:" + realmId);
       }
@@ -139,7 +137,7 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
          throw new IllegalArgumentException("parameter realmId can not be null");
       }
 
-      Datastore ds = morphiaDataStore.getDataStore(realmId);
+      Datastore ds = morphiaDataStoreWrapper.getDataStore(realmId);
       if (Log.isDebugEnabled()) {
          Log.debug("DataStore: dataBaseName:" + ds.getDatabase().getName() + " retrieved via realmId:" + realmId);
       }
@@ -187,7 +185,7 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
 
    @Override
    public CloseableIterator<CredentialUserIdPassword> getStreamByQuery (int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields) {
-      return  super.getStreamByQuery(morphiaDataStore.getDataStore(envConfigUtils.getSystemRealm()), skip, limit, query, sortFields, projectionFields);
+      return  super.getStreamByQuery(morphiaDataStoreWrapper.getDataStore(envConfigUtils.getSystemRealm()), skip, limit, query, sortFields, projectionFields);
    }
 
    @Override
@@ -202,17 +200,17 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
 
    @Override
    public long updateActiveStatus (ObjectId id, boolean active) {
-      return super.updateActiveStatus(morphiaDataStore.getDataStore(envConfigUtils.getSystemRealm()),id, active);
+      return super.updateActiveStatus(morphiaDataStoreWrapper.getDataStore(envConfigUtils.getSystemRealm()),id, active);
    }
 
    @Override
    public long update (@org.jetbrains.annotations.NotNull ObjectId id, @org.jetbrains.annotations.NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
-      return super.update(morphiaDataStore.getDataStore(envConfigUtils.getSystemRealm()), id, pairs);
+      return super.update(morphiaDataStoreWrapper.getDataStore(envConfigUtils.getSystemRealm()), id, pairs);
    }
 
    @Override
    public CredentialUserIdPassword merge (@org.jetbrains.annotations.NotNull CredentialUserIdPassword entity) {
-      return super.merge(morphiaDataStore.getDataStore(envConfigUtils.getSystemRealm()), entity);
+      return super.merge(morphiaDataStoreWrapper.getDataStore(envConfigUtils.getSystemRealm()), entity);
    }
 
    /**
@@ -222,7 +220,7 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
     */
    @Override
    public List<CredentialUserIdPassword> save(List<CredentialUserIdPassword> entities) {
-      return this.save(morphiaDataStore.getDataStore(envConfigUtils.getSystemRealm()),entities);
+      return this.save(morphiaDataStoreWrapper.getDataStore(envConfigUtils.getSystemRealm()),entities);
    }
 
    @Override
@@ -237,15 +235,15 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
 
    @Override
    public List<CredentialUserIdPassword> getAllList () {
-      return this.getAllList(morphiaDataStore.getDataStore(envConfigUtils.getSystemRealm()));
+      return this.getAllList(morphiaDataStoreWrapper.getDataStore(envConfigUtils.getSystemRealm()));
    }
 
    @Override
    public List<CredentialUserIdPassword> getListByQuery(int skip, int limit, @Nullable String query, List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields) {
-      return getListByQuery(morphiaDataStore.getDataStore(envConfigUtils.getSystemRealm()), skip, limit, query, sortFields, projectionFields);
+      return getListByQuery(morphiaDataStoreWrapper.getDataStore(envConfigUtils.getSystemRealm()), skip, limit, query, sortFields, projectionFields);
    }
    @Override
    public List<CredentialUserIdPassword> getListFromReferences(List<EntityReference> references) {
-      return getListFromReferences(morphiaDataStore.getDataStore(envConfigUtils.getSystemRealm()), references);
+      return getListFromReferences(morphiaDataStoreWrapper.getDataStore(envConfigUtils.getSystemRealm()), references);
    }
 }

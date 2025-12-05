@@ -6,73 +6,16 @@ scope:
   type: GLOBAL
 
 datasets:
-  # Functional Domains (minimal starter set). Upsert by refName.
-  - collection: functionalDomain
-    modelClass: com.e2eq.framework.model.security.FunctionalDomain
-    naturalKey: [ "refName" ]
-    upsert: true
-    file: functional-domains.jsonl
-    transforms:
-      - type: tenantSubstitution
-
-  # Full security model functional domains (ported from securityModel.yaml)
-  - collection: functionalDomain
-    modelClass: com.e2eq.framework.model.security.FunctionalDomain
-    naturalKey: [ "refName" ]
-    upsert: true
-    file: functional-domains-all.jsonl
-    transforms:
-      - type: tenantSubstitution
-
-  # System organization (refName unique). If your environment uses a different refName,
-  # adjust the JSONL accordingly.
-  - collection: organization
-    modelClass: com.e2eq.framework.model.security.Organization
-    naturalKey: [ "refName" ]
-    upsert: true
-    file: organization.jsonl
-    transforms:
-      - type: tenantSubstitution
-
-  # System account associated to organization (refName unique)
-  - collection: account
-    modelClass: com.e2eq.framework.model.security.Account
-    naturalKey: [ "refName" ]
-    upsert: true
-    file: account.jsonl
-    transforms:
-      - type: tenantSubstitution
-
   # Counters (e.g., accountNumber). Upsert by refName
   - collection: counter
     modelClass: com.e2eq.framework.model.persistent.base.Counter
-    naturalKey: [ "refName" ]
-    upsert: true
-    file: counters.jsonl
-    transforms:
-      - type: tenantSubstitution
+    repoClass: com.e2eq.framework.model.persistent.morphia.CounterRepo
+    naturalKey: [refName]
+    file: classpath:seed-packs/system-initialize/datasets/counters.jsonl
 
   # Default user policy equivalent to InitializeDatabase.createInitialRules()
   - collection: policy
-    naturalKey: [ "refName" ]
-    upsert: true
-    file: policies-default-user.jsonl
-    transforms:
-      - type: tenantSubstitution
-
-  # System rules (previously hardcoded in RuleContext.addSystemRules())
-  - collection: policy
-    naturalKey: [ "refName" ]
-    upsert: true
-    file: policies-system-rules.jsonl
-    transforms:
-      - type: tenantSubstitution
-
-  # System user profile (without enforcing credential link to avoid hashing concerns)
-  - collection: userProfile
-    modelClass: com.e2eq.framework.model.security.UserProfile
-    naturalKey: [ "refName" ]
-    upsert: true
-    file: system-userProfile.jsonl
-    transforms:
-      - type: tenantSubstitution
+    modelClass: com.e2eq.framework.model.security.Policy
+    repoClass: com.e2eq.framework.model.persistent.morphia.PolicyRepo
+    naturalKey: [refName]
+    file: classpath:seed-packs/system-initialize/datasets/policies-default-user.jsonl

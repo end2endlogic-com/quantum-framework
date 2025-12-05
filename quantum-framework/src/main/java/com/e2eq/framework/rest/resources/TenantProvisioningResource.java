@@ -61,7 +61,8 @@ public class TenantProvisioningResource {
                     req.adminUserId,
                     req.adminUsername, // subject ?
                     req.adminPassword,
-                    archetypes
+                    archetypes,
+                    true
             );
             int status = (r.realmCreated || r.userCreated) ? Response.Status.CREATED.getStatusCode() : Response.Status.OK.getStatusCode();
             return Response.status(status).entity(new ProvisionTenantResponse(r)).build();

@@ -1,7 +1,7 @@
 package com.e2eq.framework.api.security;
 
 import com.e2eq.framework.model.persistent.migration.base.MigrationService;
-import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
+import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.framework.model.securityrules.SecurityCheckException;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.securityrules.SecuritySession;
@@ -50,7 +50,7 @@ public class TestUserProfile extends BaseRepoTest {
     @Inject
     TestUtils testUtils;
     @Inject
-    MorphiaDataStore morphiaDataStore;
+    MorphiaDataStoreWrapper morphiaDataStoreWrapper;
 
 
     @Test
@@ -89,7 +89,7 @@ public class TestUserProfile extends BaseRepoTest {
     }
 
     @Test void testCredentialsNoSecuritySession() {
-        Datastore datastore = morphiaDataStore.getDataStore(testUtils.getTestRealm());
+        Datastore datastore = morphiaDataStoreWrapper.getDataStore(testUtils.getTestRealm());
 
 
         Optional<CredentialUserIdPassword> opCreds = credentialRepo.findByUserId( envConfigUtils.getTestUserId(), envConfigUtils.getSystemRealm(), true);

@@ -12,7 +12,7 @@ import jakarta.validation.constraints.NotNull;
 public class OrganizationRepo extends MorphiaRepo<Organization> {
 
    public Organization createOrganization(@NotNull String displayName, @NotNull String refName, @Valid @NotNull DataDomain dataDomain) {
-      return createOrganization(morphiaDataStore.getDataStore(getSecurityContextRealmId()), displayName, refName, dataDomain);
+      return createOrganization(morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()), displayName, refName, dataDomain);
    }
 
    public Organization createOrganization(Datastore  ds, @NotNull String displayName, @NotNull String refName, @Valid @NotNull DataDomain dataDomain) {

@@ -38,6 +38,9 @@ public class SeedLoaderService {
     @Inject
     SeedMetrics seedMetrics;
 
+    @Inject
+    SeedDatasetValidator seedDatasetValidator;
+
     @ConfigProperty(name = "quantum.seed.conflict-policy", defaultValue = "SEED_WINS")
     SeedConflictPolicy conflictPolicy;
 
@@ -62,7 +65,8 @@ public class SeedLoaderService {
                 .objectMapper(objectMapper)
                 .conflictPolicy(conflictPolicy)
                 .batchSize(batchSize)
-                .seedMetrics(seedMetrics);
+                .seedMetrics(seedMetrics)
+                .seedDatasetValidator(seedDatasetValidator);
 
         // Add auto-discovered CDI-managed seed sources
         // FileSeedSource and ClasspathSeedSource are now @ApplicationScoped beans

@@ -14,7 +14,7 @@ import static dev.morphia.query.Sort.descending;
 public class DatabaseVersionRepo extends MorphiaRepo<DatabaseVersion> {
 
    public Optional<DatabaseVersion> findCurrentVersion(String realm) {
-      return findCurrentVersion(morphiaDataStore.getDataStore(realm));
+      return findCurrentVersion(morphiaDataStoreWrapper.getDataStore(realm));
    }
 
 

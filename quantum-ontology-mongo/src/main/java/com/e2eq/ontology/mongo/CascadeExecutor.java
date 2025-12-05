@@ -3,10 +3,9 @@ package com.e2eq.ontology.mongo;
 import com.e2eq.ontology.annotations.CascadeType;
 import com.e2eq.ontology.annotations.OntologyClass;
 import com.e2eq.ontology.annotations.OntologyProperty;
-import com.e2eq.ontology.core.Reasoner;
 import com.e2eq.ontology.model.OntologyEdge;
 import com.e2eq.ontology.repo.OntologyEdgeRepo;
-import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
+import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import dev.morphia.Datastore;
 import dev.morphia.query.Query;
 import dev.morphia.query.filters.Filters;
@@ -35,7 +34,7 @@ public class CascadeExecutor {
     @Inject
     OntologyEdgeRepo edgeRepo;
     @Inject
-    MorphiaDataStore morphiaDataStore;
+    MorphiaDataStoreWrapper morphiaDataStoreWrapper;
     @Inject
     dev.morphia.MorphiaDatastore morphiaDatastore;
 
@@ -45,7 +44,7 @@ public class CascadeExecutor {
     void init() {
         try {
             // Reuse MorphiaOntologyLoader logic to discover entity classes
-            var ds = morphiaDataStore.getDefaultSystemDataStore();
+            var ds = morphiaDataStoreWrapper.getDefaultSystemDataStore();
             dev.morphia.MorphiaDatastore md = (dev.morphia.MorphiaDatastore) ds;
             MorphiaOntologyLoader loader = new MorphiaOntologyLoader(md);
             java.lang.reflect.Method m = MorphiaOntologyLoader.class.getDeclaredMethod("discoverEntityClasses");
@@ -348,7 +347,7 @@ public class CascadeExecutor {
         }
         // As a fallback, try using the default system datastore if available
         try {
-            var ds = morphiaDataStore.getDefaultSystemDataStore();
+            var ds = morphiaDataStoreWrapper.getDefaultSystemDataStore();
             dev.morphia.MorphiaDatastore md = (dev.morphia.MorphiaDatastore) ds;
             MorphiaOntologyLoader loader = new MorphiaOntologyLoader(md);
             java.lang.reflect.Method m = MorphiaOntologyLoader.class.getDeclaredMethod("discoverEntityClasses");

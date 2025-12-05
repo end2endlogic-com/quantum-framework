@@ -18,6 +18,21 @@ final class SeedResourceRouter {
     }
 
     InputStream open(SeedPackDescriptor descriptor, String pathOrUri) throws IOException {
+        // Handle classpath: prefix
+        if (isClasspath(pathOrUri)) {
+            String cp = pathOrUri.substring("classpath:".length());
+            ClassLoader cl = Thread.currentThread().getContextClassLoader();
+            if (cl == null) {
+                cl = SeedResourceRouter.class.getClassLoader();
+            }
+            InputStream in = cl.getResourceAsStream(cp);
+            if (in == null) {
+                throw new IOException("Classpath resource not found: " + cp);
+            }
+            return in;
+        }
+
+        // Handle URI schemes (file://, s3://, etc.)
         if (isUri(pathOrUri)) {
             URI uri = URI.create(pathOrUri);
             String scheme = uri.getScheme();
@@ -28,8 +43,13 @@ final class SeedResourceRouter {
             }
             throw new IOException("No SeedSource found for URI scheme '" + scheme + "'");
         }
+
         // Backward compatible relative path resolution via owning source
         return descriptor.getSource().openDataset(descriptor, pathOrUri);
+    }
+
+    private static boolean isClasspath(String value) {
+        return value != null && value.startsWith("classpath:");
     }
 
     private static boolean isUri(String value) {

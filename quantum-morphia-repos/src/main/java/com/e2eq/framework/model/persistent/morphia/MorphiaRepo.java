@@ -18,6 +18,7 @@ import com.google.common.reflect.TypeToken;
 import com.mongodb.client.result.DeleteResult;
 import com.mongodb.client.result.UpdateResult;
 import dev.morphia.Datastore;
+import dev.morphia.MorphiaDatastore;
 import dev.morphia.annotations.Reference;
 import dev.morphia.mapping.Mapper;
 import dev.morphia.mapping.codec.pojo.EntityModel;
@@ -106,7 +107,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
     @Inject
-    protected MorphiaDataStore morphiaDataStore;
+    protected MorphiaDataStoreWrapper morphiaDataStoreWrapper;
 
     @Inject
     protected RuleContext ruleContext;
@@ -244,8 +245,18 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
     @Override
+    public MorphiaDataStoreWrapper getMorphiaDataStoreWrapper () {
+       return morphiaDataStoreWrapper;
+    }
+
+    @Override
+    public MorphiaDatastore getMorphiaDataStore() {
+       return morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId());
+    }
+
+    @Override
     public String getDatabaseName () {
-       return morphiaDataStore.getDataStore(getSecurityContextRealmId()).getDatabase().getName();
+       return morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()).getDatabase().getName();
     }
 
     public Filter[] getFilterArray(@NotNull List<Filter> filters, Class<? extends UnversionedBaseModel> modelClass) {
@@ -276,12 +287,12 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     public void ensureIndexes (String realmId, String collection) {
       Objects.requireNonNull(realmId, "RealmId cannot be null");
       Objects.requireNonNull(collection, "Collection cannot be null");
-      morphiaDataStore.getDataStore(realmId).ensureIndexes(getPersistentClass());
+      morphiaDataStoreWrapper.getDataStore(realmId).ensureIndexes(getPersistentClass());
    }
 
 
       protected List<String> getDefaultUIActionsFromFD(@NotNull String fdRefName) {
-        return getDefaultUIActionsFromFD(morphiaDataStore.getDataStore(getSecurityContextRealmId()), fdRefName);
+        return getDefaultUIActionsFromFD(morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()), fdRefName);
     }
 
     protected List<String> getDefaultUIActionsFromFD(Datastore datastore, @NotNull String fdRefName) {
@@ -314,7 +325,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
    @Override
    public Optional<T> findById (@NotNull String id, boolean ignoreRules) {
        ObjectId oid = new ObjectId(id);
-      return this.findById(morphiaDataStore.getDataStore(getSecurityContextRealmId()), oid, ignoreRules);
+      return this.findById(morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()), oid, ignoreRules);
    }
 
    @Override
@@ -326,17 +337,17 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public Optional<T> findById(@NotNull ObjectId id) {
-        return findById(morphiaDataStore.getDataStore(getSecurityContextRealmId()), id);
+        return findById(morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()), id);
     }
 
    @Override
    public Optional<T> findById (@NotNull ObjectId id, String realmId) {
-      return findById(morphiaDataStore.getDataStore(realmId), id, false);
+      return findById(morphiaDataStoreWrapper.getDataStore(realmId), id, false);
    }
 
    @Override
    public Optional<T> findById (@NotNull ObjectId id, String realmId, boolean ignoreRules) {
-       return findById(morphiaDataStore.getDataStore(realmId), id, ignoreRules);
+       return findById(morphiaDataStoreWrapper.getDataStore(realmId), id, ignoreRules);
    }
 
    @Override
@@ -371,13 +382,13 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public Optional<T> findByRefName(@NotNull String refName) {
-        return findByRefName(morphiaDataStore.getDataStore(getSecurityContextRealmId()), refName);
+        return findByRefName(morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()), refName);
     }
 
 
    @Override
    public Optional<T> findByRefName (@NotNull String refName, String realmId) {
-      return findByRefName(morphiaDataStore.getDataStore(realmId), refName);
+      return findByRefName(morphiaDataStoreWrapper.getDataStore(realmId), refName);
    }
 
    @Override
@@ -423,12 +434,12 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public List<T> getAllList() {
-        return this.getAllList(morphiaDataStore.getDataStore(getSecurityContextRealmId()));
+        return this.getAllList(morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()));
     }
 
     @Override
     public List<T> getAllList (String realmId) {
-      return this.getAllList(morphiaDataStore.getDataStore(realmId));
+      return this.getAllList(morphiaDataStoreWrapper.getDataStore(realmId));
    }
 
     @Override
@@ -444,12 +455,12 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public List<EntityReference> getEntityReferenceListByQuery(int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields) {
-        return this.getEntityReferenceListByQuery(morphiaDataStore.getDataStore(getSecurityContextRealmId()), skip, limit, query, sortFields);
+        return this.getEntityReferenceListByQuery(morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()), skip, limit, query, sortFields);
     }
 
     @Override
     public List<EntityReference> getEntityReferenceListByQuery(String realmId, int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields) {
-        return this.getEntityReferenceListByQuery(morphiaDataStore.getDataStore(realmId),skip, limit, query, sortFields);
+        return this.getEntityReferenceListByQuery(morphiaDataStoreWrapper.getDataStore(realmId),skip, limit, query, sortFields);
     }
 
     @Override
@@ -521,12 +532,12 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
     @Override
     public List<T> getListFromReferences(List<EntityReference> references) {
-        return getListFromReferences(morphiaDataStore.getDataStore(getSecurityContextRealmId()), references);
+        return getListFromReferences(morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()), references);
     }
 
     @Override
     public List<T> getListFromReferences(String realmId, List<EntityReference> references) {
-        return getListFromReferences(morphiaDataStore.getDataStore(realmId), references);
+        return getListFromReferences(morphiaDataStoreWrapper.getDataStore(realmId), references);
     }
     @Override
     public List<T> getListFromReferences(Datastore datastore, List<EntityReference> references) {
@@ -746,27 +757,27 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     // Convenience method that uses the default datastore
     @Override
     public CloseableIterator<T> getStreamByQuery(int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields) {
-        return getStreamByQuery(morphiaDataStore.getDataStore(getSecurityContextRealmId()), skip, limit, query, sortFields, projectionFields);
+        return getStreamByQuery(morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()), skip, limit, query, sortFields, projectionFields);
     }
 
    @Override
    public List<T> getListByQuery (String realmId, int skip, int limit, @Nullable String query, List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields) {
-      return getListByQuery(morphiaDataStore.getDataStore(realmId), skip, limit, query, sortFields, projectionFields);
+      return getListByQuery(morphiaDataStoreWrapper.getDataStore(realmId), skip, limit, query, sortFields, projectionFields);
    }
 
     @Override
     public List<T> getListByQuery(int skip, int limit, @Nullable String query, List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields) {
-        return getListByQuery(morphiaDataStore.getDataStore(getSecurityContextRealmId()), skip, limit, query, sortFields, projectionFields);
+        return getListByQuery(morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()), skip, limit, query, sortFields, projectionFields);
     }
 
     @Override
     public List<T> getList(int skip, int limit, @Nullable List<Filter> filters, @Nullable List<SortField> sortFields) {
-        return getList(morphiaDataStore.getDataStore(getSecurityContextRealmId()), skip, limit, filters, sortFields);
+        return getList(morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()), skip, limit, filters, sortFields);
     }
 
    @Override
    public List<T> getList (String realmId, int skip, int limit, @Nullable List<Filter> filters, @Nullable List<SortField> sortFields) {
-      return getList(morphiaDataStore.getDataStore(realmId), skip, limit, filters, sortFields);
+      return getList(morphiaDataStoreWrapper.getDataStore(realmId), skip, limit, filters, sortFields);
    }
 
     @Override
@@ -827,7 +838,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
    @Override
     public List<T> getListFromIds(@NotNull(value = "RealmId can not be null") String realmId,@NotNull(value="List of objectids can not be null") @NotEmpty (message = "list of ids can not be empty") List<ObjectId> ids) {
-        return getListFromIds(morphiaDataStore.getDataStore(realmId), ids);
+        return getListFromIds(morphiaDataStoreWrapper.getDataStore(realmId), ids);
     }
 
     @Override
@@ -847,7 +858,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         FindOptions findOptions = new FindOptions();
 
         Filter[] filterArray = new Filter[filters.size()];
-        Query<T> query = morphiaDataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass())
+        Query<T> query = morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()).find(getPersistentClass())
                 .filter(filters.toArray(filterArray));
 
         List<T> list = query.iterator(findOptions).toList();
@@ -881,7 +892,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
    @Override
     public List<T> getListFromRefNames(String realmId,List<String> refNames) {
-        return getListFromRefNames(morphiaDataStore.getDataStore(realmId), refNames);
+        return getListFromRefNames(morphiaDataStoreWrapper.getDataStore(realmId), refNames);
     }
 
     @Override
@@ -901,7 +912,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
        String realm= getSecurityContextRealmId();
 
         Filter[] filterArray = new Filter[filters.size()];
-        Query<T> query = morphiaDataStore.getDataStore(realm).find(getPersistentClass())
+        Query<T> query = morphiaDataStoreWrapper.getDataStore(realm).find(getPersistentClass())
                 .filter(filters.toArray(filterArray));
 
         List<T> list = query.iterator(findOptions).toList();
@@ -935,7 +946,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
    @Override
     public long getCount(@NotNull(value="realmId can not be null") String realmId, @Nullable String query) {
-        return getCount(morphiaDataStore.getDataStore(realmId), query);
+        return getCount(morphiaDataStoreWrapper.getDataStore(realmId), query);
     }
 
 
@@ -971,7 +982,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     // have different implementations for read vs. write.
 
     public MorphiaSession startSession(String realm) {
-        return morphiaDataStore.getDataStore(realm).startSession();
+        return morphiaDataStoreWrapper.getDataStore(realm).startSession();
     }
 
     protected void setDefaultValues(T model) {
@@ -1085,7 +1096,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public List<T> save(List<T> entities) {
-        return save(morphiaDataStore.getDataStore(getSecurityContextRealmId()),entities);
+        return save(morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()),entities);
     }
 
     @Override
@@ -1146,7 +1157,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
    @Override
    public T save(@NotNull String realmId, @Valid T value) {
-      return save(morphiaDataStore.getDataStore(realmId), value);
+      return save(morphiaDataStoreWrapper.getDataStore(realmId), value);
    }
 
 
@@ -1156,7 +1167,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
      * @param session - the session we are participating in i.e the transaction
      */
     public void removeReferenceConstraint(T obj, MorphiaSession session) {
-        Mapper mapper = morphiaDataStore.getDataStore(getSecurityContextRealmId()).getMapper();
+        Mapper mapper = morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()).getMapper();
         EntityModel mappedClass = mapper.getEntityModel(obj.getClass());
 
         for (PropertyModel mappedField : mappedClass.getProperties()) {
@@ -1228,7 +1239,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
             // if there are no references to this object, then we can just delete it
             if (obj.getReferences() == null || obj.getReferences().isEmpty()) {
                 // delete the object and remove any references that it may have had to parents
-                try (MorphiaSession s = morphiaDataStore.getDataStore(realmId).startSession()) {
+                try (MorphiaSession s = morphiaDataStoreWrapper.getDataStore(realmId).startSession()) {
                     s.startTransaction();
                     // ontology pre-delete hooks (may throw to block)
                     try { callPreDeleteHooks(realmId, obj); } catch (RuntimeException ex) { s.abortTransaction(); throw ex; }
@@ -1249,7 +1260,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
                 // for each reference, check if the referenced object still exists
                 for (ReferenceEntry reference : obj.getReferences()) {
-                    try (MorphiaSession s = morphiaDataStore.getDataStore(realmId).startSession()) {
+                    try (MorphiaSession s = morphiaDataStoreWrapper.getDataStore(realmId).startSession()) {
                         s.startTransaction();
                         // find the referenced object
                         try {
@@ -1366,7 +1377,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public long updateActiveStatus (@PathParam("id") ObjectId id, boolean active) {
-       return updateActiveStatus(morphiaDataStore.getDataStore(getSecurityContextRealmId()),id, active);
+       return updateActiveStatus(morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()),id, active);
    }
 
    @Override
@@ -1389,19 +1400,19 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
    @Override
    @SafeVarargs
    public final long update (String realmId, @NotNull String id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
-      return update(morphiaDataStore.getDataStore(realmId), id, pairs);
+      return update(morphiaDataStoreWrapper.getDataStore(realmId), id, pairs);
    }
 
    @Override
    public long update (@NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
-       return update(morphiaDataStore.getDataStore(getSecurityContextRealmId()), id, pairs);
+       return update(morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()), id, pairs);
    }
 
 
     @Override
     @SafeVarargs
     public final long update (String realmId, @NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
-        return update(morphiaDataStore.getDataStore(realmId), id, pairs);
+        return update(morphiaDataStoreWrapper.getDataStore(realmId), id, pairs);
     }
 
     private Field getFieldFromHierarchy(Class<?> clazz, String fieldName)  throws NoSuchFieldException {
@@ -1610,13 +1621,13 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     @Override
     @SafeVarargs
     public final long updateManyByQuery(@Nullable String query, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
-        return updateManyByQuery(morphiaDataStore.getDataStore(getSecurityContextRealmId()), query, false, pairs);
+        return updateManyByQuery(morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()), query, false, pairs);
     }
 
     @Override
     @SafeVarargs
     public final long updateManyByQuery(@NotNull String realmId, @Nullable String query, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
-        return updateManyByQuery(morphiaDataStore.getDataStore(realmId), query, false, pairs);
+        return updateManyByQuery(morphiaDataStoreWrapper.getDataStore(realmId), query, false, pairs);
     }
 
     @Override
@@ -1658,13 +1669,13 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     @Override
     @SafeVarargs
     public final long updateManyByIds(@NotNull List<ObjectId> ids, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
-        return updateManyByIds(morphiaDataStore.getDataStore(getSecurityContextRealmId()), ids, false, pairs);
+        return updateManyByIds(morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()), ids, false, pairs);
     }
 
     @Override
     @SafeVarargs
     public final long updateManyByIds(@NotNull String realmId, @NotNull List<ObjectId> ids, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
-        return updateManyByIds(morphiaDataStore.getDataStore(realmId), ids, false, pairs);
+        return updateManyByIds(morphiaDataStoreWrapper.getDataStore(realmId), ids, false, pairs);
     }
 
     @Override
@@ -1706,7 +1717,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     @SafeVarargs
     public final long updateManyByRefAndDomain(@NotNull List<Pair<String, com.e2eq.framework.model.persistent.base.DataDomain>> items,
                                          @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
-        return updateManyByRefAndDomain(morphiaDataStore.getDataStore(getSecurityContextRealmId()), items, false, pairs);
+        return updateManyByRefAndDomain(morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()), items, false, pairs);
     }
 
     @Override
@@ -1714,7 +1725,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     public final long updateManyByRefAndDomain(@NotNull String realmId,
                                          @NotNull List<Pair<String, com.e2eq.framework.model.persistent.base.DataDomain>> items,
                                          @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
-        return updateManyByRefAndDomain(morphiaDataStore.getDataStore(realmId), items, false, pairs);
+        return updateManyByRefAndDomain(morphiaDataStoreWrapper.getDataStore(realmId), items, false, pairs);
     }
 
     @Override
@@ -1811,7 +1822,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public T merge(@NotNull T entity){
-        return merge(morphiaDataStore.getDataStore(getSecurityContextRealmId()), entity);
+        return merge(morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()), entity);
     }
 
     @Override
@@ -1840,7 +1851,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public List<T> merge(List<T> entities) {
-        return merge(morphiaDataStore.getDataStore(getSecurityContextRealmId()), entities);
+        return merge(morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()), entities);
     }
 
     @Override

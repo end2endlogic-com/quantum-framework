@@ -29,17 +29,17 @@ import org.yaml.snakeyaml.error.YAMLException;
 public final class SeedPackManifest {
 
     private static final String DEFAULT_MANIFEST = "manifest.yaml";
-    
+
     @NotBlank(message = "seedPack name is required")
     private String seedPack;
 
     @NotBlank(message = "version is required")
     private String version;
-    
+
     @Valid
     private List<Dataset> datasets;
     private List<String> includes;
-    
+
     @Valid
     private List<Archetype> archetypes;
     // Optional scope block to control applicability
@@ -81,7 +81,7 @@ public final class SeedPackManifest {
 
     /**
      * Validates the manifest using both programmatic checks and Bean Validation.
-     * 
+     *
      * @throws IllegalStateException if validation fails
      */
     public void validate() {
@@ -89,14 +89,14 @@ public final class SeedPackManifest {
         jakarta.validation.Validator validator = jakarta.validation.Validation
                 .buildDefaultValidatorFactory()
                 .getValidator();
-        
+
         java.util.Set<jakarta.validation.ConstraintViolation<SeedPackManifest>> violations = validator.validate(this);
         if (!violations.isEmpty()) {
             StringBuilder sb = new StringBuilder("Validation failed for manifest " + getSourceDescription() + ": ");
             violations.forEach(v -> sb.append(v.getPropertyPath()).append(" ").append(v.getMessage()).append("; "));
             throw new IllegalStateException(sb.toString());
         }
-        
+
         // Additional programmatic validation
         if (datasets != null) {
             datasets.forEach(dataset -> dataset.validate(getSourceDescription()));
@@ -137,6 +137,8 @@ public final class SeedPackManifest {
         private List<Transform> transforms;
         // Optional: fully qualified class name of the UnversionedBaseModel to persist via Morphia
         private String modelClass;
+        // Optional: fully qualified class name of the Morphia repository bean to use directly
+        private String repoClass;
 
 
         public List<String> getNaturalKey() {
@@ -165,12 +167,14 @@ public final class SeedPackManifest {
         }
 
         void validate(String source) {
-            // collection may be omitted when modelClass is specified; otherwise it's required
-            if ((collection == null || collection.isBlank()) && (modelClass == null || modelClass.isBlank())) {
-                throw new IllegalStateException("Dataset collection is required in manifest " + source + " when modelClass is not specified");
+            // collection may be omitted when modelClass or repoClass is specified; otherwise it's required
+            boolean hasCollection = collection != null && !collection.isBlank();
+            boolean hasModel = modelClass != null && !modelClass.isBlank();
+            boolean hasRepo = repoClass != null && !repoClass.isBlank();
+            if (!hasCollection && !hasModel && !hasRepo) {
+                throw new IllegalStateException("Dataset collection is required in manifest " + source + " when neither modelClass nor repoClass is specified");
             }
-            String datasetId = (collection != null && !collection.isBlank()) ? collection :
-                    (modelClass != null && !modelClass.isBlank() ? modelClass : "<unknown>");
+            String datasetId = hasCollection ? collection : (hasModel ? modelClass : (hasRepo ? repoClass : "<unknown>"));
             if (file == null || file.isBlank()) {
                 throw new IllegalStateException("Dataset file is required for " + datasetId + " in manifest " + source);
             }

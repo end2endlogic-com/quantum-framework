@@ -19,7 +19,7 @@ import java.util.List;
 @ApplicationScoped
 public class RepoUtils {
     @Inject
-    protected MorphiaDataStore dataStore;
+    protected MorphiaDataStoreWrapper dataStore;
 
     @Inject
     RuleContext ruleContext;

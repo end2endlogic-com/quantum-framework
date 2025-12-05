@@ -2,7 +2,7 @@ package com.e2eq.framework.persistent;
 
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.base.ReferenceEntry;
-import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
+import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.framework.securityrules.RuleContext;
 import com.e2eq.framework.securityrules.SecuritySession;
 import com.e2eq.framework.test.ChildListModel;
@@ -23,7 +23,7 @@ public class TestReferenceInterceptorLogic extends BaseRepoTest{
 
 
     @Inject
-    protected MorphiaDataStore dataStore;
+    protected MorphiaDataStoreWrapper dataStore;
 
     @Inject
     protected TestChildRepo childRepo;

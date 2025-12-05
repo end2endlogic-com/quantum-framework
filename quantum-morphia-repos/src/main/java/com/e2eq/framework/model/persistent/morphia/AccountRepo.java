@@ -18,7 +18,7 @@ public class AccountRepo extends MorphiaRepo<Account> {
     * Convenience method that uses the current security context datastore to create an account.
     */
    public Account createAccount(String accountNumber, @Valid @NotNull Organization org) {
-      return createAccount(morphiaDataStore.getDataStore(getSecurityContextRealmId()), accountNumber, org);
+      return createAccount(morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()), accountNumber, org);
    }
 
    /**

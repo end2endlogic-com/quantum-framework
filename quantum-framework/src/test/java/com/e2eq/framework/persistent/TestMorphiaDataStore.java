@@ -1,6 +1,6 @@
 package com.e2eq.framework.persistent;
 
-import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
+import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.framework.securityrules.SecuritySession;
 import com.e2eq.framework.test.ParentModel;
 import org.junit.jupiter.api.Assertions;
@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test;
 @QuarkusTest
 public class TestMorphiaDataStore extends BaseRepoTest{
     @Inject
-    MorphiaDataStore dataStore;
+    MorphiaDataStoreWrapper dataStore;
 
 
     @Test

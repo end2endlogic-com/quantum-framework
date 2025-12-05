@@ -19,7 +19,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 @ApplicationScoped
-public class MorphiaDataStore {
+public class MorphiaDataStoreWrapper {
 
    @Inject
    MongoClient mongoClient;
@@ -51,7 +51,7 @@ public class MorphiaDataStore {
 
    protected static final boolean ENABLE_ONE_DB_PER_TENANT = false;
 
-   public MorphiaDataStore() {
+   public MorphiaDataStoreWrapper () {
    }
 
    public Datastore getDefaultSystemDataStore() {

@@ -67,7 +67,7 @@ public class ApplicationRegistrationRequestRepo extends MorphiaRepo<ApplicationR
    public Optional<ApplicationRegistration> findByCompanyIdentifier(String identifier) {
       List<Filter> filters = new ArrayList<>();
       filters.add(Filters.eq("companyIdentifier", identifier));
-      Query<ApplicationRegistration> query = morphiaDataStore.getDataStore(getSecurityContextRealmId()).find(getPersistentClass()).filter(getFilterArray(filters, getPersistentClass()));
+      Query<ApplicationRegistration> query = morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()).find(getPersistentClass()).filter(getFilterArray(filters, getPersistentClass()));
       ApplicationRegistration obj = query.first();
       return Optional.ofNullable(obj);
    }

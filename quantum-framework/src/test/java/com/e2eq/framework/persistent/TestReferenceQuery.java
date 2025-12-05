@@ -1,7 +1,7 @@
 package com.e2eq.framework.persistent;
 
 import com.e2eq.framework.model.persistent.base.BaseModel;
-import com.e2eq.framework.model.persistent.morphia.MorphiaDataStore;
+import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
 import com.e2eq.framework.securityrules.RuleContext;
 import com.e2eq.framework.securityrules.SecuritySession;
@@ -24,7 +24,7 @@ public class TestReferenceQuery extends BaseRepoTest{
     RuleContext ruleContext;
 
     @Inject
-    MorphiaDataStore dataStore;
+    MorphiaDataStoreWrapper dataStore;
 
 
     @Test

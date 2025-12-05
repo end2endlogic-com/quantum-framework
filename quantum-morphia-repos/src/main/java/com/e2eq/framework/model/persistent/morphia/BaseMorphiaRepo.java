@@ -6,6 +6,7 @@ import com.e2eq.framework.model.persistent.base.*;
 import com.e2eq.framework.rest.models.Collection;
 import com.fasterxml.jackson.module.jsonSchema.jakarta.JsonSchema;
 import dev.morphia.Datastore;
+import dev.morphia.MorphiaDatastore;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.transactions.MorphiaSession;
 import jakarta.validation.Valid;
@@ -42,6 +43,10 @@ import java.util.Optional;
  * @param <T> the concrete entity type handled by the repository
  */
 public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
+
+   MorphiaDataStoreWrapper getMorphiaDataStoreWrapper ();
+
+   MorphiaDatastore getMorphiaDataStore ();
 
    /**
     * Returns the logical database name backing this repository.
