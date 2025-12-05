@@ -529,7 +529,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Framework Documentation</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-11-24T14:49:07Z</span>
+<span id="revdate">2025-12-05T03:53:59Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -12778,6 +12778,68 @@ quantum.database.migration.changeset.package=com.example.migrations</code></pre>
 </div>
 </div>
 <div class="sect4">
+<h5 id="_seed_packs_filesystem_classpath">Seed packs (filesystem + classpath)</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="properties"># Enable seed pack discovery and application on startup
+quantum.seed-pack.enabled=true
+quantum.seed-pack.apply.on-startup=true
+
+# Filesystem root for seed packs when present in the app repo
+# If the path does not exist, the framework still loads classpath seed packs
+# contributed by dependencies (e.g., quantum-framework) from resources under seed-packs/
+quantum.seed-pack.root=src/main/resources/seed-packs
+
+# Optional CSV filter to apply only specific seed pack names
+# Example: quantum.seed.apply.filter=system-initialize,my-tenant
+quantum.seed.apply.filter=</code></pre>
+</div>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<div class="paragraph">
+<p>Classpath seed loading: The framework automatically discovers seed packs packaged
+under <code>seed-packs/</code> on the application classpath (including JAR dependencies).
+Apps depending on the framework no longer need to copy framework seeds locally
+or reference absolute file paths. If both filesystem and classpath contain seed
+packs with the same name, the latest semantic version is applied.</p>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_security_rules_diagnostics">Security rules diagnostics</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="properties"># Elevate RuleContext auto‑reload diagnostics from DEBUG to INFO when troubleshooting
+quantum.securityrules.ruleContext.debugAutoReload=false</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Tips:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>In unit tests that run inside Quarkus, prefer using a CDI‑managed <code>RuleContext</code>.
+A helper is provided in tests: <code>RuleContextTestUtils.reload(&lt;realm&gt;)</code> to force
+a refresh of policies from the repository for a given realm.</p>
+</li>
+<li>
+<p>If you construct <code>RuleContext</code> manually (outside CDI), repository injection is not available,
+and auto‑reload is skipped to avoid wiping programmatically added rules.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect4">
 <h5 id="_realm_and_tenant_configuration">Realm and Tenant Configuration</h5>
 <div class="listingblock">
 <div class="content">
@@ -12822,6 +12884,24 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="paragraph">
+<p>TBox Persistence</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="properties"># Enable TBox persistence to MongoDB (default: true)
+# When enabled, the ontology TBox (schema) is persisted to MongoDB for faster startup
+# and version history. The TBox is automatically rebuilt if the YAML source changes.
+quantum.ontology.tbox.persist=true
+
+# Force rebuild of TBox even if persisted version exists (default: false)
+# Useful for development or when you want to ensure fresh rebuild from sources
+quantum.ontology.tbox.force-rebuild=false
+
+# Package scanning for @OntologyClass and @OntologyProperty annotations
+quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pre>
+</div>
+</div>
+<div class="paragraph">
 <p>Registry modes</p>
 </div>
 <div class="ulist">
@@ -12831,6 +12911,9 @@ quantum.anonymousUserId=anonymous</code></pre>
 </li>
 <li>
 <p>Mongo-backed (advanced): load a TBox from a Mongo collection and cache it in memory for hot reload/versioning.</p>
+</li>
+<li>
+<p>Persisted TBox (recommended for production): TBox is persisted to MongoDB and loaded on startup for faster initialization.</p>
 </li>
 </ul>
 </div>

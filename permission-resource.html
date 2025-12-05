@@ -529,7 +529,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Permission Resource: Check APIs and Client Usage</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2025-11-24T14:49:07Z</span>
+<span id="revdate">2025-12-05T03:53:59Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -542,16 +542,25 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </ul>
 </li>
 <li><a href="#_data_domain_scope_and_fallback">2. Data-Domain Scope and Fallback</a></li>
-<li><a href="#_javascript_client_library">3. JavaScript Client Library</a>
+<li><a href="#_javascript_client_library">3. JavaScript Client Library</a></li>
+<li><a href="#_single_resource_check_api_evalmode_and_scoped_decisions">4. Single-resource check API: evalMode and SCOPED decisions</a></li>
+<li><a href="#_evaluate_api_per_action_decisions_with_scoped_semantics">5. Evaluate API: per-action decisions with SCOPED semantics</a>
 <ul class="sectlevel2">
-<li><a href="#_using_in_a_browser_no_build_tools">3.1. Using in a Browser (no build tools)</a></li>
-<li><a href="#_using_in_react">3.2. Using in React</a></li>
-<li><a href="#_using_in_vue">3.3. Using in Vue</a></li>
+<li><a href="#_which_rule_produced_the_decision">5.1. Which rule produced the decision?</a></li>
 </ul>
 </li>
-<li><a href="#_curl_examples">4. cURL Examples</a></li>
-<li><a href="#_caching_guidance">5. Caching Guidance</a></li>
-<li><a href="#_troubleshooting">6. Troubleshooting</a></li>
+<li><a href="#_behavior_matrix_summary">6. Behavior matrix (summary)</a></li>
+<li><a href="#_migration_notes">7. Migration notes</a></li>
+<li><a href="#_troubleshooting_faqs">8. Troubleshooting / FAQs</a>
+<ul class="sectlevel2">
+<li><a href="#_using_in_a_browser_no_build_tools">8.1. Using in a Browser (no build tools)</a></li>
+<li><a href="#_using_in_react">8.2. Using in React</a></li>
+<li><a href="#_using_in_vue">8.3. Using in Vue</a></li>
+</ul>
+</li>
+<li><a href="#_curl_examples">9. cURL Examples</a></li>
+<li><a href="#_caching_guidance">10. Caching Guidance</a></li>
+<li><a href="#_troubleshooting">11. Troubleshooting</a></li>
 </ul>
 </div>
 </div>
@@ -928,7 +937,9 @@ If your server version supports a nested dataDomain object, you may also send:
 ACLClient.buildFallbackChain(scopeKey)       <span class="comment">// =&gt; [less-specific scope keys]</span>
 ACLClient.lookupAreaDomainAction(matrix, area, domain, action) <span class="comment">// =&gt; Outcome | null</span>
 ACLClient.decide(snapshot, dataDomain, area, domain, action)   <span class="comment">// =&gt; 'ALLOW' | 'DENY'</span>
-ACLClient.decideOutcome(snapshot, dataDomain, area, domain, action) <span class="comment">// =&gt; Outcome | null</span></code></pre>
+ACLClient.decideOutcome(snapshot, dataDomain, area, domain, action) <span class="comment">// =&gt; Outcome | null</span>
+ACLClient.interpretCheckResponse(check)  <span class="comment">// =&gt; { decision, scope, constraints, filterConstraintsPresent, filterConstraints }</span>
+ACLClient.interpretEvaluateResponse(res) <span class="comment">// =&gt; { allow, deny, decisions, evalModeUsed, getDecision(area, domain, action) }</span></code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -948,8 +959,333 @@ ACLClient.decideOutcome(snapshot, dataDomain, area, domain, action) <span class=
 <div class="paragraph">
 <p>Allowed effect values are "ALLOW" or "DENY".</p>
 </div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_single_resource_check_api_evalmode_and_scoped_decisions">4. Single-resource check API: evalMode and SCOPED decisions</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The <code>/system/permissions/check</code> endpoint accepts an optional <code>evalMode</code> parameter to control
+how the server evaluates filter strings and postcondition scripts in single-resource checks. It also
+supports sending a shallow snapshot of a concrete resource instance so that filters can be evaluated
+in-memory when appropriate.</p>
+</div>
+<div class="paragraph">
+<p>Eval modes:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>LEGACY (default):</p>
+<div class="ulist">
+<ul>
+<li>
+<p>If a concrete resource instance is provided (with <code>modelClass</code> and <code>resource</code>), the server attempts in-memory
+evaluation of rule filter strings; if filters match and postcondition is true/absent, the decision is <code>EXACT</code>.</p>
+</li>
+<li>
+<p>If no resource is provided and a matching rule carries filters and/or scripts, the server returns a <code>SCOPED</code>
+decision: the outcome (<code>ALLOW</code>/<code>DENY</code>) is accompanied by <code>scopedConstraints</code> enumerating the applied filters and/or scripts.</p>
+</li>
+<li>
+<p>List endpoints should continue to use <code>getFilters(&#8230;&#8203;)</code>/<code>check-with-index</code> for DB-side filtering; <code>SCOPED</code> simply
+surfaces constraints to the client for transparency.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>AUTO: Same behavior as LEGACY; provided for client clarity.</p>
+</li>
+<li>
+<p>STRICT:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>With a resource present, the evaluator runs. If filter evaluation returns false, the rule is treated as NOT_APPLICABLE.</p>
+</li>
+<li>
+<p>Without a resource for non-LIST actions, matching rules with filters/scripts produce a <code>SCOPED</code> candidate (constraints listed)
+instead of being silently allowed/denied. Postconditions are not executed in-memory in this case.</p>
+</li>
+<li>
+<p>LIST is never suppressed; constraints are surfaced.</p>
+</li>
+</ul>
+</div>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Request fields (additive):</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>identity</code> (string, required)</p>
+</li>
+<li>
+<p><code>realm</code> (string, optional)</p>
+</li>
+<li>
+<p><code>area</code>, <code>functionalDomain</code>, <code>action</code>, <code>resourceId</code> (optional; may be wildcard <code>*</code> unless doing a specific check)</p>
+</li>
+<li>
+<p><code>modelClass</code> (string, optional): fully qualified class name or resolvable entity name</p>
+</li>
+<li>
+<p><code>resource</code> (object, optional): shallow JSON snapshot of the domain resource</p>
+</li>
+<li>
+<p><code>evalMode</code> (string, optional): <code>LEGACY</code> | <code>AUTO</code> | <code>STRICT</code> (defaults to <code>LEGACY</code>)</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Response fields (additive and backward compatible):</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>decision</code> — canonical decision string, mirrors <code>finalEffect</code> ("ALLOW"|"DENY").</p>
+</li>
+<li>
+<p><code>decisionScope</code> — one of:</p>
+<div class="ulist">
+<ul>
+<li>
+<p><code>EXACT</code> — fully evaluated in-memory (filters and scripts, when present).</p>
+</li>
+<li>
+<p><code>SCOPED</code> — conditionally applies; <code>scopedConstraints</code> lists the filters/scripts that must hold.</p>
+</li>
+<li>
+<p><code>DEFAULT</code> — no rule applied; the decision fell back to the default (<code>naLabel</code> will be <code>NA-ALLOW</code> or <code>NA-DENY</code>).</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p><code>evalModeUsed</code> — echoes the server-applied eval mode.</p>
+</li>
+<li>
+<p><code>scopedConstraintsPresent</code> and <code>scopedConstraints[]</code> — present when <code>decisionScope=SCOPED</code>.</p>
+</li>
+<li>
+<p><code>filterConstraintsPresent</code> and <code>filterConstraints[]</code> — legacy-compatible constraint listing; kept for LIST and transition.</p>
+</li>
+<li>
+<p><code>notApplicable[]</code> — rules that were considered but did not apply (with phase and reason).</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Winning rule metadata (additive):</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p><code>winningRuleName</code>, <code>winningRulePriority</code>, <code>winningRuleFinal</code> — the rule that produced the decision
+(for <code>EXACT</code>), or the selected candidate (for <code>SCOPED</code>). These are null for <code>DEFAULT</code>.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Example request enabling evaluator:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>POST /system/permissions/check
+{
+  &quot;identity&quot;: &quot;alice@end2endlogic.com&quot;,
+  &quot;realm&quot;: &quot;b2bi&quot;,
+  &quot;area&quot;: &quot;sales&quot;,
+  &quot;functionalDomain&quot;: &quot;order&quot;,
+  &quot;action&quot;: &quot;update&quot;,
+  &quot;modelClass&quot;: &quot;com.example.domain.Order&quot;,
+  &quot;resource&quot;: { &quot;id&quot;: &quot;ORD-123&quot;, &quot;customerId&quot;: &quot;5f1e1a5e5e5e5e5e5e5e5e51&quot; },
+  &quot;evalMode&quot;: &quot;STRICT&quot;
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Client usage to interpret the decision:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>const res = await fetch('/system/permissions/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req) });
+const check = await res.json();
+const out = ACLClient.interpretCheckResponse(check);
+if (out.scope === 'EXACT' &amp;&amp; out.decision === 'ALLOW') {
+  // fully allowed
+} else if (out.scope === 'SCOPED' &amp;&amp; out.decision === 'ALLOW') {
+  // allowed subject to the following constraints (filters/scripts):
+  console.log(out.constraints);
+} else {
+  // denied or default; inspect check.naLabel / check.notApplicable as needed
+}</code></pre>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_evaluate_api_per_action_decisions_with_scoped_semantics">5. Evaluate API: per-action decisions with SCOPED semantics</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The <code>/system/permissions/fd/evaluate</code> endpoint classifies an identity’s permissions across discovered
+areas/domains/actions and now supports the same <code>evalMode</code> and optional <code>modelClass</code>/<code>resource</code> parameters as <code>/check</code>.
+When the server cannot fully evaluate constraints for a given action (e.g., no resource supplied), it returns a
+<code>SCOPED</code> decision for that action along with the enumerated constraints.</p>
+</div>
+<div class="paragraph">
+<p>Request (additive parity with <code>/check</code>):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>POST /system/permissions/fd/evaluate?useIndex=true
+{
+  &quot;identity&quot;: &quot;alice@end2endlogic.com&quot;,
+  &quot;realm&quot;: &quot;b2bi&quot;,
+  // Optional narrowing
+  &quot;area&quot;: &quot;sales&quot;,
+  &quot;functionalDomain&quot;: &quot;order&quot;,
+  &quot;action&quot;: &quot;view&quot;,
+  // Optional single-resource evaluation controls
+  &quot;modelClass&quot;: &quot;com.example.domain.Order&quot;,
+  &quot;resource&quot;: { &quot;id&quot;: &quot;ORD-123&quot;, &quot;customerId&quot;: &quot;5f1e1a5e5e5e5e5e5e5e5e51&quot; },
+  &quot;evalMode&quot;: &quot;STRICT&quot;
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Response (additive):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>{
+  &quot;allow&quot;: { ... },
+  &quot;deny&quot;: { ... },
+  &quot;decisions&quot;: {
+    &quot;sales&quot;: {
+      &quot;order&quot;: {
+        &quot;view&quot;: {
+          &quot;effect&quot;: &quot;ALLOW&quot;,
+          &quot;decisionScope&quot;: &quot;SCOPED&quot;,
+          &quot;scopedConstraintsPresent&quot;: true,
+          &quot;scopedConstraints&quot;: [
+            { &quot;type&quot;: &quot;FILTER&quot;, &quot;detail&quot;: &quot;customerId:^[${accessibleCustomerIds}]&quot;, &quot;joinOp&quot;: &quot;AND&quot; }
+          ],
+          &quot;naLabel&quot;: null,
+          &quot;rule&quot;: &quot;user-sales-order-view-filter&quot;,
+          &quot;priority&quot;: 100,
+          &quot;finalRule&quot;: false,
+          &quot;source&quot;: null
+        }
+      }
+    }
+  },
+  &quot;evalModeUsed&quot;: &quot;STRICT&quot;
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Client usage:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>const res = await fetch('/system/permissions/fd/evaluate?useIndex=true', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req) });
+const body = await res.json();
+const ev = ACLClient.interpretEvaluateResponse(body);
+const decision = ev.getDecision('sales', 'order', 'view');
+if (decision &amp;&amp; decision.decisionScope === 'EXACT' &amp;&amp; decision.effect === 'ALLOW') {
+  // fully allowed
+} else if (decision &amp;&amp; decision.decisionScope === 'SCOPED' &amp;&amp; decision.effect === 'ALLOW') {
+  // allowed subject to constraints
+  console.log(decision.scopedConstraints);
+}</code></pre>
+</div>
+</div>
 <div class="sect2">
-<h3 id="_using_in_a_browser_no_build_tools">3.1. Using in a Browser (no build tools)</h3>
+<h3 id="_which_rule_produced_the_decision">5.1. Which rule produced the decision?</h3>
+<div class="paragraph">
+<p>For actions resolved by the optimized index, <code>decisions[area][domain][action]</code> includes <code>rule</code>, <code>priority</code>,
+<code>finalRule</code>, and <code>source</code> from the index outcome. For server-evaluated fallbacks (when index is disabled or does not
+cover the specific combination), the server maps the winning rule metadata from the underlying check result, so
+<code>rule/priority/finalRule</code> are also present for parity.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_behavior_matrix_summary">6. Behavior matrix (summary)</h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>With resource present (any mode): evaluator runs. Filters=true and postcondition=true/absent ⇒ <code>EXACT</code>.
+Filters=false ⇒ rule is <code>NOT_APPLICABLE</code>. Failures to evaluate ⇒ fallback to SCOPED in STRICT, legacy-compatible otherwise.</p>
+</li>
+<li>
+<p>Without resource:</p>
+<div class="ulist">
+<ul>
+<li>
+<p><code>LEGACY</code>/<code>AUTO</code>: matching rules with filters/scripts surface as <code>SCOPED</code> candidates; constraints listed.</p>
+</li>
+<li>
+<p><code>STRICT</code> (non-LIST): also returns <code>SCOPED</code>; postconditions are skipped; constraints listed.</p>
+</li>
+<li>
+<p>LIST is never suppressed; DB-side filters continue via <code>getFilters(&#8230;&#8203;)</code>; constraints surfaced for transparency.</p>
+</li>
+</ul>
+</div>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_migration_notes">7. Migration notes</h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Prefer <code>evalMode</code> over the deprecated <code>enableFilterEval</code>. If <code>enableFilterEval=true</code> and both <code>modelClass</code> and <code>resource</code>
+are supplied, the server treats it as <code>AUTO</code> for backward compatibility.</p>
+</li>
+<li>
+<p>Existing clients that only use <code>finalEffect</code> remain compatible. To opt in to richer semantics, read <code>decision</code>,
+<code>decisionScope</code>, and <code>scopedConstraints</code>.</p>
+</li>
+<li>
+<p>For list/search pages, continue to rely on DB-side <code>getFilters(&#8230;&#8203;)</code> or <code>check-with-index</code>; do not pass a resource
+snapshot to <code>/check</code> for lists.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_troubleshooting_faqs">8. Troubleshooting / FAQs</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Q: Why do I get <code>SCOPED</code> instead of <code>EXACT</code>?
+  * A: The server did not have a concrete resource to evaluate, or the predicate engine was not available. Use <code>STRICT</code>
+     with <code>modelClass</code> + <code>resource</code> for a fully evaluated decision when applicable.</p>
+</div>
+<div class="paragraph">
+<p>Q: What is <code>NA-ALLOW</code> / <code>NA-DENY</code>?
+  * A: They are labels for default fallbacks when no rule could make a decision (<code>decisionScope=DEFAULT</code>). The value
+     mirrors the <code>finalEffect</code> chosen as the default.</p>
+</div>
+<div class="paragraph">
+<p>Q: How do I know which rule produced the result?
+  * A: Inspect <code>winningRuleName</code>, <code>winningRulePriority</code>, <code>winningRuleFinal</code> on <code>/check</code> responses, or per-action
+     <code>rule/priority/finalRule</code> in <code>/fd/evaluate</code> responses.</p>
+</div>
+<div class="sect2">
+<h3 id="_using_in_a_browser_no_build_tools">8.1. Using in a Browser (no build tools)</h3>
 <div class="listingblock">
 <div class="title">HTML</div>
 <div class="content">
@@ -976,7 +1312,7 @@ ACLClient.decideOutcome(snapshot, dataDomain, area, domain, action) <span class=
 </div>
 </div>
 <div class="sect2">
-<h3 id="_using_in_react">3.2. Using in React</h3>
+<h3 id="_using_in_react">8.2. Using in React</h3>
 <div class="ulist">
 <div class="title">Installation (served by your Quarkus backend)</div>
 <ul>
@@ -1013,7 +1349,7 @@ export default function ProfileButton() {
 </div>
 </div>
 <div class="sect2">
-<h3 id="_using_in_vue">3.3. Using in Vue</h3>
+<h3 id="_using_in_vue">8.3. Using in Vue</h3>
 <div class="listingblock">
 <div class="title">Vue component example</div>
 <div class="content">
@@ -1041,7 +1377,7 @@ export default {
 </div>
 </div>
 <div class="sect1">
-<h2 id="_curl_examples">4. cURL Examples</h2>
+<h2 id="_curl_examples">9. cURL Examples</h2>
 <div class="sectionbody">
 <div class="listingblock">
 <div class="title">Server-evaluated check</div>
@@ -1083,7 +1419,7 @@ export default {
 </div>
 </div>
 <div class="sect1">
-<h2 id="_caching_guidance">5. Caching Guidance</h2>
+<h2 id="_caching_guidance">10. Caching Guidance</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -1098,7 +1434,7 @@ export default {
 </div>
 </div>
 <div class="sect1">
-<h2 id="_troubleshooting">6. Troubleshooting</h2>
+<h2 id="_troubleshooting">11. Troubleshooting</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -1119,7 +1455,7 @@ export default {
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-11-07 20:34:59 -0500
+Last updated 2025-11-25 11:07:37 -0500
 </div>
 </div>
 </body>
