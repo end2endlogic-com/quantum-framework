@@ -3,6 +3,7 @@ package com.e2eq.framework.securityrules;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
 import com.e2eq.framework.model.persistent.morphia.PolicyRepo;
+import com.e2eq.framework.model.security.Policy;
 import com.e2eq.framework.model.security.Rule;
 import com.e2eq.framework.model.securityrules.*;
 import com.e2eq.framework.util.EnvConfigUtils;
@@ -64,10 +65,10 @@ public class RuleContext {
      PolicyRepo policyRepo;
 
     /**
-     * This holds a map of rules, indexed by an "identity" where an identity may be either
-     * a specific userId, or a role name.
+     * This holds ONLY the default system rules, indexed by identity.
+     * Database policies are fetched fresh on each request.
      */
-    Map<String, List<Rule>> rules = new HashMap<>();
+    private final Map<String, List<Rule>> defaultSystemRules = new HashMap<>();
 
     // Optional compiled discrimination index (off by default)
     @ConfigProperty(name = "quantum.security.rules.index.enabled", defaultValue = "false")
@@ -126,7 +127,7 @@ public class RuleContext {
      */
     public com.e2eq.framework.model.securityrules.RuleIndexSnapshot exportIndexSnapshot() {
         // Full snapshot of all identities
-        return exportIndexSnapshotForIdentities(this.rules.keySet());
+        return exportIndexSnapshotForIdentities(this.defaultSystemRules.keySet());
     }
 
     /**
@@ -141,7 +142,7 @@ public class RuleContext {
         snap.setPolicyVersion(getPolicyVersion());
         if (identities != null) {
             for (String id : identities) {
-                java.util.List<Rule> list = rules.get(id);
+                java.util.List<Rule> list = defaultSystemRules.get(id);
                 if (list == null) continue;
                 for (Rule r : list) {
                     snap.getRules().add(com.e2eq.framework.model.securityrules.RuleIndexSnapshot.fromRule(r));
@@ -175,7 +176,7 @@ public class RuleContext {
         java.util.Map<String, java.util.List<Rule>> byScope = new java.util.HashMap<>();
         if (identities != null) {
             for (String id : identities) {
-                java.util.List<Rule> list = rules.get(id);
+                java.util.List<Rule> list = defaultSystemRules.get(id);
                 if (list == null) continue;
                 for (Rule r : list) {
                     if (r == null || r.getSecurityURI() == null) continue;
@@ -213,7 +214,7 @@ public class RuleContext {
         // Preserve legacy rules list (for compatibility)
         if (identities != null) {
             for (String id : identities) {
-                java.util.List<Rule> list = rules.get(id);
+                java.util.List<Rule> list = defaultSystemRules.get(id);
                 if (list == null) continue;
                 for (Rule r : list) {
                     snap.getRules().add(com.e2eq.framework.model.securityrules.RuleIndexSnapshot.fromRule(r));
@@ -380,7 +381,7 @@ public class RuleContext {
         } catch (Exception e) {
             // Fallback to system rules only if repo hydration fails
             Log.warn("Policy hydration failed during startup; using system rules only", e);
-            if (rules.isEmpty() || rulesForIdentity(securityUtils.getSystemSecurityHeader().getIdentity()).isEmpty()) {
+            if (securityUtils != null && (defaultSystemRules.isEmpty() || rulesForIdentity(securityUtils.getSystemSecurityHeader().getIdentity()).isEmpty())) {
                 addSystemRules();
             }
         }
@@ -391,38 +392,34 @@ public class RuleContext {
      */
     public List<com.e2eq.framework.model.security.Policy> getDefaultSystemPolicies() {
         List<com.e2eq.framework.model.security.Policy> policies = new ArrayList<>();
-        
-        // Group rules by identity to create policies
-        Map<String, List<Rule>> rulesByIdentity = new HashMap<>();
-        
-        // Temporarily store current rules and rebuild system rules
-        Map<String, List<Rule>> savedRules = new HashMap<>(this.rules);
-        this.rules.clear();
-        addSystemRules();
-        
+
+        // Ensure default system rules are initialized
+        if (defaultSystemRules.isEmpty() && securityUtils != null) {
+            addSystemRules();
+        }
+
         // Extract system rules grouped by identity
-        for (Map.Entry<String, List<Rule>> entry : this.rules.entrySet()) {
+        for (Map.Entry<String, List<Rule>> entry : defaultSystemRules.entrySet()) {
             String identity = entry.getKey();
             List<Rule> ruleList = entry.getValue();
-            
+
             com.e2eq.framework.model.security.Policy policy = new com.e2eq.framework.model.security.Policy();
             policy.setPrincipalId(identity);
             policy.setRefName("system-default-" + identity);
             policy.setDisplayName("System Default: " + identity);
             policy.setDescription("Default system rules for " + identity);
-            policy.setPrincipalType("system".equals(identity) ? 
-                com.e2eq.framework.model.security.Policy.PrincipalType.USER : 
+            policy.setPrincipalType("system".equals(identity) ?
+                com.e2eq.framework.model.security.Policy.PrincipalType.USER :
                 com.e2eq.framework.model.security.Policy.PrincipalType.ROLE);
             policy.setRules(new ArrayList<>(ruleList));
             policy.setPolicySource("SYSTEM_DEFAULT");
-            policy.setDataDomain(securityUtils.getSystemDataDomain());
-            
+            if (securityUtils != null) {
+                policy.setDataDomain(securityUtils.getSystemDataDomain());
+            }
+
             policies.add(policy);
         }
-        
-        // Restore original rules
-        this.rules = savedRules;
-        
+
         return policies;
     }
 
@@ -433,7 +430,8 @@ public class RuleContext {
         // add default rules for the system
         // first explicitly add the "system"
         // to operate with in the security area
-        SecurityURI suri = new SecurityURI(securityUtils.getSystemSecurityHeader(), securityUtils.getSystemSecurityBody());
+        SecurityURI suri = new SecurityURI(securityUtils.getSystemSecurityHeader(),
+           securityUtils.getSystemSecurityBody());
 
         Rule systemRule = new Rule.Builder()
                 .withName("SysAnyActionSecurity")
@@ -458,75 +456,29 @@ public class RuleContext {
                 .withFinalRule(true).build();
         this.addRule(header, systemRoleRule);
 
-        // So this will match any user that has the role "user"
-        // for "any area, any domain, and any action i.e. all areas, domains, and actions
-        header = new SecurityURIHeader.Builder()
-                .withIdentity("user")      // with the role "user"
-                .withArea("*")             // any area
-                .withFunctionalDomain("*") // any domain
-                .withAction("*")           // any action
-                .build();
-
-        // This will match the resources
-        // from "any" account, in the "b2bi" realm, any tenant, any owner, any datasegment
-        SecurityURIBody body = new SecurityURIBody.Builder()
-                .withOrgRefName("*")       // any organization
-                .withAccountNumber("*")    // any account
-                .withRealm("*")            // within just the b2bi realm
-                .withTenantId("*")         // any tenant
-                .withOwnerId("*")          // any owner
-                .withDataSegment("*")      // any datasegement
-                .build();
-
-        // Create the URI that represents this "rule" where by
-        // for any one with the role "user", we want to consider this rule base for
-        // all resources in the b2bi realm
-        SecurityURI uri = new SecurityURI(header, body);
-
-        // Create the first rule which will be a rule that
-        // compares the userId of the principal, with the resource's ownerId
-        // if they match then we allow the user to do what ever they are asking
-        // we however can not allow them to delete themselves, so they can't
-        // delete their credentials ( but can modify it ) and can't delete their
-        // userProfile.
-
-        // in this case
-        // In the case we are reading we have a filter that constrains the result set
-        // to where the ownerId is the same as the principalId
-        Rule.Builder b = new Rule.Builder()
-                .withName("view your own resources, limit to default dataSegment")
-                .withSecurityURI(uri)
-                .withAndFilterString("dataDomain.ownerId:${principalId}&&dataDomain.dataSegment:#0")
-                .withEffect(RuleEffect.ALLOW)
-                .withFinalRule(false);
-        Rule r = b.build();
-
-        this.addRule(header, r);
-
-        header = new SecurityURIHeader.Builder()
-                .withIdentity("user")         // with the role "admin"
-                .withArea("Security")                 // any area
-                .withFunctionalDomain("*") // any domain
-                .withAction("DELETE")               // any action
-                .build();
-
-        uri = new SecurityURI(header, body);
-        Rule.Builder userDenySecurityArea = new Rule.Builder()
-                .withName("users can't delete anything in security area")
-                .withSecurityURI(uri)
-                .withAndFilterString("dataDomain.ownerId:${principalId}&&dataDomain.dataSegment:#0")
-                .withEffect(RuleEffect.DENY)
-                .withFinalRule(true);
-        r = userDenySecurityArea.build();
-        this.addRule(header, r);
+       SecurityURIBody body = new SecurityURIBody.Builder()
+                                 .withOrgRefName("*")       // any organization
+                                 .withAccountNumber("*")    // any account
+                                 .withRealm("*")            // within just the b2bi realm
+                                 .withTenantId("*")         // any tenant
+                                 .withOwnerId("*")          // any owner
+                                 .withDataSegment("*")      // any datasegement
+                                 .build();
 
 
+
+       // **** Tenant Admin ***
         header = new SecurityURIHeader.Builder()
                 .withIdentity("admin")         // with the role "admin"
                 .withArea("*")                 // any area
                 .withFunctionalDomain("*") // any domain
                 .withAction("*")               // any action
                 .build();
+
+       // Create the URI that represents this "rule" where by
+       // for any one with the role "user", we want to consider this rule base for
+       // all resources in the b2bi realm
+       SecurityURI uri = new SecurityURI(header, body);
 
         // Now add one for a tenant level admin
         uri = new SecurityURI(header, body);
@@ -536,66 +488,17 @@ public class RuleContext {
                 .withAndFilterString("dataDomain.tenantId:${pTenantId}")
                 .withEffect(RuleEffect.ALLOW)
                 .withFinalRule(true);
-        r = tenantAdminbuilder.build();
-        this.addRule(header, r);
+       Rule r = tenantAdminbuilder.build();
+       r = tenantAdminbuilder.build();
+       this.addRule(header, r);
 
-        // set up anonymous actions
-        header = new SecurityURIHeader.Builder()
-                .withIdentity("ANONYMOUS")
-                .withArea("onboarding")
-                .withFunctionalDomain("registrationRequest")
-                .withAction("create")
-                .build();
-        body = new SecurityURIBody.Builder()
-                .withRealm(envConfigUtils.getSystemRealm())
-                .withTenantId(envConfigUtils.getSystemTenantId())
-                .withAccountNumber(envConfigUtils.getSystemAccountNumber())
-                .withDataSegment("*")
-                .withOwnerId("*")
-                .withOrgRefName("*")
-                .build();
-        uri = new SecurityURI(header, body);
-
-        Rule.Builder anonymousbuilder = new Rule.Builder()
-                .withName("anonymous user can call register")
-                .withSecurityURI(uri)
-                .withAndFilterString("dataDomain.tenantId:${pTenantId}")
-                .withEffect(RuleEffect.ALLOW)
-                .withFinalRule(true);
-        r = anonymousbuilder.build();
-        this.addRule(header, r);
-
-        header = new SecurityURIHeader.Builder()
-                .withIdentity("ANONYMOUS")
-                .withArea("website")
-                .withFunctionalDomain("contactus")
-                .withAction("create")
-                .build();
-        body = new SecurityURIBody.Builder()
-                .withRealm(envConfigUtils.getSystemRealm())
-                .withTenantId(envConfigUtils.getSystemTenantId())
-                .withAccountNumber(envConfigUtils.getSystemAccountNumber())
-                .withDataSegment("*")
-                .withOwnerId("*")
-                .withOrgRefName("*")
-                .build();
-        uri = new SecurityURI(header, body);
-
-        anonymousbuilder = new Rule.Builder()
-                .withName("anonymous user can call contactus")
-                .withSecurityURI(uri)
-                .withAndFilterString("dataDomain.tenantId:${pTenantId}")
-                .withEffect(RuleEffect.ALLOW)
-                .withFinalRule(true);
-        r = anonymousbuilder.build();
-        this.addRule(header, r);
     }
 
     /**
-     * clears the rule base
+     * clears the default system rule base
      */
     public void clear() {
-        rules.clear();
+        defaultSystemRules.clear();
         compiledIndex = null;
     }
 
@@ -604,106 +507,32 @@ public class RuleContext {
     public long getPolicyVersion() { return policyVersion; }
 
     /**
-     * Reloads the in-memory rule base from the persistent PolicyRepo for the given realm.
-     * Keeps built-in system rules and then incorporates all rules from policies.
+     * Reloads the default system rules only. Database policies are fetched fresh on each request.
      */
     public synchronized void reloadFromRepo(@NotNull String realm) {
-        // Reset in-memory rules and add system defaults
+        // Reset and reload default system rules only
         clear();
         addSystemRules();
 
-        try {
-            // Establish a minimal SecurityContext to satisfy repo filters during hydration
-            try {
-                if (com.e2eq.framework.model.securityrules.SecurityContext.getPrincipalContext().isEmpty()) {
-                    PrincipalContext pc = new PrincipalContext.Builder()
-                            .withDefaultRealm(realm)
-                            .withDataDomain(securityUtils.getSystemDataDomain())
-                            .withUserId(envConfigUtils.getSystemUserId())
-                            .withRoles(new String[]{"admin", "user"})
-                            .build();
-                    com.e2eq.framework.model.securityrules.SecurityContext.setPrincipalContext(pc);
-                }
-                if (com.e2eq.framework.model.securityrules.SecurityContext.getResourceContext().isEmpty()) {
-                    com.e2eq.framework.model.securityrules.SecurityContext.setResourceContext(ResourceContext.DEFAULT_ANONYMOUS_CONTEXT);
-                }
-            } catch (Exception ignore) {
-                // If context setup fails, repo calls may still work depending on configuration
-            }
+        policyVersion = System.nanoTime();
+        Log.infof("RuleContext: reloaded default system rules for realm %s", realm);
 
-            // Fetch all policies in realm (bypass permission filters)
-           if (policyRepo != null) {
-              java.util.List<com.e2eq.framework.model.security.Policy> policies = policyRepo.getAllListIgnoreRules(realm);
-              if (policies != null) {
-                 for (com.e2eq.framework.model.security.Policy p : policies) {
-                    // Mark policy source as database collection
-                    p.setPolicySource("POLICY_COLLECTION");
-                    if (p.getRules() == null) continue;
-                    for (Rule r : p.getRules()) {
-                       String identity = null;
-                       if (r.getSecurityURI() != null && r.getSecurityURI().getHeader() != null) {
-                          identity = r.getSecurityURI().getHeader().getIdentity();
-                       }
-                       if (identity == null || identity.isBlank()) {
-                          identity = p.getPrincipalId();
-                       }
-                       if (identity == null || identity.isBlank()) {
-                          Log.warnf("Rule:%s dod mpt jave an identity specified:", r.toString());
-                          // skip malformed entries
-                          continue;
-                       }
-                       // Build a header solely to key by identity; addRule uses identity for indexing
-                       SecurityURIHeader header = new SecurityURIHeader.Builder()
-                                                     .withIdentity(identity)
-                                                     .withArea("*")
-                                                     .withFunctionalDomain("*")
-                                                     .withAction("*")
-                                                     .build();
-                       addRule(header, r);
-                    }
-                 }
-              }
-              // Sort each identity list by priority once for stable merge later
-              for (Map.Entry<String, List<Rule>> e : rules.entrySet()) {
-                 List<Rule> list = e.getValue();
-                 if (list != null && list.size() > 1) {
-                    list.sort((r1, r2) -> Integer.compare(r1.getPriority(), r2.getPriority()));
-                 }
-              }
-              policyVersion = System.nanoTime();
-              Log.infof("RuleContext: loaded %d rules from repo for realm %s", rules.size(), realm);
-           }
-        } catch (Exception ex) {
-            Log.error("Failed to load policies into RuleContext; retaining system rules only", ex);
-        }
-        // (Re)build compiled index if enabled
-        if (indexEnabled) {
-            long start = System.nanoTime();
-            List<Rule> all = new ArrayList<>();
-            for (List<Rule> l : rules.values()) all.addAll(l);
-            try {
-                compiledIndex = RuleIndex.build(all);
-                Log.infof("RuleContext: compiled index built in %d µs", (System.nanoTime() - start) / 1000);
-            } catch (Throwable t) {
-                Log.warn("RuleContext: failed to build compiled index; falling back to list scan", t);
-                compiledIndex = null;
-            }
-        }
+        // Note: Database policies are NOT cached - they are fetched fresh on each checkRules call
     }
 
     /**
-     * Adds a rule to the rule base
+     * Adds a rule to the default system rule base
      *
      * @param key  the header that will be used to match against and determine if the rule is applicable or not
      * @param rule the rule itself
      */
     public void addRule(@NotNull @Valid SecurityURIHeader key, @Valid @NotNull Rule rule) {
-        // Store rules by identity
-        List<Rule> list = rules.get(key.getIdentity());
+        // Store rules by identity in default system rules
+        List<Rule> list = defaultSystemRules.get(key.getIdentity());
 
         if (list == null) {
             list = new ArrayList<Rule>();
-            rules.put(key.getIdentity(), list);
+            defaultSystemRules.put(key.getIdentity(), list);
         }
 
         list.add(rule);
@@ -711,20 +540,31 @@ public class RuleContext {
     }
 
     /**
-     * Returns all the rules for a given identity
+     * Returns all the rules for a given identity from the provided rules map
+     *
+     * @param identity the identity to get the rules for
+     * @param rulesMap the map of rules to search in
+     * @return an optional list of rules
+     */
+    public Optional<List<Rule>> rulesForIdentity(@NotNull String identity, Map<String, List<Rule>> rulesMap) {
+        List<Rule> ruleList = rulesMap.get(identity);
+        if (ruleList == null) {
+            return Optional.empty();
+        }
+        return Optional.of(ruleList);
+    }
+
+    /**
+     * Returns all the rules for a given identity from default system rules only
      *
      * @param identity the identity to get the rules for
      * @return an optional list of rules
      */
     public Optional<List<Rule>> rulesForIdentity(@NotNull String identity) {
-
-        // return all the rules for this identity
-        List<Rule> ruleList = rules.get(identity);
-
+        List<Rule> ruleList = defaultSystemRules.get(identity);
         if (ruleList == null) {
             return Optional.empty();
         }
-
         return Optional.of(ruleList);
     }
 
@@ -922,6 +762,9 @@ public class RuleContext {
 
 
     List<Rule> getApplicableRulesForPrincipalAndAssociatedRoles(PrincipalContext pcontext, ResourceContext rcontext) {
+        // Get fresh effective rules (defaults + database policies)
+        Map<String, List<Rule>> effectiveRules = getEffectiveRulesForRequest(pcontext);
+
         // If the compiled index is enabled and available, use it to quickly gather candidates
         if (indexEnabled && compiledIndex != null) {
            Log.warn("<< checking with index enabled >>");
@@ -938,7 +781,7 @@ public class RuleContext {
         SecurityURIHeader h = createHeaderFor(pcontext.getUserId(), rcontext);
 
         // find the rules that match this header
-        Optional<List<Rule>> identityRules = rulesForIdentity(h.getIdentity());
+        Optional<List<Rule>> identityRules = rulesForIdentity(h.getIdentity(), effectiveRules);
 
         if (identityRules.isPresent()) {
             applicableRules.addAll(identityRules.get());
@@ -946,7 +789,7 @@ public class RuleContext {
 
         // Add role rules
         for (String role : pcontext.getRoles()) {
-            identityRules = rulesForIdentity(role);
+            identityRules = rulesForIdentity(role, effectiveRules);
             if (identityRules.isPresent()) {
                 applicableRules.addAll(identityRules.get());
             }
@@ -965,6 +808,24 @@ public class RuleContext {
             }
         }
         return applicableRules;
+    }
+
+    /**
+     * Gets effective rules for the current request by merging cached default system rules
+     * with fresh database policies.
+     */
+    private Map<String, List<Rule>> getEffectiveRulesForRequest(PrincipalContext pcontext) {
+        // In test contexts without CDI, fall back to in-memory rules only
+        if (policyRepo == null) {
+            return new HashMap<>(defaultSystemRules);
+        }
+
+        String realm = pcontext != null && pcontext.getDefaultRealm() != null
+            ? pcontext.getDefaultRealm()
+            : defaultRealm;
+
+        List<Policy> defaults = getDefaultSystemPolicies();
+        return policyRepo.getEffectiveRules(realm, defaults);
     }
 
 
