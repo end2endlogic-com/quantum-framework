@@ -12,10 +12,3 @@ datasets:
     repoClass: com.e2eq.framework.model.persistent.morphia.CounterRepo
     naturalKey: [refName]
     file: classpath:seed-packs/system-initialize/datasets/counters.jsonl
-
-  # Default user policy equivalent to InitializeDatabase.createInitialRules()
-  - collection: policy
-    modelClass: com.e2eq.framework.model.security.Policy
-    repoClass: com.e2eq.framework.model.persistent.morphia.PolicyRepo
-    naturalKey: [refName]
-    file: classpath:seed-packs/system-initialize/datasets/policies-default-user.jsonl

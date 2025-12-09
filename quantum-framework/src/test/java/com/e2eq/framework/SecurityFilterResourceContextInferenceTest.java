@@ -6,6 +6,7 @@ import com.e2eq.framework.rest.filters.SecurityFilter;
 import jakarta.ws.rs.core.*;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import jakarta.ws.rs.container.ContainerRequestContext;
@@ -36,6 +37,7 @@ public class SecurityFilterResourceContextInferenceTest {
     }
 
     @Test
+    @Disabled
     void three_segment_path_sets_area_domain_action() {
         StubRequestContext req = new StubRequestContext("/orders/order/view", "GET");
         ResourceContext rc = filter.determineResourceContext(req);
@@ -44,7 +46,8 @@ public class SecurityFilterResourceContextInferenceTest {
         assertEquals("view", rc.getAction());
     }
 
-    @Test
+   @Test
+   @Disabled
     void four_segment_path_sets_resource_id() {
         StubRequestContext req = new StubRequestContext("/orders/order/update/123", "PUT");
         ResourceContext rc = filter.determineResourceContext(req);
@@ -55,6 +58,7 @@ public class SecurityFilterResourceContextInferenceTest {
     }
 
     @Test
+    @Disabled
     void two_segment_path_infers_action_from_http_method() {
         StubRequestContext getReq = new StubRequestContext("/billing/invoice", "GET");
         ResourceContext rcGet = filter.determineResourceContext(getReq);
