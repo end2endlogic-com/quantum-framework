@@ -170,6 +170,13 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             String functionalDomain = null;
             String action = null;
 
+            // @PermitAll endpoints don't require functional mapping
+            if (isPermitAllEndpoint()) {
+                rcontext = ResourceContext.DEFAULT_ANONYMOUS_CONTEXT;
+                SecurityContext.setResourceContext(rcontext);
+                return rcontext;
+            }
+
             // PRIORITY-BASED RESOLUTION (Model as Single Source of Truth)
             // Priority 1: Model @FunctionalMapping annotation (SINGLE SOURCE OF TRUTH)
             // Priority 2: Model bmFunctionalArea()/bmFunctionalDomain() methods (fallback)
@@ -220,7 +227,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                         }
                     }
 
-                    // Extract action from annotation
+                    // Determine action: 1) annotation, 2) URL keywords, 3) HTTP method
                     if (resourceInfo.getResourceMethod() != null) {
                         com.e2eq.framework.annotations.FunctionalAction fa =
                             resourceInfo.getResourceMethod().getAnnotation(com.e2eq.framework.annotations.FunctionalAction.class);
@@ -233,10 +240,28 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                     if (area != null && functionalDomain != null) {
                         if (action == null) {
                             String path = requestContext.getUriInfo().getPath();
-                            if ("GET".equalsIgnoreCase(requestContext.getMethod()) && path != null && path.contains("/list")) {
-                                action = "LIST";
+                            if (path != null) {
+                                String lowerPath = path.toLowerCase();
+                                if (lowerPath.contains("/list")) {
+                                    action = "LIST";
+                                } else if (lowerPath.contains("/create")) {
+                                    action = "CREATE";
+                                } else if (lowerPath.contains("/delete")) {
+                                    action = "DELETE";
+                                } else if (lowerPath.contains("/update")) {
+                                    action = "UPDATE";
+                                }
+                            }
+                        }
+                        if (action == null) {
+                            String httpMethod = requestContext.getMethod();
+                            if (httpMethod != null) {
+                                action = inferActionFromHttpMethod(httpMethod);
                             } else {
-                                action = inferActionFromHttpMethod(requestContext.getMethod());
+                                Log.errorf("No action found for path: %s. Add @FunctionalAction annotation.", requestContext.getUriInfo().getPath());
+                                rcontext = ResourceContext.DEFAULT_ANONYMOUS_CONTEXT;
+                                SecurityContext.setResourceContext(rcontext);
+                                return rcontext;
                             }
                         }
                         if ("list".equalsIgnoreCase(action)) {
