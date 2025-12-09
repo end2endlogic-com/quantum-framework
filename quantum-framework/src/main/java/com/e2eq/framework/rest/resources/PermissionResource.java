@@ -559,12 +559,18 @@ public class PermissionResource {
               .withScope(req.scope != null ? req.scope : "api")
               .build();
 
+      // Normalize action to match SecurityFilter behavior (converts "list" -> "LIST")
+      String normalizedAction = req.action;
+      if (normalizedAction != null && "list".equalsIgnoreCase(normalizedAction)) {
+         normalizedAction = "LIST";
+      }
+
       // Do NOT override FunctionalDomain, Area, or Action if scripts supply them; use request or wildcard
       ResourceContext rc = new ResourceContext.Builder()
               .withRealm(realm)
               .withArea(req.area != null ? req.area : "*")
               .withFunctionalDomain(req.functionalDomain != null ? req.functionalDomain : "*")
-              .withAction(req.action != null ? req.action : "*")
+              .withAction(normalizedAction != null ? normalizedAction : "*")
               .withResourceId(req.resourceId)
               .withOwnerId(ownerId)
               .build();

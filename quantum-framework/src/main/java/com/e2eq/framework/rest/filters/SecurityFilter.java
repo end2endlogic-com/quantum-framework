@@ -94,6 +94,12 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     @ConfigProperty(name = "quantum.security.scripting.maxStatements", defaultValue = "10000")
     long scriptingMaxStatements;
 
+    @ConfigProperty(name = "quantum.security.filter.enforcePreAuth", defaultValue = "true")
+    boolean enforcePreAuth;
+
+    @Inject
+    com.e2eq.framework.securityrules.RuleContext ruleContext;
+
     private static final java.util.concurrent.atomic.AtomicBoolean WARNED_PERMISSIVE = new java.util.concurrent.atomic.AtomicBoolean(false);
 
 
@@ -140,13 +146,18 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         SecurityContext.setPrincipalContext(principalContext);
         SecurityContext.setResourceContext(resourceContext);
 
+        // Pre-authorization check: enforce policy rules before endpoint execution
+        if (!isPermitAll && enforcePreAuth) {
+            enforcePreAuthorization(principalContext, resourceContext, requestContext);
+        }
+
         // Note: @PermitAll endpoints bypass policy checks at the Jakarta Security level,
         // but we still set up the contexts here for consistency and potential use by other filters/components.
     }
 
         @Override
         public void filter(ContainerRequestContext requestContext, jakarta.ws.rs.container.ContainerResponseContext responseContext) throws IOException {
-            // Clear ThreadLocal contexts after response is produced
+            // Clear ThreadLocal contexts after a response is produced
             SecurityContext.clear();
         }
 
@@ -155,18 +166,82 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             // Always determine the resource context from the current request and overwrite any prior value
             // to avoid leaking/caching context across multiple requests within the same thread/test.
             ResourceContext rcontext = null;
+            String area = null;
+            String functionalDomain = null;
+            String action = null;
 
-            // First, prefer annotations if available on the matched resource and method
+            // PRIORITY-BASED RESOLUTION (Model as Single Source of Truth)
+            // Priority 1: Model @FunctionalMapping annotation (SINGLE SOURCE OF TRUTH)
+            // Priority 2: Model bmFunctionalArea()/bmFunctionalDomain() methods (fallback)
+            // Priority 3: JAX-RS method-level @FunctionalMapping annotation (rare overrides)
+            // Priority 4: JAX-RS class-level @FunctionalMapping annotation (for non-BaseResource classes)
+            // NO URL PARSING - Model or JAX-RS resource must define functional mapping
+
             try {
-                if (resourceInfo != null && resourceInfo.getResourceClass() != null) {
-                    Class<?> rc = resourceInfo.getResourceClass();
-                    java.lang.reflect.Method rm = resourceInfo.getResourceMethod();
-                    com.e2eq.framework.annotations.FunctionalMapping fm = rc.getAnnotation(com.e2eq.framework.annotations.FunctionalMapping.class);
-                    com.e2eq.framework.annotations.FunctionalAction fa = (rm != null) ? rm.getAnnotation(com.e2eq.framework.annotations.FunctionalAction.class) : null;
-                    if (fm != null) {
-                        String area = fm.area();
-                        String functionalDomain = fm.domain();
-                        String action = (fa != null) ? fa.value() : inferActionFromHttpMethod(requestContext.getMethod());
+                if (resourceInfo != null) {
+                    // Priority 1 & 2: Model annotation or methods (injected by ModelMappingExtractor)
+                    String modelArea = (String) requestContext.getProperty("model.functional.area");
+                    String modelDomain = (String) requestContext.getProperty("model.functional.domain");
+                    if (modelArea != null && modelDomain != null) {
+                        area = modelArea;
+                        functionalDomain = modelDomain;
+                        if (Log.isDebugEnabled()) {
+                            Log.debugf("Using model mapping: area=%s, domain=%s", area, functionalDomain);
+                        }
+                    }
+
+                    // Priority 3: JAX-RS method-level annotation
+                    if (area == null) {
+                        java.lang.reflect.Method rm = resourceInfo.getResourceMethod();
+                        if (rm != null) {
+                            com.e2eq.framework.annotations.FunctionalMapping methodMapping =
+                                rm.getAnnotation(com.e2eq.framework.annotations.FunctionalMapping.class);
+                            if (methodMapping != null) {
+                                area = methodMapping.area();
+                                functionalDomain = methodMapping.domain();
+                                if (Log.isDebugEnabled()) {
+                                    Log.debugf("Using JAX-RS method @FunctionalMapping: area=%s, domain=%s", area, functionalDomain);
+                                }
+                            }
+                        }
+                    }
+
+                    // Priority 4: JAX-RS class-level annotation
+                    if (area == null && resourceInfo.getResourceClass() != null) {
+                        Class<?> rc = resourceInfo.getResourceClass();
+                        com.e2eq.framework.annotations.FunctionalMapping classMapping =
+                            rc.getAnnotation(com.e2eq.framework.annotations.FunctionalMapping.class);
+                        if (classMapping != null) {
+                            area = classMapping.area();
+                            functionalDomain = classMapping.domain();
+                            if (Log.isDebugEnabled()) {
+                                Log.debugf("Using JAX-RS class @FunctionalMapping: area=%s, domain=%s", area, functionalDomain);
+                            }
+                        }
+                    }
+
+                    // Extract action from annotation
+                    if (resourceInfo.getResourceMethod() != null) {
+                        com.e2eq.framework.annotations.FunctionalAction fa =
+                            resourceInfo.getResourceMethod().getAnnotation(com.e2eq.framework.annotations.FunctionalAction.class);
+                        if (fa != null) {
+                            action = fa.value();
+                        }
+                    }
+
+                    // Build context if we found area/domain
+                    if (area != null && functionalDomain != null) {
+                        if (action == null) {
+                            String path = requestContext.getUriInfo().getPath();
+                            if ("GET".equalsIgnoreCase(requestContext.getMethod()) && path != null && path.contains("/list")) {
+                                action = "LIST";
+                            } else {
+                                action = inferActionFromHttpMethod(requestContext.getMethod());
+                            }
+                        }
+                        if ("list".equalsIgnoreCase(action)) {
+                            action = "LIST";
+                        }
                         rcontext = new ResourceContext.Builder()
                                 .withArea(area)
                                 .withFunctionalDomain(functionalDomain)
@@ -174,145 +249,19 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                                 .build();
                         SecurityContext.setResourceContext(rcontext);
                         if (Log.isDebugEnabled()) {
-                            Log.debugf("Resource Context set from annotations: area=%s, domain=%s, action=%s", area, functionalDomain, action);
+                            Log.debugf("Resource Context set: area=%s, domain=%s, action=%s",
+                                area, functionalDomain, action);
                         }
                         return rcontext;
                     }
                 }
             } catch (Exception ex) {
-                Log.debugf("Annotation-based resource context resolution failed: %s", ex.toString());
+                Log.errorf(ex, "Resource context resolution failed");
             }
 
-            /**
-             * Enhanced path-based resource context resolution
-             * Handles variable path segment counts (1-4+ segments)
-             */
+            // No mapping found - error
             String path = requestContext.getUriInfo().getPath();
-            if (path == null || path.isEmpty()) {
-                rcontext = ResourceContext.DEFAULT_ANONYMOUS_CONTEXT;
-                SecurityContext.setResourceContext(rcontext);
-                return rcontext;
-            }
-
-            // Remove leading/trailing slashes and split
-            path = path.startsWith("/") ? path.substring(1) : path;
-            path = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
-
-            if (path.isEmpty()) {
-                rcontext = ResourceContext.DEFAULT_ANONYMOUS_CONTEXT;
-                SecurityContext.setResourceContext(rcontext);
-                return rcontext;
-            }
-
-            String[] segments = path.split("/");
-            int segmentCount = segments.length;
-
-            // Pattern 1: /area/domain/action (3 segments) - PRIMARY
-            if (segmentCount == 3) {
-                String area = segments[0];
-                String functionalDomain = segments[1];
-                String action = segments[2];
-
-                rcontext = new ResourceContext.Builder()
-                        .withAction(action)
-                        .withArea(area)
-                        .withFunctionalDomain(functionalDomain)
-                        .build();
-                SecurityContext.setResourceContext(rcontext);
-
-                if (Log.isDebugEnabled()) {
-                    Log.debugf("Resource Context set from path (3 segments): area=%s, domain=%s, action=%s",
-                        area, functionalDomain, action);
-                }
-                return rcontext;
-            }
-
-            // Pattern 2: /area/domain/action/id (4 segments) - ACTION with resource ID
-            if (segmentCount == 4) {
-                String area = segments[0];
-                String functionalDomain = segments[1];
-                String action = segments[2];
-                String resourceId = segments[3];
-
-                rcontext = new ResourceContext.Builder()
-                        .withAction(action)
-                        .withArea(area)
-                        .withFunctionalDomain(functionalDomain)
-                        .withResourceId(resourceId)
-                        .build();
-                SecurityContext.setResourceContext(rcontext);
-
-                if (Log.isDebugEnabled()) {
-                    Log.debugf("Resource Context set from path (4 segments): area=%s, domain=%s, action=%s, id=%s",
-                        area, functionalDomain, action, resourceId);
-                }
-                return rcontext;
-            }
-
-            // Pattern 3: /area/domain (2 segments) - Infer action from HTTP method
-            if (segmentCount == 2) {
-                String area = segments[0];
-                String functionalDomain = segments[1];
-                String action = inferActionFromHttpMethod(requestContext.getMethod());
-
-                rcontext = new ResourceContext.Builder()
-                        .withAction(action)
-                        .withArea(area)
-                        .withFunctionalDomain(functionalDomain)
-                        .build();
-                SecurityContext.setResourceContext(rcontext);
-
-                if (Log.isDebugEnabled()) {
-                    Log.debugf("Resource Context set from path (2 segments): area=%s, domain=%s, action=%s (inferred)",
-                        area, functionalDomain, action);
-                }
-                return rcontext;
-            }
-
-            // Pattern 4: /area (1 segment) - Minimal context
-            if (segmentCount == 1) {
-                String area = segments[0];
-                String action = inferActionFromHttpMethod(requestContext.getMethod());
-
-                rcontext = new ResourceContext.Builder()
-                        .withAction(action)
-                        .withArea(area)
-                        .withFunctionalDomain("*")
-                        .build();
-                SecurityContext.setResourceContext(rcontext);
-
-                if (Log.isDebugEnabled()) {
-                    Log.debugf("Resource Context set from path (1 segment): area=%s, action=%s (inferred)",
-                        area, action);
-                }
-                return rcontext;
-            }
-
-            // Pattern 5: More than 4 segments - Use first 3, log warning
-            if (segmentCount > 4) {
-                Log.warnf("Path has %d segments, using first 3 for resource context: %s", segmentCount, path);
-                String area = segments[0];
-                String functionalDomain = segments[1];
-                String action = segments[2];
-                String resourceId = segmentCount > 3 ? segments[3] : null;
-
-                rcontext = new ResourceContext.Builder()
-                        .withAction(action)
-                        .withArea(area)
-                        .withFunctionalDomain(functionalDomain)
-                        .withResourceId(resourceId)
-                        .build();
-                SecurityContext.setResourceContext(rcontext);
-
-                if (Log.isDebugEnabled()) {
-                    Log.debugf("Resource Context set from path (%d segments, truncated): area=%s, domain=%s, action=%s",
-                        segmentCount, area, functionalDomain, action);
-                }
-                return rcontext;
-            }
-
-            // Fallback: Anonymous context
-            Log.debugf("Non-conformant path: %s (segments: %d) - setting to anonymous context", path, segmentCount);
+            Log.errorf("No functional mapping found for path: %s. Add @FunctionalMapping to model class, implement bmFunctionalArea()/bmFunctionalDomain() methods, or add @FunctionalMapping to JAX-RS resource.", path);
             rcontext = ResourceContext.DEFAULT_ANONYMOUS_CONTEXT;
             SecurityContext.setResourceContext(rcontext);
             return rcontext;
@@ -327,6 +276,25 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             case "DELETE" -> "DELETE";
             default -> http;
         };
+    }
+
+    /**
+     * Extracts the action from @FunctionalAction annotation if present on the resource method.
+     * @return the action value from annotation, or null if not present
+     */
+    private String getAnnotatedAction() {
+        try {
+            if (resourceInfo != null && resourceInfo.getResourceMethod() != null) {
+                com.e2eq.framework.annotations.FunctionalAction fa =
+                    resourceInfo.getResourceMethod().getAnnotation(com.e2eq.framework.annotations.FunctionalAction.class);
+                if (fa != null) {
+                    return fa.value();
+                }
+            }
+        } catch (Exception ex) {
+            Log.debugf("Failed to extract @FunctionalAction annotation: %s", ex.toString());
+        }
+        return null;
     }
 
     private boolean runScript(String subject, String userId,  String realm, String script) {
@@ -722,6 +690,52 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
     private PrincipalContext applyRealmOverride(PrincipalContext context, String realm) {
         return context;
+    }
+
+    /**
+     * Enforces pre-authorization by checking security rules before endpoint execution.
+     * Prevents unauthorized access when endpoints bypass Morphia repo filtering.
+     */
+    private void enforcePreAuthorization(PrincipalContext principalContext, ResourceContext resourceContext,
+                                         ContainerRequestContext requestContext) {
+        try {
+            com.e2eq.framework.model.securityrules.SecurityCheckResponse response =
+                ruleContext.checkRules(principalContext, resourceContext, com.e2eq.framework.model.securityrules.RuleEffect.DENY);
+
+            if (response.getFinalEffect() != com.e2eq.framework.model.securityrules.RuleEffect.ALLOW) {
+                String message = String.format(
+                    "Access denied: user=%s, area=%s, domain=%s, action=%s",
+                    principalContext.getUserId(),
+                    resourceContext.getArea(),
+                    resourceContext.getFunctionalDomain(),
+                    resourceContext.getAction()
+                );
+
+                if (Log.isDebugEnabled()) {
+                    Log.debugf("Pre-authorization failed: %s, decision=%s, scope=%s",
+                        message, response.getDecision(), response.getDecisionScope());
+                }
+
+                requestContext.abortWith(
+                    Response.status(Response.Status.FORBIDDEN)
+                        .entity(Map.of(
+                            "error", "Access Denied",
+                            "message", message,
+                            "decision", response.getDecision() != null ? response.getDecision() : "DENY",
+                            "scope", response.getDecisionScope() != null ? response.getDecisionScope() : "DEFAULT"
+                        ))
+                        .build()
+                );
+            }
+        } catch (Exception e) {
+            Log.errorf(e, "Pre-authorization check failed for user=%s, path=%s",
+                principalContext.getUserId(), requestContext.getUriInfo().getPath());
+            requestContext.abortWith(
+                Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(Map.of("error", "Authorization check failed"))
+                    .build()
+            );
+        }
     }
 
     /**

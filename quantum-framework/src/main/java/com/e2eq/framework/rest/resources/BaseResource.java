@@ -56,6 +56,7 @@ import static java.lang.String.format;
 @RolesAllowed({ "user", "admin" })
 public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaRepo<T>> {
    protected R repo;
+   protected Class<T> modelClass;
 
    @Inject
    protected JsonWebToken jwt;
@@ -70,6 +71,39 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
 
    protected BaseResource(R repo) {
       this.repo = repo;
+      this.modelClass = extractModelClass();
+   }
+
+   /**
+    * Extract the model class from the generic type parameter.
+    * This allows us to get the @FunctionalMapping annotation from the model.
+    */
+   @SuppressWarnings("unchecked")
+   private Class<T> extractModelClass() {
+      try {
+         java.lang.reflect.Type genericSuperclass = getClass().getGenericSuperclass();
+         if (genericSuperclass instanceof java.lang.reflect.ParameterizedType) {
+            java.lang.reflect.ParameterizedType pt = (java.lang.reflect.ParameterizedType) genericSuperclass;
+            java.lang.reflect.Type[] typeArgs = pt.getActualTypeArguments();
+            if (typeArgs.length > 0 && typeArgs[0] instanceof Class) {
+               return (Class<T>) typeArgs[0];
+            }
+         }
+      } catch (Exception e) {
+         // Ignore - will return null
+      }
+      return null;
+   }
+
+   /**
+    * Get the functional mapping from the model class.
+    * This is the single source of truth for area/domain.
+    */
+   public com.e2eq.framework.annotations.FunctionalMapping getModelFunctionalMapping() {
+      if (modelClass != null) {
+         return modelClass.getAnnotation(com.e2eq.framework.annotations.FunctionalMapping.class);
+      }
+      return null;
    }
 
    @Path("refName/{refName}")
