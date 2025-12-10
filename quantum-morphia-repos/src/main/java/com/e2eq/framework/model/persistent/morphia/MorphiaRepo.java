@@ -19,6 +19,7 @@ import com.mongodb.client.result.DeleteResult;
 import com.mongodb.client.result.UpdateResult;
 import dev.morphia.Datastore;
 import dev.morphia.MorphiaDatastore;
+import dev.morphia.UpdateOptions;
 import dev.morphia.annotations.Reference;
 import dev.morphia.mapping.Mapper;
 import dev.morphia.mapping.codec.pojo.EntityModel;
@@ -1656,13 +1657,10 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         }
         ops.add(UpdateOperators.set("auditInfo.lastUpdateTs", new Date()));
         ops.add(UpdateOperators.set("auditInfo.lastUpdateIdentity", securityIdentity.getPrincipal().getName()));
-        UpdateResult res;
-        if (ops.size() == 1) {
-            res = datastore.find(getPersistentClass()).filter(qfilters).update(ops.get(0));
-        } else {
-            UpdateOperator[] arr = ops.toArray(new UpdateOperator[0]);
-            res = datastore.find(getPersistentClass()).filter(qfilters).update(arr[0], Arrays.copyOfRange(arr, 1, arr.length));
-        }
+        
+        UpdateOperator[] arr = ops.toArray(new UpdateOperator[0]);
+        UpdateResult res = datastore.find(getPersistentClass()).filter(qfilters)
+                .update(new UpdateOptions().multi(true), arr[0], Arrays.copyOfRange(arr, 1, arr.length));
         return res.getModifiedCount();
     }
 
@@ -1703,13 +1701,10 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         }
         ops.add(UpdateOperators.set("auditInfo.lastUpdateTs", new Date()));
         ops.add(UpdateOperators.set("auditInfo.lastUpdateIdentity", securityIdentity.getPrincipal().getName()));
-        UpdateResult res;
-        if (ops.size() == 1) {
-            res = datastore.find(getPersistentClass()).filter(qfilters).update(ops.get(0));
-        } else {
-            UpdateOperator[] arr = ops.toArray(new UpdateOperator[0]);
-            res = datastore.find(getPersistentClass()).filter(qfilters).update(arr[0], Arrays.copyOfRange(arr, 1, arr.length));
-        }
+        
+        UpdateOperator[] arr = ops.toArray(new UpdateOperator[0]);
+        UpdateResult res = datastore.find(getPersistentClass()).filter(qfilters)
+                .update(new UpdateOptions().multi(true), arr[0], Arrays.copyOfRange(arr, 1, arr.length));
         return res.getModifiedCount();
     }
 
@@ -1768,13 +1763,10 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         }
         ops.add(UpdateOperators.set("auditInfo.lastUpdateTs", new Date()));
         ops.add(UpdateOperators.set("auditInfo.lastUpdateIdentity", securityIdentity.getPrincipal().getName()));
-        UpdateResult res;
-        if (ops.size() == 1) {
-            res = datastore.find(getPersistentClass()).filter(qfilters).update(ops.get(0));
-        } else {
-            UpdateOperator[] arr = ops.toArray(new UpdateOperator[0]);
-            res = datastore.find(getPersistentClass()).filter(qfilters).update(arr[0], Arrays.copyOfRange(arr, 1, arr.length));
-        }
+        
+        UpdateOperator[] arr = ops.toArray(new UpdateOperator[0]);
+        UpdateResult res = datastore.find(getPersistentClass()).filter(qfilters)
+                .update(new UpdateOptions().multi(true), arr[0], Arrays.copyOfRange(arr, 1, arr.length));
         return res.getModifiedCount();
     }
 
