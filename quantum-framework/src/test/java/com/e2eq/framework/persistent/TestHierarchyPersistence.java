@@ -19,7 +19,7 @@ import java.util.List;
 @QuarkusTest
 public class TestHierarchyPersistence extends BaseRepoTest {
     @Inject
-    MenuHierarchyRepo hierarchyRepo;
+    MenuHierarchyRepo menuHierarchyRepo;
 
     @Inject
     MenuItemRepo menuItemRepo;
@@ -28,12 +28,12 @@ public class TestHierarchyPersistence extends BaseRepoTest {
     MenuItemStaticDynamicListRepo menuStaticDynamicListRepo;
 
     protected MenuHierarchyModel getOrCreateHierarchy(String name) {
-        Optional<MenuHierarchyModel> oroot = hierarchyRepo.findByRefName(name);
+        Optional<MenuHierarchyModel> oroot = menuHierarchyRepo.findByRefName(name);
         MenuHierarchyModel root;
         if (!oroot.isPresent()) {
             root = new MenuHierarchyModel();
             root.setRefName(name);
-            root = hierarchyRepo.save(root);
+            root = menuHierarchyRepo.save(root);
         } else {
             root = oroot.get();
         }
@@ -86,11 +86,11 @@ public class TestHierarchyPersistence extends BaseRepoTest {
             menuChildHierarchyModel.setParent(menuRootHierarchyModel.createEntityReference());
             MenuItemStaticDynamicList childSlist = getOrCreateStaticDynamicList("childSlist", getOrCreateMenuItems(10,15));
             menuChildHierarchyModel.setStaticDynamicList(childSlist);
-            hierarchyRepo.save(menuChildHierarchyModel);
+            menuHierarchyRepo.save(menuChildHierarchyModel);
 
-            menuRootHierarchyModel = hierarchyRepo.findByRefName("root").orElse(null);
+            menuRootHierarchyModel = menuHierarchyRepo.findByRefName("root").orElse(null);
 
-            List<MenuItemModel> items = hierarchyRepo.getAllObjectsForHierarchy(menuRootHierarchyModel.getId());
+            List<MenuItemModel> items = menuHierarchyRepo.getAllObjectsForHierarchy(menuRootHierarchyModel.getId());
 
             for (MenuItemModel item : items) {
                 System.out.println(item);
