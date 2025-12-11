@@ -86,10 +86,11 @@ public class IdentityRoleResolver {
                             }
                         }
                     }
-                } else {
-                    // No matching UserProfile found, assume anonymous
-                    Log.warnf("No matching UserProfile found for subject %s", credential.getSubject());
                 }
+                //else {
+                    // No matching UserProfile found, assume anonymous
+                    // Log.warnf("No matching UserProfile found for subject %s", credential.getSubject());
+                //}
             }
         } catch (Exception e) {
             Log.warn("Failed to expand roles via user groups; continuing", e);
