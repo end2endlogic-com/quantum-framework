@@ -1,5 +1,8 @@
 package com.e2eq.ontology.resource;
 
+import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.ontology.core.OntologyRegistry;
 import com.e2eq.ontology.core.OntologyRegistry.ClassDef;
 import com.e2eq.ontology.core.OntologyRegistry.PropertyChainDef;
@@ -241,9 +244,26 @@ public class OntologyResource {
         if (type == null || type.isBlank()) {
             throw new WebApplicationException("Query param 'type' is required", Response.Status.BAD_REQUEST);
         }
-        String tenant = headers.getHeaderString("X-Realm");
-        if (tenant == null || tenant.isBlank()) {
-            throw new WebApplicationException("Header X-Realm (tenant) is required", Response.Status.BAD_REQUEST);
+        
+        // Get DataDomain from SecurityContext (set by SecurityFilter)
+        DataDomain dataDomain = SecurityContext.getPrincipalContext()
+                .map(PrincipalContext::getDataDomain)
+                .orElse(null);
+        
+        if (dataDomain == null) {
+            // Fallback: try to construct from X-Realm header for backward compatibility
+            String tenant = headers.getHeaderString("X-Realm");
+            if (tenant == null || tenant.isBlank()) {
+                throw new WebApplicationException("No DataDomain available from security context and X-Realm header is missing", 
+                    Response.Status.BAD_REQUEST);
+            }
+            // Create minimal DataDomain for backward compatibility
+            dataDomain = new DataDomain();
+            dataDomain.setOrgRefName("ontology");
+            dataDomain.setAccountNum("0000000000");
+            dataDomain.setTenantId(tenant);
+            dataDomain.setOwnerId("system");
+            dataDomain.setDataSegment(0);
         }
 
         String dir = direction.toLowerCase(Locale.ROOT);
@@ -253,17 +273,17 @@ public class OntologyResource {
                 ? predicates.stream().filter(Objects::nonNull).map(String::trim).filter(s -> !s.isEmpty()).collect(Collectors.toSet())
                 : null;
 
-        // Collect edges
+        // Collect edges using full DataDomain scoping
         List<OntologyEdge> edges = new ArrayList<>();
         if (includeOut) {
-            for (OntologyEdge e : edgeRepo.findBySrc(tenant, src)) {
+            for (OntologyEdge e : edgeRepo.findBySrc(dataDomain, src)) {
                 if (!type.equals(e.getSrcType())) continue; // ensure type matches the provided one for the focus node
                 if (predicateFilter != null && !predicateFilter.contains(e.getP())) continue;
                 edges.add(e);
             }
         }
         if (includeIn) {
-            for (OntologyEdge e : edgeRepo.findByDst(tenant, src)) {
+            for (OntologyEdge e : edgeRepo.findByDst(dataDomain, src)) {
                 if (!type.equals(e.getDstType())) continue; // when incoming, focus matches dst side
                 if (predicateFilter != null && !predicateFilter.contains(e.getP())) continue;
                 edges.add(e);

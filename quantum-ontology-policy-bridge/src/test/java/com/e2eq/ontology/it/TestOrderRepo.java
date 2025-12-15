@@ -1,5 +1,6 @@
 package com.e2eq.ontology.it;
 
+import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.morphia.MorphiaRepo;
 
 import com.e2eq.ontology.repo.OntologyEdgeRepo;
@@ -14,9 +15,9 @@ import java.util.Set;
 @ApplicationScoped
 public class TestOrderRepo extends MorphiaRepo<TestOrder> {
 
-    public List<TestOrder> listByHasEdge(String realmId, String predicate, String dstId, OntologyEdgeRepo edgeDao) {
+    public List<TestOrder> listByHasEdge(String realmId, DataDomain dataDomain, String predicate, String dstId, OntologyEdgeRepo edgeRepo) {
         // Compute ids via ontology and constrain Morphia query using Morphia Filters
-        Set<String> ids = edgeDao.srcIdsByDst(realmId, predicate, dstId);
+        Set<String> ids = edgeRepo.srcIdsByDst(dataDomain, predicate, dstId);
         if (ids.isEmpty()) return java.util.List.of();
         MorphiaDatastore datastore = morphiaDataStoreWrapper.getDataStore(realmId);
         // Use raw collection to avoid mapping issues in tests

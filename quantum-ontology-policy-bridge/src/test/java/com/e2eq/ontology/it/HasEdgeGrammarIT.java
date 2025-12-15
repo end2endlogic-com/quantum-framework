@@ -1,5 +1,6 @@
 package com.e2eq.ontology.it;
 
+import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.morphia.QueryToFilterListener;
 import com.e2eq.framework.grammar.BIAPIQueryLexer;
 import com.e2eq.framework.grammar.BIAPIQueryParser;
@@ -45,12 +46,21 @@ public class HasEdgeGrammarIT {
 
     private static final String TENANT = "test-tenant";
     private ForwardChainingReasoner reasoner;
+    private DataDomain testDataDomain;
 
     @BeforeEach
     public void setup() {
         reasoner = new ForwardChainingReasoner();
         edgeRepo.deleteAll();
         datastore.getDatabase().getCollection("orders").drop();
+        
+        // Create test DataDomain
+        testDataDomain = new DataDomain();
+        testDataDomain.setOrgRefName("test-org");
+        testDataDomain.setAccountNum("1234567890");
+        testDataDomain.setTenantId(TENANT);
+        testDataDomain.setOwnerId("system");
+        testDataDomain.setDataSegment(0);
     }
 
     @Test
@@ -68,7 +78,7 @@ public class HasEdgeGrammarIT {
 
         // When: Query using ListQueryRewriter directly
         Filter statusFilter = Filters.eq("status", "OPEN");
-        Filter orgFilter = queryRewriter.hasEdge(TENANT, "placedInOrg", "ORG-ACME");
+        Filter orgFilter = queryRewriter.hasEdge(testDataDomain, "placedInOrg", "ORG-ACME");
         Filter combinedFilter = Filters.and(statusFilter, orgFilter);
 
         List<TestOrder> directResults = datastore.find(TestOrder.class)
@@ -167,8 +177,8 @@ public class HasEdgeGrammarIT {
     }
     
     private void setupOrderInOrg(String orderId, String customerId, String orgId) {
-        edgeRepo.upsert(TENANT, "Order", orderId, "placedBy", "Customer", customerId, false, null);
-        edgeRepo.upsert(TENANT, "Customer", customerId, "memberOf", "Organization", orgId, false, null);
+        edgeRepo.upsert(testDataDomain, "Order", orderId, "placedBy", "Customer", customerId, false, null);
+        edgeRepo.upsert(testDataDomain, "Customer", customerId, "memberOf", "Organization", orgId, false, null);
 
         List<Reasoner.Edge> explicitEdges = List.of(
                 new Reasoner.Edge(orderId, "Order", "placedBy", customerId, "Customer", false, Optional.empty()),
@@ -180,7 +190,7 @@ public class HasEdgeGrammarIT {
 
         for (Reasoner.Edge edge : result.addEdges()) {
             Map<String, Object> prov = edge.prov().map(p -> Map.<String, Object>of("rule", p)).orElse(null);
-            edgeRepo.upsert(TENANT, edge.srcType(), edge.srcId(), edge.p(), edge.dstType(), edge.dstId(), edge.inferred(), prov);
+            edgeRepo.upsert(testDataDomain, edge.srcType(), edge.srcId(), edge.p(), edge.dstType(), edge.dstId(), edge.inferred(), prov);
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.e2eq.ontology.it;
 
+import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.ontology.core.ForwardChainingReasoner;
 import com.e2eq.ontology.core.OntologyRegistry;
 import com.e2eq.ontology.core.Reasoner;
@@ -37,15 +38,23 @@ public class HasEdgeQueryIT {
 
     private static final String TENANT = "test-tenant";
     private ForwardChainingReasoner reasoner;
+    private DataDomain testDataDomain;
 
     @BeforeEach
     public void setup() {
-
         reasoner = new ForwardChainingReasoner();
         edgeRepo.deleteAll();
 
         // Clean orders collection
         datastore.getDatabase().getCollection("orders").drop();
+        
+        // Create test DataDomain
+        testDataDomain = new DataDomain();
+        testDataDomain.setOrgRefName("test-org");
+        testDataDomain.setAccountNum("1234567890");
+        testDataDomain.setTenantId(TENANT);
+        testDataDomain.setOwnerId("system");
+        testDataDomain.setDataSegment(0);
     }
 
     @Test
@@ -64,7 +73,7 @@ public class HasEdgeQueryIT {
 
         // When: Query for OPEN orders in ORG-ACME using hasEdge
         Filter statusFilter = Filters.eq("status", "OPEN");
-        Filter orgFilter = queryRewriter.hasEdge(TENANT, "placedInOrg", "ORG-ACME");
+        Filter orgFilter = queryRewriter.hasEdge(testDataDomain, "placedInOrg", "ORG-ACME");
         Filter combinedFilter = Filters.and(statusFilter, orgFilter);
 
         List<TestOrder> results = datastore.find(TestOrder.class)
@@ -93,7 +102,7 @@ public class HasEdgeQueryIT {
         setupOrderInOrg("ORDER-004", "CUST-D", "ORG-OTHER");
 
         // When: Query for orders in either ORG-ACME or ORG-GLOBEX
-        Filter orgFilter = queryRewriter.hasEdgeAny(TENANT, "placedInOrg",
+        Filter orgFilter = queryRewriter.hasEdgeAny(testDataDomain, "placedInOrg",
                 List.of("ORG-ACME", "ORG-GLOBEX"));
 
         List<TestOrder> results = datastore.find(TestOrder.class)
@@ -119,7 +128,7 @@ public class HasEdgeQueryIT {
         setupOrderInOrg("ORDER-003", "CUST-C", "ORG-ALLOWED");
 
         // When: Query for orders NOT in restricted organization
-        Filter notRestrictedFilter = queryRewriter.notHasEdge(TENANT, "placedInOrg", "ORG-RESTRICTED");
+        Filter notRestrictedFilter = queryRewriter.notHasEdge(testDataDomain, "placedInOrg", "ORG-RESTRICTED");
 
         List<TestOrder> results = datastore.find(TestOrder.class)
                 .filter(notRestrictedFilter)
@@ -140,7 +149,7 @@ public class HasEdgeQueryIT {
         setupOrderInOrg("ORDER-001", "CUST-A", "ORG-OTHER");
 
         // When: Query for orders in non-existent organization
-        Filter orgFilter = queryRewriter.hasEdge(TENANT, "placedInOrg", "ORG-NONEXISTENT");
+        Filter orgFilter = queryRewriter.hasEdge(testDataDomain, "placedInOrg", "ORG-NONEXISTENT");
 
         List<TestOrder> results = datastore.find(TestOrder.class)
                 .filter(orgFilter)
@@ -160,8 +169,8 @@ public class HasEdgeQueryIT {
 
     private void setupOrderInOrg(String orderId, String customerId, String orgId) {
         // Store explicit edges
-        edgeRepo.upsert(TENANT, "Order", orderId, "placedBy", "Customer", customerId, false, null);
-        edgeRepo.upsert(TENANT, "Customer", customerId, "memberOf", "Organization", orgId, false, null);
+        edgeRepo.upsert(testDataDomain, "Order", orderId, "placedBy", "Customer", customerId, false, null);
+        edgeRepo.upsert(testDataDomain, "Customer", customerId, "memberOf", "Organization", orgId, false, null);
 
         // Infer placedInOrg edge
         List<Reasoner.Edge> explicitEdges = List.of(
@@ -174,7 +183,7 @@ public class HasEdgeQueryIT {
 
         for (Reasoner.Edge edge : result.addEdges()) {
             Map<String, Object> prov = edge.prov().map(p -> Map.<String, Object>of("rule", p)).orElse(null);
-            edgeRepo.upsert(TENANT, edge.srcType(), edge.srcId(), edge.p(), edge.dstType(), edge.dstId(), edge.inferred(), prov);
+            edgeRepo.upsert(testDataDomain, edge.srcType(), edge.srcId(), edge.p(), edge.dstType(), edge.dstId(), edge.inferred(), prov);
         }
     }
 }

@@ -158,26 +158,30 @@ public final class MorphiaOntologyLoader {
         return Optional.empty();
     }
 
-    @SuppressWarnings("unchecked")
     private Collection<Class<?>> discoverEntityClasses() {
         try {
             var mapper = datastore.getMapper();
-            // Morphia 2.x: mapper.getEntityModels() returns a collection of EntityModel with getType()
-            var method = mapper.getClass().getMethod("getEntityModels");
-            Object models = method.invoke(mapper);
+            // Use getMappedEntities() which returns List<EntityModel>
+            java.util.List<dev.morphia.mapping.codec.pojo.EntityModel> entityModels = mapper.getMappedEntities();
             Collection<Class<?>> classes = new LinkedHashSet<>();
-            for (Object m : (Collection<?>) models) {
+            for (dev.morphia.mapping.codec.pojo.EntityModel model : entityModels) {
                 try {
-                    var getType = m.getClass().getMethod("getType");
-                    Object c = getType.invoke(m);
-                    if (c instanceof Class<?>) classes.add((Class<?>) c);
-                } catch (NoSuchMethodException ignored) {
-                    // Older Morphia: try getType() on model; if not, try getEntityClass()
+                    Class<?> entityClass = model.getType();
+                    if (entityClass != null) {
+                        classes.add(entityClass);
+                    }
+                } catch (Exception e) {
+                    // If getType() fails, try alternative approach
                     try {
-                        var getEntityClass = m.getClass().getMethod("getEntityClass");
-                        Object c = getEntityClass.invoke(m);
-                        if (c instanceof Class<?>) classes.add((Class<?>) c);
-                    } catch (NoSuchMethodException ignored2) { /* give up on this model */ }
+                        // Some Morphia versions may have getEntityClass() method
+                        java.lang.reflect.Method getEntityClass = model.getClass().getMethod("getEntityClass");
+                        Object c = getEntityClass.invoke(model);
+                        if (c instanceof Class<?>) {
+                            classes.add((Class<?>) c);
+                        }
+                    } catch (NoSuchMethodException ignored) {
+                        // Skip this model if we can't determine its type
+                    }
                 }
             }
             return classes;

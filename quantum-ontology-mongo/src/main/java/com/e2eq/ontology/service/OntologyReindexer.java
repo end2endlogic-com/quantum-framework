@@ -1,5 +1,7 @@
 package com.e2eq.ontology.service;
 
+import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.ontology.annotations.OntologyClass;
 import com.e2eq.ontology.core.Reasoner;
@@ -76,21 +78,15 @@ public class OntologyReindexer {
     }
 
     private void runInternal(String realmId, boolean force) {
-        // Optionally purge existing derived edges before recomputation
-        if (force) {
-            try {
-                status = "PURGE_DERIVED";
-                edgeRepo.deleteDerivedByTenant(realmId);
-            } catch (Throwable t) {
-                Log.warn("Failed to purge derived edges before reindex: " + t.getMessage());
-            }
-        }
         // Discover ontology participant classes from Morphia mapper
         var datastore = morphiaDataStoreWrapper.getDataStore(realmId);
         Collection<Class<?>> entityClasses = discoverEntityClasses(datastore.getMapper());
         List<Class<?>> participants = new ArrayList<>();
         for (Class<?> c : entityClasses) if (c.isAnnotationPresent(OntologyClass.class)) participants.add(c);
         Log.infof("OntologyReindexer: found %d ontology participant classes", participants.size());
+
+        // If force, collect all unique DataDomains we'll encounter and purge derived edges for each
+        Set<DataDomain> processedDataDomains = new HashSet<>();
 
         // For each class, load all instances (ids only if possible) and recompute edges
         for (Class<?> clazz : participants) {
@@ -103,8 +99,22 @@ public class OntologyReindexer {
                 try {
                     String srcId = extractor.idOf(entity);
                     String entityType = extractor.metaOf(clazz).map(m -> m.classId).orElse(clazz.getSimpleName());
+                    
+                    // Extract DataDomain from entity
+                    DataDomain dataDomain = extractDataDomain(entity, realmId);
+                    
+                    // If force mode and first time seeing this DataDomain, purge derived edges
+                    if (force && processedDataDomains.add(dataDomain)) {
+                        try {
+                            status = "PURGE_DERIVED for " + dataDomain.getTenantId();
+                            edgeRepo.deleteDerivedByDataDomain(dataDomain);
+                        } catch (Throwable t) {
+                            Log.warn("Failed to purge derived edges for DataDomain " + dataDomain.getTenantId() + ": " + t.getMessage());
+                        }
+                    }
+                    
                     List<Reasoner.Edge> explicit = extractor.fromEntity(realmId, entity);
-                    materializer.apply(realmId, srcId, entityType, explicit);
+                    materializer.apply(dataDomain, srcId, entityType, explicit);
                     processed++;
                     if (processed % 100 == 0) {
                         status = String.format(Locale.ROOT, "Materialized %d %s", processed, clazz.getSimpleName());
@@ -116,24 +126,51 @@ public class OntologyReindexer {
             Log.infof("OntologyReindexer: completed %s", clazz.getSimpleName());
         }
     }
+    
+    /**
+     * Extracts DataDomain from an entity, with fallback for backward compatibility.
+     */
+    private DataDomain extractDataDomain(Object entity, String realmId) {
+        if (entity instanceof UnversionedBaseModel model) {
+            DataDomain dd = model.getDataDomain();
+            if (dd != null && dd.getOrgRefName() != null && dd.getAccountNum() != null && dd.getTenantId() != null) {
+                return dd;
+            }
+        }
+        // Fallback DataDomain for backward compatibility
+        DataDomain dd = new DataDomain();
+        dd.setOrgRefName("ontology");
+        dd.setAccountNum("0000000000");
+        dd.setTenantId(realmId);
+        dd.setOwnerId("system");
+        dd.setDataSegment(0);
+        return dd;
+    }
 
-    @SuppressWarnings("unchecked")
     private Collection<Class<?>> discoverEntityClasses(dev.morphia.mapping.Mapper mapper) {
         try {
-            var method = mapper.getClass().getMethod("getEntityModels");
-            Object models = method.invoke(mapper);
+            // Use getMappedEntities() which returns List<EntityModel>
+            java.util.List<dev.morphia.mapping.codec.pojo.EntityModel> entityModels = mapper.getMappedEntities();
             Collection<Class<?>> classes = new LinkedHashSet<>();
-            for (Object m : (Collection<?>) models) {
+            for (dev.morphia.mapping.codec.pojo.EntityModel model : entityModels) {
                 try {
-                    var getType = m.getClass().getMethod("getType");
-                    Object c = getType.invoke(m);
-                    if (c instanceof Class<?>) classes.add((Class<?>) c);
-                } catch (NoSuchMethodException ignored) {
+                    Class<?> entityClass = model.getType();
+                    if (entityClass != null) {
+                        classes.add(entityClass);
+                    }
+                } catch (Exception e) {
+                    // If getType() fails, try alternative approach
                     try {
-                        var getEntityClass = m.getClass().getMethod("getEntityClass");
-                        Object c = getEntityClass.invoke(m);
-                        if (c instanceof Class<?>) classes.add((Class<?>) c);
-                    } catch (NoSuchMethodException ignored2) { }
+                        // Some Morphia versions may have getEntityClass() method
+                        java.lang.reflect.Method getEntityClass = model.getClass().getMethod("getEntityClass");
+                        Object c = getEntityClass.invoke(model);
+                        if (c instanceof Class<?>) {
+                            classes.add((Class<?>) c);
+                        }
+                    } catch (NoSuchMethodException ignored) {
+                        // Skip this model if we can't determine its type
+                        Log.debugf("OntologyReindexer: unable to determine type for EntityModel: %s", model);
+                    }
                 }
             }
             return classes;

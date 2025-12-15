@@ -15,14 +15,46 @@ import java.util.Map;
 @EqualsAndHashCode(callSuper = true)
 @Entity(value = "edges")
 @Indexes({
-    @Index(options = @IndexOptions(name = "idx_tenant_p_dst"),
-           fields = { @Field("dataDomain.tenantId"), @Field("p"), @Field("dst") }),
-    @Index(options = @IndexOptions(name = "idx_tenant_src_p"),
-           fields = { @Field("dataDomain.tenantId"), @Field("src"), @Field("p") }),
-    @Index(options = @IndexOptions(name = "idx_tenant_derived"),
-           fields = { @Field("dataDomain.tenantId"), @Field("derived") }),
-    @Index(options = @IndexOptions(name = "uniq_tenant_src_p_dst", unique = true),
-           fields = { @Field("dataDomain.tenantId"), @Field("src"), @Field("p"), @Field("dst") })
+    // DataDomain-scoped unique index: prevents collisions across orgs/accounts within same tenant
+    @Index(options = @IndexOptions(name = "uniq_domain_src_p_dst", unique = true),
+           fields = {
+               @Field("dataDomain.orgRefName"),
+               @Field("dataDomain.accountNum"),
+               @Field("dataDomain.tenantId"),
+               @Field("dataDomain.dataSegment"),
+               @Field("src"),
+               @Field("p"),
+               @Field("dst")
+           }),
+    // Read-optimizing index for finding edges by predicate and destination (e.g., "who has role X?")
+    @Index(options = @IndexOptions(name = "idx_domain_p_dst"),
+           fields = {
+               @Field("dataDomain.orgRefName"),
+               @Field("dataDomain.accountNum"),
+               @Field("dataDomain.tenantId"),
+               @Field("dataDomain.dataSegment"),
+               @Field("p"),
+               @Field("dst")
+           }),
+    // Read-optimizing index for finding edges by source and predicate (e.g., "what roles does entity X have?")
+    @Index(options = @IndexOptions(name = "idx_domain_src_p"),
+           fields = {
+               @Field("dataDomain.orgRefName"),
+               @Field("dataDomain.accountNum"),
+               @Field("dataDomain.tenantId"),
+               @Field("dataDomain.dataSegment"),
+               @Field("src"),
+               @Field("p")
+           }),
+    // Index for finding derived edges within a DataDomain
+    @Index(options = @IndexOptions(name = "idx_domain_derived"),
+           fields = {
+               @Field("dataDomain.orgRefName"),
+               @Field("dataDomain.accountNum"),
+               @Field("dataDomain.tenantId"),
+               @Field("dataDomain.dataSegment"),
+               @Field("derived")
+           })
 })
 public class OntologyEdge extends UnversionedBaseModel {
 

@@ -1,5 +1,6 @@
 package com.e2eq.ontology.core;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.*;
@@ -7,6 +8,13 @@ import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 public class IncrementalChainEvaluatorTransitiveChainTest {
+
+    private DataDomainInfo testDataDomainInfo;
+
+    @BeforeEach
+    void setUp() {
+        testDataDomainInfo = new DataDomainInfo("test-org", "1234567890", "t1", 0);
+    }
 
     private OntologyRegistry buildEcomRegistry() {
         Map<String, OntologyRegistry.ClassDef> classes = Map.of(
@@ -28,7 +36,6 @@ public class IncrementalChainEvaluatorTransitiveChainTest {
 
     @Test
     public void transitiveStepInChain_isExpandedAndPropagates() {
-        String tenant = "t1";
         String order = "O1";
         String cust = "C9";
         String orgA = "OrgA";
@@ -37,14 +44,14 @@ public class IncrementalChainEvaluatorTransitiveChainTest {
 
         InMemoryEdgeStoreTestDouble store = new InMemoryEdgeStoreTestDouble();
         // Base explicit edges
-        store.upsert(tenant, "Order", order, "placedBy", "Customer", cust, false, Map.of());
-        store.upsert(tenant, "Customer", cust, "memberOf", "Organization", orgA, false, Map.of());
-        store.upsert(tenant, "Organization", orgA, "ancestorOf", "Organization", orgP, false, Map.of());
-        store.upsert(tenant, "Organization", orgP, "ancestorOf", "Organization", orgG, false, Map.of());
+        store.upsert(testDataDomainInfo, "Order", order, "placedBy", "Customer", cust, false, Map.of());
+        store.upsert(testDataDomainInfo, "Customer", cust, "memberOf", "Organization", orgA, false, Map.of());
+        store.upsert(testDataDomainInfo, "Organization", orgA, "ancestorOf", "Organization", orgP, false, Map.of());
+        store.upsert(testDataDomainInfo, "Organization", orgP, "ancestorOf", "Organization", orgG, false, Map.of());
 
         IncrementalChainEvaluator eval = new IncrementalChainEvaluator();
         OntologyRegistry reg = buildEcomRegistry();
-        IncrementalChainEvaluator.Result res = eval.evaluate(tenant, order, Set.of("placedBy", "memberOf", "ancestorOf"), reg, store);
+        IncrementalChainEvaluator.Result res = eval.evaluate(testDataDomainInfo, order, Set.of("placedBy", "memberOf", "ancestorOf"), reg, store);
 
         Set<String> got = new HashSet<>();
         for (EdgeRecord e : res.derivedEdges()) {
@@ -59,7 +66,6 @@ public class IncrementalChainEvaluatorTransitiveChainTest {
 
     @Test
     public void cyclesOnTransitive_doNotLoop() {
-        String tenant = "t1";
         String order = "O1";
         String cust = "C9";
         String orgA = "OrgA";
@@ -67,15 +73,15 @@ public class IncrementalChainEvaluatorTransitiveChainTest {
 
         InMemoryEdgeStoreTestDouble store = new InMemoryEdgeStoreTestDouble();
         // Base explicit edges
-        store.upsert(tenant, "Order", order, "placedBy", "Customer", cust, false, Map.of());
-        store.upsert(tenant, "Customer", cust, "memberOf", "Organization", orgA, false, Map.of());
+        store.upsert(testDataDomainInfo, "Order", order, "placedBy", "Customer", cust, false, Map.of());
+        store.upsert(testDataDomainInfo, "Customer", cust, "memberOf", "Organization", orgA, false, Map.of());
         // cycle on ancestorOf
-        store.upsert(tenant, "Organization", orgA, "ancestorOf", "Organization", orgB, false, Map.of());
-        store.upsert(tenant, "Organization", orgB, "ancestorOf", "Organization", orgA, false, Map.of());
+        store.upsert(testDataDomainInfo, "Organization", orgA, "ancestorOf", "Organization", orgB, false, Map.of());
+        store.upsert(testDataDomainInfo, "Organization", orgB, "ancestorOf", "Organization", orgA, false, Map.of());
 
         IncrementalChainEvaluator eval = new IncrementalChainEvaluator();
         OntologyRegistry reg = buildEcomRegistry();
-        IncrementalChainEvaluator.Result res = eval.evaluate(tenant, order, Set.of("placedBy", "memberOf", "ancestorOf"), reg, store);
+        IncrementalChainEvaluator.Result res = eval.evaluate(testDataDomainInfo, order, Set.of("placedBy", "memberOf", "ancestorOf"), reg, store);
 
         long count = res.derivedEdges().stream()
                 .filter(e -> e.getSrc().equals(order) && e.getP().equals("placedInOrg"))

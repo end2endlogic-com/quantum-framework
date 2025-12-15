@@ -6,10 +6,11 @@ import java.util.Map;
 
 /**
  * A transport-neutral representation of an ontology edge used by the EdgeStore abstraction.
- * This DTO intentionally avoids persistence-module classes to keep the core materializer unit-testable.
+ * Contains DataDomainInfo scoping to ensure proper isolation across organizations, accounts,
+ * tenants, and data segments.
  */
 public class EdgeRecord {
-    private String tenantId;
+    private DataDomainInfo dataDomainInfo;
     private String src;
     private String srcType;
     private String p;
@@ -23,8 +24,11 @@ public class EdgeRecord {
 
     public EdgeRecord() { }
 
-    public EdgeRecord(String tenantId, String srcType, String src, String p, String dstType, String dst, boolean inferred, Map<String, Object> prov, Date ts) {
-        this.tenantId = tenantId;
+    /**
+     * Constructor for explicit or inferred edges with DataDomainInfo scoping.
+     */
+    public EdgeRecord(DataDomainInfo dataDomainInfo, String srcType, String src, String p, String dstType, String dst, boolean inferred, Map<String, Object> prov, Date ts) {
+        this.dataDomainInfo = dataDomainInfo;
         this.srcType = srcType;
         this.src = src;
         this.p = p;
@@ -36,8 +40,11 @@ public class EdgeRecord {
         this.ts = ts;
     }
 
-    public EdgeRecord(String tenantId, String srcType, String src, String p, String dstType, String dst, boolean derived, Map<String, Object> prov, List<Support> support, Date ts) {
-        this.tenantId = tenantId;
+    /**
+     * Constructor for derived edges with support provenance and DataDomainInfo scoping.
+     */
+    public EdgeRecord(DataDomainInfo dataDomainInfo, String srcType, String src, String p, String dstType, String dst, boolean derived, Map<String, Object> prov, List<Support> support, Date ts) {
+        this.dataDomainInfo = dataDomainInfo;
         this.srcType = srcType;
         this.src = src;
         this.p = p;
@@ -50,8 +57,17 @@ public class EdgeRecord {
         this.ts = ts;
     }
 
-    public String getTenantId() { return tenantId; }
-    public void setTenantId(String tenantId) { this.tenantId = tenantId; }
+    public DataDomainInfo getDataDomainInfo() { return dataDomainInfo; }
+    public void setDataDomainInfo(DataDomainInfo dataDomainInfo) { this.dataDomainInfo = dataDomainInfo; }
+    
+    /**
+     * Convenience getter for tenantId from the DataDomainInfo.
+     * @return tenantId if dataDomainInfo is set, null otherwise
+     */
+    public String getTenantId() { 
+        return dataDomainInfo != null ? dataDomainInfo.tenantId() : null; 
+    }
+    
     public String getSrc() { return src; }
     public void setSrc(String src) { this.src = src; }
     public String getSrcType() { return srcType; }

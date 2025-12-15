@@ -3,6 +3,7 @@ package com.e2eq.ontology.mongo;
 
 import java.util.*;
 import jakarta.enterprise.context.ApplicationScoped;
+import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.ontology.model.OntologyEdge;
 import com.e2eq.ontology.repo.OntologyEdgeRepo;
 import dev.morphia.Datastore;
@@ -10,6 +11,10 @@ import org.bson.types.ObjectId;
 import jakarta.inject.Inject;
 import io.quarkus.logging.Log;
 
+/**
+ * Enriches ontology context for resources with edge information.
+ * All operations are scoped by DataDomain for proper isolation.
+ */
 @ApplicationScoped
 public class OntologyContextEnricherMongo {
 
@@ -18,24 +23,24 @@ public class OntologyContextEnricherMongo {
 
     /**
      * Enriches ontology context for a resource, including resolved display names for destinations.
-     * @param tenantId The tenant/realm ID (used for edge filtering, not database selection)
+     * @param dataDomain The DataDomain for scoping the query
      * @param resourceId The source resource ID
      * @return Map containing edges with optional displayName resolution
      */
-    public Map<String, Object> enrich(String tenantId, String resourceId) {
-        return enrich(tenantId, resourceId, true);
+    public Map<String, Object> enrich(DataDomain dataDomain, String resourceId) {
+        return enrich(dataDomain, resourceId, true);
     }
 
     /**
      * Enriches ontology context for a resource.
-     * @param tenantId The tenant/realm ID (used for edge filtering, not database selection)
+     * @param dataDomain The DataDomain for scoping the query
      * @param resourceId The source resource ID
      * @param resolveDisplayNames If true, attempts to resolve displayName for each destination entity
      * @return Map containing edges with optional displayName resolution
      */
-    public Map<String, Object> enrich(String tenantId, String resourceId, boolean resolveDisplayNames) {
+    public Map<String, Object> enrich(DataDomain dataDomain, String resourceId, boolean resolveDisplayNames) {
         Map<String, Object> rc = new HashMap<>();
-        List<OntologyEdge> edges = edgeRepo.findBySrc(tenantId, resourceId);
+        List<OntologyEdge> edges = edgeRepo.findBySrc(dataDomain, resourceId);
         List<Map<String, Object>> edgeSummaries = new ArrayList<>();
 
         // Group destinations by type for batch resolution
