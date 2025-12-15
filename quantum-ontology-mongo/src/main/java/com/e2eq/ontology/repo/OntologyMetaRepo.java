@@ -2,58 +2,61 @@ package com.e2eq.ontology.repo;
 
 import com.e2eq.framework.model.persistent.morphia.MorphiaRepo;
 import com.e2eq.ontology.model.OntologyMeta;
-import dev.morphia.query.Query;
+import com.mongodb.client.model.ReturnDocument;
 import dev.morphia.query.filters.Filters;
+import dev.morphia.query.updates.UpdateOperators;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.util.Date;
 import java.util.Optional;
 
+/**
+ * Repository for OntologyMeta singleton (global, not per-realm).
+ * Uses findAndModify with upsert=true to avoid race conditions.
+ */
 @ApplicationScoped
 public class OntologyMetaRepo extends MorphiaRepo<OntologyMeta> {
 
     public Optional<OntologyMeta> getSingleton() {
-        Query<OntologyMeta> q = ds().find(OntologyMeta.class)
-                .filter(Filters.eq("refName", "global"));
-        return Optional.ofNullable(q.first());
+        return Optional.ofNullable(ds().find(OntologyMeta.class)
+                .filter(Filters.eq("refName", "global"))
+                .first());
     }
 
     /**
-     * Record an observation of the current ontology YAML state without changing the applied yamlHash.
+     * Record an observation of the current ontology YAML state without changing applied hashes.
+     * Uses findAndModify with upsert=true to avoid races.
      */
     public OntologyMeta upsertObservation(Integer yamlVersion, String source, boolean reindexRequired) {
-        OntologyMeta meta = getSingleton().orElseGet(() -> {
-            OntologyMeta m = new OntologyMeta();
-            m.setRefName("global");
-            return m;
-        });
-        meta.setYamlVersion(yamlVersion);
-        meta.setSource(source);
-        meta.setUpdatedAt(new Date());
-        meta.setReindexRequired(reindexRequired);
-        save(ds(), meta);
-        return meta;
+        Date now = new Date();
+        dev.morphia.ModifyOptions opts = new dev.morphia.ModifyOptions()
+                .upsert(true)
+                .returnDocument(ReturnDocument.AFTER);
+        return ds().find(OntologyMeta.class)
+                .filter(Filters.eq("refName", "global"))
+                .modify(opts, UpdateOperators.set("yamlVersion", yamlVersion),
+                        UpdateOperators.set("source", source),
+                        UpdateOperators.set("updatedAt", now),
+                        UpdateOperators.set("reindexRequired", reindexRequired));
     }
 
     /**
-     * Mark that the current YAML has been applied: set yamlHash and appliedAt and clear reindexRequired.
+     * Mark that the current YAML has been applied: set yamlHash, tboxHash, yamlVersion, appliedAt and clear reindexRequired.
+     * Uses findAndModify with upsert=true to avoid races.
      */
-    public OntologyMeta markApplied(String yamlHash) {
-        OntologyMeta meta = getSingleton().orElseGet(() -> {
-            OntologyMeta m = new OntologyMeta();
-            m.setRefName("global");
-            return m;
-        });
-        meta.setYamlHash(yamlHash);
-        meta.setAppliedAt(new Date());
-        meta.setUpdatedAt(new Date());
-        meta.setReindexRequired(false);
-        save(ds(), meta);
-        return meta;
-    }
-
-    public void saveSingleton(OntologyMeta m) {
-        save(ds(), m);
+    public OntologyMeta markApplied(String yamlHash, String tboxHash, Integer yamlVersion) {
+        Date now = new Date();
+        dev.morphia.ModifyOptions opts = new dev.morphia.ModifyOptions()
+                .upsert(true)
+                .returnDocument(ReturnDocument.AFTER);
+        return ds().find(OntologyMeta.class)
+                .filter(Filters.eq("refName", "global"))
+                .modify(opts, UpdateOperators.set("yamlHash", yamlHash),
+                        UpdateOperators.set("tboxHash", tboxHash),
+                        UpdateOperators.set("yamlVersion", yamlVersion),
+                        UpdateOperators.set("appliedAt", now),
+                        UpdateOperators.set("updatedAt", now),
+                        UpdateOperators.set("reindexRequired", false));
     }
 
     private dev.morphia.Datastore ds() {

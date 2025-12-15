@@ -1,87 +1,89 @@
 package com.e2eq.ontology.core;
 
 import com.e2eq.ontology.core.OntologyRegistry.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.util.HexFormat;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
- * Utility for computing deterministic hashes of TBox content.
- * Used to detect changes and avoid unnecessary persistence operations.
+ * Computes a stable hash of a TBox by canonicalizing to sorted JSON.
  */
 public final class TBoxHasher {
+    private TBoxHasher() {}
     
-    private TBoxHasher() {
-        // Utility class
-    }
+    private static final ObjectMapper MAPPER = new ObjectMapper()
+            .enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS);
     
-    /**
-     * Compute SHA-256 hash of TBox content for change detection.
-     * The hash is deterministic and will be the same for identical TBox content.
-     * 
-     * @param tbox the TBox to hash
-     * @return SHA-256 hash as hex string
-     */
     public static String computeHash(TBox tbox) {
         try {
+            Map<String, Object> canonical = canonicalize(tbox);
+            String json = MAPPER.writeValueAsString(canonical);
             MessageDigest md = MessageDigest.getInstance("SHA-256");
-            
-            // Hash classes in sorted order for determinism
-            if (tbox.classes() != null) {
-                tbox.classes().entrySet().stream()
-                    .sorted(Map.Entry.comparingByKey())
-                    .forEach(e -> {
-                        md.update(e.getKey().getBytes(StandardCharsets.UTF_8));
-                        ClassDef def = e.getValue();
-                        md.update(def.name().getBytes(StandardCharsets.UTF_8));
-                        def.parents().stream().sorted().forEach(p -> 
-                            md.update(p.getBytes(StandardCharsets.UTF_8)));
-                        def.disjointWith().stream().sorted().forEach(d -> 
-                            md.update(d.getBytes(StandardCharsets.UTF_8)));
-                        def.sameAs().stream().sorted().forEach(s -> 
-                            md.update(s.getBytes(StandardCharsets.UTF_8)));
-                    });
-            }
-            
-            // Hash properties in sorted order for determinism
-            if (tbox.properties() != null) {
-                tbox.properties().entrySet().stream()
-                    .sorted(Map.Entry.comparingByKey())
-                    .forEach(e -> {
-                        md.update(e.getKey().getBytes(StandardCharsets.UTF_8));
-                        PropertyDef def = e.getValue();
-                        md.update(def.name().getBytes(StandardCharsets.UTF_8));
-                        def.domain().ifPresent(d -> md.update(d.getBytes(StandardCharsets.UTF_8)));
-                        def.range().ifPresent(r -> md.update(r.getBytes(StandardCharsets.UTF_8)));
-                        if (def.inverse()) md.update("inverse".getBytes(StandardCharsets.UTF_8));
-                        def.inverseOf().ifPresent(i -> md.update(i.getBytes(StandardCharsets.UTF_8)));
-                        if (def.transitive()) md.update("transitive".getBytes(StandardCharsets.UTF_8));
-                        if (def.symmetric()) md.update("symmetric".getBytes(StandardCharsets.UTF_8));
-                        if (def.functional()) md.update("functional".getBytes(StandardCharsets.UTF_8));
-                        def.subPropertyOf().stream().sorted().forEach(s -> 
-                            md.update(s.getBytes(StandardCharsets.UTF_8)));
-                    });
-            }
-            
-            // Hash chains in sorted order for determinism
-            if (tbox.propertyChains() != null) {
-                tbox.propertyChains().stream()
-                    .sorted((a, b) -> {
-                        int chainCmp = a.chain().toString().compareTo(b.chain().toString());
-                        return chainCmp != 0 ? chainCmp : a.implies().compareTo(b.implies());
-                    })
-                    .forEach(chain -> {
-                        chain.chain().forEach(c -> md.update(c.getBytes(StandardCharsets.UTF_8)));
-                        md.update(chain.implies().getBytes(StandardCharsets.UTF_8));
-                    });
-            }
-            
-            return HexFormat.of().formatHex(md.digest());
+            byte[] hash = md.digest(json.getBytes(StandardCharsets.UTF_8));
+            return bytesToHex(hash);
         } catch (Exception e) {
             throw new RuntimeException("Failed to compute TBox hash", e);
         }
     }
+    
+    private static Map<String, Object> canonicalize(TBox tbox) {
+        Map<String, Object> result = new TreeMap<>();
+        
+        // Classes
+        Map<String, Object> classes = new TreeMap<>();
+        for (ClassDef c : tbox.classes().values()) {
+            Map<String, Object> cData = new TreeMap<>();
+            cData.put("name", c.name());
+            cData.put("parents", new TreeSet<>(c.parents()));
+            cData.put("disjointWith", new TreeSet<>(c.disjointWith()));
+            cData.put("sameAs", new TreeSet<>(c.sameAs()));
+            classes.put(c.name(), cData);
+        }
+        result.put("classes", classes);
+        
+        // Properties
+        Map<String, Object> properties = new TreeMap<>();
+        for (PropertyDef p : tbox.properties().values()) {
+            Map<String, Object> pData = new TreeMap<>();
+            pData.put("name", p.name());
+            pData.put("domain", p.domain().orElse(null));
+            pData.put("range", p.range().orElse(null));
+            pData.put("inverse", p.inverse());
+            pData.put("inverseOf", p.inverseOf().orElse(null));
+            pData.put("transitive", p.transitive());
+            pData.put("symmetric", p.symmetric());
+            pData.put("functional", p.functional());
+            pData.put("subPropertyOf", new TreeSet<>(p.subPropertyOf()));
+            pData.put("inferred", p.inferred());
+            properties.put(p.name(), pData);
+        }
+        result.put("properties", properties);
+        
+        // Chains (sorted by implies then chain)
+        List<Map<String, Object>> chains = tbox.propertyChains().stream()
+                .sorted(Comparator.comparing(PropertyChainDef::implies)
+                        .thenComparing(ch -> String.join(",", ch.chain())))
+                .map(ch -> {
+                    Map<String, Object> chData = new TreeMap<>();
+                    chData.put("chain", new ArrayList<>(ch.chain()));
+                    chData.put("implies", ch.implies());
+                    return chData;
+                })
+                .collect(Collectors.toList());
+        result.put("propertyChains", chains);
+        
+        return result;
+    }
+    
+    private static String bytesToHex(byte[] bytes) {
+        StringBuilder sb = new StringBuilder();
+        for (byte b : bytes) {
+            sb.append(String.format("%02x", b));
+        }
+        return sb.toString();
+    }
 }
-

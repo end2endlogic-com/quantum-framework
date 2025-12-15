@@ -238,12 +238,52 @@ Tips:
 
 ---
 
+## Advanced Features
+
+### Ontology Validation
+The framework validates TBox definitions including:
+- Reference integrity (all classes/properties exist)
+- Cycle detection in property and class hierarchies
+- Property chain validation (no transitive properties, minimum 2 members)
+- Transitive property constraints (domain == range)
+
+See [ONTOLOGY_VALIDATION.md](../quantum-ontology-core/ONTOLOGY_VALIDATION.md) for details.
+
+### Closure Methods
+Query transitive closures efficiently:
+```bash
+GET /ontology/properties/{name}/superProperties
+GET /ontology/properties/{name}/subProperties
+GET /ontology/properties/{name}/inverse
+GET /ontology/classes/{name}/ancestors
+GET /ontology/classes/{name}/descendants
+```
+
+### TBox Hashing
+Stable SHA-256 hashes for change detection:
+```bash
+GET /ontology/hash              # Current TBox hash
+GET /ontology/version           # Includes yamlHash and tboxHash
+```
+
+### Inferred Properties
+Properties marked `inferred: true` in YAML are:
+- Read-only in REST responses
+- Visually distinct in graphs (dashed lines)
+- Automatically marked for chain-implied properties
+
+### Materialization
+The `MaterializationEngine` applies ontology rules (subPropertyOf, inverses, transitivity, chains) using fixpoint iteration. See documentation for integration with PostPersistHook.
+
+---
+
 ## Troubleshooting
 
 - 401/403 errors: Ensure a valid JWT and role `user` or `admin`.
 - 400 on instance graph: Provide both `src` and `type` query params and include `X-Realm` header.
 - Empty classes list: The built-in `OntologyRegistry` may not expose classes; properties and domains/ranges still render meaningful graphs.
 - Large graphs: Use `include` filters on TBox graph and `p` + `limit` on instance graphs to bound payload size.
+- Validation errors: Check YAML syntax and ensure all referenced classes/properties exist. Cycle detection will identify circular hierarchies.
 
 ---
 

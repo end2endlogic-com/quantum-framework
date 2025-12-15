@@ -135,12 +135,67 @@ public class OntologyResource {
             var metaOpt = metaRepo.getSingleton();
             Map<String, Object> body = metaOpt.<Map<String, Object>>map(m -> Map.of(
                             "yamlHash", m.getYamlHash(),
+                            "tboxHash", m.getTboxHash(),
                             "appliedAt", m.getAppliedAt()))
-                    .orElse(Map.of("yamlHash", null, "appliedAt", null));
+                    .orElse(Map.of("yamlHash", null, "tboxHash", null, "appliedAt", null));
             return Response.ok(body).build();
         } catch (Exception e) {
             return Response.serverError().entity(Map.of("error", e.getMessage())).build();
         }
+    }
+    
+    @GET
+    @Path("hash")
+    @Operation(summary = "Get current TBox hash")
+    @SecurityRequirement(name = "bearerAuth")
+    public Response getTBoxHash() {
+        String hash = registry.getTBoxHash();
+        return Response.ok(Map.of("tboxHash", hash)).build();
+    }
+    
+    @GET
+    @Path("properties/{name}/superProperties")
+    @Operation(summary = "Get super-properties of a property")
+    @SecurityRequirement(name = "bearerAuth")
+    public Response getSuperProperties(@PathParam("name") String name) {
+        Set<String> supers = registry.superPropertiesOf(name);
+        return Response.ok(Map.of("property", name, "superProperties", supers)).build();
+    }
+    
+    @GET
+    @Path("properties/{name}/subProperties")
+    @Operation(summary = "Get sub-properties of a property")
+    @SecurityRequirement(name = "bearerAuth")
+    public Response getSubProperties(@PathParam("name") String name) {
+        Set<String> subs = registry.subPropertiesOf(name);
+        return Response.ok(Map.of("property", name, "subProperties", subs)).build();
+    }
+    
+    @GET
+    @Path("properties/{name}/inverse")
+    @Operation(summary = "Get inverse property")
+    @SecurityRequirement(name = "bearerAuth")
+    public Response getInverseProperty(@PathParam("name") String name) {
+        Optional<String> inv = registry.inverseOf(name);
+        return Response.ok(Map.of("property", name, "inverse", inv.orElse(null))).build();
+    }
+    
+    @GET
+    @Path("classes/{name}/ancestors")
+    @Operation(summary = "Get ancestor classes")
+    @SecurityRequirement(name = "bearerAuth")
+    public Response getAncestors(@PathParam("name") String name) {
+        Set<String> ancestors = registry.ancestorsOf(name);
+        return Response.ok(Map.of("class", name, "ancestors", ancestors)).build();
+    }
+    
+    @GET
+    @Path("classes/{name}/descendants")
+    @Operation(summary = "Get descendant classes")
+    @SecurityRequirement(name = "bearerAuth")
+    public Response getDescendants(@PathParam("name") String name) {
+        Set<String> descendants = registry.descendantsOf(name);
+        return Response.ok(Map.of("class", name, "descendants", descendants)).build();
     }
 
     @GET
@@ -320,31 +375,54 @@ public class OntologyResource {
             List<Map<String, Object>> links = new ArrayList<>();
 
             Map<String, PropertyDef> props = reg.properties();
+            
+            // Collect properties that are inferred/calculated:
+            // 1. Properties implied by chains
+            // 2. Properties explicitly marked as inferred in YAML
+            Set<String> inferredProps = new HashSet<>();
+            
+            // Chain-implied properties
+            for (var chain : reg.propertyChains()) {
+                if (chain.implies() != null && !chain.implies().isBlank()) {
+                    inferredProps.add(chain.implies());
+                }
+            }
+            
+            // Properties explicitly marked as inferred
+            for (var p : props.values()) {
+                if (p.inferred()) {
+                    inferredProps.add(p.name());
+                    System.out.println("GraphBuilder: Property '" + p.name() + "' marked as inferred");
+                }
+            }
+            System.out.println("GraphBuilder: Total inferred properties: " + inferredProps);
 
             Set<String> classes = new LinkedHashSet<>();
             props.values().forEach(p -> { p.domain().ifPresent(classes::add); p.range().ifPresent(classes::add); });
 
             if (include.contains("classes")) {
                 for (String c : classes) {
-                    elements.putIfAbsent("Class:" + c, rect("Class:" + c, c, 160, 40, "class"));
+                    elements.putIfAbsent("Class:" + c, rect("Class:" + c, c, 160, 40, "class", false));
                 }
             }
             if (include.contains("properties")) {
                 for (var p : props.values()) {
-                    elements.putIfAbsent("Prop:" + p.name(), rect("Prop:" + p.name(), p.name(), 180, 34, "property"));
+                    boolean isInferred = inferredProps.contains(p.name());
+                    elements.putIfAbsent("Prop:" + p.name(), rect("Prop:" + p.name(), p.name(), 180, 34, "property", isInferred));
                 }
             }
 
             if (include.contains("properties")) {
                 for (var p : props.values()) {
-                    p.domain().ifPresent(d -> links.add(link("Edge:domain:" + p.name(), "Prop:" + p.name(), "Class:" + d, "domain")));
-                    p.range().ifPresent(r -> links.add(link("Edge:range:" + p.name(), "Prop:" + p.name(), "Class:" + r, "range")));
+                    boolean isInferred = inferredProps.contains(p.name());
+                    p.domain().ifPresent(d -> links.add(link("Edge:domain:" + p.name(), "Prop:" + p.name(), "Class:" + d, "domain", isInferred)));
+                    p.range().ifPresent(r -> links.add(link("Edge:range:" + p.name(), "Prop:" + p.name(), "Class:" + r, "range", isInferred)));
                     for (String sp : p.subPropertyOf()) {
-                        links.add(link("Edge:subPropertyOf:" + p.name() + "->" + sp, "Prop:" + p.name(), "Prop:" + sp, "subPropertyOf"));
+                        links.add(link("Edge:subPropertyOf:" + p.name() + "->" + sp, "Prop:" + p.name(), "Prop:" + sp, "subPropertyOf", false));
                     }
-                    p.inverseOf().ifPresent(inv -> links.add(link("Edge:inverseOf:" + p.name() + "->" + inv, "Prop:" + p.name(), "Prop:" + inv, "inverseOf")));
+                    p.inverseOf().ifPresent(inv -> links.add(link("Edge:inverseOf:" + p.name() + "->" + inv, "Prop:" + p.name(), "Prop:" + inv, "inverseOf", false)));
                     if (p.symmetric()) {
-                        links.add(link("Edge:symmetric:" + p.name(), "Prop:" + p.name(), "Prop:" + p.name(), "symmetric"));
+                        links.add(link("Edge:symmetric:" + p.name(), "Prop:" + p.name(), "Prop:" + p.name(), "symmetric", false));
                     }
                 }
             }
@@ -364,7 +442,7 @@ public class OntologyResource {
             return cells;
         }
 
-        private Map<String, Object> rect(String id, String label, int w, int h, String kind) {
+        private Map<String, Object> rect(String id, String label, int w, int h, String kind, boolean inferred) {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("type", "standard.Rectangle");
             m.put("id", id);
@@ -374,17 +452,26 @@ public class OntologyResource {
                     "label", Map.of("text", label),
                     "root", Map.of("data-type", kind)
             ));
+            m.put("data", Map.of("inferred", inferred));
             return m;
         }
 
-        private Map<String, Object> link(String id, String sourceId, String targetId, String label) {
-            return Map.of(
-                "type", "standard.Link",
-                "id", id,
-                "source", Map.of("id", sourceId),
-                "target", Map.of("id", targetId),
-                "labels", List.of(Map.of("attrs", Map.of("text", Map.of("text", label))))
-            );
+        private Map<String, Object> link(String id, String sourceId, String targetId, String label, boolean inferred) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("type", "standard.Link");
+            result.put("id", id);
+            result.put("source", Map.of("id", sourceId));
+            result.put("target", Map.of("id", targetId));
+            result.put("labels", List.of(Map.of("attrs", Map.of("text", Map.of("text", label)))));
+            result.put("data", Map.of("inferred", inferred));
+            if (inferred) {
+                // Add visual styling for inferred links
+                result.put("attrs", Map.of("line", Map.of(
+                    "strokeDasharray", "6,4",
+                    "stroke", "#9575cd"
+                )));
+            }
+            return result;
         }
     }
 }

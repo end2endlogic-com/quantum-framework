@@ -1,0 +1,107 @@
+version: 1
+
+classes:
+  - id: Thing
+  - id: Agent
+  - id: Person
+  - id: Organization
+
+properties:
+  # Basic property with domain/range
+  - id: name
+    domain: Thing
+    range: String
+    functional: true
+    
+  # Symmetric property
+  - id: knows
+    domain: Person
+    range: Person
+    symmetric: true
+    
+  # Property with inverse
+  - id: hasChild
+    domain: Person
+    range: Person
+    inverseOf: hasParent
+    
+  - id: hasParent
+    domain: Person
+    range: Person
+    inverseOf: hasChild
+    inferred: true  # Computed from inverse
+    
+  # Transitive property (domain == range required)
+  - id: ancestorOf
+    domain: Person
+    range: Person
+    transitive: true
+    
+  # SubPropertyOf hierarchy
+  - id: relatedTo
+    domain: Person
+    range: Person
+    
+  - id: familyRelation
+    domain: Person
+    range: Person
+    subPropertyOf: [relatedTo]
+    
+  - id: hasDescendant
+    domain: Person
+    range: Person
+    subPropertyOf: [familyRelation, relatedTo]
+    
+  # Property implied by chain (marked inferred)
+  - id: grandparentOf
+    domain: Person
+    range: Person
+    inferred: true
+    
+  # Organizational properties
+  - id: memberOf
+    domain: Person
+    range: Organization
+    
+  - id: employs
+    domain: Organization
+    range: Person
+    inverseOf: memberOf
+
+chains:
+  # hasParent o hasParent => grandparentOf
+  - chain: [hasParent, hasParent]
+    implies: grandparentOf
+
+# Validation examples:
+# ✓ All classes referenced in domains/ranges exist
+# ✓ All inverseOf references are bidirectional
+# ✓ Transitive property ancestorOf has same domain and range
+# ✓ No cycles in subPropertyOf hierarchy
+# ✓ Property chain has >= 2 members
+# ✓ Chain members exist and are not transitive
+
+# Invalid examples (would fail validation):
+# 
+# - id: badProperty
+#   domain: NonExistentClass  # ✗ Unknown class
+#   
+# - id: badInverse
+#   inverseOf: nonExistent    # ✗ Unknown property
+#   
+# - id: badTransitive
+#   domain: Person
+#   range: Organization
+#   transitive: true          # ✗ Domain != Range
+#   
+# - id: cyclicA
+#   subPropertyOf: [cyclicB]
+# - id: cyclicB
+#   subPropertyOf: [cyclicA]  # ✗ Cycle detected
+#   
+# chains:
+#   - chain: [ancestorOf]
+#     implies: something       # ✗ Chain too short
+#     
+#   - chain: [ancestorOf, knows]
+#     implies: related         # ✗ Contains transitive property
