@@ -35,6 +35,9 @@ public class OntologyReindexer {
     @Inject
     OntologyMetaService metaService;
 
+    @Inject
+    com.e2eq.ontology.core.OntologyRegistry registry;
+
     private final AtomicBoolean running = new AtomicBoolean(false);
     private volatile String status = "IDLE";
 
@@ -58,7 +61,10 @@ public class OntologyReindexer {
                 Optional<String> src = metaService.getMeta().map(m -> m.getSource());
                 Optional<Path> p = src.filter(s -> s != null && !s.equals("<none>")).map(Path::of).filter(Files::exists);
                 var res = metaService.observeYaml(p, "/ontology.yaml");
-                metaService.markApplied(res.currentHash());
+                // Get tboxHash from runtime registry and yamlVersion from metadata
+                String tboxHash = io.quarkus.arc.Arc.container().instance(com.e2eq.ontology.core.OntologyRegistry.class).get().getTBoxHash();
+                Integer yamlVersion = res.meta().getYamlVersion();
+                metaService.markApplied(res.currentHash(), tboxHash, yamlVersion);
                 status = "COMPLETED";
             } catch (Throwable t) {
                 status = "FAILED: " + t.getMessage();

@@ -43,15 +43,15 @@ public class OntologyMetaService {
         }
     }
 
-    public void markApplied(String appliedHash) {
-        metaRepo.markApplied(appliedHash);
+    public void markApplied(String yamlHash, String tboxHash, Integer yamlVersion) {
+        metaRepo.markApplied(yamlHash, tboxHash, yamlVersion);
     }
 
     public void clearReindexRequired() {
-        metaRepo.getSingleton().ifPresent(m -> {
-            m.setReindexRequired(false);
-            metaRepo.saveSingleton(m);
-        });
+        // Use atomic update instead of read-modify-write
+        metaRepo.getSingleton().ifPresent(m -> 
+            metaRepo.upsertObservation(m.getYamlVersion(), m.getSource(), false)
+        );
     }
 
     private Observed readYamlBytes(Optional<Path> path, String classpathFallback) throws Exception {

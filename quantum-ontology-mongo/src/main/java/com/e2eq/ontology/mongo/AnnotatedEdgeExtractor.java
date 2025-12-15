@@ -1,6 +1,7 @@
 package com.e2eq.ontology.mongo;
 
 import com.e2eq.framework.model.persistent.base.EntityReference;
+import com.e2eq.framework.model.persistent.base.ReferenceTarget;
 import com.e2eq.ontology.annotations.OntologyClass;
 import com.e2eq.ontology.annotations.OntologyProperty;
 import com.e2eq.ontology.core.Reasoner;
@@ -75,7 +76,9 @@ public class AnnotatedEdgeExtractor {
                     MethodHandle mh = lookup.unreflectGetter(f);
                     boolean isCol = Collection.class.isAssignableFrom(f.getType()) || f.getType().isArray();
                     boolean materialize = pa.materializeEdge();
-                    String rangeType = resolveRangeType(pa, f.getType(), f.getGenericType());
+                    // Check for @ReferenceTarget annotation to get the actual target type
+                    ReferenceTarget refTarget = f.getAnnotation(ReferenceTarget.class);
+                    String rangeType = resolveRangeType(pa, refTarget, f.getType(), f.getGenericType());
                     props.add(new PropertyBinding(pid, mh, isCol, materialize, rangeType));
                 } catch (IllegalAccessException ignored) {}
             }
@@ -90,7 +93,8 @@ public class AnnotatedEdgeExtractor {
                     MethodHandle mh = lookup.unreflect(m);
                     boolean isCol = Collection.class.isAssignableFrom(m.getReturnType()) || m.getReturnType().isArray();
                     boolean materialize = pa.materializeEdge();
-                    String rangeType = resolveRangeType(pa, m.getReturnType(), m.getGenericReturnType());
+                    // Methods don't have @ReferenceTarget, pass null
+                    String rangeType = resolveRangeType(pa, null, m.getReturnType(), m.getGenericReturnType());
                     props.add(new PropertyBinding(pid, mh, isCol, materialize, rangeType));
                 } catch (IllegalAccessException ignored) {}
             }
@@ -152,7 +156,9 @@ public class AnnotatedEdgeExtractor {
                 MethodHandle mh = lookup.unreflectGetter(f);
                 boolean isCol = Collection.class.isAssignableFrom(f.getType()) || f.getType().isArray();
                 boolean materialize = pa.materializeEdge();
-                String rangeType = resolveRangeType(pa, f.getType(), f.getGenericType());
+                // Check for @ReferenceTarget annotation to get the actual target type
+                ReferenceTarget refTarget = f.getAnnotation(ReferenceTarget.class);
+                String rangeType = resolveRangeType(pa, refTarget, f.getType(), f.getGenericType());
                 props.add(new PropertyBinding(pid, mh, isCol, materialize, rangeType));
             } catch (IllegalAccessException ignored) {}
         }
@@ -167,7 +173,8 @@ public class AnnotatedEdgeExtractor {
                 MethodHandle mh = lookup.unreflect(m);
                 boolean isCol = Collection.class.isAssignableFrom(m.getReturnType()) || m.getReturnType().isArray();
                 boolean materialize = pa.materializeEdge();
-                String rangeType = resolveRangeType(pa, m.getReturnType(), m.getGenericReturnType());
+                // Methods don't have @ReferenceTarget, pass null
+                String rangeType = resolveRangeType(pa, null, m.getReturnType(), m.getGenericReturnType());
                 props.add(new PropertyBinding(pid, mh, isCol, materialize, rangeType));
             } catch (IllegalAccessException ignored) {}
         }
@@ -229,11 +236,28 @@ public class AnnotatedEdgeExtractor {
         return null;
     }
 
-    private String resolveRangeType(OntologyProperty property, Class<?> rawType, java.lang.reflect.Type genericType) {
+    /**
+     * Resolves the range type (destination entity type) for an ontology property.
+     * Priority order:
+     * 1. @OntologyProperty.ref() - explicitly declared reference type
+     * 2. @OntologyProperty.range() - explicitly declared range type
+     * 3. @ReferenceTarget.target() - for EntityReference fields, use the target class
+     * 4. Field/method return type - inferred from the Java type
+     */
+    private String resolveRangeType(OntologyProperty property, ReferenceTarget refTarget, 
+                                    Class<?> rawType, java.lang.reflect.Type genericType) {
+        // First priority: explicit OntologyProperty declarations
         if (property != null) {
             if (!property.ref().isEmpty()) return property.ref();
             if (!property.range().isEmpty()) return property.range();
         }
+        
+        // Second priority: @ReferenceTarget annotation (for EntityReference fields)
+        if (refTarget != null && refTarget.target() != null && refTarget.target() != Object.class) {
+            return classIdOf(refTarget.target());
+        }
+        
+        // Third priority: infer from Java type
         Class<?> candidate = rawType;
         if (Collection.class.isAssignableFrom(rawType)) {
             if (genericType instanceof java.lang.reflect.ParameterizedType p) {
@@ -245,7 +269,9 @@ public class AnnotatedEdgeExtractor {
         } else if (rawType.isArray()) {
             candidate = rawType.getComponentType();
         }
-        if (candidate != null && candidate != Object.class) {
+        
+        // Avoid returning "EntityReference" as the type - it's not useful
+        if (candidate != null && candidate != Object.class && !EntityReference.class.isAssignableFrom(candidate)) {
             return classIdOf(candidate);
         }
         return null;
@@ -253,10 +279,21 @@ public class AnnotatedEdgeExtractor {
 
     @ApplicationScoped
     public static class DefaultIdAccessor {
+        /**
+         * Extracts the canonical identifier from an entity for use in ontology edges.
+         * Priority order:
+         * 1. ObjectId (via getId()) - preferred for entity matching by _id
+         * 2. EntityReference.entityId - for reference objects with ObjectId
+         * 3. EntityReference.entityRefName - fallback for references without ObjectId
+         * 4. refName - only if getId() returns null
+         * 5. hashCode - last resort
+         */
         public String idOf(Object entity) {
             if (entity == null) return null;
             // If the target is already a CharSequence (e.g., String id), use it directly
             if (entity instanceof CharSequence cs) return cs.toString();
+            
+            // Handle EntityReference: prioritize entityId (ObjectId) over entityRefName
             if (entity instanceof EntityReference ref) {
                 if (ref.getEntityId() != null) {
                     return ref.getEntityId().toHexString();
@@ -265,16 +302,28 @@ public class AnnotatedEdgeExtractor {
                     return ref.getEntityRefName();
                 }
             }
+            
+            // For regular entities: prioritize getId() (ObjectId) over getRefName()
+            // This ensures ontology edges use the actual database _id for matching
+            try {
+                Method m = entity.getClass().getMethod("getId");
+                Object v = m.invoke(entity);
+                if (v != null) {
+                    String idStr = String.valueOf(v);
+                    // Only use getId() if it returns a valid value (not empty)
+                    if (!idStr.isBlank() && !idStr.equals("null")) {
+                        return idStr;
+                    }
+                }
+            } catch (Exception ignored) {}
+            
+            // Fallback to refName only if getId() didn't produce a valid result
             try {
                 Method m = entity.getClass().getMethod("getRefName");
                 Object v = m.invoke(entity);
                 if (v != null) return String.valueOf(v);
             } catch (Exception ignored) {}
-            try {
-                Method m = entity.getClass().getMethod("getId");
-                Object v = m.invoke(entity);
-                if (v != null) return String.valueOf(v);
-            } catch (Exception ignored) {}
+            
             return String.valueOf(entity.hashCode());
         }
     }

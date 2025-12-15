@@ -31,7 +31,9 @@ public final class YamlOntologyLoader {
             String inverseOf,
             Boolean transitive,
             Boolean symmetric,
-            List<String> subPropertyOf
+            List<String> subPropertyOf,
+            // Mark property as inferred/calculated (e.g., inverse or chain-implied)
+            Boolean inferred
     ) {}
     public record YChain(List<String> chain, String implies) {}
 
@@ -77,6 +79,8 @@ public final class YamlOntologyLoader {
                 functional = Boolean.TRUE.equals(p.functional());
             }
 
+            boolean isInferred = Boolean.TRUE.equals(p.inferred());
+            System.out.println("YamlOntologyLoader: Property '" + p.id() + "' inferred=" + isInferred + " (raw: " + p.inferred() + ")");
             PropertyDef def = new PropertyDef(
                     p.id(),
                     Optional.ofNullable(p.domain()),
@@ -86,7 +90,8 @@ public final class YamlOntologyLoader {
                     Boolean.TRUE.equals(p.transitive()),
                     Boolean.TRUE.equals(p.symmetric()),
                     functional,
-                    supers
+                    supers,
+                    isInferred
             );
             props.put(p.id(), def);
         }

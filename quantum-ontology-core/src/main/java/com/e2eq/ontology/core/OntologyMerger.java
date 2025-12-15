@@ -47,7 +47,8 @@ public final class OntologyMerger {
                 boolean functional = op.functional() || bp.functional();
                 Set<String> supers = new LinkedHashSet<>(bp.subPropertyOf());
                 supers.addAll(op.subPropertyOf());
-                props.put(id, new PropertyDef(id, domain, range, inverse, inverseOf, transitive, symmetric, functional, supers));
+                boolean inferred = op.inferred() || bp.inferred();
+                props.put(id, new PropertyDef(id, domain, range, inverse, inverseOf, transitive, symmetric, functional, supers, inferred));
             }
         });
 
