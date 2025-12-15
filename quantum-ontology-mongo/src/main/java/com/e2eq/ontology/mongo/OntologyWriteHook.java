@@ -1,6 +1,9 @@
 package com.e2eq.ontology.mongo;
 
+import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.PostPersistHook;
+import com.e2eq.ontology.core.DataDomainInfo;
 import com.e2eq.ontology.core.OntologyRegistry;
 import com.e2eq.ontology.core.Reasoner;
 import com.e2eq.ontology.model.OntologyEdge;
@@ -15,6 +18,7 @@ import java.util.List;
 
 /**
  * Post-persist hook that auto-materializes ontology edges for annotated entities.
+ * All edges are scoped by the entity's DataDomain to ensure isolation.
  */
 @ApplicationScoped
 public class OntologyWriteHook implements PostPersistHook {
@@ -36,13 +40,21 @@ public class OntologyWriteHook implements PostPersistHook {
         var metaOpt = extractor.metaOf(entity.getClass());
         if (metaOpt.isEmpty()) return; // not an ontology participant
         String entityType = metaOpt.get().classId;
-        // Use realmId as tenant id in ontology edges
+        
+        // Extract DataDomain from entity - required for proper scoping
+        DataDomain dataDomain = extractDataDomain(entity, realmId);
+        if (dataDomain == null) {
+            io.quarkus.logging.Log.warnf("Cannot materialize ontology edges: entity %s has no DataDomain", entity.getClass().getName());
+            return;
+        }
+        
         List<Reasoner.Edge> explicit = new ArrayList<>(extractor.fromEntity(realmId, entity));
-        // Extend with SPI-provided edges
+        // Extend with SPI-provided edges, now passing DataDomainInfo
+        DataDomainInfo dataDomainInfo = DataDomainConverter.toInfo(dataDomain);
         try {
             for (OntologyEdgeProvider p : providers) {
                 if (p.supports(entity.getClass())) {
-                    var extra = p.edges(realmId, entity);
+                    var extra = p.edges(realmId, dataDomainInfo, entity);
                     if (extra != null && !extra.isEmpty()) explicit.addAll(extra);
                 }
             }
@@ -50,19 +62,43 @@ public class OntologyWriteHook implements PostPersistHook {
             io.quarkus.logging.Log.warn("[DEBUG_LOG] OntologyWriteHook: provider extension failed", t);
         }
         try {
-            io.quarkus.logging.Log.infof("[DEBUG_LOG] OntologyWriteHook.afterPersist entityType=%s, realm=%s, explicitEdges=%d", entityType, realmId, explicit.size());
+            io.quarkus.logging.Log.infof("[DEBUG_LOG] OntologyWriteHook.afterPersist entityType=%s, realm=%s, dataDomain=%s/%s/%s, explicitEdges=%d", 
+                entityType, realmId, dataDomain.getOrgRefName(), dataDomain.getAccountNum(), dataDomain.getTenantId(), explicit.size());
             for (Reasoner.Edge e : explicit) {
                 io.quarkus.logging.Log.infof("[DEBUG_LOG]   explicit: (%s)-['%s']->(%s)", e.srcId(), e.p(), e.dstId());
             }
         } catch (Exception ignored) {}
         String srcId = extractor.idOf(entity);
-        // Capture prior edges for this source to support cascade diffs
-        java.util.List<OntologyEdge> priorAll = edgeRepo.findBySrc(realmId, srcId);
+        // Capture prior edges for this source to support cascade diffs - now scoped by DataDomain
+        java.util.List<OntologyEdge> priorAll = edgeRepo.findBySrc(dataDomain, srcId);
         java.util.List<OntologyEdge> priorExplicit = new java.util.ArrayList<>();
         for (OntologyEdge e : priorAll) if (!e.isInferred()) priorExplicit.add(e);
         // First, apply materialization so explicit edges are upserted and stale ones pruned
-        materializer.apply(realmId, srcId, entityType, explicit);
+        materializer.apply(dataDomain, srcId, entityType, explicit);
         // Then handle ORPHAN_REMOVE cascade based on prior vs new state and repo contents
-        try { cascadeExecutor.onAfterPersist(realmId, srcId, entity, priorExplicit, explicit); } catch (Throwable ignored) {}
+        try { cascadeExecutor.onAfterPersist(realmId, dataDomain, srcId, entity, priorExplicit, explicit); } catch (Throwable ignored) {}
+    }
+    
+    /**
+     * Extracts DataDomain from an entity. If the entity doesn't have a DataDomain,
+     * creates a fallback one using the realmId as tenantId with default values.
+     */
+    private DataDomain extractDataDomain(Object entity, String realmId) {
+        if (entity instanceof UnversionedBaseModel model) {
+            DataDomain dd = model.getDataDomain();
+            if (dd != null && dd.getOrgRefName() != null && dd.getAccountNum() != null && dd.getTenantId() != null) {
+                return dd;
+            }
+        }
+        // Fallback: create minimal DataDomain from realmId (for backward compatibility with tests)
+        // In production, entities should always have a proper DataDomain set
+        DataDomain fallback = new DataDomain();
+        fallback.setOrgRefName("ontology");
+        fallback.setAccountNum("0000000000");
+        fallback.setTenantId(realmId);
+        fallback.setOwnerId("system");
+        fallback.setDataSegment(0);
+        io.quarkus.logging.Log.warnf("Entity %s missing DataDomain, using fallback with tenantId=%s", entity.getClass().getSimpleName(), realmId);
+        return fallback;
     }
 }

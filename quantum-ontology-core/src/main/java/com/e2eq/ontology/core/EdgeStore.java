@@ -7,12 +7,26 @@ import java.util.Set;
 
 /**
  * Abstraction over the persistence of ontology edges, with provenance support.
+ * All operations are scoped by DataDomainInfo (orgRefName, accountNum, tenantId, dataSegment)
+ * to ensure proper isolation and prevent cross-org/account leakage.
+ * 
  * Implementations can be backed by Mongo (Morphia), in-memory maps, or others.
  */
 public interface EdgeStore {
 
-    // Legacy upsert used for explicit and inferred (pre-derived) edges
-    void upsert(String tenantId,
+    /**
+     * Upsert an explicit or inferred edge with full DataDomainInfo scoping.
+     *
+     * @param dataDomainInfo data domain info (orgRefName, accountNum, tenantId, dataSegment)
+     * @param srcType    type of the source entity
+     * @param src        source entity ID
+     * @param p          predicate/property name
+     * @param dstType    type of the destination entity
+     * @param dst        destination entity ID
+     * @param inferred   true if this edge was inferred by reasoner
+     * @param prov       provenance metadata
+     */
+    void upsert(DataDomainInfo dataDomainInfo,
                 String srcType,
                 String src,
                 String p,
@@ -21,8 +35,19 @@ public interface EdgeStore {
                 boolean inferred,
                 Map<String, Object> prov);
 
-    // New: upsert an implied edge with derived flag and structured support
-    void upsertDerived(String tenantId,
+    /**
+     * Upsert a derived edge with support provenance and DataDomainInfo scoping.
+     *
+     * @param dataDomainInfo data domain info
+     * @param srcType    type of the source entity
+     * @param src        source entity ID
+     * @param p          predicate/property name
+     * @param dstType    type of the destination entity
+     * @param dst        destination entity ID
+     * @param support    list of support records (rule IDs and path edge IDs)
+     * @param prov       provenance metadata
+     */
+    void upsertDerived(DataDomainInfo dataDomainInfo,
                        String srcType,
                        String src,
                        String p,
@@ -31,18 +56,42 @@ public interface EdgeStore {
                        List<EdgeRecord.Support> support,
                        Map<String, Object> prov);
 
+    /**
+     * Bulk upsert multiple edge records. Each record must have its DataDomainInfo set.
+     */
     void upsertMany(Collection<EdgeRecord> edges);
 
-    // Queries
-    List<EdgeRecord> findBySrc(String tenantId, String src);
-    List<EdgeRecord> listOutgoingBy(String tenantId, String src, String p);
-    List<EdgeRecord> listIncomingBy(String tenantId, String p, String dst);
+    // Queries - all scoped by DataDomainInfo
+    
+    /**
+     * Find all edges originating from the given source within the DataDomainInfo.
+     */
+    List<EdgeRecord> findBySrc(DataDomainInfo dataDomainInfo, String src);
+    
+    /**
+     * List outgoing edges from source with given predicate within the DataDomainInfo.
+     */
+    List<EdgeRecord> listOutgoingBy(DataDomainInfo dataDomainInfo, String src, String p);
+    
+    /**
+     * List incoming edges to destination with given predicate within the DataDomainInfo.
+     */
+    List<EdgeRecord> listIncomingBy(DataDomainInfo dataDomainInfo, String p, String dst);
 
-    // Deletions / pruning
-    void deleteInferredBySrcNotIn(String tenantId, String src, String p, Collection<String> dstKeep);
+    // Deletions / pruning - all scoped by DataDomainInfo
+    
+    /**
+     * Delete inferred edges from source with predicate where destination is not in the keep set.
+     */
+    void deleteInferredBySrcNotIn(DataDomainInfo dataDomainInfo, String src, String p, Collection<String> dstKeep);
 
-    void deleteExplicitBySrcNotIn(String tenantId, String src, String p, Collection<String> dstKeep);
+    /**
+     * Delete explicit edges from source with predicate where destination is not in the keep set.
+     */
+    void deleteExplicitBySrcNotIn(DataDomainInfo dataDomainInfo, String src, String p, Collection<String> dstKeep);
 
-    // Remove derived edges whose support is empty or missing
-    void pruneDerivedWithoutSupport(String tenantId);
+    /**
+     * Remove derived edges whose support is empty or missing within the DataDomainInfo.
+     */
+    void pruneDerivedWithoutSupport(DataDomainInfo dataDomainInfo);
 }

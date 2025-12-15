@@ -1,11 +1,14 @@
 package com.e2eq.ontology.service;
 
+import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.ontology.annotations.OntologyClass;
+import com.e2eq.ontology.core.DataDomainInfo;
 import com.e2eq.ontology.core.EdgeStore;
 import com.e2eq.ontology.core.Reasoner;
 import com.e2eq.ontology.mongo.AnnotatedEdgeExtractor;
+import com.e2eq.ontology.mongo.DataDomainConverter;
 import com.e2eq.ontology.mongo.OntologyMaterializer;
 import com.e2eq.ontology.spi.OntologyEdgeProvider;
 import dev.morphia.Datastore;
@@ -22,6 +25,7 @@ import java.util.*;
  * Drift repair job that:
  * - Prunes derived edges without support (safety: can be run independently).
  * - Re-derives missing edges by scanning current base graph for a given entity class, page by page.
+ * All operations are scoped by DataDomain for proper isolation.
  * Supports: per-realm, per-entity class, pagination via page size + _id cursor token.
  */
 @ApplicationScoped
@@ -81,22 +85,6 @@ public class DriftRepairJob {
         res.realmId = req.realmId;
         res.entityClass = clazz.getName();
 
-        // Phase 1: prune derived without support
-        if (req.prune) {
-            try {
-                if (!req.dryRun) edgeStore.pruneDerivedWithoutSupport(req.realmId);
-                res.pruned = true;
-            } catch (Throwable t) {
-                String msg = "Prune failed: " + t.getMessage();
-                res.warnings.add(msg);
-                Log.warn(msg, t);
-            }
-        }
-
-        if (!req.derive) {
-            return res;
-        }
-
         // Phase 2: re-derive edges for this entity class page-by-page
         Datastore ds = morphiaDataStoreWrapper.getDataStore(req.realmId);
         @SuppressWarnings("unchecked")
@@ -113,11 +101,42 @@ public class DriftRepairJob {
         }
         List<? extends UnversionedBaseModel> page = q.iterator(new FindOptions().limit(pageSize).sort(dev.morphia.query.Sort.ascending("_id"))).toList();
 
+        // Phase 1: prune derived without support (per DataDomain encountered)
+        Set<String> prunedDomains = new HashSet<>();
+        
         String lastIdHex = null;
         int derivedApplied = 0;
-        for (Object entity : page) {
+        for (UnversionedBaseModel entity : page) {
             res.scanned++;
             try {
+                // Extract DataDomain from entity
+                DataDomain dataDomain = entity.getDataDomain();
+                if (dataDomain == null || dataDomain.getOrgRefName() == null || 
+                    dataDomain.getAccountNum() == null || dataDomain.getTenantId() == null) {
+                    // Create fallback DataDomain for entities without proper scoping
+                    dataDomain = createFallbackDataDomain(req.realmId);
+                    Log.warnf("DriftRepair: Entity %s missing DataDomain, using fallback", entity.getClass().getSimpleName());
+                }
+                
+                // Prune derived edges for this DataDomain (once per unique domain)
+                DataDomainInfo dataDomainInfo = DataDomainConverter.toInfo(dataDomain);
+                if (req.prune) {
+                    String domainKey = dataDomain.getOrgRefName() + "/" + dataDomain.getAccountNum() + "/" + 
+                                       dataDomain.getTenantId() + "/" + dataDomain.getDataSegment();
+                    if (prunedDomains.add(domainKey)) {
+                        try {
+                            if (!req.dryRun) edgeStore.pruneDerivedWithoutSupport(dataDomainInfo);
+                            res.pruned = true;
+                        } catch (Throwable t) {
+                            String msg = "Prune failed for domain " + domainKey + ": " + t.getMessage();
+                            res.warnings.add(msg);
+                            Log.warn(msg, t);
+                        }
+                    }
+                }
+                
+                if (!req.derive) continue;
+                
                 String srcId = extractor.idOf(entity);
                 String entityType = extractor.metaOf(clazz).map(m -> m.classId).orElse(clazz.getSimpleName());
                 // Explicit edges come from annotations + providers
@@ -125,7 +144,7 @@ public class DriftRepairJob {
                 for (OntologyEdgeProvider p : providers) {
                     try {
                         if (p.supports(clazz)) {
-                            List<Reasoner.Edge> extra = p.edges(req.realmId, entity);
+                            List<Reasoner.Edge> extra = p.edges(req.realmId, dataDomainInfo, entity);
                             if (extra != null) explicit.addAll(extra);
                         }
                     } catch (Throwable t) {
@@ -133,7 +152,7 @@ public class DriftRepairJob {
                     }
                 }
                 if (!req.dryRun) {
-                    materializer.apply(req.realmId, srcId, entityType, explicit);
+                    materializer.apply(dataDomain, srcId, entityType, explicit);
                     derivedApplied++; // approximate counter; materializer handles diffing
                 }
                 // track cursor
@@ -152,5 +171,18 @@ public class DriftRepairJob {
         res.derivedApplied = derivedApplied;
         res.nextPageToken = lastIdHex; // if null, caller can treat as done
         return res;
+    }
+    
+    /**
+     * Creates a fallback DataDomain for entities without proper scoping.
+     */
+    private DataDomain createFallbackDataDomain(String realmId) {
+        DataDomain dd = new DataDomain();
+        dd.setOrgRefName("ontology");
+        dd.setAccountNum("0000000000");
+        dd.setTenantId(realmId);
+        dd.setOwnerId("system");
+        dd.setDataSegment(0);
+        return dd;
     }
 }

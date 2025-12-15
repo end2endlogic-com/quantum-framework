@@ -1,5 +1,6 @@
 package com.e2eq.ontology.it;
 
+import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.ontology.core.ForwardChainingReasoner;
 import com.e2eq.ontology.core.OntologyRegistry;
 import com.e2eq.ontology.core.Reasoner;
@@ -32,11 +33,20 @@ public class OntologySemanticReasoningIT {
 
     private static final String TENANT = "test-tenant";
     private ForwardChainingReasoner reasoner;
+    private DataDomain testDataDomain;
 
     @BeforeEach
     public void setup() {
         reasoner = new ForwardChainingReasoner();
         edgeRepo.deleteAll();
+        
+        // Create test DataDomain
+        testDataDomain = new DataDomain();
+        testDataDomain.setOrgRefName("test-org");
+        testDataDomain.setAccountNum("1234567890");
+        testDataDomain.setTenantId(TENANT);
+        testDataDomain.setOwnerId("system");
+        testDataDomain.setDataSegment(0);
     }
 
     @Test
@@ -85,14 +95,14 @@ public class OntologySemanticReasoningIT {
         String orgOther = "ORG-OTHER";
 
         // Store explicit edges
-        edgeRepo.upsert(TENANT, "Order", order1, "placedBy", "Customer", cust1, false, null);
-        edgeRepo.upsert(TENANT, "Customer", cust1, "memberOf", "Organization", orgAcme, false, null);
+        edgeRepo.upsert(testDataDomain, "Order", order1, "placedBy", "Customer", cust1, false, null);
+        edgeRepo.upsert(testDataDomain, "Customer", cust1, "memberOf", "Organization", orgAcme, false, null);
 
-        edgeRepo.upsert(TENANT, "Order", order2, "placedBy", "Customer", cust2, false, null);
-        edgeRepo.upsert(TENANT, "Customer", cust2, "memberOf", "Organization", orgAcme, false, null);
+        edgeRepo.upsert(testDataDomain, "Order", order2, "placedBy", "Customer", cust2, false, null);
+        edgeRepo.upsert(testDataDomain, "Customer", cust2, "memberOf", "Organization", orgAcme, false, null);
 
-        edgeRepo.upsert(TENANT, "Order", order3, "placedBy", "Customer", cust3, false, null);
-        edgeRepo.upsert(TENANT, "Customer", cust3, "memberOf", "Organization", orgOther, false, null);
+        edgeRepo.upsert(testDataDomain, "Order", order3, "placedBy", "Customer", cust3, false, null);
+        edgeRepo.upsert(testDataDomain, "Customer", cust3, "memberOf", "Organization", orgOther, false, null);
 
         // Infer placedInOrg edges for each order
         inferAndStoreEdges(order1, "Order", List.of(
@@ -111,7 +121,7 @@ public class OntologySemanticReasoningIT {
         ));
 
         // When: Query for orders placed in ORG-ACME using ontology edges
-        Set<String> orderIdsInAcme = edgeRepo.srcIdsByDst(TENANT, "placedInOrg", orgAcme);
+        Set<String> orderIdsInAcme = edgeRepo.srcIdsByDst(testDataDomain, "placedInOrg", orgAcme);
 
         // Then: Should only return orders from ACME organization
         assertEquals(2, orderIdsInAcme.size(), "Should find 2 orders in ACME org");
@@ -122,25 +132,37 @@ public class OntologySemanticReasoningIT {
 
     @Test
     public void testPolicyEnforcement_MultiTenantIsolation() {
-        // Given: Same organization ID in different tenants
-        String tenant1 = "tenant-1";
-        String tenant2 = "tenant-2";
+        // Given: Same organization ID in different data domains (simulating different tenants)
         String orderId = "ORDER-001";
         String customerId = "CUST-123";
         String orgId = "ORG-SHARED";
 
-        // Store edges in tenant1
-        edgeRepo.upsert(tenant1, "Order", orderId, "placedBy", "Customer", customerId, false, null);
-        edgeRepo.upsert(tenant1, "Customer", customerId, "memberOf", "Organization", orgId, false, null);
+        DataDomain tenant1DataDomain = new DataDomain();
+        tenant1DataDomain.setOrgRefName("org-tenant1");
+        tenant1DataDomain.setAccountNum("1111111111");
+        tenant1DataDomain.setTenantId("tenant-1");
+        tenant1DataDomain.setOwnerId("system");
+        tenant1DataDomain.setDataSegment(0);
 
-        inferAndStoreEdges(tenant1, orderId, "Order", List.of(
+        DataDomain tenant2DataDomain = new DataDomain();
+        tenant2DataDomain.setOrgRefName("org-tenant2");
+        tenant2DataDomain.setAccountNum("2222222222");
+        tenant2DataDomain.setTenantId("tenant-2");
+        tenant2DataDomain.setOwnerId("system");
+        tenant2DataDomain.setDataSegment(0);
+
+        // Store edges in tenant1
+        edgeRepo.upsert(tenant1DataDomain, "Order", orderId, "placedBy", "Customer", customerId, false, null);
+        edgeRepo.upsert(tenant1DataDomain, "Customer", customerId, "memberOf", "Organization", orgId, false, null);
+
+        inferAndStoreEdges(tenant1DataDomain, orderId, "Order", List.of(
                 new Reasoner.Edge(orderId, "Order", "placedBy", customerId, "Customer", false, Optional.empty()),
                 new Reasoner.Edge(customerId, "Customer", "memberOf", orgId, "Organization", false, Optional.empty())
         ));
 
         // When: Query each tenant separately
-        Set<String> tenant1Orders = edgeRepo.srcIdsByDst(tenant1, "placedInOrg", orgId);
-        Set<String> tenant2Orders = edgeRepo.srcIdsByDst(tenant2, "placedInOrg", orgId);
+        Set<String> tenant1Orders = edgeRepo.srcIdsByDst(tenant1DataDomain, "placedInOrg", orgId);
+        Set<String> tenant2Orders = edgeRepo.srcIdsByDst(tenant2DataDomain, "placedInOrg", orgId);
 
         // Then: Tenant isolation is enforced
         assertEquals(1, tenant1Orders.size(), "Tenant1 should have 1 order");
@@ -150,16 +172,16 @@ public class OntologySemanticReasoningIT {
     }
 
     private void inferAndStoreEdges(String entityId, String entityType, List<Reasoner.Edge> explicitEdges) {
-        inferAndStoreEdges(TENANT, entityId, entityType, explicitEdges);
+        inferAndStoreEdges(testDataDomain, entityId, entityType, explicitEdges);
     }
 
-    private void inferAndStoreEdges(String tenant, String entityId, String entityType, List<Reasoner.Edge> explicitEdges) {
-        Reasoner.EntitySnapshot snapshot = new Reasoner.EntitySnapshot(tenant, entityId, entityType, explicitEdges);
+    private void inferAndStoreEdges(DataDomain dataDomain, String entityId, String entityType, List<Reasoner.Edge> explicitEdges) {
+        Reasoner.EntitySnapshot snapshot = new Reasoner.EntitySnapshot(dataDomain.getTenantId(), entityId, entityType, explicitEdges);
         Reasoner.InferenceResult result = reasoner.infer(snapshot, ontologyRegistry);
 
         for (Reasoner.Edge edge : result.addEdges()) {
             Map<String, Object> prov = edge.prov().map(p -> Map.<String, Object>of("rule", p)).orElse(null);
-            edgeRepo.upsert(tenant, edge.srcType(), edge.srcId(), edge.p(), edge.dstType(), edge.dstId(), edge.inferred(), prov);
+            edgeRepo.upsert(dataDomain, edge.srcType(), edge.srcId(), edge.p(), edge.dstType(), edge.dstId(), edge.inferred(), prov);
+        }
     }
-}
 }

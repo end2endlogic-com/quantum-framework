@@ -1,5 +1,7 @@
 package com.e2eq.ontology.mongo;
 
+import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.PostDeleteHook;
 import com.e2eq.framework.model.persistent.morphia.PreDeleteHook;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
@@ -16,9 +18,10 @@ import jakarta.inject.Inject;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Enforces ontology delete-time policies.
+ * Enforces ontology delete-time policies with DataDomain scoping.
  * - beforeDelete: blocks deletion when incoming references exist and policy demands it (BLOCK_IF_REFERENCED)
  * - afterDelete: triggers DELETE cascade for outgoing relations that declare it, and removes residual edges from src
  */
@@ -33,6 +36,9 @@ public class OntologyDeleteHook implements PreDeleteHook, PostDeleteHook {
 
     @Inject
     MorphiaDataStoreWrapper morphiaDataStoreWrapper;
+    
+    // Cache DataDomain during beforeDelete for use in afterDelete
+    private final Map<String, DataDomain> pendingDeleteDataDomains = new ConcurrentHashMap<>();
 
     @Override
     public void beforeDelete(String realmId, Object entity) throws RuntimeException {
@@ -41,9 +47,18 @@ public class OntologyDeleteHook implements PreDeleteHook, PostDeleteHook {
         OntologyClass oc = c.getAnnotation(OntologyClass.class);
         if (oc == null) return; // not an ontology participant
         String id = idOf(entity);
+        
+        // Extract DataDomain from entity
+        DataDomain dataDomain = extractDataDomain(entity, realmId);
+        
+        // Cache for afterDelete
+        if (dataDomain != null && id != null) {
+            pendingDeleteDataDomains.put(id, dataDomain);
+        }
+        
         // If any incoming edges exist and any property declares BLOCK_IF_REFERENCED, block
         Set<String> blockingPredicates = collectBlockingPredicates();
-        List<OntologyEdge> incoming = edgeRepo.findByDst(realmId, id);
+        List<OntologyEdge> incoming = edgeRepo.findByDst(dataDomain, id);
         boolean shouldBlock;
         if (blockingPredicates.isEmpty()) {
             // Conservative default: block when there is any incoming edge
@@ -61,12 +76,48 @@ public class OntologyDeleteHook implements PreDeleteHook, PostDeleteHook {
     public void afterDelete(String realmId, Class<?> entityClass, String idAsString) {
         try {
             String entityType = classIdOf(entityClass);
-            cascadeExecutor.onAfterDelete(realmId, entityType, idAsString);
+            
+            // Get cached DataDomain from beforeDelete, or create fallback
+            DataDomain dataDomain = pendingDeleteDataDomains.remove(idAsString);
+            if (dataDomain == null) {
+                dataDomain = createFallbackDataDomain(realmId);
+                Log.warnf("No cached DataDomain for deleted entity %s, using fallback", idAsString);
+            }
+            
+            // Execute cascade operations with full DataDomain scoping
+            cascadeExecutor.onAfterDelete(dataDomain, entityType, idAsString);
+            
             // Remove any edges that still have this node as src
-            edgeRepo.deleteBySrc(realmId, idAsString, false);
+            edgeRepo.deleteBySrc(dataDomain, idAsString, false);
         } catch (Throwable t) {
             Log.warn("OntologyDeleteHook.afterDelete error: "+t.getMessage());
         }
+    }
+    
+    /**
+     * Extracts DataDomain from an entity, with fallback.
+     */
+    private DataDomain extractDataDomain(Object entity, String realmId) {
+        if (entity instanceof UnversionedBaseModel model) {
+            DataDomain dd = model.getDataDomain();
+            if (dd != null && dd.getOrgRefName() != null && dd.getAccountNum() != null && dd.getTenantId() != null) {
+                return dd;
+            }
+        }
+        return createFallbackDataDomain(realmId);
+    }
+    
+    /**
+     * Creates a fallback DataDomain for backward compatibility.
+     */
+    private DataDomain createFallbackDataDomain(String realmId) {
+        DataDomain dd = new DataDomain();
+        dd.setOrgRefName("ontology");
+        dd.setAccountNum("0000000000");
+        dd.setTenantId(realmId);
+        dd.setOwnerId("system");
+        dd.setDataSegment(0);
+        return dd;
     }
 
     private String classIdOf(Class<?> clazz) {

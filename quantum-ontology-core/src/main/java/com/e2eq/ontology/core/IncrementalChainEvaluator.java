@@ -46,13 +46,19 @@ public final class IncrementalChainEvaluator {
     /**
      * Evaluate property chains around an anchor entityId (as X) and produce derived q(X, Z) edges.
      * Only chains whose predicates intersect changedPredicates are processed.
+     * 
+     * @param dataDomainInfo data domain info for scoping edge queries
+     * @param entityId       the anchor entity ID
+     * @param changedPredicates set of predicates that changed
+     * @param registry       ontology registry
+     * @param store          edge store for querying existing edges
      */
-    public Result evaluate(String tenantId,
+    public Result evaluate(DataDomainInfo dataDomainInfo,
                            String entityId,
                            Set<String> changedPredicates,
                            OntologyRegistry registry,
                            EdgeStore store) {
-        Objects.requireNonNull(tenantId, "tenantId");
+        Objects.requireNonNull(dataDomainInfo, "dataDomainInfo");
         Objects.requireNonNull(entityId, "entityId");
         Objects.requireNonNull(registry, "registry");
         Objects.requireNonNull(store, "store");
@@ -89,7 +95,7 @@ public final class IncrementalChainEvaluator {
                         while (!dq.isEmpty() && visits < MAX_TRANSITIVE_VISITS) {
                             String node = dq.removeFirst();
                             visits++;
-                            Set<String> dsts = queryOutgoing(store, tenantId, node, p, outCache);
+                            Set<String> dsts = queryOutgoing(store, dataDomainInfo, node, p, outCache);
                             for (String y : dsts) {
                                 if (visited.add(y)) dq.addLast(y);
                                 next.add(y);
@@ -97,7 +103,7 @@ public final class IncrementalChainEvaluator {
                         }
                     } else {
                         for (String node : frontier) {
-                            Set<String> dsts = queryOutgoing(store, tenantId, node, p, outCache);
+                            Set<String> dsts = queryOutgoing(store, dataDomainInfo, node, p, outCache);
                             next.addAll(dsts);
                         }
                     }
@@ -131,7 +137,7 @@ public final class IncrementalChainEvaluator {
             // If q is functional, prefer existing explicit value; otherwise choose deterministic one
             if (qDef != null && qDef.functional()) {
                 // existing explicit q(X, ?)
-                String preferred = findExistingExplicit(store, tenantId, entityId, q);
+                String preferred = findExistingExplicit(store, dataDomainInfo, entityId, q);
                 if (preferred != null) {
                     zs.clear();
                     zs.add(preferred);
@@ -149,7 +155,7 @@ public final class IncrementalChainEvaluator {
                 while (!dq.isEmpty()) {
                     String mid = dq.removeFirst();
                     if (!visited.add(mid)) continue;
-                    Set<String> cont = queryOutgoing(store, tenantId, mid, q, outCache);
+                    Set<String> cont = queryOutgoing(store, dataDomainInfo, mid, q, outCache);
                     for (String z2 : cont) {
                         if (!z2.equals(entityId) && zs.add(z2)) dq.addLast(z2);
                     }
@@ -160,7 +166,7 @@ public final class IncrementalChainEvaluator {
             for (String z : zs) {
                 String srcType = qDef != null ? qDef.domain().orElse(null) : null;
                 String dstType = qDef != null ? qDef.range().orElse(null) : null;
-                EdgeRecord rec = new EdgeRecord(tenantId, srcType, entityId, q, dstType, z,
+                EdgeRecord rec = new EdgeRecord(dataDomainInfo, srcType, entityId, q, dstType, z,
                         true, Map.of("derivedBy", "chain"), /*support*/ null, new Date());
                 rec.setDerived(true);
                 rec.setInferred(true);
@@ -182,9 +188,9 @@ public final class IncrementalChainEvaluator {
         return new ArrayList<>(uniq.values());
     }
 
-    private static String findExistingExplicit(EdgeStore store, String tenantId, String src, String q) {
+    private static String findExistingExplicit(EdgeStore store, DataDomainInfo dataDomainInfo, String src, String q) {
         try {
-            List<EdgeRecord> existing = store.listOutgoingBy(tenantId, src, q);
+            List<EdgeRecord> existing = store.listOutgoingBy(dataDomainInfo, src, q);
             if (existing == null) return null;
             // Prefer explicit over derived/inferred
             for (EdgeRecord e : existing) {
@@ -197,12 +203,12 @@ public final class IncrementalChainEvaluator {
         }
     }
 
-    private static Set<String> queryOutgoing(EdgeStore store, String tenantId, String node, String p,
+    private static Set<String> queryOutgoing(EdgeStore store, DataDomainInfo dataDomainInfo, String node, String p,
                                              Map<NodePred, Set<String>> cache) {
         NodePred key = new NodePred(node, p);
         Set<String> cached = cache.get(key);
         if (cached != null) return cached;
-        List<EdgeRecord> rows = store.listOutgoingBy(tenantId, node, p);
+        List<EdgeRecord> rows = store.listOutgoingBy(dataDomainInfo, node, p);
         Set<String> dsts = new HashSet<>();
         if (rows != null) {
             for (EdgeRecord r : rows) dsts.add(r.getDst());

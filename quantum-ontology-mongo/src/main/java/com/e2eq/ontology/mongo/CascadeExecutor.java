@@ -1,5 +1,6 @@
 package com.e2eq.ontology.mongo;
 
+import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.ontology.annotations.CascadeType;
 import com.e2eq.ontology.annotations.OntologyClass;
 import com.e2eq.ontology.annotations.OntologyProperty;
@@ -20,6 +21,7 @@ import java.util.*;
 
 /**
  * Executes cascade policies declared on @OntologyProperty.
+ * All operations are scoped by DataDomain to ensure isolation.
  *
  * Notes:
  * - UNLINK of edges on update/delete is already handled by OntologyMaterializer pruning.
@@ -63,11 +65,17 @@ public class CascadeExecutor {
         }
     }
 
-    public void onAfterPersist(String tenantId, String srcId, Object newEntity, java.util.List<com.e2eq.ontology.model.OntologyEdge> priorExplicit, java.util.List<com.e2eq.ontology.core.Reasoner.Edge> newExplicit) {
+    /**
+     * Handle cascade operations after entity persistence, scoped by DataDomain.
+     */
+    public void onAfterPersist(String realmId, DataDomain dataDomain, String srcId, Object newEntity, 
+                               java.util.List<com.e2eq.ontology.model.OntologyEdge> priorExplicit, 
+                               java.util.List<com.e2eq.ontology.core.Reasoner.Edge> newExplicit) {
         try {
             Class<?> c = newEntity.getClass();
             if (!hasOntologyProperties(c)) return;
-            Log.debugf("[DEBUG_LOG] CascadeExecutor.onAfterPersist type=%s tenant=%s src=%s", c.getName(), tenantId, srcId);
+            Log.debugf("[DEBUG_LOG] CascadeExecutor.onAfterPersist type=%s dataDomain=%s/%s/%s src=%s", 
+                c.getName(), dataDomain.getOrgRefName(), dataDomain.getAccountNum(), dataDomain.getTenantId(), srcId);
             // Build predicate -> refType and ORPHAN_REMOVE policies from annotations
             Map<String, String> predicateToRef = new HashMap<>();
             Set<String> orphanPredicates = new HashSet<>();
@@ -79,7 +87,7 @@ public class CascadeExecutor {
                 priorByP.computeIfAbsent(e.getP(), k -> new HashSet<>()).add(e.getDst());
             }
             Map<String, Set<String>> currentByP = new HashMap<>();
-            for (OntologyEdge e : edgeRepo.findBySrc(tenantId, srcId)) {
+            for (OntologyEdge e : edgeRepo.findBySrc(dataDomain, srcId)) {
                 if (e.isInferred()) continue;
                 currentByP.computeIfAbsent(e.getP(), k -> new HashSet<>()).add(e.getDst());
             }
@@ -91,10 +99,10 @@ public class CascadeExecutor {
                 for (String removedDst : prev) {
                     if (now.contains(removedDst)) continue; // still present after materializer
                     // Only remove if no other sources reference it by same predicate
-                    List<com.e2eq.ontology.model.OntologyEdge> refs = edgeRepo.findByDstAndP(tenantId, removedDst, p);
+                    List<com.e2eq.ontology.model.OntologyEdge> refs = edgeRepo.findByDstAndP(dataDomain, removedDst, p);
                     long otherRefs = refs.stream().filter(ed -> !Objects.equals(ed.getSrc(), srcId)).count();
                     if (otherRefs > 0) continue; // still referenced elsewhere
-                    deleteTarget(tenantId, refType, removedDst);
+                    deleteTarget(realmId, refType, removedDst);
                 }
             }
         } catch (Throwable t) {
@@ -102,8 +110,15 @@ public class CascadeExecutor {
         }
     }
 
-    public void onAfterDelete(String tenantId, String entityType, String entityId) {
-        Log.debugf("[DEBUG_LOG] CascadeExecutor.onAfterDelete type=%s id=%s tenant=%s", entityType, entityId, tenantId);
+    /**
+     * Handle cascade operations after entity deletion, scoped by DataDomain.
+     */
+    public void onAfterDelete(DataDomain dataDomain, String entityType, String entityId) {
+        Log.debugf("[DEBUG_LOG] CascadeExecutor.onAfterDelete type=%s id=%s dataDomain=%s/%s/%s", 
+            entityType, entityId, 
+            dataDomain != null ? dataDomain.getOrgRefName() : null,
+            dataDomain != null ? dataDomain.getAccountNum() : null,
+            dataDomain != null ? dataDomain.getTenantId() : null);
         try {
             Class<?> srcClass = ontologyTypeToClass.getOrDefault(entityType, null);
             if (srcClass == null) {
@@ -113,28 +128,28 @@ public class CascadeExecutor {
             }
             if (srcClass == null) {
                 Log.infof("[DEBUG_LOG] onAfterDelete: no class mapping for %s; running best-effort orphan removal", entityType);
-                bestEffortDeleteOutgoingTargets(tenantId, entityId);
+                bestEffortDeleteOutgoingTargets(dataDomain, entityId);
                 return;
             }
             Map<String, CascadeSpec> specs = buildCascadeSpecs(srcClass);
             if (specs.isEmpty()) {
                 Log.infof("[DEBUG_LOG] onAfterDelete: no cascade specs for %s; running best-effort orphan removal", entityType);
-                bestEffortDeleteOutgoingTargets(tenantId, entityId);
+                bestEffortDeleteOutgoingTargets(dataDomain, entityId);
                 return;
             }
             Log.infof("[DEBUG_LOG] onAfterDelete specs for %s: %s", entityType, specs.keySet());
             Set<String> visited = new HashSet<>();
-            recursiveDelete(tenantId, entityType, entityId, specs, visited, 0);
+            recursiveDelete(dataDomain, entityType, entityId, specs, visited, 0);
         } catch (Throwable t) {
             Log.warn("CascadeExecutor.onAfterDelete error: " + t.getMessage());
         }
     }
 
-    private void recursiveDelete(String tenantId, String srcType, String srcId, Map<String, CascadeSpec> specs, Set<String> visited, int depth) {
+    private void recursiveDelete(DataDomain dataDomain, String srcType, String srcId, Map<String, CascadeSpec> specs, Set<String> visited, int depth) {
         String key = srcType + "#" + srcId;
         if (!visited.add(key)) return; // cycle guard
         // Gather current outgoing explicit edges from src
-        List<OntologyEdge> edges = edgeRepo.findBySrc(tenantId, srcId);
+        List<OntologyEdge> edges = edgeRepo.findBySrc(dataDomain, srcId);
         for (OntologyEdge e : edges) {
             if (e.isInferred()) continue; // only explicit relations drive cascade
             CascadeSpec spec = specs.get(e.getP());
@@ -146,7 +161,7 @@ public class CascadeExecutor {
             if (targetType == null || targetType.isEmpty()) continue;
             // BLOCK_IF_REFERENCED check
             if (spec.blockIfReferenced) {
-                List<OntologyEdge> refs = edgeRepo.findByDstAndP(tenantId, targetId, e.getP());
+                List<OntologyEdge> refs = edgeRepo.findByDstAndP(dataDomain, targetId, e.getP());
                 boolean referencedElsewhere = refs.stream().anyMatch(ed -> !Objects.equals(ed.getSrc(), srcId));
                 if (referencedElsewhere) {
                     Log.debugf("[DEBUG_LOG] Skip DELETE cascade for dst=%s via %s due to other references", targetId, e.getP());
@@ -155,8 +170,8 @@ public class CascadeExecutor {
             }
             if (spec.delete) {
                 // Delete the target entity and its edges recursively
-                deleteTarget(tenantId, targetType, targetId);
-                recursiveDelete(tenantId, targetType, targetId, specsFor(targetType), visited, depth + 1);
+                deleteTarget(dataDomain.getTenantId(), targetType, targetId);
+                recursiveDelete(dataDomain, targetType, targetId, specsFor(targetType), visited, depth + 1);
             }
         }
     }
@@ -311,13 +326,13 @@ public class CascadeExecutor {
         }
     }
 
-    private void bestEffortDeleteOutgoingTargets(String tenantId, String srcId) {
+    private void bestEffortDeleteOutgoingTargets(DataDomain dataDomain, String srcId) {
         try {
-            List<OntologyEdge> edges = edgeRepo.findBySrc(tenantId, srcId);
+            List<OntologyEdge> edges = edgeRepo.findBySrc(dataDomain, srcId);
             for (OntologyEdge e : edges) {
                 if (e.isInferred()) continue; // only explicit relations drive cascade
                 // Use dstType as a best-effort refType for deletion
-                deleteTarget(tenantId, e.getDstType(), e.getDst());
+                deleteTarget(dataDomain.getTenantId(), e.getDstType(), e.getDst());
             }
         } catch (Throwable t) {
             Log.debugf("[DEBUG_LOG] bestEffortDeleteOutgoingTargets error: %s", t.getMessage());

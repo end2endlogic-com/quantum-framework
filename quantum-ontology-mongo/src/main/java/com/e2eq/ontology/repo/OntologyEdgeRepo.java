@@ -6,6 +6,7 @@ import com.e2eq.ontology.core.EdgeRecord;
 import com.e2eq.ontology.model.OntologyEdge;
 import dev.morphia.Datastore;
 import dev.morphia.query.Query;
+import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -18,6 +19,11 @@ import org.bson.Document;
 
 import java.util.*;
 
+/**
+ * Repository for ontology edges with full DataDomain scoping.
+ * All queries and mutations are filtered by the complete DataDomain
+ * (orgRefName, accountNum, tenantId, dataSegment) to ensure isolation.
+ */
 @ApplicationScoped
 public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
 
@@ -30,7 +36,71 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
         return morphiaDataStoreWrapper.getDataStore(defaultRealm);
     }
 
-    public void upsert(String tenantId,
+    /**
+     * Validates that the DataDomain has all required fields for scoping.
+     * @throws IllegalArgumentException if any required field is missing
+     */
+    private void validateDataDomain(DataDomain dd) {
+        if (dd == null) {
+            throw new IllegalArgumentException("DataDomain must be provided");
+        }
+        if (dd.getOrgRefName() == null || dd.getOrgRefName().isBlank()) {
+            throw new IllegalArgumentException("DataDomain.orgRefName must be provided");
+        }
+        if (dd.getAccountNum() == null || dd.getAccountNum().isBlank()) {
+            throw new IllegalArgumentException("DataDomain.accountNum must be provided");
+        }
+        if (dd.getTenantId() == null || dd.getTenantId().isBlank()) {
+            throw new IllegalArgumentException("DataDomain.tenantId must be provided");
+        }
+    }
+
+    /**
+     * Creates Morphia filters for the full DataDomain scope.
+     */
+    private Filter[] dataDomainFilters(DataDomain dd) {
+        return new Filter[] {
+            Filters.eq("dataDomain.orgRefName", dd.getOrgRefName()),
+            Filters.eq("dataDomain.accountNum", dd.getAccountNum()),
+            Filters.eq("dataDomain.tenantId", dd.getTenantId()),
+            Filters.eq("dataDomain.dataSegment", dd.getDataSegment())
+        };
+    }
+
+    /**
+     * Creates a BSON Document filter for the full DataDomain scope.
+     */
+    private Document dataDomainDocFilter(DataDomain dd) {
+        return new Document("dataDomain.orgRefName", dd.getOrgRefName())
+                .append("dataDomain.accountNum", dd.getAccountNum())
+                .append("dataDomain.tenantId", dd.getTenantId())
+                .append("dataDomain.dataSegment", dd.getDataSegment());
+    }
+
+    /**
+     * Creates a BSON Document representation of the DataDomain for upserts.
+     */
+    private Document dataDomainDoc(DataDomain dd) {
+        return new Document("orgRefName", dd.getOrgRefName())
+                .append("accountNum", dd.getAccountNum())
+                .append("tenantId", dd.getTenantId())
+                .append("dataSegment", dd.getDataSegment())
+                .append("ownerId", dd.getOwnerId() != null ? dd.getOwnerId() : "system");
+    }
+
+    /**
+     * Upsert an edge with full DataDomain scoping.
+     *
+     * @param dataDomain full DataDomain context (orgRefName, accountNum, tenantId, dataSegment)
+     * @param srcType    type of source entity
+     * @param src        source entity ID
+     * @param p          predicate/property
+     * @param dstType    type of destination entity
+     * @param dst        destination entity ID
+     * @param inferred   whether this edge is inferred
+     * @param prov       provenance metadata
+     */
+    public void upsert(DataDomain dataDomain,
                        String srcType,
                        String src,
                        String p,
@@ -38,9 +108,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
                        String dst,
                        boolean inferred,
                        Map<String, Object> prov) {
-        if (tenantId == null || tenantId.isBlank()) {
-            throw new IllegalArgumentException("tenantId must be provided");
-        }
+        validateDataDomain(dataDomain);
         if (srcType == null || srcType.isBlank()) {
             throw new IllegalArgumentException("srcType must be provided for edge " + src + "-" + p + "-" + dst);
         }
@@ -56,22 +124,24 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
            return;
         }
         Datastore d = ds();
-        Query<OntologyEdge> q = d.find(OntologyEdge.class)
-                .filter(Filters.eq("dataDomain.tenantId", tenantId))
-                .filter(Filters.eq("src", src))
-                .filter(Filters.eq("p", p))
-                .filter(Filters.eq("dst", dst));
+        Query<OntologyEdge> q = d.find(OntologyEdge.class);
+        for (Filter f : dataDomainFilters(dataDomain)) {
+            q.filter(f);
+        }
+        q.filter(Filters.eq("src", src))
+         .filter(Filters.eq("p", p))
+         .filter(Filters.eq("dst", dst));
         OntologyEdge edge = q.first();
         if (edge == null) {
             edge = new OntologyEdge();
             edge.setRefName(src + "|" + p + "|" + dst);
+            // Clone the dataDomain to avoid mutation issues
             DataDomain dd = new DataDomain();
-            // Populate required DataDomain fields for ontology edges; tests use default realm without user context
-            dd.setTenantId(tenantId);
-            // Derive minimal defaults; in production these should be set from SecurityContext/Seed context
-            if (dd.getOrgRefName() == null) dd.setOrgRefName("ontology");
-            if (dd.getAccountNum() == null) dd.setAccountNum("0000000000");
-            if (dd.getOwnerId() == null) dd.setOwnerId("system");
+            dd.setOrgRefName(dataDomain.getOrgRefName());
+            dd.setAccountNum(dataDomain.getAccountNum());
+            dd.setTenantId(dataDomain.getTenantId());
+            dd.setDataSegment(dataDomain.getDataSegment());
+            dd.setOwnerId(dataDomain.getOwnerId() != null ? dataDomain.getOwnerId() : "system");
             edge.setDataDomain(dd);
             edge.setSrc(src);
             edge.setSrcType(srcType);
@@ -87,21 +157,38 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
         save(d, edge);
     }
 
+    /**
+     * Bulk upsert edge records. Each EdgeRecord must have its DataDomainInfo set.
+     * This method converts DataDomainInfo to DataDomain internally.
+     */
     public void bulkUpsertEdgeRecords(Collection<EdgeRecord> edges) {
         if (edges == null || edges.isEmpty()) return;
         List<WriteModel<OntologyEdge>> ops = new ArrayList<>(edges.size());
         Date now = new Date();
         for (EdgeRecord e : edges) {
-            if (e.getTenantId() == null || e.getSrc() == null || e.getP() == null || e.getDst() == null) continue;
-            Document filter = new Document("dataDomain.tenantId", e.getTenantId())
+            com.e2eq.ontology.core.DataDomainInfo ddi = e.getDataDomainInfo();
+            if (ddi == null) {
+                Log.warnf("Skipping edge with null DataDomainInfo: %s", e);
+                continue;
+            }
+            DataDomain dd = new DataDomain();
+            dd.setOrgRefName(ddi.orgRefName());
+            dd.setAccountNum(ddi.accountNum());
+            dd.setTenantId(ddi.tenantId());
+            dd.setDataSegment(ddi.dataSegment());
+            dd.setOwnerId("system"); // default ownerId for edges
+            if (dd.getOrgRefName() == null || dd.getAccountNum() == null || 
+                dd.getTenantId() == null || e.getSrc() == null || e.getP() == null || e.getDst() == null) {
+                Log.warnf("Skipping edge with incomplete DataDomain or missing src/p/dst: %s", e);
+                continue;
+            }
+            // Full DataDomain-scoped filter for uniqueness
+            Document filter = dataDomainDocFilter(dd)
                     .append("src", e.getSrc())
                     .append("p", e.getP())
                     .append("dst", e.getDst());
             Document setOnInsert = new Document("refName", e.getSrc() + "|" + e.getP() + "|" + e.getDst())
-                    .append("dataDomain", new Document("tenantId", e.getTenantId())
-                            .append("orgRefName", "ontology")
-                            .append("accountNum", "0000000000")
-                            .append("ownerId", "system"))
+                    .append("dataDomain", dataDomainDoc(dd))
                     .append("src", e.getSrc())
                     .append("srcType", e.getSrcType())
                     .append("p", e.getP())
@@ -128,11 +215,17 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
         }
     }
 
+    /**
+     * Upsert multiple edges. Each edge must have its DataDomain set.
+     */
     public void upsertMany(Collection<?> edgesOrDocs) {
         if (edgesOrDocs == null || edgesOrDocs.isEmpty()) return;
         for (Object o : edgesOrDocs) {
             if (o instanceof OntologyEdge e) {
-                String tenantId = e.getDataDomain() != null ? e.getDataDomain().getTenantId() : null;
+                DataDomain dd = e.getDataDomain();
+                if (dd == null) {
+                    throw new IllegalArgumentException("DataDomain must be set on OntologyEdge");
+                }
                 if (Boolean.TRUE.equals(e.isDerived())) {
                     List<EdgeRecord.Support> sup = null;
                     if (e.getSupport() != null) {
@@ -141,12 +234,24 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
                             sup.add(new EdgeRecord.Support(s.getRuleId(), s.getPathEdgeIds()));
                         }
                     }
-                    upsertDerived(tenantId, e.getSrcType(), e.getSrc(), e.getP(), e.getDstType(), e.getDst(), sup, e.getProv());
+                    upsertDerived(dd, e.getSrcType(), e.getSrc(), e.getP(), e.getDstType(), e.getDst(), sup, e.getProv());
                 } else {
-                    upsert(tenantId, e.getSrcType(), e.getSrc(), e.getP(), e.getDstType(), e.getDst(), e.isInferred(), e.getProv());
+                    upsert(dd, e.getSrcType(), e.getSrc(), e.getP(), e.getDstType(), e.getDst(), e.isInferred(), e.getProv());
                 }
             } else if (o instanceof org.bson.Document d) {
-                String tenantId = d.getString("tenantId");
+                // Extract DataDomain from document - could be nested or flat
+                @SuppressWarnings("unchecked")
+                Map<String, Object> ddDoc = (Map<String, Object>) d.get("dataDomain");
+                DataDomain dd = new DataDomain();
+                if (ddDoc != null) {
+                    dd.setOrgRefName((String) ddDoc.get("orgRefName"));
+                    dd.setAccountNum((String) ddDoc.get("accountNum"));
+                    dd.setTenantId((String) ddDoc.get("tenantId"));
+                    dd.setDataSegment(ddDoc.get("dataSegment") != null ? ((Number) ddDoc.get("dataSegment")).intValue() : 0);
+                    dd.setOwnerId((String) ddDoc.getOrDefault("ownerId", "system"));
+                } else {
+                    throw new IllegalArgumentException("dataDomain must be provided in edge document");
+                }
                 String srcType = d.getString("srcType");
                 String src = d.getString("src");
                 String p = d.getString("p");
@@ -155,8 +260,8 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
                 boolean inferred = Boolean.TRUE.equals(d.getBoolean("inferred"));
                 @SuppressWarnings("unchecked")
                 Map<String, Object> prov = (Map<String, Object>) d.getOrDefault("prov", Map.of());
-                if (tenantId == null || srcType == null || dstType == null) {
-                    throw new IllegalArgumentException("tenantId, srcType, and dstType must be provided in edge document");
+                if (srcType == null || dstType == null) {
+                    throw new IllegalArgumentException("srcType and dstType must be provided in edge document");
                 }
                 if (Boolean.TRUE.equals(d.getBoolean("derived"))) {
                     @SuppressWarnings("unchecked")
@@ -171,122 +276,177 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
                             support.add(new EdgeRecord.Support(ruleId, pathEdgeIds));
                         }
                     }
-                    upsertDerived(tenantId, srcType, src, p, dstType, dst, support, prov);
+                    upsertDerived(dd, srcType, src, p, dstType, dst, support, prov);
                 } else {
-                    upsert(tenantId, srcType, src, p, dstType, dst, inferred, prov);
+                    upsert(dd, srcType, src, p, dstType, dst, inferred, prov);
                 }
             }
         }
     }
 
-    public void deleteBySrc(String tenantId, String src, boolean inferredOnly) {
-        Query<OntologyEdge> q = ds().find(OntologyEdge.class)
-                .filter(Filters.eq("dataDomain.tenantId", tenantId))
-                .filter(Filters.eq("src", src));
+    /**
+     * Delete edges by source within the given DataDomain.
+     */
+    public void deleteBySrc(DataDomain dataDomain, String src, boolean inferredOnly) {
+        validateDataDomain(dataDomain);
+        Query<OntologyEdge> q = ds().find(OntologyEdge.class);
+        for (Filter f : dataDomainFilters(dataDomain)) {
+            q.filter(f);
+        }
+        q.filter(Filters.eq("src", src));
         if (inferredOnly) q.filter(Filters.eq("inferred", true));
         q.delete();
     }
 
-    public void deleteBySrcAndPredicate(String tenantId, String src, String p) {
-        ds().find(OntologyEdge.class)
-                .filter(Filters.eq("dataDomain.tenantId", tenantId))
-                .filter(Filters.eq("src", src))
-                .filter(Filters.eq("p", p))
-                .delete();
+    /**
+     * Delete edges by source and predicate within the given DataDomain.
+     */
+    public void deleteBySrcAndPredicate(DataDomain dataDomain, String src, String p) {
+        validateDataDomain(dataDomain);
+        Query<OntologyEdge> q = ds().find(OntologyEdge.class);
+        for (Filter f : dataDomainFilters(dataDomain)) {
+            q.filter(f);
+        }
+        q.filter(Filters.eq("src", src))
+         .filter(Filters.eq("p", p))
+         .delete();
     }
 
-    public void deleteInferredBySrcNotIn(String tenantId, String src, String p, Collection<String> dstKeep) {
-        ds().find(OntologyEdge.class)
-                .filter(Filters.eq("dataDomain.tenantId", tenantId))
-                .filter(Filters.eq("src", src))
-                .filter(Filters.eq("p", p))
-                .filter(Filters.eq("inferred", true))
-                .filter(Filters.nin("dst", dstKeep))
-                .delete();
+    /**
+     * Delete inferred edges from source with predicate where destination is not in keep set.
+     */
+    public void deleteInferredBySrcNotIn(DataDomain dataDomain, String src, String p, Collection<String> dstKeep) {
+        validateDataDomain(dataDomain);
+        Query<OntologyEdge> q = ds().find(OntologyEdge.class);
+        for (Filter f : dataDomainFilters(dataDomain)) {
+            q.filter(f);
+        }
+        q.filter(Filters.eq("src", src))
+         .filter(Filters.eq("p", p))
+         .filter(Filters.eq("inferred", true))
+         .filter(Filters.nin("dst", dstKeep))
+         .delete();
     }
 
-    public void deleteExplicitBySrcNotIn(String tenantId, String src, String p, Collection<String> dstKeep) {
+    /**
+     * Delete explicit edges from source with predicate where destination is not in keep set.
+     */
+    public void deleteExplicitBySrcNotIn(DataDomain dataDomain, String src, String p, Collection<String> dstKeep) {
+        validateDataDomain(dataDomain);
         // Treat explicit edges as those where inferred != true (handles nulls)
-        ds().find(OntologyEdge.class)
-                .filter(Filters.eq("dataDomain.tenantId", tenantId))
-                .filter(Filters.eq("src", src))
-                .filter(Filters.eq("p", p))
-                .filter(Filters.ne("inferred", true))
-                .filter(Filters.nin("dst", dstKeep))
-                .delete();
+        Query<OntologyEdge> q = ds().find(OntologyEdge.class);
+        for (Filter f : dataDomainFilters(dataDomain)) {
+            q.filter(f);
+        }
+        q.filter(Filters.eq("src", src))
+         .filter(Filters.eq("p", p))
+         .filter(Filters.ne("inferred", true))
+         .filter(Filters.nin("dst", dstKeep))
+         .delete();
     }
 
-    public Set<String> srcIdsByDst(String tenantId, String p, String dst) {
+    /**
+     * Find source IDs for edges with given predicate pointing to destination, within the DataDomain.
+     */
+    public Set<String> srcIdsByDst(DataDomain dataDomain, String p, String dst) {
+        validateDataDomain(dataDomain);
         Set<String> ids = new HashSet<>();
-        for (OntologyEdge e : ds().find(OntologyEdge.class)
-                .filter(Filters.eq("dataDomain.tenantId", tenantId))
-                .filter(Filters.eq("p", p))
-                .filter(Filters.eq("dst", dst))) {
+        Query<OntologyEdge> q = ds().find(OntologyEdge.class);
+        for (Filter f : dataDomainFilters(dataDomain)) {
+            q.filter(f);
+        }
+        for (OntologyEdge e : q.filter(Filters.eq("p", p)).filter(Filters.eq("dst", dst))) {
             ids.add(e.getSrc());
         }
         return ids;
     }
 
-    public Set<String> srcIdsByDstIn(String tenantId, String p, Collection<String> dstIds) {
+    /**
+     * Find source IDs for edges with given predicate pointing to any destination in set, within the DataDomain.
+     */
+    public Set<String> srcIdsByDstIn(DataDomain dataDomain, String p, Collection<String> dstIds) {
         if (dstIds == null || dstIds.isEmpty()) return Set.of();
+        validateDataDomain(dataDomain);
         Set<String> ids = new HashSet<>();
-        for (OntologyEdge e : ds().find(OntologyEdge.class)
-                .filter(Filters.eq("dataDomain.tenantId", tenantId))
-                .filter(Filters.eq("p", p))
-                .filter(Filters.in("dst", dstIds))) {
+        Query<OntologyEdge> q = ds().find(OntologyEdge.class);
+        for (Filter f : dataDomainFilters(dataDomain)) {
+            q.filter(f);
+        }
+        for (OntologyEdge e : q.filter(Filters.eq("p", p)).filter(Filters.in("dst", dstIds))) {
             ids.add(e.getSrc());
         }
         return ids;
     }
 
-    public Map<String, Set<String>> srcIdsByDstGrouped(String tenantId, String p, Collection<String> dstIds) {
+    /**
+     * Group source IDs by destination for edges with given predicate, within the DataDomain.
+     */
+    public Map<String, Set<String>> srcIdsByDstGrouped(DataDomain dataDomain, String p, Collection<String> dstIds) {
         Map<String, Set<String>> map = new HashMap<>();
         if (dstIds == null || dstIds.isEmpty()) return map;
-        for (OntologyEdge e : ds().find(OntologyEdge.class)
-                .filter(Filters.eq("dataDomain.tenantId", tenantId))
-                .filter(Filters.eq("p", p))
-                .filter(Filters.in("dst", dstIds))
-                .iterator().toList()) {
+        validateDataDomain(dataDomain);
+        Query<OntologyEdge> q = ds().find(OntologyEdge.class);
+        for (Filter f : dataDomainFilters(dataDomain)) {
+            q.filter(f);
+        }
+        for (OntologyEdge e : q.filter(Filters.eq("p", p)).filter(Filters.in("dst", dstIds)).iterator().toList()) {
             map.computeIfAbsent(e.getDst(), k -> new HashSet<>()).add(e.getSrc());
         }
         return map;
     }
 
-    public List<OntologyEdge> findBySrc(String tenantId, String src) {
-        return ds().find(OntologyEdge.class)
-                .filter(Filters.eq("dataDomain.tenantId", tenantId))
-                .filter(Filters.eq("src", src))
-                .iterator()
-                .toList();
+    /**
+     * Find all edges from the given source within the DataDomain.
+     */
+    public List<OntologyEdge> findBySrc(DataDomain dataDomain, String src) {
+        validateDataDomain(dataDomain);
+        Query<OntologyEdge> q = ds().find(OntologyEdge.class);
+        for (Filter f : dataDomainFilters(dataDomain)) {
+            q.filter(f);
+        }
+        return q.filter(Filters.eq("src", src)).iterator().toList();
     }
 
-    public List<OntologyEdge> findByDst(String tenantId, String dst) {
-        return ds().find(OntologyEdge.class)
-                .filter(Filters.eq("dataDomain.tenantId", tenantId))
-                .filter(Filters.eq("dst", dst))
-                .iterator()
-                .toList();
+    /**
+     * Find all edges pointing to the given destination within the DataDomain.
+     */
+    public List<OntologyEdge> findByDst(DataDomain dataDomain, String dst) {
+        validateDataDomain(dataDomain);
+        Query<OntologyEdge> q = ds().find(OntologyEdge.class);
+        for (Filter f : dataDomainFilters(dataDomain)) {
+            q.filter(f);
+        }
+        return q.filter(Filters.eq("dst", dst)).iterator().toList();
     }
 
-    public List<OntologyEdge> findByDstAndP(String tenantId, String dst, String p) {
-        return ds().find(OntologyEdge.class)
-                .filter(Filters.eq("dataDomain.tenantId", tenantId))
-                .filter(Filters.eq("dst", dst))
-                .filter(Filters.eq("p", p))
-                .iterator()
-                .toList();
+    /**
+     * Find edges with given predicate pointing to destination, within the DataDomain.
+     */
+    public List<OntologyEdge> findByDstAndP(DataDomain dataDomain, String dst, String p) {
+        validateDataDomain(dataDomain);
+        Query<OntologyEdge> q = ds().find(OntologyEdge.class);
+        for (Filter f : dataDomainFilters(dataDomain)) {
+            q.filter(f);
+        }
+        return q.filter(Filters.eq("dst", dst)).filter(Filters.eq("p", p)).iterator().toList();
     }
 
-    public List<OntologyEdge> findBySrcAndP(String tenantId, String src, String p) {
-        return ds().find(OntologyEdge.class)
-                .filter(Filters.eq("dataDomain.tenantId", tenantId))
-                .filter(Filters.eq("src", src))
-                .filter(Filters.eq("p", p))
-                .iterator()
-                .toList();
+    /**
+     * Find edges from source with given predicate, within the DataDomain.
+     */
+    public List<OntologyEdge> findBySrcAndP(DataDomain dataDomain, String src, String p) {
+        validateDataDomain(dataDomain);
+        Query<OntologyEdge> q = ds().find(OntologyEdge.class);
+        for (Filter f : dataDomainFilters(dataDomain)) {
+            q.filter(f);
+        }
+        return q.filter(Filters.eq("src", src)).filter(Filters.eq("p", p)).iterator().toList();
     }
 
-    public void upsertDerived(String tenantId,
+    /**
+     * Upsert a derived edge with support provenance, scoped by DataDomain.
+     */
+    public void upsertDerived(DataDomain dataDomain,
                               String srcType,
                               String src,
                               String p,
@@ -294,9 +454,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
                               String dst,
                               List<EdgeRecord.Support> support,
                               Map<String, Object> prov) {
-        if (tenantId == null || tenantId.isBlank()) {
-            throw new IllegalArgumentException("tenantId must be provided");
-        }
+        validateDataDomain(dataDomain);
         if (srcType == null || srcType.isBlank()) {
             throw new IllegalArgumentException("srcType must be provided for edge " + src + "-" + p + "-" + dst);
         }
@@ -312,20 +470,24 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
             return;
         }
         Datastore d = ds();
-        Query<OntologyEdge> q = d.find(OntologyEdge.class)
-                .filter(Filters.eq("dataDomain.tenantId", tenantId))
-                .filter(Filters.eq("src", src))
-                .filter(Filters.eq("p", p))
-                .filter(Filters.eq("dst", dst));
+        Query<OntologyEdge> q = d.find(OntologyEdge.class);
+        for (Filter f : dataDomainFilters(dataDomain)) {
+            q.filter(f);
+        }
+        q.filter(Filters.eq("src", src))
+         .filter(Filters.eq("p", p))
+         .filter(Filters.eq("dst", dst));
         OntologyEdge edge = q.first();
         if (edge == null) {
             edge = new OntologyEdge();
             edge.setRefName(src + "|" + p + "|" + dst);
+            // Clone the dataDomain
             DataDomain dd = new DataDomain();
-            dd.setTenantId(tenantId);
-            if (dd.getOrgRefName() == null) dd.setOrgRefName("ontology");
-            if (dd.getAccountNum() == null) dd.setAccountNum("0000000000");
-            if (dd.getOwnerId() == null) dd.setOwnerId("system");
+            dd.setOrgRefName(dataDomain.getOrgRefName());
+            dd.setAccountNum(dataDomain.getAccountNum());
+            dd.setTenantId(dataDomain.getTenantId());
+            dd.setDataSegment(dataDomain.getDataSegment());
+            dd.setOwnerId(dataDomain.getOwnerId() != null ? dataDomain.getOwnerId() : "system");
             edge.setDataDomain(dd);
             edge.setSrc(src);
             edge.setSrcType(srcType);
@@ -354,9 +516,13 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
         save(d, edge);
     }
 
-    public void pruneDerivedWithoutSupport(String tenantId) {
+    /**
+     * Remove derived edges whose support is empty or missing, within the DataDomain.
+     */
+    public void pruneDerivedWithoutSupport(DataDomain dataDomain) {
+        validateDataDomain(dataDomain);
         // Delete derived edges whose support is null or empty
-        org.bson.Document filter = new org.bson.Document("dataDomain.tenantId", tenantId)
+        org.bson.Document filter = dataDomainDocFilter(dataDomain)
                 .append("derived", true)
                 .append("$or", List.of(
                         new org.bson.Document("support", new org.bson.Document("$exists", false)),
@@ -366,10 +532,11 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
     }
 
     /**
-     * Delete all derived edges for the given tenant. Used by force reindex.
+     * Delete all derived edges within the DataDomain. Used by force reindex.
      */
-    public void deleteDerivedByTenant(String tenantId) {
-        org.bson.Document filter = new org.bson.Document("dataDomain.tenantId", tenantId)
+    public void deleteDerivedByDataDomain(DataDomain dataDomain) {
+        validateDataDomain(dataDomain);
+        org.bson.Document filter = dataDomainDocFilter(dataDomain)
                 .append("derived", true);
         ds().getCollection(OntologyEdge.class).deleteMany(filter);
     }
