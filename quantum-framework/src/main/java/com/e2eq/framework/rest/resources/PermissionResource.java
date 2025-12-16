@@ -13,6 +13,8 @@ import com.e2eq.framework.model.persistent.morphia.IdentityRoleResolver;
 import com.e2eq.framework.securityrules.RuleContext;
 import com.e2eq.framework.util.ExceptionLoggingUtils;
 import com.e2eq.framework.util.SecurityUtils;
+import com.e2eq.framework.annotations.FunctionalMapping;
+import com.e2eq.framework.annotations.FunctionalAction;
 import dev.morphia.MorphiaDatastore;
 import dev.morphia.mapping.codec.pojo.EntityModel;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -21,6 +23,7 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import io.quarkus.security.Authenticated;
 
 import java.lang.reflect.Method;
 import java.util.*;
@@ -29,6 +32,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 
 @Path("/system/permissions")
+@FunctionalMapping(area = "SYSTEM", domain = "PERMISSIONS")
 public class PermissionResource {
 
    @Inject
@@ -186,6 +190,7 @@ public class PermissionResource {
 
    @POST
    @Path("/role-provenance")
+   @FunctionalAction("VIEW")
    @Consumes(MediaType.APPLICATION_JSON)
    @Produces(MediaType.APPLICATION_JSON)
    public Response roleProvenance(RoleProvenanceRequest req) {
@@ -394,6 +399,7 @@ public class PermissionResource {
 
    @GET
    @Path("/entities")
+   @FunctionalAction("VIEW")
    @Produces(MediaType.APPLICATION_JSON)
    public Response entities() {
       return Response.ok(getInfoList()).build();
@@ -401,6 +407,7 @@ public class PermissionResource {
 
    @GET
    @Path("/fd")
+   @FunctionalAction("VIEW")
    @Produces(MediaType.APPLICATION_JSON)
    public Response functionalDomains(@QueryParam("includeActions") @DefaultValue("false") boolean includeActions) {
       // Unified structure: area -> domain -> actions (case-insensitive)
@@ -433,7 +440,7 @@ public class PermissionResource {
             Set<String> actions = ensureAreaDomain(areaDomainActions, area, domain);
             if (includeActions) {
                if (fd.getFunctionalActions() != null) {
-                  for (FunctionalAction a : fd.getFunctionalActions()) {
+                  for (com.e2eq.framework.model.security.FunctionalAction a : fd.getFunctionalActions()) {
                      if (a == null) continue;
                      String ref = safe(a.getRefName());
                      if (!ref.isEmpty()) actions.add(ref);
@@ -511,6 +518,8 @@ public class PermissionResource {
 
    @POST
    @Path("/check")
+   @FunctionalAction("CHECK")
+   @Authenticated
    @Consumes(MediaType.APPLICATION_JSON)
    @Produces(MediaType.APPLICATION_JSON)
    public Response check(CheckRequest req) {
@@ -626,6 +635,8 @@ public class PermissionResource {
 
    @POST
    @Path("/check-with-index")
+   @FunctionalAction("VIEW")
+   @Authenticated
    @Consumes(MediaType.APPLICATION_JSON)
    @Produces(MediaType.APPLICATION_JSON)
    public Response checkWithIndex(CheckRequest req) {
@@ -710,6 +721,8 @@ public class PermissionResource {
 
    @POST
    @Path("/fd/evaluate")
+   @FunctionalAction("EVALUATE")
+   @Authenticated
    @Consumes(MediaType.APPLICATION_JSON)
    @Produces(MediaType.APPLICATION_JSON)
    public Response evaluateFunctionalAccess(@QueryParam("useIndex") @DefaultValue("true") boolean useIndex, EvaluateRequest req) {
@@ -778,7 +791,7 @@ public class PermissionResource {
             if (a.isEmpty() || d.isEmpty()) continue;
             Set<String> actions = ensureAreaDomain(discovered, a, d);
             if (fd.getFunctionalActions() != null) {
-               for (FunctionalAction fa : fd.getFunctionalActions()) {
+               for (com.e2eq.framework.model.security.FunctionalAction fa : fd.getFunctionalActions()) {
                   if (fa == null) continue;
                   String ref = safe(fa.getRefName());
                   if (!ref.isEmpty()) actions.add(ref);

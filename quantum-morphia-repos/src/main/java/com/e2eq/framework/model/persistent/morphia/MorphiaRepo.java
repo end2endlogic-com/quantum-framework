@@ -1923,9 +1923,10 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
         Map<DataDomain, UIActionList> actions = new HashMap<>();
 
-        boolean firstIteration = true;
-
         for (T model : collection.getRows()) {
+            // First, filter this model's actions based on permissions
+            fillUIActions(model);
+            
             DataDomain domain = model.getDataDomain();
             UIActionList modelActions = model.getActionList();
 
