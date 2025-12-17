@@ -15,6 +15,7 @@ import com.e2eq.framework.util.ExceptionLoggingUtils;
 import com.e2eq.framework.util.SecurityUtils;
 import dev.morphia.MorphiaDatastore;
 import dev.morphia.mapping.codec.pojo.EntityModel;
+import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.enterprise.inject.Default;
 import jakarta.inject.Inject;
@@ -22,6 +23,7 @@ import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
+import javax.annotation.security.PermitAll;
 import java.lang.reflect.Method;
 import java.util.*;
 import java.io.BufferedReader;
@@ -511,6 +513,7 @@ public class PermissionResource {
 
    @POST
    @Path("/check")
+   @Authenticated
    @Consumes(MediaType.APPLICATION_JSON)
    @Produces(MediaType.APPLICATION_JSON)
    public Response check(CheckRequest req) {
@@ -626,6 +629,7 @@ public class PermissionResource {
 
    @POST
    @Path("/check-with-index")
+   @Authenticated
    @Consumes(MediaType.APPLICATION_JSON)
    @Produces(MediaType.APPLICATION_JSON)
    public Response checkWithIndex(CheckRequest req) {
@@ -710,6 +714,7 @@ public class PermissionResource {
 
    @POST
    @Path("/fd/evaluate")
+   @Authenticated
    @Consumes(MediaType.APPLICATION_JSON)
    @Produces(MediaType.APPLICATION_JSON)
    public Response evaluateFunctionalAccess(@QueryParam("useIndex") @DefaultValue("true") boolean useIndex, EvaluateRequest req) {
