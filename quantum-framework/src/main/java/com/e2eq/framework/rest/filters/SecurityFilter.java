@@ -115,6 +115,12 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
         ResourceContext resourceContext;
         PrincipalContext principalContext;
+        // Initialize per-request permission cache (if enabled)
+        try {
+            if (ruleContext != null) {
+                com.e2eq.framework.securityrules.RuleContext.initRequestCacheIfAbsent();
+            }
+        } catch (Throwable ignored) {}
 
         // we ignore the hello endpoint because it should never require authroization
         // and is used for heart beats, so we just let it go through
@@ -167,6 +173,10 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         public void filter(ContainerRequestContext requestContext, jakarta.ws.rs.container.ContainerResponseContext responseContext) throws IOException {
             // Clear ThreadLocal contexts after a response is produced
             SecurityContext.clear();
+            // Clear per-request permission cache
+            try {
+                com.e2eq.framework.securityrules.RuleContext.clearRequestCache();
+            } catch (Throwable ignored) {}
         }
 
 
@@ -783,25 +793,14 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         }
 
         try {
-            // Check method-level annotation first (takes precedence)
-            if (resourceInfo.getResourceMethod() != null) {
-                Authenticated methodAnnotation = resourceInfo.getResourceMethod().getAnnotation(Authenticated.class);
-                if (methodAnnotation != null) {
-                    return true;
-                }
-            }
-
-            // Check class-level annotation
-            if (resourceInfo.getResourceClass() != null) {
-                Authenticated classAnnotation = resourceInfo.getResourceClass().getAnnotation(Authenticated.class);
-                if (classAnnotation != null) {
-                    return true;
-                }
+            // Jandex-first lookup with reflection fallback
+            if (hasAnnotationJandexFirst(resourceInfo.getResourceClass(), resourceInfo.getResourceMethod(),
+                    io.quarkus.security.Authenticated.class.getName())) {
+                return true;
             }
         } catch (Exception e) {
-            // If we can't determine the annotation, err on the side of security and proceed with checks
             if (Log.isDebugEnabled()) {
-                Log.debugf("Error checking @Authenticated annotation: %s", e.getMessage());
+                Log.debugf("Error checking @Authenticated via Jandex: %s", e.getMessage());
             }
         }
 
@@ -820,29 +819,105 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         }
 
         try {
-            // Check method-level annotation first (takes precedence)
-            if (resourceInfo.getResourceMethod() != null) {
-                PermitAll methodAnnotation = resourceInfo.getResourceMethod().getAnnotation(PermitAll.class);
-                if (methodAnnotation != null) {
-                    return true;
-                }
-            }
-
-            // Check class-level annotation
-            if (resourceInfo.getResourceClass() != null) {
-                PermitAll classAnnotation = resourceInfo.getResourceClass().getAnnotation(PermitAll.class);
-                if (classAnnotation != null) {
-                    return true;
-                }
+            // Jandex-first lookup with reflection fallback
+            if (hasAnnotationJandexFirst(resourceInfo.getResourceClass(), resourceInfo.getResourceMethod(),
+                    jakarta.annotation.security.PermitAll.class.getName())) {
+                return true;
             }
         } catch (Exception e) {
-            // If we can't determine the annotation, err on the side of security and proceed with checks
             if (Log.isDebugEnabled()) {
-                Log.debugf("Error checking @PermitAll annotation: %s", e.getMessage());
+                Log.debugf("Error checking @PermitAll via Jandex: %s", e.getMessage());
             }
         }
 
         return false;
+    }
+
+    // --- Jandex-first annotation detection with reflection fallback and small caches ---
+    private static final java.util.concurrent.ConcurrentMap<String, Boolean> ANNOTATION_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+    private static volatile org.jboss.jandex.IndexView JANDEX_INDEX;
+
+    private static org.jboss.jandex.IndexView getJandexIndexIfAvailable() {
+        if (JANDEX_INDEX != null) return JANDEX_INDEX;
+        synchronized (SecurityFilter.class) {
+            if (JANDEX_INDEX != null) return JANDEX_INDEX;
+            try {
+                ClassLoader cl = Thread.currentThread().getContextClassLoader();
+                java.io.InputStream is = (cl != null)
+                        ? cl.getResourceAsStream("META-INF/jandex.idx")
+                        : SecurityFilter.class.getClassLoader().getResourceAsStream("META-INF/jandex.idx");
+                if (is != null) {
+                    try (java.io.InputStream in = is) {
+                        JANDEX_INDEX = new org.jboss.jandex.IndexReader(in).read();
+                    }
+                }
+            } catch (Throwable t) {
+                // ignore; fallback to reflection
+            }
+            return JANDEX_INDEX;
+        }
+    }
+
+    private boolean hasAnnotationJandexFirst(Class<?> resourceClass, java.lang.reflect.Method method, String annotationFqn) {
+        if (resourceClass == null) return false;
+        String cacheKey = buildAnnotationCacheKey(resourceClass, method, annotationFqn);
+        Boolean cached = ANNOTATION_CACHE.get(cacheKey);
+        if (cached != null) return cached;
+
+        boolean present = false;
+
+        org.jboss.jandex.IndexView index = getJandexIndexIfAvailable();
+        if (index != null) {
+            try {
+                org.jboss.jandex.DotName ann = org.jboss.jandex.DotName.createSimple(annotationFqn);
+                org.jboss.jandex.ClassInfo ci = index.getClassByName(org.jboss.jandex.DotName.createSimple(resourceClass.getName()));
+                if (ci != null) {
+                    // method-level first
+                    if (method != null) {
+                        java.util.List<org.jboss.jandex.MethodInfo> methods = ci.methods();
+                        for (org.jboss.jandex.MethodInfo mi : methods) {
+                            if (mi.name().equals(method.getName()) && mi.parameterTypes().size() == method.getParameterCount()) {
+                                if (mi.hasAnnotation(ann)) { present = true; break; }
+                            }
+                        }
+                    }
+                    // class-level if not found
+                    if (!present) {
+                        if (ci.hasAnnotation(ann)) {
+                            present = true;
+                        }
+                    }
+                }
+            } catch (Throwable t) {
+                // ignore and fall back to reflection
+            }
+        }
+
+        if (!present) {
+            // Fallback: reflection
+            if (method != null) {
+                try {
+                    if (method.getAnnotation((Class)Class.forName(annotationFqn)) != null) {
+                        present = true;
+                    }
+                } catch (ClassNotFoundException ignored) { }
+            }
+            if (!present) {
+                try {
+                    if (resourceClass.getAnnotation((Class)Class.forName(annotationFqn)) != null) {
+                        present = true;
+                    }
+                } catch (ClassNotFoundException ignored) { }
+            }
+        }
+
+        ANNOTATION_CACHE.putIfAbsent(cacheKey, present);
+        return present;
+    }
+
+    private static String buildAnnotationCacheKey(Class<?> clazz, java.lang.reflect.Method method, String annFqn) {
+        String m = (method == null) ? "<class>" : method.getName() + "#" + method.getParameterCount();
+        return clazz.getName() + "|" + m + "|" + annFqn;
     }
     public boolean matchesRealmFilter(String realm, String filterPattern) {
         if (filterPattern == null || realm == null)
