@@ -1657,7 +1657,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         }
         ops.add(UpdateOperators.set("auditInfo.lastUpdateTs", new Date()));
         ops.add(UpdateOperators.set("auditInfo.lastUpdateIdentity", securityIdentity.getPrincipal().getName()));
-        
+
         UpdateOperator[] arr = ops.toArray(new UpdateOperator[0]);
         UpdateResult res = datastore.find(getPersistentClass()).filter(qfilters)
                 .update(new UpdateOptions().multi(true), arr[0], Arrays.copyOfRange(arr, 1, arr.length));
@@ -1701,7 +1701,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         }
         ops.add(UpdateOperators.set("auditInfo.lastUpdateTs", new Date()));
         ops.add(UpdateOperators.set("auditInfo.lastUpdateIdentity", securityIdentity.getPrincipal().getName()));
-        
+
         UpdateOperator[] arr = ops.toArray(new UpdateOperator[0]);
         UpdateResult res = datastore.find(getPersistentClass()).filter(qfilters)
                 .update(new UpdateOptions().multi(true), arr[0], Arrays.copyOfRange(arr, 1, arr.length));
@@ -1763,7 +1763,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         }
         ops.add(UpdateOperators.set("auditInfo.lastUpdateTs", new Date()));
         ops.add(UpdateOperators.set("auditInfo.lastUpdateIdentity", securityIdentity.getPrincipal().getName()));
-        
+
         UpdateOperator[] arr = ops.toArray(new UpdateOperator[0]);
         UpdateResult res = datastore.find(getPersistentClass()).filter(qfilters)
                 .update(new UpdateOptions().multi(true), arr[0], Arrays.copyOfRange(arr, 1, arr.length));
@@ -1878,35 +1878,34 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
             UIActionList mactions = new UIActionList(model.calculateStateBasedUIActions().size());
             UIActionList alist = model.calculateStateBasedUIActions();
 
-            alist.forEach((UIAction action) -> {
+            // Resolve functional mapping once per model (cached per class)
+            com.e2eq.framework.annotations.support.FunctionalMappingInfo mi =
+                    com.e2eq.framework.annotations.support.FunctionalMappingResolver.resolve(
+                            model.getClass(), model::bmFunctionalArea, model::bmFunctionalDomain);
+            String area = mi.area;
+            String domain = mi.domain;
 
+            // Resolve principal context once
+            PrincipalContext pcontext = SecurityContext.getPrincipalContext()
+                    .orElseThrow(() -> new IllegalStateException("Principal Context should be non null"));
+
+            String resourceId = model.getRefName();
+
+            alist.forEach((UIAction action) -> {
                 String actionString = action.getLabel().toUpperCase().replace(" ", "_");
 
-                // Prefer annotations on model class if present
-                com.e2eq.framework.annotations.FunctionalMapping fm = model.getClass().getAnnotation(com.e2eq.framework.annotations.FunctionalMapping.class);
-                String area = (fm != null) ? fm.area() : model.bmFunctionalArea();
-                String domain = (fm != null) ? fm.domain() : model.bmFunctionalDomain();
                 ResourceContext rcontext = new ResourceContext.Builder()
                         .withFunctionalDomain(domain)
                         .withArea(area)
                         .withAction(actionString)
-                        .withResourceId(model.getRefName())
-                        //.withRealm(securityUtils.getSystemRealm())
+                        .withResourceId(resourceId)
                         .build();
-                PrincipalContext pcontext;
-                if (SecurityContext.getPrincipalContext().isPresent()) {
-                    pcontext = SecurityContext.getPrincipalContext().get();
-                } else {
-                    throw new IllegalStateException("Principal Context should be non null");
-                }
 
                 SecurityCheckResponse sr = ruleContext.checkRules(pcontext, rcontext);
                 if (sr.getFinalEffect().equals(RuleEffect.ALLOW)) {
                     mactions.add(action);
-                } else {
-                    if (Log.isDebugEnabled()) {
-                        Log.debug("Action " + action.getLabel() + " is not allowed" + " for principal:" + pcontext.getUserId());
-                    }
+                } else if (Log.isDebugEnabled()) {
+                    Log.debug("Action " + action.getLabel() + " is not allowed" + " for principal:" + pcontext.getUserId());
                 }
             });
 
@@ -1926,6 +1925,9 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         boolean firstIteration = true;
 
         for (T model : collection.getRows()) {
+            // First, filter this model's actions based on permissions
+            fillUIActions(model);
+
             DataDomain domain = model.getDataDomain();
             UIActionList modelActions = model.getActionList();
 

@@ -16,6 +16,7 @@ import com.e2eq.framework.util.EnvConfigUtils;
 import com.e2eq.framework.util.SecurityUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.logging.Log;
+import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.annotation.security.PermitAll;
 import jakarta.inject.Inject;
@@ -122,9 +123,15 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         }
 
         // Check if the endpoint is annotated with @PermitAll
-        boolean isPermitAll = isPermitAllEndpoint();
-        if (isPermitAll && Log.isDebugEnabled()) {
+        boolean isPermitAllEndPoint = isPermitAllEndpoint();
+        if (isPermitAllEndPoint && Log.isDebugEnabled()) {
             Log.debugf("@PermitAll endpoint detected: %s - setting contexts but bypassing policy checks",
+                requestContext.getUriInfo().getPath());
+        }
+
+        boolean isAuthenticatedEndPoint = isAuthenticatedEndpoint();
+        if (isAuthenticatedEndPoint && Log.isDebugEnabled()) {
+            Log.debugf("@Authenticated endpoint detected: %s - setting contexts but bypassing policy checks",
                 requestContext.getUriInfo().getPath());
         }
 
@@ -147,7 +154,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         SecurityContext.setResourceContext(resourceContext);
 
         // Pre-authorization check: enforce policy rules before endpoint execution
-        if (!isPermitAll && enforcePreAuth) {
+        if ((!isPermitAllEndPoint  || !isAuthenticatedEndPoint) && enforcePreAuth ) {
             enforcePreAuthorization(principalContext, resourceContext, requestContext);
         }
 
@@ -761,6 +768,43 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                     .build()
             );
         }
+    }
+
+    /**
+     * Checks if the current endpoint is annotated with @PermitAll.
+     * @Authenticated endpoints bypass all policy checks and are handled entirely by Jakarta Security.
+     *
+     * @return true if the method or class is annotated with @PermitAll, false otherwise
+     */
+    private boolean isAuthenticatedEndpoint() {
+        if (resourceInfo == null) {
+            return false;
+        }
+
+        try {
+            // Check method-level annotation first (takes precedence)
+            if (resourceInfo.getResourceMethod() != null) {
+                Authenticated methodAnnotation = resourceInfo.getResourceMethod().getAnnotation(Authenticated.class);
+                if (methodAnnotation != null) {
+                    return true;
+                }
+            }
+
+            // Check class-level annotation
+            if (resourceInfo.getResourceClass() != null) {
+                Authenticated classAnnotation = resourceInfo.getResourceClass().getAnnotation(Authenticated.class);
+                if (classAnnotation != null) {
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            // If we can't determine the annotation, err on the side of security and proceed with checks
+            if (Log.isDebugEnabled()) {
+                Log.debugf("Error checking @Authenticated annotation: %s", e.getMessage());
+            }
+        }
+
+        return false;
     }
 
     /**
