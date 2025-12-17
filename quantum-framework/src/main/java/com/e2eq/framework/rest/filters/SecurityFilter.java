@@ -154,7 +154,8 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         SecurityContext.setResourceContext(resourceContext);
 
         // Pre-authorization check: enforce policy rules before endpoint execution
-        if ((!isPermitAllEndPoint  || !isAuthenticatedEndPoint) && enforcePreAuth ) {
+        boolean skipPreAuth = isPermitAllEndPoint || isAuthenticatedEndPoint;
+        if (!skipPreAuth && enforcePreAuth) {
             enforcePreAuthorization(principalContext, resourceContext, requestContext);
         }
 
