@@ -4,6 +4,7 @@ import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.base.StaticDynamicList;
 import com.e2eq.framework.model.persistent.base.HierarchicalModel;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
+import com.fasterxml.jackson.core.TreeNode;
 import com.mongodb.client.MongoCursor;
 import dev.morphia.Datastore;
 import dev.morphia.aggregation.Aggregation;
@@ -12,6 +13,7 @@ import io.quarkus.logging.Log;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
 import jakarta.ws.rs.NotFoundException;
+import org.bson.Document;
 import org.bson.types.ObjectId;
 import org.jetbrains.annotations.NotNull;
 
@@ -162,6 +164,81 @@ public abstract class HierarchicalRepo<
             throw new NotFoundException("Hierarchy node not found for refName: " + refName);
         }
         return getAllChildren(oHierarchyNode.get().getId());
+    }
+
+    public List<com.e2eq.framework.model.TreeNode> getTrees() {
+        List<com.e2eq.framework.model.TreeNode> nodes = new ArrayList<>();
+        Document query = new Document("parent", new Document("$exists", false));
+        try (MongoCursor<T> cursor = getMorphiaDataStore().getCollection(getPersistentClass()).find(query).iterator()) {
+            while (cursor.hasNext()) {
+                T root = cursor.next();
+                nodes.add(resolveToHierarchy(root));
+            }
+        }
+
+        return nodes;
+    }
+
+    private com.e2eq.framework.model.TreeNode toTreeNode(T object) {
+        com.e2eq.framework.model.TreeNode node = new com.e2eq.framework.model.TreeNode();
+        node.key = object.getId().toHexString();
+        node.label = object.getDisplayName();
+        node.icon = "pi pi-map-marker";
+        return node;
+    }
+
+    private com.e2eq.framework.model.TreeNode resolveToHierarchy(T object) {
+        // Convert object to TreeNode
+        com.e2eq.framework.model.TreeNode node = toTreeNode(object);
+
+        // Populate curated metadata only (avoid leaking internal fields)
+        Map<String, Object> data = new java.util.HashMap<>();
+        data.put("id", node.key);
+        data.put("displayName", object.getDisplayName());
+        data.put("skipValidation", false);
+        // TODO should pull this from functional domain definition
+        data.put("defaultUIActions", List.of("CREATE", "UPDATE", "VIEW", "DELETE", "ARCHIVE"));
+        node.data = data;
+
+        // Guard against accidental cycles
+        return resolveChildren(object, node, new java.util.HashSet<>());
+    }
+
+    private com.e2eq.framework.model.TreeNode resolveChildren(T object, com.e2eq.framework.model.TreeNode node, java.util.Set<ObjectId> visited) {
+        if (object.getId() != null && !visited.add(object.getId())) {
+            // already visited, break the cycle
+            return node;
+        }
+
+        // Handle child nodes with one batch fetch per level
+        if (object.getDescendants() != null && !object.getDescendants().isEmpty()) {
+            List<ObjectId> ids = object.getDescendants();
+            List<T> children = getMorphiaDataStore().find(getPersistentClass())
+                                  .filter(dev.morphia.query.filters.Filters.in("_id", ids))
+                                  .iterator().toList();
+            java.util.Map<ObjectId, T> byId = new java.util.HashMap<>();
+            for (T c : children) {
+                if (c.getId() != null) {
+                    byId.put(c.getId(), c);
+                }
+            }
+            for (ObjectId id : ids) {
+                T childObject = byId.get(id);
+                if (childObject != null) {
+                    com.e2eq.framework.model.TreeNode childNode = toTreeNode(childObject);
+                    // Curated child data
+                    java.util.Map<String, Object> childData = new java.util.HashMap<>();
+                    childData.put("id", childNode.key);
+                    childData.put("displayName", childObject.getDisplayName());
+                    childData.put("skipValidation", false);
+                    childData.put("defaultUIActions", List.of("CREATE", "UPDATE", "VIEW", "DELETE", "ARCHIVE"));
+                    childNode.data = childData;
+
+                    node.children.add(resolveChildren(childObject, childNode, visited));
+                }
+            }
+        }
+        return node;
     }
 
 
