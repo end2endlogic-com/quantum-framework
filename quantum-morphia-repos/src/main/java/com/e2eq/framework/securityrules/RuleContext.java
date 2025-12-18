@@ -88,12 +88,51 @@ public class RuleContext {
     @ConfigProperty(name = "quantum.security.scripting.allowAllAccess", defaultValue = "false")
     boolean scriptingAllowAllAccess;
 
+    // Enable/disable per-request memoization of permission checks
+    @ConfigProperty(name = "quantum.security.rules.requestCache.enabled", defaultValue = "true")
+    boolean requestCacheEnabled;
+
     // Policy for handling rules with filters when no concrete resource is provided on single-resource checks
     // Values: DEFER (legacy-compatible, default), CONSERVATIVE_NA (strict)
     @ConfigProperty(name = "security.rules.noResourceFilterPolicy", defaultValue = "DEFER")
     String noResourceFilterPolicy;
 
     private static final java.util.concurrent.atomic.AtomicBoolean WARNED_PERMISSIVE = new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    // Request-scoped memoization cache for permission lookups to avoid re-evaluating rules
+    private static final ThreadLocal<java.util.Map<String, com.e2eq.framework.model.securityrules.SecurityCheckResponse>> TL_REQUEST_PERMISSION_CACHE = new ThreadLocal<>();
+    // Allow callers (e.g., resource-aware STRICT checks) to bypass request cache to prevent scope leakage
+    private static final ThreadLocal<Boolean> TL_SKIP_REQUEST_CACHE = new ThreadLocal<>();
+
+    public static void initRequestCacheIfAbsent() {
+        if (TL_REQUEST_PERMISSION_CACHE.get() == null) {
+            TL_REQUEST_PERMISSION_CACHE.set(new java.util.HashMap<>());
+        }
+    }
+
+    public static void clearRequestCache() {
+        TL_REQUEST_PERMISSION_CACHE.remove();
+    }
+
+    private static boolean shouldSkipRequestCache() {
+        Boolean b = TL_SKIP_REQUEST_CACHE.get();
+        return b != null && b.booleanValue();
+    }
+
+    private static String buildPermissionCacheKey(
+            com.e2eq.framework.model.securityrules.PrincipalContext pctx,
+            com.e2eq.framework.model.securityrules.ResourceContext rctx,
+            com.e2eq.framework.model.securityrules.RuleEffect defaultEffect) {
+        String user = String.valueOf(pctx != null ? pctx.getUserId() : "<anon>");
+        String realm = String.valueOf(pctx != null ? pctx.getDefaultRealm() : "<realm>");
+        String scope = String.valueOf(pctx != null ? pctx.getScope() : "<scope>");
+        String roles = java.util.Arrays.toString(pctx != null ? pctx.getRoles() : new String[0]);
+        String area = String.valueOf(rctx != null ? rctx.getArea() : "<area>");
+        String domain = String.valueOf(rctx != null ? rctx.getFunctionalDomain() : "<domain>");
+        String action = String.valueOf(rctx != null ? rctx.getAction() : "<action>");
+        String dd = String.valueOf(pctx != null && pctx.getDataDomain() != null ? pctx.getDataDomain().toString() : "<dd>");
+        return String.join("|", user, realm, scope, roles, area, domain, action, dd, String.valueOf(defaultEffect));
+    }
 
     public RuleContext(SecurityUtils securityUtils, EnvConfigUtils envConfigUtils) {
         this.securityUtils = securityUtils;
@@ -865,6 +904,28 @@ public class RuleContext {
             Object resourceInstance,
             @NotNull RuleEffect defaultFinalEffect) {
 
+        // Request-scope memoization: return cached result if enabled and present
+        if (requestCacheEnabled && !shouldSkipRequestCache()) {
+            try {
+                initRequestCacheIfAbsent();
+                String key = buildPermissionCacheKey(pcontext, rcontext, defaultFinalEffect);
+                java.util.Map<String, SecurityCheckResponse> cache = TL_REQUEST_PERMISSION_CACHE.get();
+                SecurityCheckResponse cached = (cache != null) ? cache.get(key) : null;
+                if (cached != null) {
+                    if (Log.isDebugEnabled()) {
+                        Log.debugf("RuleContext.checkRules cache hit for user=%s area=%s domain=%s action=%s",
+                                pcontext != null ? pcontext.getUserId() : "<anon>",
+                                rcontext != null ? rcontext.getArea() : "<area>",
+                                rcontext != null ? rcontext.getFunctionalDomain() : "<domain>",
+                                rcontext != null ? rcontext.getAction() : "<action>");
+                    }
+                    return cached;
+                }
+            } catch (Throwable t) {
+                // ignore cache issues and proceed
+            }
+        }
+
         if (Log.isDebugEnabled()) {
             Log.debug("####  checking Permissions for pcontext:" + pcontext.toString() + " resource context:" + rcontext.toString());
         }
@@ -1113,31 +1174,9 @@ public class RuleContext {
                         // Only run evaluator when a concrete resource instance is provided.
                         if (resourceInstance != null) {
                             filterOk = evaluateFilterApplicability(pcontext, rcontext, r, modelClass, resourceInstance, matchEvent);
-                            // STRICT mode: if evaluator could not run (empty) for a rule with filters, treat as SCOPED candidate
-                            if (evalMode == com.e2eq.framework.model.securityrules.EvalMode.STRICT
-                                    && ruleHasFilters && filterOk.isEmpty()) {
-                                if (matchEvent != null && matchEvent.getFilterReason() == null) {
-                                    matchEvent.setFilterReason("STRICT: evaluator unavailable ⇒ SCOPED candidate");
-                                }
-                                int score = ruleHasFilters ? 2 : (ruleHasPostScript ? 1 : 0);
-                                boolean replace = (scopedCandidateRuleName == null)
-                                        || (score > scopedCandidateScore)
-                                        || (score == scopedCandidateScore && r.getPriority() < (scopedCandidateRulePriority != null ? scopedCandidateRulePriority : Integer.MAX_VALUE));
-                                if (replace) {
-                                    scopedCandidateEffect = r.getEffect();
-                                    scopedFilterInfos.clear();
-                                    scopedFilterInfos.add(new SecurityCheckResponse.RuleFilterInfo(
-                                            r.getName(), r.getAndFilterString(), r.getOrFilterString(),
-                                            r.getJoinOp() != null ? r.getJoinOp().name() : "AND"));
-                                    scopedScriptDetail = ruleHasPostScript ? r.getPostconditionScript() : null;
-                                    scopedCandidateRuleName = r.getName();
-                                    scopedCandidateRulePriority = r.getPriority();
-                                    scopedCandidateRuleFinal = r.isFinalRule();
-                                    scopedCandidateScore = score;
-                                }
-                                // In STRICT mode treat this rule as inconclusive: skip postcondition
-                                strictSkipPost = true;
-                            }
+                            // STRICT mode: if evaluator could not run (empty) for a rule with filters,
+                            // do NOT force SCOPED candidate here; proceed with normal postcondition/effect evaluation
+                            // so that a concrete resource can still yield an EXACT decision.
                         } else {
                             // Evaluator skipped in no-resource context; preserve legacy behavior
                             if (matchEvent != null) {
@@ -1371,6 +1410,14 @@ public class RuleContext {
             }
         } catch (Throwable ignored) { }
 
+        // Store in request cache if enabled
+        if (requestCacheEnabled && !shouldSkipRequestCache()) {
+            try {
+                String key = buildPermissionCacheKey(pcontext, rcontext, defaultFinalEffect);
+                java.util.Map<String, SecurityCheckResponse> cache = TL_REQUEST_PERMISSION_CACHE.get();
+                if (cache != null) cache.put(key, response);
+            } catch (Throwable ignored) {}
+        }
         return response;
     }
 
@@ -1387,6 +1434,8 @@ public class RuleContext {
             com.e2eq.framework.model.securityrules.EvalMode evalMode) {
         // Set eval mode for this thread so core evaluation can react to it
         setEvalModeForThread(evalMode != null ? evalMode : com.e2eq.framework.model.securityrules.EvalMode.LEGACY);
+        // Bypass the request cache for resource-aware checks to avoid leaking SCOPED/DEFAULT across resources
+        if (resourceInstance != null) TL_SKIP_REQUEST_CACHE.set(Boolean.TRUE);
         try {
             SecurityCheckResponse resp = checkRules(pcontext, rcontext, modelClass, resourceInstance, defaultFinalEffect);
 
@@ -1427,6 +1476,7 @@ public class RuleContext {
             return resp;
         } finally {
             clearEvalModeForThread();
+            TL_SKIP_REQUEST_CACHE.remove();
         }
     }
 
