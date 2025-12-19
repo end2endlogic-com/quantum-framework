@@ -706,7 +706,8 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
                                 @DefaultValue("50")@QueryParam("limit") int limit,
                                 @QueryParam("filter") String filter,
                                 @QueryParam("sort") String sort,
-                                @QueryParam("projection") String projection) {
+                                @QueryParam("projection") String projection,
+                                @QueryParam("uiActions") Boolean uiActions) {
 
       try {
          List<ProjectionField> projectionFields = null;
@@ -733,6 +734,23 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
          String realmId = headers.getHeaderString("X-Realm");
          List<T> ups;
          long count;
+         // Determine whether to compute UI actions.
+         // Policy:
+         // - If projection is absent: compute unless uiActions explicitly false.
+         // - If projection is present: compute only if uiActions explicitly true.
+         boolean projectionPresent = projection != null;
+         boolean computeUiActions = !projectionPresent ? (uiActions == null || Boolean.TRUE.equals(uiActions))
+                 : Boolean.TRUE.equals(uiActions);
+
+         // If we will compute UI actions and projections are present, ensure dataDomain is included
+         if (computeUiActions && projectionFields != null) {
+            boolean hasDataDomain = projectionFields.stream()
+                    .anyMatch(pf -> "dataDomain".equals(pf.getFieldName()));
+            if (!hasDataDomain) {
+               // add include for dataDomain
+               projectionFields.add(new ProjectionField("dataDomain", ProjectionField.ProjectionType.INCLUDE));
+            }
+         }
          if (realmId == null) {
             ups = repo.getListByQuery(skip, limit, filter, sortFields, projectionFields);
             count =repo.getCount(filter);
@@ -749,8 +767,10 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
          else
             collection = new Collection<>(ups, skip, limit, filter, count, sortFields);
 
-         // fill in ui-actions
-         collection = repo.fillUIActions(collection);
+         // fill in ui-actions (conditionally based on projection/uiActions)
+         if (computeUiActions) {
+            collection = repo.fillUIActions(collection);
+         }
          collection.setFilter(filter);
          collection.setRealm(realmId == null ? repo.getDatabaseName() : realmId);
 
@@ -763,6 +783,26 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
 
       }
 
+   }
+
+   /**
+    * Backward-compatible overload for subclasses and callers that use the historical signature
+    * (without the uiActions parameter). This method intentionally has no JAX-RS annotations to
+    * avoid duplicate endpoint exposure from the framework class. Resource subclasses may still
+    * expose their own endpoints with this signature via annotations.
+    *
+    * Delegates to the newer signature with a null uiActions flag, which preserves the new policy:
+    * - Without projection: compute UI actions by default.
+    * - With projection: skip UI actions unless explicitly requested (uiActions=true).
+    */
+   @Deprecated
+   public Collection<T> getList(@Context HttpHeaders headers,
+                                @DefaultValue("0") @QueryParam("skip") int skip,
+                                @DefaultValue("50") @QueryParam("limit") int limit,
+                                @QueryParam("filter") String filter,
+                                @QueryParam("sort") String sort,
+                                @QueryParam("projection") String projection) {
+      return getList(headers, skip, limit, filter, sort, projection, null);
    }
 
    @Path("schema")

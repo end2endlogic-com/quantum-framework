@@ -1867,7 +1867,14 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     public T fillUIActions(@NotNull T model) {
         Objects.requireNonNull(model);
-        Objects.requireNonNull(model.getDataDomain());
+        if (model.getDataDomain() == null) {
+            // When dataDomain is missing (common with projections or legacy data),
+            // skip UI action calculation to avoid NPE and set empty actions.
+            Log.warn("Skipping UI actions: dataDomain is null for " + model.getClass().getSimpleName() +
+                    " refName=" + model.getRefName());
+            model.setActionList(new UIActionList());
+            return model;
+        }
 
         Map<DataDomain, UIActionList> actions = new HashMap<DataDomain, UIActionList>();
         DataDomain dd = model.getDataDomain();
@@ -1921,8 +1928,6 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     public Collection<T> fillUIActions(@NotNull Collection<T> collection) {
 
         Map<DataDomain, UIActionList> actions = new HashMap<>();
-
-        boolean firstIteration = true;
 
         for (T model : collection.getRows()) {
             // First, filter this model's actions based on permissions
