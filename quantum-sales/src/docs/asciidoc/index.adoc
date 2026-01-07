@@ -19,3 +19,4 @@ This documentation provides sales and marketing materials for the Quantum Framew
 include::sales/quantum-vs-palantir.adoc[]
 include::sales/framework-overview.adoc[]
 
+

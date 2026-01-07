@@ -11,8 +11,12 @@ import java.util.Date;
 import java.util.Optional;
 
 /**
- * Repository for OntologyMeta singleton (global, not per-realm).
+ * Repository for OntologyMeta.
+ * <p>
+ * OntologyMeta is now per-realm (one per database/tenant), not global.
  * Uses findAndModify with upsert=true to avoid race conditions.
+ * The realm is derived from the current SecurityContext.
+ * </p>
  */
 @ApplicationScoped
 public class OntologyMetaRepo extends MorphiaRepo<OntologyMeta> {
@@ -21,6 +25,13 @@ public class OntologyMetaRepo extends MorphiaRepo<OntologyMeta> {
         return Optional.ofNullable(ds().find(OntologyMeta.class)
                 .filter(Filters.eq("refName", "global"))
                 .first());
+    }
+
+    /**
+     * Delete all OntologyMeta documents in the current realm.
+     */
+    public void deleteAll() {
+        ds().getCollection(OntologyMeta.class).deleteMany(new org.bson.Document());
     }
 
     /**
@@ -59,7 +70,19 @@ public class OntologyMetaRepo extends MorphiaRepo<OntologyMeta> {
                         UpdateOperators.set("reindexRequired", false));
     }
 
+    /**
+     * Get the datastore for the current security context realm.
+     * Uses getSecurityContextRealmId() to derive realm from security context,
+     * falling back to defaultRealm if no security context is available.
+     */
     private dev.morphia.Datastore ds() {
-        return morphiaDataStoreWrapper.getDataStore(defaultRealm);
+        return morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId());
+    }
+
+    /**
+     * Get the datastore for a specific realm (used for explicit realm operations).
+     */
+    private dev.morphia.Datastore ds(String realm) {
+        return morphiaDataStoreWrapper.getDataStore(realm);
     }
 }

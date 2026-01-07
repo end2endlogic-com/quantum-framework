@@ -71,3 +71,4 @@ git checkout "$CURRENT_BRANCH"
 echo "Done. The 'gh-pages' branch now exists on origin. You can publish docs with:"
 echo "  mvn -am -DskipTests deploy"
 
+

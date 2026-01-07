@@ -31,9 +31,20 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
       ds().getCollection(OntologyEdge.class).deleteMany(new org.bson.Document());
    }
 
+    /**
+     * Get the datastore for the current security context realm.
+     * Uses getSecurityContextRealmId() to derive realm from security context,
+     * falling back to defaultRealm if no security context is available.
+     */
     private Datastore ds() {
-        // Use the default realm configured for the service; MorphiaRepo injects it.
-        return morphiaDataStoreWrapper.getDataStore(defaultRealm);
+        return morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId());
+    }
+
+    /**
+     * Get the datastore for a specific realm (used for explicit realm operations).
+     */
+    private Datastore ds(String realm) {
+        return morphiaDataStoreWrapper.getDataStore(realm);
     }
 
     /**
