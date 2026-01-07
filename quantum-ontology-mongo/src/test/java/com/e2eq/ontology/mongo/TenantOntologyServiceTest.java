@@ -1,9 +1,10 @@
-package com.e2eq.ontology.service;
+package com.e2eq.ontology.mongo;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.ontology.core.OntologyRegistry.*;
 import com.e2eq.ontology.repo.TenantOntologyMetaRepo;
 import com.e2eq.ontology.repo.TenantOntologyTBoxRepo;
+import com.e2eq.ontology.service.TenantOntologyService;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.BeforeEach;

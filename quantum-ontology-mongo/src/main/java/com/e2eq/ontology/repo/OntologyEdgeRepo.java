@@ -455,6 +455,18 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
     }
 
     /**
+     * Find all edges with the given property/predicate, within the DataDomain.
+     */
+    public List<OntologyEdge> findByProperty(DataDomain dataDomain, String p) {
+        validateDataDomain(dataDomain);
+        Query<OntologyEdge> q = ds().find(OntologyEdge.class);
+        for (Filter f : dataDomainFilters(dataDomain)) {
+            q.filter(f);
+        }
+        return q.filter(Filters.eq("p", p)).iterator().toList();
+    }
+
+    /**
      * Upsert a derived edge with support provenance, scoped by DataDomain.
      */
     public void upsertDerived(DataDomain dataDomain,
