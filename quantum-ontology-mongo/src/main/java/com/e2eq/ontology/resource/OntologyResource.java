@@ -10,6 +10,7 @@ import com.e2eq.ontology.core.OntologyRegistry.PropertyDef;
 import com.e2eq.ontology.core.OntologyRegistry.TBox;
 import com.e2eq.ontology.model.OntologyEdge;
 import com.e2eq.ontology.repo.OntologyEdgeRepo;
+import com.e2eq.ontology.runtime.TenantOntologyRegistryProvider;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -24,6 +25,14 @@ import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * REST API for Ontology TBox and ABox operations.
+ * <p>
+ * This resource is realm-aware. The OntologyRegistry is resolved based on
+ * the current SecurityContext's realm. For ABox queries, DataDomain is used
+ * for row-level filtering.
+ * </p>
+ */
 @ApplicationScoped
 @Path("ontology")
 @Produces(MediaType.APPLICATION_JSON)
@@ -36,6 +45,9 @@ public class OntologyResource {
 
     @Inject
     OntologyEdgeRepo edgeRepo;
+
+    @Inject
+    TenantOntologyRegistryProvider registryProvider;
 
     @GET
     @Path("registry")
@@ -154,6 +166,64 @@ public class OntologyResource {
     public Response getTBoxHash() {
         String hash = registry.getTBoxHash();
         return Response.ok(Map.of("tboxHash", hash)).build();
+    }
+
+    @GET
+    @Path("realm/status")
+    @Operation(summary = "Get realm ontology status including cached realms")
+    @SecurityRequirement(name = "bearerAuth")
+    @RolesAllowed({"admin"})
+    public Response getRealmStatus() {
+        Set<String> cachedRealms = registryProvider.getCachedRealms();
+        Map<String, Object> body = Map.of(
+                "cachedRealms", cachedRealms,
+                "cacheSize", cachedRealms.size()
+        );
+        return Response.ok(body).build();
+    }
+
+    @POST
+    @Path("realm/invalidate")
+    @Operation(summary = "Invalidate the ontology cache for current or specified realm")
+    @SecurityRequirement(name = "bearerAuth")
+    @RolesAllowed({"admin"})
+    @Consumes(MediaType.WILDCARD)
+    public Response invalidateRealm(@QueryParam("realm") String realm) {
+        if (realm != null && !realm.isBlank()) {
+            registryProvider.invalidateRealm(realm);
+            return Response.ok(Map.of("invalidated", realm, "success", true)).build();
+        } else {
+            // Invalidate current realm from security context
+            registryProvider.clearCache();
+            return Response.ok(Map.of("invalidated", "all", "success", true)).build();
+        }
+    }
+
+    @POST
+    @Path("realm/rebuild")
+    @Operation(summary = "Force rebuild the TBox for a realm")
+    @SecurityRequirement(name = "bearerAuth")
+    @RolesAllowed({"admin"})
+    @Consumes(MediaType.WILDCARD)
+    public Response forceRebuild(@QueryParam("realm") String realm) {
+        if (realm == null || realm.isBlank()) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", "realm parameter is required"))
+                    .build();
+        }
+        try {
+            OntologyRegistry rebuilt = registryProvider.forceRebuild(realm);
+            Map<String, Object> body = Map.of(
+                    "realm", realm,
+                    "success", true,
+                    "classes", rebuilt.classes().size(),
+                    "properties", rebuilt.properties().size(),
+                    "tboxHash", rebuilt.getTBoxHash()
+            );
+            return Response.ok(body).build();
+        } catch (Exception e) {
+            return Response.serverError().entity(Map.of("error", e.getMessage())).build();
+        }
     }
     
     @GET
