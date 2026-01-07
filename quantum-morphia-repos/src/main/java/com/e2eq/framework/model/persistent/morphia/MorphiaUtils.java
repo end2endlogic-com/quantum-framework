@@ -121,6 +121,11 @@ public class MorphiaUtils {
       variableMap.put("action", rcontext.getAction());
       variableMap.put("functionalDomain", rcontext.getFunctionalDomain());
       variableMap.put("area", rcontext.getArea());
+      
+      // Add defaultRealm so permission filters can dynamically scope by current realm
+      // This is critical for X-Realm functionality - when realm switches, filters adapt automatically
+      variableMap.put("defaultRealm", pcontext.getDefaultRealm());
+      
       return variableMap;
    }
 

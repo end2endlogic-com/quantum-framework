@@ -765,8 +765,87 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 .build();
     }
 
+    /**
+     * Applies realm override when X-Realm header is set. When a user switches realms via X-Realm,
+     * their DataDomain should be updated to the target realm's default DataDomain so that:
+     * 1. Created records are stamped with the correct DataDomain for that realm
+     * 2. Query filters use the correct DataDomain for that realm
+     * 
+     * The user's identity (userId, roles) remains unchanged - they stay "themselves" but act
+     * within the target realm's data context.
+     * 
+     * @param context the current PrincipalContext
+     * @param realm the target realm from X-Realm header (may be null)
+     * @return updated PrincipalContext with realm's DataDomain, or original context if no override needed
+     */
     private PrincipalContext applyRealmOverride(PrincipalContext context, String realm) {
-        return context;
+        // No realm override requested, or already on that realm
+        if (realm == null || realm.isBlank() || realm.equals(context.getDefaultRealm())) {
+            return context;
+        }
+        
+        // Skip if impersonation is active - impersonation takes precedence
+        if (context.getImpersonatedBySubject() != null || context.getImpersonatedByUserId() != null) {
+            Log.debugf("Realm override skipped - impersonation is active for user %s", context.getUserId());
+            return context;
+        }
+        
+        // Look up the target realm to get its default DomainContext
+        // Use system realm for the lookup since realms are typically stored there
+        Optional<com.e2eq.framework.model.security.Realm> targetRealmOpt = 
+            realmRepo.findByRefName(realm, true, envConfigUtils.getSystemRealm());
+        
+        // If not found by refName, try by databaseName (they're often the same)
+        if (targetRealmOpt.isEmpty()) {
+            targetRealmOpt = realmRepo.findByDatabaseName(realm, true, envConfigUtils.getSystemRealm());
+        }
+        
+        if (targetRealmOpt.isEmpty()) {
+            // Realm not found - log warning and return original context
+            // The realm was already validated in validateRealmAccess(), so this shouldn't normally happen
+            Log.warnf("Realm '%s' not found during realm override for user %s - using original DataDomain", 
+                realm, context.getUserId());
+            return context;
+        }
+        
+        com.e2eq.framework.model.security.Realm targetRealm = targetRealmOpt.get();
+        com.e2eq.framework.model.security.DomainContext targetDomainContext = targetRealm.getDomainContext();
+        
+        if (targetDomainContext == null) {
+            // Realm has no DomainContext configured
+            Log.warnf("Realm '%s' has no DomainContext configured - cannot apply realm override for user %s", 
+                realm, context.getUserId());
+            return context;
+        }
+        
+        // Create the effective DataDomain using the target realm's context but keeping caller's userId as owner
+        DataDomain effectiveDataDomain = targetDomainContext.toDataDomain(context.getUserId());
+        
+        Log.infof("Applying realm override: user=%s, originalRealm=%s, targetRealm=%s, " +
+                  "originalDataDomain=%s, effectiveDataDomain=%s",
+            context.getUserId(), 
+            context.getDefaultRealm(), 
+            realm,
+            context.getDataDomain(),
+            effectiveDataDomain);
+        
+        // Rebuild the context with the target realm's DataDomain
+        return new PrincipalContext.Builder()
+                .withDefaultRealm(realm)
+                .withDataDomain(effectiveDataDomain)
+                .withUserId(context.getUserId())
+                .withRoles(context.getRoles())
+                .withScope(context.getScope())
+                .withArea2RealmOverrides(context.getArea2RealmOverrides())
+                .withDataDomainPolicy(context.getDataDomainPolicy())
+                .withImpersonatedBySubject(context.getImpersonatedBySubject())
+                .withImpersonatedByUserId(context.getImpersonatedByUserId())
+                .withActingOnBehalfOfSubject(context.getActingOnBehalfOfSubject())
+                .withActingOnBehalfOfUserId(context.getActingOnBehalfOfUserId())
+                // Track realm override for audit purposes
+                .withRealmOverrideActive(true)
+                .withOriginalDataDomain(context.getDataDomain())
+                .build();
     }
 
     /**
