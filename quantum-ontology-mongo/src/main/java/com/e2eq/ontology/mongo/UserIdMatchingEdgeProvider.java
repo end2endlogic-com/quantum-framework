@@ -22,7 +22,7 @@ import java.util.Optional;
 /**
  * Edge provider that creates edges linking Credential entities to matching UserProfile entities
  * based on userId, email, or subject, scoped by DataDomain to prevent cross-org/account leakage.
- * 
+ *
  * <p>This provider ensures that edges are only created when both the Credential and UserProfile
  * are in the same DataDomain (orgRefName, accountNum, tenantId). This prevents accidental
  * cross-organization or cross-account edge creation even when userIds/emails match.
@@ -51,9 +51,9 @@ public class UserIdMatchingEdgeProvider implements OntologyEdgeProvider {
 
         // Convert DataDomainInfo to DataDomain for query filtering
         DataDomain dataDomain = DataDomainConverter.fromInfo(dataDomainInfo);
-        if (dataDomain == null || 
-            dataDomain.getOrgRefName() == null || 
-            dataDomain.getAccountNum() == null || 
+        if (dataDomain == null ||
+            dataDomain.getOrgRefName() == null ||
+            dataDomain.getAccountNum() == null ||
             dataDomain.getTenantId() == null) {
             Log.warnf("UserIdMatchingEdgeProvider: Missing DataDomain fields for credential %s, skipping edge creation", credentialRefName);
             return List.of();
@@ -78,7 +78,7 @@ public class UserIdMatchingEdgeProvider implements OntologyEdgeProvider {
             !dataDomain.getOrgRefName().equals(profileDomain.getOrgRefName()) ||
             !dataDomain.getAccountNum().equals(profileDomain.getAccountNum()) ||
             !dataDomain.getTenantId().equals(profileDomain.getTenantId())) {
-            Log.warnf("UserIdMatchingEdgeProvider: DataDomain mismatch detected for credential %s and profile %s, skipping edge creation", 
+            Log.warnf("UserIdMatchingEdgeProvider: DataDomain mismatch detected for credential %s and profile %s, skipping edge creation",
                      credentialRefName, profileRefName);
             return List.of();
         }
@@ -103,7 +103,7 @@ public class UserIdMatchingEdgeProvider implements OntologyEdgeProvider {
     /**
      * Finds a matching UserProfile for the given Credential within the same DataDomain.
      * Matches by userId, email, or subject (credential's entityRefName).
-     * 
+     *
      * @param realmId the realm/database identifier
      * @param credential the credential to match
      * @param dataDomain the DataDomain scope (orgRefName, accountNum, tenantId must match)
@@ -118,14 +118,14 @@ public class UserIdMatchingEdgeProvider implements OntologyEdgeProvider {
 
         String credentialUserId = credential.getUserId();
         String credentialSubject = credential.getSubject();
-        if ((credentialUserId == null || credentialUserId.isBlank()) && 
+        if ((credentialUserId == null || credentialUserId.isBlank()) &&
             (credentialSubject == null || credentialSubject.isBlank())) {
             return Optional.empty();
         }
 
         // Build query with DataDomain filters to prevent cross-org/account matches
         Query<UserProfile> query = datastore.find(UserProfile.class);
-        
+
         // Add DataDomain filters: MUST match orgRefName, accountNum, tenantId
         List<Filter> dataDomainFilters = new ArrayList<>();
         dataDomainFilters.add(Filters.eq("dataDomain.orgRefName", dataDomain.getOrgRefName()));
@@ -174,4 +174,3 @@ public class UserIdMatchingEdgeProvider implements OntologyEdgeProvider {
         return Optional.empty();
     }
 }
-

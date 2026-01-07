@@ -67,7 +67,7 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
    private static final int MAXIMUM_REJECTS_SHOWN = 5;
 
    @Inject
-   CSVImportHelper csvImportHelper;
+   protected CSVImportHelper csvImportHelper;
 
    protected BaseResource(R repo) {
       this.repo = repo;
@@ -81,13 +81,19 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
    @SuppressWarnings("unchecked")
    private Class<T> extractModelClass() {
       try {
-         java.lang.reflect.Type genericSuperclass = getClass().getGenericSuperclass();
-         if (genericSuperclass instanceof java.lang.reflect.ParameterizedType) {
-            java.lang.reflect.ParameterizedType pt = (java.lang.reflect.ParameterizedType) genericSuperclass;
-            java.lang.reflect.Type[] typeArgs = pt.getActualTypeArguments();
-            if (typeArgs.length > 0 && typeArgs[0] instanceof Class) {
-               return (Class<T>) typeArgs[0];
+         Class<?> clazz = getClass();
+         while (clazz != null && clazz != Object.class) {
+            java.lang.reflect.Type genericSuperclass = clazz.getGenericSuperclass();
+            if (genericSuperclass instanceof java.lang.reflect.ParameterizedType) {
+               java.lang.reflect.ParameterizedType pt = (java.lang.reflect.ParameterizedType) genericSuperclass;
+               if (BaseResource.class.isAssignableFrom((Class<?>) pt.getRawType())) {
+                  java.lang.reflect.Type[] typeArgs = pt.getActualTypeArguments();
+                  if (typeArgs.length > 0 && typeArgs[0] instanceof Class) {
+                     return (Class<T>) typeArgs[0];
+                  }
+               }
             }
+            clazz = clazz.getSuperclass();
          }
       } catch (Exception e) {
          // Ignore - will return null
@@ -124,7 +130,7 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
    @Path("indexes/ensureIndexes/{realm}")
    @POST
    @SecurityRequirement(name = "bearerAuth")
-   @RolesAllowed("{admin}")
+   @RolesAllowed({"admin"})
    @Produces(MediaType.APPLICATION_JSON)
    public Response ensureIndexes(@PathParam( "realm") String realm, @QueryParam("collectionName") String collectionName) {
        repo.ensureIndexes(realm, collectionName);

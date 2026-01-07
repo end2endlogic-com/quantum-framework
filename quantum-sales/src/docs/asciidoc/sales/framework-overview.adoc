@@ -1,0 +1,1650 @@
+[[framework-overview]]
+= Quantum Framework: Overview & Advantages
+
+== What is the Quantum Framework?
+
+Quantum is a Quarkus-based, open-source framework for building secure, multi-tenant business applications. It provides a "business-aware operating system" for enterprise SaaS, enabling teams to focus on domain logic and outcomes while the framework handles cross-cutting concerns like security, governance, and multi-tenancy.
+
+=== Core Purpose
+
+Quantum solves the challenge of building applications where multiple parties need to collaborate on shared data without losing control of their own data. It's designed for:
+
+*Multi-Tenant B2B SaaS Platforms*
+- Each organization is isolated by default
+- Selective, auditable sharing when needed
+- Consistent APIs across all tenants
+
+*Multi-Party Collaboration*
+- Secure data sharing between organizations
+- Policy-driven access control
+- Clear audit trails
+
+*Governed Data Platforms*
+- Ontology-driven data modeling
+- Policy-based security and placement
+- Compliance-ready by construction
+
+== Key Advantages
+
+=== 1. Ontology-Driven Data Modeling
+
+Quantum uses ontologies to make business concepts and relationships explicit:
+
+*Business Language*
+- Define entities in business terms (Shipment, PurchaseOrder, Partner)
+- Capture relationships explicitly (Shipment fulfills PurchaseOrder)
+- Enable semantic queries and reasoning
+
+*Graph-Style Navigation*
+- Navigate relationships automatically
+- Support cascaded operations
+- Enable impact analysis
+
+*Future-Proof*
+- Add new domains without re-platforming
+- Extend relationships as business evolves
+- Enable analytics on semantic foundations
+
+=== 2. Policy-Based Data Governance
+
+Security and compliance are built into the framework:
+
+*Human-Readable Rules*
+- Define "who can do what" in clear policies
+- Changes take effect without code deployment
+- Policies explain access decisions
+
+*Automatic Filtering*
+- Users see only authorized records
+- Filters applied consistently across all APIs
+- No need to remember security in every query
+
+*Data Placement Control*
+- Policies determine where data lives
+- Enforce residency requirements
+- Support multi-cloud and hybrid deployments
+
+=== 3. Multi-Tenant SaaS Foundation
+
+True multi-tenancy built into the core:
+
+*Tenant Isolation*
+- Each tenant's data is separate by default
+- Flexible tenancy models (one-DB-per-tenant or shared-DB)
+- Automatic tenant context in all operations
+
+*Selective Sharing*
+- Share entire domains or specific records
+- Time-bound and scope-limited sharing
+- Collaboration "bubbles" for specific projects
+
+*Rapid Onboarding*
+- Seed packs for versioned baseline data
+- Programmatic tenant creation
+- Consistent onboarding experience
+
+=== 4. Developer Productivity
+
+Minimal boilerplate, maximum functionality:
+
+*Consistent APIs*
+- Single BaseResource pattern for all CRUD operations
+- Automatic OpenAPI documentation
+- Built-in CSV import/export
+
+*Live Development*
+- Hot reload in development mode
+- Fast iteration cycles
+- Immediate feedback
+
+*Clear Extension Points*
+- Extend base classes for custom behavior
+- Pluggable authentication and authorization
+- Flexible query and filtering
+
+== Developer Ease of Use: Building Multi-Tenant APIs with Minimal Code
+
+Quantum is designed to eliminate boilerplate and accelerate development. The framework provides out-of-the-box capabilities that would typically require weeks of custom development.
+
+=== Out-of-the-Box Modeling: BaseModel and Repositories
+
+Creating a new entity with full multi-tenant support requires minimal code:
+
+*Define Your Model*
+
+[source,java]
+----
+@Entity
+@Data
+@NoArgsConstructor
+@SuperBuilder
+@EqualsAndHashCode(callSuper = true)
+public class Order extends BaseModel {
+    private String orderNumber;
+    private BigDecimal totalAmount;
+    private OrderStatus status;
+    private EntityReference customerRef;
+    
+    @Override
+    public String bmFunctionalArea() { return "Sales"; }
+    
+    @Override
+    public String bmFunctionalDomain() { return "Order"; }
+}
+----
+
+That's it. By extending `BaseModel`, you automatically get:
+- DataDomain fields (tenantId, orgRefName, ownerId, dataSegment)
+- Audit fields (creationTs, creationIdentity, lastUpdateTs, lastUpdateIdentity)
+- Version field for optimistic locking
+- ID management
+- Validation hooks
+- Reference tracking
+
+*Create a Repository*
+
+[source,java]
+----
+public interface OrderRepo extends MorphiaRepo<Order> {
+    // Custom queries can be added here if needed
+    // Most queries work via the query language - no custom code needed
+}
+----
+
+The repository automatically provides:
+- Multi-tenant filtering
+- DataDomain-aware queries
+- Security policy integration
+- Query language support
+
+*Expose REST APIs*
+
+[source,java]
+----
+@Path("/orders")
+public class OrderResource extends BaseResource<Order, OrderRepo> {
+    // That's it! You now have:
+    // GET /orders/list - List with filtering, sorting, pagination
+    // GET /orders/{id} - Get single order
+    // POST /orders - Create order
+    // PUT /orders/{id} - Update order
+    // DELETE /orders/{id} - Delete order
+    // GET /orders/{id}/export - CSV export
+    // POST /orders/import - CSV import
+}
+----
+
+With just these three classes, you have:
+- Full CRUD REST APIs
+- Automatic multi-tenant isolation
+- Security policy enforcement
+- OpenAPI documentation
+- CSV import/export
+- Query language support
+- Audit trails
+
+=== Powerful Query Language: One Syntax, Multiple Execution Engines
+
+Quantum's query language (BIAPIQuery) provides a consistent, powerful way to filter and query data across all endpoints. The same syntax works for REST APIs, permission rules, and access resolvers.
+
+*Basic Query Syntax*
+
+[source]
+----
+# String matching
+name:"Widget"
+name:*widget*        # contains "widget"
+name:widget*         # starts with "widget"
+
+# Numeric comparisons
+price:>##10.50
+quantity:>=#100
+totalAmount:<=##1000
+
+# Date/DateTime
+createdDate:>=2024-01-01
+updatedAt:>2024-01-01T10:30:00Z
+
+# Boolean
+active:true
+featured:false
+
+# In lists
+status:^["ACTIVE","PENDING","PROCESSING"]
+categoryId:!^["DELETED","ARCHIVED"]
+
+# Logical operators
+(active:true || featured:true) && price:>##0
+status:"ACTIVE" && (quantity:>#10 || priority:"HIGH")
+----
+
+*Morphia-Based Execution (Database-Side)*
+
+For repository queries, the query language is converted to MongoDB/Morphia filters and executed in the database:
+
+[source,java]
+----
+// Query is parsed and converted to Morphia Filter
+// Executed efficiently in MongoDB with index support
+GET /orders/list?filter=status:"ACTIVE"&&totalAmount:>##1000&sort=-createdDate
+----
+
+Benefits:
+- Leverages MongoDB indexes
+- Efficient for large datasets
+- No data loaded into memory unnecessarily
+- Supports complex aggregations
+
+*In-Memory Execution (GraalVM-Friendly)*
+
+For permission rules and access resolvers, queries can be executed in-memory as Java Predicates:
+
+[source,java]
+----
+// Query is parsed and converted to Java Predicate
+// Executed in-memory over JSON data
+// Ideal for Quarkus/GraalVM native compilation
+rule: andFilterString="status:ACTIVE && ownerId:${principalId}"
+----
+
+Benefits:
+- Fast evaluation for small datasets
+- Works in native compiled applications
+- No database round-trip needed
+- Ideal for policy evaluation
+
+*Aggregations and Joins*
+
+Quantum supports MongoDB aggregations and relationship hydration:
+
+[source]
+----
+# Expand relationships (joins)
+GET /orders/list?filter=status:"ACTIVE"&expand=customer&expand=items[*].product
+
+# This creates an aggregation pipeline with $lookup operations
+# Materializes related documents and embeds them in results
+----
+
+The `expand()` directive:
+- Automatically switches to AGGREGATION mode
+- Constructs MongoDB aggregation pipelines
+- Uses `$lookup` for relationship joins
+- Supports nested arrays: `expand(items[*].product)`
+- Supports deep paths: `expand(customer.address.region)`
+
+*Query Planning*
+
+The QueryPlanner automatically selects the best execution mode:
+- FILTER mode: Simple queries → Morphia Filter
+- AGGREGATION mode: Queries with `expand()` → Aggregation Pipeline
+
+[source,java]
+----
+// Planner inspects query and selects mode
+QueryPlan plan = queryPlanner.plan(query);
+
+if (plan.getMode() == AGGREGATION) {
+    // Build aggregation pipeline
+    List<Bson> pipeline = buildAggregationPipeline(plan);
+} else {
+    // Build Morphia filter
+    Filter filter = buildMorphiaFilter(plan);
+}
+----
+
+=== Automatic Audit Functionality
+
+Quantum provides comprehensive audit trails out of the box:
+
+*Audit Fields on Every Model*
+
+Every entity extending `BaseModel` automatically includes:
+
+[source,java]
+----
+public class AuditInfo {
+    protected Date creationTs;           // When created
+    protected String creationIdentity;   // Who created it
+    protected Date lastUpdateTs;         // When last updated
+    protected String lastUpdateIdentity;  // Who last updated it
+    protected String impersonatorSubject; // If created via impersonation
+    protected String impersonatorUserId;
+    protected String actingOnBehalfOfSubject;
+    protected String actingOnBehalfOfUserId;
+}
+----
+
+*Automatic Audit Interception*
+
+The `AuditInterceptor` automatically:
+- Sets creation timestamp and identity on persist
+- Updates last update timestamp and identity on update
+- Tracks impersonation context
+- Records "acting on behalf of" relationships
+
+*Persistent Event Tracking*
+
+For models annotated with `@AuditPersistence`, Quantum tracks:
+- Every persist operation
+- Version information
+- User who performed the operation
+- Timestamp of the operation
+
+[source,java]
+----
+@Entity
+@AuditPersistence
+public class Order extends BaseModel {
+    // Persistent events automatically tracked
+    // List<PersistentEvent> persistentEvents
+}
+----
+
+*Audit Querying*
+
+Query audit information using the standard query language:
+
+[source]
+----
+# Find orders created by a specific user
+GET /orders/list?filter=auditInfo.creationIdentity:"user-123"
+
+# Find orders updated in the last 24 hours
+GET /orders/list?filter=auditInfo.lastUpdateTs:>=2024-01-15T00:00:00Z
+
+# Find orders created via impersonation
+GET /orders/list?filter=auditInfo.impersonatorUserId:~
+----
+
+=== Pluggable Authorization
+
+Quantum's authorization system is fully pluggable and extensible:
+
+*Permission Rules*
+
+Define authorization rules in YAML or JSON:
+
+[source,yaml]
+----
+- name: user-own-records
+  priority: 300
+  match:
+    method: [GET, PUT, DELETE]
+    url: /api/orders/**
+  effect: ALLOW
+  andFilterString: "dataDomain.ownerId:${principalId}"
+
+- name: manager-org-records
+  priority: 200
+  match:
+    method: [GET]
+    url: /api/orders/**
+  effect: ALLOW
+  andFilterString: "dataDomain.orgRefName:${principal.orgRefName}"
+  postconditionScript: |
+    if (principal.roles.contains('Manager')) {
+      return true;
+    }
+    return false;
+----
+
+*Access Resolvers*
+
+Create custom access resolvers for complex authorization logic:
+
+[source,java]
+----
+@ApplicationScoped
+public class CustomerAccessResolver implements AccessListResolver {
+    @Inject
+    CustomerService customerService;
+    
+    @Override
+    public Collection<?> resolve(SecurityContext context) {
+        // Custom logic to determine accessible customer IDs
+        return customerService.getAccessibleCustomerIds(
+            context.getPrincipal().getUserId()
+        );
+    }
+}
+----
+
+Use in permission rules:
+
+[source,yaml]
+----
+- name: accessible-customers
+  effect: ALLOW
+  andFilterString: "customerId:^[${accessibleCustomerIds}]"
+----
+
+*RuleContext Integration*
+
+The `RuleContext` evaluates rules and provides:
+- ALLOW/DENY decisions
+- Data filters (andFilterString, orFilterString)
+- Projections
+- Custom script execution
+
+[source,java]
+----
+@Inject
+RuleContext ruleContext;
+
+public List<Order> listOrders() {
+    // RuleContext automatically applies:
+    // - Permission checks
+    // - DataDomain filters
+    // - Ontology-based filters (hasEdge)
+    // - Access resolver results
+    
+    return repo.list(ruleContext);
+}
+----
+
+=== Dynamic Attributes: Extend Models Without Code Changes
+
+Quantum supports dynamic attributes that can be added to entities at runtime:
+
+*Dynamic Attribute Types*
+
+[source,java]
+----
+public enum DynamicAttributeType {
+    String, Text, Integer, Long, Float, Double,
+    Date, DateTime, Boolean,
+    Select, MultiSelect,
+    Regex, Exclude,
+    Object, ObjectRef
+}
+----
+
+*Define Attribute Sets*
+
+[source,java]
+----
+DynamicAttributeSet logisticsSet = DynamicAttributeSet.builder()
+    .name("Logistics")
+    .attributes(List.of(
+        DynamicAttribute.builder()
+            .name("shippingNumber")
+            .label("Shipping Number")
+            .type(DynamicAttributeType.String)
+            .required(true)
+            .build(),
+        DynamicAttribute.builder()
+            .name("vatNumber")
+            .label("VAT Number")
+            .type(DynamicAttributeType.String)
+            .build(),
+        DynamicAttribute.builder()
+            .name("containerNumber")
+            .label("Container Number")
+            .type(DynamicAttributeType.String)
+            .build()
+    ))
+    .build();
+----
+
+*Apply to Entities*
+
+Dynamic attributes can be:
+- Added to entities at runtime
+- Grouped into sets (e.g., "Logistics", "Compliance", "Custom")
+- Inherited from parent entities
+- Hidden from UI
+- Required or optional
+- Validated (regex, select values)
+
+*Query Dynamic Attributes*
+
+[source]
+----
+# Query by dynamic attribute
+GET /orders/list?filter=dynamicAttributes.logistics.shippingNumber:"SHIP-123"
+
+# Filter by dynamic attribute value
+GET /orders/list?filter=dynamicAttributes.compliance.certificationNumber:~
+----
+
+=== Extensibility Points
+
+Quantum provides multiple extension points for customization:
+
+*Model Extensions*
+
+[source,java]
+----
+// Add custom validation
+@Override
+public void validate() {
+    super.validate();
+    if (totalAmount.compareTo(BigDecimal.ZERO) < 0) {
+        throw new ValidationException("Total amount cannot be negative");
+    }
+}
+
+// Custom business logic hooks
+@Override
+public void beforePersist() {
+    super.beforePersist();
+    // Custom logic before saving
+}
+
+@Override
+public void afterLoad() {
+    super.afterLoad();
+    // Custom logic after loading
+}
+----
+
+*Repository Extensions*
+
+[source,java]
+----
+public interface OrderRepo extends MorphiaRepo<Order> {
+    // Custom query methods
+    List<Order> findByCustomerAndDateRange(
+        String customerId, 
+        Date startDate, 
+        Date endDate
+    );
+    
+    // Custom aggregation
+    AggregationResults<OrderSummary> summarizeByStatus();
+}
+----
+
+*Resource Extensions*
+
+[source,java]
+----
+@Path("/orders")
+public class OrderResource extends BaseResource<Order, OrderRepo> {
+    
+    // Add custom endpoints
+    @POST
+    @Path("/{id}/approve")
+    public Response approveOrder(@PathParam("id") String id) {
+        // Custom business logic
+    }
+    
+    // Override default behavior
+    @Override
+    public Response save(Order order) {
+        // Custom validation or processing
+        return super.save(order);
+    }
+}
+----
+
+*Authentication Extensions*
+
+[source,java]
+----
+// Implement custom authentication provider
+@ApplicationScoped
+public class CustomAuthProvider implements AuthProvider {
+    @Override
+    public Principal authenticate(String credentials) {
+        // Custom authentication logic
+    }
+}
+----
+
+*Authorization Extensions*
+
+[source,java]
+----
+// Custom access resolver
+@ApplicationScoped
+public class CustomAccessResolver implements AccessListResolver {
+    @Override
+    public Collection<?> resolve(SecurityContext context) {
+        // Custom authorization logic
+    }
+}
+----
+
+=== Developer Experience Summary
+
+Quantum's developer-friendly approach means:
+
+*Minimal Code*
+- 3 classes (Model, Repository, Resource) = Full CRUD API
+- No boilerplate for multi-tenancy
+- No boilerplate for security
+- No boilerplate for audit
+
+*Consistent Patterns*
+- Same patterns work across all entities
+- Predictable API structure
+- Familiar Java/Quarkus ecosystem
+
+*Powerful Capabilities*
+- Rich query language
+- Automatic aggregations and joins
+- Comprehensive audit trails
+- Flexible authorization
+- Dynamic attributes
+
+*Fast Iteration*
+- Hot reload in development
+- Immediate feedback
+- Clear error messages
+- Comprehensive documentation
+
+=== AI-Assisted Development: Established Patterns Enable "Vibe-Based Coding"
+
+Modern AI coding assistants like Cursor excel when working with established patterns and conventions. Quantum's consistent architecture makes it ideal for AI-assisted development.
+
+*What is "Vibe-Based Coding"?*
+
+"Vibe-based coding" refers to the ability to describe what you want in natural language and have AI assistants generate code that follows established patterns. This works best when:
+
+- Patterns are consistent and well-documented
+- Conventions are clear and predictable
+- Examples are readily available
+- The framework provides clear extension points
+
+*How Quantum Enables AI-Assisted Development*
+
+*Consistent Patterns*
+
+Every entity follows the same pattern:
+
+[source]
+----
+# AI can generate this pattern reliably:
+1. Extend BaseModel
+2. Add @Entity, @Data, @SuperBuilder annotations
+3. Implement bmFunctionalArea() and bmFunctionalDomain()
+4. Create repository extending MorphiaRepo
+5. Create resource extending BaseResource
+----
+
+When you ask an AI assistant: "Create an Order entity with multi-tenant support", it can generate correct code because the pattern is always the same.
+
+*Predictable Structure*
+
+[source]
+----
+# AI knows exactly what to generate:
+@Entity
+@Data
+@SuperBuilder
+public class Order extends BaseModel {
+    // Business fields here
+    // Always includes DataDomain automatically
+    // Always includes AuditInfo automatically
+}
+----
+
+The AI doesn't need to guess about multi-tenancy, security, or audit—it's built into the base class.
+
+*Clear Extension Points*
+
+[source]
+----
+# AI knows where to add custom logic:
+public class OrderResource extends BaseResource<Order, OrderRepo> {
+    // Custom endpoints here
+    // Override methods here
+    // Add business logic here
+}
+----
+
+The framework makes it clear where customization belongs, so AI-generated code fits naturally.
+
+*Advantages Over Starting from Scratch*
+
+When building from scratch, AI assistants struggle because:
+
+*No Established Patterns*
+- Every decision requires context
+- AI must guess architecture choices
+- Inconsistent code across the codebase
+- More errors and refactoring needed
+
+*Unclear Conventions*
+- Where does security go?
+- How is multi-tenancy handled?
+- What's the query pattern?
+- How are relationships managed?
+
+*More Code to Write*
+- Security boilerplate
+- Multi-tenant filtering
+- Audit logging
+- API consistency
+
+*With Quantum's Established Patterns*
+
+*Consistent Code Generation*
+- AI generates correct code following patterns
+- Less need for corrections
+- Faster development cycles
+- Predictable outcomes
+
+*Clear Context*
+- AI understands the framework structure
+- Can generate appropriate code for each layer
+- Knows where to add custom logic
+- Follows established conventions
+
+*Less Boilerplate*
+- AI generates business logic, not infrastructure
+- Focus on domain problems
+- Framework handles cross-cutting concerns
+- More value per line of code
+
+*Example: AI-Assisted Development Flow*
+
+[source]
+----
+# Developer: "Create a Shipment entity that references an Order"
+
+# AI generates (following Quantum patterns):
+@Entity
+@Data
+@SuperBuilder
+public class Shipment extends BaseModel {
+    private String trackingNumber;
+    private EntityReference orderRef;  // AI knows this pattern
+    private ShipmentStatus status;
+    
+    @Override
+    public String bmFunctionalArea() { return "Logistics"; }
+    
+    @Override
+    public String bmFunctionalDomain() { return "Shipment"; }
+}
+
+# AI generates repository:
+public interface ShipmentRepo extends MorphiaRepo<Shipment> {
+    // Custom queries if needed
+}
+
+# AI generates resource:
+@Path("/shipments")
+public class ShipmentResource extends BaseResource<Shipment, ShipmentRepo> {
+    // Full CRUD API automatically available
+}
+----
+
+The AI generates correct, production-ready code because the patterns are established and consistent.
+
+=== Comparison with Other Frameworks
+
+=== vs. Spring Boot
+
+Spring Boot is a general-purpose framework, but it lacks many features needed for multi-tenant SaaS and supply chain applications:
+
+*What Spring Boot Provides*
+- Dependency injection
+- Web MVC framework
+- Data access (JPA, MongoDB)
+- Security (Spring Security)
+- Actuator for monitoring
+
+*What Spring Boot Lacks for Multi-Tenant SaaS*
+
+*No Built-in Multi-Tenancy*
+- No DataDomain concept
+- No automatic tenant filtering
+- Must build tenant isolation from scratch
+- Easy to introduce security vulnerabilities
+
+*No Policy-Driven Authorization*
+- Spring Security is role-based, not policy-based
+- Rules are code-based, not data-driven
+- Changes require code deployment
+- Difficult to express complex business rules
+
+*No Ontology Support*
+- No built-in relationship modeling
+- No semantic querying
+- Must build graph relationships manually
+- No property chain inference
+
+*No Consistent API Pattern*
+- Each endpoint is custom
+- No automatic CRUD generation
+- Inconsistent query patterns
+- More boilerplate per endpoint
+
+*Example: Building Multi-Tenant Order API*
+
+**With Spring Boot** (from scratch):
+- Create Order entity
+- Add tenantId field manually
+- Create repository with custom tenant filtering
+- Create service layer with security checks
+- Create controller with manual filtering
+- Add audit logging manually
+- Write custom query language parser
+- Build policy engine
+- Implement ontology relationships
+- **Result**: 1000+ lines of infrastructure code
+
+**With Quantum**:
+- Extend BaseModel (automatic multi-tenancy)
+- Extend MorphiaRepo (automatic filtering)
+- Extend BaseResource (automatic CRUD)
+- **Result**: ~50 lines of business code
+
+*What You'd Need to Build on Spring*
+
+To match Quantum's capabilities in Spring Boot, you'd need to build:
+
+1. **Multi-Tenancy Framework**
+   - DataDomain abstraction
+   - Tenant context propagation
+   - Automatic filtering
+   - Cross-tenant sharing
+
+2. **Policy Engine**
+   - Rule evaluation engine
+   - Query language parser
+   - Access resolvers
+   - Script execution
+
+3. **Ontology System**
+   - Relationship modeling
+   - Edge materialization
+   - Property chain inference
+   - Query rewriting
+
+4. **Consistent API Pattern**
+   - Base resource class
+   - Automatic CRUD generation
+   - Query language integration
+   - OpenAPI generation
+
+5. **Audit System**
+   - Automatic audit logging
+   - Event tracking
+   - Impersonation tracking
+
+**Estimated Effort**: 6-12 months of development time
+
+=== vs. Other Frameworks
+
+*Django (Python)*
+- Good for rapid development
+- No built-in multi-tenancy
+- No ontology support
+- Limited policy-driven authorization
+- Not Java-based (different ecosystem)
+
+*Ruby on Rails*
+- Convention over configuration
+- No multi-tenant primitives
+- No ontology support
+- Not Java-based
+
+*NestJS (Node.js)*
+- TypeScript-based
+- Good for microservices
+- No built-in multi-tenancy
+- No ontology support
+- Different runtime (Node.js vs JVM)
+
+*Quarkus (without Quantum)*
+- Fast startup, low memory
+- Good for microservices
+- No multi-tenant primitives
+- No ontology support
+- No policy engine
+- **Quantum adds these capabilities to Quarkus**
+
+=== Why Quantum is Purpose-Built for Supply Chain
+
+Supply chain applications have unique requirements that general-purpose frameworks don't address:
+
+*Multi-Party Collaboration*
+- Multiple independent organizations
+- Selective data sharing
+- Complex access rules
+- Audit requirements
+
+*Relationship Complexity*
+- Orders → Shipments → Deliveries
+- Products → Suppliers → Inventory
+- Facilities → Regions → Networks
+- Ontology makes these explicit
+
+*Regulatory Compliance*
+- Data residency requirements
+- Cross-border data sharing
+- Audit trails
+- Policy-driven governance
+
+*Rapid Partner Onboarding*
+- New tenants frequently
+- Consistent onboarding
+- Seed packs for baseline data
+- Policy-based access
+
+General-purpose frameworks require building all of this from scratch. Quantum provides it out of the box.
+
+=== 5. Enterprise Integration
+
+Built for real-world enterprise needs:
+
+*Authentication*
+- JWT and OIDC support
+- Enterprise SSO integration
+- Partner login support
+
+*Audit Trails*
+- Automatic audit logging
+- Explainable access decisions
+- Compliance-ready reporting
+
+*Observability*
+- Built-in logging and metrics
+- Health checks and monitoring
+- Production-ready defaults
+
+== Architecture
+
+=== Layered Architecture
+
+Quantum separates concerns into clear, well-defined layers that enable independent development while maintaining consistency:
+
+[plantuml]
+....
+@startuml Quantum Architecture Layers
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam componentStyle rectangle
+
+package "Presentation Layer" {
+  [REST APIs] as APIs
+  [OpenAPI Docs] as Docs
+}
+
+package "Security & Governance Layer" {
+  [Authentication] as Auth
+  [Permission Rules] as Rules
+  [RuleContext] as RuleCtx
+  [DomainContext] as DomainCtx
+}
+
+package "Business Logic Layer" {
+  [BaseResource] as Resource
+  [Business Services] as Services
+  [Workflow Engine] as Workflow
+}
+
+package "Ontology Layer" {
+  [Ontology Registry] as Ontology
+  [Reasoner] as Reasoner
+  [Edge Materializer] as Materializer
+}
+
+package "Data Access Layer" {
+  [MorphiaRepo] as Repo
+  [Query Rewriter] as Rewriter
+  [DataDomain Filters] as Filters
+}
+
+package "Persistence Layer" {
+  database "MongoDB" {
+    [Entity Collections] as Entities
+    [Edge Collection] as Edges
+  }
+}
+
+APIs --> Auth
+APIs --> Resource
+Auth --> Rules
+Rules --> RuleCtx
+RuleCtx --> DomainCtx
+Resource --> Services
+Resource --> Repo
+Services --> Ontology
+Services --> Materializer
+Ontology --> Reasoner
+Reasoner --> Materializer
+Materializer --> Edges
+RuleCtx --> Rewriter
+Rewriter --> Edges
+DomainCtx --> Filters
+Repo --> Filters
+Filters --> Entities
+@enduml
+....
+
+*Identity & Tenancy Layer*
+- User and tenant management
+- Authentication integration (JWT, OIDC, SSO)
+- Tenant context propagation
+- Multi-tenant identity resolution
+
+*Policy & Governance Layer*
+- Access control rules (human-readable policies)
+- Data placement policies
+- Sharing configurations
+- RuleContext evaluation
+- DomainContext management
+
+*Business Logic Layer*
+- BaseResource pattern for consistent REST APIs
+- Business services and domain logic
+- Workflow and state management
+- Long-running process support
+
+*Ontology Layer*
+- Entity and relationship definitions (TBox)
+- Semantic reasoning and inference
+- Graph navigation via edges
+- Property chain computation
+- Edge materialization
+
+*Data Access Layer*
+- Morphia-based repositories
+- Query rewriting for ontology relationships
+- DataDomain filtering
+- Automatic tenant isolation
+
+*Persistence Layer*
+- MongoDB document storage
+- Edge collection for relationships
+- Horizontal scaling support
+- Flexible deployment models
+
+=== Request Flow Architecture
+
+[plantuml]
+....
+@startuml Request Flow
+!theme plain
+skinparam backgroundColor #FFFFFF
+
+start
+:Incoming REST Request;
+:Extract Security Principal;
+:Build DomainContext\n(tenant, org, user, action);
+:Evaluate Permission Rules;
+if (Rule allows?) then (yes)
+  :Build RuleContext\n(filters, projections);
+  :Apply Ontology Query Rewriting\n(if hasEdge() in rules);
+  :Apply DataDomain Filters\n(tenant, org, dataSegment);
+  :Execute Repository Query\n(with all filters);
+  :Return Filtered Results;
+else (no)
+  :Return 403 Forbidden;
+  stop
+endif
+stop
+@enduml
+....
+
+=== Multi-Tenancy Architecture
+
+Quantum supports flexible multi-tenancy models to fit different deployment scenarios:
+
+[plantuml]
+....
+@startuml Multi-Tenancy Models
+!theme plain
+skinparam backgroundColor #FFFFFF
+
+package "Model 1: One Database Per Tenant" {
+  database "MongoDB Cluster" {
+    database "Tenant-A DB" {
+      [Collections]
+    }
+    database "Tenant-B DB" {
+      [Collections]
+    }
+    database "Tenant-C DB" {
+      [Collections]
+    }
+  }
+  note right: Strong isolation\nSimplified backup/restore\nHigher operational overhead
+}
+
+package "Model 2: Shared Database" {
+  database "Shared MongoDB" {
+    [Collections\nwith tenantId filters]
+  }
+  note right: Efficient resource usage\nApplication-level isolation\nRequires strict filtering
+}
+
+package "Model 3: Hybrid" {
+  database "MongoDB Cluster" {
+    database "Premium Tenant DBs" {
+      [High-value tenants]
+    }
+    database "Shared DB" {
+      [Standard tenants\nwith tenantId filters]
+    }
+  }
+  note right: Best of both worlds\nFlexible deployment\nCost optimization
+}
+@enduml
+....
+
+=== Data Segmentation Architecture
+
+Quantum's data segmentation model provides multiple levels of isolation and sharing:
+
+[plantuml]
+....
+@startuml Data Segmentation
+!theme plain
+allowmixing
+skinparam backgroundColor #FFFFFF
+
+class DataDomain {
+  + accountNum: String
+  + tenantId: String
+  + orgRefName: String
+  + dataSegment: int
+  + ownerId: String
+  + locationId: String
+  + businessTransactionId: String
+}
+
+component "Account Level" as Account
+component "Tenant Level" as Tenant
+component "Organization Level" as Org
+component "Data Segment Level" as Segment
+component "Owner Level" as Owner
+
+Account --> Tenant
+Tenant --> Org
+Org --> Segment
+Segment --> Owner
+
+note right of Account
+  Top-level isolation
+  Billing and subscription boundary
+end note
+
+note right of Tenant
+  Primary isolation boundary
+  Customer or organization partition
+end note
+
+note right of Org
+  Sub-tenant grouping
+  Department or business unit
+end note
+
+note right of Segment
+  Fine-grained permission control
+  Project or initiative level
+end note
+
+note right of Owner
+  Individual ownership
+  Creator or assignee
+end note
+@enduml
+....
+
+=== Technology Stack
+
+*Quarkus*
+- Fast startup and low memory footprint
+- Native compilation support
+- Rich ecosystem and extensions
+- Hot reload for development
+
+*MongoDB*
+- Flexible document model
+- Horizontal scaling with sharding
+- Rich query capabilities
+- Multi-database support for tenant isolation
+
+*Java 17+*
+- Modern language features
+- Strong typing and tooling
+- Enterprise ecosystem
+- Long-term support
+
+== Use Cases
+
+=== Supply Chain Collaboration
+
+Multi-party supply chain platforms where shippers, suppliers, carriers, and 3PLs collaborate:
+
+*Requirements*
+- Secure cross-company sharing
+- Role-appropriate visibility
+- Auditability and compliance
+- Rapid partner onboarding
+
+*Quantum Solution*
+- Ontology maps domain relationships
+- Policies control access per role and company
+- Collaboration bubbles for specific orders/shipments
+- Seed packs for rapid partner setup
+
+== Multi-Tenancy and Data Segmentation: Critical for Supply Chain
+
+=== Why Multi-Tenancy Matters in Supply Chain
+
+Supply chain applications involve multiple independent organizations that need to collaborate while maintaining strict data isolation. Quantum's multi-tenancy architecture addresses these critical needs:
+
+*Organizational Isolation*
+- Each company (shipper, supplier, carrier, 3PL) operates as a separate tenant
+- Data is isolated by default—no risk of cross-company data leakage
+- Each organization has its own identity, policies, and data domains
+
+*Selective Collaboration*
+- Companies can share specific data (orders, shipments, inventory) without exposing everything
+- Collaboration is explicit, auditable, and time-bound
+- Partners see only what they need, when they need it
+
+*Regulatory Compliance*
+- Data residency requirements can be enforced per tenant
+- Audit trails show exactly who accessed what data and when
+- Compliance boundaries align with tenant boundaries
+
+*Operational Efficiency*
+- Single platform serves multiple organizations
+- Shared infrastructure with isolated data
+- Consistent APIs across all tenants
+
+=== Data Segmentation: Granular Control
+
+Quantum's data segmentation model provides multiple levels of control beyond simple tenant isolation:
+
+*Account Level*
+- Top-level billing and subscription boundary
+- Can contain multiple tenants
+- Useful for enterprise customers with multiple divisions
+
+*Tenant Level*
+- Primary isolation boundary
+- Each company is typically one tenant
+- All data within a tenant is isolated from other tenants
+
+*Organization Level (orgRefName)*
+- Sub-tenant grouping within a company
+- Useful for large organizations with multiple divisions
+- Example: A retailer with separate divisions for online and brick-and-mortar
+
+*Data Segment Level*
+- Fine-grained permission control
+- Project or initiative level isolation
+- Example: Separate segments for different product lines or regions
+
+*Owner Level*
+- Individual ownership and access control
+- Creator or assignee of records
+- Useful for personal data or assigned tasks
+
+=== Supply Chain Example: Multi-Tenant Collaboration
+
+Consider a supply chain platform with the following participants:
+
+*Tenants*
+- Acme Retailer (Tenant-A)
+- Global Supplier Corp (Tenant-B)
+- Fast Logistics (Tenant-C)
+- Regional Distribution Centers (Tenant-D)
+
+*Scenario: Order Fulfillment*
+
+1. **Initial State (Isolated)**:
+   - Acme Retailer creates an order (Tenant-A, dataSegment=0)
+   - Order is completely isolated—only Acme can see it
+   - DataDomain: `{tenantId: "Tenant-A", orgRefName: "Acme-Online", ownerId: "buyer-123"}`
+
+2. **Sharing with Supplier**:
+   - Acme shares the order with Global Supplier Corp
+   - Creates collaboration edge: `(Order-456, sharedWith, Tenant-B)`
+   - Policy grants Global Supplier read access to this specific order
+   - Global Supplier can now see the order but not other Acme data
+
+3. **Supplier Creates Shipment**:
+   - Global Supplier creates a shipment (Tenant-B, dataSegment=0)
+   - Shipment references the shared order via ontology edge
+   - DataDomain: `{tenantId: "Tenant-B", orgRefName: "Supplier-Main", ownerId: "planner-789"}`
+   - Shipment is isolated to Global Supplier by default
+
+4. **Sharing Shipment with Carrier**:
+   - Global Supplier shares shipment with Fast Logistics
+   - Creates collaboration edge: `(Shipment-101, sharedWith, Tenant-C)`
+   - Fast Logistics can see shipment details and update status
+   - Fast Logistics cannot see the original order (not shared with them)
+
+5. **Distribution Center Access**:
+   - When shipment arrives, Regional Distribution Centers need visibility
+   - Ontology relationship: `Shipment arrivesAt DistributionCenter`
+   - Policy: `hasEdge('arrivesAt', principal.distributionCenterRef)`
+   - Distribution center automatically sees shipments arriving at their location
+
+*Key Benefits*:
+- Each organization's data remains isolated
+- Sharing is explicit and auditable
+- Partners see only what they need
+- Relationships are managed via ontology, not hard-coded
+- Policies automatically enforce access based on relationships
+
+=== Data Segmentation Example: Regional Operations
+
+Consider a global retailer with regional operations:
+
+*Account*: GlobalRetailer
+*Tenants*:
+- GlobalRetailer-NA (North America)
+- GlobalRetailer-EU (Europe)
+- GlobalRetailer-APAC (Asia Pacific)
+
+*Within Each Tenant*:
+- `orgRefName: "Online"` - E-commerce division
+- `orgRefName: "Stores"` - Brick-and-mortar division
+- `orgRefName: "Wholesale"` - B2B division
+
+*Data Segments*:
+- `dataSegment: 0` - Standard operations
+- `dataSegment: 1` - Holiday season operations
+- `dataSegment: 2` - Special promotions
+
+*Use Case: Holiday Season Inventory*
+
+1. **Standard Operations** (dataSegment=0):
+   - Regular inventory and orders
+   - Accessible to all users in the org
+
+2. **Holiday Operations** (dataSegment=1):
+   - Special holiday inventory allocation
+   - Only holiday planning team can access
+   - Policy: `dataSegment = 1 AND role = 'HolidayPlanner'`
+
+3. **Cross-Region Visibility**:
+   - Regional managers see their region's data
+   - Global managers see all regions
+   - Policy: `orgRefName = principal.orgRefName OR role = 'GlobalManager'`
+
+*Key Benefits*:
+- Fine-grained access control without separate systems
+- Segments can be time-bound (holiday season ends, segment access expires)
+- Clear audit trail of who accessed which segment
+- Flexible sharing models (within org, across orgs, across tenants)
+
+=== Concrete Supply Chain Strengths
+
+*Example 1: Multi-Party Order Visibility*
+
+**Traditional Approach**:
+- Each party has separate system
+- Manual data sharing via emails or EDI
+- No real-time visibility
+- Difficult to audit
+
+**Quantum Approach**:
+- Single platform, multiple tenants
+- Real-time collaboration via shared edges
+- Automatic visibility based on relationships
+- Complete audit trail
+
+**Implementation**:
+```
+Order (Tenant-A, ownerId: buyer-123)
+  → sharedWith → Tenant-B (Supplier)
+  → sharedWith → Tenant-C (Carrier)
+  
+Shipment (Tenant-B, ownerId: planner-789)
+  → fulfills → Order (via ontology edge)
+  → assignedTo → Tenant-C (Carrier)
+  
+Policy for Carrier:
+  hasEdge('assignedTo', principal.carrierRef) OR
+  hasEdge('sharedWith', principal.tenantId)
+```
+
+*Example 2: Regional Distribution Network*
+
+**Business Need**:
+- Distribution centers see orders shipping to their region
+- Regional managers see all DCs in their region
+- National managers see all regions
+
+**Traditional Approach**:
+- Complex database views per role
+- Hard-coded region mappings
+- Difficult to change as network evolves
+
+**Quantum Approach**:
+- Ontology relationships: `Order shipsTo DistributionCenter`, `DistributionCenter locatedIn Region`
+- Property chain: `shipsTo ∘ locatedIn → shipsToRegion`
+- Policies automatically grant access based on relationships
+
+**Implementation**:
+```
+Distribution Center Operator:
+  hasEdge('shipsTo', principal.distributionCenterRef)
+
+Regional Manager:
+  hasEdge('shipsToRegion', principal.regionRef)
+
+National Manager:
+  role = 'NationalManager' (sees all)
+```
+
+*Example 3: Supplier Network Collaboration*
+
+**Business Need**:
+- Strategic suppliers see orders for their products
+- Regular suppliers see only assigned orders
+- Suppliers cannot see each other's data
+
+**Traditional Approach**:
+- Separate access control per supplier
+- Manual assignment of orders to suppliers
+- Risk of suppliers seeing wrong data
+
+**Quantum Approach**:
+- Ontology: `Order contains Product`, `Product suppliedBy Supplier`
+- Property chain: `contains ∘ suppliedBy → suppliedBySupplier`
+- Policies differentiate strategic vs. regular suppliers
+
+**Implementation**:
+```
+Strategic Supplier Policy:
+  hasEdge('suppliedBySupplier', principal.supplierRef) AND
+  supplier.strategic = true
+
+Regular Supplier Policy:
+  hasEdge('assignedToSupplier', principal.supplierRef) AND
+  hasEdge('sharedWith', principal.tenantId)
+```
+
+*Example 4: Compliance and Audit*
+
+**Business Need**:
+- Track who accessed what data and when
+- Demonstrate compliance with data residency requirements
+- Audit cross-company data sharing
+
+**Quantum Approach**:
+- Every access is logged with full context
+- DataDomain shows where data lives (tenant, org, segment)
+- Audit trail includes relationship changes
+
+**Implementation**:
+```
+Audit Log Entry:
+  timestamp: 2024-01-15T10:30:00Z
+  user: supplier-planner-789
+  tenant: Tenant-B
+  action: VIEW
+  resource: Order-456
+  dataDomain: {tenantId: "Tenant-A", orgRefName: "Acme-Online"}
+  relationship: sharedWith (Tenant-B)
+  policy: hasEdge('sharedWith', principal.tenantId)
+```
+
+=== Why This Architecture Excels in Supply Chain
+
+*Scalability*
+- Add new partners as new tenants—no system changes required
+- Horizontal scaling with MongoDB sharding
+- Efficient queries even with thousands of tenants
+
+*Security*
+- Isolation by default prevents data leakage
+- Explicit sharing with audit trails
+- Policy-driven access control
+
+*Flexibility*
+- Support different collaboration models
+- Adapt to changing business relationships
+- Extend ontology as supply chain evolves
+
+*Performance*
+- Edge-based queries are fast (indexed lookups)
+- No complex joins across tenants
+- Efficient filtering at database level
+
+*Compliance*
+- Data residency enforced per tenant
+- Complete audit trails
+- Policy changes without code deployment
+
+=== B2B SaaS Platforms
+
+Multi-tenant SaaS where customers need isolation with selective sharing:
+
+*Requirements*
+- Tenant isolation by default
+- Selective data sharing
+- Consistent APIs
+- Rapid feature development
+
+*Quantum Solution*
+- Native multi-tenancy
+- Policy-driven sharing
+- Consistent REST APIs
+- Minimal boilerplate
+
+=== Data Mesh Foundation
+
+Connect multiple data domains with consistent governance:
+
+*Requirements*
+- Domain autonomy
+- Consistent governance
+- Semantic understanding
+- Cross-domain queries
+
+*Quantum Solution*
+- Ontology defines cross-domain relationships
+- Policies govern access and placement
+- Consistent query language
+- Domain-specific extensions
+
+== Competitive Advantages
+
+=== vs. Custom Development
+
+*Faster Delivery*
+- Pre-built multi-tenancy and security
+- Consistent patterns and APIs
+- Less code to write and maintain
+
+*Lower Risk*
+- Security and compliance built-in
+- Proven patterns and practices
+- Active community and support
+
+*Better Maintainability*
+- Clear architecture and patterns
+- Comprehensive documentation
+- Extensible design
+
+=== vs. Generic Frameworks
+
+*Business-Aware*
+- Ontology makes business concepts explicit
+- Policies express business rules
+- Semantic queries understand relationships
+
+*Multi-Tenant Native*
+- Built for SaaS from the ground up
+- Tenant isolation and sharing
+- Rapid onboarding
+
+*Governance First*
+- Security and compliance by construction
+- Explainable access control
+- Audit trails built-in
+
+=== vs. Enterprise Platforms
+
+*Accessibility*
+- Open-source with clear documentation
+- Developer-friendly stack
+- No specialized training
+
+*Flexibility*
+- Customize and extend freely
+- No vendor lock-in
+- Integrate with existing systems
+
+*Cost*
+- Open-source foundation
+- Standard infrastructure
+- Flexible support options
+
+== Getting Started
+
+=== For Developers
+
+1. *Set Up Project*
+   - Add Quantum dependencies
+   - Configure MongoDB
+   - Set up authentication
+
+2. *Define Domain Model*
+   - Create entity classes
+   - Define ontology
+   - Map relationships
+
+3. *Create Resources*
+   - Extend BaseResource
+   - Get automatic CRUD APIs
+   - Add custom logic
+
+4. *Define Policies*
+   - Specify access rules
+   - Configure data placement
+   - Test security
+
+5. *Deploy and Iterate*
+   - Use seed packs for data
+   - Monitor and optimize
+   - Extend as needed
+
+=== For Business Leaders
+
+1. *Identify Use Case*
+   - Pick high-value domain
+   - Define success criteria
+   - Plan rollout
+
+2. *Build MVP*
+   - Start with core entities
+   - Enable basic collaboration
+   - Demonstrate value
+
+3. *Scale Gradually*
+   - Add domains and features
+   - Onboard partners
+   - Refine governance
+
+== Summary
+
+Quantum provides a powerful foundation for building governed, multi-tenant SaaS applications. Its ontology-driven approach makes business concepts explicit, its policy-based governance ensures security and compliance, and its developer-friendly design accelerates delivery while reducing risk.
+
+Whether you're building a supply chain platform, a B2B SaaS product, or a data mesh foundation, Quantum provides the capabilities you need without the complexity and cost of enterprise platforms.
+

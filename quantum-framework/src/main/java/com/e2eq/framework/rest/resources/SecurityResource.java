@@ -4,6 +4,7 @@ package com.e2eq.framework.rest.resources;
 import com.e2eq.framework.model.auth.AuthProvider;
 import com.e2eq.framework.model.auth.AuthProviderFactory;
 import com.e2eq.framework.model.auth.RoleAssignment;
+import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.rest.models.*;
 import com.e2eq.framework.model.securityrules.SecurityCheckException;
 import com.e2eq.framework.model.security.ApplicationRegistration;
@@ -204,6 +205,13 @@ public class SecurityResource {
             if (userProfileOp.isPresent()) {
                 userProfileRepo.fillUIActions(userProfileOp.get());
             }
+            else {
+                Optional<CredentialUserIdPassword> cred = credentialRepo.findBySubject(securityContext.getUserPrincipal().getName());
+                if (cred.isPresent()) {
+                    return Response.ok(cred.get()).build();
+                }
+            }
+
             Response response;
             if (userProfileOp.isPresent()) {
                 response = Response.ok(userProfileOp.get()).build();

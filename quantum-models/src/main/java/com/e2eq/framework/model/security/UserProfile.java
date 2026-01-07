@@ -7,13 +7,16 @@ import com.e2eq.framework.model.persistent.base.ReferenceTarget;
 import com.e2eq.ontology.annotations.OntologyClass;
 import com.e2eq.ontology.annotations.OntologyProperty;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import dev.morphia.annotations.Entity;
+import com.mongodb.client.model.CollationStrength;
+import dev.morphia.annotations.*;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
+
+import static dev.morphia.mapping.IndexType.DESC;
 
 
 @EqualsAndHashCode(callSuper = true)
@@ -24,6 +27,11 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 @Data
 @ToString(callSuper = true)
 @OntologyClass(id = "UserProfile")
+@Indexes({
+   @Index(fields={@Field( value="userId", type=DESC)},
+      options=@IndexOptions(unique=true, collation = @Collation(locale = "en", strength = CollationStrength.SECONDARY), name = "idx_userIdUnique")
+   )
+})
 public  class UserProfile extends BaseModel {
     public enum Status {
         ACTIVE("ACTIVE"),

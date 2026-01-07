@@ -62,16 +62,16 @@ import static dev.morphia.query.Sort.descending;
 public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements BaseMorphiaRepo<T> {
 
     @Inject
-    Instance<PostPersistHook> postPersistHooks;
+    protected Instance<PostPersistHook> postPersistHooks;
 
     @Inject
-    Instance<PreDeleteHook> preDeleteHooks;
+    protected Instance<PreDeleteHook> preDeleteHooks;
 
     @Inject
-    Instance<PostDeleteHook> postDeleteHooks;
+    protected Instance<PostDeleteHook> postDeleteHooks;
 
     @ConfigProperty(name = "ontology.auto-materialize", defaultValue = "true")
-    boolean autoMaterialize;
+    protected boolean autoMaterialize;
 
     private void callPostPersistHooks(String realmId, Object entity) {
         if (!autoMaterialize || postPersistHooks == null) return;
@@ -134,7 +134,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     protected MessageTemplateLocator messageTemplateLocator;
 
     @Inject
-    StateGraphManager stateGraphManager;
+    protected StateGraphManager stateGraphManager;
 
     private void ensureSecurityContextFromIdentity() {
                 String currentIdentity = null;

@@ -26,12 +26,12 @@ import java.util.Optional;
 public class UserProfileResource extends BaseResource<UserProfile, UserProfileRepo> {
 
    @Inject
-   AuthProviderFactory authProviderFactory;
+   protected AuthProviderFactory authProviderFactory;
 
    @Inject
-   CredentialRepo credentialRepo;
+   protected CredentialRepo credentialRepo;
 
-   UserProfileResource (UserProfileRepo repo ) {
+   protected UserProfileResource (UserProfileRepo repo ) {
       super(repo);
    }
 

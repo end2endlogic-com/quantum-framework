@@ -1,6 +1,7 @@
 package com.e2eq.framework.model.persistent.morphia;
 
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
+import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.base.EntityReference;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.DomainContext;
@@ -128,6 +129,30 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
       return createUser( userId, fname, lname, forceChangePassword, roles, password, securityUtils.getDefaultDomainContext());
    }
 
+   public UserProfile createUser(
+      String userId,
+      String fname,
+      String lname,
+      Boolean forceChangePassword,
+      @NotNull @NotEmpty String[] roles,
+      @NotNull @NonNull @NotEmpty @Size(min=8, max=50, message = "password must be between 8 and 50 characters") String password,
+      DomainContext domainContext
+      ) {
+         return createUser(userId, fname, lname, forceChangePassword, roles, password, domainContext,null);
+   }
+
+   public UserProfile createUser(
+      String userId,
+      String fname,
+      String lname,
+      Boolean forceChangePassword,
+      @NotNull @NotEmpty String[] roles,
+      @NotNull @NonNull @NotEmpty @Size(min=8, max=50, message = "password must be between 8 and 50 characters") String password,
+      DomainContext domainContext,
+      DataDomain dataDomain) {
+      return createUser(userId, fname, lname, forceChangePassword, roles, password, domainContext, dataDomain, null);
+   }
+
 
    public UserProfile createUser(
                                  String userId,
@@ -136,7 +161,9 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
                                  Boolean forceChangePassword,
                                  @NotNull @NotEmpty String[] roles,
                                  @NotNull @NonNull @NotEmpty @Size(min=8, max=50, message = "password must be between 8 and 50 characters") String password,
-                                 DomainContext domainContext) {
+                                 DomainContext domainContext,
+                                 DataDomain dataDomain,
+                                 String realm) {
 
       // convert roles array to a set of strings
       Set<String> roleSet = new HashSet<>(Arrays.asList(roles));
@@ -150,7 +177,7 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
          // this will handle the password encryption and storage in the system
          // and will also handle the creation of the user in the authentication system
          // (like LDAP, Active Directory, etc.)
-         authProviderFactory.getUserManager().createUser( userId, password, forceChangePassword, roleSet, domainContext);
+         authProviderFactory.getUserManager().createUser( userId, password, forceChangePassword, roleSet, domainContext, dataDomain);
       } else {
         Log.warnf("User  with userId %s already exists in the auth provider. skipping create", userId);
       }
@@ -162,6 +189,8 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
          up.setEmail(userId);
          up.setFname(fname);
          up.setLname(lname);
+         up.setUserId(userId);
+         up.setRefName(userId);
 
         // check if credential is present
          Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId( userId, envConfigUtils.getSystemRealm(), true);
@@ -172,7 +201,7 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
             throw new IllegalStateException(String.format("Failed to find the user in the credential repository for userId %s", userId));
          }
          // now create the user profile
-         up = save(up);
+         up = (realm == null) ? save(up) : save(realm, up);
       } else {
          up = oup.get();
          Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId( userId, envConfigUtils.getSystemRealm(), true);
@@ -181,7 +210,7 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
             // ensure the reference is correct
             if (!ref.equals(up.getCredentialUserIdPasswordRef())) {
                up.setCredentialUserIdPasswordRef(ref);
-               up = save(up);
+               up = (realm==null) ? save(up) : save(realm, up);
             }
          } else {
             throw new IllegalStateException(String.format("Failed to find the user in the credential repository for userId %s", userId));
