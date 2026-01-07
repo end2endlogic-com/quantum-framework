@@ -817,7 +817,66 @@ Effective: OR( eq(ownerId, principalId), AND(eq(tags, 'shared')) )
 
 Placeholders and variables:
 
-- ${principalId}, ${pTenantId}, and other variables are resolved from PrincipalContext/ResourceContext and AccessListResolvers.
+The following standard variables are available in andFilterString/orFilterString:
+
+[cols="1,2,3"]
+|===
+|Variable |Source |Description
+
+|`${principalId}`
+|PrincipalContext.userId
+|The authenticated user's ID
+
+|`${pAccountId}`
+|PrincipalContext.dataDomain.accountNum
+|The principal's account number
+
+|`${pTenantId}`
+|PrincipalContext.dataDomain.tenantId
+|The principal's tenant ID
+
+|`${ownerId}`
+|PrincipalContext.dataDomain.ownerId
+|The data owner ID
+
+|`${orgRefName}`
+|PrincipalContext.dataDomain.orgRefName
+|The organization reference name
+
+|`${defaultRealm}`
+|PrincipalContext.defaultRealm
+|The current realm (changes with X-Realm override)
+
+|`${resourceId}`
+|ResourceContext.resourceId
+|The target resource ID
+
+|`${action}`
+|ResourceContext.action
+|The action being performed
+
+|`${functionalDomain}`
+|ResourceContext.functionalDomain
+|The functional domain
+
+|`${area}`
+|ResourceContext.area
+|The functional area
+|===
+
+**X-Realm integration**: When `X-Realm` is used, `${defaultRealm}` automatically reflects the target realm. This enables permission filters to dynamically scope data based on the active realm:
+
+[source,yaml]
+----
+- name: scope-by-realm
+  securityURI:
+    header: { identity: USER, area: '*', functionalDomain: '*', action: view }
+    body:   { realm: '*', orgRefName: '*', accountNumber: '*', tenantId: '*', ownerId: '*', dataSegment: '*', resourceId: '*' }
+  andFilterString: "dataDomain.tenantId:${defaultRealm}"
+  effect: ALLOW
+  priority: 200
+----
+
 - The filter DSL is described in the Query Language guide; it maps to Morphia dev.morphia.query.filters.Filters under the hood via MorphiaUtils.convertToFilter.
 
 === AccessListResolvers (SPI) for list-based access
@@ -1116,6 +1175,7 @@ if (Impersonation header present?) then (yes)
   if (pass) then (yes)
     :Build PrincipalContext from impersonated user;
     :Effective realm = impersonated user's defaultRealm;
+    :DataDomain = impersonated user's DomainContext;
   else (no)
     :403;
     stop
@@ -1124,8 +1184,11 @@ else (no)
   :Build PrincipalContext from caller;
   if (X-Realm provided and allowed by realmRegEx?) then (yes)
     :Set defaultRealm = X-Realm;
+    :Lookup target Realm's DomainContext;
+    :DataDomain = target realm's DomainContext (ownerId = caller);
   else (no)
     :Use caller's default realm;
+    :DataDomain = caller's DomainContext;
   endif
 endif
 :Proceed to rule evaluation;
@@ -1133,12 +1196,13 @@ stop
 @enduml
 ....
 
-This section explains how to use the request headers X-Realm and X-Impersonate-* alongside permission rule bases. These headers influence which realm (database) a request operates against and, in the case of impersonation, which identity’s roles are evaluated by the rule engine.
+This section explains how to use the request headers X-Realm, X-Impersonate-*, and X-Acting-On-Behalf-Of-* alongside permission rule bases. These headers influence which realm (database) a request operates against and, in the case of impersonation, which identity's roles are evaluated by the rule engine.
 
 === What they do (at a glance)
 
-- X-Realm: Overrides the target realm (MongoDB database) used by repositories for this request. Your own identity and roles remain the same; only the data context (tenant/realm) changes for this call. This lets you “switch tenants” at the database level in deployments that use the one-tenant-per-database model.
-- X-Impersonate-Subject or X-Impersonate-UserId: Causes the request to run as another identity. The effective permissions become those of the impersonated identity (potentially more or less than your own). This is analogous to sudo on Unix or to “simulate a user/role” for troubleshooting.
+- X-Realm: Overrides the target realm (MongoDB database) used by repositories for this request. Your own identity and roles remain the same. **The DataDomain is updated to the target realm's default DomainContext** (while preserving your userId as the ownerId). This ensures that data created via X-Realm is properly scoped to the target realm's tenant/org structure.
+- X-Impersonate-Subject or X-Impersonate-UserId: Causes the request to run as another identity. The effective permissions become those of the impersonated identity (potentially more or less than your own). This is analogous to sudo on Unix or to "simulate a user/role" for troubleshooting.
+- X-Acting-On-Behalf-Of-Subject or X-Acting-On-Behalf-Of-UserId: Records that the caller is acting on behalf of another party (for audit/tracking purposes). Unlike impersonation, this does NOT change permissions—the caller retains their own identity and roles.
 
 Only one of X-Impersonate-Subject or X-Impersonate-UserId may be supplied per request. Supplying both results in a 400/IllegalArgumentException.
 
@@ -1147,10 +1211,17 @@ Only one of X-Impersonate-Subject or X-Impersonate-UserId may be supplied per re
 - Rule matching and effects (ALLOW/DENY) still follow the standard algorithm described earlier.
 - With X-Realm (no impersonation):
   - The PrincipalContext.defaultRealm is set to the header value (after validation), and repositories operate in that realm.
-  - Your own roles and identity remain intact; the rule base is evaluated for your identity and roles but in the specified realm’s data context.
+  - **The DataDomain is updated** from the target realm's DomainContext (org, tenant, account, dataSegment), while preserving your userId as the ownerId.
+  - Your own roles and identity remain intact; the rule base is evaluated for your identity and roles but with the target realm's data context.
+  - Permission filter strings can use `${defaultRealm}` to dynamically scope queries based on the active realm.
 - With impersonation:
-  - The PrincipalContext is rebuilt from the impersonated user’s credential. The effective roles used by the rule engine include the impersonated user’s roles; the platform also merges in the caller’s security roles from Quarkus SecurityIdentity. This means permissions can be a superset; design policy rules accordingly.
-  - The effective realm for the request is set to the impersonated user’s default realm (not the X-Realm header). If you passed X-Realm, it is still validated (see below) but not used to override the impersonated default realm in the current implementation.
+  - The PrincipalContext is rebuilt from the impersonated user's credential. The effective roles used by the rule engine include the impersonated user's roles; the platform also merges in the caller's security roles from Quarkus SecurityIdentity. This means permissions can be a superset; design policy rules accordingly.
+  - The effective realm for the request is set to the impersonated user's default realm (not the X-Realm header). If you passed X-Realm, it is still validated (see below) but not used to override the impersonated default realm in the current implementation.
+  - The DataDomain is set from the impersonated user's DomainContext.
+- With Acting-On-Behalf-Of:
+  - The caller retains their own identity, roles, realm, and DataDomain.
+  - The X-Acting-On-Behalf-Of-Subject or X-Acting-On-Behalf-Of-UserId is recorded in the PrincipalContext for audit purposes.
+  - This is useful for service-to-service calls or when a support agent needs to perform actions that should be attributed to a customer.
 
 === Required credential configuration (CredentialUserIdPassword)
 
@@ -1191,19 +1262,31 @@ The SecurityFilter constructs the PrincipalContext/ResourceContext before rule e
 
 - Realm override (X-Realm):
   - Who you are does not change; only where you act changes. Your permissions (as determined by policies attached to your identity/roles) are applied against data in the specified realm.
+  - **DataDomain changes**: The DataDomain is updated from the target realm's DomainContext (tenant, org, account), ensuring new records are created with the correct scoping.
   - Use cases:
     - Multi-tenant admin tooling that needs to inspect or repair data in customer realms.
     - Reporting or backfills where the same service is pointed at different tenant databases per request.
+    - Creating data in a target realm with proper DataDomain stamping.
 - Impersonation (X-Impersonate-*):
-  - Who you are (for authorization purposes) changes. You act with the impersonated identity’s permissions; depending on your configuration, additional caller roles may be merged.
+  - Who you are (for authorization purposes) changes. You act with the impersonated identity's permissions; depending on your configuration, additional caller roles may be merged.
+  - The DataDomain is set from the impersonated user's credential.
   - Use cases:
     - Temporary elevation to an admin identity (sudo-like) for break-glass operations.
     - Simulate what a given role/identity can see/do for troubleshooting or customer support.
+    - Testing user-specific permission rules without logging in as that user.
+- Acting-On-Behalf-Of (X-Acting-On-Behalf-Of-*):
+  - Who you are does NOT change; you retain your own identity, roles, realm, and DataDomain.
+  - The "acting on behalf of" information is recorded in the PrincipalContext for audit trails.
+  - Use cases:
+    - Service-to-service calls where the downstream service needs to know the original requestor.
+    - Support agents performing actions that should be audited as being done "on behalf of" a customer.
+    - Compliance and audit requirements where the chain of delegation must be recorded.
 
 Caveats:
 - Never set a permissive impersonateFilterScript in production. Keep it restrictive and auditable.
-- When using both X-Realm and impersonation in one call, be aware that the effective realm will be the impersonated user’s default realm; X-Realm is not applied in the impersonation branch in the current implementation.
+- When using both X-Realm and impersonation in one call, be aware that the effective realm will be the impersonated user's default realm; X-Realm is not applied in the impersonation branch in the current implementation.
 - realmRegEx must be populated for any user who needs realm override; leaving it blank effectively disables X-Realm for that user.
+- Acting-On-Behalf-Of headers do NOT grant any additional permissions; they are purely for audit purposes.
 
 === Examples
 

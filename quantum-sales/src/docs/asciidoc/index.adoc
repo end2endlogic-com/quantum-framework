@@ -20,3 +20,4 @@ include::sales/quantum-vs-palantir.adoc[]
 include::sales/framework-overview.adoc[]
 
 
+

@@ -39,6 +39,10 @@ public final class PrincipalContext {
    Map<String, String> area2RealmOverrides;
    // Optional: data domain policy attached to the principal's credential
    DataDomainPolicy dataDomainPolicy;
+   
+   // Realm override tracking - when X-Realm header is used
+   boolean realmOverrideActive;       // True if X-Realm override is in effect
+   DataDomain originalDataDomain;     // The caller's original DataDomain before realm override (for audit)
 
    PrincipalContext(@NotNull String defaultRealm,
                     @Valid @NotNull DataDomain dataDomain,
@@ -91,6 +95,8 @@ public final class PrincipalContext {
       String actingOnBehalfOfSubject;
       Map<String, String> area2RealmOverrides;
       DataDomainPolicy dataDomainPolicy;
+      boolean realmOverrideActive;
+      DataDomain originalDataDomain;
 
       public Builder withDefaultRealm(String realm) {
          this.defaultRealm = realm;
@@ -143,12 +149,36 @@ public final class PrincipalContext {
          return this;
       }
 
+      /**
+       * Indicates that an X-Realm header override is in effect, meaning the DataDomain
+       * has been switched to the target realm's default DataDomain.
+       * @param active true if realm override is active
+       * @return this builder
+       */
+      public Builder withRealmOverrideActive(boolean active) {
+         this.realmOverrideActive = active;
+         return this;
+      }
+
+      /**
+       * The caller's original DataDomain before realm override was applied.
+       * Useful for audit purposes when X-Realm is used.
+       * @param original the original DataDomain
+       * @return this builder
+       */
+      public Builder withOriginalDataDomain(DataDomain original) {
+         this.originalDataDomain = original;
+         return this;
+      }
+
       public PrincipalContext build() {
          PrincipalContext pc =
             new PrincipalContext(defaultRealm, dataDomain, userId, roles, scope,
-               impersonatedBySubject, impersonatedByUserId, actingOnBehalfOfSubject, actingOnBehalfOfUserId);
+               impersonatedBySubject, impersonatedByUserId, actingOnBehalfOfUserId, actingOnBehalfOfSubject);
          pc.area2RealmOverrides = this.area2RealmOverrides;
          pc.dataDomainPolicy = this.dataDomainPolicy;
+         pc.realmOverrideActive = this.realmOverrideActive;
+         pc.originalDataDomain = this.originalDataDomain;
          return pc;
       }
 
@@ -243,6 +273,33 @@ public final class PrincipalContext {
       this.dataDomainPolicy = dataDomainPolicy;
    }
 
+   /**
+    * Returns true if an X-Realm header override is in effect, meaning the DataDomain
+    * has been switched to the target realm's default DataDomain rather than the caller's.
+    * @return true if realm override is active
+    */
+   @HostAccess.Export
+   public boolean isRealmOverrideActive() {
+      return realmOverrideActive;
+   }
+
+   public void setRealmOverrideActive(boolean realmOverrideActive) {
+      this.realmOverrideActive = realmOverrideActive;
+   }
+
+   /**
+    * Returns the caller's original DataDomain before realm override was applied.
+    * This is null if no realm override is active. Useful for audit purposes.
+    * @return the original DataDomain or null
+    */
+   @HostAccess.Export
+   public DataDomain getOriginalDataDomain() {
+      return originalDataDomain;
+   }
+
+   public void setOriginalDataDomain(DataDomain originalDataDomain) {
+      this.originalDataDomain = originalDataDomain;
+   }
 
    @HostAccess.Export
    @Override
@@ -263,6 +320,8 @@ public final class PrincipalContext {
       if (!Arrays.equals(roles, that.roles)) return false;
       if (scope != null ? !scope.equals(that.scope) : that.scope != null) return false;
       if (dataDomainPolicy != null ? !dataDomainPolicy.equals(that.dataDomainPolicy) : that.dataDomainPolicy != null) return false;
+      if (realmOverrideActive != that.realmOverrideActive) return false;
+      if (originalDataDomain != null ? !originalDataDomain.equals(that.originalDataDomain) : that.originalDataDomain != null) return false;
       return true;
    }
 
@@ -279,6 +338,8 @@ public final class PrincipalContext {
       result = 31 * result + (actingOnBehalfOfSubject!= null? actingOnBehalfOfSubject.hashCode() : 0);
       result = 31 * result + (actingOnBehalfOfUserId!= null? actingOnBehalfOfUserId.hashCode() : 0);
       result = 31 * result + (dataDomainPolicy != null ? dataDomainPolicy.hashCode() : 0);
+      result = 31 * result + (realmOverrideActive ? 1 : 0);
+      result = 31 * result + (originalDataDomain != null ? originalDataDomain.hashCode() : 0);
       return result;
    }
 
@@ -294,6 +355,8 @@ public final class PrincipalContext {
                ", impersonatedByUserId='" + impersonatedByUserId + '\'' +
                ", actingOnBehalfOfUserId='" + actingOnBehalfOfUserId + '\'' +
                ", actingOnBehalfOfSubject='" + actingOnBehalfOfSubject + '\'' +
+               ", realmOverrideActive=" + realmOverrideActive +
+               ", originalDataDomain=" + originalDataDomain +
                '}';
    }
 }
