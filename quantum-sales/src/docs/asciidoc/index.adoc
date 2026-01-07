@@ -1,0 +1,21 @@
+:toc: left
+:toclevels: 3
+:sectnums:
+:doctype: book
+:icons: font
+:revnumber: {project-version}
+
+= Quantum Framework: Sales & Marketing Materials
+
+This documentation provides sales and marketing materials for the Quantum Framework, positioning it as a "Palantir Light" solution for organizations seeking enterprise-grade data integration and governance capabilities without the complexity and cost of full-scale Palantir deployments.
+
+== Quick Navigation
+
+- xref:sales/quantum-vs-palantir.adoc[Quantum vs. Palantir: The "Palantir Light" Approach]
+- xref:sales/framework-overview.adoc[Framework Overview & Advantages]
+
+== Sales Materials
+
+include::sales/quantum-vs-palantir.adoc[]
+include::sales/framework-overview.adoc[]
+

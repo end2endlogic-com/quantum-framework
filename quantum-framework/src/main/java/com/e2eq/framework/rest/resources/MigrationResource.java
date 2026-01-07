@@ -81,6 +81,14 @@ public class MigrationResource {
    }
 
    @POST
+   @Path("/indexes/applyAllIndexes/{realm}")
+   @RolesAllowed("admin")
+   @Produces(MediaType.APPLICATION_JSON)
+   public void applyAllIndexes (@Context HttpHeaders headers, @PathParam("realm") String realm) {
+      migrationService.applyAllIndexes(realm);
+   }
+
+   @POST
    @Path("/indexes/dropAllIndexes/{realm}")
    @RolesAllowed("admin")
    @Produces(MediaType.APPLICATION_JSON)

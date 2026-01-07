@@ -37,6 +37,7 @@ import java.io.*;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 
 @Provider
@@ -245,43 +246,40 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                         }
                     }
 
-                    // Determine action: 1) annotation, 2) URL keywords, 3) HTTP method
-                    if (resourceInfo.getResourceMethod() != null) {
-                        com.e2eq.framework.annotations.FunctionalAction fa =
-                            resourceInfo.getResourceMethod().getAnnotation(com.e2eq.framework.annotations.FunctionalAction.class);
-                        if (fa != null) {
-                            action = fa.value();
+                    // Fallback to bmFunctionalArea() and bmFunctionalDomain() if still null
+                    if (area == null || functionalDomain == null) {
+                        try {
+                            Class<?> resourceClass = resourceInfo.getResourceClass();
+                            if (resourceClass != null) {
+                                Class<?> modelClass = findModelClass(resourceClass);
+                                if (modelClass != null && com.e2eq.framework.model.persistent.base.UnversionedBaseModel.class.isAssignableFrom(modelClass)) {
+                                    com.e2eq.framework.model.persistent.base.UnversionedBaseModel instance = (com.e2eq.framework.model.persistent.base.UnversionedBaseModel) modelClass.getDeclaredConstructor().newInstance();
+                                    if (area == null) area = instance.bmFunctionalArea();
+                                    if (functionalDomain == null) functionalDomain = instance.bmFunctionalDomain();
+                                    if (Log.isDebugEnabled()) {
+                                        Log.debugf("Using fallback bmFunctional methods: area=%s, domain=%s", area, functionalDomain);
+                                    }
+                                }
+                            }
+                        } catch (Exception e) {
+                            // Ignore fallback failures
                         }
                     }
+
+                    // Determine action: 1) annotation, 2) URL keywords, 3) HTTP method
+                    action = getAnnotatedAction();
 
                     // Build context if we found area/domain
                     if (area != null && functionalDomain != null) {
                         if (action == null) {
                             String path = requestContext.getUriInfo().getPath();
-                            if (path != null) {
-                                String lowerPath = path.toLowerCase();
-                                if (lowerPath.contains("/list")) {
-                                    action = "LIST";
-                                } else if (lowerPath.contains("/create")) {
-                                    action = "CREATE";
-                                } else if (lowerPath.contains("/delete")) {
-                                    action = "DELETE";
-                                } else if (lowerPath.contains("/update")) {
-                                    action = "UPDATE";
-                                }
-                            }
+                            action = inferActionFromUrlKeywords(path);
                         }
+
                         if (action == null) {
-                            String httpMethod = requestContext.getMethod();
-                            if (httpMethod != null) {
-                                action = inferActionFromHttpMethod(httpMethod);
-                            } else {
-                                Log.errorf("No action found for path: %s. Add @FunctionalAction annotation.", requestContext.getUriInfo().getPath());
-                                rcontext = ResourceContext.DEFAULT_ANONYMOUS_CONTEXT;
-                                SecurityContext.setResourceContext(rcontext);
-                                return rcontext;
-                            }
+                            action = inferActionFromHttpMethod(requestContext.getMethod());
                         }
+
                         if ("list".equalsIgnoreCase(action)) {
                             action = "LIST";
                         }
@@ -291,12 +289,12 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                                 .withAction(action)
                                 .build();
                         SecurityContext.setResourceContext(rcontext);
-                        if (Log.isDebugEnabled()) {
-                            Log.debugf("Resource Context set: area=%s, domain=%s, action=%s",
+                        Log.infof("Resource Context set: area=%s, domain=%s, action=%s",
                                 area, functionalDomain, action);
-                        }
                         return rcontext;
                     }
+                } else {
+                    Log.infof("Resource Info is null for request: %s", requestContext.getUriInfo().getPath());
                 }
             } catch (Exception ex) {
                 Log.errorf(ex, "Resource context resolution failed");
@@ -304,7 +302,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
             // No mapping found - error
             String path = requestContext.getUriInfo().getPath();
-            Log.errorf("No functional mapping found for path: %s. Add @FunctionalMapping to model class, implement bmFunctionalArea()/bmFunctionalDomain() methods, or add @FunctionalMapping to JAX-RS resource.", path);
+            Log.errorf("Setting default Anonymous Context for ResourceContext, No functional mapping annotations found for path: %s. Add @FunctionalMapping to model class, implement bmFunctionalArea()/bmFunctionalDomain() methods, or add @FunctionalMapping to JAX-RS resource.", path);
             rcontext = ResourceContext.DEFAULT_ANONYMOUS_CONTEXT;
             SecurityContext.setResourceContext(rcontext);
             return rcontext;
@@ -319,6 +317,39 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             case "DELETE" -> "DELETE";
             default -> http;
         };
+    }
+
+    private String inferActionFromUrlKeywords(String path) {
+        if (path == null) return null;
+        String lowerPath = path.toLowerCase();
+        if (lowerPath.contains("/list")) {
+            return "LIST";
+        } else if (lowerPath.contains("/create")) {
+            return "CREATE";
+        } else if (lowerPath.contains("/delete")) {
+            return "DELETE";
+        } else if (lowerPath.contains("/update")) {
+            return "UPDATE";
+        }
+        return null;
+    }
+
+    private Class<?> findModelClass(Class<?> resourceClass) {
+        Class<?> clazz = resourceClass;
+        while (clazz != null && clazz != Object.class) {
+            java.lang.reflect.Type genericSuperclass = clazz.getGenericSuperclass();
+            if (genericSuperclass instanceof java.lang.reflect.ParameterizedType) {
+                java.lang.reflect.ParameterizedType pt = (java.lang.reflect.ParameterizedType) genericSuperclass;
+                if (com.e2eq.framework.rest.resources.BaseResource.class.isAssignableFrom((Class<?>) pt.getRawType())) {
+                    java.lang.reflect.Type[] typeArgs = pt.getActualTypeArguments();
+                    if (typeArgs.length > 0 && typeArgs[0] instanceof Class) {
+                        return (Class<?>) typeArgs[0];
+                    }
+                }
+            }
+            clazz = clazz.getSuperclass();
+        }
+        return null;
     }
 
     /**
@@ -630,8 +661,11 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             List<String> realmRefNamesAvailable = new java.util.ArrayList<>(realmsAvailable.stream().map(Realm::getRefName).toList());
 
             if (!realmRefNamesAvailable.contains(realm)) {
+                if (Log.isDebugEnabled()) {
+                    Log.debugf("Available realms determined by realm Collection in database: %s,  values: %s", envConfigUtils.getSystemRealm(), realmRefNamesAvailable.stream().collect(Collectors.joining(", ") ));
+                }
                 throw new IllegalArgumentException(String.format(
-                    "The realm override %s is not a configured Realm RefName", realm));
+                    "The realm override %s is not a configured Realm RefName in the realm collection in the database:%s", realm, envConfigUtils.getSystemRealm()));
             }
 
             List<String> realmsAuthorized = securityUtils.computeAllowedRealmRefNames(creds, realmRefNamesAvailable);

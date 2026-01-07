@@ -1,0 +1,10 @@
+{
+  "name": "quantum-sales",
+  "version": "1.0.0",
+  "description": "Sales and marketing materials for the Quantum Framework",
+  "dependencies": {
+    "asciidoctor": "^3.0.4",
+    "asciidoctor-kroki": "^0.18.1"
+  }
+}
+

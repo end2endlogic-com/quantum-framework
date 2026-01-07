@@ -53,45 +53,39 @@ public class ModelMappingExtractor implements ContainerRequestFilter {
      */
     private void extractAndSetMapping(Class<?> resourceClass, ContainerRequestContext requestContext) {
         try {
-            java.lang.reflect.Type genericSuperclass = resourceClass.getGenericSuperclass();
-            if (genericSuperclass instanceof java.lang.reflect.ParameterizedType) {
-                java.lang.reflect.ParameterizedType pt = (java.lang.reflect.ParameterizedType) genericSuperclass;
-                java.lang.reflect.Type[] typeArgs = pt.getActualTypeArguments();
-                
-                if (typeArgs.length > 0 && typeArgs[0] instanceof Class) {
-                    Class<?> modelClass = (Class<?>) typeArgs[0];
-                    
-                    // Priority 1: @FunctionalMapping annotation on model class
-                    FunctionalMapping mapping = modelClass.getAnnotation(FunctionalMapping.class);
-                    if (mapping != null) {
-                        requestContext.setProperty("model.functional.area", mapping.area());
-                        requestContext.setProperty("model.functional.domain", mapping.domain());
-                        if (Log.isDebugEnabled()) {
-                            Log.debugf("Extracted model @FunctionalMapping: area=%s, domain=%s from %s", 
-                                mapping.area(), mapping.domain(), modelClass.getSimpleName());
-                        }
-                        return;
+            Class<?> modelClass = findModelClass(resourceClass);
+            
+            if (modelClass != null) {
+                // Priority 1: @FunctionalMapping annotation on model class
+                FunctionalMapping mapping = modelClass.getAnnotation(FunctionalMapping.class);
+                if (mapping != null) {
+                    requestContext.setProperty("model.functional.area", mapping.area());
+                    requestContext.setProperty("model.functional.domain", mapping.domain());
+                    if (Log.isDebugEnabled()) {
+                        Log.debugf("Extracted model @FunctionalMapping: area=%s, domain=%s from %s", 
+                            mapping.area(), mapping.domain(), modelClass.getSimpleName());
                     }
-                    
-                    // Priority 2: bmFunctionalArea()/bmFunctionalDomain() methods
-                    if (UnversionedBaseModel.class.isAssignableFrom(modelClass)) {
-                        try {
-                            UnversionedBaseModel instance = (UnversionedBaseModel) modelClass.getDeclaredConstructor().newInstance();
-                            String area = instance.bmFunctionalArea();
-                            String domain = instance.bmFunctionalDomain();
-                            
-                            if (area != null && domain != null) {
-                                requestContext.setProperty("model.functional.area", area);
-                                requestContext.setProperty("model.functional.domain", domain);
-                                if (Log.isDebugEnabled()) {
-                                    Log.debugf("Extracted model bmFunctional methods: area=%s, domain=%s from %s", 
-                                        area, domain, modelClass.getSimpleName());
-                                }
-                            }
-                        } catch (Exception e) {
+                    return;
+                }
+                
+                // Priority 2: bmFunctionalArea()/bmFunctionalDomain() methods
+                if (UnversionedBaseModel.class.isAssignableFrom(modelClass)) {
+                    try {
+                        UnversionedBaseModel instance = (UnversionedBaseModel) modelClass.getDeclaredConstructor().newInstance();
+                        String area = instance.bmFunctionalArea();
+                        String domain = instance.bmFunctionalDomain();
+                        
+                        if (area != null && domain != null) {
+                            requestContext.setProperty("model.functional.area", area);
+                            requestContext.setProperty("model.functional.domain", domain);
                             if (Log.isDebugEnabled()) {
-                                Log.debugf("Could not call bmFunctional methods: %s", e.getMessage());
+                                Log.debugf("Extracted model bmFunctional methods: area=%s, domain=%s from %s", 
+                                    area, domain, modelClass.getSimpleName());
                             }
+                        }
+                    } catch (Exception e) {
+                        if (Log.isDebugEnabled()) {
+                            Log.debugf("Could not call bmFunctional methods: %s", e.getMessage());
                         }
                     }
                 }
@@ -101,5 +95,23 @@ public class ModelMappingExtractor implements ContainerRequestFilter {
                 Log.debugf("Error extracting model mapping: %s", e.getMessage());
             }
         }
+    }
+
+    private Class<?> findModelClass(Class<?> resourceClass) {
+        Class<?> clazz = resourceClass;
+        while (clazz != null && clazz != Object.class) {
+            java.lang.reflect.Type genericSuperclass = clazz.getGenericSuperclass();
+            if (genericSuperclass instanceof java.lang.reflect.ParameterizedType) {
+                java.lang.reflect.ParameterizedType pt = (java.lang.reflect.ParameterizedType) genericSuperclass;
+                if (BaseResource.class.isAssignableFrom((Class<?>) pt.getRawType())) {
+                    java.lang.reflect.Type[] typeArgs = pt.getActualTypeArguments();
+                    if (typeArgs.length > 0 && typeArgs[0] instanceof Class) {
+                        return (Class<?>) typeArgs[0];
+                    }
+                }
+            }
+            clazz = clazz.getSuperclass();
+        }
+        return null;
     }
 }

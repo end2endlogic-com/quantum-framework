@@ -182,6 +182,13 @@ public class MigrationService {
       morphiaDataStoreWrapper.getDataStore(realmId).ensureIndexes(em.get().getType());
    }
 
+   public void applyAllIndexes(String realmId) {
+     Objects.requireNonNull(realmId);
+      morphiaDataStoreWrapper.getDataStore(realmId).getMapper().getMappedEntities().forEach(entity -> {
+         morphiaDataStoreWrapper.getDataStore(realmId).ensureIndexes(entity.getType());
+      });
+   }
+
    public void dropAllIndexes (String realmId) {
       Objects.requireNonNull(realmId, "RealmId cannot be null");
       morphiaDataStoreWrapper.getDataStore(realmId).getMapper().getMappedEntities().forEach(entity -> {
