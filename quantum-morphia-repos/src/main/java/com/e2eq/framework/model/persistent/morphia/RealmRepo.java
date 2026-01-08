@@ -1,18 +1,28 @@
 package com.e2eq.framework.model.persistent.morphia;
 
 import com.e2eq.framework.model.security.Realm;
+import com.e2eq.framework.util.EnvConfigUtils;
 import dev.morphia.MorphiaDatastore;
 import dev.morphia.query.Query;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
 @ApplicationScoped
 public class RealmRepo extends MorphiaRepo<Realm> {
+
+   @Inject
+   EnvConfigUtils envConfigUtils;
+
+   @Override
+   public String getSecurityContextRealmId() {
+      return envConfigUtils.getSystemRealm();
+   }
 
 
    public java.util.List<Realm> getAllListWithIgnoreRules (String realmId) {
