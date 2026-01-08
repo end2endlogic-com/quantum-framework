@@ -33,7 +33,6 @@ import java.util.concurrent.ConcurrentHashMap;
  *   <li>Rebuilding TBox from Morphia scan + YAML when no persisted TBox exists</li>
  *   <li>Persisting rebuilt TBox in realm-specific collections</li>
  * </ul>
- * </p>
  * <p>
  * The realm is derived from SecurityContext via RuleContext.getRealmId().
  * TBox is per-realm (database-level), while ABox (edges) can be further scoped by DataDomain.
