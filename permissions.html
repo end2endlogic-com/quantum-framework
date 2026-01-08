@@ -529,7 +529,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Permissions: Rule Bases, SecurityURIHeader, and SecurityURIBody</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2026-01-07T14:07:25Z</span>
+<span id="revdate">2026-01-08T03:09:47Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -2196,11 +2196,91 @@ resp.setRoleAssignments(roleAssignments);
 <div class="paragraph">
 <p>Placeholders and variables:</p>
 </div>
+<div class="paragraph">
+<p>The following standard variables are available in andFilterString/orFilterString:</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 16.6666%;">
+<col style="width: 33.3333%;">
+<col style="width: 50.0001%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Variable</th>
+<th class="tableblock halign-left valign-top">Source</th>
+<th class="tableblock halign-left valign-top">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${principalId}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PrincipalContext.userId</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The authenticated user&#8217;s ID</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${pAccountId}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PrincipalContext.dataDomain.accountNum</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The principal&#8217;s account number</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${pTenantId}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PrincipalContext.dataDomain.tenantId</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The principal&#8217;s tenant ID</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${ownerId}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PrincipalContext.dataDomain.ownerId</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The data owner ID</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${orgRefName}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PrincipalContext.dataDomain.orgRefName</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The organization reference name</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${defaultRealm}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PrincipalContext.defaultRealm</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The current realm (changes with X-Realm override)</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${resourceId}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">ResourceContext.resourceId</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The target resource ID</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${action}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">ResourceContext.action</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The action being performed</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${functionalDomain}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">ResourceContext.functionalDomain</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The functional domain</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${area}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">ResourceContext.area</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The functional area</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><strong>X-Realm integration</strong>: When <code>X-Realm</code> is used, <code>${defaultRealm}</code> automatically reflects the target realm. This enables permission filters to dynamically scope data based on the active realm:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml">- <span class="string"><span class="content">name: scope-by-realm</span></span>
+  <span class="key">securityURI</span>:
+    <span class="key">header</span>: <span class="string"><span class="content">{ identity: USER, area: '*', functionalDomain: '*', action: view }</span></span>
+    <span class="key">body</span>:   <span class="string"><span class="content">{ realm: '*', orgRefName: '*', accountNumber: '*', tenantId: '*', ownerId: '*', dataSegment: '*', resourceId: '*' }</span></span>
+  <span class="key">andFilterString</span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">dataDomain.tenantId:${defaultRealm}</span><span class="delimiter">&quot;</span></span>
+  <span class="key">effect</span>: <span class="string"><span class="content">ALLOW</span></span>
+  <span class="key">priority</span>: <span class="string"><span class="content">200</span></span></code></pre>
+</div>
+</div>
 <div class="ulist">
 <ul>
-<li>
-<p>${principalId}, ${pTenantId}, and other variables are resolved from PrincipalContext/ResourceContext and AccessListResolvers.</p>
-</li>
 <li>
 <p>The filter DSL is described in the Query Language guide; it maps to Morphia dev.morphia.query.filters.Filters under the hood via MorphiaUtils.convertToFilter.</p>
 </li>
@@ -2736,21 +2816,24 @@ resp.setRoleAssignments(roleAssignments);
 <div class="sectionbody">
 <div class="imageblock">
 <div class="content">
-<img src="diag-plantuml-md5-c40dd9c649fd79fd29b0acc476e4da52.svg" alt="Diagram" width="916" height="470">
+<img src="diag-plantuml-md5-04369f6fc7778d6745830bc098403f15.svg" alt="Diagram" width="1085" height="535">
 </div>
 </div>
 <div class="paragraph">
-<p>This section explains how to use the request headers X-Realm and X-Impersonate-* alongside permission rule bases. These headers influence which realm (database) a request operates against and, in the case of impersonation, which identity’s roles are evaluated by the rule engine.</p>
+<p>This section explains how to use the request headers X-Realm, X-Impersonate-<strong>, and X-Acting-On-Behalf-Of-</strong> alongside permission rule bases. These headers influence which realm (database) a request operates against and, in the case of impersonation, which identity&#8217;s roles are evaluated by the rule engine.</p>
 </div>
 <div class="sect2">
 <h3 id="_what_they_do_at_a_glance">15.1. What they do (at a glance)</h3>
 <div class="ulist">
 <ul>
 <li>
-<p>X-Realm: Overrides the target realm (MongoDB database) used by repositories for this request. Your own identity and roles remain the same; only the data context (tenant/realm) changes for this call. This lets you “switch tenants” at the database level in deployments that use the one-tenant-per-database model.</p>
+<p>X-Realm: Overrides the target realm (MongoDB database) used by repositories for this request. Your own identity and roles remain the same. <strong>The DataDomain is updated to the target realm&#8217;s default DomainContext</strong> (while preserving your userId as the ownerId). This ensures that data created via X-Realm is properly scoped to the target realm&#8217;s tenant/org structure.</p>
 </li>
 <li>
-<p>X-Impersonate-Subject or X-Impersonate-UserId: Causes the request to run as another identity. The effective permissions become those of the impersonated identity (potentially more or less than your own). This is analogous to sudo on Unix or to “simulate a user/role” for troubleshooting.</p>
+<p>X-Impersonate-Subject or X-Impersonate-UserId: Causes the request to run as another identity. The effective permissions become those of the impersonated identity (potentially more or less than your own). This is analogous to sudo on Unix or to "simulate a user/role" for troubleshooting.</p>
+</li>
+<li>
+<p>X-Acting-On-Behalf-Of-Subject or X-Acting-On-Behalf-Of-UserId: Records that the caller is acting on behalf of another party (for audit/tracking purposes). Unlike impersonation, this does NOT change permissions—the caller retains their own identity and roles.</p>
 </li>
 </ul>
 </div>
@@ -2772,16 +2855,37 @@ resp.setRoleAssignments(roleAssignments);
 <p>The PrincipalContext.defaultRealm is set to the header value (after validation), and repositories operate in that realm.</p>
 </li>
 <li>
-<p>Your own roles and identity remain intact; the rule base is evaluated for your identity and roles but in the specified realm’s data context.</p>
+<p><strong>The DataDomain is updated</strong> from the target realm&#8217;s DomainContext (org, tenant, account, dataSegment), while preserving your userId as the ownerId.</p>
+</li>
+<li>
+<p>Your own roles and identity remain intact; the rule base is evaluated for your identity and roles but with the target realm&#8217;s data context.</p>
+</li>
+<li>
+<p>Permission filter strings can use <code>${defaultRealm}</code> to dynamically scope queries based on the active realm.</p>
 </li>
 <li>
 <p>With impersonation:</p>
 </li>
 <li>
-<p>The PrincipalContext is rebuilt from the impersonated user’s credential. The effective roles used by the rule engine include the impersonated user’s roles; the platform also merges in the caller’s security roles from Quarkus SecurityIdentity. This means permissions can be a superset; design policy rules accordingly.</p>
+<p>The PrincipalContext is rebuilt from the impersonated user&#8217;s credential. The effective roles used by the rule engine include the impersonated user&#8217;s roles; the platform also merges in the caller&#8217;s security roles from Quarkus SecurityIdentity. This means permissions can be a superset; design policy rules accordingly.</p>
 </li>
 <li>
-<p>The effective realm for the request is set to the impersonated user’s default realm (not the X-Realm header). If you passed X-Realm, it is still validated (see below) but not used to override the impersonated default realm in the current implementation.</p>
+<p>The effective realm for the request is set to the impersonated user&#8217;s default realm (not the X-Realm header). If you passed X-Realm, it is still validated (see below) but not used to override the impersonated default realm in the current implementation.</p>
+</li>
+<li>
+<p>The DataDomain is set from the impersonated user&#8217;s DomainContext.</p>
+</li>
+<li>
+<p>With Acting-On-Behalf-Of:</p>
+</li>
+<li>
+<p>The caller retains their own identity, roles, realm, and DataDomain.</p>
+</li>
+<li>
+<p>The X-Acting-On-Behalf-Of-Subject or X-Acting-On-Behalf-Of-UserId is recorded in the PrincipalContext for audit purposes.</p>
+</li>
+<li>
+<p>This is useful for service-to-service calls or when a support agent needs to perform actions that should be attributed to a customer.</p>
 </li>
 </ul>
 </div>
@@ -2863,6 +2967,9 @@ resp.setRoleAssignments(roleAssignments);
 <p>Who you are does not change; only where you act changes. Your permissions (as determined by policies attached to your identity/roles) are applied against data in the specified realm.</p>
 </li>
 <li>
+<p><strong>DataDomain changes</strong>: The DataDomain is updated from the target realm&#8217;s DomainContext (tenant, org, account), ensuring new records are created with the correct scoping.</p>
+</li>
+<li>
 <p>Use cases:</p>
 </li>
 <li>
@@ -2872,10 +2979,16 @@ resp.setRoleAssignments(roleAssignments);
 <p>Reporting or backfills where the same service is pointed at different tenant databases per request.</p>
 </li>
 <li>
+<p>Creating data in a target realm with proper DataDomain stamping.</p>
+</li>
+<li>
 <p>Impersonation (X-Impersonate-*):</p>
 </li>
 <li>
-<p>Who you are (for authorization purposes) changes. You act with the impersonated identity’s permissions; depending on your configuration, additional caller roles may be merged.</p>
+<p>Who you are (for authorization purposes) changes. You act with the impersonated identity&#8217;s permissions; depending on your configuration, additional caller roles may be merged.</p>
+</li>
+<li>
+<p>The DataDomain is set from the impersonated user&#8217;s credential.</p>
 </li>
 <li>
 <p>Use cases:</p>
@@ -2886,13 +2999,38 @@ resp.setRoleAssignments(roleAssignments);
 <li>
 <p>Simulate what a given role/identity can see/do for troubleshooting or customer support.</p>
 </li>
+<li>
+<p>Testing user-specific permission rules without logging in as that user.</p>
+</li>
+<li>
+<p>Acting-On-Behalf-Of (X-Acting-On-Behalf-Of-*):</p>
+</li>
+<li>
+<p>Who you are does NOT change; you retain your own identity, roles, realm, and DataDomain.</p>
+</li>
+<li>
+<p>The "acting on behalf of" information is recorded in the PrincipalContext for audit trails.</p>
+</li>
+<li>
+<p>Use cases:</p>
+</li>
+<li>
+<p>Service-to-service calls where the downstream service needs to know the original requestor.</p>
+</li>
+<li>
+<p>Support agents performing actions that should be audited as being done "on behalf of" a customer.</p>
+</li>
+<li>
+<p>Compliance and audit requirements where the chain of delegation must be recorded.</p>
+</li>
 </ul>
 </div>
 <div class="paragraph">
 <p>Caveats:
 - Never set a permissive impersonateFilterScript in production. Keep it restrictive and auditable.
-- When using both X-Realm and impersonation in one call, be aware that the effective realm will be the impersonated user’s default realm; X-Realm is not applied in the impersonation branch in the current implementation.
-- realmRegEx must be populated for any user who needs realm override; leaving it blank effectively disables X-Realm for that user.</p>
+- When using both X-Realm and impersonation in one call, be aware that the effective realm will be the impersonated user&#8217;s default realm; X-Realm is not applied in the impersonation branch in the current implementation.
+- realmRegEx must be populated for any user who needs realm override; leaving it blank effectively disables X-Realm for that user.
+- Acting-On-Behalf-Of headers do NOT grant any additional permissions; they are purely for audit purposes.</p>
 </div>
 </div>
 <div class="sect2">
@@ -3700,7 +3838,7 @@ noViolations() === <span class="predefined-constant">true</span></code></pre>
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-11-20 12:25:16 -0600
+Last updated 2026-01-07 15:10:40 -0600
 </div>
 </div>
 </body>
