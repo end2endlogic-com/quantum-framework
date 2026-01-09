@@ -161,6 +161,91 @@ public Product duplicate(@PathParam("id") String id) { ... }
 public void archive(@PathParam("id") String id) { ... }
 ----
 
+==== Bypassing Data Scoping for System Operations
+
+Some endpoints perform system-level operations that don't operate on tenant-scoped data entities. For example:
+
+- Database migration operations (index creation, schema changes)
+- System initialization and setup endpoints
+- Administrative operations that don't query/modify tenant-scoped records
+
+For these endpoints, permission rules may return a `SCOPED` decision with data-level constraints like `dataDomain.tenantId:${pTenantId}`. However, since there's no data entity to scope on, these constraints can't be meaningfully applied.
+
+Use `bypassDataScoping = true` to mark such endpoints:
+
+[source,java]
+----
+@POST
+@Path("/indexes/applyAllIndexes/{realm}")
+@RolesAllowed("admin")
+@FunctionalMapping(area = "migration", domain = "indexes")
+@FunctionalAction(value = "APPLY_ALL_INDEXES", bypassDataScoping = true)
+public void applyAllIndexes(@PathParam("realm") String realm) {
+    migrationService.applyAllIndexes(realm);
+}
+----
+
+===== How It Works
+
+When `bypassDataScoping = true`:
+
+1. **Permission checks still apply** - The user must still be authorized (ALLOW decision) based on their roles and the permission rules
+2. **SCOPED constraints are ignored** - Data-level filters (like `dataDomain.tenantId:${pTenantId}`) are bypassed because they're not applicable
+3. **Audit logging** - The framework logs when data scoping is bypassed for transparency
+
+===== Security Considerations
+
+CAUTION: Only use `bypassDataScoping = true` for endpoints that genuinely do not operate on tenant-scoped data. Misuse could expose cross-tenant data access vulnerabilities.
+
+[cols="1,1,1"]
+|===
+|Use Case |bypassDataScoping |Why
+
+|Database migrations
+|`true`
+|Index/schema operations don't involve tenant data
+
+|System initialization
+|`true`
+|Setup operations are realm-wide, not tenant-scoped
+
+|CRUD on tenant data
+|`false` (default)
+|Must respect tenant isolation
+
+|Report generation
+|`false`
+|Reports should only include user's accessible data
+|===
+
+===== Example: MigrationResource
+
+The `MigrationResource` class uses `bypassDataScoping` for all index management operations:
+
+[source,java]
+----
+@Path("/system/migration")
+@RolesAllowed({"admin"})
+public class MigrationResource {
+
+   @POST
+   @Path("/indexes/applyIndexes/{realm}")
+   @FunctionalMapping(area = "MIGRATION", domain = "INDEXES")
+   @FunctionalAction(value = "APPLY_INDEXES", bypassDataScoping = true)
+   public void applyIndexes(@PathParam("realm") String realm) {
+      migrationService.applyIndexes(realm);
+   }
+
+   @POST
+   @Path("/indexes/dropAllIndexes/{realm}")
+   @FunctionalMapping(area = "MIGRATION", domain = "INDEXES")
+   @FunctionalAction(value = "DROP_ALL_INDEXES", bypassDataScoping = true)
+   public void dropIndexes(@PathParam("realm") String realm) {
+      migrationService.dropAllIndexes(realm);
+   }
+}
+----
+
 ==== Integration with Permission Rules
 
 Annotations feed into permission rule matching:

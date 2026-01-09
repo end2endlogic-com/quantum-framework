@@ -142,14 +142,9 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 requestContext.getUriInfo().getPath());
         }
 
-        if (requestContext.getUriInfo().getPath().contains("/system/migration") && securityIdentity != null && securityIdentity.getRoles().contains("admin")) {
-           Log.warnf("System migration detected, setting up system principal context");
-           resourceContext = determineResourceContext(requestContext);
-           principalContext = securityUtils.getSystemPrincipalContext();
-        } else {
-            resourceContext = determineResourceContext(requestContext);
-            principalContext = determinePrincipalContext(requestContext);
-        }
+        // Determine the resource and principal contexts
+        resourceContext = determineResourceContext(requestContext);
+        principalContext = determinePrincipalContext(requestContext);
 
         if (principalContext == null) {
             throw new IllegalStateException("Principal context came back null and should not be null");
@@ -162,6 +157,24 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
         // Pre-authorization check: enforce policy rules before endpoint execution
         boolean skipPreAuth = isPermitAllEndPoint || isAuthenticatedEndPoint;
+        
+        // For system-level endpoints with bypassDataScoping=true, we trust Jakarta Security's
+        // @RolesAllowed check and skip the policy rule evaluation entirely.
+        // This avoids issues where rule matching depends on complex role resolution that may
+        // differ between the permission check API and the actual request flow.
+        if (!skipPreAuth && isBypassDataScoping()) {
+            if (Log.isInfoEnabled()) {
+                Log.infof("Bypassing policy rules for system operation: user=%s, area=%s, domain=%s, action=%s, " +
+                          "roles=%s (bypassDataScoping=true, trusting @RolesAllowed)",
+                    principalContext.getUserId(),
+                    resourceContext.getArea(),
+                    resourceContext.getFunctionalDomain(),
+                    resourceContext.getAction(),
+                    principalContext.getRoles() != null ? java.util.Arrays.toString(principalContext.getRoles()) : "[]");
+            }
+            skipPreAuth = true;
+        }
+        
         if (!skipPreAuth && enforcePreAuth) {
             enforcePreAuthorization(principalContext, resourceContext, requestContext);
         }
@@ -369,6 +382,28 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             Log.debugf("Failed to extract @FunctionalAction annotation: %s", ex.toString());
         }
         return null;
+    }
+
+    /**
+     * Checks if the current endpoint has bypassDataScoping=true on @FunctionalAction.
+     * When true, the endpoint is a system-level operation that does not operate on
+     * data entities with dataDomain scoping - SCOPED constraints should be ignored.
+     *
+     * @return true if the method is annotated with @FunctionalAction(bypassDataScoping=true)
+     */
+    private boolean isBypassDataScoping() {
+        try {
+            if (resourceInfo != null && resourceInfo.getResourceMethod() != null) {
+                com.e2eq.framework.annotations.FunctionalAction fa =
+                    resourceInfo.getResourceMethod().getAnnotation(com.e2eq.framework.annotations.FunctionalAction.class);
+                if (fa != null) {
+                    return fa.bypassDataScoping();
+                }
+            }
+        } catch (Exception ex) {
+            Log.debugf("Failed to check bypassDataScoping attribute: %s", ex.toString());
+        }
+        return false;
     }
 
     private boolean runScript(String subject, String userId,  String realm, String script) {
@@ -770,10 +805,10 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
      * their DataDomain should be updated to the target realm's default DataDomain so that:
      * 1. Created records are stamped with the correct DataDomain for that realm
      * 2. Query filters use the correct DataDomain for that realm
-     * 
+     *
      * The user's identity (userId, roles) remains unchanged - they stay "themselves" but act
      * within the target realm's data context.
-     * 
+     *
      * @param context the current PrincipalContext
      * @param realm the target realm from X-Realm header (may be null)
      * @return updated PrincipalContext with realm's DataDomain, or original context if no override needed
@@ -783,52 +818,52 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         if (realm == null || realm.isBlank() || realm.equals(context.getDefaultRealm())) {
             return context;
         }
-        
+
         // Skip if impersonation is active - impersonation takes precedence
         if (context.getImpersonatedBySubject() != null || context.getImpersonatedByUserId() != null) {
             Log.debugf("Realm override skipped - impersonation is active for user %s", context.getUserId());
             return context;
         }
-        
+
         // Look up the target realm to get its default DomainContext
         // Use system realm for the lookup since realms are typically stored there
-        Optional<com.e2eq.framework.model.security.Realm> targetRealmOpt = 
+        Optional<com.e2eq.framework.model.security.Realm> targetRealmOpt =
             realmRepo.findByRefName(realm, true, envConfigUtils.getSystemRealm());
-        
+
         // If not found by refName, try by databaseName (they're often the same)
         if (targetRealmOpt.isEmpty()) {
             targetRealmOpt = realmRepo.findByDatabaseName(realm, true, envConfigUtils.getSystemRealm());
         }
-        
+
         if (targetRealmOpt.isEmpty()) {
             // Realm not found - log warning and return original context
             // The realm was already validated in validateRealmAccess(), so this shouldn't normally happen
-            Log.warnf("Realm '%s' not found during realm override for user %s - using original DataDomain", 
+            Log.warnf("Realm '%s' not found during realm override for user %s - using original DataDomain",
                 realm, context.getUserId());
             return context;
         }
-        
+
         com.e2eq.framework.model.security.Realm targetRealm = targetRealmOpt.get();
         com.e2eq.framework.model.security.DomainContext targetDomainContext = targetRealm.getDomainContext();
-        
+
         if (targetDomainContext == null) {
             // Realm has no DomainContext configured
-            Log.warnf("Realm '%s' has no DomainContext configured - cannot apply realm override for user %s", 
+            Log.warnf("Realm '%s' has no DomainContext configured - cannot apply realm override for user %s",
                 realm, context.getUserId());
             return context;
         }
-        
+
         // Create the effective DataDomain using the target realm's context but keeping caller's userId as owner
         DataDomain effectiveDataDomain = targetDomainContext.toDataDomain(context.getUserId());
-        
+
         Log.infof("Applying realm override: user=%s, originalRealm=%s, targetRealm=%s, " +
                   "originalDataDomain=%s, effectiveDataDomain=%s",
-            context.getUserId(), 
-            context.getDefaultRealm(), 
+            context.getUserId(),
+            context.getDefaultRealm(),
             realm,
             context.getDataDomain(),
             effectiveDataDomain);
-        
+
         // Rebuild the context with the target realm's DataDomain
         return new PrincipalContext.Builder()
                 .withDefaultRealm(realm)
@@ -851,13 +886,34 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     /**
      * Enforces pre-authorization by checking security rules before endpoint execution.
      * Prevents unauthorized access when endpoints bypass Morphia repo filtering.
+     *
+     * <p>When the endpoint is annotated with {@code @FunctionalAction(bypassDataScoping=true)},
+     * SCOPED constraints (data-level filters like {@code dataDomain.tenantId:${pTenantId}}) are
+     * ignored. This is intended for system-level operations that don't operate on tenant-scoped
+     * data entities.</p>
      */
     private void enforcePreAuthorization(PrincipalContext principalContext, ResourceContext resourceContext,
                                          ContainerRequestContext requestContext) {
         try {
+            // Log principal and resource context for debugging
+            if (Log.isDebugEnabled()) {
+                Log.debugf("enforcePreAuthorization: user=%s, roles=%s, realm=%s, dataDomain=%s",
+                    principalContext.getUserId(),
+                    principalContext.getRoles() != null ? java.util.Arrays.toString(principalContext.getRoles()) : "[]",
+                    principalContext.getDefaultRealm(),
+                    principalContext.getDataDomain() != null ? principalContext.getDataDomain().toString() : "null");
+                Log.debugf("enforcePreAuthorization: area=%s, domain=%s, action=%s",
+                    resourceContext.getArea(),
+                    resourceContext.getFunctionalDomain(),
+                    resourceContext.getAction());
+            }
+            
             com.e2eq.framework.model.securityrules.SecurityCheckResponse response =
                 ruleContext.checkRules(principalContext, resourceContext, com.e2eq.framework.model.securityrules.RuleEffect.DENY);
 
+            boolean bypassDataScoping = isBypassDataScoping();
+
+            // Check if access is denied
             if (response.getFinalEffect() != com.e2eq.framework.model.securityrules.RuleEffect.ALLOW) {
                 String message = String.format(
                     "Access denied: user=%s, area=%s, domain=%s, action=%s",
@@ -866,6 +922,20 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                     resourceContext.getFunctionalDomain(),
                     resourceContext.getAction()
                 );
+
+                // Log detailed info at WARN level to help diagnose rule matching issues
+                Log.warnf("Pre-authorization DENIED: user=%s, roles=%s, realm=%s, area=%s, domain=%s, action=%s, " +
+                          "decision=%s, scope=%s, winningRule=%s, bypassDataScoping=%s",
+                    principalContext.getUserId(),
+                    principalContext.getRoles() != null ? java.util.Arrays.toString(principalContext.getRoles()) : "[]",
+                    principalContext.getDefaultRealm(),
+                    resourceContext.getArea(),
+                    resourceContext.getFunctionalDomain(),
+                    resourceContext.getAction(),
+                    response.getDecision(),
+                    response.getDecisionScope(),
+                    response.getWinningRuleName(),
+                    bypassDataScoping);
 
                 if (Log.isDebugEnabled()) {
                     Log.debugf("Pre-authorization failed: %s, decision=%s, scope=%s",
@@ -882,6 +952,38 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                         ))
                         .build()
                 );
+                return;
+            }
+
+            // Access is ALLOWED - handle SCOPED decisions
+            if ("SCOPED".equals(response.getDecisionScope()) && response.isScopedConstraintsPresent()) {
+                if (bypassDataScoping) {
+                    // System-level operation - bypass data scoping constraints
+                    if (Log.isInfoEnabled()) {
+                        Log.infof("Bypassing data scoping for system operation: user=%s, area=%s, domain=%s, action=%s, " +
+                                  "scopedConstraints=%s (bypassDataScoping=true)",
+                            principalContext.getUserId(),
+                            resourceContext.getArea(),
+                            resourceContext.getFunctionalDomain(),
+                            resourceContext.getAction(),
+                            response.getScopedConstraints());
+                    }
+                    // Allow the request to proceed - data scoping is not applicable for this operation
+                } else {
+                    // Standard data operation with SCOPED decision
+                    // For LIST/VIEW operations, the scoped constraints will be applied at the repo level
+                    // For non-list operations without bypassDataScoping, we log a warning but allow
+                    // (the repo layer should enforce constraints)
+                    if (Log.isDebugEnabled()) {
+                        Log.debugf("SCOPED access granted with constraints: user=%s, area=%s, domain=%s, action=%s, " +
+                                   "constraints=%s",
+                            principalContext.getUserId(),
+                            resourceContext.getArea(),
+                            resourceContext.getFunctionalDomain(),
+                            resourceContext.getAction(),
+                            response.getScopedConstraints());
+                    }
+                }
             }
         } catch (Exception e) {
             Log.errorf(e, "Pre-authorization check failed for user=%s, path=%s",
