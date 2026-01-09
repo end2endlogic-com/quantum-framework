@@ -537,8 +537,9 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_how_the_framework_uses_these_annotations">1.4. How the Framework Uses These Annotations</a></li>
 <li><a href="#_migration_from_legacy_methods">1.5. Migration from Legacy Methods</a></li>
 <li><a href="#_best_practices">1.6. Best Practices</a></li>
-<li><a href="#_integration_with_permission_rules">1.7. Integration with Permission Rules</a></li>
-<li><a href="#_see_also">1.8. See Also</a></li>
+<li><a href="#_bypassing_data_scoping_for_system_operations">1.7. Bypassing Data Scoping for System Operations</a></li>
+<li><a href="#_integration_with_permission_rules">1.8. Integration with Permission Rules</a></li>
+<li><a href="#_see_also">1.9. See Also</a></li>
 </ul>
 </li>
 </ul>
@@ -796,7 +797,144 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect3">
-<h4 id="_integration_with_permission_rules">1.7. Integration with Permission Rules</h4>
+<h4 id="_bypassing_data_scoping_for_system_operations">1.7. Bypassing Data Scoping for System Operations</h4>
+<div class="paragraph">
+<p>Some endpoints perform system-level operations that don&#8217;t operate on tenant-scoped data entities. For example:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Database migration operations (index creation, schema changes)</p>
+</li>
+<li>
+<p>System initialization and setup endpoints</p>
+</li>
+<li>
+<p>Administrative operations that don&#8217;t query/modify tenant-scoped records</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>For these endpoints, permission rules may return a <code>SCOPED</code> decision with data-level constraints like <code>dataDomain.tenantId:${pTenantId}</code>. However, since there&#8217;s no data entity to scope on, these constraints can&#8217;t be meaningfully applied.</p>
+</div>
+<div class="paragraph">
+<p>Use <code>bypassDataScoping = true</code> to mark such endpoints:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@POST</span>
+<span class="annotation">@Path</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">/indexes/applyAllIndexes/{realm}</span><span class="delimiter">&quot;</span></span>)
+<span class="annotation">@RolesAllowed</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">admin</span><span class="delimiter">&quot;</span></span>)
+<span class="annotation">@FunctionalMapping</span>(area = <span class="string"><span class="delimiter">&quot;</span><span class="content">migration</span><span class="delimiter">&quot;</span></span>, domain = <span class="string"><span class="delimiter">&quot;</span><span class="content">indexes</span><span class="delimiter">&quot;</span></span>)
+<span class="annotation">@FunctionalAction</span>(value = <span class="string"><span class="delimiter">&quot;</span><span class="content">APPLY_ALL_INDEXES</span><span class="delimiter">&quot;</span></span>, bypassDataScoping = <span class="predefined-constant">true</span>)
+<span class="directive">public</span> <span class="type">void</span> applyAllIndexes(<span class="annotation">@PathParam</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">realm</span><span class="delimiter">&quot;</span></span>) <span class="predefined-type">String</span> realm) {
+    migrationService.applyAllIndexes(realm);
+}</code></pre>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_how_it_works">How It Works</h5>
+<div class="paragraph">
+<p>When <code>bypassDataScoping = true</code>:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p><strong>Permission checks still apply</strong> - The user must still be authorized (ALLOW decision) based on their roles and the permission rules</p>
+</li>
+<li>
+<p><strong>SCOPED constraints are ignored</strong> - Data-level filters (like <code>dataDomain.tenantId:${pTenantId}</code>) are bypassed because they&#8217;re not applicable</p>
+</li>
+<li>
+<p><strong>Audit logging</strong> - The framework logs when data scoping is bypassed for transparency</p>
+</li>
+</ol>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_security_considerations">Security Considerations</h5>
+<div class="admonitionblock caution">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-caution" title="Caution"></i>
+</td>
+<td class="content">
+Only use <code>bypassDataScoping = true</code> for endpoints that genuinely do not operate on tenant-scoped data. Misuse could expose cross-tenant data access vulnerabilities.
+</td>
+</tr>
+</table>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 33.3333%;">
+<col style="width: 33.3333%;">
+<col style="width: 33.3334%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Use Case</th>
+<th class="tableblock halign-left valign-top">bypassDataScoping</th>
+<th class="tableblock halign-left valign-top">Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Database migrations</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>true</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Index/schema operations don&#8217;t involve tenant data</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">System initialization</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>true</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Setup operations are realm-wide, not tenant-scoped</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">CRUD on tenant data</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code> (default)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Must respect tenant isolation</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Report generation</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Reports should only include user&#8217;s accessible data</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect4">
+<h5 id="_example_migrationresource">Example: MigrationResource</h5>
+<div class="paragraph">
+<p>The <code>MigrationResource</code> class uses <code>bypassDataScoping</code> for all index management operations:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@Path</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">/system/migration</span><span class="delimiter">&quot;</span></span>)
+<span class="annotation">@RolesAllowed</span>({<span class="string"><span class="delimiter">&quot;</span><span class="content">admin</span><span class="delimiter">&quot;</span></span>})
+<span class="directive">public</span> <span class="type">class</span> <span class="class">MigrationResource</span> {
+
+   <span class="annotation">@POST</span>
+   <span class="annotation">@Path</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">/indexes/applyIndexes/{realm}</span><span class="delimiter">&quot;</span></span>)
+   <span class="annotation">@FunctionalMapping</span>(area = <span class="string"><span class="delimiter">&quot;</span><span class="content">MIGRATION</span><span class="delimiter">&quot;</span></span>, domain = <span class="string"><span class="delimiter">&quot;</span><span class="content">INDEXES</span><span class="delimiter">&quot;</span></span>)
+   <span class="annotation">@FunctionalAction</span>(value = <span class="string"><span class="delimiter">&quot;</span><span class="content">APPLY_INDEXES</span><span class="delimiter">&quot;</span></span>, bypassDataScoping = <span class="predefined-constant">true</span>)
+   <span class="directive">public</span> <span class="type">void</span> applyIndexes(<span class="annotation">@PathParam</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">realm</span><span class="delimiter">&quot;</span></span>) <span class="predefined-type">String</span> realm) {
+      migrationService.applyIndexes(realm);
+   }
+
+   <span class="annotation">@POST</span>
+   <span class="annotation">@Path</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">/indexes/dropAllIndexes/{realm}</span><span class="delimiter">&quot;</span></span>)
+   <span class="annotation">@FunctionalMapping</span>(area = <span class="string"><span class="delimiter">&quot;</span><span class="content">MIGRATION</span><span class="delimiter">&quot;</span></span>, domain = <span class="string"><span class="delimiter">&quot;</span><span class="content">INDEXES</span><span class="delimiter">&quot;</span></span>)
+   <span class="annotation">@FunctionalAction</span>(value = <span class="string"><span class="delimiter">&quot;</span><span class="content">DROP_ALL_INDEXES</span><span class="delimiter">&quot;</span></span>, bypassDataScoping = <span class="predefined-constant">true</span>)
+   <span class="directive">public</span> <span class="type">void</span> dropIndexes(<span class="annotation">@PathParam</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">realm</span><span class="delimiter">&quot;</span></span>) <span class="predefined-type">String</span> realm) {
+      migrationService.dropAllIndexes(realm);
+   }
+}</code></pre>
+</div>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_integration_with_permission_rules">1.8. Integration with Permission Rules</h4>
 <div class="paragraph">
 <p>Annotations feed into permission rule matching:</p>
 </div>
@@ -829,7 +967,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect3">
-<h4 id="_see_also">1.8. See Also</h4>
+<h4 id="_see_also">1.9. See Also</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -849,7 +987,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-09-30 19:58:16 -0500
+Last updated 2026-01-08 17:32:04 -0600
 </div>
 </div>
 </body>
