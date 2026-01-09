@@ -1,5 +1,7 @@
 package com.e2eq.framework.rest.resources;
 
+import com.e2eq.framework.annotations.FunctionalAction;
+import com.e2eq.framework.annotations.FunctionalMapping;
 import com.e2eq.framework.model.persistent.migration.base.DatabaseVersion;
 import com.e2eq.framework.model.persistent.migration.base.MigrationService;
 import com.e2eq.framework.model.persistent.morphia.DatabaseVersionRepo;
@@ -67,6 +69,8 @@ public class MigrationResource {
    @Path("/indexes/applyIndexes/{realm}")
    @RolesAllowed("admin")
    @Produces(MediaType.APPLICATION_JSON)
+   @FunctionalMapping(area="MIGRATION", domain="INDEXES")
+   @FunctionalAction(value = "APPLY_INDEXES", bypassDataScoping = true)
    public void applyIndexes (@Context HttpHeaders headers, @PathParam("realm") String realm) {
       migrationService.applyIndexes(realm);
    }
@@ -75,6 +79,8 @@ public class MigrationResource {
    @Path("/indexes/applyIndexes/{realm}/{collection}")
    @RolesAllowed("admin")
    @Produces(MediaType.APPLICATION_JSON)
+   @FunctionalMapping(area="MIGRATION", domain="INDEXES")
+   @FunctionalAction(value = "APPLY_INDEXES_COLLECTION", bypassDataScoping = true)
    public void applyIndexesOnCollection (@Context HttpHeaders headers, @PathParam("realm") String realm, @PathParam(
       "collection") String collection) {
       migrationService.applyIndexes(realm, collection);
@@ -84,6 +90,8 @@ public class MigrationResource {
    @Path("/indexes/applyAllIndexes/{realm}")
    @RolesAllowed("admin")
    @Produces(MediaType.APPLICATION_JSON)
+   @FunctionalMapping(area="MIGRATION", domain="INDEXES")
+   @FunctionalAction(value = "APPLY_ALL_INDEXES", bypassDataScoping = true)
    public void applyAllIndexes (@Context HttpHeaders headers, @PathParam("realm") String realm) {
       migrationService.applyAllIndexes(realm);
    }
@@ -92,6 +100,8 @@ public class MigrationResource {
    @Path("/indexes/dropAllIndexes/{realm}")
    @RolesAllowed("admin")
    @Produces(MediaType.APPLICATION_JSON)
+   @FunctionalMapping(area="MIGRATION", domain="INDEXES")
+   @FunctionalAction(value = "DROP_ALL_INDEXES", bypassDataScoping = true)
    public void dropIndexes (@Context HttpHeaders headers, @PathParam("realm") String realm) {
       migrationService.dropAllIndexes(realm);
    }
@@ -100,6 +110,8 @@ public class MigrationResource {
    @Path("/indexes/drop/{realm}/{collection}")
    @RolesAllowed("admin")
    @Produces(MediaType.APPLICATION_JSON)
+   @FunctionalMapping(area="MIGRATION", domain="INDEXES")
+   @FunctionalAction(value = "DROP_INDEX", bypassDataScoping = true)
    public void dropIndex (@Context HttpHeaders headers, @PathParam("realm") String realm,
                           @PathParam("collection") String collection) {
       migrationService.dropIndexOnCollection(realm, collection);
