@@ -734,7 +734,10 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
             } else {
                sortFields = null;
             }
-            projectionFields = FilterUtils.convertProjectionFields(projection);
+            // Only convert projection if projection parameter is actually provided
+            if (projection != null) {
+               projectionFields = FilterUtils.convertProjectionFields(projection);
+            }
          }
 
          String realmId = headers.getHeaderString("X-Realm");
