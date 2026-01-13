@@ -390,6 +390,7 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
       String field = ctx.field.getText();
 
       List<Object> values = new ArrayList<>();
+      List<String> unresolvedVars = new ArrayList<>();
 
       // Handle the special single-variable form: [${ids}]
       BIAPIQueryParser.ValueListExprContext list = ctx.value;
@@ -425,17 +426,40 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
 
          Object v = (varName != null && objectVars != null) ? objectVars.get(varName) : null;
          if (v instanceof Collection<?> coll) {
+            if (coll.isEmpty()) {
+               // Option 3: Warn when resolver returns empty collection - this will result in $in matching nothing
+               Log.warnf("Resolver variable '%s' returned empty collection for field '%s'. " +
+                        "The resulting $in filter will match no documents. " +
+                        "Verify the resolver's supports() method returns true for the current context.",
+                        varName, field);
+            }
             for (Object item : coll) {
                values.add(coerceValue(item));
             }
          } else if (v != null && v.getClass().isArray()) {
             int len = java.lang.reflect.Array.getLength(v);
+            if (len == 0) {
+               // Option 3: Warn when resolver returns empty array
+               Log.warnf("Resolver variable '%s' returned empty array for field '%s'. " +
+                        "The resulting $in filter will match no documents. " +
+                        "Verify the resolver's supports() method returns true for the current context.",
+                        varName, field);
+            }
             for (int i = 0; i < len; i++) {
                values.add(coerceValue(java.lang.reflect.Array.get(v, i)));
             }
          } else {
             String substituted = sub.replace(varTokenText); // may yield comma-separated scalars
-            if (substituted != null && !substituted.isBlank()) {
+            // Option 2: Check if variable was not resolved (still contains ${...} pattern)
+            if (substituted != null && substituted.contains("${")) {
+               unresolvedVars.add(varTokenText);
+               Log.errorf("Unresolved variable '%s' in IN clause for field '%s'. " +
+                        "This likely means the AccessListResolver's supports() method returned false for the current context. " +
+                        "The resolver must return true for all contexts where this variable is used in rule filters. " +
+                        "Check that your resolver's supports() method matches the area/functionalDomain/action of the request.",
+                        varTokenText, field);
+               // Don't add unresolved variable as literal - it would never match any document
+            } else if (substituted != null && !substituted.isBlank()) {
                for (String part : substituted.split(",")) {
                   values.add(coerceValue(part.trim()));
                }
@@ -467,9 +491,18 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
                }
                case BIAPIQueryParser.VARIABLE: {
                   String replaced = (sub != null) ? sub.replace(tn.getText()) : tn.getText();
-                  // Note: this branch treats variable expansion as scalar(s) to be coerced
-                  // If callers need exact string semantics, they should quote the variable in the query: ["${var}"]
-                  if (replaced != null && !replaced.isBlank()) {
+                  // Option 2: Check if variable was not resolved
+                  // Only check when we have a substitutor - if no substitutor, variables are expected to remain unresolved
+                  if (sub != null && replaced != null && replaced.contains("${")) {
+                     unresolvedVars.add(tn.getText());
+                     Log.errorf("Unresolved variable '%s' in IN clause for field '%s'. " +
+                              "This likely means the AccessListResolver's supports() method returned false for the current context. " +
+                              "The resolver must return true for all contexts where this variable is used in rule filters.",
+                              tn.getText(), field);
+                     // Don't add unresolved variable as literal
+                  } else if (replaced != null && !replaced.isBlank()) {
+                     // Note: this branch treats variable expansion as scalar(s) to be coerced
+                     // If callers need exact string semantics, they should quote the variable in the query: ["${var}"]
                      for (String part : replaced.split(",")) {
                         values.add(coerceValue(part.trim()));
                      }
@@ -481,6 +514,14 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
                   break;
             }
          }
+      }
+
+      // Option 2 & 3: Throw exception if we have unresolved variables - fail fast rather than silently returning no results
+      if (!unresolvedVars.isEmpty()) {
+         throw new IllegalStateException(
+            "Unresolved resolver variable(s) " + unresolvedVars + " in IN clause for field '" + field + "'. " +
+            "The AccessListResolver's supports() method must return true for the current request context. " +
+            "Ensure your resolver supports all area/functionalDomain/action combinations where this variable is used.");
       }
 
       Filter f;
@@ -601,6 +642,18 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
                     break;
                 case BIAPIQueryParser.VARIABLE: {
                     String replaced = (sub != null) ? sub.replace(tok.getText()) : tok.getText();
+                    // Check if variable was not resolved (still contains ${...} pattern)
+                    // Only check when we have a substitutor - if no substitutor, variables are expected to remain unresolved
+                    if (sub != null && replaced != null && replaced.contains("${")) {
+                        Log.errorf("Unresolved variable '%s' for field '%s'. " +
+                                "This likely means the AccessListResolver's supports() method returned false for the current context, " +
+                                "or the variable is not provided by any resolver. " +
+                                "Ensure your resolver supports all area/functionalDomain/action combinations where this variable is used.",
+                                tok.getText(), field.getText());
+                        throw new IllegalStateException(
+                            "Unresolved resolver variable '" + tok.getText() + "' for field '" + field.getText() + "'. " +
+                            "The AccessListResolver's supports() method must return true for the current request context.");
+                    }
                     value = coerceValue(replaced);
                 }
                     break;
