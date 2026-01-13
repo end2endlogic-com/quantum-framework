@@ -149,4 +149,90 @@ public class QueryToFilterListenerInClauseTest {
         assertTrue(list.get(4) instanceof String);
         assertEquals("X7", list.get(4));
     }
+
+    @Test
+    public void inList_unresolvedVariable_throwsException() {
+        // Test that an unresolved variable (not in objectVars or strings) throws an exception
+        // rather than silently treating ${unresolvedVar} as a literal string
+        String q = "locationId:^[${accessibleLocationIds}]";
+
+        // Create a variable bundle that does NOT contain "accessibleLocationIds"
+        Map<String, Object> extra = new HashMap<>();
+        // Don't add accessibleLocationIds - simulating resolver's supports() returning false
+        MorphiaUtils.VariableBundle vars = MorphiaUtils.buildVariableBundle(principal(), resource(), extra);
+
+        // Should throw IllegalStateException with helpful message about unresolved variable
+        IllegalStateException ex = assertThrows(IllegalStateException.class, () -> {
+            MorphiaUtils.convertToFilter(q, vars, DummyModel.class);
+        });
+
+        assertTrue(ex.getMessage().contains("Unresolved resolver variable"),
+                "Exception should mention unresolved variable");
+        assertTrue(ex.getMessage().contains("accessibleLocationIds"),
+                "Exception should mention the variable name");
+        assertTrue(ex.getMessage().contains("locationId"),
+                "Exception should mention the field name");
+    }
+
+    @Test
+    public void inList_emptyCollection_createsEmptyInFilter() {
+        // Test that an empty collection from a resolver creates an empty $in filter
+        // (which matches no documents) rather than failing
+        String q = "locationId:^[${accessibleLocationIds}]";
+
+        Map<String, Object> extra = new HashMap<>();
+        // Add an EMPTY collection - simulating resolver returning no access
+        extra.put("accessibleLocationIds", Collections.emptyList());
+        MorphiaUtils.VariableBundle vars = MorphiaUtils.buildVariableBundle(principal(), resource(), extra);
+
+        // Should succeed but create empty $in filter
+        Filter f = MorphiaUtils.convertToFilter(q, vars, DummyModel.class);
+        assertEquals("$in", f.getName());
+        assertEquals("locationId", f.getField());
+        Object v = f.getValue();
+        assertTrue(v instanceof List);
+        List<?> list = (List<?>) v;
+        assertTrue(list.isEmpty(), "Empty collection should result in empty $in list");
+    }
+
+    @Test
+    public void basicFilter_unresolvedVariable_throwsException() {
+        // Test that unresolved variables in basic equality expressions also throw
+        String q = "tenantId:${unresolvedTenant}";
+
+        Map<String, Object> extra = new HashMap<>();
+        MorphiaUtils.VariableBundle vars = MorphiaUtils.buildVariableBundle(principal(), resource(), extra);
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, () -> {
+            MorphiaUtils.convertToFilter(q, vars, DummyModel.class);
+        });
+
+        assertTrue(ex.getMessage().contains("Unresolved resolver variable"),
+                "Exception should mention unresolved variable");
+        assertTrue(ex.getMessage().contains("unresolvedTenant"),
+                "Exception should mention the variable name");
+    }
+
+    @Test
+    public void inList_resolvedVariable_succeeds() {
+        // Verify that properly resolved variables still work correctly
+        String q = "customerId:^[${accessibleCustomerIds}]";
+
+        Map<String, Object> extra = new HashMap<>();
+        extra.put("accessibleCustomerIds", Arrays.asList(
+                new ObjectId("5f1e1a5e5e5e5e5e5e5e5e51"),
+                new ObjectId("5f1e1a5e5e5e5e5e5e5e5e52")
+        ));
+        MorphiaUtils.VariableBundle vars = MorphiaUtils.buildVariableBundle(principal(), resource(), extra);
+
+        Filter f = MorphiaUtils.convertToFilter(q, vars, DummyModel.class);
+        assertEquals("$in", f.getName());
+        assertEquals("customerId", f.getField());
+        Object v = f.getValue();
+        assertTrue(v instanceof List);
+        List<?> list = (List<?>) v;
+        assertEquals(2, list.size());
+        assertTrue(list.get(0) instanceof ObjectId);
+        assertTrue(list.get(1) instanceof ObjectId);
+    }
 }
