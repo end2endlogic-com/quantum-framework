@@ -1039,7 +1039,9 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
       String realmId = headers.getHeaderString("X-Realm");
       if (realmId == null) {
          Optional<T> model = repo.findByRefName(refName);
-         return deleteEntity(ruleContext.getDefaultRealm(), model);
+         // Use the realm where the entity was found, not the default realm
+         String actualRealmId = getRealmIdFromModel(model);
+         return deleteEntity(actualRealmId, model);
       } else {
          Optional<T> model = repo.findByRefName(realmId, refName);
          return deleteEntity(realmId, model);
@@ -1074,15 +1076,67 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
      String realmId = headers.getHeaderString("X-Realm");
      if (realmId == null) {
         Optional<T> model = repo.findById(id);
-        return deleteEntity(id, model);
+        // Use the realm where the entity was found, not the default realm
+        String actualRealmId = getRealmIdFromModel(model);
+        return deleteEntity(actualRealmId, id, model);
      } else {
         Optional<T> model = repo.findById(realmId, id);
         return deleteEntity(realmId, id, model);
      }
    }
 
-   protected Response deleteEntity(String id, Optional<T> model) throws ReferentialIntegrityViolationException {
-      return deleteEntity(ruleContext.getDefaultRealm(), id, model);
+   /**
+    * Gets the realm ID from the model if available, otherwise from the security context.
+    * Falls back to default realm if neither is available.
+    *
+    * @param model the optional model that may have modelSourceRealm set
+    * @return the realm ID to use for the operation
+    */
+   private String getRealmIdFromModel(Optional<T> model) {
+      // First, try to get the realm from the model (where it was found)
+      if (model.isPresent() && model.get().getModelSourceRealm() != null && !model.get().getModelSourceRealm().isEmpty()) {
+         return model.get().getModelSourceRealm();
+      }
+      
+      // Otherwise, try to get it from the security context via the repo
+      if (repo instanceof com.e2eq.framework.model.persistent.morphia.MorphiaRepo) {
+         return ((com.e2eq.framework.model.persistent.morphia.MorphiaRepo<?>) repo).getSecurityContextRealmId();
+      }
+      
+      // Fall back to default realm
+      return ruleContext.getDefaultRealm();
+   }
+
+   /**
+    * Delete entity by realmId and model (for refName-based deletes).
+    *
+    * @param realmId the realm ID where the entity should be deleted
+    * @param model the optional model to delete
+    * @return the response indicating success or failure
+    */
+   protected Response deleteEntity(String realmId, Optional<T> model) throws ReferentialIntegrityViolationException {
+      if (model.isPresent()) {
+         long deletedCount = repo.delete(realmId, model.get());
+         if (deletedCount != 0) {
+            SuccessResponse r = new SuccessResponse();
+            r.setMessage("Delete successful");
+            r.setStatusCode(Response.Status.OK.getStatusCode());
+            return Response.ok().entity(r).build();
+         } else {
+            RestError error = RestError.builder()
+                    .statusMessage("Entity with identifier:" + model.get().getId().toHexString() + " was found but delete returned 0 indicating the entity may not have been deleted. Retry your request")
+                    .reasonMessage("Delete Operation returned 0 when 1 was expected")
+                    .debugMessage("MongoDB delete operation returned 0")
+                    .build();
+
+            return Response.status(Response.Status.NOT_MODIFIED).entity(error).build();
+         }
+      } else {
+         RestError error = RestError.builder()
+                 .status(Response.Status.NOT_FOUND.getStatusCode())
+                 .statusMessage("Entity was not found").build();
+         return Response.status(Response.Status.NOT_FOUND).entity(error).build();
+      }
    }
 
    protected Response deleteEntity(String realmId,String id, Optional<T> model) throws ReferentialIntegrityViolationException {
