@@ -1794,12 +1794,56 @@ public class RuleContext {
             }
 
             Rule rule = result.getRule();
+            
+            // Try to convert filter strings, but skip this rule if variables can't be resolved
+            // This handles the case where a rule matches by area/domain/action but its filter
+            // string references variables that are only available for specific model classes.
+            // For example, a Location rule with ${accessibleLocationIds} should not apply
+            // to UserProfile queries even if they share the same area/domain/action.
+            boolean ruleFilterSkipped = false;
+            
             if (rule.getAndFilterString() != null && !rule.getAndFilterString().isEmpty()) {
-                andFilters.add(MorphiaUtils.convertToFilter(rule.getAndFilterString(), vars, modelClass));
+                try {
+                    andFilters.add(MorphiaUtils.convertToFilter(rule.getAndFilterString(), vars, modelClass));
+                } catch (IllegalStateException e) {
+                    // Filter string contains unresolved variables - this rule doesn't apply to this model class
+                    if (e.getMessage() != null && e.getMessage().contains("Unresolved resolver variable")) {
+                        if (Log.isDebugEnabled()) {
+                            Log.debugf("Skipping rule '%s' filter for model class %s: %s",
+                                    rule.getName(), modelClass != null ? modelClass.getName() : "null", e.getMessage());
+                        }
+                        ruleFilterSkipped = true;
+                    } else {
+                        // Re-throw if it's a different IllegalStateException
+                        throw e;
+                    }
+                }
             }
 
-            if (rule.getOrFilterString() != null && !rule.getOrFilterString().isEmpty()) {
-                orFilters.add(MorphiaUtils.convertToFilter(rule.getOrFilterString(), vars, modelClass));
+            if (!ruleFilterSkipped && rule.getOrFilterString() != null && !rule.getOrFilterString().isEmpty()) {
+                try {
+                    orFilters.add(MorphiaUtils.convertToFilter(rule.getOrFilterString(), vars, modelClass));
+                } catch (IllegalStateException e) {
+                    // Filter string contains unresolved variables - this rule doesn't apply to this model class
+                    if (e.getMessage() != null && e.getMessage().contains("Unresolved resolver variable")) {
+                        if (Log.isDebugEnabled()) {
+                            Log.debugf("Skipping rule '%s' filter for model class %s: %s",
+                                    rule.getName(), modelClass != null ? modelClass.getName() : "null", e.getMessage());
+                        }
+                        ruleFilterSkipped = true;
+                    } else {
+                        // Re-throw if it's a different IllegalStateException
+                        throw e;
+                    }
+                }
+            }
+            
+            // Skip processing this rule's filters if they couldn't be resolved
+            // Clear any filters we may have added for this rule to avoid mixing with next rule's filters
+            if (ruleFilterSkipped) {
+                andFilters.clear();
+                orFilters.clear();
+                continue;
             }
 
             if (!andFilters.isEmpty() && !orFilters.isEmpty()) {
