@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./mvnw test:*)",
+      "Bash(mvn test:*)",
+      "Bash(mvn compile:*)",
+      "Bash(java -version:*)",
+      "Bash(/usr/libexec/java_home:*)",
+      "Bash(export JAVA_HOME=/Library/Java/JavaVirtualMachines/graalvm-community-openjdk-17.0.9+9.1/Contents/Home)",
+      "Bash($JAVA_HOME/bin/java -version)",
+      "Bash(JAVA_HOME=/Library/Java/JavaVirtualMachines/graalvm-community-openjdk-17.0.9+9.1/Contents/Home PATH=$JAVA_HOME/bin:$PATH mvn compile:*)",
+      "Bash(JAVA_HOME=/Library/Java/JavaVirtualMachines/graalvm-community-openjdk-17.0.9+9.1/Contents/Home PATH=$JAVA_HOME/bin:/opt/homebrew/bin:$PATH mvn compile:*)",
+      "Bash(JAVA_HOME=/Library/Java/JavaVirtualMachines/graalvm-community-openjdk-17.0.9+9.1/Contents/Home:*)",
+      "Bash(export JAVA_HOME)",
+      "Bash(export PATH=\"$JAVA_HOME/bin:$PATH\")",
+      "Bash(JAVA_HOME=/Library/Java/JavaVirtualMachines/graalvm-jdk-21.0.4+8.1/Contents/Home PATH=\"/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:$JAVA_HOME/bin:$PATH\" java:*)",
+      "Bash(JAVA_HOME=/Library/Java/JavaVirtualMachines/graalvm-jdk-21.0.4+8.1/Contents/Home mvn test:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push)",
+      "Bash(git push:*)"
+    ]
+  }
+}

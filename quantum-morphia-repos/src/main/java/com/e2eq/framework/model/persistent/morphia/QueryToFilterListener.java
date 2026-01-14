@@ -492,7 +492,8 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
                case BIAPIQueryParser.VARIABLE: {
                   String replaced = (sub != null) ? sub.replace(tn.getText()) : tn.getText();
                   // Option 2: Check if variable was not resolved
-                  if (replaced != null && replaced.contains("${")) {
+                  // Only check when we have a substitutor - if no substitutor, variables are expected to remain unresolved
+                  if (sub != null && replaced != null && replaced.contains("${")) {
                      unresolvedVars.add(tn.getText());
                      Log.errorf("Unresolved variable '%s' in IN clause for field '%s'. " +
                               "This likely means the AccessListResolver's supports() method returned false for the current context. " +
@@ -642,7 +643,8 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
                 case BIAPIQueryParser.VARIABLE: {
                     String replaced = (sub != null) ? sub.replace(tok.getText()) : tok.getText();
                     // Check if variable was not resolved (still contains ${...} pattern)
-                    if (replaced != null && replaced.contains("${")) {
+                    // Only check when we have a substitutor - if no substitutor, variables are expected to remain unresolved
+                    if (sub != null && replaced != null && replaced.contains("${")) {
                         Log.errorf("Unresolved variable '%s' for field '%s'. " +
                                 "This likely means the AccessListResolver's supports() method returned false for the current context, " +
                                 "or the variable is not provided by any resolver. " +
