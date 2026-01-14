@@ -1109,34 +1109,15 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
 
    /**
     * Delete entity by realmId and model (for refName-based deletes).
+    * Delegates to the 3-parameter version with id extracted from the model if present.
     *
     * @param realmId the realm ID where the entity should be deleted
     * @param model the optional model to delete
     * @return the response indicating success or failure
     */
    protected Response deleteEntity(String realmId, Optional<T> model) throws ReferentialIntegrityViolationException {
-      if (model.isPresent()) {
-         long deletedCount = repo.delete(realmId, model.get());
-         if (deletedCount != 0) {
-            SuccessResponse r = new SuccessResponse();
-            r.setMessage("Delete successful");
-            r.setStatusCode(Response.Status.OK.getStatusCode());
-            return Response.ok().entity(r).build();
-         } else {
-            RestError error = RestError.builder()
-                    .statusMessage("Entity with identifier:" + model.get().getId().toHexString() + " was found but delete returned 0 indicating the entity may not have been deleted. Retry your request")
-                    .reasonMessage("Delete Operation returned 0 when 1 was expected")
-                    .debugMessage("MongoDB delete operation returned 0")
-                    .build();
-
-            return Response.status(Response.Status.NOT_MODIFIED).entity(error).build();
-         }
-      } else {
-         RestError error = RestError.builder()
-                 .status(Response.Status.NOT_FOUND.getStatusCode())
-                 .statusMessage("Entity was not found").build();
-         return Response.status(Response.Status.NOT_FOUND).entity(error).build();
-      }
+      String id = model.isPresent() ? model.get().getId().toHexString() : null;
+      return deleteEntity(realmId, id, model);
    }
 
    protected Response deleteEntity(String realmId,String id, Optional<T> model) throws ReferentialIntegrityViolationException {
