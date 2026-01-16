@@ -25,7 +25,7 @@ import java.util.stream.Collectors;
  */
 @Path("/admin/seeds")
 @Produces(MediaType.APPLICATION_JSON)
-@RolesAllowed({"admin"})
+@RolesAllowed({"admin", "system"})
 @ApplicationScoped
 public class SeedAdminResource {
 

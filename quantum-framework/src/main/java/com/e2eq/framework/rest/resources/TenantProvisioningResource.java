@@ -50,7 +50,7 @@ public class TenantProvisioningResource {
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    @RolesAllowed({"admin"})
+    @RolesAllowed({"admin", "system"})
     public Response provision(ProvisionTenantRequest req) {
         try {
             List<String> archetypes = req.archetypes == null ? java.util.List.of() : req.archetypes;

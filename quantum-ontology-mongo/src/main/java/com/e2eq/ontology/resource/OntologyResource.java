@@ -37,7 +37,7 @@ import java.util.stream.Collectors;
 @Path("ontology")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
-@RolesAllowed({"user", "admin"})
+@RolesAllowed({"user", "admin", "system"})
 public class OntologyResource {
 
     @Inject
@@ -119,7 +119,7 @@ public class OntologyResource {
 
     @POST
     @Path("reindex")
-    @RolesAllowed({"admin"})
+    @RolesAllowed({"admin", "system"})
     @Consumes(MediaType.WILDCARD)
     @Operation(summary = "Trigger full ontology reindex")
     @SecurityRequirement(name = "bearerAuth")
@@ -172,7 +172,7 @@ public class OntologyResource {
     @Path("realm/status")
     @Operation(summary = "Get realm ontology status including cached realms")
     @SecurityRequirement(name = "bearerAuth")
-    @RolesAllowed({"admin"})
+    @RolesAllowed({"admin", "system"})
     public Response getRealmStatus() {
         Set<String> cachedRealms = registryProvider.getCachedRealms();
         Map<String, Object> body = Map.of(
@@ -186,7 +186,7 @@ public class OntologyResource {
     @Path("realm/invalidate")
     @Operation(summary = "Invalidate the ontology cache for current or specified realm")
     @SecurityRequirement(name = "bearerAuth")
-    @RolesAllowed({"admin"})
+    @RolesAllowed({"admin", "system"})
     @Consumes(MediaType.WILDCARD)
     public Response invalidateRealm(@QueryParam("realm") String realm) {
         if (realm != null && !realm.isBlank()) {
@@ -203,7 +203,7 @@ public class OntologyResource {
     @Path("realm/rebuild")
     @Operation(summary = "Force rebuild the TBox for a realm")
     @SecurityRequirement(name = "bearerAuth")
-    @RolesAllowed({"admin"})
+    @RolesAllowed({"admin", "system"})
     @Consumes(MediaType.WILDCARD)
     public Response forceRebuild(@QueryParam("realm") String realm) {
         if (realm == null || realm.isBlank()) {

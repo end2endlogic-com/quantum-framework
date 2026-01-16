@@ -10,7 +10,7 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 
 @Path("/tenant/{tenant}")
-@RolesAllowed({ "user", "admin" })
+@RolesAllowed({ "user", "admin", "system" })
 @Tag(name = "tenancy", description = "Operations related to managing multiple tenants")
 public class HomeResource {
 
