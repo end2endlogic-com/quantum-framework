@@ -60,8 +60,18 @@ public class SecurityUtils {
               .withAction(any)
               .build();
 
+      // Create system DomainContext for consistent realm resolution
+      DomainContext systemDomainContext = DomainContext.builder()
+              .tenantId(envConfigUtils.getSystemTenantId())
+              .defaultRealm(envConfigUtils.getSystemRealm())
+              .orgRefName(envConfigUtils.getSystemOrgRefName())
+              .accountId(envConfigUtils.getSystemAccountNumber())
+              .dataSegment(envConfigUtils.getDefaultDataSegment())
+              .build();
+
       systemPrincipalContext  = new PrincipalContext.Builder()
               .withDefaultRealm(envConfigUtils.getSystemRealm())
+              .withDomainContext(systemDomainContext)
               .withDataDomain(systemDataDomain)
               .withUserId(envConfigUtils.getSystemUserId())
               .withRoles(systemRole)
