@@ -3,6 +3,7 @@ package com.e2eq.framework.model.persistent.morphia;
 import com.e2eq.framework.grammar.BIAPIQueryLexer;
 import com.e2eq.framework.grammar.BIAPIQueryParser;
 import com.e2eq.framework.model.persistent.base.*;
+import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import dev.morphia.query.Sort;
@@ -126,7 +127,17 @@ public class MorphiaUtils {
       // Add defaultRealm so permission filters can dynamically scope by current realm
       // This is critical for X-Realm functionality - when realm switches, filters adapt automatically
       variableMap.put("defaultRealm", pcontext.getDefaultRealm());
-      
+
+      // Add DomainContext-sourced variables for richer realm context
+      // These provide direct access to the domain context fields (which may differ from DataDomain when X-Realm is used)
+      DomainContext dc = pcontext.getDomainContext();
+      if (dc != null) {
+         variableMap.put("dcTenantId", dc.getTenantId());
+         variableMap.put("dcOrgRefName", dc.getOrgRefName());
+         variableMap.put("dcAccountId", dc.getAccountId());
+         variableMap.put("dcDataSegment", String.valueOf(dc.getDataSegment()));
+      }
+
       return variableMap;
    }
 
