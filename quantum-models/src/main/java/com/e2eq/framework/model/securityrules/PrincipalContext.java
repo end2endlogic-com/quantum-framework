@@ -2,6 +2,7 @@ package com.e2eq.framework.model.securityrules;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.security.DataDomainPolicy;
+import com.e2eq.framework.model.security.DomainContext;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.graalvm.polyglot.HostAccess;
 
@@ -43,6 +44,10 @@ public final class PrincipalContext {
    // Realm override tracking - when X-Realm header is used
    boolean realmOverrideActive;       // True if X-Realm override is in effect
    DataDomain originalDataDomain;     // The caller's original DataDomain before realm override (for audit)
+
+   // DomainContext provides complete realm context including tenantId, orgRefName, accountId, dataSegment
+   // When set, getDefaultRealm() delegates to domainContext.getDefaultRealm()
+   DomainContext domainContext;
 
    PrincipalContext(@NotNull String defaultRealm,
                     @Valid @NotNull DataDomain dataDomain,
@@ -97,6 +102,7 @@ public final class PrincipalContext {
       DataDomainPolicy dataDomainPolicy;
       boolean realmOverrideActive;
       DataDomain originalDataDomain;
+      DomainContext domainContext;
 
       public Builder withDefaultRealm(String realm) {
          this.defaultRealm = realm;
@@ -171,6 +177,19 @@ public final class PrincipalContext {
          return this;
       }
 
+      /**
+       * Sets the DomainContext for this principal. When set, getDefaultRealm()
+       * will delegate to domainContext.getDefaultRealm() rather than using the
+       * standalone defaultRealm field. This provides a single source of truth
+       * for realm resolution.
+       * @param domainContext the domain context
+       * @return this builder
+       */
+      public Builder withDomainContext(DomainContext domainContext) {
+         this.domainContext = domainContext;
+         return this;
+      }
+
       public PrincipalContext build() {
          PrincipalContext pc =
             new PrincipalContext(defaultRealm, dataDomain, userId, roles, scope,
@@ -179,13 +198,24 @@ public final class PrincipalContext {
          pc.dataDomainPolicy = this.dataDomainPolicy;
          pc.realmOverrideActive = this.realmOverrideActive;
          pc.originalDataDomain = this.originalDataDomain;
+         pc.domainContext = this.domainContext;
          return pc;
       }
 
    }
 
+   /**
+    * Returns the default realm for this principal. If a DomainContext is set,
+    * this delegates to domainContext.getDefaultRealm(). Otherwise, returns
+    * the standalone defaultRealm field.
+    * @return the default realm
+    */
    @HostAccess.Export
    public String getDefaultRealm () {
+      // Delegation: if domainContext is set, use its defaultRealm
+      if (domainContext != null && domainContext.getDefaultRealm() != null) {
+         return domainContext.getDefaultRealm();
+      }
       return defaultRealm;
    }
 
@@ -301,6 +331,20 @@ public final class PrincipalContext {
       this.originalDataDomain = originalDataDomain;
    }
 
+   /**
+    * Returns the DomainContext if set. This provides complete realm context
+    * including tenantId, orgRefName, accountId, and dataSegment.
+    * @return the DomainContext or null
+    */
+   @HostAccess.Export
+   public DomainContext getDomainContext() {
+      return domainContext;
+   }
+
+   public void setDomainContext(DomainContext domainContext) {
+      this.domainContext = domainContext;
+   }
+
    @HostAccess.Export
    @Override
    public boolean equals (Object o) {
@@ -322,6 +366,7 @@ public final class PrincipalContext {
       if (dataDomainPolicy != null ? !dataDomainPolicy.equals(that.dataDomainPolicy) : that.dataDomainPolicy != null) return false;
       if (realmOverrideActive != that.realmOverrideActive) return false;
       if (originalDataDomain != null ? !originalDataDomain.equals(that.originalDataDomain) : that.originalDataDomain != null) return false;
+      if (domainContext != null ? !domainContext.equals(that.domainContext) : that.domainContext != null) return false;
       return true;
    }
 
@@ -340,6 +385,7 @@ public final class PrincipalContext {
       result = 31 * result + (dataDomainPolicy != null ? dataDomainPolicy.hashCode() : 0);
       result = 31 * result + (realmOverrideActive ? 1 : 0);
       result = 31 * result + (originalDataDomain != null ? originalDataDomain.hashCode() : 0);
+      result = 31 * result + (domainContext != null ? domainContext.hashCode() : 0);
       return result;
    }
 
@@ -357,6 +403,7 @@ public final class PrincipalContext {
                ", actingOnBehalfOfSubject='" + actingOnBehalfOfSubject + '\'' +
                ", realmOverrideActive=" + realmOverrideActive +
                ", originalDataDomain=" + originalDataDomain +
+               ", domainContext=" + domainContext +
                '}';
    }
 }

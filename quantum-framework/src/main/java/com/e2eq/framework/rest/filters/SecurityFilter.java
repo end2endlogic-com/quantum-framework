@@ -587,6 +587,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
             return new PrincipalContext.Builder()
                     .withDefaultRealm(contextRealm)
+                    .withDomainContext(creds.getDomainContext())
                     .withDataDomain(dataDomain)
                     .withUserId(creds.getUserId())
                     .withRoles(roles)
@@ -634,6 +635,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         String effectiveRealm = (realm != null) ? realm : creds.getDomainContext().getDefaultRealm();
         return new PrincipalContext.Builder()
                 .withDefaultRealm(effectiveRealm)
+                .withDomainContext(creds.getDomainContext())
                 .withDataDomain(dataDomain)
                 .withUserId(creds.getUserId())
                 .withRoles(roles)
@@ -787,6 +789,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
         return new PrincipalContext.Builder()
                 .withDefaultRealm(targetCreds.getDomainContext().getDefaultRealm())
+                .withDomainContext(targetCreds.getDomainContext())
                 .withDataDomain(dataDomain)
                 .withUserId(targetCreds.getUserId())
                 .withRoles(roles)
@@ -864,9 +867,10 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             context.getDataDomain(),
             effectiveDataDomain);
 
-        // Rebuild the context with the target realm's DataDomain
+        // Rebuild the context with the target realm's DataDomain and DomainContext
         return new PrincipalContext.Builder()
                 .withDefaultRealm(realm)
+                .withDomainContext(targetDomainContext)
                 .withDataDomain(effectiveDataDomain)
                 .withUserId(context.getUserId())
                 .withRoles(context.getRoles())
