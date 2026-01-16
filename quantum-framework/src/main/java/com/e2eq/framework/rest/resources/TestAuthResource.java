@@ -35,7 +35,7 @@ public class TestAuthResource {
     }
     @GET
     @Path("/view")
-    @RolesAllowed({"user", "admin"})
+    @RolesAllowed({"user", "admin", "system"})
     public Response viewSecureResource(SecurityContext ctx) {
         Log.info("Context User: " + ctx.getUserPrincipal().getName());
         Log.info(" SecureIdentity: " + securityIdentity.getPrincipal().getName());
@@ -45,7 +45,7 @@ public class TestAuthResource {
 
     @POST
     @Path("/create")
-    @RolesAllowed({"admin"})
+    @RolesAllowed({"admin", "system"})
     public Response createSecureResource() {
         return Response.ok(new SecureResponse("Secure content created")).build();
     }

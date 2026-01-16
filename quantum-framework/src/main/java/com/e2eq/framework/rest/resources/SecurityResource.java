@@ -484,7 +484,7 @@ public class SecurityResource {
 
 
     @PUT
-    @RolesAllowed("admin")
+    @RolesAllowed({"admin", "system"})
     @Path("/enableRealmOverride")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
@@ -494,7 +494,7 @@ public class SecurityResource {
     }
 
     @PUT
-    @RolesAllowed("admin")
+    @RolesAllowed({"admin", "system"})
     @Path("/disableRealmOverride")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
@@ -504,7 +504,7 @@ public class SecurityResource {
     }
 
     @PUT
-    @RolesAllowed("admin")
+    @RolesAllowed({"admin", "system"})
     @Path("/disableImpersonation")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
@@ -514,7 +514,7 @@ public class SecurityResource {
     }
 
     @PUT
-    @RolesAllowed("admin")
+    @RolesAllowed({"admin", "system"})
     @Path("/disableImpersonation/withSubject/{subject}")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)

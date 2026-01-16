@@ -14,7 +14,7 @@ import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 @Path("/integration/counters")
-@RolesAllowed({ "user", "admin" })
+@RolesAllowed({ "user", "admin", "system" })
 @Tag(name = "integration", description = "Operations related integrating into the system")
 public class CounterResource extends BaseResource<Counter, CounterRepo> {
 

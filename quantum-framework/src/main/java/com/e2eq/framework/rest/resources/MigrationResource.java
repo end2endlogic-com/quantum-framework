@@ -27,7 +27,7 @@ import java.util.Optional;
 import java.util.concurrent.Executor;
 
 @Path("/system/migration")
-@RolesAllowed({"admin"})
+@RolesAllowed({"admin", "system"})
 public class MigrationResource {
    @Inject
    Executor managedExecutor;
@@ -67,7 +67,7 @@ public class MigrationResource {
 
    @POST
    @Path("/indexes/applyIndexes/{realm}")
-   @RolesAllowed("admin")
+   @RolesAllowed({"admin", "system"})
    @Produces(MediaType.APPLICATION_JSON)
    @FunctionalMapping(area="MIGRATION", domain="INDEXES")
    @FunctionalAction(value = "APPLY_INDEXES", bypassDataScoping = true)
@@ -77,7 +77,7 @@ public class MigrationResource {
 
    @POST
    @Path("/indexes/applyIndexes/{realm}/{collection}")
-   @RolesAllowed("admin")
+   @RolesAllowed({"admin", "system"})
    @Produces(MediaType.APPLICATION_JSON)
    @FunctionalMapping(area="MIGRATION", domain="INDEXES")
    @FunctionalAction(value = "APPLY_INDEXES_COLLECTION", bypassDataScoping = true)
@@ -88,7 +88,7 @@ public class MigrationResource {
 
    @POST
    @Path("/indexes/applyAllIndexes/{realm}")
-   @RolesAllowed("admin")
+   @RolesAllowed({"admin", "system"})
    @Produces(MediaType.APPLICATION_JSON)
    @FunctionalMapping(area="MIGRATION", domain="INDEXES")
    @FunctionalAction(value = "APPLY_ALL_INDEXES", bypassDataScoping = true)
@@ -98,7 +98,7 @@ public class MigrationResource {
 
    @POST
    @Path("/indexes/dropAllIndexes/{realm}")
-   @RolesAllowed("admin")
+   @RolesAllowed({"admin", "system"})
    @Produces(MediaType.APPLICATION_JSON)
    @FunctionalMapping(area="MIGRATION", domain="INDEXES")
    @FunctionalAction(value = "DROP_ALL_INDEXES", bypassDataScoping = true)
@@ -108,7 +108,7 @@ public class MigrationResource {
 
    @POST
    @Path("/indexes/drop/{realm}/{collection}")
-   @RolesAllowed("admin")
+   @RolesAllowed({"admin", "system"})
    @Produces(MediaType.APPLICATION_JSON)
    @FunctionalMapping(area="MIGRATION", domain="INDEXES")
    @FunctionalAction(value = "DROP_INDEX", bypassDataScoping = true)
@@ -119,7 +119,7 @@ public class MigrationResource {
 
    @POST
    @Path("/changeSet/execute/{realm}/{beanRefName}")
-   @RolesAllowed("admin")
+   @RolesAllowed({"admin", "system"})
    @Produces(MediaType.SERVER_SENT_EVENTS)
    public void executeChangeSet (@Context HttpHeaders headers, @PathParam("realm") String realm, @PathParam(
       "beanRefName") String beanRefName, SseEventSink eventSink, Sse sse) {
@@ -182,7 +182,7 @@ public class MigrationResource {
 
    @GET
    @Path("/start")
-   @RolesAllowed("admin")
+   @RolesAllowed({"admin", "system"})
    @Produces(MediaType.SERVER_SENT_EVENTS)
    public void startTask (SseEventSink eventSink, Sse sse) {
       Multi.createFrom().publisher(runMigrateAllTask())
@@ -210,7 +210,7 @@ public class MigrationResource {
 
    @GET
    @Path("/start/{realm}")
-   @RolesAllowed("admin")
+   @RolesAllowed({"admin", "system"})
    @Produces(MediaType.SERVER_SENT_EVENTS)
    public void startSpecificTask (@PathParam("realm") String realm, SseEventSink eventSink, Sse sse) {
       Multi.createFrom().publisher(runMigrateSpecificTask(realm))
