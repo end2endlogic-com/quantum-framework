@@ -4,8 +4,10 @@ import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.migration.base.MigrationService;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
+import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
+import dev.morphia.query.filters.Filters;
 import io.smallrye.mutiny.Multi;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.DomainContext;
@@ -82,6 +84,9 @@ public class XRealmUserProvisioningIT extends BaseRepoTest {
 
     @Inject
     MigrationService migrationService;
+
+    @Inject
+    MorphiaDataStoreWrapper morphiaDataStoreWrapper;
 
     private String accessToken;
     private Realm targetRealm;
@@ -251,42 +256,66 @@ public class XRealmUserProvisioningIT extends BaseRepoTest {
 
     /**
      * Cleans up test users created during tests.
+     * Uses direct Morphia queries to bypass security filters that would otherwise
+     * prevent cleanup of users in different tenants.
      */
     private void cleanupTestUsers() {
-        // Clean up local test user
+        // Clean up local test user using direct Morphia queries
         try {
-            Optional<CredentialUserIdPassword> localCred = credRepo.findByUserId(
-                LOCAL_TEST_USER, envConfigUtils.getSystemRealm(), true);
-            if (localCred.isPresent()) {
-                authProviderFactory.getUserManager().removeUserWithUserId(LOCAL_TEST_USER);
-                Log.infof("Cleaned up local test user: %s", LOCAL_TEST_USER);
+            // Delete UserProfile in local realm
+            long deleted = morphiaDataStoreWrapper.getDataStore(testUtils.getTestRealm())
+                .find(UserProfile.class)
+                .filter(Filters.eq("userId", LOCAL_TEST_USER))
+                .delete()
+                .getDeletedCount();
+            if (deleted > 0) {
+                Log.infof("Cleaned up local user profile: %s (deleted %d)", LOCAL_TEST_USER, deleted);
             }
         } catch (Exception e) {
-            Log.debugf("Could not cleanup local test user: %s", e.getMessage());
+            Log.debugf("Could not cleanup local user profile: %s", e.getMessage());
         }
 
-        // Clean up X-Realm test user
         try {
-            Optional<CredentialUserIdPassword> xrealmCred = credRepo.findByUserId(
-                XREALM_TEST_USER, envConfigUtils.getSystemRealm(), true);
-            if (xrealmCred.isPresent()) {
-                authProviderFactory.getUserManager().removeUserWithUserId(XREALM_TEST_USER);
-                Log.infof("Cleaned up xrealm test user: %s", XREALM_TEST_USER);
+            // Delete Credential in system realm
+            long deleted = morphiaDataStoreWrapper.getDataStore(envConfigUtils.getSystemRealm())
+                .find(CredentialUserIdPassword.class)
+                .filter(Filters.eq("userId", LOCAL_TEST_USER))
+                .delete()
+                .getDeletedCount();
+            if (deleted > 0) {
+                Log.infof("Cleaned up local test credential: %s (deleted %d)", LOCAL_TEST_USER, deleted);
             }
         } catch (Exception e) {
-            Log.debugf("Could not cleanup xrealm test user: %s", e.getMessage());
+            Log.debugf("Could not cleanup local test credential: %s", e.getMessage());
         }
 
-        // Clean up UserProfile in target realm
+        // Clean up X-Realm test user using direct Morphia queries
         try {
-            Optional<UserProfile> xrealmProfile = userProfileRepo.getByUserId(
-                TARGET_REALM_REF_NAME, XREALM_TEST_USER);
-            if (xrealmProfile.isPresent()) {
-                userProfileRepo.delete(TARGET_REALM_REF_NAME, xrealmProfile.get());
-                Log.infof("Cleaned up xrealm user profile: %s", XREALM_TEST_USER);
+            // Delete UserProfile in target realm
+            long deleted = morphiaDataStoreWrapper.getDataStore(TARGET_REALM_REF_NAME)
+                .find(UserProfile.class)
+                .filter(Filters.eq("userId", XREALM_TEST_USER))
+                .delete()
+                .getDeletedCount();
+            if (deleted > 0) {
+                Log.infof("Cleaned up xrealm user profile: %s (deleted %d)", XREALM_TEST_USER, deleted);
             }
         } catch (Exception e) {
             Log.debugf("Could not cleanup xrealm user profile: %s", e.getMessage());
+        }
+
+        try {
+            // Delete Credential in system realm
+            long deleted = morphiaDataStoreWrapper.getDataStore(envConfigUtils.getSystemRealm())
+                .find(CredentialUserIdPassword.class)
+                .filter(Filters.eq("userId", XREALM_TEST_USER))
+                .delete()
+                .getDeletedCount();
+            if (deleted > 0) {
+                Log.infof("Cleaned up xrealm test credential: %s (deleted %d)", XREALM_TEST_USER, deleted);
+            }
+        } catch (Exception e) {
+            Log.debugf("Could not cleanup xrealm test credential: %s", e.getMessage());
         }
     }
 
@@ -461,48 +490,53 @@ public class XRealmUserProvisioningIT extends BaseRepoTest {
         assertEquals(200, status, "User creation with X-Realm should succeed");
 
         // Verify the user was created in the TARGET tenant, NOT the admin's home tenant
-        try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
-            // Check credential was created
-            Optional<CredentialUserIdPassword> cred = credRepo.findByUserId(
-                XREALM_TEST_USER, envConfigUtils.getSystemRealm(), true);
-            assertTrue(cred.isPresent(), "Credential should be created");
+        // Use direct Morphia queries to bypass security filters
 
-            // CRITICAL: Verify the credential's DomainContext matches the TARGET tenant
-            DomainContext credDc = cred.get().getDomainContext();
-            assertNotNull(credDc, "Credential should have DomainContext");
-            assertEquals(TARGET_TENANT, credDc.getTenantId(),
-                "Credential tenant should match TARGET tenant, not admin's tenant");
-            assertEquals(TARGET_ORG, credDc.getOrgRefName(),
-                "Credential org should match TARGET org");
-            assertEquals(TARGET_ACCOUNT, credDc.getAccountId(),
-                "Credential account should match TARGET account");
+        // Check credential was created using direct query
+        CredentialUserIdPassword cred = morphiaDataStoreWrapper.getDataStore(envConfigUtils.getSystemRealm())
+            .find(CredentialUserIdPassword.class)
+            .filter(Filters.eq("userId", XREALM_TEST_USER))
+            .first();
+        assertNotNull(cred, "Credential should be created");
 
-            // Check UserProfile was created - it should be in the TARGET realm
-            Optional<UserProfile> profile = userProfileRepo.getByUserId(
-                TARGET_REALM_REF_NAME, XREALM_TEST_USER);
-            assertTrue(profile.isPresent(),
-                "UserProfile should be created in target realm");
-            assertEquals(XREALM_TEST_USER, profile.get().getEmail());
+        // CRITICAL: Verify the credential's DomainContext matches the TARGET tenant
+        DomainContext credDc = cred.getDomainContext();
+        assertNotNull(credDc, "Credential should have DomainContext");
+        assertEquals(TARGET_TENANT, credDc.getTenantId(),
+            "Credential tenant should match TARGET tenant, not admin's tenant");
+        assertEquals(TARGET_ORG, credDc.getOrgRefName(),
+            "Credential org should match TARGET org");
+        assertEquals(TARGET_ACCOUNT, credDc.getAccountId(),
+            "Credential account should match TARGET account");
 
-            // CRITICAL: Verify UserProfile DataDomain matches TARGET tenant
-            DataDomain profileDd = profile.get().getDataDomain();
-            assertNotNull(profileDd, "UserProfile should have DataDomain");
-            assertEquals(TARGET_TENANT, profileDd.getTenantId(),
-                "UserProfile tenant should match TARGET tenant");
-            assertEquals(TARGET_ORG, profileDd.getOrgRefName(),
-                "UserProfile org should match TARGET org");
-            assertEquals(TARGET_ACCOUNT, profileDd.getAccountNum(),
-                "UserProfile account should match TARGET account");
+        // Check UserProfile was created - it should be in the TARGET realm (use direct query)
+        UserProfile profile = morphiaDataStoreWrapper.getDataStore(TARGET_REALM_REF_NAME)
+            .find(UserProfile.class)
+            .filter(Filters.eq("userId", XREALM_TEST_USER))
+            .first();
+        assertNotNull(profile, "UserProfile should be created in target realm");
+        assertEquals(XREALM_TEST_USER, profile.getEmail());
 
-            Log.infof("Successfully verified X-Realm user creation: userId=%s created in tenantId=%s (target), not in admin's tenant",
-                XREALM_TEST_USER, profileDd.getTenantId());
+        // CRITICAL: Verify UserProfile DataDomain matches TARGET tenant
+        DataDomain profileDd = profile.getDataDomain();
+        assertNotNull(profileDd, "UserProfile should have DataDomain");
+        assertEquals(TARGET_TENANT, profileDd.getTenantId(),
+            "UserProfile tenant should match TARGET tenant");
+        assertEquals(TARGET_ORG, profileDd.getOrgRefName(),
+            "UserProfile org should match TARGET org");
+        assertEquals(TARGET_ACCOUNT, profileDd.getAccountNum(),
+            "UserProfile account should match TARGET account");
 
-            // Additional verification: The user should NOT be in the admin's local realm
-            Optional<UserProfile> wrongProfile = userProfileRepo.getByUserId(
-                testUtils.getTestRealm(), XREALM_TEST_USER);
-            assertFalse(wrongProfile.isPresent(),
-                "UserProfile should NOT be created in admin's home realm - X-Realm should redirect to target");
-        }
+        Log.infof("Successfully verified X-Realm user creation: userId=%s created in tenantId=%s (target), not in admin's tenant",
+            XREALM_TEST_USER, profileDd.getTenantId());
+
+        // Additional verification: The user should NOT be in the admin's local realm (use direct query)
+        UserProfile wrongProfile = morphiaDataStoreWrapper.getDataStore(testUtils.getTestRealm())
+            .find(UserProfile.class)
+            .filter(Filters.eq("userId", XREALM_TEST_USER))
+            .first();
+        assertNull(wrongProfile,
+            "UserProfile should NOT be created in admin's home realm - X-Realm should redirect to target");
     }
 
     @Test
