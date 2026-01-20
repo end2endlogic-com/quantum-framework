@@ -2,8 +2,10 @@ package com.e2eq.framework.rest.filters;
 
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.persistent.migration.base.MigrationService;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.RealmRepo;
+import io.smallrye.mutiny.Multi;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.security.Realm;
@@ -58,6 +60,9 @@ public class XRealmDataDomainIT extends BaseRepoTest {
 
     @Inject
     EnvConfigUtils envConfigUtils;
+
+    @Inject
+    MigrationService migrationService;
 
     @Inject
     AuthProviderFactory authProviderFactory;
@@ -142,6 +147,8 @@ public class XRealmDataDomainIT extends BaseRepoTest {
         
         if (existingRealm.isPresent()) {
             targetRealm = existingRealm.get();
+            // Ensure migrations are initialized even if realm already exists
+            initializeRealmMigrations(TARGET_REALM_REF_NAME);
             return;
         }
 
@@ -174,6 +181,30 @@ public class XRealmDataDomainIT extends BaseRepoTest {
 
         targetRealm = realmRepo.save(envConfigUtils.getSystemRealm(), targetRealm);
         Log.infof("Created target realm: %s", TARGET_REALM_REF_NAME);
+
+        // Initialize the target realm's database with migrations
+        // This is required for X-Realm requests to succeed
+        initializeRealmMigrations(TARGET_REALM_REF_NAME);
+        Log.infof("Initialized migrations for target realm: %s", TARGET_REALM_REF_NAME);
+    }
+
+    /**
+     * Initializes migrations for a realm, running them if needed.
+     */
+    private void initializeRealmMigrations(String realm) {
+        try {
+            migrationService.checkInitialized(realm);
+        } catch (Exception e) {
+            // Database not initialized, run migrations
+            Log.infof("Running migrations for realm: %s", realm);
+            Multi.createFrom().emitter(emitter -> {
+                migrationService.runAllUnRunMigrations(realm, emitter);
+            }).subscribe().with(
+                item -> Log.debugf("Migration: %s", item),
+                failure -> Log.errorf("Migration failed: %s", failure.getMessage()),
+                () -> Log.infof("Migrations completed for realm: %s", realm)
+            );
+        }
     }
 
     /**
