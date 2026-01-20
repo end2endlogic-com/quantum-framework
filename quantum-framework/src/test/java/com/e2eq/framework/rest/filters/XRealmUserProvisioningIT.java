@@ -237,20 +237,24 @@ public class XRealmUserProvisioningIT extends BaseRepoTest {
 
     /**
      * Initializes migrations for a realm, running them if needed.
+     * Blocks until migrations complete or fails the test if migrations fail.
      */
     private void initializeRealmMigrations(String realm) {
         try {
             migrationService.checkInitialized(realm);
         } catch (Exception e) {
-            // Database not initialized, run migrations
+            // Database not initialized, run migrations synchronously
             Log.infof("Running migrations for realm: %s", realm);
-            Multi.createFrom().emitter(emitter -> {
-                migrationService.runAllUnRunMigrations(realm, emitter);
-            }).subscribe().with(
-                item -> Log.debugf("Migration: %s", item),
-                failure -> Log.errorf("Migration failed: %s", failure.getMessage()),
-                () -> Log.infof("Migrations completed for realm: %s", realm)
-            );
+            try {
+                Multi.createFrom().emitter(emitter -> {
+                    migrationService.runAllUnRunMigrations(realm, emitter);
+                })
+                .collect().asList()
+                .await().indefinitely();
+                Log.infof("Migrations completed for realm: %s", realm);
+            } catch (Exception migrationEx) {
+                throw new RuntimeException("Migration failed for realm: " + realm, migrationEx);
+            }
         }
     }
 
