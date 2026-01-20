@@ -28,6 +28,7 @@ import java.util.Optional;
 
 import static io.restassured.RestAssured.given;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * Integration tests for X-Realm header DataDomain override behavior.
@@ -305,11 +306,8 @@ public class XRealmDataDomainIT extends BaseRepoTest {
     @Order(4)
     @DisplayName("API request with X-Realm header should succeed")
     void testApiRequestWithXRealmHeader() {
-        // Skip if no access token (login failed)
-        if (accessToken == null) {
-            Log.warn("Skipping test - no access token available");
-            return;
-        }
+        // Skip test if login failed during setup
+        assumeTrue(accessToken != null, "Test skipped - login failed during setup");
 
         // When: Making an API request with X-Realm header
         Response response = given()
@@ -333,11 +331,8 @@ public class XRealmDataDomainIT extends BaseRepoTest {
     @Order(5)
     @DisplayName("API request without X-Realm should use default realm")
     void testApiRequestWithoutXRealmHeader() {
-        // Skip if no access token
-        if (accessToken == null) {
-            Log.warn("Skipping test - no access token available");
-            return;
-        }
+        // Skip test if login failed during setup
+        assumeTrue(accessToken != null, "Test skipped - login failed during setup");
 
         // When: Making an API request without X-Realm header
         Response response = given()
@@ -373,11 +368,8 @@ public class XRealmDataDomainIT extends BaseRepoTest {
     @Order(7)
     @DisplayName("X-Realm to non-existent realm should be handled gracefully")
     void testXRealmToNonExistentRealm() {
-        // Skip if no access token
-        if (accessToken == null) {
-            Log.warn("Skipping test - no access token available");
-            return;
-        }
+        // Skip test if login failed during setup
+        assumeTrue(accessToken != null, "Test skipped - login failed during setup");
 
         // When: Making an API request with X-Realm header pointing to non-existent realm
         Response response = given()
