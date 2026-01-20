@@ -426,15 +426,23 @@ public abstract class HierarchicalRepo<
      *
      * @param nodeId the id of the node to build the path to
      * @return list of hierarchy nodes from root to the specified node (inclusive)
+     * @throws IllegalStateException if a cycle is detected in the hierarchy
      */
     public List<T> getPathToNode(ObjectId nodeId) {
         Objects.requireNonNull(nodeId, "nodeId cannot be null for getPathToNode method");
 
         List<T> path = new ArrayList<>();
+        Set<ObjectId> visited = new HashSet<>();
         ObjectId currentId = nodeId;
 
-        // Walk up the tree from node to root
+        // Walk up the tree from node to root with cycle detection
         while (currentId != null) {
+            // Cycle detection: if we've seen this node before, we have a cycle
+            if (!visited.add(currentId)) {
+                throw new IllegalStateException(
+                        "Cycle detected in hierarchy at node id: " + currentId.toHexString());
+            }
+
             Optional<T> oNode = findById(currentId);
             if (!oNode.isPresent()) {
                 break;
@@ -565,8 +573,9 @@ public abstract class HierarchicalRepo<
             }
 
             String parentFilter = combineFilters(parentFilters);
-            String idFilter = "_id:in:[" + itemIds.stream()
-                    .map(id -> "\"" + id.toHexString() + "\"")
+            // Use :^ (IN operator) with unquoted OID tokens for _id filter
+            String idFilter = "_id:^[" + itemIds.stream()
+                    .map(ObjectId::toHexString)
                     .collect(Collectors.joining(",")) + "]";
 
             String combinedFilter = "(" + parentFilter + ") && (" + idFilter + ")";
@@ -575,9 +584,8 @@ public abstract class HierarchicalRepo<
         } else if (staticDynamicList.isDynamic()) {
             // For dynamic lists, combine all filters from path
             String accumulatedFilter = getAccumulatedFilterForNode(nodeId);
-            if (accumulatedFilter == null || accumulatedFilter.trim().isEmpty()) {
-                return new ArrayList<>();
-            }
+            // Pass filter to getListByQuery even if null/empty - this matches legacy behavior
+            // where null filter returns all items subject to security rules
             return objectRepo.getListByQuery(0, -1, accumulatedFilter, null, null);
         }
 
@@ -606,6 +614,8 @@ public abstract class HierarchicalRepo<
      *
      * @param nodeId the id of the starting hierarchy node
      * @return list of objects with proper filter accumulation
+     * @throws NotFoundException if the node is not found
+     * @throws RuntimeException if any error occurs processing the hierarchy
      */
     public List<O> getAllObjectsForHierarchyWithAccumulatedFilters(ObjectId nodeId) {
         Objects.requireNonNull(nodeId, "nodeId cannot be null");
@@ -624,12 +634,8 @@ public abstract class HierarchicalRepo<
         List<T> descendants = getAllChildren(nodeId);
         for (T descendant : descendants) {
             if (descendant.getId() != null) {
-                try {
-                    objectSet.addAll(getObjectsWithAccumulatedFilter(descendant.getId()));
-                } catch (Exception e) {
-                    Log.warnf("Error getting objects for descendant %s: %s",
-                            descendant.getId().toHexString(), e.getMessage());
-                }
+                // Let exceptions propagate - consistent with root node behavior
+                objectSet.addAll(getObjectsWithAccumulatedFilter(descendant.getId()));
             }
         }
 
