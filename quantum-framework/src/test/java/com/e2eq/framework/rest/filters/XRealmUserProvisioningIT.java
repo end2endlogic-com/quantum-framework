@@ -34,6 +34,7 @@ import java.util.Set;
 
 import static io.restassured.RestAssured.given;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * Integration tests for X-Realm user provisioning.
@@ -361,11 +362,8 @@ public class XRealmUserProvisioningIT extends BaseRepoTest {
     @Order(1)
     @DisplayName("Test 1: Admin provisions user in own tenant WITHOUT X-Realm header")
     void testProvisionUserInOwnTenantWithoutXRealm() throws Exception {
-        // Skip if no access token (login failed)
-        if (accessToken == null) {
-            Log.warn("Skipping test - no access token available");
-            return;
-        }
+        // Skip test if login failed during setup
+        assumeTrue(accessToken != null, "Test skipped - login failed during setup");
 
         // Given: A CreateUserRequest for the admin's own tenant
         DomainContext localDomainContext = DomainContext.builder()
@@ -445,11 +443,8 @@ public class XRealmUserProvisioningIT extends BaseRepoTest {
     @Order(2)
     @DisplayName("Test 2: Admin uses X-Realm to provision user in DIFFERENT tenant")
     void testProvisionUserInDifferentTenantWithXRealm() throws Exception {
-        // Skip if no access token (login failed)
-        if (accessToken == null) {
-            Log.warn("Skipping test - no access token available");
-            return;
-        }
+        // Skip test if login failed during setup
+        assumeTrue(accessToken != null, "Test skipped - login failed during setup");
 
         // Given: A CreateUserRequest for the TARGET tenant (different from admin's tenant)
         // The DomainContext in the request should match the target realm
@@ -551,10 +546,8 @@ public class XRealmUserProvisioningIT extends BaseRepoTest {
         // DomainContext is correctly set to the target realm's DomainContext
         // (this is the core of our refactoring)
 
-        if (accessToken == null) {
-            Log.warn("Skipping test - no access token available");
-            return;
-        }
+        // Skip test if login failed during setup
+        assumeTrue(accessToken != null, "Test skipped - login failed during setup");
 
         // When: Making a request with X-Realm header
         // We'll use a simple GET endpoint to verify the context is correct
@@ -608,10 +601,8 @@ public class XRealmUserProvisioningIT extends BaseRepoTest {
                     .then()
                     .extract().response();
 
-            if (loginResponse.getStatusCode() != 200) {
-                Log.warnf("Could not login as test user, skipping test");
-                return;
-            }
+            assumeTrue(loginResponse.getStatusCode() == 200,
+                "Test skipped - could not login as test user after removing realmRegEx");
 
             String restrictedToken = loginResponse.jsonPath().getString("access_token");
 
