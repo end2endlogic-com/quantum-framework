@@ -53,7 +53,7 @@ import static java.lang.String.format;
         scheme = "bearer",
         bearerFormat = "JWT"
 )
-@RolesAllowed({ "user", "admin" })
+@RolesAllowed({ "user", "admin", "system" })
 public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaRepo<T>> {
    protected R repo;
    protected Class<T> modelClass;
@@ -130,7 +130,7 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
    @Path("indexes/ensureIndexes/{realm}")
    @POST
    @SecurityRequirement(name = "bearerAuth")
-   @RolesAllowed({"admin"})
+   @RolesAllowed({"admin", "system"})
    @Produces(MediaType.APPLICATION_JSON)
    public Response ensureIndexes(@PathParam( "realm") String realm, @QueryParam("collectionName") String collectionName) {
        repo.ensureIndexes(realm, collectionName);

@@ -102,7 +102,7 @@ public class SystemResource {
     @Path("/functional-domains/import")
     @Consumes({"text/plain", "application/yaml", "text/yaml"})
     @Produces(MediaType.APPLICATION_JSON)
-    @RolesAllowed("admin")
+    @RolesAllowed({"admin", "system"})
     public Response importFunctionalDomains(
             @QueryParam("mode") @DefaultValue("merge") String mode,
             @QueryParam("pruneMissing") @DefaultValue("false") boolean pruneMissing,

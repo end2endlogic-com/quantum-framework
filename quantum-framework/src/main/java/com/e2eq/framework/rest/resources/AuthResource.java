@@ -30,7 +30,7 @@ public class AuthResource {
     @Path("/provider/name")
     @Operation(summary = "Get Authentication Provider Name", description = "Returns the name of the current authentication provider.")
     @APIResponse(responseCode = "200", description = "Successfully retrieved prov")
-    @RolesAllowed({ "user","admin"})
+    @RolesAllowed({ "user","admin", "system"})
     public Response getProviderName() {
         AuthProvider authProvider = authProviderFactory.getAuthProvider();
         return Response.ok(authProvider.getName()).build();
@@ -43,7 +43,7 @@ public class AuthResource {
        @APIResponse(responseCode = "200", description = "User created successfully"),
        @APIResponse(responseCode = "400", description = "Invalid request data")
     })
-    @RolesAllowed({ "admin"})
+    @RolesAllowed({ "admin", "system"})
     public Response createUser(CreateUserRequest request) {
         UserManagement usermanager = authProviderFactory.getUserManager();
         usermanager.createUser(request.getUserId(), request.getPassword(),

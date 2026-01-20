@@ -125,7 +125,7 @@ public class PolicyResource extends BaseResource<Policy, PolicyRepo>{
    @Path("/import")
    @Consumes({MediaType.TEXT_PLAIN, "application/yaml", "text/yaml"})
    @Produces(MediaType.APPLICATION_JSON)
-   @RolesAllowed("admin")
+   @RolesAllowed({"admin", "system"})
    public Response importPolicies(@HeaderParam("X-Realm") String realm, String yamlPayload) {
       String effectiveRealm = (realm == null || realm.isBlank()) ? ruleContext.getDefaultRealm() : realm;
 

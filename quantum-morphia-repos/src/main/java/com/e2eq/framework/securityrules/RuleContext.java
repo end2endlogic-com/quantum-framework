@@ -466,8 +466,8 @@ public class RuleContext {
      * Adds in the system rules regardless of any configuration that may be present and later added in
      */
     protected void addSystemRules() {
-        // add default rules for the system
-        // first explicitly add the "system"
+        // add default rules for the system USERID
+        // first explicitly add the "root" for the configured system USERID only no role
         // to operate with in the security area
         SecurityURI suri = new SecurityURI(securityUtils.getSystemSecurityHeader(),
            securityUtils.getSystemSecurityBody());
@@ -482,6 +482,9 @@ public class RuleContext {
 
         this.addRule(securityUtils.getSystemSecurityHeader(), systemRule);
 
+        // ----------------------------
+        // Now lets add a system role that can be assigned to other ids to in effect act as root.
+
         SecurityURIHeader header = securityUtils.getSystemSecurityHeader().clone();
         header.setIdentity("system");
         suri = new SecurityURI(header, securityUtils.getSystemSecurityBody());
@@ -491,9 +494,12 @@ public class RuleContext {
                 .withDescription("system role can take any action with in security")
                 .withSecurityURI(suri)
                 .withEffect(RuleEffect.ALLOW)
-                .withPriority(1)
+                .withPriority(-100)
                 .withFinalRule(true).build();
         this.addRule(header, systemRoleRule);
+
+        //-----------------------
+       // Now lets add a tenant admin id
 
        SecurityURIBody body = new SecurityURIBody.Builder()
                                  .withOrgRefName("*")       // any organization
@@ -503,8 +509,6 @@ public class RuleContext {
                                  .withOwnerId("*")          // any owner
                                  .withDataSegment("*")      // any datasegement
                                  .build();
-
-
 
        // **** Tenant Admin ***
         header = new SecurityURIHeader.Builder()
@@ -526,9 +530,9 @@ public class RuleContext {
                 .withSecurityURI(uri)
                 .withAndFilterString("dataDomain.tenantId:${pTenantId}")
                 .withEffect(RuleEffect.ALLOW)
+                .withPriority(0)
                 .withFinalRule(true);
        Rule r = tenantAdminbuilder.build();
-       r = tenantAdminbuilder.build();
        this.addRule(header, r);
 
     }
@@ -1794,14 +1798,14 @@ public class RuleContext {
             }
 
             Rule rule = result.getRule();
-            
+
             // Try to convert filter strings, but skip this rule if variables can't be resolved
             // This handles the case where a rule matches by area/domain/action but its filter
             // string references variables that are only available for specific model classes.
             // For example, a Location rule with ${accessibleLocationIds} should not apply
             // to UserProfile queries even if they share the same area/domain/action.
             boolean ruleFilterSkipped = false;
-            
+
             if (rule.getAndFilterString() != null && !rule.getAndFilterString().isEmpty()) {
                 try {
                     andFilters.add(MorphiaUtils.convertToFilter(rule.getAndFilterString(), vars, modelClass));
@@ -1837,7 +1841,7 @@ public class RuleContext {
                     }
                 }
             }
-            
+
             // Skip processing this rule's filters if they couldn't be resolved
             // Clear any filters we may have added for this rule to avoid mixing with next rule's filters
             if (ruleFilterSkipped) {

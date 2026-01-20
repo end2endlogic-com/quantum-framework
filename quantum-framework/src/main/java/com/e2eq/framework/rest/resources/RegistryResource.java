@@ -22,7 +22,7 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import java.util.Optional;
 
 @Path("/onboarding/registrationRequest")
-@RolesAllowed({ "user", "admin" })
+@RolesAllowed({ "user", "admin", "system" })
 @Tag(name = "onboarding", description = "Operations related to onboarding new tenants")
 public class RegistryResource extends BaseResource<ApplicationRegistration, BaseMorphiaRepo<ApplicationRegistration>> {
 
