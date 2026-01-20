@@ -33,7 +33,7 @@ public class GreetingResource {
 
     @Path("/list")
     @GET
-    @RolesAllowed({ "user", "admin" })
+    @RolesAllowed({ "user", "admin", "system" })
     @Produces(MediaType.TEXT_PLAIN)
     public List<String> helloList() {
         return Arrays.asList("Test", "Test1", "Test2");

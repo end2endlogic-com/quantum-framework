@@ -21,7 +21,7 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import java.util.Optional;
 
 @Path("/user/userProfile")
-@RolesAllowed({"user", "admin"})
+@RolesAllowed({"user", "admin", "system"})
 @Tag(name = "users", description = "Operations related to managing users")
 public class UserProfileResource extends BaseResource<UserProfile, UserProfileRepo> {
 
@@ -39,7 +39,7 @@ public class UserProfileResource extends BaseResource<UserProfile, UserProfileRe
 
    @Path("byRefName")
    @GET
-   @RolesAllowed({ "user", "admin" })
+   @RolesAllowed({ "user", "admin", "system" })
    @Produces(MediaType.APPLICATION_JSON)
    @PermissionCheck(
       area = "Security",
@@ -54,7 +54,7 @@ public class UserProfileResource extends BaseResource<UserProfile, UserProfileRe
 
    @Path("updateStatus")
    @PUT
-   @RolesAllowed({ "user", "admin" })
+   @RolesAllowed({ "user", "admin", "system" })
    @Produces(MediaType.APPLICATION_JSON)
    @PermissionCheck(
       area = "Security",

@@ -15,7 +15,7 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import java.util.List;
 
 @Path("/user/credentials")
-@RolesAllowed({ "user", "admin" })
+@RolesAllowed({ "user", "admin", "system" })
 @Tag(name = "user", description = "Operations related to managing users")
 public class CredentialsResource extends BaseResource<CredentialUserIdPassword, CredentialRepo> {
 
@@ -26,7 +26,7 @@ public class CredentialsResource extends BaseResource<CredentialUserIdPassword, 
 
 
     @Override
-    @RolesAllowed({ "admin" })
+    @RolesAllowed({ "admin", "system" })
     public Response importCSVList(
             @Context UriInfo info,
             @BeanParam FileUpload fileUpload,
@@ -48,7 +48,7 @@ public class CredentialsResource extends BaseResource<CredentialUserIdPassword, 
 
     @Path("changePassword")
     @POST
-    @RolesAllowed({ "user", "admin" })
+    @RolesAllowed({ "user", "admin", "system" })
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
     public Response changePassword(SecurityContext securityContext, ChangePasswordRequest changePasswordRequest) {
@@ -93,7 +93,7 @@ public class CredentialsResource extends BaseResource<CredentialUserIdPassword, 
 
     @GET
     @Path("matching-realms")
-    @RolesAllowed({ "user", "admin" })
+    @RolesAllowed({ "user", "admin", "system" })
     @Produces(MediaType.APPLICATION_JSON)
     public Response getMatchingRealms() {
         List<String> realms = repo.getMatchingRealmsForCurrentUser();

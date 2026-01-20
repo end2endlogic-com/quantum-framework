@@ -26,7 +26,7 @@ import com.e2eq.framework.util.SecurityUtils;
 
 
 @Path("/security/realm")
-@RolesAllowed({ "admin" })
+@RolesAllowed({ "admin", "system" })
 @Tag(name = "security", description = "Operations related to security")
 public class RealmResource extends BaseResource<Realm, BaseMorphiaRepo<Realm>> {
    @Inject
@@ -43,7 +43,7 @@ public class RealmResource extends BaseResource<Realm, BaseMorphiaRepo<Realm>> {
 
    @Path("byTenantId")
    @GET
-   @RolesAllowed({"user", "admin"})
+   @RolesAllowed({"user", "admin", "system"})
    @PermissionCheck(
       area = "Security",
       functionalDomain="Realm",
@@ -68,7 +68,7 @@ public class RealmResource extends BaseResource<Realm, BaseMorphiaRepo<Realm>> {
    @Produces({ "application/json"})
    @Consumes({"application/json"})
    @GET
-   @RolesAllowed({"user", "admin"})
+   @RolesAllowed({"user", "admin", "system"})
    public Response possibleImpersonationRealms() {
       PrincipalContext pContext;
       if (!SecurityContext.getPrincipalContext().isPresent()) {
@@ -123,7 +123,7 @@ public class RealmResource extends BaseResource<Realm, BaseMorphiaRepo<Realm>> {
    @GET
    @Produces({ "application/json"})
    @Consumes({"application/json"})
-   @RolesAllowed({"user", "admin"})
+   @RolesAllowed({"user", "admin", "system"})
    public Response accessible(@QueryParam("userId") String userId, @QueryParam("subjectId") String subjectId) {
       if ((userId == null || userId.isBlank()) && (subjectId == null || subjectId.isBlank())) {
          RestError error = RestError.builder()

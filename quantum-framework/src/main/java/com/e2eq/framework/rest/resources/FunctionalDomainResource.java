@@ -11,7 +11,7 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 
 @Path("/security/functionalDomain")
-@RolesAllowed("admin")
+@RolesAllowed({"admin", "system"})
 @Tag(name = "security", description = "Operations related to managing the security of the system")
 public class FunctionalDomainResource extends BaseResource<FunctionalDomain, BaseMorphiaRepo<FunctionalDomain>>{
    protected FunctionalDomainResource (FunctionalDomainRepo repo) {

@@ -7,7 +7,7 @@ import jakarta.ws.rs.Path;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 @Path("/security/accounts/organizations")
-@RolesAllowed({"admin"})
+@RolesAllowed({"admin", "system"})
 @Tag(name = "security", description = "Operations related to security")
 public class OrganizationResource extends BaseResource<Organization, OrganizationRepo>  {
     protected OrganizationResource(OrganizationRepo repo) {
