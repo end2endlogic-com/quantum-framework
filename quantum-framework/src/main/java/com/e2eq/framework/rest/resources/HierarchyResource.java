@@ -92,4 +92,39 @@ public class HierarchyResource<
         }
         return Response.ok(dto).build();
     }
+
+    /**
+     * Gets the effective filter string for a hierarchy node.
+     * This includes all accumulated dynamic filters AND static ID constraints
+     * from the path (root to node). This is the complete filter that would be
+     * applied when querying objects for this node.
+     *
+     * @param id the ObjectId of the hierarchy node
+     * @return JSON response containing the effective filter string
+     */
+    @GET
+    @Path("/{id}/effective-filter")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getEffectiveFilter(@PathParam("id") String id) {
+        ObjectId oid;
+        try {
+            oid = new ObjectId(id);
+        } catch (IllegalArgumentException ex) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", "Invalid id format"))
+                    .build();
+        }
+
+        try {
+            String effectiveFilter = repo.getEffectiveFilterForNode(oid);
+            return Response.ok(Map.of(
+                    "nodeId", id,
+                    "effectiveFilter", effectiveFilter != null ? effectiveFilter : ""
+            )).build();
+        } catch (NotFoundException ex) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity(Map.of("error", "Hierarchy node not found for id: " + id))
+                    .build();
+        }
+    }
 }
