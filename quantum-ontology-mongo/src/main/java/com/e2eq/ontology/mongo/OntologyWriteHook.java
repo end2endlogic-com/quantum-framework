@@ -3,6 +3,7 @@ package com.e2eq.ontology.mongo;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.PostPersistHook;
+import com.e2eq.ontology.annotations.OntologyClass;
 import com.e2eq.ontology.core.DataDomainInfo;
 import com.e2eq.ontology.core.OntologyRegistry;
 import com.e2eq.ontology.core.Reasoner;
@@ -31,43 +32,87 @@ public class OntologyWriteHook implements PostPersistHook {
 
     @Override
     public void afterPersist(String realmId, Object entity) {
+        Class<?> entityClass = entity.getClass();
+
+        // Check if entity participates in ontology via annotations
+        var metaOpt = extractor.metaOf(entityClass);
+        boolean hasOntologyAnnotation = metaOpt.isPresent();
+
+        // Check if any provider supports this entity type
+        boolean hasProviderSupport = false;
+        for (OntologyEdgeProvider p : providers) {
+            if (p.supports(entityClass)) {
+                hasProviderSupport = true;
+                break;
+            }
+        }
+
+        // If neither annotations nor providers apply, skip this entity
+        if (!hasOntologyAnnotation && !hasProviderSupport) {
+            return;
+        }
+
         try {
-            Class<?> c = entity.getClass();
-            var oc = c.getAnnotation(com.e2eq.ontology.annotations.OntologyClass.class);
-            long propCount = java.util.Arrays.stream(c.getDeclaredFields()).filter(f -> f.getAnnotation(com.e2eq.ontology.annotations.OntologyProperty.class) != null).count();
-            io.quarkus.logging.Log.infof("[DEBUG_LOG] afterPersist on %s, has @OntologyClass=%s, annotatedProps=%d", c.getName(), (oc!=null), propCount);
+            var oc = entityClass.getAnnotation(OntologyClass.class);
+            long propCount = java.util.Arrays.stream(entityClass.getDeclaredFields())
+                .filter(f -> f.getAnnotation(com.e2eq.ontology.annotations.OntologyProperty.class) != null)
+                .count();
+            io.quarkus.logging.Log.infof("[DEBUG_LOG] afterPersist on %s, has @OntologyClass=%s, annotatedProps=%d, hasProviderSupport=%s",
+                entityClass.getName(), (oc != null), propCount, hasProviderSupport);
         } catch (Exception ignored) {}
-        var metaOpt = extractor.metaOf(entity.getClass());
-        if (metaOpt.isEmpty()) return; // not an ontology participant
-        String entityType = metaOpt.get().classId;
-        
+
+        // Determine entity type: prefer annotation ID, fallback to simple class name
+        String entityType;
+        if (hasOntologyAnnotation) {
+            entityType = metaOpt.get().classId;
+        } else {
+            // For provider-only entities, derive type from @OntologyClass annotation if present
+            OntologyClass ontologyClassAnnotation = entityClass.getAnnotation(OntologyClass.class);
+            if (ontologyClassAnnotation != null && !ontologyClassAnnotation.id().isEmpty()) {
+                entityType = ontologyClassAnnotation.id();
+            } else {
+                entityType = entityClass.getSimpleName();
+            }
+        }
+
         // Extract DataDomain from entity - required for proper scoping
         DataDomain dataDomain = extractDataDomain(entity, realmId);
         if (dataDomain == null) {
-            io.quarkus.logging.Log.warnf("Cannot materialize ontology edges: entity %s has no DataDomain", entity.getClass().getName());
+            io.quarkus.logging.Log.warnf("Cannot materialize ontology edges: entity %s has no DataDomain", entityClass.getName());
             return;
         }
-        
-        List<Reasoner.Edge> explicit = new ArrayList<>(extractor.fromEntity(realmId, entity));
-        // Extend with SPI-provided edges, now passing DataDomainInfo
+
+        // Collect edges from annotations (if any)
+        List<Reasoner.Edge> explicit = new ArrayList<>();
+        if (hasOntologyAnnotation) {
+            explicit.addAll(extractor.fromEntity(realmId, entity));
+        }
+
+        // Extend with SPI-provided edges
         DataDomainInfo dataDomainInfo = DataDomainConverter.toInfo(dataDomain);
         try {
             for (OntologyEdgeProvider p : providers) {
-                if (p.supports(entity.getClass())) {
+                if (p.supports(entityClass)) {
                     var extra = p.edges(realmId, dataDomainInfo, entity);
-                    if (extra != null && !extra.isEmpty()) explicit.addAll(extra);
+                    if (extra != null && !extra.isEmpty()) {
+                        io.quarkus.logging.Log.infof("[DEBUG_LOG] Provider %s contributed %d edges for %s",
+                            p.getClass().getSimpleName(), extra.size(), entityClass.getSimpleName());
+                        explicit.addAll(extra);
+                    }
                 }
             }
         } catch (Throwable t) {
             io.quarkus.logging.Log.warn("[DEBUG_LOG] OntologyWriteHook: provider extension failed", t);
         }
+
         try {
-            io.quarkus.logging.Log.infof("[DEBUG_LOG] OntologyWriteHook.afterPersist entityType=%s, realm=%s, dataDomain=%s/%s/%s, explicitEdges=%d", 
+            io.quarkus.logging.Log.infof("[DEBUG_LOG] OntologyWriteHook.afterPersist entityType=%s, realm=%s, dataDomain=%s/%s/%s, explicitEdges=%d",
                 entityType, realmId, dataDomain.getOrgRefName(), dataDomain.getAccountNum(), dataDomain.getTenantId(), explicit.size());
             for (Reasoner.Edge e : explicit) {
                 io.quarkus.logging.Log.infof("[DEBUG_LOG]   explicit: (%s)-['%s']->(%s)", e.srcId(), e.p(), e.dstId());
             }
         } catch (Exception ignored) {}
+
         String srcId = extractor.idOf(entity);
         // Capture prior edges for this source to support cascade diffs - now scoped by DataDomain
         java.util.List<OntologyEdge> priorAll = edgeRepo.findBySrc(dataDomain, srcId);
