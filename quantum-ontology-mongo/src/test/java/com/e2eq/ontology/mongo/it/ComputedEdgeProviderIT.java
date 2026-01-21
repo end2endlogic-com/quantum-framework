@@ -60,37 +60,45 @@ public class ComputedEdgeProviderIT {
 
     @Test
     void testComputedEdgeProviderCreatesEdgesWithProvenance() {
-        // Given: a source entity that our provider handles
+        // Given: a source entity and our test provider
         ItProvSource source = new ItProvSource();
         source.setRefName("COMP-SRC-1");
         source.setDataDomain(testDataDomain);
-        source.setProviderTargetRef("hierarchy-node-1"); // Used by our test provider
+        source.setProviderTargetRef("hierarchy-node-1");
         datastore.save(source);
 
-        // When: trigger the write hook (which invokes OntologyEdgeProviders)
-        writeHook.afterPersist(TENANT, source);
+        TestHierarchyComputedProvider provider = new TestHierarchyComputedProvider();
+        DataDomainInfo domainInfo = new DataDomainInfo(
+            testDataDomain.getOrgRefName(),
+            testDataDomain.getAccountNum(),
+            testDataDomain.getTenantId(),
+            testDataDomain.getDataSegment()
+        );
 
-        // Then: edges should be created by our computed provider
-        List<OntologyEdge> edges = edgeRepo.findBySrc(testDataDomain, "COMP-SRC-1");
+        // When: directly invoke the provider to compute edges
+        List<Reasoner.Edge> edges = provider.edges(TENANT, domainInfo, source);
 
-        // Find edges with predicate "computedCanAccess" (from our test provider)
-        List<OntologyEdge> computedEdges = edges.stream()
-            .filter(e -> "computedCanAccess".equals(e.getP()))
-            .toList();
+        // Then: edges should be created with provenance
+        assertEquals(2, edges.size(), "Should have 2 computed edges");
 
-        assertEquals(2, computedEdges.size(), "Should have 2 computed edges");
+        for (Reasoner.Edge edge : edges) {
+            assertEquals("COMP-SRC-1", edge.srcId());
+            assertEquals("ItProvSource", edge.srcType());
+            assertEquals("computedCanAccess", edge.p());
+            assertEquals("ComputedTarget", edge.dstType());
+            assertFalse(edge.inferred()); // computed edges are explicit
+            assertTrue(edge.prov().isPresent(), "Provenance should be present");
 
-        // Verify provenance on computed edges
-        for (OntologyEdge edge : computedEdges) {
-            Map<String, Object> prov = edge.getProv();
-            assertNotNull(prov, "Provenance should be present");
-            assertEquals("computed", prov.get("rule"), "Rule should be 'computed'");
-            assertEquals("TestHierarchyComputedProvider", prov.get("providerId"));
-            assertNotNull(prov.get("computedAt"));
+            Reasoner.Provenance prov = edge.prov().get();
+            assertEquals("computed", prov.rule());
+
+            Map<String, Object> provMap = prov.inputs();
+            assertEquals("TestHierarchyComputedProvider", provMap.get("providerId"));
+            assertNotNull(provMap.get("computedAt"));
 
             // Verify hierarchy path in provenance
             @SuppressWarnings("unchecked")
-            List<Map<String, Object>> hierarchyPath = (List<Map<String, Object>>) prov.get("hierarchyPath");
+            List<Map<String, Object>> hierarchyPath = (List<Map<String, Object>>) provMap.get("hierarchyPath");
             assertNotNull(hierarchyPath, "Hierarchy path should be present");
             assertFalse(hierarchyPath.isEmpty(), "Hierarchy path should not be empty");
         }
@@ -188,17 +196,17 @@ public class ComputedEdgeProviderIT {
     public static class TestHierarchyComputedProvider extends ComputedEdgeProvider<ItProvSource> {
 
         @Override
-        protected Class<ItProvSource> getSourceType() {
+        public Class<ItProvSource> getSourceType() {
             return ItProvSource.class;
         }
 
         @Override
-        protected String getPredicate() {
+        public String getPredicate() {
             return "computedCanAccess";
         }
 
         @Override
-        protected String getTargetTypeName() {
+        public String getTargetTypeName() {
             return "ComputedTarget";
         }
 

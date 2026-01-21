@@ -1,5 +1,7 @@
 package com.e2eq.ontology.core;
 
+import jakarta.enterprise.context.ApplicationScoped;
+
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -36,6 +38,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * <p>Implementations should be registered as CDI beans. The framework will
  * automatically discover and register ComputedEdgeProvider beans.</p>
  */
+@ApplicationScoped
 public class ComputedEdgeRegistry {
 
     /** Maps dependency type -> providers that depend on it */

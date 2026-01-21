@@ -315,17 +315,17 @@ public class ComputedEdgeProviderTest {
     /** Simple computed edge provider for testing */
     static class TestComputedEdgeProvider extends ComputedEdgeProvider<TestSourceEntity> {
         @Override
-        protected Class<TestSourceEntity> getSourceType() {
+        public Class<TestSourceEntity> getSourceType() {
             return TestSourceEntity.class;
         }
 
         @Override
-        protected String getPredicate() {
+        public String getPredicate() {
             return "canAccess";
         }
 
         @Override
-        protected String getTargetTypeName() {
+        public String getTargetTypeName() {
             return "Target";
         }
 
@@ -341,17 +341,17 @@ public class ComputedEdgeProviderTest {
     /** Provider that includes provenance in computed targets */
     static class TestComputedEdgeProviderWithProvenance extends ComputedEdgeProvider<TestSourceEntity> {
         @Override
-        protected Class<TestSourceEntity> getSourceType() {
+        public Class<TestSourceEntity> getSourceType() {
             return TestSourceEntity.class;
         }
 
         @Override
-        protected String getPredicate() {
+        public String getPredicate() {
             return "canView";
         }
 
         @Override
-        protected String getTargetTypeName() {
+        public String getTargetTypeName() {
             return "Resource";
         }
 
@@ -372,17 +372,17 @@ public class ComputedEdgeProviderTest {
     /** Provider with dependencies for testing incremental updates */
     static class TestProviderWithDependencies extends ComputedEdgeProvider<TestSourceEntity> {
         @Override
-        protected Class<TestSourceEntity> getSourceType() {
+        public Class<TestSourceEntity> getSourceType() {
             return TestSourceEntity.class;
         }
 
         @Override
-        protected String getPredicate() {
+        public String getPredicate() {
             return "dependsOn";
         }
 
         @Override
-        protected String getTargetTypeName() {
+        public String getTargetTypeName() {
             return "Dependency";
         }
 
