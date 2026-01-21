@@ -1,6 +1,8 @@
 package com.e2eq.ontology.core;
 
 import java.util.*;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 /**
@@ -67,6 +69,8 @@ import java.util.stream.Collectors;
  * @param <T> target entity type (e.g., Location)
  */
 public abstract class HierarchyListEdgeProvider<S, H, T> extends ComputedEdgeProvider<S> {
+
+    private static final Logger LOG = Logger.getLogger(HierarchyListEdgeProvider.class.getName());
 
     /**
      * Get the hierarchy node IDs directly assigned to the source entity.
@@ -159,8 +163,13 @@ public abstract class HierarchyListEdgeProvider<S, H, T> extends ComputedEdgePro
             var method = node.getClass().getMethod("getRefName");
             Object refName = method.invoke(node);
             return refName != null ? refName.toString() : null;
+        } catch (NoSuchMethodException e) {
+            // RefName is optional - method doesn't exist, not an error
+            LOG.log(Level.FINE, "No getRefName() method on {0}, returning null", node.getClass().getName());
+            return null;
         } catch (Exception e) {
-            // RefName is optional, return null if not available
+            // Unexpected error accessing refName
+            LOG.log(Level.WARNING, "Error extracting refName from " + node.getClass().getName(), e);
             return null;
         }
     }
@@ -190,22 +199,39 @@ public abstract class HierarchyListEdgeProvider<S, H, T> extends ComputedEdgePro
                 var getIdMethod = list.getClass().getMethod("getId");
                 Object id = getIdMethod.invoke(list);
                 listId = id != null ? id.toString() : null;
-            } catch (Exception ignored) {}
+            } catch (NoSuchMethodException e) {
+                LOG.log(Level.FINE, "No getId() method on list {0}", list.getClass().getName());
+            } catch (Exception e) {
+                LOG.log(Level.FINE, "Error extracting list ID from " + list.getClass().getName(), e);
+            }
 
             try {
                 var getModeMethod = list.getClass().getMethod("getMode");
                 Object modeObj = getModeMethod.invoke(list);
                 mode = modeObj != null ? modeObj.toString() : "UNKNOWN";
-            } catch (Exception ignored) {}
+            } catch (NoSuchMethodException e) {
+                LOG.log(Level.FINE, "No getMode() method on list {0}", list.getClass().getName());
+            } catch (Exception e) {
+                LOG.log(Level.FINE, "Error extracting mode from " + list.getClass().getName(), e);
+            }
 
             try {
                 var getFilterMethod = list.getClass().getMethod("getFilterString");
                 Object filter = getFilterMethod.invoke(list);
                 filterString = filter != null ? filter.toString() : null;
-            } catch (Exception ignored) {}
+            } catch (NoSuchMethodException e) {
+                LOG.log(Level.FINE, "No getFilterString() method on list {0}", list.getClass().getName());
+            } catch (Exception e) {
+                LOG.log(Level.FINE, "Error extracting filterString from " + list.getClass().getName(), e);
+            }
 
             return new ListMetadata(listId, listType, mode, filterString);
+        } catch (NoSuchMethodException e) {
+            // No getStaticDynamicList method - this is expected for nodes without lists
+            LOG.log(Level.FINE, "No getStaticDynamicList() method on {0}", node.getClass().getName());
+            return null;
         } catch (Exception e) {
+            LOG.log(Level.WARNING, "Error extracting list metadata from " + node.getClass().getName(), e);
             return null;
         }
     }
