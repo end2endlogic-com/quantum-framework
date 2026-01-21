@@ -96,6 +96,11 @@ public class InMemoryEdgeStoreTestDouble implements EdgeStore {
     }
 
     @Override
+    public void deleteDerivedBySrcNotIn(DataDomainInfo dataDomainInfo, String src, String p, Collection<String> dstKeep) {
+        // Not needed for these unit tests.
+    }
+
+    @Override
     public void pruneDerivedWithoutSupport(DataDomainInfo dataDomainInfo) {
         // Not needed for tests.
     }
