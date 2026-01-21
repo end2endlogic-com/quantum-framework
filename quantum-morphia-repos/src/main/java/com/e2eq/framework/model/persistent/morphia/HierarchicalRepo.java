@@ -421,6 +421,98 @@ public abstract class HierarchicalRepo<
     }
 
     /**
+     * Helper class to track accumulated constraints along a hierarchy path.
+     * Handles both dynamic filters and static ID constraints from parent nodes.
+     * When a parent has a static list, all child results must be constrained to those IDs.
+     */
+    private static class AccumulatedConstraint {
+        final List<String> dynamicFilters;
+        final Set<ObjectId> staticIdConstraint; // null = no constraint, empty set = no results possible
+
+        AccumulatedConstraint(List<String> dynamicFilters, Set<ObjectId> staticIdConstraint) {
+            this.dynamicFilters = dynamicFilters != null ? dynamicFilters : new ArrayList<>();
+            this.staticIdConstraint = staticIdConstraint;
+        }
+
+        /**
+         * Returns true if the constraint results in no possible matches
+         * (e.g., static constraint is an empty set)
+         */
+        boolean hasNoResults() {
+            return staticIdConstraint != null && staticIdConstraint.isEmpty();
+        }
+
+        /**
+         * Returns true if there is a static ID constraint (and it's not empty)
+         */
+        boolean hasStaticConstraint() {
+            return staticIdConstraint != null && !staticIdConstraint.isEmpty();
+        }
+    }
+
+    /**
+     * Builds an accumulated constraint for a node by walking from the root to the node.
+     * Collects dynamic filters and static ID constraints from parent nodes.
+     *
+     * If a parent has a static list, subsequent dynamic filters are constrained to those IDs.
+     * If a parent has a static list and a later ancestor also has a static list,
+     * the IDs are intersected (results must be in both lists).
+     *
+     * @param nodeId the id of the target node
+     * @param excludeCurrentNode if true, the current node's list is not included in the constraint
+     * @return the accumulated constraint
+     */
+    private AccumulatedConstraint buildAccumulatedConstraint(ObjectId nodeId, boolean excludeCurrentNode) {
+        List<T> path = getPathToNode(nodeId);
+        if (excludeCurrentNode && path.size() > 0) {
+            path = path.subList(0, path.size() - 1);
+        }
+
+        List<String> dynamicFilters = new ArrayList<>();
+        Set<ObjectId> staticIdConstraint = null; // null means no constraint
+
+        for (T node : path) {
+            StaticDynamicList<O> list = node.getStaticDynamicList();
+            if (list == null) {
+                continue;
+            }
+
+            if (list.isStatic()) {
+                // Static list: extract IDs and intersect with any existing constraint
+                List<O> items = list.getItems();
+                if (items == null || items.isEmpty()) {
+                    // Empty static list means no results possible
+                    return new AccumulatedConstraint(dynamicFilters, Collections.emptySet());
+                }
+
+                Set<ObjectId> itemIds = items.stream()
+                        .map(UnversionedBaseModel::getId)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toSet());
+
+                if (staticIdConstraint == null) {
+                    staticIdConstraint = itemIds;
+                } else {
+                    // Intersect with existing constraint
+                    staticIdConstraint.retainAll(itemIds);
+                    if (staticIdConstraint.isEmpty()) {
+                        // No common IDs, no results possible
+                        return new AccumulatedConstraint(dynamicFilters, Collections.emptySet());
+                    }
+                }
+            } else if (list.isDynamic()) {
+                // Dynamic list: collect filter string
+                String filter = list.getFilterString();
+                if (filter != null && !filter.trim().isEmpty()) {
+                    dynamicFilters.add(filter);
+                }
+            }
+        }
+
+        return new AccumulatedConstraint(dynamicFilters, staticIdConstraint);
+    }
+
+    /**
      * Builds the path from the root to the specified node, ordered from root to node.
      * This is useful for accumulating filters along the hierarchy path.
      *
@@ -512,8 +604,11 @@ public abstract class HierarchicalRepo<
 
     /**
      * Gets objects for a hierarchy node with accumulated filters from the path.
-     * If the node has a dynamic list, the filter applied will be the combination
-     * of all parent filters AND this node's filter.
+     * Properly handles mixed static/dynamic lists along the path:
+     * - If a parent has a static list of 10 locations and a child has a dynamic filter,
+     *   the child's filter is ANDed with an IN clause constraining to those 10 IDs.
+     * - Dynamic filters from parents are accumulated and ANDed together.
+     * - Static lists constrain which IDs are valid for all descendants.
      *
      * @param nodeId the id of the hierarchy node
      * @return list of objects matching the accumulated filter criteria
@@ -533,60 +628,78 @@ public abstract class HierarchicalRepo<
             return new ArrayList<>();
         }
 
+        // Build accumulated constraint from parents (excluding current node)
+        AccumulatedConstraint parentConstraint = buildAccumulatedConstraint(nodeId, true);
+
+        // If parent constraint results in no possible matches, return empty
+        if (parentConstraint.hasNoResults()) {
+            return new ArrayList<>();
+        }
+
         if (staticDynamicList.isStatic()) {
-            // For static lists, we need to filter the items using accumulated parent filters
+            // Current node has a static list
             List<O> items = staticDynamicList.getItems();
             if (items == null || items.isEmpty()) {
                 return new ArrayList<>();
             }
 
-            // Get accumulated filter from parents (excluding this node since it's static)
-            List<T> path = getPathToNode(nodeId);
-            // Remove the last element (current node) as it's static
-            if (path.size() > 1) {
-                path = path.subList(0, path.size() - 1);
-            } else {
-                // No parents, return items as-is
-                return new ArrayList<>(items);
-            }
-
-            List<String> parentFilters = path.stream()
-                    .filter(n -> n.getStaticDynamicList() != null)
-                    .filter(n -> n.getStaticDynamicList().isDynamic())
-                    .map(n -> n.getStaticDynamicList().getFilterString())
-                    .filter(f -> f != null && !f.trim().isEmpty())
-                    .collect(Collectors.toList());
-
-            if (parentFilters.isEmpty()) {
-                return new ArrayList<>(items);
-            }
-
-            // Apply parent filters to the static items by querying with both the
-            // parent filter and an IN clause for the static item IDs
-            List<ObjectId> itemIds = items.stream()
+            // Get IDs from this node's static list
+            Set<ObjectId> currentIds = items.stream()
                     .map(UnversionedBaseModel::getId)
                     .filter(Objects::nonNull)
-                    .collect(Collectors.toList());
+                    .collect(Collectors.toSet());
 
-            if (itemIds.isEmpty()) {
+            if (currentIds.isEmpty()) {
                 return new ArrayList<>();
             }
 
-            String parentFilter = combineFilters(parentFilters);
-            // Use :^ (IN operator) with unquoted OID tokens for _id filter
-            String idFilter = "_id:^[" + itemIds.stream()
+            // Determine effective IDs: intersect with parent static constraint if present
+            final Set<ObjectId> effectiveIds;
+            if (parentConstraint.hasStaticConstraint()) {
+                Set<ObjectId> intersection = new HashSet<>(currentIds);
+                intersection.retainAll(parentConstraint.staticIdConstraint);
+                if (intersection.isEmpty()) {
+                    return new ArrayList<>();
+                }
+                effectiveIds = intersection;
+            } else {
+                effectiveIds = currentIds;
+            }
+
+            // Build the query filter
+            List<String> filters = new ArrayList<>(parentConstraint.dynamicFilters);
+
+            // Add IN clause for the effective IDs
+            String idFilter = "_id:^[" + effectiveIds.stream()
                     .map(ObjectId::toHexString)
                     .collect(Collectors.joining(",")) + "]";
+            filters.add(idFilter);
 
-            String combinedFilter = "(" + parentFilter + ") && (" + idFilter + ")";
+            String combinedFilter = combineFilters(filters);
             return objectRepo.getListByQuery(0, -1, combinedFilter, null, null);
 
         } else if (staticDynamicList.isDynamic()) {
-            // For dynamic lists, combine all filters from path
-            String accumulatedFilter = getAccumulatedFilterForNode(nodeId);
+            // Current node has a dynamic filter
+            String currentFilter = staticDynamicList.getFilterString();
+
+            // Collect all filters including current node's filter
+            List<String> filters = new ArrayList<>(parentConstraint.dynamicFilters);
+            if (currentFilter != null && !currentFilter.trim().isEmpty()) {
+                filters.add(currentFilter);
+            }
+
+            // If parent has static ID constraint, add IN clause
+            if (parentConstraint.hasStaticConstraint()) {
+                String idFilter = "_id:^[" + parentConstraint.staticIdConstraint.stream()
+                        .map(ObjectId::toHexString)
+                        .collect(Collectors.joining(",")) + "]";
+                filters.add(idFilter);
+            }
+
+            String combinedFilter = combineFilters(filters);
             // Pass filter to getListByQuery even if null/empty - this matches legacy behavior
             // where null filter returns all items subject to security rules
-            return objectRepo.getListByQuery(0, -1, accumulatedFilter, null, null);
+            return objectRepo.getListByQuery(0, -1, combinedFilter, null, null);
         }
 
         return new ArrayList<>();
