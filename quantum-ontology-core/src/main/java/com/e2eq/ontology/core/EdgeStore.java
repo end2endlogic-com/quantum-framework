@@ -87,8 +87,15 @@ public interface EdgeStore {
 
     /**
      * Delete explicit edges from source with predicate where destination is not in the keep set.
+     * Explicit edges are those where inferred=false AND derived=false.
      */
     void deleteExplicitBySrcNotIn(DataDomainInfo dataDomainInfo, String src, String p, Collection<String> dstKeep);
+
+    /**
+     * Delete derived/computed edges from source with predicate where destination is not in the keep set.
+     * Derived edges are those where derived=true (from ComputedEdgeProvider).
+     */
+    void deleteDerivedBySrcNotIn(DataDomainInfo dataDomainInfo, String src, String p, Collection<String> dstKeep);
 
     /**
      * Remove derived edges whose support is empty or missing within the DataDomainInfo.

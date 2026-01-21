@@ -341,10 +341,12 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
 
     /**
      * Delete explicit edges from source with predicate where destination is not in keep set.
+     * Explicit edges are those where inferred=false AND derived=false (or null).
+     * This excludes inferred edges (from reasoner) and derived/computed edges (from ComputedEdgeProvider).
      */
     public void deleteExplicitBySrcNotIn(DataDomain dataDomain, String src, String p, Collection<String> dstKeep) {
         validateDataDomain(dataDomain);
-        // Treat explicit edges as those where inferred != true (handles nulls)
+        // Treat explicit edges as those where inferred != true AND derived != true (handles nulls)
         Query<OntologyEdge> q = ds().find(OntologyEdge.class);
         for (Filter f : dataDomainFilters(dataDomain)) {
             q.filter(f);
@@ -352,6 +354,24 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
         q.filter(Filters.eq("src", src))
          .filter(Filters.eq("p", p))
          .filter(Filters.ne("inferred", true))
+         .filter(Filters.ne("derived", true))  // Exclude derived/computed edges
+         .filter(Filters.nin("dst", dstKeep))
+         .delete();
+    }
+
+    /**
+     * Delete derived/computed edges from source with predicate where destination is not in keep set.
+     * Derived edges are those where derived=true (from ComputedEdgeProvider).
+     */
+    public void deleteDerivedBySrcNotIn(DataDomain dataDomain, String src, String p, Collection<String> dstKeep) {
+        validateDataDomain(dataDomain);
+        Query<OntologyEdge> q = ds().find(OntologyEdge.class);
+        for (Filter f : dataDomainFilters(dataDomain)) {
+            q.filter(f);
+        }
+        q.filter(Filters.eq("src", src))
+         .filter(Filters.eq("p", p))
+         .filter(Filters.eq("derived", true))  // Only derived/computed edges
          .filter(Filters.nin("dst", dstKeep))
          .delete();
     }

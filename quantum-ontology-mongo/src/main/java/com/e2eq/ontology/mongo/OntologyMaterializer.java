@@ -48,11 +48,30 @@ public class OntologyMaterializer {
         var out = reasoner.infer(snap, registry);
 
         // 1) Upsert EXPLICIT edges as-is for traversal and cascade logic
+        // Separate computed edges (from ComputedEdgeProvider) from regular explicit edges
         Map<String, Set<String>> explicitByP = new HashMap<>();
+        Map<String, Set<String>> computedByP = new HashMap<>();
         if (explicitEdges != null) {
             for (var e : explicitEdges) {
-                explicitByP.computeIfAbsent(e.p(), k -> new HashSet<>()).add(e.dstId());
-                edgeStore.upsert(dataDomainInfo, e.srcType(), e.srcId(), e.p(), e.dstType(), e.dstId(), false, Map.of());
+                // Check if this is a computed edge (from ComputedEdgeProvider)
+                boolean isComputed = e.prov().map(p -> "computed".equals(p.rule())).orElse(false);
+
+                if (isComputed) {
+                    // Computed edges are tracked separately and stored as derived
+                    computedByP.computeIfAbsent(e.p(), k -> new HashSet<>()).add(e.dstId());
+                    Map<String, Object> prov = e.prov()
+                        .map(p -> Map.<String, Object>of("rule", p.rule(), "inputs", p.inputs()))
+                        .orElse(Map.of());
+                    // Use upsertDerived for computed edges so they get derived=true flag
+                    edgeStore.upsertDerived(dataDomainInfo, e.srcType(), e.srcId(), e.p(), e.dstType(), e.dstId(), List.of(), prov);
+                } else {
+                    // Regular explicit edges
+                    explicitByP.computeIfAbsent(e.p(), k -> new HashSet<>()).add(e.dstId());
+                    Map<String, Object> prov = e.prov()
+                        .map(p -> Map.<String, Object>of("rule", p.rule(), "inputs", p.inputs()))
+                        .orElse(Map.of());
+                    edgeStore.upsert(dataDomainInfo, e.srcType(), e.srcId(), e.p(), e.dstType(), e.dstId(), false, prov);
+                }
             }
         }
 
@@ -113,6 +132,27 @@ public class OntologyMaterializer {
         for (String pAbsent : existingExplicitPreds) {
             edgeStore.deleteExplicitBySrcNotIn(dataDomainInfo, entityId, pAbsent, Set.of());
         }
+
+        // 5) Prune derived/computed edges that are no longer present in the provider output
+        // Determine existing derived predicates
+        Map<String, Set<String>> existingDerivedByP = new HashMap<>();
+        for (EdgeRecord e : existing) {
+            if (e.isDerived() && !e.isInferred()) { // derived but not inferred = computed edges
+                existingDerivedByP.computeIfAbsent(e.getP(), k -> new HashSet<>()).add(e.getDst());
+            }
+        }
+        // For predicates present in computed snapshot: keep only dsts that remain
+        for (Map.Entry<String, Set<String>> en : computedByP.entrySet()) {
+            String p = en.getKey();
+            Set<String> keep = en.getValue();
+            edgeStore.deleteDerivedBySrcNotIn(dataDomainInfo, entityId, p, keep);
+            existingDerivedByP.remove(p);
+        }
+        // For predicates with no computed edges now: remove all derived edges for those predicates
+        for (String pAbsent : existingDerivedByP.keySet()) {
+            edgeStore.deleteDerivedBySrcNotIn(dataDomainInfo, entityId, pAbsent, Set.of());
+        }
+
         // Final debug: show edges after pruning
         try {
             var srcEdges2 = edgeStore.findBySrc(dataDomainInfo, entityId);
