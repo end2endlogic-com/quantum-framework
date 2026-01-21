@@ -1,5 +1,6 @@
 package com.e2eq.ontology.core;
 
+import com.e2eq.ontology.annotations.OntologyClass;
 import com.e2eq.ontology.spi.OntologyEdgeProvider;
 
 import java.util.*;
@@ -84,6 +85,39 @@ public abstract class ComputedEdgeProvider<S> implements OntologyEdgeProvider {
     public abstract String getTargetTypeName();
 
     /**
+     * The source entity type name for edge metadata.
+     *
+     * <p>Default implementation resolves the ontology class ID from the
+     * {@link OntologyClass} annotation on the source type, falling back to
+     * the simple class name if no annotation is present.</p>
+     *
+     * <p>Override this method if you need custom source type naming.</p>
+     *
+     * @return source type name (e.g., "Credential" for CredentialUserIdPassword)
+     */
+    public String getSourceTypeName() {
+        return resolveOntologyClassId(getSourceType());
+    }
+
+    /**
+     * Resolves the ontology class ID for a given class.
+     *
+     * <p>Checks for {@link OntologyClass} annotation and returns its id if present
+     * and non-empty, otherwise returns the simple class name. This matches the
+     * behavior of {@link AnnotationOntologyLoader#classIdOf}.</p>
+     *
+     * @param clazz the class to resolve
+     * @return ontology class ID or simple class name
+     */
+    protected static String resolveOntologyClassId(Class<?> clazz) {
+        OntologyClass annotation = clazz.getAnnotation(OntologyClass.class);
+        if (annotation != null && !annotation.id().isEmpty()) {
+            return annotation.id();
+        }
+        return clazz.getSimpleName();
+    }
+
+    /**
      * Core logic: compute target entity IDs from a source entity.
      *
      * <p>Implementations should use the context to track provenance information
@@ -145,7 +179,7 @@ public abstract class ComputedEdgeProvider<S> implements OntologyEdgeProvider {
     public final List<Reasoner.Edge> edges(String realmId, DataDomainInfo domain, Object entity) {
         S source = (S) entity;
         String sourceId = extractId(source);
-        String sourceTypeName = getSourceType().getSimpleName();
+        String sourceTypeName = getSourceTypeName();
 
         ComputationContext context = new ComputationContext(realmId, domain, getProviderId());
         Set<ComputedTarget> targets = computeTargets(context, source);
