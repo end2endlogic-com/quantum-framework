@@ -2,8 +2,10 @@ package com.e2eq.framework.rest.filters;
 
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.persistent.migration.base.MigrationService;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.RealmRepo;
+import io.smallrye.mutiny.Multi;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.security.Realm;
@@ -26,6 +28,7 @@ import java.util.Optional;
 
 import static io.restassured.RestAssured.given;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * Integration tests for X-Realm header DataDomain override behavior.
@@ -58,6 +61,9 @@ public class XRealmDataDomainIT extends BaseRepoTest {
 
     @Inject
     EnvConfigUtils envConfigUtils;
+
+    @Inject
+    MigrationService migrationService;
 
     @Inject
     AuthProviderFactory authProviderFactory;
@@ -142,6 +148,8 @@ public class XRealmDataDomainIT extends BaseRepoTest {
         
         if (existingRealm.isPresent()) {
             targetRealm = existingRealm.get();
+            // Ensure migrations are initialized even if realm already exists
+            initializeRealmMigrations(TARGET_REALM_REF_NAME);
             return;
         }
 
@@ -174,6 +182,34 @@ public class XRealmDataDomainIT extends BaseRepoTest {
 
         targetRealm = realmRepo.save(envConfigUtils.getSystemRealm(), targetRealm);
         Log.infof("Created target realm: %s", TARGET_REALM_REF_NAME);
+
+        // Initialize the target realm's database with migrations
+        // This is required for X-Realm requests to succeed
+        initializeRealmMigrations(TARGET_REALM_REF_NAME);
+        Log.infof("Initialized migrations for target realm: %s", TARGET_REALM_REF_NAME);
+    }
+
+    /**
+     * Initializes migrations for a realm, running them if needed.
+     * Blocks until migrations complete or fails the test if migrations fail.
+     */
+    private void initializeRealmMigrations(String realm) {
+        try {
+            migrationService.checkInitialized(realm);
+        } catch (Exception e) {
+            // Database not initialized, run migrations synchronously
+            Log.infof("Running migrations for realm: %s", realm);
+            try {
+                Multi.createFrom().emitter(emitter -> {
+                    migrationService.runAllUnRunMigrations(realm, emitter);
+                })
+                .collect().asList()
+                .await().indefinitely();
+                Log.infof("Migrations completed for realm: %s", realm);
+            } catch (Exception migrationEx) {
+                throw new RuntimeException("Migration failed for realm: " + realm, migrationEx);
+            }
+        }
     }
 
     /**
@@ -270,11 +306,8 @@ public class XRealmDataDomainIT extends BaseRepoTest {
     @Order(4)
     @DisplayName("API request with X-Realm header should succeed")
     void testApiRequestWithXRealmHeader() {
-        // Skip if no access token (login failed)
-        if (accessToken == null) {
-            Log.warn("Skipping test - no access token available");
-            return;
-        }
+        // Skip test if login failed during setup
+        assumeTrue(accessToken != null, "Test skipped - login failed during setup");
 
         // When: Making an API request with X-Realm header
         Response response = given()
@@ -298,11 +331,8 @@ public class XRealmDataDomainIT extends BaseRepoTest {
     @Order(5)
     @DisplayName("API request without X-Realm should use default realm")
     void testApiRequestWithoutXRealmHeader() {
-        // Skip if no access token
-        if (accessToken == null) {
-            Log.warn("Skipping test - no access token available");
-            return;
-        }
+        // Skip test if login failed during setup
+        assumeTrue(accessToken != null, "Test skipped - login failed during setup");
 
         // When: Making an API request without X-Realm header
         Response response = given()
@@ -338,11 +368,8 @@ public class XRealmDataDomainIT extends BaseRepoTest {
     @Order(7)
     @DisplayName("X-Realm to non-existent realm should be handled gracefully")
     void testXRealmToNonExistentRealm() {
-        // Skip if no access token
-        if (accessToken == null) {
-            Log.warn("Skipping test - no access token available");
-            return;
-        }
+        // Skip test if login failed during setup
+        assumeTrue(accessToken != null, "Test skipped - login failed during setup");
 
         // When: Making an API request with X-Realm header pointing to non-existent realm
         Response response = given()
