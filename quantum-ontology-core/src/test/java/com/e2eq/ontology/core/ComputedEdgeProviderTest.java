@@ -1,5 +1,6 @@
 package com.e2eq.ontology.core;
 
+import com.e2eq.ontology.annotations.OntologyClass;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -115,6 +116,67 @@ public class ComputedEdgeProviderTest {
         assertFalse(edge1.inferred()); // computed edges are not "inferred" by reasoner
         assertTrue(edge1.prov().isPresent());
         assertEquals("computed", edge1.prov().get().rule());
+    }
+
+    @Test
+    void testResolveOntologyClassId_withAnnotation() {
+        // Entity with @OntologyClass(id = "Credential") should return "Credential"
+        String id = ComputedEdgeProvider.resolveOntologyClassId(AnnotatedSourceEntity.class);
+        assertEquals("Credential", id);
+    }
+
+    @Test
+    void testResolveOntologyClassId_withEmptyId() {
+        // Entity with @OntologyClass but empty id should return simple class name
+        String id = ComputedEdgeProvider.resolveOntologyClassId(AnnotatedSourceEntityEmptyId.class);
+        assertEquals("AnnotatedSourceEntityEmptyId", id);
+    }
+
+    @Test
+    void testResolveOntologyClassId_withoutAnnotation() {
+        // Entity without @OntologyClass should return simple class name
+        String id = ComputedEdgeProvider.resolveOntologyClassId(TestSourceEntity.class);
+        assertEquals("TestSourceEntity", id);
+    }
+
+    @Test
+    void testGetSourceTypeName_usesOntologyClassId() {
+        AnnotatedSourceProvider provider = new AnnotatedSourceProvider();
+
+        // getSourceTypeName should return the ontology class ID, not the simple class name
+        assertEquals("Credential", provider.getSourceTypeName());
+    }
+
+    @Test
+    void testEdgesUseOntologyClassId() {
+        AnnotatedSourceProvider provider = new AnnotatedSourceProvider();
+
+        AnnotatedSourceEntity source = new AnnotatedSourceEntity("cred-123");
+        List<Reasoner.Edge> edges = provider.edges("realm1", testDomain, source);
+
+        assertEquals(1, edges.size());
+
+        // The edge source type should use the ontology class ID "Credential",
+        // not the Java class name "AnnotatedSourceEntity"
+        Reasoner.Edge edge = edges.get(0);
+        assertEquals("cred-123", edge.srcId());
+        assertEquals("Credential", edge.srcType()); // This is the key assertion
+        assertEquals("canAuthenticate", edge.p());
+        assertEquals("System", edge.dstType());
+    }
+
+    @Test
+    void testGetSourceTypeName_canBeOverridden() {
+        OverriddenSourceTypeProvider provider = new OverriddenSourceTypeProvider();
+
+        // Override should take precedence
+        assertEquals("CustomSourceType", provider.getSourceTypeName());
+
+        TestSourceEntity source = new TestSourceEntity("src-123");
+        List<Reasoner.Edge> edges = provider.edges("realm1", testDomain, source);
+
+        assertEquals(1, edges.size());
+        assertEquals("CustomSourceType", edges.get(0).srcType());
     }
 
     @Test
@@ -299,6 +361,34 @@ public class ComputedEdgeProviderTest {
         }
     }
 
+    /** Source entity with @OntologyClass annotation specifying a custom ID */
+    @OntologyClass(id = "Credential")
+    static class AnnotatedSourceEntity {
+        private final String id;
+
+        AnnotatedSourceEntity(String id) {
+            this.id = id;
+        }
+
+        public String getId() {
+            return id;
+        }
+    }
+
+    /** Source entity with @OntologyClass annotation but empty id */
+    @OntologyClass(id = "")
+    static class AnnotatedSourceEntityEmptyId {
+        private final String id;
+
+        AnnotatedSourceEntityEmptyId(String id) {
+            this.id = id;
+        }
+
+        public String getId() {
+            return id;
+        }
+    }
+
     /** Simple dependency entity for testing */
     static class DependencyEntity {
         private final String id;
@@ -403,6 +493,57 @@ public class ComputedEdgeProviderTest {
                 return Set.of("src-1", "src-2");
             }
             return Set.of();
+        }
+    }
+
+    /** Provider for annotated source entity - tests ontology class ID resolution */
+    static class AnnotatedSourceProvider extends ComputedEdgeProvider<AnnotatedSourceEntity> {
+        @Override
+        public Class<AnnotatedSourceEntity> getSourceType() {
+            return AnnotatedSourceEntity.class;
+        }
+
+        @Override
+        public String getPredicate() {
+            return "canAuthenticate";
+        }
+
+        @Override
+        public String getTargetTypeName() {
+            return "System";
+        }
+
+        @Override
+        protected Set<ComputedTarget> computeTargets(ComputationContext context, AnnotatedSourceEntity source) {
+            return Set.of(new ComputedTarget("system-1"));
+        }
+    }
+
+    /** Provider that overrides getSourceTypeName() */
+    static class OverriddenSourceTypeProvider extends ComputedEdgeProvider<TestSourceEntity> {
+        @Override
+        public Class<TestSourceEntity> getSourceType() {
+            return TestSourceEntity.class;
+        }
+
+        @Override
+        public String getSourceTypeName() {
+            return "CustomSourceType"; // Override the default behavior
+        }
+
+        @Override
+        public String getPredicate() {
+            return "customPredicate";
+        }
+
+        @Override
+        public String getTargetTypeName() {
+            return "CustomTarget";
+        }
+
+        @Override
+        protected Set<ComputedTarget> computeTargets(ComputationContext context, TestSourceEntity source) {
+            return Set.of(new ComputedTarget("custom-target"));
         }
     }
 }
