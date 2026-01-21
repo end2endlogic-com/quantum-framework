@@ -3,7 +3,6 @@ package com.e2eq.ontology.mongo;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.PostPersistHook;
-import com.e2eq.ontology.annotations.OntologyClass;
 import com.e2eq.ontology.core.DataDomainInfo;
 import com.e2eq.ontology.core.OntologyRegistry;
 import com.e2eq.ontology.core.Reasoner;
@@ -34,46 +33,21 @@ public class OntologyWriteHook implements PostPersistHook {
     public void afterPersist(String realmId, Object entity) {
         Class<?> entityClass = entity.getClass();
 
-        // Check if entity participates in ontology via annotations
-        var metaOpt = extractor.metaOf(entityClass);
-        boolean hasOntologyAnnotation = metaOpt.isPresent();
-
-        // Check if any provider supports this entity type
-        boolean hasProviderSupport = false;
-        for (OntologyEdgeProvider p : providers) {
-            if (p.supports(entityClass)) {
-                hasProviderSupport = true;
-                break;
-            }
-        }
-
-        // If neither annotations nor providers apply, skip this entity
-        if (!hasOntologyAnnotation && !hasProviderSupport) {
-            return;
-        }
-
         try {
             var oc = entityClass.getAnnotation(OntologyClass.class);
             long propCount = java.util.Arrays.stream(entityClass.getDeclaredFields())
                 .filter(f -> f.getAnnotation(com.e2eq.ontology.annotations.OntologyProperty.class) != null)
                 .count();
-            io.quarkus.logging.Log.infof("[DEBUG_LOG] afterPersist on %s, has @OntologyClass=%s, annotatedProps=%d, hasProviderSupport=%s",
-                entityClass.getName(), (oc != null), propCount, hasProviderSupport);
+            io.quarkus.logging.Log.infof("[DEBUG_LOG] afterPersist on %s, has @OntologyClass=%s, annotatedProps=%d",
+                entityClass.getName(), (oc != null), propCount);
         } catch (Exception ignored) {}
 
-        // Determine entity type: prefer annotation ID, fallback to simple class name
-        String entityType;
-        if (hasOntologyAnnotation) {
-            entityType = metaOpt.get().classId;
-        } else {
-            // For provider-only entities, derive type from @OntologyClass annotation if present
-            OntologyClass ontologyClassAnnotation = entityClass.getAnnotation(OntologyClass.class);
-            if (ontologyClassAnnotation != null && !ontologyClassAnnotation.id().isEmpty()) {
-                entityType = ontologyClassAnnotation.id();
-            } else {
-                entityType = entityClass.getSimpleName();
-            }
+        // Entity must have @OntologyClass annotation to participate in ontology
+        var metaOpt = extractor.metaOf(entityClass);
+        if (metaOpt.isEmpty()) {
+            return; // Not an ontology participant
         }
+        String entityType = metaOpt.get().classId;
 
         // Extract DataDomain from entity - required for proper scoping
         DataDomain dataDomain = extractDataDomain(entity, realmId);
@@ -82,13 +56,10 @@ public class OntologyWriteHook implements PostPersistHook {
             return;
         }
 
-        // Collect edges from annotations (if any)
-        List<Reasoner.Edge> explicit = new ArrayList<>();
-        if (hasOntologyAnnotation) {
-            explicit.addAll(extractor.fromEntity(realmId, entity));
-        }
+        // Collect edges from annotations
+        List<Reasoner.Edge> explicit = new ArrayList<>(extractor.fromEntity(realmId, entity));
 
-        // Extend with SPI-provided edges
+        // Extend with SPI-provided edges (includes ComputedEdgeProviders)
         DataDomainInfo dataDomainInfo = DataDomainConverter.toInfo(dataDomain);
         try {
             for (OntologyEdgeProvider p : providers) {
