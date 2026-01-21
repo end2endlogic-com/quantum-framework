@@ -603,6 +603,66 @@ public abstract class HierarchicalRepo<
     }
 
     /**
+     * Gets the effective filter string for a hierarchy node, including both
+     * accumulated dynamic filters AND static ID constraints from the path.
+     * This is the complete filter that would be applied when querying objects
+     * for this node.
+     *
+     * Unlike getAccumulatedFilterForNode which only returns dynamic filters,
+     * this method includes IN clauses for static list constraints.
+     *
+     * @param nodeId the id of the hierarchy node
+     * @return the effective filter string, or null if no constraints exist
+     * @throws NotFoundException if the node is not found
+     */
+    public String getEffectiveFilterForNode(ObjectId nodeId) {
+        Objects.requireNonNull(nodeId, "nodeId cannot be null");
+
+        Optional<T> oNode = findById(nodeId);
+        if (!oNode.isPresent()) {
+            throw new NotFoundException("Hierarchy node not found for id: " + nodeId);
+        }
+
+        T node = oNode.get();
+        StaticDynamicList<O> staticDynamicList = node.getStaticDynamicList();
+
+        // Build accumulated constraint including the current node
+        AccumulatedConstraint constraint = buildAccumulatedConstraint(nodeId, false);
+
+        // If constraint results in no possible matches, return a filter that matches nothing
+        if (constraint.hasNoResults()) {
+            return "_id:null"; // This will match nothing
+        }
+
+        List<String> filters = new ArrayList<>(constraint.dynamicFilters);
+
+        // Add static ID constraint if present
+        if (constraint.hasStaticConstraint()) {
+            String idFilter = "_id:^[" + constraint.staticIdConstraint.stream()
+                    .map(ObjectId::toHexString)
+                    .collect(Collectors.joining(",")) + "]";
+            filters.add(idFilter);
+        }
+
+        return combineFilters(filters);
+    }
+
+    /**
+     * Gets the effective filter string for a hierarchy node by refName.
+     *
+     * @param refName the refName of the hierarchy node
+     * @return the effective filter string, or null if no constraints exist
+     * @throws NotFoundException if the node is not found
+     */
+    public String getEffectiveFilterForNode(String refName) {
+        Optional<T> oNode = findByRefName(refName);
+        if (!oNode.isPresent()) {
+            throw new NotFoundException("Hierarchy node not found for refName: " + refName);
+        }
+        return getEffectiveFilterForNode(oNode.get().getId());
+    }
+
+    /**
      * Gets objects for a hierarchy node with accumulated filters from the path.
      * Properly handles mixed static/dynamic lists along the path:
      * - If a parent has a static list of 10 locations and a child has a dynamic filter,
