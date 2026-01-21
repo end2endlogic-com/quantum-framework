@@ -272,10 +272,10 @@ public abstract class HierarchicalRepo<
 
     /**
      * Gets all objects for the hierarchy starting from a node by refName.
-     * By default, filters are accumulated along the path (parent filter A AND child filter B).
+     * By default, each node's filter is applied independently (legacy behavior).
      *
      * @param refName the refName of the starting hierarchy node
-     * @return list of objects with accumulated filters applied
+     * @return list of objects
      */
     public List<O> getAllObjectsForHierarchy(String refName) {
         return getAllObjectsForHierarchy(refName, false);
@@ -285,17 +285,20 @@ public abstract class HierarchicalRepo<
      * Gets all objects for the hierarchy starting from a node by refName.
      *
      * @param refName the refName of the starting hierarchy node
-     * @param skipFilterAccumulation if true, each node's filter is applied independently (legacy behavior);
-     *                               if false (default), filters are accumulated along the path
+     * @param accumulateFilters if true, filters are accumulated along the path (parent filter A AND child filter B);
+     *                          if false (default), each node's filter is applied independently (legacy behavior)
      * @return list of objects
      */
-    public List<O> getAllObjectsForHierarchy(String refName, boolean skipFilterAccumulation) {
+    public List<O> getAllObjectsForHierarchy(String refName, boolean accumulateFilters) {
         Optional<T> oHierarchyNode = findByRefName(refName);
         if (!oHierarchyNode.isPresent()) {
             throw new NotFoundException("Hierarchy node not found for refName: " + refName);
         }
 
-        if (skipFilterAccumulation) {
+        if (accumulateFilters) {
+            // New behavior: accumulated filters along the path
+            return getAllObjectsForHierarchyWithAccumulatedFilters(oHierarchyNode.get().getId());
+        } else {
             // Legacy behavior: each node's filter applied independently
             List<O> objects = new ArrayList<>();
             Set<O> objectSet = new HashSet<>();
@@ -316,18 +319,15 @@ public abstract class HierarchicalRepo<
                 objects.addAll(objectSet);
             }
             return objects;
-        } else {
-            // New behavior: accumulated filters along the path
-            return getAllObjectsForHierarchyWithAccumulatedFilters(oHierarchyNode.get().getId());
         }
     }
 
     /**
      * Gets all objects for the hierarchy starting from a node.
-     * By default, filters are accumulated along the path.
+     * By default, each node's filter is applied independently (legacy behavior).
      *
      * @param node the starting hierarchy node
-     * @return list of objects with accumulated filters applied
+     * @return list of objects
      */
     protected List<O> getAllObjectsForHierarchy(@Valid T node) {
         return getAllObjectsForHierarchy(node, false);
@@ -337,11 +337,11 @@ public abstract class HierarchicalRepo<
      * Gets all objects for the hierarchy starting from a node.
      *
      * @param node the starting hierarchy node
-     * @param skipFilterAccumulation if true, each node's filter is applied independently (legacy behavior);
-     *                               if false (default), filters are accumulated along the path
+     * @param accumulateFilters if true, filters are accumulated along the path (parent filter A AND child filter B);
+     *                          if false (default), each node's filter is applied independently (legacy behavior)
      * @return list of objects
      */
-    protected List<O> getAllObjectsForHierarchy(@Valid T node, boolean skipFilterAccumulation) {
+    protected List<O> getAllObjectsForHierarchy(@Valid T node, boolean accumulateFilters) {
         Objects.requireNonNull(node, "node can not be null for getAllObjectsForHierarchy method");
         Objects.requireNonNull(node.getId(), "node id can not be null for getAllObjectsForHierarchy method");
         Optional<T> oNode = findById(node.getId());
@@ -349,7 +349,10 @@ public abstract class HierarchicalRepo<
             throw new NotFoundException("Node not found for id: " + node.getId());
         }
 
-        if (skipFilterAccumulation) {
+        if (accumulateFilters) {
+            // New behavior: accumulated filters along the path
+            return getAllObjectsForHierarchyWithAccumulatedFilters(node.getId());
+        } else {
             // Legacy behavior: each node's filter applied independently
             Set<O> locationSet = new HashSet<>();
             List<T> descendants = getAllChildren(node.getId());
@@ -363,18 +366,15 @@ public abstract class HierarchicalRepo<
                 }
             }
             return new ArrayList<>(locationSet);
-        } else {
-            // New behavior: accumulated filters along the path
-            return getAllObjectsForHierarchyWithAccumulatedFilters(node.getId());
         }
     }
 
     /**
      * Gets all objects for the hierarchy starting from a node by ObjectId.
-     * By default, filters are accumulated along the path.
+     * By default, each node's filter is applied independently (legacy behavior).
      *
      * @param objectId the id of the starting hierarchy node
-     * @return list of objects with accumulated filters applied
+     * @return list of objects
      */
     public List<O> getAllObjectsForHierarchy(ObjectId objectId) {
         return getAllObjectsForHierarchy(objectId, false);
@@ -384,16 +384,16 @@ public abstract class HierarchicalRepo<
      * Gets all objects for the hierarchy starting from a node by ObjectId.
      *
      * @param objectId the id of the starting hierarchy node
-     * @param skipFilterAccumulation if true, each node's filter is applied independently (legacy behavior);
-     *                               if false (default), filters are accumulated along the path
+     * @param accumulateFilters if true, filters are accumulated along the path (parent filter A AND child filter B);
+     *                          if false (default), each node's filter is applied independently (legacy behavior)
      * @return list of objects
      */
-    public List<O> getAllObjectsForHierarchy(ObjectId objectId, boolean skipFilterAccumulation) {
+    public List<O> getAllObjectsForHierarchy(ObjectId objectId, boolean accumulateFilters) {
         Optional<T> ohiearchyNode = findById(objectId);
         if (!ohiearchyNode.isPresent()) {
             throw new NotFoundException("Hierarchy Node not found for id: " + objectId);
         }
-        return getAllObjectsForHierarchy(ohiearchyNode.get(), skipFilterAccumulation);
+        return getAllObjectsForHierarchy(ohiearchyNode.get(), accumulateFilters);
     }
 
     /**
