@@ -222,18 +222,32 @@ public class ComputedEdgeRecomputeHandler {
 
     /**
      * Check if an edge was computed by a specific provider.
+     *
+     * <p>This checks multiple indicators:</p>
+     * <ol>
+     *   <li>Provenance providerId matches the given provider</li>
+     *   <li>Provenance rule == "computed"</li>
+     *   <li>Edge has derived=true flag (fallback for edges materialized through OntologyMaterializer)</li>
+     * </ol>
      */
     private boolean isComputedByProvider(OntologyEdge edge, String providerId) {
-        if (edge.getProv() == null) return false;
+        // First, check provenance if available
+        if (edge.getProv() != null && !edge.getProv().isEmpty()) {
+            Object providerIdObj = edge.getProv().get("providerId");
+            if (providerIdObj != null) {
+                return providerId.equals(providerIdObj.toString());
+            }
 
-        Object providerIdObj = edge.getProv().get("providerId");
-        if (providerIdObj == null) {
             // Check rule field for "computed" marker
             Object rule = edge.getProv().get("rule");
-            return "computed".equals(rule);
+            if ("computed".equals(rule)) {
+                return true;
+            }
         }
 
-        return providerId.equals(providerIdObj.toString());
+        // Fallback: check if edge is derived (computed edges are stored with derived=true)
+        // This handles edges that went through OntologyMaterializer
+        return edge.isDerived();
     }
 
     /**

@@ -72,6 +72,12 @@ public class MongoEdgeStore implements EdgeStore {
         edgeRepo.deleteExplicitBySrcNotIn(dd, src, p, dstKeep);
     }
 
+    @Override
+    public void deleteDerivedBySrcNotIn(DataDomainInfo dataDomainInfo, String src, String p, Collection<String> dstKeep) {
+        DataDomain dd = DataDomainConverter.fromInfo(dataDomainInfo);
+        edgeRepo.deleteDerivedBySrcNotIn(dd, src, p, dstKeep);
+    }
+
     /**
      * Converts OntologyEdge to EdgeRecord, converting DataDomain to DataDomainInfo.
      */
