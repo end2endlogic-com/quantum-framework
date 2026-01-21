@@ -212,7 +212,7 @@ public class ComputedEdgeRecomputeHandler {
             for (OntologyEdge edge : existing) {
                 // Only delete edges created by this provider
                 if (isComputedByProvider(edge, providerId)) {
-                    edgeRepo.deleteById(edge.getId().toString());
+                    edgeRepo.delete(edge.getId());
                 }
             }
         } catch (Exception e) {

@@ -67,21 +67,21 @@ public abstract class ComputedEdgeProvider<S> implements OntologyEdgeProvider {
      *
      * @return class of the source entity
      */
-    protected abstract Class<S> getSourceType();
+    public abstract Class<S> getSourceType();
 
     /**
      * The predicate/property name for edges created by this provider.
      *
      * @return predicate string (e.g., "canSeeLocation")
      */
-    protected abstract String getPredicate();
+    public abstract String getPredicate();
 
     /**
      * The target entity type name for edge metadata.
      *
      * @return target type name (e.g., "Location")
      */
-    protected abstract String getTargetTypeName();
+    public abstract String getTargetTypeName();
 
     /**
      * Core logic: compute target entity IDs from a source entity.
