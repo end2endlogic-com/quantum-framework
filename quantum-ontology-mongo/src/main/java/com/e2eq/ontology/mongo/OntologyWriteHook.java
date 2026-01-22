@@ -3,6 +3,7 @@ package com.e2eq.ontology.mongo;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.PostPersistHook;
+import com.e2eq.ontology.annotations.OntologyClass;
 import com.e2eq.ontology.core.DataDomainInfo;
 import com.e2eq.ontology.core.OntologyRegistry;
 import com.e2eq.ontology.core.Reasoner;
