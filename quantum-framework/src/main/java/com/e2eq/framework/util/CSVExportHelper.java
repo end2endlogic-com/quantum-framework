@@ -43,7 +43,19 @@ import static java.lang.String.format;
 public class CSVExportHelper {
 
     final private static Pattern ARRAY_OPERATOR_RE = Pattern.compile(
-            "\\[[0-9]\\]"); // pattern to eliminate index to query mongo
+            "\\[\\d+\\]"); // pattern to match array indices like [0], [1], [10], etc.
+
+    /**
+     * Pattern to detect nested arrays (multiple [index] patterns in a path)
+     * Examples: dynamicAttributeSets[0].attributes[1].value, contactInfo.emailAddresses[0].number
+     */
+    final private static Pattern NESTED_ARRAY_PATTERN = Pattern.compile(
+            ".*\\[\\d+\\].*\\[\\d+\\].*");
+
+    /**
+     * ThreadLocal to store the current record being processed, so nested array processors can access it
+     */
+    private static final ThreadLocal<Object> CURRENT_RECORD = new ThreadLocal<>();
 
 
     /**
@@ -158,51 +170,16 @@ public class CSVExportHelper {
                     if (records != null) {
 
                         for (T record : records) {
-                            if (nestedProperty != null) {
-                                List propertyValue = (List) PropertyUtils.getProperty(record, nestedProperty);
-                                List tempPropertyValue = new ArrayList<>(propertyValue);
-
-                                if (propertyValue == null || (propertyValue instanceof List)) {
-                                    if (propertyValue == null || propertyValue.isEmpty() || propertyValue.size() == 1) {
-                                        beanWriter.write(record, processors);
-                                    }
-                                    else {
-                                        for (int i = 0; i < propertyValue.size(); i++) {
-                                            if (i > 0) {
-                                                // Object itemInFocus = propertyValue.remove(i);
-                                                // propertyValue.add(0, itemInFocus);
-                                                Object itemInFocus = tempPropertyValue.remove(i);
-                                                tempPropertyValue.add(0, itemInFocus);
-
-                                                PropertyUtils.setProperty(record, nestedProperty, tempPropertyValue);
-                                            }
-                                            beanWriter.write(record, processors);
-                                        }
-                                    }
-                                }
-                                else {
-                                    throw new ValidationException(format("requestedColumns refers to a property " +
-                                            "%s whose value is not a list", nestedProperty));
-                                }
-                            }
-                            else {
-                                beanWriter.write(record, processors);
-                            }
-
-                        }
-                    }
-                    else if (iterator != null) {
-                        try {
-                            while (iterator.hasNext()) {
-                                T record = iterator.next();
-
+                            try {
+                                // Store current record in ThreadLocal for nested array processors
+                                CURRENT_RECORD.set(record);
+                                
                                 if (nestedProperty != null) {
                                     List propertyValue = (List) PropertyUtils.getProperty(record, nestedProperty);
                                     List tempPropertyValue = new ArrayList<>(propertyValue);
 
                                     if (propertyValue == null || (propertyValue instanceof List)) {
-                                        if (propertyValue == null || propertyValue.isEmpty() || propertyValue.size()
-                                                == 1) {
+                                        if (propertyValue == null || propertyValue.isEmpty() || propertyValue.size() == 1) {
                                             beanWriter.write(record, processors);
                                         }
                                         else {
@@ -213,8 +190,7 @@ public class CSVExportHelper {
                                                     Object itemInFocus = tempPropertyValue.remove(i);
                                                     tempPropertyValue.add(0, itemInFocus);
 
-                                                    PropertyUtils.setProperty(record, nestedProperty,
-                                                            tempPropertyValue);
+                                                    PropertyUtils.setProperty(record, nestedProperty, tempPropertyValue);
                                                 }
                                                 beanWriter.write(record, processors);
                                             }
@@ -227,6 +203,56 @@ public class CSVExportHelper {
                                 }
                                 else {
                                     beanWriter.write(record, processors);
+                                }
+                            } finally {
+                                CURRENT_RECORD.remove();
+                            }
+
+                        }
+                    }
+                    else if (iterator != null) {
+                        try {
+                            while (iterator.hasNext()) {
+                                T record = iterator.next();
+                                
+                                try {
+                                    // Store current record in ThreadLocal for nested array processors
+                                    CURRENT_RECORD.set(record);
+
+                                    if (nestedProperty != null) {
+                                        List propertyValue = (List) PropertyUtils.getProperty(record, nestedProperty);
+                                        List tempPropertyValue = new ArrayList<>(propertyValue);
+
+                                        if (propertyValue == null || (propertyValue instanceof List)) {
+                                            if (propertyValue == null || propertyValue.isEmpty() || propertyValue.size()
+                                                    == 1) {
+                                                beanWriter.write(record, processors);
+                                            }
+                                            else {
+                                                for (int i = 0; i < propertyValue.size(); i++) {
+                                                    if (i > 0) {
+                                                        // Object itemInFocus = propertyValue.remove(i);
+                                                        // propertyValue.add(0, itemInFocus);
+                                                        Object itemInFocus = tempPropertyValue.remove(i);
+                                                        tempPropertyValue.add(0, itemInFocus);
+
+                                                        PropertyUtils.setProperty(record, nestedProperty,
+                                                                tempPropertyValue);
+                                                    }
+                                                    beanWriter.write(record, processors);
+                                                }
+                                            }
+                                        }
+                                        else {
+                                            throw new ValidationException(format("requestedColumns refers to a property " +
+                                                    "%s whose value is not a list", nestedProperty));
+                                        }
+                                    }
+                                    else {
+                                        beanWriter.write(record, processors);
+                                    }
+                                } finally {
+                                    CURRENT_RECORD.remove();
                                 }
 
                             }
@@ -424,30 +450,35 @@ public class CSVExportHelper {
         CellProcessor[] processors = new CellProcessor[cols.size()];
         for (int i = 0; i < cols.size(); i++) {
             String fieldName = cols.get(i);
-            if (fieldName.contains("[")) {
+            if (hasNestedArrays(fieldName)) {
+                // Use nested array processor for nested arrays like dynamicAttributeSets[0].attributes[1].value
+                processors[i] = new org.supercsv.cellprocessor.Optional(new NestedArrayCellProcessor(fieldName));
+            } else if (fieldName.contains("[")) {
+                // Single-level array access
                 processors[i] = new org.supercsv.cellprocessor.Optional(listProcessor);
-                continue;
-            }
-            Class<?> type = getFieldType(clazz, fieldName);
-            if (type == int.class || type == Integer.class) {
-                processors[i] = new org.supercsv.cellprocessor.Optional(new ParseInt());
-            } else if (type == long.class || type == Long.class) {
-                processors[i] = new org.supercsv.cellprocessor.Optional(new ParseLong());
-            } else if (type == double.class || type == Double.class ||
-                    type == float.class || type == Float.class) {
-                processors[i] = new org.supercsv.cellprocessor.Optional(new ParseDouble());
-            } else if (type == java.math.BigDecimal.class) {
-                // No need to parse BigDecimal, just use Optional
-                processors[i] = new org.supercsv.cellprocessor.Optional();
             } else {
-                processors[i] = new org.supercsv.cellprocessor.Optional();
+                Class<?> type = getFieldType(clazz, fieldName);
+                if (type == int.class || type == Integer.class) {
+                    processors[i] = new org.supercsv.cellprocessor.Optional(new ParseInt());
+                } else if (type == long.class || type == Long.class) {
+                    processors[i] = new org.supercsv.cellprocessor.Optional(new ParseLong());
+                } else if (type == double.class || type == Double.class ||
+                        type == float.class || type == Float.class) {
+                    processors[i] = new org.supercsv.cellprocessor.Optional(new ParseDouble());
+                } else if (type == java.math.BigDecimal.class) {
+                    // No need to parse BigDecimal, just use Optional
+                    processors[i] = new org.supercsv.cellprocessor.Optional();
+                } else {
+                    processors[i] = new org.supercsv.cellprocessor.Optional();
+                }
             }
         }
         return processors;
     }
 
     private Class<?> getFieldType(Class<?> clazz, String name) {
-        String clean = name.replace("[0]", "");
+        // Remove all array indices for type detection
+        String clean = name.replaceAll("\\[\\d+\\]", "");
         Class<?> current = clazz;
         while (current != null) {
             try {
@@ -457,6 +488,76 @@ public class CSVExportHelper {
             }
         }
         return null;
+    }
+
+    /**
+     * Checks if a column path contains nested arrays (multiple [index] patterns)
+     * 
+     * @param columnPath the column path to check
+     * @return true if the path contains nested arrays
+     */
+    private boolean hasNestedArrays(String columnPath) {
+        return NESTED_ARRAY_PATTERN.matcher(columnPath).matches();
+    }
+
+    /**
+     * Extracts a value from a nested array path like "dynamicAttributeSets[0].attributes[1].value"
+     * 
+     * @param record the record to extract from
+     * @param path the nested path with array indices
+     * @return the extracted value, or null if path doesn't exist or index is out of bounds
+     */
+    private Object extractNestedArrayValue(Object record, String path) {
+        if (record == null || path == null || path.isEmpty()) {
+            return null;
+        }
+        
+        try {
+            // Parse the path to extract property names and array indices
+            Pattern indexPattern = Pattern.compile("\\[(\\d+)\\]");
+            Matcher matcher = indexPattern.matcher(path);
+            
+            // Split by array indices to get property paths
+            String[] parts = path.split("\\[\\d+\\]");
+            
+            Object current = record;
+            int partIndex = 0;
+            List<Integer> indices = new ArrayList<>();
+            
+            // Collect all indices
+            while (matcher.find()) {
+                indices.add(Integer.parseInt(matcher.group(1)));
+            }
+            
+            // Reset matcher for processing
+            matcher = indexPattern.matcher(path);
+            
+            // Navigate through the path
+            for (int i = 0; i < parts.length && current != null; i++) {
+                String propertyPath = parts[i].replaceAll("^\\.", "").replaceAll("\\.$", "");
+                
+                // Navigate to the property if there's a property path
+                if (!propertyPath.isEmpty()) {
+                    current = PropertyUtils.getProperty(current, propertyPath);
+                }
+                
+                // If there's an array index at this position, access the array element
+                if (matcher.find() && current instanceof List) {
+                    int arrayIndex = indices.get(partIndex++);
+                    List<?> list = (List<?>) current;
+                    if (arrayIndex >= 0 && arrayIndex < list.size()) {
+                        current = list.get(arrayIndex);
+                    } else {
+                        return null; // Index out of bounds
+                    }
+                }
+            }
+            
+            return current;
+        } catch (Exception e) {
+            // Return null on any error (property doesn't exist, wrong type, etc.)
+            return null;
+        }
     }
 
     /**
@@ -485,7 +586,7 @@ public class CSVExportHelper {
     }
 
     /**
-     * Inner class to process CSV cell
+     * Inner class to process CSV cell for single-level arrays
      */
     public class ListCellProcessor extends CellProcessorAdaptor {
 
@@ -533,37 +634,73 @@ public class CSVExportHelper {
         }
     }
 
+    /**
+     * Cell processor for nested arrays that extracts values directly from the record.
+     * Handles paths like dynamicAttributeSets[0].attributes[1].value
+     */
+    public class NestedArrayCellProcessor extends CellProcessorAdaptor {
+        private final String path;
+        
+        /**
+         * Creates a nested array cell processor
+         * 
+         * @param path the nested array path (e.g., "dynamicAttributeSets[0].attributes[1].value")
+         */
+        public NestedArrayCellProcessor(String path) {
+            this.path = path;
+        }
+        
+        /**
+         * Executes the cell processor for each cell.
+         * Dozer may pass null for nested array paths, so we get the record from ThreadLocal.
+         *
+         * @param value   the value extracted by Dozer (may be null for nested arrays)
+         * @param context CsvContext
+         * @return Object returns the processed cell value
+         */
+        @Override
+        public Object execute(Object value, CsvContext context) {
+            // For nested arrays, Dozer may pass null, so get the record from ThreadLocal
+            Object record = CURRENT_RECORD.get();
+            if (record == null) {
+                // Fallback to value if ThreadLocal is not set (shouldn't happen in normal flow)
+                record = value;
+            }
+            
+            // Extract the nested value from the record
+            Object extracted = extractNestedArrayValue(record, path);
+            if (extracted == null) {
+                return next.execute("", context);
+            }
+            return next.execute(extracted, context);
+        }
+    }
+
     private String screenRequestedColumns(List<String> requestedColumnsInParam,
                                           List<String> requestedColumnsOutParam)
             throws ValidationException {
 
         String soleNestedProperty = null;
         for (String col : requestedColumnsInParam) {
-            String[] parts = ARRAY_OPERATOR_RE.split(col);
-            if (parts.length == 1) {
-                requestedColumnsOutParam.add(col);
-            }
-            else {
-                if (soleNestedProperty == null) {
-                    soleNestedProperty = parts[0];
-                }
-                else {
-                    if (!(soleNestedProperty.equals(parts[0]))) {
-                        throw new ValidationException(format("requestedColumns should not referred" +
-                                " more than one nested property (%s and %s)", soleNestedProperty, parts[0]));
+            if (hasNestedArrays(col)) {
+                // For nested arrays, remove all array indices for MongoDB projection
+                // The full path with indices is kept in requestedColumnsInParam for CSV extraction
+                // Example: dynamicAttributeSets[0].attributes[1].value -> dynamicAttributeSets.attributes.value
+                String projectionPath = col.replaceAll("\\[\\d+\\]", "");
+                requestedColumnsOutParam.add(projectionPath);
+            } else {
+                // Handle single-level arrays or non-array properties
+                String[] parts = ARRAY_OPERATOR_RE.split(col);
+                if (parts.length == 1) {
+                    // No array indices, add as-is
+                    requestedColumnsOutParam.add(col);
+                } else {
+                    // Single-level array - remove indices for MongoDB projection
+                    // Track the first nested property for backward compatibility with row expansion logic
+                    if (soleNestedProperty == null) {
+                        soleNestedProperty = parts[0];
                     }
-                }
-                requestedColumnsOutParam.add(StringUtils.join(parts, ""));
-
-                Matcher m = ARRAY_OPERATOR_RE.matcher(col);
-
-                if (m.find()) {
-                    // Guaranteed to match because ARRAY_OPERATOR_RE.split() did manage to split the string
-
-                    if (!m.group().equals("[0]")) {
-                        throw new ValidationException(format("requestedColumns with nested property %s " +
-                                "should not use an index other than [0]", soleNestedProperty));
-                    }
+                    requestedColumnsOutParam.add(StringUtils.join(parts, ""));
                 }
             }
         }

@@ -1,10 +1,14 @@
 package com.e2eq.framework.api.csv;
 
 
+import com.e2eq.framework.model.persistent.base.DynamicAttribute;
+import com.e2eq.framework.model.persistent.base.DynamicAttributeSet;
 import com.e2eq.framework.securityrules.SecuritySession;
 import com.e2eq.framework.persistent.BaseRepoTest;
 import com.e2eq.framework.persistent.TestCSVModelRepo;
+import com.e2eq.framework.persistent.TestParentRepo;
 import com.e2eq.framework.test.CSVModel;
+import com.e2eq.framework.test.ParentModel;
 import com.e2eq.framework.util.CSVExportHelper;
 import com.e2eq.framework.util.CSVImportHelper;
 
@@ -14,6 +18,7 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.core.StreamingOutput;
 import org.apache.commons.beanutils.PropertyUtils;
 import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
 import org.supercsv.cellprocessor.CellProcessorAdaptor;
 import org.supercsv.cellprocessor.Optional;
 import org.supercsv.cellprocessor.constraint.NotNull;
@@ -37,6 +42,9 @@ import java.util.*;
 public class TestCSVFeatures extends BaseRepoTest {
     @Inject
     TestCSVModelRepo repo;
+
+    @Inject
+    TestParentRepo parentRepo;
 
     @Inject
     CSVImportHelper csvImportHelper;
@@ -282,6 +290,376 @@ public class TestCSVFeatures extends BaseRepoTest {
             System.out.println("Import Result: Imported Failed Count:" + result.getFailedCount());
             for (Object r : result.getFailedRecordsFeedback()) {
                 System.out.println(r);
+            }
+        }
+    }
+
+    /**
+     * Creates test ParentModel records with nested dynamicAttributeSets for testing nested array export
+     */
+    private List<ParentModel> getParentModelRecords() {
+        List<ParentModel> records = new ArrayList<>();
+
+        // First record with nested arrays
+        ParentModel model1 = new ParentModel();
+        model1.setTestField("testValue1");
+        model1.setRefName("parent1");
+
+        DynamicAttributeSet set1 = new DynamicAttributeSet();
+        set1.setName("logistics");
+        List<DynamicAttribute> attrs1 = new ArrayList<>();
+        DynamicAttribute attr1 = new DynamicAttribute();
+        attr1.setName("shippingNumber");
+        attr1.setValue("SHIP-001");
+        attrs1.add(attr1);
+        DynamicAttribute attr2 = new DynamicAttribute();
+        attr2.setName("vatNumber");
+        attr2.setValue("VAT-001");
+        attrs1.add(attr2);
+        DynamicAttribute attr3 = new DynamicAttribute();
+        attr3.setName("containerNumber");
+        attr3.setValue("CONT-001");
+        attrs1.add(attr3);
+        set1.setAttributes(attrs1);
+
+        DynamicAttributeSet set2 = new DynamicAttributeSet();
+        set2.setName("compliance");
+        List<DynamicAttribute> attrs2 = new ArrayList<>();
+        DynamicAttribute attr4 = new DynamicAttribute();
+        attr4.setName("certification");
+        attr4.setValue("CERT-001");
+        attrs2.add(attr4);
+        set2.setAttributes(attrs2);
+
+        model1.getDynamicAttributeSets().add(set1);
+        model1.getDynamicAttributeSets().add(set2);
+        records.add(model1);
+
+        // Second record with nested arrays
+        ParentModel model2 = new ParentModel();
+        model2.setTestField("testValue2");
+        model2.setRefName("parent2");
+
+        DynamicAttributeSet set3 = new DynamicAttributeSet();
+        set3.setName("logistics");
+        List<DynamicAttribute> attrs3 = new ArrayList<>();
+        DynamicAttribute attr5 = new DynamicAttribute();
+        attr5.setName("shippingNumber");
+        attr5.setValue("SHIP-002");
+        attrs3.add(attr5);
+        DynamicAttribute attr6 = new DynamicAttribute();
+        attr6.setName("vatNumber");
+        attr6.setValue("VAT-002");
+        attrs3.add(attr6);
+        set3.setAttributes(attrs3);
+
+        model2.getDynamicAttributeSets().add(set3);
+        records.add(model2);
+
+        return records;
+    }
+
+    @Test
+    public void testNestedArrayExport() throws IOException {
+        CSVExportHelper helper = new CSVExportHelper();
+
+        List<ParentModel> records = getParentModelRecords();
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        StreamingOutput streamingOutput = helper.streamCSVOut(
+                ParentModel.class,
+                records,
+                null,
+                ',',
+                List.of(
+                        "refName",
+                        "testField",
+                        "dynamicAttributeSets[0].attributes[1].value",  // Nested array: second attribute of first set
+                        "dynamicAttributeSets[0].attributes[0].name",    // Nested array: first attribute name
+                        "dynamicAttributeSets[1].attributes[0].value"    // Nested array: first attribute of second set
+                ),
+                "QUOTE_WHERE_ESSENTIAL",
+                '"',
+                Charset.forName("UTF-8"),
+                false,
+                true,
+                List.of("ID", "Test Field", "VAT Number", "Shipping Name", "Certification"),
+                null);
+
+        streamingOutput.write(output);
+        String csvOutput = output.toString(Charset.forName("UTF-8"));
+
+        // Verify the CSV contains expected values
+        assertTrue(csvOutput.contains("parent1"), "Should contain parent1");
+        assertTrue(csvOutput.contains("VAT-001"), "Should contain VAT-001 from dynamicAttributeSets[0].attributes[1].value");
+        assertTrue(csvOutput.contains("shippingNumber"), "Should contain shippingNumber from dynamicAttributeSets[0].attributes[0].name");
+        assertTrue(csvOutput.contains("CERT-001"), "Should contain CERT-001 from dynamicAttributeSets[1].attributes[0].value");
+        assertTrue(csvOutput.contains("parent2"), "Should contain parent2");
+
+        System.out.println("Nested Array CSV Output:");
+        System.out.println(csvOutput);
+    }
+
+    @Test
+    public void testNestedArrayWithMultiDigitIndex() throws IOException {
+        CSVExportHelper helper = new CSVExportHelper();
+
+        // Create a record with many dynamic attribute sets to test multi-digit indices
+        ParentModel model = new ParentModel();
+        model.setTestField("testValue");
+        model.setRefName("parent10");
+
+        for (int i = 0; i < 15; i++) {
+            DynamicAttributeSet set = new DynamicAttributeSet();
+            set.setName("set" + i);
+            List<DynamicAttribute> attrs = new ArrayList<>();
+            DynamicAttribute attr = new DynamicAttribute();
+            attr.setName("attr" + i);
+            attr.setValue("value" + i);
+            attrs.add(attr);
+            set.setAttributes(attrs);
+            model.getDynamicAttributeSets().add(set);
+        }
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        StreamingOutput streamingOutput = helper.streamCSVOut(
+                ParentModel.class,
+                List.of(model),
+                null,
+                ',',
+                List.of(
+                        "refName",
+                        "dynamicAttributeSets[10].attributes[0].value",  // Multi-digit index
+                        "dynamicAttributeSets[0].attributes[0].value"     // Single-digit index
+                ),
+                "QUOTE_WHERE_ESSENTIAL",
+                '"',
+                Charset.forName("UTF-8"),
+                false,
+                true,
+                List.of("ID", "Value at Index 10", "Value at Index 0"),
+                null);
+
+        streamingOutput.write(output);
+        String csvOutput = output.toString(Charset.forName("UTF-8"));
+
+        // Verify multi-digit index works
+        assertTrue(csvOutput.contains("value10"), "Should contain value10 from index [10]");
+        assertTrue(csvOutput.contains("value0"), "Should contain value0 from index [0]");
+
+        System.out.println("Multi-digit Index CSV Output:");
+        System.out.println(csvOutput);
+    }
+
+    @Test
+    public void testNestedArrayWithMultipleNestedProperties() throws IOException {
+        CSVExportHelper helper = new CSVExportHelper();
+
+        List<ParentModel> records = getParentModelRecords();
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        StreamingOutput streamingOutput = helper.streamCSVOut(
+                ParentModel.class,
+                records,
+                null,
+                ',',
+                List.of(
+                        "refName",
+                        "testField",
+                        "dynamicAttributeSets[0].attributes[0].value",  // First nested property
+                        "dynamicAttributeSets[0].attributes[1].value",  // Second nested property
+                        "dynamicAttributeSets[0].name",                  // Set name (not nested array)
+                        "dynamicAttributeSets[1].attributes[0].value"   // Third nested property
+                ),
+                "QUOTE_WHERE_ESSENTIAL",
+                '"',
+                Charset.forName("UTF-8"),
+                false,
+                true,
+                null,
+                null);
+
+        streamingOutput.write(output);
+        String csvOutput = output.toString(Charset.forName("UTF-8"));
+
+        // Verify multiple nested properties work together
+        assertTrue(csvOutput.contains("SHIP-001"), "Should contain SHIP-001");
+        assertTrue(csvOutput.contains("VAT-001"), "Should contain VAT-001");
+        assertTrue(csvOutput.contains("logistics"), "Should contain logistics set name");
+        assertTrue(csvOutput.contains("CERT-001"), "Should contain CERT-001");
+
+        System.out.println("Multiple Nested Properties CSV Output:");
+        System.out.println(csvOutput);
+    }
+
+    @Test
+    public void testNestedArrayWithOutOfBoundsIndex() throws IOException {
+        CSVExportHelper helper = new CSVExportHelper();
+
+        List<ParentModel> records = getParentModelRecords();
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        StreamingOutput streamingOutput = helper.streamCSVOut(
+                ParentModel.class,
+                records,
+                null,
+                ',',
+                List.of(
+                        "refName",
+                        "dynamicAttributeSets[0].attributes[10].value",  // Out of bounds index
+                        "dynamicAttributeSets[5].attributes[0].value"   // Out of bounds set index
+                ),
+                "QUOTE_WHERE_ESSENTIAL",
+                '"',
+                Charset.forName("UTF-8"),
+                false,
+                true,
+                null,
+                null);
+
+        streamingOutput.write(output);
+        String csvOutput = output.toString(Charset.forName("UTF-8"));
+
+        // Verify out of bounds indices return empty strings (graceful handling)
+        // The CSV should still be valid, just with empty values
+        assertTrue(csvOutput.contains("parent1"), "Should contain parent1");
+        assertTrue(csvOutput.contains("parent2"), "Should contain parent2");
+
+        System.out.println("Out of Bounds Index CSV Output:");
+        System.out.println(csvOutput);
+    }
+
+    @Test
+    public void testNestedArrayWithNullValues() throws IOException {
+        CSVExportHelper helper = new CSVExportHelper();
+
+        ParentModel model = new ParentModel();
+        model.setTestField("testValue");
+        model.setRefName("parentNull");
+        // dynamicAttributeSets is empty (initialized as empty ArrayList)
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        StreamingOutput streamingOutput = helper.streamCSVOut(
+                ParentModel.class,
+                List.of(model),
+                null,
+                ',',
+                List.of(
+                        "refName",
+                        "dynamicAttributeSets[0].attributes[0].value"  // Null nested array
+                ),
+                "QUOTE_WHERE_ESSENTIAL",
+                '"',
+                Charset.forName("UTF-8"),
+                false,
+                true,
+                null,
+                null);
+
+        streamingOutput.write(output);
+        String csvOutput = output.toString(Charset.forName("UTF-8"));
+
+        // Verify null/empty values are handled gracefully (empty string)
+        assertTrue(csvOutput.contains("parentNull"), "Should contain parentNull");
+
+        System.out.println("Null Values CSV Output:");
+        System.out.println(csvOutput);
+    }
+
+    @Test
+    public void testNestedArrayBackwardCompatibility() throws IOException {
+        CSVExportHelper helper = new CSVExportHelper();
+
+        List<CSVModel> records = getRecords();
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        StreamingOutput streamingOutput = helper.streamCSVOut(
+                CSVModel.class,
+                records,
+                null,
+                ',',
+                List.of("testField1", "testList[0]", "displayName"),  // Single-level array (backward compatible)
+                "QUOTE_WHERE_ESSENTIAL",
+                '"',
+                Charset.forName("UTF-8"),
+                false,
+                true,
+                null,
+                null);
+
+        streamingOutput.write(output);
+        String csvOutput = output.toString(Charset.forName("UTF-8"));
+
+        // Verify backward compatibility - single-level arrays still work
+        assertTrue(csvOutput.contains("value1"), "Should contain value1");
+        assertTrue(csvOutput.contains("value2"), "Should contain value2 from testList[0]");
+        assertTrue(csvOutput.contains("testDisplayName"), "Should contain testDisplayName");
+
+        System.out.println("Backward Compatibility CSV Output:");
+        System.out.println(csvOutput);
+    }
+
+    @Test
+    public void testNestedArrayWithRepositoryProjection() throws IOException {
+        // This test verifies that nested array paths are correctly stripped of array indices
+        // for MongoDB projection, preventing Morphia validation errors
+        try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
+            CSVExportHelper helper = new CSVExportHelper();
+
+            // First, save some test data
+            List<ParentModel> testRecords = getParentModelRecords();
+            List<org.bson.types.ObjectId> savedIds = new ArrayList<>();
+            for (ParentModel record : testRecords) {
+                ParentModel saved = parentRepo.save(record);
+                savedIds.add(saved.getId());
+            }
+
+            try {
+                // Test CSV export using repository with nested array paths
+                // This should not throw a Morphia validation error about array indices in projection paths
+                ByteArrayOutputStream output = new ByteArrayOutputStream();
+                StreamingOutput streamingOutput = helper.streamCSVOut(
+                        parentRepo,
+                        ',',
+                        List.of(
+                                "refName",
+                                "testField",
+                                "dynamicAttributeSets[0].attributes[1].value",  // Nested array path
+                                "dynamicAttributeSets[0].attributes[0].name",    // Nested array path
+                                "dynamicAttributeSets[1].attributes[0].value"     // Nested array path
+                        ),
+                        "QUOTE_WHERE_ESSENTIAL",
+                        '"',
+                        Charset.forName("UTF-8"),
+                        false,
+                        null,  // filter
+                        0,     // offset
+                        -1,    // length (-1 for all)
+                        true,  // prependHeaderRow
+                        List.of("ID", "Test Field", "VAT Number", "Shipping Name", "Certification")
+                );
+
+                // This should not throw an exception about projection paths
+                streamingOutput.write(output);
+                String csvOutput = output.toString(Charset.forName("UTF-8"));
+
+                // Verify the CSV contains expected values
+                assertTrue(csvOutput.contains("parent1"), "Should contain parent1");
+                assertTrue(csvOutput.contains("VAT-001"), "Should contain VAT-001 from nested array");
+                assertTrue(csvOutput.contains("shippingNumber"), "Should contain shippingNumber from nested array");
+                assertTrue(csvOutput.contains("CERT-001"), "Should contain CERT-001 from nested array");
+
+                System.out.println("Repository-based Nested Array CSV Output:");
+                System.out.println(csvOutput);
+            } finally {
+                // Clean up test data to avoid conflicts with other tests
+                for (org.bson.types.ObjectId id : savedIds) {
+                    try {
+                        parentRepo.delete(id);
+                    } catch (Exception e) {
+                        // Ignore cleanup errors
+                    }
+                }
             }
         }
     }
