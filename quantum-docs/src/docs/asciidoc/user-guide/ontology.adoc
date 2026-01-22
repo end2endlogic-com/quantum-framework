@@ -565,6 +565,238 @@ public final class OntologyFilterHelper {
     - calls OntologyMaterializer to infer inverse, transitive, symmetric, and super-property edges and upsert them to the edges collection.
   - This is enabled by default. To disable temporarily (e.g., for bulk loads), set: ontology.auto-materialize=false
 
+[[property-chains-vs-computed-providers]]
+==== When to use Property Chains vs ComputedEdgeProvider
+
+Understanding when to use property chains versus `ComputedEdgeProvider` is critical for modeling your ontology effectively. This section provides clear guidance on which approach to use.
+
+===== Property Chains: Use for Sequential Multi-Hop Traversals
+
+Property chains are ideal when your derived relationship follows a **fixed sequence of predicates** where each step is a simple, direct relationship.
+
+**Property chains handle:**
+
+1. **Multi-hop paths through direct predicates**: Deriving relationships through intermediate entities
+   - Example: `Order --placedBy-> Customer --memberOf-> Organization => Order --placedInOrg-> Organization`
+   - Example: `Order --orderHasShipment-> Shipment --shipsTo-> Address => Order --orderShipsTo-> Address`
+
+2. **Transitive closure within chains**: When one step is a transitive property
+   - Example: `Order --placedInOrg-> Org1 --ancestorOf-> Org2 => Order --placedInOrg-> Org2`
+   - Propagates derived relationships up hierarchies automatically
+
+3. **Chain composition**: Output of one chain feeds another
+   - Chain 1: `[orderHasShipment, shipsTo]` => `orderShipsTo`
+   - Chain 2: `[orderShipsTo, locatedIn]` => `orderShipsToRegion`
+
+**Property chain example (YAML):**
+[source,yaml]
+----
+chains:
+  - chain: [placedBy, memberOf]
+    implies: placedInOrg
+  - chain: [orderHasShipment, shipsTo]
+    implies: orderShipsTo
+  - chain: [orderShipsTo, locatedIn]
+    implies: orderShipsToRegion
+----
+
+**Property chain limitations:**
+
+- Chains must be **regular** (non-transitive predicates in the chain itself)
+- Chains are **strict sequential paths** - no branching, alternation (`OR`), or conditional logic
+- No backtracking or negation
+- Cannot involve **external data lookups** or **dynamic queries** during computation
+- Cannot handle **collection expansion** where one entity has a list that must be resolved
+
+===== ComputedEdgeProvider: Use for Complex Logic Beyond Sequential Paths
+
+Use `ComputedEdgeProvider` when your derived edges require:
+
+1. **Database queries during computation**: Loading related entities to determine targets
+2. **Collection/list resolution**: The target set comes from resolving a list (static or dynamic)
+3. **Conditional logic**: Different targets based on entity state or business rules
+4. **Non-sequential traversals**: Logic that doesn't follow a simple A->B->C pattern
+
+**When to use ComputedEdgeProvider:**
+
+[cols="1,1"]
+|===
+|Scenario |Why Property Chains Won't Work
+
+|Associate → canSeeLocation → Location (via Territory hierarchy + LocationList)
+|Requires loading the Territory, expanding to children, then resolving each Territory's LocationList - involves list resolution
+
+|User → canAccessCustomer → Customer (via assigned Regions and dynamic filters)
+|Requires executing dynamic queries based on filter strings stored in Region entities
+
+|Manager → canViewReport → Report (where Reports are determined by Department + Role combinations)
+|Requires conditional logic based on both hierarchy position AND role assignments
+
+|Entity → derivedTarget → Target (where targets depend on runtime configuration)
+|Requires external lookups that chains cannot perform
+|===
+
+===== HierarchyListEdgeProvider: Specialized for Hierarchy + List Pattern
+
+`HierarchyListEdgeProvider<S, H, T>` is a specialized base class for the common pattern:
+
+1. Get assigned hierarchy nodes from source entity (e.g., Associate's Territories)
+2. Expand to include all child nodes (hierarchy traversal)
+3. Resolve each node's list (static or dynamic)
+4. Create edges to the resolved items
+
+**Use HierarchyListEdgeProvider when:**
+
+- Your source entity is assigned to hierarchy nodes (Territories, Departments, Regions)
+- Each hierarchy node has an associated list of target entities
+- The relationship should include targets from the assigned node AND all descendants
+- You need provenance tracking of which nodes and lists contributed to each edge
+
+**Example use cases:**
+
+- `Associate → canSeeLocation → Location` via Territory hierarchy
+- `SalesRep → canAccessAccount → Account` via Region hierarchy
+- `Employee → canViewDocument → Document` via Department hierarchy
+
+**Example implementation:**
+[source,java]
+----
+@ApplicationScoped
+public class AssociateCanSeeLocationProvider
+        extends HierarchyListEdgeProvider<Associate, Territory, Location> {
+
+    @Inject TerritoryRepo territoryRepo;
+    @Inject LocationListResolver listResolver;
+
+    @Override protected Class<Associate> getSourceType() { return Associate.class; }
+    @Override protected String getPredicate() { return "canSeeLocation"; }
+    @Override protected String getTargetTypeName() { return "Location"; }
+    @Override protected String getHierarchyTypeName() { return "Territory"; }
+
+    @Override
+    protected List<String> getAssignedNodeIds(Associate source) {
+        return source.getAssignedTerritories().stream()
+            .map(ref -> ref.getId().toString())
+            .toList();
+    }
+
+    @Override
+    protected Optional<Territory> loadHierarchyNode(ComputationContext ctx, String nodeId) {
+        return territoryRepo.findById(new ObjectId(nodeId));
+    }
+
+    @Override
+    protected List<Territory> getChildNodes(ComputationContext ctx, String nodeId) {
+        return territoryRepo.getAllChildren(new ObjectId(nodeId));
+    }
+
+    @Override
+    protected List<Location> resolveListItems(ComputationContext ctx, Territory node) {
+        return listResolver.resolve(ctx.getDataDomainInfo(), node.getStaticDynamicList());
+    }
+
+    @Override
+    protected String extractTargetId(Location target) {
+        return target.getId().toString();
+    }
+}
+----
+
+===== Decision Guide
+
+[cols="1,3,2"]
+|===
+|Approach |When to Use |Example
+
+|**Property Chain (YAML)**
+|Sequential multi-hop through direct predicates; no external data lookups needed
+|`Order --placedBy-> Customer --memberOf-> Org`
+
+|**Property Chain with Transitive**
+|Hierarchy rollup where relationships are direct predicates
+|`Order --placedInOrg-> Org --ancestorOf-> ParentOrg`
+
+|**ComputedEdgeProvider**
+|Complex logic, conditional branching, or external data lookups
+|Permission edges based on roles + entity state
+
+|**HierarchyListEdgeProvider**
+|Source assigned to hierarchy nodes, each with associated target lists
+|`Associate → canSeeLocation → Location` via Territory + LocationList
+|===
+
+===== Important Notes
+
+1. **Source types must be @OntologyClass annotated**: ComputedEdgeProvider implementations will show a warning at startup if their source type lacks `@OntologyClass`. The edges will not be processed during entity persistence.
+
+2. **Providers are automatically discovered**: Any `@ApplicationScoped` class extending `ComputedEdgeProvider` is automatically discovered and registered at startup.
+
+3. **Provenance is tracked**: `ComputedEdgeProvider` and `HierarchyListEdgeProvider` automatically track which inputs contributed to each computed edge, enabling smart incremental updates.
+
+4. **Combine approaches when needed**: You can use property chains for some relationships and computed providers for others in the same application.
+
+==== Extending materialization with ComputedEdgeProvider (Advanced)
+
+While `OntologyEdgeProvider` is sufficient for simple, direct edges, many real-world use cases require edges computed from complex logic, such as hierarchy traversal or dynamic list resolution. `ComputedEdgeProvider` is a more robust base class that provides:
+
+- **Provenance tracking**: Records why an edge exists (which hierarchy nodes and lists were involved).
+- **Incremental updates**: Tracks dependencies to know exactly which edges to recompute when a source changes.
+- **Specialized hierarchy support**: `HierarchyListEdgeProvider` simplifies implementing common patterns like "User can see Locations in their assigned Territories (and descendants)".
+
+===== Example: Hierarchy-based Edge Provider
+
+[source,java]
+----
+@ApplicationScoped
+public class AssociateCanSeeLocationProvider
+        extends HierarchyListEdgeProvider<Associate, Territory, Location> {
+
+    @Inject TerritoryRepo territoryRepo;
+    @Inject LocationListResolver listResolver;
+
+    @Override protected Class<Associate> getSourceType() { return Associate.class; }
+    @Override protected String getPredicate() { return "canSeeLocation"; }
+    @Override protected String getTargetTypeName() { return "Location"; }
+    @Override protected String getHierarchyTypeName() { return "Territory"; }
+
+    @Override
+    protected List<String> getAssignedNodeIds(Associate source) {
+        return source.getAssignedTerritories().stream()
+            .map(ref -> ref.getId().toString())
+            .toList();
+    }
+
+    @Override
+    protected Optional<Territory> loadHierarchyNode(ComputationContext ctx, String nodeId) {
+        return territoryRepo.findById(new ObjectId(nodeId));
+    }
+
+    @Override
+    protected List<Territory> getChildNodes(ComputationContext ctx, String nodeId) {
+        return territoryRepo.getAllChildren(new ObjectId(nodeId));
+    }
+
+    @Override
+    protected List<Location> resolveListItems(ComputationContext ctx, Territory node) {
+        return listResolver.resolve(ctx.getDataDomainInfo(), node.getStaticDynamicList());
+    }
+
+    @Override
+    protected String extractTargetId(Location target) {
+        return target.getId().toString();
+    }
+}
+----
+
+===== Multi-hop and Provenance
+
+`ComputedEdgeProvider` supports multi-hop capabilities by allowing providers to contribute to the overall ontology graph that is materialized. The provenance information captured by these providers includes:
+
+- **Hierarchy Contributions**: Every node traversed in a hierarchy path.
+- **List Contributions**: Every list (static or dynamic) resolved to find target entities.
+
+This provenance is stored with the edge and allows the framework to perform smart, incremental recomputations when underlying data (like a Territory's child nodes or a LocationList's filter) changes.
+
 ==== Extending materialization with OntologyEdgeProvider (SPI)
 
 The write hook is annotation-first and SPI-second:
