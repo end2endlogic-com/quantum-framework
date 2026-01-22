@@ -38,7 +38,7 @@ public class OntologyReindexer {
     OntologyMetaService metaService;
 
     @Inject
-    com.e2eq.ontology.core.OntologyRegistry registry;
+    com.e2eq.ontology.runtime.TenantOntologyRegistryProvider registryProvider;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
     private volatile String status = "IDLE";
@@ -64,7 +64,7 @@ public class OntologyReindexer {
                 Optional<Path> p = src.filter(s -> s != null && !s.equals("<none>")).map(Path::of).filter(Files::exists);
                 var res = metaService.observeYaml(p, "/ontology.yaml");
                 // Get tboxHash from runtime registry and yamlVersion from metadata
-                String tboxHash = io.quarkus.arc.Arc.container().instance(com.e2eq.ontology.core.OntologyRegistry.class).get().getTBoxHash();
+                String tboxHash = registryProvider.getRegistryForRealm(realmId).getTBoxHash();
                 Integer yamlVersion = res.meta().getYamlVersion();
                 metaService.markApplied(res.currentHash(), tboxHash, yamlVersion);
                 status = "COMPLETED";
@@ -99,10 +99,10 @@ public class OntologyReindexer {
                 try {
                     String srcId = extractor.idOf(entity);
                     String entityType = extractor.metaOf(clazz).map(m -> m.classId).orElse(clazz.getSimpleName());
-                    
+
                     // Extract DataDomain from entity
                     DataDomain dataDomain = extractDataDomain(entity, realmId);
-                    
+
                     // If force mode and first time seeing this DataDomain, purge derived edges
                     if (force && processedDataDomains.add(dataDomain)) {
                         try {
@@ -112,7 +112,7 @@ public class OntologyReindexer {
                             Log.warn("Failed to purge derived edges for DataDomain " + dataDomain.getTenantId() + ": " + t.getMessage());
                         }
                     }
-                    
+
                     List<Reasoner.Edge> explicit = extractor.fromEntity(realmId, entity);
                     materializer.apply(dataDomain, srcId, entityType, explicit);
                     processed++;
@@ -126,7 +126,7 @@ public class OntologyReindexer {
             Log.infof("OntologyReindexer: completed %s", clazz.getSimpleName());
         }
     }
-    
+
     /**
      * Extracts DataDomain from an entity, with fallback for backward compatibility.
      */

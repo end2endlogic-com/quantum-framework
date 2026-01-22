@@ -21,7 +21,10 @@
       "Bash(git push:*)",
       "Bash(gh pr view:*)",
       "Bash(git branch:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(mvn clean compile:*)",
+      "Bash(javac:*)",
+      "Bash(gh pr create --title \"Enable automatic ComputedEdgeProvider discovery and validation\" --body \"$\\(cat <<''EOF''\n## Summary\n- Add `ComputedEdgeProviderAutoDiscovery` to automatically discover and register `@ApplicationScoped` `ComputedEdgeProvider` beans at application startup\n- Add validation that warns if a provider''s source type is not annotated with `@OntologyClass`\n- Enhance `OntologyWriteHook` to log when providers contribute edges\n\n## Changes\n1. **ComputedEdgeProviderAutoDiscovery.java** \\(new file\\)\n   - Runs at startup via `@Startup` annotation\n   - Iterates all `OntologyEdgeProvider` beans discovered by CDI\n   - Registers `ComputedEdgeProvider` instances with `ComputedEdgeRegistry`\n   - Validates source types have `@OntologyClass` annotation, logs clear warnings if not\n\n2. **OntologyWriteHook.java**\n   - Added logging when providers contribute edges\n   - Clarified that `@OntologyClass` annotation is required for ontology participation\n\n## Why\nPreviously, `ComputedEdgeProvider` implementations were not being invoked when entities were saved because:\n1. The `ComputedEdgeRegistry` required manual `register\\(\\)` calls - there was no automatic discovery\n2. There was no validation to catch misconfigured providers\n\nNow:\n- Providers are automatically discovered and registered\n- Clear warnings are shown at startup if a provider''s source type lacks `@OntologyClass`\n\n## Test plan\n- [ ] Verify `ComputedEdgeProvider` implementations are automatically discovered at startup\n- [ ] Verify warning is logged for providers with non-`@OntologyClass` source types\n- [ ] Verify computed edges are created when annotated entities are saved\n- [ ] Run existing integration tests\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\nEOF\n\\)\" --base main)"
     ]
   }
 }

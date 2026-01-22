@@ -3,6 +3,7 @@ package com.e2eq.ontology.mongo;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.PostPersistHook;
+import com.e2eq.ontology.annotations.OntologyClass;
 import com.e2eq.ontology.core.DataDomainInfo;
 import com.e2eq.ontology.core.OntologyRegistry;
 import com.e2eq.ontology.core.Reasoner;
@@ -94,7 +95,7 @@ public class OntologyWriteHook implements PostPersistHook {
         // Then handle ORPHAN_REMOVE cascade based on prior vs new state and repo contents
         try { cascadeExecutor.onAfterPersist(realmId, dataDomain, srcId, entity, priorExplicit, explicit); } catch (Throwable ignored) {}
     }
-    
+
     /**
      * Extracts DataDomain from an entity. If the entity doesn't have a DataDomain,
      * creates a fallback one using the realmId as tenantId with default values.

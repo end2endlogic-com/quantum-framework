@@ -103,8 +103,7 @@ public abstract class ComputedEdgeProvider<S> implements OntologyEdgeProvider {
      * Resolves the ontology class ID for a given class.
      *
      * <p>Checks for {@link OntologyClass} annotation and returns its id if present
-     * and non-empty, otherwise returns the simple class name. This matches the
-     * behavior of {@link AnnotationOntologyLoader#classIdOf}.</p>
+     * and non-empty, otherwise returns the simple class name.</p>
      *
      * @param clazz the class to resolve
      * @return ontology class ID or simple class name

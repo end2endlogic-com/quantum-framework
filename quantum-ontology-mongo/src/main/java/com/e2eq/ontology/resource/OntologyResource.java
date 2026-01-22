@@ -1,5 +1,7 @@
 package com.e2eq.ontology.resource;
 
+import com.e2eq.framework.annotations.FunctionalAction;
+import com.e2eq.framework.annotations.FunctionalMapping;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
@@ -9,6 +11,7 @@ import com.e2eq.ontology.core.OntologyRegistry.PropertyChainDef;
 import com.e2eq.ontology.core.OntologyRegistry.PropertyDef;
 import com.e2eq.ontology.core.OntologyRegistry.TBox;
 import com.e2eq.ontology.model.OntologyEdge;
+import com.e2eq.framework.annotations.FunctionalMapping;
 import com.e2eq.ontology.repo.OntologyEdgeRepo;
 import com.e2eq.ontology.runtime.TenantOntologyRegistryProvider;
 import jakarta.annotation.security.RolesAllowed;
@@ -38,6 +41,7 @@ import java.util.stream.Collectors;
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 @RolesAllowed({"user", "admin", "system"})
+@FunctionalMapping(area="ONTOLOGY", domain="INDEXES")
 public class OntologyResource {
 
     @Inject
@@ -75,6 +79,7 @@ public class OntologyResource {
     @Path("classes")
     @Operation(summary = "List classes (best-effort)")
     @SecurityRequirement(name = "bearerAuth")
+    @FunctionalAction("LIST_CLASSES")
     public Response listClasses(@QueryParam("contains") String contains) {
         Set<String> classNames = new HashSet<>();
         registry.properties().values().forEach(p -> {
@@ -93,6 +98,7 @@ public class OntologyResource {
     @Path("properties")
     @Operation(summary = "List properties")
     @SecurityRequirement(name = "bearerAuth")
+    @FunctionalAction("LIST_PROPERTIES")
     public Response listProperties() {
         return Response.ok(registry.properties().values().stream()
                 .sorted(Comparator.comparing(PropertyDef::name))
@@ -103,6 +109,7 @@ public class OntologyResource {
     @Path("properties/{name}")
     @Operation(summary = "Get a property by name")
     @SecurityRequirement(name = "bearerAuth")
+    @FunctionalAction("GET_PROPERTIES")
     public Response getProperty(@PathParam("name") String name) {
         return registry.propertyOf(name)
                 .map(v -> Response.ok(v).build())
@@ -113,6 +120,7 @@ public class OntologyResource {
     @Path("propertyChains")
     @Operation(summary = "List property chains")
     @SecurityRequirement(name = "bearerAuth")
+    @FunctionalAction("LIST_PROPERTY_CHAINS")
     public Response listPropertyChains() {
         return Response.ok(registry.propertyChains()).build();
     }
@@ -123,6 +131,7 @@ public class OntologyResource {
     @Consumes(MediaType.WILDCARD)
     @Operation(summary = "Trigger full ontology reindex")
     @SecurityRequirement(name = "bearerAuth")
+    @FunctionalAction("RE-INDEX")
     public Response triggerReindex(@QueryParam("realm") @DefaultValue("default") String realm,
                                    @QueryParam("force") @DefaultValue("false") boolean force) {
         try {
@@ -158,7 +167,7 @@ public class OntologyResource {
             return Response.serverError().entity(Map.of("error", e.getMessage())).build();
         }
     }
-    
+
     @GET
     @Path("hash")
     @Operation(summary = "Get current TBox hash")
@@ -225,7 +234,7 @@ public class OntologyResource {
             return Response.serverError().entity(Map.of("error", e.getMessage())).build();
         }
     }
-    
+
     @GET
     @Path("properties/{name}/superProperties")
     @Operation(summary = "Get super-properties of a property")
@@ -234,7 +243,7 @@ public class OntologyResource {
         Set<String> supers = registry.superPropertiesOf(name);
         return Response.ok(Map.of("property", name, "superProperties", supers)).build();
     }
-    
+
     @GET
     @Path("properties/{name}/subProperties")
     @Operation(summary = "Get sub-properties of a property")
@@ -243,7 +252,7 @@ public class OntologyResource {
         Set<String> subs = registry.subPropertiesOf(name);
         return Response.ok(Map.of("property", name, "subProperties", subs)).build();
     }
-    
+
     @GET
     @Path("properties/{name}/inverse")
     @Operation(summary = "Get inverse property")
@@ -252,7 +261,7 @@ public class OntologyResource {
         Optional<String> inv = registry.inverseOf(name);
         return Response.ok(Map.of("property", name, "inverse", inv.orElse(null))).build();
     }
-    
+
     @GET
     @Path("classes/{name}/ancestors")
     @Operation(summary = "Get ancestor classes")
@@ -261,7 +270,7 @@ public class OntologyResource {
         Set<String> ancestors = registry.ancestorsOf(name);
         return Response.ok(Map.of("class", name, "ancestors", ancestors)).build();
     }
-    
+
     @GET
     @Path("classes/{name}/descendants")
     @Operation(summary = "Get descendant classes")
@@ -314,17 +323,17 @@ public class OntologyResource {
         if (type == null || type.isBlank()) {
             throw new WebApplicationException("Query param 'type' is required", Response.Status.BAD_REQUEST);
         }
-        
+
         // Get DataDomain from SecurityContext (set by SecurityFilter)
         DataDomain dataDomain = SecurityContext.getPrincipalContext()
                 .map(PrincipalContext::getDataDomain)
                 .orElse(null);
-        
+
         if (dataDomain == null) {
             // Fallback: try to construct from X-Realm header for backward compatibility
             String tenant = headers.getHeaderString("X-Realm");
             if (tenant == null || tenant.isBlank()) {
-                throw new WebApplicationException("No DataDomain available from security context and X-Realm header is missing", 
+                throw new WebApplicationException("No DataDomain available from security context and X-Realm header is missing",
                     Response.Status.BAD_REQUEST);
             }
             // Create minimal DataDomain for backward compatibility
@@ -465,19 +474,19 @@ public class OntologyResource {
             List<Map<String, Object>> links = new ArrayList<>();
 
             Map<String, PropertyDef> props = reg.properties();
-            
+
             // Collect properties that are inferred/calculated:
             // 1. Properties implied by chains
             // 2. Properties explicitly marked as inferred in YAML
             Set<String> inferredProps = new HashSet<>();
-            
+
             // Chain-implied properties
             for (var chain : reg.propertyChains()) {
                 if (chain.implies() != null && !chain.implies().isBlank()) {
                     inferredProps.add(chain.implies());
                 }
             }
-            
+
             // Properties explicitly marked as inferred
             for (var p : props.values()) {
                 if (p.inferred()) {

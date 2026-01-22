@@ -1,6 +1,5 @@
 package com.e2eq.ontology.mongo;
 
-import com.e2eq.ontology.core.OntologyRegistry;
 import io.quarkus.logging.Log;
 import io.quarkus.runtime.Startup;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -16,7 +15,7 @@ import jakarta.inject.Inject;
 public class OntologyStartupInitializer {
 
     @Inject
-    OntologyRegistry registry; // injection triggers producer at startup
+    com.e2eq.ontology.runtime.TenantOntologyRegistryProvider registryProvider; // injection triggers provider at startup
 
     public OntologyStartupInitializer() {
         Log.debug("OntologyStartupInitializer constructed");
