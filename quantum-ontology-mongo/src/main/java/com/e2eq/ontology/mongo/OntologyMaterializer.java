@@ -21,14 +21,14 @@ public class OntologyMaterializer {
    protected ForwardChainingReasoner reasoner;
 
    @Inject
-   protected OntologyRegistry registry;
+   protected com.e2eq.ontology.runtime.TenantOntologyRegistryProvider registryProvider;
 
    @Inject
    protected EdgeStore edgeStore;
 
     /**
      * Apply materialization for an entity with full DataDomain scoping.
-     * 
+     *
      * @param dataDomain  full DataDomain context for edge scoping
      * @param entityId    ID of the entity
      * @param entityType  type of the entity
@@ -41,8 +41,10 @@ public class OntologyMaterializer {
         // Convert to DataDomainInfo for EdgeStore operations
         DataDomainInfo dataDomainInfo = DataDomainConverter.toInfo(dataDomain);
         String tenantId = dataDomain.getTenantId(); // For logging/reasoner compatibility
-        
+
         var snap = new Reasoner.EntitySnapshot(tenantId, entityId, entityType, explicitEdges);
+        // Resolve registry for the given DataDomain
+        OntologyRegistry registry = registryProvider.getRegistryForTenant(dataDomain);
         // [DEBUG_LOG] dump registry props
         try { io.quarkus.logging.Log.infof("[DEBUG_LOG] Registry properties: %s", registry.properties().keySet()); } catch (Exception ignored) {}
         var out = reasoner.infer(snap, registry);
@@ -89,8 +91,8 @@ public class OntologyMaterializer {
         }
         // [DEBUG_LOG] summarize inferred edges
         try {
-            System.out.println("[DEBUG_LOG] OntologyMaterializer.apply inferred edges: src=" + entityId + 
-                ", dataDomain=" + dataDomain.getOrgRefName() + "/" + dataDomain.getAccountNum() + "/" + tenantId + 
+            System.out.println("[DEBUG_LOG] OntologyMaterializer.apply inferred edges: src=" + entityId +
+                ", dataDomain=" + dataDomain.getOrgRefName() + "/" + dataDomain.getAccountNum() + "/" + tenantId +
                 ", count=" + upserts.size() + ", byP=" + newByP);
         } catch (Exception ignored) {}
         if (!upserts.isEmpty()) {

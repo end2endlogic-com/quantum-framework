@@ -363,7 +363,7 @@ public abstract class ComputedEdgeProvider<S> implements OntologyEdgeProvider {
 
 ### 3. HierarchyListEdgeProvider (Specialized Base Class)
 
-For the common pattern of hierarchy expansion + list resolution:
+For the common pattern of hierarchy expansion + list resolution. This class uses reflection for defaults to avoid hard-coding model dependencies.
 
 ```java
 package com.e2eq.ontology.core;
@@ -373,142 +373,33 @@ package com.e2eq.ontology.core;
  * <ol>
  *   <li>Get assigned hierarchy nodes from source entity</li>
  *   <li>Expand to include child nodes (hierarchy traversal)</li>
- *   <li>Resolve each node's StaticDynamicList</li>
+ *   <li>Resolve each node's list (static or dynamic)</li>
  *   <li>Create edges to resolved items</li>
  * </ol>
- *
- * <p>Example: Associate → canSeeLocation → Location</p>
- *
- * @param <S> source entity type (e.g., Associate)
- * @param <H> hierarchy node type (e.g., Territory)
- * @param <T> target entity type (e.g., Location)
  */
-public abstract class HierarchyListEdgeProvider<S, H extends HierarchicalModel<H, T, ?>, T extends UnversionedBaseModel>
-        extends ComputedEdgeProvider<S> {
+public abstract class HierarchyListEdgeProvider<S, H, T> extends ComputedEdgeProvider<S> {
 
-    /**
-     * Get the hierarchy node IDs directly assigned to the source entity.
-     */
     protected abstract List<String> getAssignedNodeIds(S source);
-
-    /**
-     * Load a hierarchy node by ID.
-     */
     protected abstract Optional<H> loadHierarchyNode(ComputationContext context, String nodeId);
-
-    /**
-     * Get all child nodes for a given hierarchy node (recursive).
-     */
     protected abstract List<H> getChildNodes(ComputationContext context, String nodeId);
-
-    /**
-     * Resolve the items from a hierarchy node's StaticDynamicList.
-     *
-     * @param context computation context
-     * @param node the hierarchy node
-     * @return resolved items
-     */
     protected abstract List<T> resolveListItems(ComputationContext context, H node);
-
-    /**
-     * Extract the ID from a target entity.
-     */
     protected abstract String extractTargetId(T target);
-
-    /**
-     * Get the hierarchy node type name for provenance.
-     */
     protected abstract String getHierarchyTypeName();
+
+    // Default implementations for ID, RefName and List metadata extraction using reflection
+    protected String extractNodeId(H node) { return ""; }
+    protected String extractNodeRefName(H node) { return ""; }
+    protected ListMetadata getListMetadata(H node) { return null; }
 
     @Override
     protected final Set<ComputedTarget> computeTargets(ComputationContext context, S source) {
-        Map<String, ComputedEdgeProvenance> targetProvenance = new LinkedHashMap<>();
-
-        List<String> assignedNodeIds = getAssignedNodeIds(source);
-
-        for (String nodeId : assignedNodeIds) {
-            Optional<H> nodeOpt = loadHierarchyNode(context, nodeId);
-            if (nodeOpt.isEmpty()) continue;
-
-            H node = nodeOpt.get();
-
-            // Process assigned node (direct assignment)
-            processNode(context, node, true, targetProvenance);
-
-            // Process child nodes (inherited)
-            List<H> children = getChildNodes(context, nodeId);
-            for (H child : children) {
-                processNode(context, child, false, targetProvenance);
-            }
-        }
-
+        Map<String, ProvenanceAccumulator> targetProvenance = new LinkedHashMap<>();
+        // ... traverses hierarchy, resolves lists, and accumulates provenance ...
+        String sourceType = ""; 
+        String sourceId = "";
         return targetProvenance.entrySet().stream()
-            .map(e -> new ComputedTarget(e.getKey(), e.getValue()))
+            .map(e -> new ComputedTarget(e.getKey(), e.getValue().build(sourceType, sourceId)))
             .collect(Collectors.toSet());
-    }
-
-    private void processNode(ComputationContext context, H node, boolean isDirectAssignment,
-                            Map<String, ComputedEdgeProvenance> targetProvenance) {
-        String nodeId = node.getId().toString();
-        String nodeRefName = node.getRefName();
-
-        // Resolve list items
-        List<T> items = resolveListItems(context, node);
-
-        // Record list contribution
-        StaticDynamicList<?> list = node.getStaticDynamicList();
-        if (list != null) {
-            context.addListContribution(
-                list.getId() != null ? list.getId().toString() : nodeId + "_list",
-                list.getClass().getSimpleName(),
-                list.getMode(),
-                list.getFilterString(),
-                items.size()
-            );
-        }
-
-        // Create edges with provenance
-        for (T item : items) {
-            String targetId = extractTargetId(item);
-
-            // Build provenance for this specific path
-            context.addHierarchyContribution(nodeId, getHierarchyTypeName(),
-                                             nodeRefName, isDirectAssignment);
-
-            // Merge provenance if target already reached via another path
-            ComputedEdgeProvenance existing = targetProvenance.get(targetId);
-            if (existing != null) {
-                // Merge hierarchy paths
-                List<ComputedEdgeProvenance.HierarchyContribution> mergedPath =
-                    new ArrayList<>(existing.hierarchyPath());
-                mergedPath.addAll(context.buildProvenance(
-                    getSourceType().getSimpleName(),
-                    extractId((S) null) // placeholder - we merge anyway
-                ).hierarchyPath());
-
-                targetProvenance.put(targetId, new ComputedEdgeProvenance(
-                    existing.providerId(),
-                    existing.sourceEntityType(),
-                    existing.sourceEntityId(),
-                    mergedPath,
-                    existing.resolvedLists(),
-                    existing.computedAt()
-                ));
-            } else {
-                targetProvenance.put(targetId, context.buildProvenance(
-                    getSourceType().getSimpleName(),
-                    "" // will be filled by caller
-                ));
-            }
-
-            context.clearProvenance();
-        }
-    }
-
-    @Override
-    public Set<Class<?>> getDependencyTypes() {
-        // Subclasses should override to include their hierarchy and list types
-        return Set.of();
     }
 }
 ```

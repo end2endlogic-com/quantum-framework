@@ -3,12 +3,17 @@ package com.e2eq.ontology.mongo.it;
 import com.e2eq.ontology.core.OntologyRegistry;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Produces;
+import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
+import com.e2eq.ontology.runtime.TenantOntologyRegistryProvider;
 
 import java.util.*;
 
 @ApplicationScoped
 public class TestOntologyRegistryProducer {
+
+    @Inject
+    TenantOntologyRegistryProvider registryProvider;
 
     @Produces @Singleton
     public OntologyRegistry ontologyRegistry() {
