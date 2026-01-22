@@ -31,43 +31,59 @@ public class OntologyWriteHook implements PostPersistHook {
 
     @Override
     public void afterPersist(String realmId, Object entity) {
+        Class<?> entityClass = entity.getClass();
+
         try {
-            Class<?> c = entity.getClass();
-            var oc = c.getAnnotation(com.e2eq.ontology.annotations.OntologyClass.class);
-            long propCount = java.util.Arrays.stream(c.getDeclaredFields()).filter(f -> f.getAnnotation(com.e2eq.ontology.annotations.OntologyProperty.class) != null).count();
-            io.quarkus.logging.Log.infof("[DEBUG_LOG] afterPersist on %s, has @OntologyClass=%s, annotatedProps=%d", c.getName(), (oc!=null), propCount);
+            var oc = entityClass.getAnnotation(OntologyClass.class);
+            long propCount = java.util.Arrays.stream(entityClass.getDeclaredFields())
+                .filter(f -> f.getAnnotation(com.e2eq.ontology.annotations.OntologyProperty.class) != null)
+                .count();
+            io.quarkus.logging.Log.infof("[DEBUG_LOG] afterPersist on %s, has @OntologyClass=%s, annotatedProps=%d",
+                entityClass.getName(), (oc != null), propCount);
         } catch (Exception ignored) {}
-        var metaOpt = extractor.metaOf(entity.getClass());
-        if (metaOpt.isEmpty()) return; // not an ontology participant
+
+        // Entity must have @OntologyClass annotation to participate in ontology
+        var metaOpt = extractor.metaOf(entityClass);
+        if (metaOpt.isEmpty()) {
+            return; // Not an ontology participant
+        }
         String entityType = metaOpt.get().classId;
-        
+
         // Extract DataDomain from entity - required for proper scoping
         DataDomain dataDomain = extractDataDomain(entity, realmId);
         if (dataDomain == null) {
-            io.quarkus.logging.Log.warnf("Cannot materialize ontology edges: entity %s has no DataDomain", entity.getClass().getName());
+            io.quarkus.logging.Log.warnf("Cannot materialize ontology edges: entity %s has no DataDomain", entityClass.getName());
             return;
         }
-        
+
+        // Collect edges from annotations
         List<Reasoner.Edge> explicit = new ArrayList<>(extractor.fromEntity(realmId, entity));
-        // Extend with SPI-provided edges, now passing DataDomainInfo
+
+        // Extend with SPI-provided edges (includes ComputedEdgeProviders)
         DataDomainInfo dataDomainInfo = DataDomainConverter.toInfo(dataDomain);
         try {
             for (OntologyEdgeProvider p : providers) {
-                if (p.supports(entity.getClass())) {
+                if (p.supports(entityClass)) {
                     var extra = p.edges(realmId, dataDomainInfo, entity);
-                    if (extra != null && !extra.isEmpty()) explicit.addAll(extra);
+                    if (extra != null && !extra.isEmpty()) {
+                        io.quarkus.logging.Log.infof("[DEBUG_LOG] Provider %s contributed %d edges for %s",
+                            p.getClass().getSimpleName(), extra.size(), entityClass.getSimpleName());
+                        explicit.addAll(extra);
+                    }
                 }
             }
         } catch (Throwable t) {
             io.quarkus.logging.Log.warn("[DEBUG_LOG] OntologyWriteHook: provider extension failed", t);
         }
+
         try {
-            io.quarkus.logging.Log.infof("[DEBUG_LOG] OntologyWriteHook.afterPersist entityType=%s, realm=%s, dataDomain=%s/%s/%s, explicitEdges=%d", 
+            io.quarkus.logging.Log.infof("[DEBUG_LOG] OntologyWriteHook.afterPersist entityType=%s, realm=%s, dataDomain=%s/%s/%s, explicitEdges=%d",
                 entityType, realmId, dataDomain.getOrgRefName(), dataDomain.getAccountNum(), dataDomain.getTenantId(), explicit.size());
             for (Reasoner.Edge e : explicit) {
                 io.quarkus.logging.Log.infof("[DEBUG_LOG]   explicit: (%s)-['%s']->(%s)", e.srcId(), e.p(), e.dstId());
             }
         } catch (Exception ignored) {}
+
         String srcId = extractor.idOf(entity);
         // Capture prior edges for this source to support cascade diffs - now scoped by DataDomain
         java.util.List<OntologyEdge> priorAll = edgeRepo.findBySrc(dataDomain, srcId);
