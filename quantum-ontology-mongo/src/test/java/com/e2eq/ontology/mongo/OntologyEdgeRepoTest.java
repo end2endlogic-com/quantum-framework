@@ -28,7 +28,7 @@ public class OntologyEdgeRepoTest {
 
     @BeforeEach
     void clean() {
-        edgeRepo.deleteAll();
+        edgeRepo.deleteAll("types-test");
         // Create test DataDomains for isolation testing
         testDataDomain = new DataDomain();
         testDataDomain.setOrgRefName("test-org-a");

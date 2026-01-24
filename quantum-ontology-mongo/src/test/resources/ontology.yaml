@@ -6,6 +6,11 @@ classes:
   - id: Shipment
   - id: Address
   - id: Region
+  # Chain inference test classes
+  - id: ChainClassA
+  - id: ChainClassB
+  - id: ChainClassC
+  - id: ChainClassD
 
 properties:
   - id: placedBy
@@ -39,6 +44,28 @@ properties:
   - id: orderShipsToRegion
     domain: Order
     range: Region
+  # Chain inference test properties
+  - id: refersToB
+    domain: ChainClassA
+    range: ChainClassB
+    functional: true
+  - id: refersToC
+    domain: ChainClassB
+    range: ChainClassC
+    functional: true
+  - id: refersToD
+    domain: ChainClassB
+    range: ChainClassD
+    functional: true
+  # Implied properties from chains
+  - id: impliedRefersToC
+    domain: ChainClassA
+    range: ChainClassC
+    inferred: true
+  - id: impliedRefersToD
+    domain: ChainClassA
+    range: ChainClassD
+    inferred: true
 
 chains:
   - chain: [placedBy, memberOf]
@@ -47,5 +74,12 @@ chains:
     implies: orderShipsTo
   - chain: [orderShipsTo, locatedIn]
     implies: orderShipsToRegion
-  - chain: [placedInOrg, ancestorOf]
-    implies: placedInOrg
+  # Note: Removed [placedInOrg, ancestorOf] => placedInOrg chain because
+  # ancestorOf is transitive and chains cannot contain transitive properties (non-regular).
+  # Transitive properties get their closure computed separately.
+  # Chain inference test: A->B->C implies A->C
+  - chain: [refersToB, refersToC]
+    implies: impliedRefersToC
+  # Chain inference test: A->B->D implies A->D
+  - chain: [refersToB, refersToD]
+    implies: impliedRefersToD

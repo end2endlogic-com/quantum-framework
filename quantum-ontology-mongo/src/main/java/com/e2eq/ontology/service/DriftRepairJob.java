@@ -5,11 +5,11 @@ import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.ontology.annotations.OntologyClass;
 import com.e2eq.ontology.core.DataDomainInfo;
-import com.e2eq.ontology.core.EdgeStore;
 import com.e2eq.ontology.core.Reasoner;
 import com.e2eq.ontology.mongo.AnnotatedEdgeExtractor;
 import com.e2eq.ontology.mongo.DataDomainConverter;
 import com.e2eq.ontology.mongo.OntologyMaterializer;
+import com.e2eq.ontology.repo.OntologyEdgeRepo;
 import com.e2eq.ontology.spi.OntologyEdgeProvider;
 import dev.morphia.Datastore;
 import dev.morphia.query.FindOptions;
@@ -38,7 +38,7 @@ public class DriftRepairJob {
     @Inject
     OntologyMaterializer materializer;
     @Inject
-    EdgeStore edgeStore;
+    OntologyEdgeRepo edgeRepo;
     @Inject
     jakarta.enterprise.inject.Instance<OntologyEdgeProvider> providers;
 
@@ -125,7 +125,7 @@ public class DriftRepairJob {
                                        dataDomain.getTenantId() + "/" + dataDomain.getDataSegment();
                     if (prunedDomains.add(domainKey)) {
                         try {
-                            if (!req.dryRun) edgeStore.pruneDerivedWithoutSupport(dataDomainInfo);
+                            if (!req.dryRun) edgeRepo.pruneDerivedWithoutSupport(dataDomain);
                             res.pruned = true;
                         } catch (Throwable t) {
                             String msg = "Prune failed for domain " + domainKey + ": " + t.getMessage();
