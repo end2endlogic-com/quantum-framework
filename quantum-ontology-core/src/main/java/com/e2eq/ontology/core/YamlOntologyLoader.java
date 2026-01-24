@@ -80,7 +80,6 @@ public final class YamlOntologyLoader {
             }
 
             boolean isInferred = Boolean.TRUE.equals(p.inferred());
-            System.out.println("YamlOntologyLoader: Property '" + p.id() + "' inferred=" + isInferred + " (raw: " + p.inferred() + ")");
             PropertyDef def = new PropertyDef(
                     p.id(),
                     Optional.ofNullable(p.domain()),

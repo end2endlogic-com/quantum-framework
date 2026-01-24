@@ -138,12 +138,21 @@ public class OntologyResource {
             // Delegate to service
             com.e2eq.ontology.service.OntologyReindexer reindexer = io.quarkus.arc.Arc.container().instance(com.e2eq.ontology.service.OntologyReindexer.class).get();
             reindexer.runAsync(realm, force);
-            Map<String, Object> body = Map.of(
-                    "accepted", true,
-                    "running", reindexer.isRunning(),
-                    "status", reindexer.status()
-            );
-            return Response.accepted(body).build();
+            return Response.accepted(reindexer.getResult()).build();
+        } catch (Exception e) {
+            return Response.serverError().entity(Map.of("error", e.getMessage())).build();
+        }
+    }
+
+    @GET
+    @Path("reindex/status")
+    @RolesAllowed({"admin", "system"})
+    @Operation(summary = "Get the status and results of the last/current reindex")
+    @SecurityRequirement(name = "bearerAuth")
+    public Response getReindexStatus() {
+        try {
+            com.e2eq.ontology.service.OntologyReindexer reindexer = io.quarkus.arc.Arc.container().instance(com.e2eq.ontology.service.OntologyReindexer.class).get();
+            return Response.ok(reindexer.getResult()).build();
         } catch (Exception e) {
             return Response.serverError().entity(Map.of("error", e.getMessage())).build();
         }
@@ -305,6 +314,347 @@ public class OntologyResource {
         Set<String> classNames = new HashSet<>();
         registry.properties().values().forEach(p -> { p.domain().ifPresent(classNames::add); p.range().ifPresent(classNames::add); });
         return Response.ok(Map.of("classes", classNames.size(), "properties", propertyCount, "chains", registry.propertyChains().size())).build();
+    }
+
+    // ========================================================================
+    // ABox Edge APIs - Query edges stored in the system
+    // ========================================================================
+
+    /**
+     * DTO for edge representation in API responses.
+     */
+    public record EdgeDTO(
+            String src,
+            String srcType,
+            String predicate,
+            String dst,
+            String dstType,
+            boolean inferred,
+            boolean derived,
+            Map<String, Object> provenance,
+            String origin // "explicit", "inferred", "computed"
+    ) {
+        public static EdgeDTO from(OntologyEdge e) {
+            String origin;
+            if (e.isDerived() && !e.isInferred()) {
+                origin = "computed";
+            } else if (e.isInferred()) {
+                origin = "inferred";
+            } else {
+                origin = "explicit";
+            }
+            return new EdgeDTO(
+                    e.getSrc(), e.getSrcType(), e.getP(), e.getDst(), e.getDstType(),
+                    e.isInferred(), e.isDerived(), e.getProv(), origin
+            );
+        }
+    }
+
+    @GET
+    @Path("edges")
+    @Operation(summary = "List all edges in the system, optionally filtered by predicate, source type, or destination type")
+    @SecurityRequirement(name = "bearerAuth")
+    @FunctionalAction("LIST_EDGES")
+    public Response listEdges(@Context HttpHeaders headers,
+                              @QueryParam("predicate") String predicate,
+                              @QueryParam("srcType") String srcType,
+                              @QueryParam("dstType") String dstType,
+                              @QueryParam("inferred") Boolean inferred,
+                              @QueryParam("derived") Boolean derived,
+                              @QueryParam("limit") @DefaultValue("1000") int limit) {
+        DataDomain dataDomain = getDataDomainFromContext(headers);
+        if (dataDomain == null) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", "No DataDomain available from security context"))
+                    .build();
+        }
+
+        // Query edges with optional predicate filter
+        List<OntologyEdge> edges;
+        if (predicate != null && !predicate.isBlank()) {
+            edges = edgeRepo.findByProperty(dataDomain, predicate);
+        } else {
+            // For no predicate filter, we need to query all edges (potentially expensive)
+            // Return error suggesting to use a filter
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", "Please provide at least a 'predicate' filter to query edges"))
+                    .build();
+        }
+
+        // Apply additional filters
+        List<EdgeDTO> result = edges.stream()
+                .filter(e -> srcType == null || srcType.equals(e.getSrcType()))
+                .filter(e -> dstType == null || dstType.equals(e.getDstType()))
+                .filter(e -> inferred == null || inferred.equals(e.isInferred()))
+                .filter(e -> derived == null || derived.equals(e.isDerived()))
+                .limit(limit)
+                .map(EdgeDTO::from)
+                .toList();
+
+        return Response.ok(Map.of(
+                "edges", result,
+                "count", result.size(),
+                "truncated", result.size() == limit
+        )).build();
+    }
+
+    @GET
+    @Path("instance/{type}/{id}/edges")
+    @Operation(summary = "Get all ontology edges for a specific class instance")
+    @SecurityRequirement(name = "bearerAuth")
+    @FunctionalAction("GET_INSTANCE_EDGES")
+    public Response getInstanceEdges(@Context HttpHeaders headers,
+                                     @PathParam("type") String type,
+                                     @PathParam("id") String id,
+                                     @QueryParam("direction") @DefaultValue("both") String direction,
+                                     @QueryParam("predicate") List<String> predicates) {
+        if (type == null || type.isBlank()) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", "type path parameter is required"))
+                    .build();
+        }
+        if (id == null || id.isBlank()) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", "id path parameter is required"))
+                    .build();
+        }
+
+        DataDomain dataDomain = getDataDomainFromContext(headers);
+        if (dataDomain == null) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", "No DataDomain available from security context"))
+                    .build();
+        }
+
+        String dir = direction.toLowerCase(Locale.ROOT);
+        boolean includeOutgoing = dir.equals("out") || dir.equals("both");
+        boolean includeIncoming = dir.equals("in") || dir.equals("both");
+        Set<String> predicateFilter = predicates != null && !predicates.isEmpty()
+                ? predicates.stream().filter(Objects::nonNull).map(String::trim).filter(s -> !s.isEmpty()).collect(Collectors.toSet())
+                : null;
+
+        List<EdgeDTO> outgoing = new ArrayList<>();
+        List<EdgeDTO> incoming = new ArrayList<>();
+
+        if (includeOutgoing) {
+            for (OntologyEdge e : edgeRepo.findBySrc(dataDomain, id)) {
+                if (!type.equals(e.getSrcType())) continue;
+                if (predicateFilter != null && !predicateFilter.contains(e.getP())) continue;
+                outgoing.add(EdgeDTO.from(e));
+            }
+        }
+
+        if (includeIncoming) {
+            for (OntologyEdge e : edgeRepo.findByDst(dataDomain, id)) {
+                if (!type.equals(e.getDstType())) continue;
+                if (predicateFilter != null && !predicateFilter.contains(e.getP())) continue;
+                incoming.add(EdgeDTO.from(e));
+            }
+        }
+
+        // Group edges by origin type for summary
+        Map<String, Long> outgoingByOrigin = outgoing.stream()
+                .collect(Collectors.groupingBy(EdgeDTO::origin, Collectors.counting()));
+        Map<String, Long> incomingByOrigin = incoming.stream()
+                .collect(Collectors.groupingBy(EdgeDTO::origin, Collectors.counting()));
+
+        return Response.ok(Map.of(
+                "instanceType", type,
+                "instanceId", id,
+                "outgoing", outgoing,
+                "incoming", incoming,
+                "summary", Map.of(
+                        "totalOutgoing", outgoing.size(),
+                        "totalIncoming", incoming.size(),
+                        "outgoingByOrigin", outgoingByOrigin,
+                        "incomingByOrigin", incomingByOrigin
+                )
+        )).build();
+    }
+
+    // ========================================================================
+    // TBox Edge Definition APIs - Show what edges SHOULD exist per ontology
+    // ========================================================================
+
+    /**
+     * DTO representing an edge definition from the TBox (ontology schema).
+     */
+    public record TBoxEdgeDefinition(
+            String predicate,
+            String domain,       // Source type (class)
+            String range,        // Destination type (class)
+            boolean functional,  // At most one value?
+            boolean transitive,  // Transitive property?
+            boolean symmetric,   // Symmetric property?
+            boolean inferred,    // Marked as inferred in TBox?
+            Set<String> subPropertyOf,   // Super-properties
+            String inverseOf,    // Inverse property name
+            String impliedBy     // Chain that implies this (if any)
+    ) {}
+
+    @GET
+    @Path("tbox/edges")
+    @Operation(summary = "Get all edge definitions from the TBox (what edges SHOULD exist based on ontology)")
+    @SecurityRequirement(name = "bearerAuth")
+    @FunctionalAction("GET_TBOX_EDGES")
+    public Response getTBoxEdges(@QueryParam("domain") String domain,
+                                 @QueryParam("range") String range,
+                                 @QueryParam("includeImplied") @DefaultValue("true") boolean includeImplied) {
+        List<TBoxEdgeDefinition> definitions = new ArrayList<>();
+
+        // Collect properties implied by chains
+        Map<String, List<String>> impliedByChains = new HashMap<>();
+        for (var chain : registry.propertyChains()) {
+            if (chain.implies() != null && !chain.implies().isBlank()) {
+                impliedByChains.computeIfAbsent(chain.implies(), k -> new ArrayList<>())
+                        .add(String.join(" → ", chain.chain()));
+            }
+        }
+
+        // Build definitions from properties
+        for (var prop : registry.properties().values()) {
+            // Filter by domain/range if specified
+            if (domain != null && !domain.isBlank() && prop.domain().map(d -> !d.equals(domain)).orElse(true)) {
+                continue;
+            }
+            if (range != null && !range.isBlank() && prop.range().map(r -> !r.equals(range)).orElse(true)) {
+                continue;
+            }
+
+            // Skip inferred-only properties if includeImplied is false
+            boolean isImplied = impliedByChains.containsKey(prop.name()) || prop.inferred();
+            if (!includeImplied && isImplied) {
+                continue;
+            }
+
+            List<String> chainImpliers = impliedByChains.get(prop.name());
+            String impliedBy = chainImpliers != null ? String.join("; ", chainImpliers) : null;
+
+            definitions.add(new TBoxEdgeDefinition(
+                    prop.name(),
+                    prop.domain().orElse(null),
+                    prop.range().orElse(null),
+                    prop.functional(),
+                    prop.transitive(),
+                    prop.symmetric(),
+                    prop.inferred() || impliedByChains.containsKey(prop.name()),
+                    prop.subPropertyOf(),
+                    prop.inverseOf().orElse(null),
+                    impliedBy
+            ));
+        }
+
+        // Sort by predicate name
+        definitions.sort(Comparator.comparing(TBoxEdgeDefinition::predicate));
+
+        // Summary statistics
+        long explicitCount = definitions.stream().filter(d -> !d.inferred()).count();
+        long inferredCount = definitions.stream().filter(TBoxEdgeDefinition::inferred).count();
+        long transitiveCount = definitions.stream().filter(TBoxEdgeDefinition::transitive).count();
+        long functionalCount = definitions.stream().filter(TBoxEdgeDefinition::functional).count();
+        long symmetricCount = definitions.stream().filter(TBoxEdgeDefinition::symmetric).count();
+
+        return Response.ok(Map.of(
+                "definitions", definitions,
+                "summary", Map.of(
+                        "total", definitions.size(),
+                        "explicit", explicitCount,
+                        "inferred", inferredCount,
+                        "transitive", transitiveCount,
+                        "functional", functionalCount,
+                        "symmetric", symmetricCount
+                ),
+                "tboxHash", registry.getTBoxHash()
+        )).build();
+    }
+
+    @GET
+    @Path("tbox/edges/{predicate}")
+    @Operation(summary = "Get detailed edge definition for a specific predicate including provenance rules")
+    @SecurityRequirement(name = "bearerAuth")
+    @FunctionalAction("GET_TBOX_EDGE")
+    public Response getTBoxEdge(@PathParam("predicate") String predicate) {
+        var propOpt = registry.propertyOf(predicate);
+        if (propOpt.isEmpty()) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity(Map.of("error", "Property not found: " + predicate))
+                    .build();
+        }
+
+        var prop = propOpt.get();
+
+        // Find chains that imply this property
+        List<Map<String, Object>> implyingChains = new ArrayList<>();
+        for (var chain : registry.propertyChains()) {
+            if (predicate.equals(chain.implies())) {
+                implyingChains.add(Map.of(
+                        "chain", chain.chain(),
+                        "description", String.join(" → ", chain.chain()) + " ⇒ " + predicate
+                ));
+            }
+        }
+
+        // Find chains that use this property
+        List<Map<String, Object>> chainsUsing = new ArrayList<>();
+        for (var chain : registry.propertyChains()) {
+            if (chain.chain().contains(predicate)) {
+                chainsUsing.add(Map.of(
+                        "chain", chain.chain(),
+                        "implies", chain.implies(),
+                        "description", String.join(" → ", chain.chain()) + " ⇒ " + chain.implies()
+                ));
+            }
+        }
+
+        // Get hierarchy information
+        Set<String> superProps = registry.superPropertiesOf(predicate);
+        Set<String> subProps = registry.subPropertiesOf(predicate);
+        Optional<String> inverse = registry.inverseOf(predicate);
+
+        return Response.ok(Map.of(
+                "predicate", predicate,
+                "domain", prop.domain().orElse(null),
+                "range", prop.range().orElse(null),
+                "characteristics", Map.of(
+                        "functional", prop.functional(),
+                        "transitive", prop.transitive(),
+                        "symmetric", prop.symmetric(),
+                        "inferred", prop.inferred()
+                ),
+                "hierarchy", Map.of(
+                        "superProperties", superProps,
+                        "subProperties", subProps,
+                        "inverseOf", inverse.orElse(null)
+                ),
+                "inference", Map.of(
+                        "impliedByChains", implyingChains,
+                        "usedInChains", chainsUsing,
+                        "willCreateInferredEdges", !implyingChains.isEmpty() || prop.transitive() || inverse.isPresent() || prop.symmetric()
+                )
+        )).build();
+    }
+
+    /**
+     * Helper method to extract DataDomain from security context or headers.
+     */
+    private DataDomain getDataDomainFromContext(HttpHeaders headers) {
+        DataDomain dataDomain = SecurityContext.getPrincipalContext()
+                .map(PrincipalContext::getDataDomain)
+                .orElse(null);
+
+        if (dataDomain == null) {
+            // Fallback: try to construct from X-Realm header for backward compatibility
+            String tenant = headers.getHeaderString("X-Realm");
+            if (tenant != null && !tenant.isBlank()) {
+                dataDomain = new DataDomain();
+                dataDomain.setOrgRefName("ontology");
+                dataDomain.setAccountNum("0000000000");
+                dataDomain.setTenantId(tenant);
+                dataDomain.setOwnerId("system");
+                dataDomain.setDataSegment(0);
+            }
+        }
+        return dataDomain;
     }
 
     @GET

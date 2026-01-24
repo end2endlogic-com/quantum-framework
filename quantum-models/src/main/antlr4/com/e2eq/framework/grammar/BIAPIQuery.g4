@@ -3,7 +3,7 @@ grammar BIAPIQuery;
 query: (exprGroup | compoundExpr) (exprOp (exprGroup | compoundExpr))*;
 exprGroup: lp=LPAREN (exprGroup | compoundExpr) (exprOp (exprGroup | compoundExpr))* rp=RPAREN;
 compoundExpr: allowedExpr (exprOp allowedExpr)*;
-allowedExpr:   inExpr |  basicExpr |  nullExpr | existsExpr | booleanExpr | notExpr | regexExpr | elemMatchExpr | hasEdgeExpr | expandExpr;
+allowedExpr:   inExpr |  basicExpr |  nullExpr | existsExpr | booleanExpr | notExpr | regexExpr | elemMatchExpr | hasEdgeExpr | hasIncomingEdgeExpr | expandExpr;
 exprOp: op=(AND | OR);
 existsExpr: field=STRING op=EXISTS;
 booleanExpr: field=STRING op=(EQ | NEQ) value=(TRUE | FALSE);
@@ -36,8 +36,12 @@ nullExpr: field=STRING op=(EQ | NEQ) value=NULL;
 
 elemMatchExpr: field=STRING op=EQ lp=LBRCE nested=query rp=RBRCE;
 
-// Ontology function
+// Ontology functions
+// hasEdge(predicate, dst) - find entities that have edges TO the given destination
 hasEdgeExpr: HASEDGE LPAREN predicate=(STRING|QUOTED_STRING|VARIABLE) COMMA dst=(STRING|QUOTED_STRING|VARIABLE|OID|REFERENCE) RPAREN;
+// hasIncomingEdge(predicate, src) - find entities that the given source has edges TO (inverse direction)
+// Example: hasIncomingEdge(canSeeLocation, associateId) finds locations the associate can see
+hasIncomingEdgeExpr: HASINCOMGINEDGE LPAREN predicate=(STRING|QUOTED_STRING|VARIABLE) COMMA src=(STRING|QUOTED_STRING|VARIABLE|OID|REFERENCE) RPAREN;
 
 // Expansion directive (parsed but evaluation is handled elsewhere)
 // Support simple dotted paths and optional array wildcards [*] between segments.
@@ -45,6 +49,7 @@ hasEdgeExpr: HASEDGE LPAREN predicate=(STRING|QUOTED_STRING|VARIABLE) COMMA dst=
 expandExpr: EXPAND LPAREN head=(STRING|VARIABLE) (LBRKT WILDCARD RBRKT)? ((seg=(STRING|VARIABLE)) (LBRKT WILDCARD RBRKT)? )* RPAREN;
 
 HASEDGE: 'hasEdge';
+HASINCOMGINEDGE: 'hasIncomingEdge';
 EXPAND: 'expand';
 
 // Operators

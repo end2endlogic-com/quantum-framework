@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * A transport-neutral representation of an ontology edge used by the EdgeStore abstraction.
+ * A transport-neutral representation of an ontology edge used for bulk operations and change tracking.
  * Contains DataDomainInfo scoping to ensure proper isolation across organizations, accounts,
  * tenants, and data segments.
  */
@@ -26,6 +26,8 @@ public class EdgeRecord {
 
     /**
      * Constructor for explicit or inferred edges with DataDomainInfo scoping.
+     * Note: inferred edges (from reasoner chain inference) are NOT derived;
+     * derived edges come from ComputedEdgeProvider.
      */
     public EdgeRecord(DataDomainInfo dataDomainInfo, String srcType, String src, String p, String dstType, String dst, boolean inferred, Map<String, Object> prov, Date ts) {
         this.dataDomainInfo = dataDomainInfo;
@@ -35,7 +37,7 @@ public class EdgeRecord {
         this.dstType = dstType;
         this.dst = dst;
         this.inferred = inferred;
-        this.derived = inferred; // keep in sync by default for backward compatibility
+        this.derived = false; // inferred edges are NOT derived; derived is for ComputedEdgeProvider
         this.prov = prov;
         this.ts = ts;
     }

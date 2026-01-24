@@ -833,7 +833,161 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         if (ids == null || ids.isEmpty()) {
             filterStack.push(Filters.eq("_id", "__none__"));
         } else {
-            filterStack.push(Filters.in("_id", ids));
+            // Convert String IDs to ObjectIds for proper matching against _id field
+            List<Object> objectIds = new ArrayList<>();
+            for (String id : ids) {
+                try {
+                    objectIds.add(new ObjectId(id));
+                } catch (IllegalArgumentException e) {
+                    // If not a valid ObjectId, use as-is (might be refName-based key)
+                    objectIds.add(id);
+                }
+            }
+            filterStack.push(Filters.in("_id", objectIds));
+        }
+    }
+
+    // Ontology function: hasIncomingEdge(predicate, src)
+    // This finds entities that the given source has edges TO (inverse direction from hasEdge).
+    // Example: hasIncomingEdge(canSeeLocation, associateId) finds locations the associate can see.
+    // Edge direction: src --predicate--> dst, this function queries by src to find dst entities.
+    @Override
+    public void enterHasIncomingEdgeExpr(BIAPIQueryParser.HasIncomingEdgeExprContext ctx) {
+        String predicate = ctx.predicate.getText();
+        String src = ctx.src.getText();
+        if (sub != null) {
+            predicate = sub.replace(predicate);
+            src = sub.replace(src);
+        }
+        String tenantId = null;
+        if (variableMap != null) {
+            tenantId = variableMap.get("pTenantId");
+            if (tenantId == null) tenantId = variableMap.get("tenantId");
+        }
+
+        // Try to canonicalize predicate using OntologyAliasResolver if available via CDI
+        try {
+            var cdi = jakarta.enterprise.inject.spi.CDI.current();
+            if (cdi != null) {
+                Class<?> aliasCls = Class.forName("com.e2eq.ontology.core.OntologyAliasResolver");
+                var aliasSel = cdi.select(aliasCls);
+                Object resolver = aliasSel.isUnsatisfied() ? null : aliasSel.get();
+                if (resolver != null) {
+                    java.lang.reflect.Method cm = aliasCls.getMethod("canonical", String.class);
+                    Object can = cm.invoke(resolver, predicate);
+                    if (can instanceof String s) predicate = s;
+                }
+            }
+        } catch (Throwable ignored) { /* continue if resolver not present */ }
+
+        // Optional safety: validate that the predicate's range matches the current model class
+        try {
+            if (modelClass != null) {
+                var cdi = jakarta.enterprise.inject.spi.CDI.current();
+                if (cdi != null) {
+                    Class<?> regIface = Class.forName("com.e2eq.ontology.core.OntologyRegistry");
+                    var regSel = cdi.select(regIface);
+                    Object registry = regSel.isUnsatisfied() ? null : regSel.get();
+                    if (registry != null) {
+                        // For hasIncomingEdge, we check the range (not domain) since we're finding destinations
+                        if (!isPredicateRangeApplicableToModel(registry, regIface, predicate, modelClass)) {
+                            // Fail closed: predicate not applicable to this collection/entity
+                            filterStack.push(Filters.eq("_id", "__none__"));
+                            return;
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) { /* if ontology not wired, continue with best-effort behavior */ }
+
+        Set<String> ids = Collections.emptySet();
+        if (tenantId != null && !tenantId.isBlank()) {
+            try {
+                var cdi = jakarta.enterprise.inject.spi.CDI.current();
+                if (cdi != null) {
+                    Class<?> edgeIface = Class.forName("com.e2eq.ontology.repo.OntologyEdgeRepo");
+                    var sel = cdi.select(edgeIface);
+                    Object store = sel.isUnsatisfied() ? null : sel.get();
+                    if (store != null) {
+                        // Use dstIdsBySrc to get destination IDs where src has edges
+                        java.lang.reflect.Method m = edgeIface.getMethod("dstIdsBySrc",
+                            com.e2eq.framework.model.persistent.base.DataDomain.class, String.class, String.class);
+
+                        // Build DataDomain from tenantId - use defaults for testing
+                        com.e2eq.framework.model.persistent.base.DataDomain dd =
+                            new com.e2eq.framework.model.persistent.base.DataDomain();
+                        dd.setTenantId(tenantId);
+                        // Try to get org and account from security context
+                        try {
+                            var secCtxOpt = com.e2eq.framework.model.securityrules.SecurityContext.getPrincipalContext();
+                            if (secCtxOpt.isPresent()) {
+                                var pctx = secCtxOpt.get();
+                                if (pctx.getDataDomain() != null) {
+                                    dd = pctx.getDataDomain();
+                                }
+                            }
+                        } catch (Throwable ignored2) { }
+                        // Set fallback values if not set
+                        if (dd.getOrgRefName() == null) dd.setOrgRefName("ontology");
+                        if (dd.getAccountNum() == null) dd.setAccountNum("0000000000");
+                        if (dd.getTenantId() == null) dd.setTenantId(tenantId);
+                        dd.setDataSegment(0);
+
+                        if (Log.isDebugEnabled()) {
+                            Log.debugf("hasIncomingEdge: calling dstIdsBySrc with dd=%s, predicate=%s, src=%s", dd, predicate, src);
+                        }
+                        Object result = m.invoke(store, dd, predicate, src);
+                        if (result instanceof java.util.Set) {
+                            ids = (Set<String>) result;
+                            if (Log.isDebugEnabled()) {
+                                Log.debugf("hasIncomingEdge: dstIdsBySrc returned %d IDs: %s", ids.size(), ids);
+                            }
+                        }
+                    }
+                }
+            } catch (Throwable t) {
+                if (Log.isDebugEnabled()) {
+                    Log.debugf(t, "hasIncomingEdge: Exception while querying edges");
+                }
+            }
+        }
+        if (ids == null || ids.isEmpty()) {
+            filterStack.push(Filters.eq("_id", "__none__"));
+        } else {
+            // Convert String IDs to ObjectIds for proper matching against _id field
+            List<Object> objectIds = new ArrayList<>();
+            for (String id : ids) {
+                try {
+                    objectIds.add(new ObjectId(id));
+                } catch (IllegalArgumentException e) {
+                    // If not a valid ObjectId, use as-is (might be refName-based key)
+                    objectIds.add(id);
+                }
+            }
+            filterStack.push(Filters.in("_id", objectIds));
+        }
+    }
+
+    // Reflective helper: check if predicate range is compatible with modelClass (for hasIncomingEdge)
+    private boolean isPredicateRangeApplicableToModel(Object registry, Class<?> regIface, String predicate, Class<?> modelClass) {
+        try {
+            java.lang.reflect.Method propertyOf = regIface.getMethod("propertyOf", String.class);
+            Object optProp = propertyOf.invoke(registry, predicate);
+            if (!(optProp instanceof java.util.Optional<?> opt) || opt.isEmpty()) return true; // no info => allow
+            Object propDef = opt.get();
+            java.lang.reflect.Method rangeMethod = propDef.getClass().getMethod("range");
+            Object optRange = rangeMethod.invoke(propDef);
+            if (!(optRange instanceof java.util.Optional<?> or) || or.isEmpty()) return true; // no range declared
+            Object rangeIdObj = or.get();
+            if (!(rangeIdObj instanceof String rangeId)) return true;
+
+            String modelId = classIdOf(modelClass);
+            if (modelId.equals(rangeId)) return true;
+
+            // Traverse parents of modelId to see if it is a subclass of rangeId
+            return isA(registry, regIface, modelId, rangeId);
+        } catch (Throwable t) {
+            return true; // be permissive on reflection failures
         }
     }
 

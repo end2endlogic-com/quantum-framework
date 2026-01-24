@@ -34,15 +34,6 @@ public class OntologyWriteHook implements PostPersistHook {
     public void afterPersist(String realmId, Object entity) {
         Class<?> entityClass = entity.getClass();
 
-        try {
-            var oc = entityClass.getAnnotation(OntologyClass.class);
-            long propCount = java.util.Arrays.stream(entityClass.getDeclaredFields())
-                .filter(f -> f.getAnnotation(com.e2eq.ontology.annotations.OntologyProperty.class) != null)
-                .count();
-            io.quarkus.logging.Log.infof("[DEBUG_LOG] afterPersist on %s, has @OntologyClass=%s, annotatedProps=%d",
-                entityClass.getName(), (oc != null), propCount);
-        } catch (Exception ignored) {}
-
         // Entity must have @OntologyClass annotation to participate in ontology
         var metaOpt = extractor.metaOf(entityClass);
         if (metaOpt.isEmpty()) {
@@ -67,23 +58,13 @@ public class OntologyWriteHook implements PostPersistHook {
                 if (p.supports(entityClass)) {
                     var extra = p.edges(realmId, dataDomainInfo, entity);
                     if (extra != null && !extra.isEmpty()) {
-                        io.quarkus.logging.Log.infof("[DEBUG_LOG] Provider %s contributed %d edges for %s",
-                            p.getClass().getSimpleName(), extra.size(), entityClass.getSimpleName());
                         explicit.addAll(extra);
                     }
                 }
             }
         } catch (Throwable t) {
-            io.quarkus.logging.Log.warn("[DEBUG_LOG] OntologyWriteHook: provider extension failed", t);
+            io.quarkus.logging.Log.warn("OntologyWriteHook: provider extension failed", t);
         }
-
-        try {
-            io.quarkus.logging.Log.infof("[DEBUG_LOG] OntologyWriteHook.afterPersist entityType=%s, realm=%s, dataDomain=%s/%s/%s, explicitEdges=%d",
-                entityType, realmId, dataDomain.getOrgRefName(), dataDomain.getAccountNum(), dataDomain.getTenantId(), explicit.size());
-            for (Reasoner.Edge e : explicit) {
-                io.quarkus.logging.Log.infof("[DEBUG_LOG]   explicit: (%s)-['%s']->(%s)", e.srcId(), e.p(), e.dstId());
-            }
-        } catch (Exception ignored) {}
 
         String srcId = extractor.idOf(entity);
         // Capture prior edges for this source to support cascade diffs - now scoped by DataDomain
@@ -91,7 +72,7 @@ public class OntologyWriteHook implements PostPersistHook {
         java.util.List<OntologyEdge> priorExplicit = new java.util.ArrayList<>();
         for (OntologyEdge e : priorAll) if (!e.isInferred()) priorExplicit.add(e);
         // First, apply materialization so explicit edges are upserted and stale ones pruned
-        materializer.apply(dataDomain, srcId, entityType, explicit);
+        materializer.apply(realmId, dataDomain, srcId, entityType, explicit);
         // Then handle ORPHAN_REMOVE cascade based on prior vs new state and repo contents
         try { cascadeExecutor.onAfterPersist(realmId, dataDomain, srcId, entity, priorExplicit, explicit); } catch (Throwable ignored) {}
     }

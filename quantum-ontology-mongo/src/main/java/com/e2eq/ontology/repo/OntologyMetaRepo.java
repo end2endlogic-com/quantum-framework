@@ -22,7 +22,11 @@ import java.util.Optional;
 public class OntologyMetaRepo extends MorphiaRepo<OntologyMeta> {
 
     public Optional<OntologyMeta> getSingleton() {
-        return Optional.ofNullable(ds().find(OntologyMeta.class)
+        return getSingleton(getSecurityContextRealmId());
+    }
+
+    public Optional<OntologyMeta> getSingleton(String realmId) {
+        return Optional.ofNullable(ds(realmId).find(OntologyMeta.class)
                 .filter(Filters.eq("refName", "global"))
                 .first());
     }
@@ -39,11 +43,15 @@ public class OntologyMetaRepo extends MorphiaRepo<OntologyMeta> {
      * Uses findAndModify with upsert=true to avoid races.
      */
     public OntologyMeta upsertObservation(Integer yamlVersion, String source, boolean reindexRequired) {
+        return upsertObservation(getSecurityContextRealmId(), yamlVersion, source, reindexRequired);
+    }
+
+    public OntologyMeta upsertObservation(String realmId, Integer yamlVersion, String source, boolean reindexRequired) {
         Date now = new Date();
         dev.morphia.ModifyOptions opts = new dev.morphia.ModifyOptions()
                 .upsert(true)
                 .returnDocument(ReturnDocument.AFTER);
-        return ds().find(OntologyMeta.class)
+        return ds(realmId).find(OntologyMeta.class)
                 .filter(Filters.eq("refName", "global"))
                 .modify(opts, UpdateOperators.set("yamlVersion", yamlVersion),
                         UpdateOperators.set("source", source),
@@ -56,11 +64,15 @@ public class OntologyMetaRepo extends MorphiaRepo<OntologyMeta> {
      * Uses findAndModify with upsert=true to avoid races.
      */
     public OntologyMeta markApplied(String yamlHash, String tboxHash, Integer yamlVersion) {
+        return markApplied(getSecurityContextRealmId(), yamlHash, tboxHash, yamlVersion);
+    }
+
+    public OntologyMeta markApplied(String realmId, String yamlHash, String tboxHash, Integer yamlVersion) {
         Date now = new Date();
         dev.morphia.ModifyOptions opts = new dev.morphia.ModifyOptions()
                 .upsert(true)
                 .returnDocument(ReturnDocument.AFTER);
-        return ds().find(OntologyMeta.class)
+        return ds(realmId).find(OntologyMeta.class)
                 .filter(Filters.eq("refName", "global"))
                 .modify(opts, UpdateOperators.set("yamlHash", yamlHash),
                         UpdateOperators.set("tboxHash", tboxHash),
@@ -75,14 +87,15 @@ public class OntologyMetaRepo extends MorphiaRepo<OntologyMeta> {
      * Uses getSecurityContextRealmId() to derive realm from security context,
      * falling back to defaultRealm if no security context is available.
      */
-    private dev.morphia.Datastore ds() {
-        return morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId());
+    public dev.morphia.Datastore ds() {
+        return ds(getSecurityContextRealmId());
     }
 
     /**
      * Get the datastore for a specific realm (used for explicit realm operations).
      */
-    private dev.morphia.Datastore ds(String realm) {
+    public dev.morphia.Datastore ds(String realm) {
+        if (realm == null) return morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId());
         return morphiaDataStoreWrapper.getDataStore(realm);
     }
 }

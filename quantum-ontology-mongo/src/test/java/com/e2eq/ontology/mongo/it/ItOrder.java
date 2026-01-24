@@ -12,7 +12,7 @@ public class ItOrder extends UnversionedBaseModel {
     @OntologyProperty(id = "placedBy", inverseOf = "placed", functional = true)
     private ItCustomer placedBy;
 
-    @OntologyProperty(id = "placedInOrg", subPropertyOf = {"inOrg"}, functional = true)
+    @OntologyProperty(id = "placedInOrg", functional = true)
     private ItOrg placedInOrg;
 
     public ItCustomer getPlacedBy() { return placedBy; }

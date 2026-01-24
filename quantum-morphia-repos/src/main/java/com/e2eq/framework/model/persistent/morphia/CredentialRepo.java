@@ -41,13 +41,14 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
    }
 
    /**
-    * Returns the list of realm IDs (database names) that match the current user's realmRegEx.
+    * Returns the list of realm IDs (database names) that match the current user's realmRegEx
+    * or are explicitly listed in the authorizedRealms list.
     * The current user is resolved from SecurityContext's PrincipalContext. The set of candidate
     * realms is obtained from the realm catalog stored in the system realm.
     *
     * Behavior:
     * - If the user cannot be resolved or no credential is found, returns an empty list.
-    * - If realmRegEx is null/blank, returns an empty list.
+    * - Matches are combined from both authorizedRealms and realmRegEx.
     * - If realmRegEx is "*", matches all realms.
     */
    public List<String> getMatchingRealmsForCurrentUser() {
@@ -64,29 +65,42 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
          return java.util.Collections.emptyList();
       }
 
-      String realmRegex = ocred.get().getRealmRegEx();
-      if (realmRegex == null || realmRegex.isBlank()) {
-         return java.util.Collections.emptyList();
-      }
+      CredentialUserIdPassword credential = ocred.get();
+      String realmRegex = credential.getRealmRegEx();
+      List<CredentialUserIdPassword.RealmEntry> authorizedRealms = credential.getAuthorizedRealms();
 
-      String patternText = "*".equals(realmRegex) ? ".*" : realmRegex;
-      java.util.regex.Pattern pattern;
-      try {
-         pattern = java.util.regex.Pattern.compile(patternText);
-      } catch (Exception e) {
-         // Fallback to exact match if invalid regex provided
-         pattern = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote(realmRegex));
-      }
+      java.util.Set<String> matches = new java.util.LinkedHashSet<>();
 
-      List<Realm> realms = realmRepo.getAllList(envConfigUtils.getSystemRealm());
-      List<String> matches = new java.util.ArrayList<>(realms.size());
-      for (var r : realms) {
-         String realmId = r.getDatabaseName();
-         if (realmId != null && pattern.matcher(realmId).matches()) {
-            matches.add(realmId);
+      // 1. Add explicitly authorized realms
+      if (authorizedRealms != null) {
+         for (var entry : authorizedRealms) {
+            if (entry.getRealmRefName() != null && !entry.getRealmRefName().isBlank()) {
+               matches.add(entry.getRealmRefName());
+            }
          }
       }
-      return matches;
+
+      // 2. Add realms matching the regex
+      if (realmRegex != null && !realmRegex.isBlank()) {
+         String patternText = "*".equals(realmRegex) ? ".*" : realmRegex;
+         java.util.regex.Pattern pattern;
+         try {
+            pattern = java.util.regex.Pattern.compile(patternText);
+         } catch (Exception e) {
+            // Fallback to exact match if invalid regex provided
+            pattern = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote(realmRegex));
+         }
+
+         List<Realm> realms = realmRepo.getAllList(envConfigUtils.getSystemRealm());
+         for (var r : realms) {
+            String realmId = r.getDatabaseName();
+            if (realmId != null && pattern.matcher(realmId).matches()) {
+               matches.add(realmId);
+            }
+         }
+      }
+
+      return new java.util.ArrayList<>(matches);
    }
 
    public Optional<CredentialUserIdPassword> findBySubject(@NotNull String subject) {

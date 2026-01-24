@@ -19,7 +19,11 @@ public class OntologyMetaService {
     @Inject
     OntologyMetaRepo metaRepo;
 
-    public Optional<OntologyMeta> getMeta() { return metaRepo.getSingleton(); }
+    public Optional<OntologyMeta> getMeta() { return getMeta(null); }
+    public Optional<OntologyMeta> getMeta(String realmId) {
+        if (realmId != null) return metaRepo.getSingleton(realmId);
+        return metaRepo.getSingleton();
+    }
 
     /**
      * Observe current YAML on disk or classpath, compute its SHA-256, and update metadata reindex flag
@@ -27,13 +31,23 @@ public class OntologyMetaService {
      * Returns a pair-like holder with the metadata and the computed current hash.
      */
     public Result observeYaml(Optional<Path> path, String classpathFallback) {
+        return observeYaml(null, path, classpathFallback);
+    }
+
+    public Result observeYaml(String realmId, Optional<Path> path, String classpathFallback) {
         try {
             Observed observed = readYamlBytes(path, classpathFallback);
             String currentHash = sha256(observed.bytes);
-            boolean changed = metaRepo.getSingleton()
+            boolean changed = getMeta(realmId)
                     .map(m -> m.getYamlHash() == null || !m.getYamlHash().equals(currentHash))
                     .orElse(true);
-            OntologyMeta meta = metaRepo.upsertObservation(null, observed.source, changed);
+            OntologyMeta meta;
+            if (realmId != null) {
+                meta = metaRepo.upsertObservation(realmId, null, observed.source, changed);
+            } else {
+                meta = metaRepo.upsertObservation(null, observed.source, changed);
+            }
+
             if (changed) {
                 Log.infof("Ontology YAML changed; new hash=%s, source=%s. Marking reindexRequired=true.", currentHash, observed.source);
             }
@@ -45,6 +59,10 @@ public class OntologyMetaService {
 
     public void markApplied(String yamlHash, String tboxHash, Integer yamlVersion) {
         metaRepo.markApplied(yamlHash, tboxHash, yamlVersion);
+    }
+
+    public void markApplied(String realmId, String yamlHash, String tboxHash, Integer yamlVersion) {
+        metaRepo.markApplied(realmId, yamlHash, tboxHash, yamlVersion);
     }
 
     public void clearReindexRequired() {
