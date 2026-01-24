@@ -3,6 +3,8 @@ package com.e2eq.ontology.repo;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.morphia.MorphiaRepo;
 import com.e2eq.ontology.core.EdgeRecord;
+import com.e2eq.ontology.core.OntologyRegistry;
+import com.e2eq.ontology.exceptions.CardinalityViolationException;
 import com.e2eq.ontology.model.OntologyEdge;
 import dev.morphia.Datastore;
 import dev.morphia.query.Query;
@@ -10,6 +12,8 @@ import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Instance;
+import jakarta.inject.Inject;
 
 import com.mongodb.client.model.BulkWriteOptions;
 import com.mongodb.client.model.UpdateOneModel;
@@ -18,6 +22,7 @@ import com.mongodb.client.model.WriteModel;
 import org.bson.Document;
 
 import java.util.*;
+import java.util.Optional;
 
 /**
  * Repository for ontology edges with full DataDomain scoping.
@@ -26,6 +31,11 @@ import java.util.*;
  */
 @ApplicationScoped
 public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
+
+   // Optional injection to avoid circular dependency issues during startup
+   // Uses Instance<> for lazy resolution
+   @Inject
+   Instance<com.e2eq.ontology.runtime.TenantOntologyRegistryProvider> registryProviderInstance;
 
    public void deleteAll() {
       deleteAll(getSecurityContextRealmId());
@@ -117,6 +127,136 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
                 .append("ownerId", dd.getOwnerId() != null ? dd.getOwnerId() : "system");
     }
 
+    // ========================================================================
+    // Functional Constraint Validation
+    // ========================================================================
+
+    /**
+     * Validates that creating an edge would not violate a functional property constraint.
+     * <p>
+     * A functional property (ONE_TO_ONE or MANY_TO_ONE) allows at most one outgoing edge
+     * per source entity for that predicate. This method checks if an existing edge already
+     * exists and would be violated by adding a new edge to a different destination.
+     * </p>
+     *
+     * @param dataDomain the DataDomain context
+     * @param srcType    type of source entity
+     * @param src        source entity ID
+     * @param p          predicate/property name
+     * @param dst        destination entity ID being added
+     * @throws CardinalityViolationException if the edge would violate a functional constraint
+     */
+    public void validateFunctionalConstraint(DataDomain dataDomain, String srcType, String src, String p, String dst) {
+        validateFunctionalConstraint(tenantIdToRealmId(dataDomain.getTenantId()), dataDomain, srcType, src, p, dst);
+    }
+
+    public void validateFunctionalConstraint(String realmId, DataDomain dataDomain, String srcType, String src, String p, String dst) {
+        if (!isFunctionalProperty(dataDomain, p)) {
+            return; // Not a functional property, no constraint to check
+        }
+
+        // Check if an existing edge already points to a DIFFERENT destination
+        Set<String> existingDsts = dstIdsBySrc(dataDomain, p, src);
+        if (!existingDsts.isEmpty()) {
+            // If the only existing destination is the same as what we're trying to add, that's fine (idempotent upsert)
+            if (existingDsts.size() == 1 && existingDsts.contains(dst)) {
+                return;
+            }
+            // Violation: trying to add edge to different destination
+            String existingDst = existingDsts.iterator().next();
+            throw new CardinalityViolationException(p, src, srcType, existingDst, dst);
+        }
+    }
+
+    /**
+     * Checks if a property is functional (ONE_TO_ONE or MANY_TO_ONE).
+     * <p>
+     * A functional property allows at most one value per subject. This is determined
+     * by the {@code functional} flag in the ontology TBox, which is set when
+     * {@code relation = ONE_TO_ONE} or {@code relation = MANY_TO_ONE} on the
+     * {@code @OntologyProperty} annotation.
+     * </p>
+     *
+     * @param dataDomain the DataDomain context for registry lookup
+     * @param predicate  the property/predicate name
+     * @return true if the property is functional, false otherwise or if registry unavailable
+     */
+    public boolean isFunctionalProperty(DataDomain dataDomain, String predicate) {
+        try {
+            if (registryProviderInstance == null || registryProviderInstance.isUnsatisfied()) {
+                return false;
+            }
+            OntologyRegistry registry = registryProviderInstance.get().getRegistryForTenant(dataDomain);
+            if (registry == null) {
+                return false;
+            }
+            return registry.propertyOf(predicate)
+                    .map(OntologyRegistry.PropertyDef::functional)
+                    .orElse(false);
+        } catch (Throwable t) {
+            Log.debugf("Could not determine if property '%s' is functional: %s", predicate, t.getMessage());
+            return false;
+        }
+    }
+
+    // ========================================================================
+    // Single-Value Convenience Methods (for functional relationships)
+    // ========================================================================
+
+    /**
+     * Find the single destination ID for a functional relationship from a source.
+     * <p>
+     * Use this for relationships declared with {@code relation = ONE_TO_ONE} or
+     * {@code relation = MANY_TO_ONE} where each source has at most one destination.
+     * </p>
+     *
+     * @param dataDomain the DataDomain context
+     * @param p          the predicate/property name
+     * @param src        the source entity ID
+     * @return Optional containing the single destination ID, or empty if none exists
+     * @throws CardinalityViolationException if multiple destinations exist (data integrity violation)
+     */
+    public Optional<String> singleDstIdBySrc(DataDomain dataDomain, String p, String src) {
+        Set<String> dsts = dstIdsBySrc(dataDomain, p, src);
+        if (dsts.isEmpty()) {
+            return Optional.empty();
+        }
+        if (dsts.size() > 1) {
+            throw new CardinalityViolationException(
+                String.format("Data integrity violation: property '%s' should be functional but source '%s' " +
+                              "has multiple destinations: %s", p, src, dsts)
+            );
+        }
+        return Optional.of(dsts.iterator().next());
+    }
+
+    /**
+     * Find the single source ID for an inverse functional relationship pointing to a destination.
+     * <p>
+     * Use this for the inverse direction of relationships where each destination should have
+     * at most one source pointing to it (e.g., the inverse of a ONE_TO_ONE relationship).
+     * </p>
+     *
+     * @param dataDomain the DataDomain context
+     * @param p          the predicate/property name
+     * @param dst        the destination entity ID
+     * @return Optional containing the single source ID, or empty if none exists
+     * @throws CardinalityViolationException if multiple sources exist (data integrity violation)
+     */
+    public Optional<String> singleSrcIdByDst(DataDomain dataDomain, String p, String dst) {
+        Set<String> srcs = srcIdsByDst(dataDomain, p, dst);
+        if (srcs.isEmpty()) {
+            return Optional.empty();
+        }
+        if (srcs.size() > 1) {
+            throw new CardinalityViolationException(
+                String.format("Data integrity violation: inverse of property '%s' should be functional but " +
+                              "destination '%s' has multiple sources: %s", p, dst, srcs)
+            );
+        }
+        return Optional.of(srcs.iterator().next());
+    }
+
     /**
      * Upsert an edge with full DataDomain scoping.
      *
@@ -164,6 +304,10 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
            Log.warn("dst id is null or blank can not create edge");
            return;
         }
+
+        // Validate functional constraint before upserting
+        validateFunctionalConstraint(realmId, dataDomain, srcType, src, p, dst);
+
         Datastore d = ds(realmId);
         Query<OntologyEdge> q = d.find(OntologyEdge.class);
         for (Filter f : dataDomainFilters(dataDomain)) {
@@ -640,6 +784,10 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
             Log.warn("dst id is null or blank can not create edge");
             return;
         }
+
+        // Validate functional constraint before upserting
+        validateFunctionalConstraint(realmId, dataDomain, srcType, src, p, dst);
+
         Datastore d = ds(realmId);
         Query<OntologyEdge> q = d.find(OntologyEdge.class);
         for (Filter f : dataDomainFilters(dataDomain)) {
