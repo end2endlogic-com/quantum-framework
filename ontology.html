@@ -529,7 +529,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2026-01-21T15:15:04Z</span>
+<span id="revdate">2026-01-24T16:52:12Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -564,9 +564,11 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_morphia_repository_integration_patterns">4.4. Morphia repository integration patterns</a></li>
 <li><a href="#_where_ontology_materialization_happens">4.5. Where ontology materialization happens</a>
 <ul class="sectlevel3">
-<li><a href="#_extending_materialization_with_ontologyedgeprovider_spi">4.5.1. Extending materialization with OntologyEdgeProvider (SPI)</a></li>
-<li><a href="#_configuration">4.5.2. Configuration</a></li>
-<li><a href="#_example_annotate_and_save_edges_are_materialized_automatically">4.5.3. Example: annotate and save — edges are materialized automatically</a></li>
+<li><a href="#property-chains-vs-computed-providers">4.5.1. When to use Property Chains vs ComputedEdgeProvider</a></li>
+<li><a href="#_extending_materialization_with_computededgeprovider_advanced">4.5.2. Extending materialization with ComputedEdgeProvider (Advanced)</a></li>
+<li><a href="#_extending_materialization_with_ontologyedgeprovider_spi">4.5.3. Extending materialization with OntologyEdgeProvider (SPI)</a></li>
+<li><a href="#_configuration">4.5.4. Configuration</a></li>
+<li><a href="#_example_annotate_and_save_edges_are_materialized_automatically">4.5.5. Example: annotate and save — edges are materialized automatically</a></li>
 </ul>
 </li>
 <li><a href="#_security_and_multi_tenant_considerations">4.6. Security and multi-tenant considerations</a></li>
@@ -1676,7 +1678,401 @@ query.filter(Filters.in(&quot;_id&quot;, ids));</code></pre>
 </ul>
 </div>
 <div class="sect3">
-<h4 id="_extending_materialization_with_ontologyedgeprovider_spi">4.5.1. Extending materialization with OntologyEdgeProvider (SPI)</h4>
+<h4 id="property-chains-vs-computed-providers">4.5.1. When to use Property Chains vs ComputedEdgeProvider</h4>
+<div class="paragraph">
+<p>Understanding when to use property chains versus <code>ComputedEdgeProvider</code> is critical for modeling your ontology effectively. This section provides clear guidance on which approach to use.</p>
+</div>
+<div class="sect4">
+<h5 id="_property_chains_use_for_sequential_multi_hop_traversals">Property Chains: Use for Sequential Multi-Hop Traversals</h5>
+<div class="paragraph">
+<p>Property chains are ideal when your derived relationship follows a <strong>fixed sequence of predicates</strong> where each step is a simple, direct relationship.</p>
+</div>
+<div class="paragraph">
+<p><strong>Property chains handle:</strong></p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p><strong>Multi-hop paths through direct predicates</strong>: Deriving relationships through intermediate entities</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Example: <code>Order --placedBy&#8594; Customer --memberOf&#8594; Organization &#8658; Order --placedInOrg&#8594; Organization</code></p>
+</li>
+<li>
+<p>Example: <code>Order --orderHasShipment&#8594; Shipment --shipsTo&#8594; Address &#8658; Order --orderShipsTo&#8594; Address</code></p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p><strong>Transitive closure within chains</strong>: When one step is a transitive property</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Example: <code>Order --placedInOrg&#8594; Org1 --ancestorOf&#8594; Org2 &#8658; Order --placedInOrg&#8594; Org2</code></p>
+</li>
+<li>
+<p>Propagates derived relationships up hierarchies automatically</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p><strong>Chain composition</strong>: Output of one chain feeds another</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Chain 1: <code>[orderHasShipment, shipsTo]</code> &#8658; <code>orderShipsTo</code></p>
+</li>
+<li>
+<p>Chain 2: <code>[orderShipsTo, locatedIn]</code> &#8658; <code>orderShipsToRegion</code></p>
+</li>
+</ul>
+</div>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p><strong>Property chain example (YAML):</strong></p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml"><span class="key">chains</span>:
+  - <span class="string"><span class="content">chain: [placedBy, memberOf]</span></span>
+    <span class="key">implies</span>: <span class="string"><span class="content">placedInOrg</span></span>
+  - <span class="string"><span class="content">chain: [orderHasShipment, shipsTo]</span></span>
+    <span class="key">implies</span>: <span class="string"><span class="content">orderShipsTo</span></span>
+  - <span class="string"><span class="content">chain: [orderShipsTo, locatedIn]</span></span>
+    <span class="key">implies</span>: <span class="string"><span class="content">orderShipsToRegion</span></span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p><strong>Property chain limitations:</strong></p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Chains must be <strong>regular</strong> (non-transitive predicates in the chain itself)</p>
+</li>
+<li>
+<p>Chains are <strong>strict sequential paths</strong> - no branching, alternation (<code>OR</code>), or conditional logic</p>
+</li>
+<li>
+<p>No backtracking or negation</p>
+</li>
+<li>
+<p>Cannot involve <strong>external data lookups</strong> or <strong>dynamic queries</strong> during computation</p>
+</li>
+<li>
+<p>Cannot handle <strong>collection expansion</strong> where one entity has a list that must be resolved</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_computededgeprovider_use_for_complex_logic_beyond_sequential_paths">ComputedEdgeProvider: Use for Complex Logic Beyond Sequential Paths</h5>
+<div class="paragraph">
+<p>Use <code>ComputedEdgeProvider</code> when your derived edges require:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p><strong>Database queries during computation</strong>: Loading related entities to determine targets</p>
+</li>
+<li>
+<p><strong>Collection/list resolution</strong>: The target set comes from resolving a list (static or dynamic)</p>
+</li>
+<li>
+<p><strong>Conditional logic</strong>: Different targets based on entity state or business rules</p>
+</li>
+<li>
+<p><strong>Non-sequential traversals</strong>: Logic that doesn&#8217;t follow a simple A&#8594;B&#8594;C pattern</p>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p><strong>When to use ComputedEdgeProvider:</strong></p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 50%;">
+<col style="width: 50%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Scenario</th>
+<th class="tableblock halign-left valign-top">Why Property Chains Won&#8217;t Work</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Associate → canSeeLocation → Location (via Territory hierarchy + LocationList)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Requires loading the Territory, expanding to children, then resolving each Territory&#8217;s LocationList - involves list resolution</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">User → canAccessCustomer → Customer (via assigned Regions and dynamic filters)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Requires executing dynamic queries based on filter strings stored in Region entities</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Manager → canViewReport → Report (where Reports are determined by Department + Role combinations)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Requires conditional logic based on both hierarchy position AND role assignments</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Entity → derivedTarget → Target (where targets depend on runtime configuration)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Requires external lookups that chains cannot perform</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect4">
+<h5 id="_hierarchylistedgeprovider_specialized_for_hierarchy_list_pattern">HierarchyListEdgeProvider: Specialized for Hierarchy + List Pattern</h5>
+<div class="paragraph">
+<p><code>HierarchyListEdgeProvider&lt;S, H, T&gt;</code> is a specialized base class for the common pattern:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Get assigned hierarchy nodes from source entity (e.g., Associate&#8217;s Territories)</p>
+</li>
+<li>
+<p>Expand to include all child nodes (hierarchy traversal)</p>
+</li>
+<li>
+<p>Resolve each node&#8217;s list (static or dynamic)</p>
+</li>
+<li>
+<p>Create edges to the resolved items</p>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p><strong>Use HierarchyListEdgeProvider when:</strong></p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Your source entity is assigned to hierarchy nodes (Territories, Departments, Regions)</p>
+</li>
+<li>
+<p>Each hierarchy node has an associated list of target entities</p>
+</li>
+<li>
+<p>The relationship should include targets from the assigned node AND all descendants</p>
+</li>
+<li>
+<p>You need provenance tracking of which nodes and lists contributed to each edge</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p><strong>Example use cases:</strong></p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>Associate → canSeeLocation → Location</code> via Territory hierarchy</p>
+</li>
+<li>
+<p><code>SalesRep → canAccessAccount → Account</code> via Region hierarchy</p>
+</li>
+<li>
+<p><code>Employee → canViewDocument → Document</code> via Department hierarchy</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p><strong>Example implementation:</strong></p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@ApplicationScoped</span>
+<span class="directive">public</span> <span class="type">class</span> <span class="class">AssociateCanSeeLocationProvider</span>
+        <span class="directive">extends</span> HierarchyListEdgeProvider&lt;Associate, Territory, Location&gt; {
+
+    <span class="annotation">@Inject</span> TerritoryRepo territoryRepo;
+    <span class="annotation">@Inject</span> LocationListResolver listResolver;
+
+    <span class="annotation">@Override</span> <span class="directive">protected</span> <span class="predefined-type">Class</span>&lt;Associate&gt; getSourceType() { <span class="keyword">return</span> Associate.class; }
+    <span class="annotation">@Override</span> <span class="directive">protected</span> <span class="predefined-type">String</span> getPredicate() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">canSeeLocation</span><span class="delimiter">&quot;</span></span>; }
+    <span class="annotation">@Override</span> <span class="directive">protected</span> <span class="predefined-type">String</span> getTargetTypeName() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">Location</span><span class="delimiter">&quot;</span></span>; }
+    <span class="annotation">@Override</span> <span class="directive">protected</span> <span class="predefined-type">String</span> getHierarchyTypeName() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">Territory</span><span class="delimiter">&quot;</span></span>; }
+
+    <span class="annotation">@Override</span>
+    <span class="directive">protected</span> <span class="predefined-type">List</span>&lt;<span class="predefined-type">String</span>&gt; getAssignedNodeIds(Associate source) {
+        <span class="keyword">return</span> source.getAssignedTerritories().stream()
+            .map(ref -&gt; ref.getId().toString())
+            .toList();
+    }
+
+    <span class="annotation">@Override</span>
+    <span class="directive">protected</span> Optional&lt;Territory&gt; loadHierarchyNode(ComputationContext ctx, <span class="predefined-type">String</span> nodeId) {
+        <span class="keyword">return</span> territoryRepo.findById(<span class="keyword">new</span> ObjectId(nodeId));
+    }
+
+    <span class="annotation">@Override</span>
+    <span class="directive">protected</span> <span class="predefined-type">List</span>&lt;Territory&gt; getChildNodes(ComputationContext ctx, <span class="predefined-type">String</span> nodeId) {
+        <span class="keyword">return</span> territoryRepo.getAllChildren(<span class="keyword">new</span> ObjectId(nodeId));
+    }
+
+    <span class="annotation">@Override</span>
+    <span class="directive">protected</span> <span class="predefined-type">List</span>&lt;Location&gt; resolveListItems(ComputationContext ctx, Territory node) {
+        <span class="keyword">return</span> listResolver.resolve(ctx.getDataDomainInfo(), node.getStaticDynamicList());
+    }
+
+    <span class="annotation">@Override</span>
+    <span class="directive">protected</span> <span class="predefined-type">String</span> extractTargetId(Location target) {
+        <span class="keyword">return</span> target.getId().toString();
+    }
+}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_decision_guide">Decision Guide</h5>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 16.6666%;">
+<col style="width: 50%;">
+<col style="width: 33.3334%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Approach</th>
+<th class="tableblock halign-left valign-top">When to Use</th>
+<th class="tableblock halign-left valign-top">Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Property Chain (YAML)</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Sequential multi-hop through direct predicates; no external data lookups needed</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>Order --placedBy&#8594; Customer --memberOf&#8594; Org</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Property Chain with Transitive</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Hierarchy rollup where relationships are direct predicates</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>Order --placedInOrg&#8594; Org --ancestorOf&#8594; ParentOrg</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>ComputedEdgeProvider</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Complex logic, conditional branching, or external data lookups</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Permission edges based on roles + entity state</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>HierarchyListEdgeProvider</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Source assigned to hierarchy nodes, each with associated target lists</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>Associate → canSeeLocation → Location</code> via Territory + LocationList</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect4">
+<h5 id="_important_notes">Important Notes</h5>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p><strong>Source types must be @OntologyClass annotated</strong>: ComputedEdgeProvider implementations will show a warning at startup if their source type lacks <code>@OntologyClass</code>. The edges will not be processed during entity persistence.</p>
+</li>
+<li>
+<p><strong>Providers are automatically discovered</strong>: Any <code>@ApplicationScoped</code> class extending <code>ComputedEdgeProvider</code> is automatically discovered and registered at startup.</p>
+</li>
+<li>
+<p><strong>Provenance is tracked</strong>: <code>ComputedEdgeProvider</code> and <code>HierarchyListEdgeProvider</code> automatically track which inputs contributed to each computed edge, enabling smart incremental updates.</p>
+</li>
+<li>
+<p><strong>Combine approaches when needed</strong>: You can use property chains for some relationships and computed providers for others in the same application.</p>
+</li>
+</ol>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_extending_materialization_with_computededgeprovider_advanced">4.5.2. Extending materialization with ComputedEdgeProvider (Advanced)</h4>
+<div class="paragraph">
+<p>While <code>OntologyEdgeProvider</code> is sufficient for simple, direct edges, many real-world use cases require edges computed from complex logic, such as hierarchy traversal or dynamic list resolution. <code>ComputedEdgeProvider</code> is a more robust base class that provides:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>Provenance tracking</strong>: Records why an edge exists (which hierarchy nodes and lists were involved).</p>
+</li>
+<li>
+<p><strong>Incremental updates</strong>: Tracks dependencies to know exactly which edges to recompute when a source changes.</p>
+</li>
+<li>
+<p><strong>Specialized hierarchy support</strong>: <code>HierarchyListEdgeProvider</code> simplifies implementing common patterns like "User can see Locations in their assigned Territories (and descendants)".</p>
+</li>
+</ul>
+</div>
+<div class="sect4">
+<h5 id="_example_hierarchy_based_edge_provider">Example: Hierarchy-based Edge Provider</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@ApplicationScoped</span>
+<span class="directive">public</span> <span class="type">class</span> <span class="class">AssociateCanSeeLocationProvider</span>
+        <span class="directive">extends</span> HierarchyListEdgeProvider&lt;Associate, Territory, Location&gt; {
+
+    <span class="annotation">@Inject</span> TerritoryRepo territoryRepo;
+    <span class="annotation">@Inject</span> LocationListResolver listResolver;
+
+    <span class="annotation">@Override</span> <span class="directive">protected</span> <span class="predefined-type">Class</span>&lt;Associate&gt; getSourceType() { <span class="keyword">return</span> Associate.class; }
+    <span class="annotation">@Override</span> <span class="directive">protected</span> <span class="predefined-type">String</span> getPredicate() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">canSeeLocation</span><span class="delimiter">&quot;</span></span>; }
+    <span class="annotation">@Override</span> <span class="directive">protected</span> <span class="predefined-type">String</span> getTargetTypeName() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">Location</span><span class="delimiter">&quot;</span></span>; }
+    <span class="annotation">@Override</span> <span class="directive">protected</span> <span class="predefined-type">String</span> getHierarchyTypeName() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">Territory</span><span class="delimiter">&quot;</span></span>; }
+
+    <span class="annotation">@Override</span>
+    <span class="directive">protected</span> <span class="predefined-type">List</span>&lt;<span class="predefined-type">String</span>&gt; getAssignedNodeIds(Associate source) {
+        <span class="keyword">return</span> source.getAssignedTerritories().stream()
+            .map(ref -&gt; ref.getId().toString())
+            .toList();
+    }
+
+    <span class="annotation">@Override</span>
+    <span class="directive">protected</span> Optional&lt;Territory&gt; loadHierarchyNode(ComputationContext ctx, <span class="predefined-type">String</span> nodeId) {
+        <span class="keyword">return</span> territoryRepo.findById(<span class="keyword">new</span> ObjectId(nodeId));
+    }
+
+    <span class="annotation">@Override</span>
+    <span class="directive">protected</span> <span class="predefined-type">List</span>&lt;Territory&gt; getChildNodes(ComputationContext ctx, <span class="predefined-type">String</span> nodeId) {
+        <span class="keyword">return</span> territoryRepo.getAllChildren(<span class="keyword">new</span> ObjectId(nodeId));
+    }
+
+    <span class="annotation">@Override</span>
+    <span class="directive">protected</span> <span class="predefined-type">List</span>&lt;Location&gt; resolveListItems(ComputationContext ctx, Territory node) {
+        <span class="keyword">return</span> listResolver.resolve(ctx.getDataDomainInfo(), node.getStaticDynamicList());
+    }
+
+    <span class="annotation">@Override</span>
+    <span class="directive">protected</span> <span class="predefined-type">String</span> extractTargetId(Location target) {
+        <span class="keyword">return</span> target.getId().toString();
+    }
+}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_multi_hop_and_provenance">Multi-hop and Provenance</h5>
+<div class="paragraph">
+<p><code>ComputedEdgeProvider</code> supports multi-hop capabilities by allowing providers to contribute to the overall ontology graph that is materialized. The provenance information captured by these providers includes:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>Hierarchy Contributions</strong>: Every node traversed in a hierarchy path.</p>
+</li>
+<li>
+<p><strong>List Contributions</strong>: Every list (static or dynamic) resolved to find target entities.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>This provenance is stored with the edge and allows the framework to perform smart, incremental recomputations when underlying data (like a Territory&#8217;s child nodes or a LocationList&#8217;s filter) changes.</p>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_extending_materialization_with_ontologyedgeprovider_spi">4.5.3. Extending materialization with OntologyEdgeProvider (SPI)</h4>
 <div class="paragraph">
 <p>The write hook is annotation-first and SPI-second:</p>
 </div>
@@ -1827,7 +2223,7 @@ query.filter(Filters.in(&quot;_id&quot;, ids));</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_configuration">4.5.2. Configuration</h4>
+<h4 id="_configuration">4.5.4. Configuration</h4>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="properties"># default is true
@@ -1836,7 +2232,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_example_annotate_and_save_edges_are_materialized_automatically">4.5.3. Example: annotate and save — edges are materialized automatically</h4>
+<h4 id="_example_annotate_and_save_edges_are_materialized_automatically">4.5.5. Example: annotate and save — edges are materialized automatically</h4>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@OntologyClass</span>(id = <span class="string"><span class="delimiter">&quot;</span><span class="content">Order</span><span class="delimiter">&quot;</span></span>)
@@ -3537,7 +3933,7 @@ curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=defau
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-11-12 11:08:48 -0500
+Last updated 2026-01-22 11:04:34 -0500
 </div>
 </div>
 </body>
