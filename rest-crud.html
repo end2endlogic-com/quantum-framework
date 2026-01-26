@@ -554,6 +554,32 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_export_get_csv">2.1. Export: GET /csv</a></li>
 <li><a href="#_import_post_csv_multipart">2.2. Import: POST /csv (multipart)</a></li>
 <li><a href="#_import_with_preview_sessions">2.3. Import with preview sessions</a></li>
+<li><a href="#_enhanced_import_with_importprofile">2.4. Enhanced Import with ImportProfile</a>
+<ul class="sectlevel3">
+<li><a href="#_key_features">2.4.1. Key Features</a></li>
+<li><a href="#_using_a_profile">2.4.2. Using a Profile</a></li>
+<li><a href="#_profile_with_session_flow">2.4.3. Profile with Session Flow</a></li>
+<li><a href="#_example_importprofile_json">2.4.4. Example ImportProfile (JSON)</a></li>
+<li><a href="#_intent_column">2.4.5. Intent Column</a></li>
+</ul>
+</li>
+<li><a href="#_rowvalueresolver_custom_per_row_logic">2.5. RowValueResolver: Custom Per-Row Logic</a>
+<ul class="sectlevel3">
+<li><a href="#_key_features_2">2.5.1. Key Features</a></li>
+<li><a href="#_example_implementation">2.5.2. Example Implementation</a></li>
+<li><a href="#_configuration_in_importprofile">2.5.3. Configuration in ImportProfile</a></li>
+<li><a href="#_result_types">2.5.4. Result Types</a></li>
+</ul>
+</li>
+<li><a href="#_dynamic_attribute_import">2.6. Dynamic Attribute Import</a>
+<ul class="sectlevel3">
+<li><a href="#_import_strategies">2.6.1. Import Strategies</a></li>
+<li><a href="#_dot_notation_example">2.6.2. DOT_NOTATION Example</a></li>
+<li><a href="#_json_column_example">2.6.3. JSON_COLUMN Example</a></li>
+<li><a href="#_configuration_in_importprofile_2">2.6.4. Configuration in ImportProfile</a></li>
+<li><a href="#_merge_strategies">2.6.5. Merge Strategies</a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li><a href="#rest-crud-auth">Authentication and Authorization</a>
@@ -1265,6 +1291,384 @@ curl -H &quot;Authorization: Bearer $JWT&quot; \
 <p>Imports run under the same security rules as POST / (save). Ensure the caller has permission to create/update the target entities in the chosen realm.</p>
 </li>
 </ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_enhanced_import_with_importprofile">2.4. Enhanced Import with ImportProfile</h3>
+<div class="paragraph">
+<p>ImportProfile provides reusable, configurable transformation and mapping rules for CSV imports. Profiles are persistent entities that can be created via REST and referenced during imports.</p>
+</div>
+<div class="sect3">
+<h4 id="_key_features">2.4.1. Key Features</h4>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>Value Mapping</strong>: Transform CSV values before type conversion (e.g., "Y" → <code>true</code>, "Active" → <code>ACTIVE</code>)</p>
+</li>
+<li>
+<p><strong>Lookup Resolution</strong>: Resolve foreign references by looking up values in other collections</p>
+</li>
+<li>
+<p><strong>String Transformations</strong>: Trim, case conversion, regex replacement</p>
+</li>
+<li>
+<p><strong>Intent Control</strong>: Specify INSERT vs UPDATE per row via an intent column</p>
+</li>
+<li>
+<p><strong>Header Modifiers</strong>: Mark fields as required (*), optional (?), calculated (~), or key (#)</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_using_a_profile">2.4.2. Using a Profile</h4>
+<div class="paragraph">
+<p>Create a profile first, then reference it during import:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="bash"># Create profile
+curl -X POST \
+  -H &quot;Authorization: Bearer $JWT&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  &quot;https://host/api/integration/import-profiles&quot; \
+  -d @product-import-profile.json
+
+# Import using profile
+curl -X POST \
+  -H &quot;Authorization: Bearer $JWT&quot; \
+  -F &quot;file=@products.csv&quot; \
+  &quot;https://host/api/products/csv/session/profile?profileRefName=product-import-v1&quot;</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_profile_with_session_flow">2.4.3. Profile with Session Flow</h4>
+<div class="ulist">
+<ul>
+<li>
+<p>POST /{entity}/csv/session/profile (multipart): analyzes the file using the specified profile</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Query param: <code>profileRefName</code> - reference to an existing ImportProfile</p>
+</li>
+<li>
+<p>Returns preview ImportResult including sessionId, totals, and row-level findings</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>POST /{entity}/csv/session/{sessionId}/commit: imports valid rows (same as basic flow)</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_example_importprofile_json">2.4.4. Example ImportProfile (JSON)</h4>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">refName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">product-import-v1</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">displayName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Product Import Profile</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">targetType</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">com.example.Product</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">columnMappings</span><span class="delimiter">&quot;</span></span>: [
+    {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">sourceColumn</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Status</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">targetField</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">valueMappings</span><span class="delimiter">&quot;</span></span>: {
+        <span class="key"><span class="delimiter">&quot;</span><span class="content">A</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">ACTIVE</span><span class="delimiter">&quot;</span></span>,
+        <span class="key"><span class="delimiter">&quot;</span><span class="content">I</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">INACTIVE</span><span class="delimiter">&quot;</span></span>,
+        <span class="key"><span class="delimiter">&quot;</span><span class="content">D</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">DISCONTINUED</span><span class="delimiter">&quot;</span></span>
+      },
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">unmappedValueBehavior</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">FAIL</span><span class="delimiter">&quot;</span></span>
+    },
+    {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">sourceColumn</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Category</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">targetField</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">categoryRefName</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">lookup</span><span class="delimiter">&quot;</span></span>: {
+        <span class="key"><span class="delimiter">&quot;</span><span class="content">lookupCollection</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Category</span><span class="delimiter">&quot;</span></span>,
+        <span class="key"><span class="delimiter">&quot;</span><span class="content">lookupMatchField</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">displayName</span><span class="delimiter">&quot;</span></span>,
+        <span class="key"><span class="delimiter">&quot;</span><span class="content">lookupReturnField</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">refName</span><span class="delimiter">&quot;</span></span>,
+        <span class="key"><span class="delimiter">&quot;</span><span class="content">onNotFound</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">FAIL</span><span class="delimiter">&quot;</span></span>
+      }
+    }
+  ],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">intentColumn</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">_action</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">defaultIntent</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">UPSERT</span><span class="delimiter">&quot;</span></span>
+}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_intent_column">2.4.5. Intent Column</h4>
+<div class="paragraph">
+<p>When <code>intentColumn</code> is configured, each row can specify its own intent:</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Intent</th>
+<th class="tableblock halign-left valign-top">Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>INSERT</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Insert new record. Fails if refName already exists.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>UPDATE</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Update existing record. Fails if refName does not exist.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>UPSERT</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Auto-detect: INSERT if new, UPDATE if exists.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>SKIP</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Skip this row entirely.</p></td>
+</tr>
+</tbody>
+</table>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<code>MERGE</code> and <code>DELETE</code> are intentionally not supported for safety reasons.
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>For complete ImportProfile documentation, see <a href="../design/csv-import-enhancements.html">CSV Import Enhancements</a>.</p>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_rowvalueresolver_custom_per_row_logic">2.5. RowValueResolver: Custom Per-Row Logic</h3>
+<div class="paragraph">
+<p>The <code>RowValueResolver</code> SPI allows arbitrary code execution for each row during import. Unlike static lookups, RowValueResolvers have access to all columns in the row and can invoke external services.</p>
+</div>
+<div class="sect3">
+<h4 id="_key_features_2">2.5.1. Key Features</h4>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>Arc CDI Beans</strong>: Full dependency injection support</p>
+</li>
+<li>
+<p><strong>Multi-Collection Updates</strong>: Update multiple collections from a single CSV row</p>
+</li>
+<li>
+<p><strong>Full Row Access</strong>: Read any column value, not just the mapped column</p>
+</li>
+<li>
+<p><strong>Context Awareness</strong>: Access to realm, session, row number, and profile</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_example_implementation">2.5.2. Example Implementation</h4>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@ApplicationScoped</span>
+<span class="directive">public</span> <span class="type">class</span> <span class="class">GeocodeResolver</span> <span class="directive">implements</span> RowValueResolver {
+
+    <span class="annotation">@Inject</span>
+    GeocodingService geocodingService;
+
+    <span class="annotation">@Override</span>
+    <span class="directive">public</span> <span class="predefined-type">String</span> getName() {
+        <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">geocodeResolver</span><span class="delimiter">&quot;</span></span>;
+    }
+
+    <span class="annotation">@Override</span>
+    <span class="directive">public</span> <span class="predefined-type">ResolveResult</span> resolve(<span class="predefined-type">String</span> inputValue, <span class="predefined-type">Map</span>&lt;<span class="predefined-type">String</span>, <span class="predefined-type">Object</span>&gt; rowData, ImportContext context) {
+        <span class="predefined-type">String</span> street = (<span class="predefined-type">String</span>) rowData.get(<span class="string"><span class="delimiter">&quot;</span><span class="content">street</span><span class="delimiter">&quot;</span></span>);
+        <span class="predefined-type">String</span> city = (<span class="predefined-type">String</span>) rowData.get(<span class="string"><span class="delimiter">&quot;</span><span class="content">city</span><span class="delimiter">&quot;</span></span>);
+        <span class="predefined-type">String</span> state = (<span class="predefined-type">String</span>) rowData.get(<span class="string"><span class="delimiter">&quot;</span><span class="content">state</span><span class="delimiter">&quot;</span></span>);
+
+        GeocodingResult result = geocodingService.geocode(
+            <span class="predefined-type">String</span>.format(<span class="string"><span class="delimiter">&quot;</span><span class="content">%s, %s, %s</span><span class="delimiter">&quot;</span></span>, street, city, state));
+
+        <span class="keyword">if</span> (result != <span class="predefined-constant">null</span> &amp;&amp; result.isValid()) {
+            <span class="keyword">return</span> <span class="predefined-type">ResolveResult</span>.success(<span class="keyword">new</span> GeoPoint(result.getLatitude(), result.getLongitude()));
+        }
+        <span class="keyword">return</span> <span class="predefined-type">ResolveResult</span>.nullValue();
+    }
+}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_configuration_in_importprofile">2.5.3. Configuration in ImportProfile</h4>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">columnMappings</span><span class="delimiter">&quot;</span></span>: [
+    {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">sourceColumn</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">street</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">targetField</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">location</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">rowValueResolverName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">geocodeResolver</span><span class="delimiter">&quot;</span></span>
+    }
+  ]
+}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_result_types">2.5.4. Result Types</h4>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Method</th>
+<th class="tableblock halign-left valign-top">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ResolveResult.success(value)</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Set the field to the resolved value</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ResolveResult.passthrough(original)</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Keep the original value unchanged</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ResolveResult.nullValue()</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Set the field to null</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ResolveResult.skip()</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Skip this row (not an error)</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ResolveResult.error(message)</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Mark the row as an error</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>For complete RowValueResolver documentation, see <a href="../design/csv-import-enhancements.html">CSV Import Enhancements</a>.</p>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_dynamic_attribute_import">2.6. Dynamic Attribute Import</h3>
+<div class="paragraph">
+<p>For entities with dynamic attributes (schema-less, nested key-value structures), Quantum supports multiple import strategies.</p>
+</div>
+<div class="sect3">
+<h4 id="_import_strategies">2.6.1. Import Strategies</h4>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Strategy</th>
+<th class="tableblock halign-left valign-top">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>DOT_NOTATION</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Use <code>dyn.setName.attrName[:type]</code> column headers. Best for spreadsheet-friendly imports.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>JSON_COLUMN</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Single JSON column containing all attributes. Best for programmatic imports.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>VERTICAL</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Multiple rows per entity with one attribute per row. Best for attribute-centric workflows.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>HYBRID</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Combines DOT_NOTATION and JSON_COLUMN in the same import.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect3">
+<h4 id="_dot_notation_example">2.6.2. DOT_NOTATION Example</h4>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="csv">name,sku,dyn.logistics.weight:Double,dyn.logistics.hazmat:Boolean,dyn.compliance.ce_mark:Boolean
+&quot;Widget Pro&quot;,&quot;WGT-001&quot;,2.5,false,true
+&quot;Gadget X&quot;,&quot;GDG-002&quot;,1.2,false,true</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_json_column_example">2.6.3. JSON_COLUMN Example</h4>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="csv">name,sku,dynamicAttributes
+&quot;Widget Pro&quot;,&quot;WGT-001&quot;,&quot;{&quot;&quot;logistics&quot;&quot;:{&quot;&quot;weight&quot;&quot;:2.5,&quot;&quot;hazmat&quot;&quot;:false},&quot;&quot;compliance&quot;&quot;:{&quot;&quot;ce_mark&quot;&quot;:true}}&quot;</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_configuration_in_importprofile_2">2.6.4. Configuration in ImportProfile</h4>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">refName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">product-import-dynamic</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">dynamicAttributeStrategy</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">DOT_NOTATION</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">dynamicAttributePrefix</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">dyn.</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">enableDynamicAttributeDiscovery</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">dynamicAttributeMergeStrategy</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">MERGE</span><span class="delimiter">&quot;</span></span>
+}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_merge_strategies">2.6.5. Merge Strategies</h4>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Strategy</th>
+<th class="tableblock halign-left valign-top">Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>REPLACE</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Remove all existing attributes, replace with imported</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>MERGE</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Keep existing attributes, update matching, add new</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>APPEND</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Keep existing attributes, only add new (no updates)</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>For complete dynamic attribute import documentation, see <a href="../design/csv-dynamic-attributes-design.html">CSV Dynamic Attributes Design</a>.</p>
+</div>
 </div>
 </div>
 </div>
@@ -2058,7 +2462,7 @@ collection.find(rewritten).iterator();</code></pre>
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2025-11-11 21:41:57 -0500
+Last updated 2026-01-26 17:21:16 -0500
 </div>
 </div>
 </body>

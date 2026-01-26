@@ -791,6 +791,57 @@ text(&quot;priority escalation&quot;) &amp;&amp; status:&quot;OPEN&quot;</code><
 </li>
 </ul>
 </div>
+<div class="admonitionblock important">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-important" title="Important"></i>
+</td>
+<td class="content">
+MongoDB requires <code>$text</code> to be a top-level query operator. The following usages are <strong>not allowed</strong> and will be rejected at parse time:
+</td>
+</tr>
+</table>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 16.6666%;">
+<col style="width: 33.3333%;">
+<col style="width: 50.0001%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Invalid Usage</th>
+<th class="tableblock halign-left valign-top">Example</th>
+<th class="tableblock halign-left valign-top">Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Inside NOT</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>!!text("foo")</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">MongoDB does not support <code>$text</code> inside <code>$not</code> or <code>$nor</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Inside OR</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>text("foo") || status:"OPEN"</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">MongoDB does not allow <code>$text</code> inside <code>$or</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Inside elemMatch</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>tags:{text("foo")}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">MongoDB does not support <code>$text</code> inside <code>$elemMatch</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Multiple text clauses</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>text("foo") &amp;&amp; text("bar")</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Only one <code>$text</code> operator is allowed per query</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>Valid usage: <code>text(&#8230;&#8203;)</code> combined with <code>&amp;&amp;</code> (AND) at the top level is supported because MongoDB allows <code>$text</code> alongside other top-level conditions.</p>
+</div>
 </div>
 <div class="sect3">
 <h4 id="_numeric_ranges">1.2.3. Numeric Ranges</h4>
@@ -1100,7 +1151,22 @@ createdDate:2024-12-25
 # Wrong: Unbalanced parentheses
 (active:true &amp;&amp; price:&gt;##10
 # Right:
-(active:true &amp;&amp; price:&gt;##10)</code></pre>
+(active:true &amp;&amp; price:&gt;##10)
+
+# Wrong: text() inside NOT
+!!text(&quot;search&quot;)
+# Right: Use text() at top level only
+text(&quot;search&quot;) &amp;&amp; status:!&quot;DELETED&quot;
+
+# Wrong: text() inside OR
+text(&quot;search&quot;) || status:&quot;ACTIVE&quot;
+# Right: Use text() with AND only
+text(&quot;search&quot;) &amp;&amp; (status:&quot;ACTIVE&quot; || status:&quot;PENDING&quot;)
+
+# Wrong: Multiple text() clauses
+text(&quot;foo&quot;) &amp;&amp; text(&quot;bar&quot;)
+# Right: Combine search terms in a single text()
+text(&quot;foo bar&quot;)</code></pre>
 </div>
 </div>
 </div>
@@ -1145,7 +1211,7 @@ createdDate:2024-12-25
 - Output type: Morphia Filter
 - Execution: database-side (MongoDB)
 - Semantics: identical to grammar (comparisons, IN/NIN, exists, null, regex with wildcards, elemMatch, boolean &amp;&amp;/||/!!)
-- Text search: <code>text("&#8230;&#8203;")</code> is supported when a collection has a text index; only one text clause is allowed per query.
+- Text search: <code>text("&#8230;&#8203;")</code> is supported when a collection has a text index; only one text clause is allowed per query, and it must be at the top level (cannot be inside OR, NOT, or elemMatch).
 - Variable expansion: supports ${vars} and single-variable IN list expansion (e.g., [${ids}] can expand to a collection/array or a comma-separated string)</p>
 </div>
 <div class="paragraph">
@@ -1647,7 +1713,7 @@ expand(customer) &amp;&amp; fields:[+_id,+customer,+total]</code></pre>
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2026-01-26 16:34:29 -0500
+Last updated 2026-01-26 17:17:51 -0500
 </div>
 </div>
 </body>
