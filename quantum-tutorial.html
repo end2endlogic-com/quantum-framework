@@ -529,7 +529,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Tutorial: Build a Multi-tenant SaaS with Quantum</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2026-01-26T19:19:15Z</span>
+<span id="revdate">2026-01-26T21:40:03Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -5558,6 +5558,34 @@ name:&quot;WIDGET&quot;        # may or may not match &quot;widget&quot;</code><
 </div>
 </div>
 <div class="sect4">
+<h5 id="_text_search">Text Search</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># Full-text search (requires MongoDB text index)
+text(&quot;priority escalation&quot;)
+
+# Combine text search with other filters
+text(&quot;priority escalation&quot;) &amp;&amp; status:&quot;OPEN&quot;</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Notes:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>text(&#8230;&#8203;)</code> maps to MongoDB <code>$text</code> queries and is case-insensitive by default.</p>
+</li>
+<li>
+<p>MongoDB allows only one <code>text(&#8230;&#8203;)</code> clause per query.</p>
+</li>
+<li>
+<p>Text search must be backed by a text index on the target collection.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect4">
 <h5 id="_numeric_ranges">Numeric Ranges</h5>
 <div class="listingblock">
 <div class="content">
@@ -5910,6 +5938,7 @@ createdDate:2024-12-25
 - Output type: Morphia Filter
 - Execution: database-side (MongoDB)
 - Semantics: identical to grammar (comparisons, IN/NIN, exists, null, regex with wildcards, elemMatch, boolean &amp;&amp;/||/!!)
+- Text search: <code>text("&#8230;&#8203;")</code> is supported when a collection has a text index; only one text clause is allowed per query.
 - Variable expansion: supports ${vars} and single-variable IN list expansion (e.g., [${ids}] can expand to a collection/array or a comma-separated string)</p>
 </div>
 <div class="paragraph">

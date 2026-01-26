@@ -541,19 +541,20 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_common_patterns">1.2. Common Patterns</a>
 <ul class="sectlevel3">
 <li><a href="#_string_matching">1.2.1. String Matching</a></li>
-<li><a href="#_numeric_ranges">1.2.2. Numeric Ranges</a></li>
-<li><a href="#_date_and_time_queries">1.2.3. Date and Time Queries</a></li>
-<li><a href="#_list_membership">1.2.4. List Membership</a></li>
-<li><a href="#_advanced_examples">1.2.5. Advanced Examples</a></li>
-<li><a href="#_variables_in_filters">1.2.6. Variables in Filters</a></li>
-<li><a href="#_performance_tips">1.2.7. Performance Tips</a></li>
-<li><a href="#_integration_with_rest_apis">1.2.8. Integration with REST APIs</a></li>
-<li><a href="#_error_handling">1.2.9. Error Handling</a></li>
-<li><a href="#_see_also">1.2.10. See Also</a></li>
-<li><a href="#_execution_engines_and_listeners">1.2.11. Execution engines and listeners</a></li>
-<li><a href="#ontology-query-language">1.2.12. Expressing Ontology Constraints in Queries (optional)</a></li>
-<li><a href="#_ontology_operators_hasedge_and_hasincomingedge">1.2.13. Ontology operators: hasEdge and hasIncomingEdge</a></li>
-<li><a href="#_root_projection_recap_fields">1.2.14. Root projection recap: fields:[+…,-…]</a></li>
+<li><a href="#_text_search">1.2.2. Text Search</a></li>
+<li><a href="#_numeric_ranges">1.2.3. Numeric Ranges</a></li>
+<li><a href="#_date_and_time_queries">1.2.4. Date and Time Queries</a></li>
+<li><a href="#_list_membership">1.2.5. List Membership</a></li>
+<li><a href="#_advanced_examples">1.2.6. Advanced Examples</a></li>
+<li><a href="#_variables_in_filters">1.2.7. Variables in Filters</a></li>
+<li><a href="#_performance_tips">1.2.8. Performance Tips</a></li>
+<li><a href="#_integration_with_rest_apis">1.2.9. Integration with REST APIs</a></li>
+<li><a href="#_error_handling">1.2.10. Error Handling</a></li>
+<li><a href="#_see_also">1.2.11. See Also</a></li>
+<li><a href="#_execution_engines_and_listeners">1.2.12. Execution engines and listeners</a></li>
+<li><a href="#ontology-query-language">1.2.13. Expressing Ontology Constraints in Queries (optional)</a></li>
+<li><a href="#_ontology_operators_hasedge_and_hasincomingedge">1.2.14. Ontology operators: hasEdge and hasIncomingEdge</a></li>
+<li><a href="#_root_projection_recap_fields">1.2.15. Root projection recap: fields:[+…,-…]</a></li>
 </ul>
 </li>
 </ul>
@@ -764,7 +765,35 @@ name:&quot;WIDGET&quot;        # may or may not match &quot;widget&quot;</code><
 </div>
 </div>
 <div class="sect3">
-<h4 id="_numeric_ranges">1.2.2. Numeric Ranges</h4>
+<h4 id="_text_search">1.2.2. Text Search</h4>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># Full-text search (requires MongoDB text index)
+text(&quot;priority escalation&quot;)
+
+# Combine text search with other filters
+text(&quot;priority escalation&quot;) &amp;&amp; status:&quot;OPEN&quot;</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Notes:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>text(&#8230;&#8203;)</code> maps to MongoDB <code>$text</code> queries and is case-insensitive by default.</p>
+</li>
+<li>
+<p>MongoDB allows only one <code>text(&#8230;&#8203;)</code> clause per query.</p>
+</li>
+<li>
+<p>Text search must be backed by a text index on the target collection.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_numeric_ranges">1.2.3. Numeric Ranges</h4>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code># Price between 10 and 100
@@ -779,7 +808,7 @@ itemCount:#5</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_date_and_time_queries">1.2.3. Date and Time Queries</h4>
+<h4 id="_date_and_time_queries">1.2.4. Date and Time Queries</h4>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code># Orders from today
@@ -797,7 +826,7 @@ updatedAt:&gt;=2024-01-01T00:00:00Z</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_list_membership">1.2.4. List Membership</h4>
+<h4 id="_list_membership">1.2.5. List Membership</h4>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code># Status in specific values (IN)
@@ -845,7 +874,7 @@ description:~ &amp;&amp; description:!&quot;&quot;</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_advanced_examples">1.2.5. Advanced Examples</h4>
+<h4 id="_advanced_examples">1.2.6. Advanced Examples</h4>
 <div class="sect4">
 <h5 id="_complex_business_logic">Complex Business Logic</h5>
 <div class="listingblock">
@@ -896,7 +925,7 @@ auditInfo.createdDate:!auditInfo.lastUpdatedDate # has been modified</code></pre
 </div>
 </div>
 <div class="sect3">
-<h4 id="_variables_in_filters">1.2.6. Variables in Filters</h4>
+<h4 id="_variables_in_filters">1.2.7. Variables in Filters</h4>
 <div class="paragraph">
 <p>Variables are resolved from the current security context and can be used in permission rules and access resolvers.</p>
 </div>
@@ -974,7 +1003,7 @@ customerId:^[${accessibleCustomerIds}]</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_performance_tips">1.2.7. Performance Tips</h4>
+<h4 id="_performance_tips">1.2.8. Performance Tips</h4>
 <div class="sect4">
 <h5 id="_efficient_queries">Efficient Queries</h5>
 <div class="listingblock">
@@ -1001,7 +1030,7 @@ GET /products/list?filter=active:true&amp;projection=+id,+name,+price,-descripti
 </div>
 </div>
 <div class="sect3">
-<h4 id="_integration_with_rest_apis">1.2.8. Integration with REST APIs</h4>
+<h4 id="_integration_with_rest_apis">1.2.9. Integration with REST APIs</h4>
 <div class="sect4">
 <h5 id="_list_endpoints">List Endpoints</h5>
 <div class="listingblock">
@@ -1047,7 +1076,7 @@ andFilterString: <span class="string"><span class="delimiter">&quot;</span><span
 </div>
 </div>
 <div class="sect3">
-<h4 id="_error_handling">1.2.9. Error Handling</h4>
+<h4 id="_error_handling">1.2.10. Error Handling</h4>
 <div class="paragraph">
 <p>Common syntax errors and solutions:</p>
 </div>
@@ -1076,7 +1105,7 @@ createdDate:2024-12-25
 </div>
 </div>
 <div class="sect3">
-<h4 id="_see_also">1.2.10. See Also</h4>
+<h4 id="_see_also">1.2.11. See Also</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -1092,7 +1121,7 @@ createdDate:2024-12-25
 </div>
 </div>
 <div class="sect3">
-<h4 id="_execution_engines_and_listeners">1.2.11. Execution engines and listeners</h4>
+<h4 id="_execution_engines_and_listeners">1.2.12. Execution engines and listeners</h4>
 <div class="paragraph">
 <p>The BIAPI query syntax is parsed once (via ANTLR) and can be executed by different "listeners" depending on the use case. Quantum ships with two primary implementations that share the same grammar and semantics:</p>
 </div>
@@ -1116,6 +1145,7 @@ createdDate:2024-12-25
 - Output type: Morphia Filter
 - Execution: database-side (MongoDB)
 - Semantics: identical to grammar (comparisons, IN/NIN, exists, null, regex with wildcards, elemMatch, boolean &amp;&amp;/||/!!)
+- Text search: <code>text("&#8230;&#8203;")</code> is supported when a collection has a text index; only one text clause is allowed per query.
 - Variable expansion: supports ${vars} and single-variable IN list expansion (e.g., [${ids}] can expand to a collection/array or a comma-separated string)</p>
 </div>
 <div class="paragraph">
@@ -1490,7 +1520,7 @@ aggValidator.validateField(<span class="string"><span class="delimiter">&quot;</
 </div>
 </div>
 <div class="sect3">
-<h4 id="ontology-query-language">1.2.12. Expressing Ontology Constraints in Queries (optional)</h4>
+<h4 id="ontology-query-language">1.2.13. Expressing Ontology Constraints in Queries (optional)</h4>
 <div class="paragraph">
 <p>The BIAPI query language primarily targets fields on documents. When using the ontology modules, there are two ways to incorporate ontology relationships into queries:</p>
 </div>
@@ -1515,7 +1545,7 @@ id:^${idsByPlacedInOrg}</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_ontology_operators_hasedge_and_hasincomingedge">1.2.13. Ontology operators: hasEdge and hasIncomingEdge</h4>
+<h4 id="_ontology_operators_hasedge_and_hasincomingedge">1.2.14. Ontology operators: hasEdge and hasIncomingEdge</h4>
 <div class="paragraph">
 <p>When the ontology module is enabled and edges are materialized, you can constrain results by semantic relationships using <code>hasEdge</code> and <code>hasIncomingEdge</code>.</p>
 </div>
@@ -1574,7 +1604,7 @@ hasIncomingEdge(canAccessLocation, ${principalId})</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_root_projection_recap_fields">1.2.14. Root projection recap: fields:[+…,-…]</h4>
+<h4 id="_root_projection_recap_fields">1.2.15. Root projection recap: fields:[+…,-…]</h4>
 <div class="paragraph">
 <p>To include or exclude fields from the root documents:</p>
 </div>
@@ -1617,7 +1647,7 @@ expand(customer) &amp;&amp; fields:[+_id,+customer,+total]</code></pre>
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2026-01-26 13:37:58 -0500
+Last updated 2026-01-26 16:34:29 -0500
 </div>
 </div>
 </body>
