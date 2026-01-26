@@ -5,7 +5,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="generator" content="Asciidoctor 2.0.23">
-<title>Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</title>
+<title>Ontology Modeling</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,300italic,400,400italic,600,600italic%7CNoto+Serif:400,400italic,700,700italic%7CDroid+Sans+Mono:400,700">
 <style>
 /*! Asciidoctor default stylesheet | MIT License | https://asciidoctor.org */
@@ -526,10 +526,10 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </head>
 <body class="book toc2 toc-left">
 <div id="header">
-<h1>Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</h1>
+<h1>Ontology Modeling</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2026-01-26T02:45:26Z</span>
+<span id="revdate">2026-01-26T19:19:15Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -554,6 +554,12 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_example_graph_orders_customers_organizations">3.1. Example graph: Orders, Customers, Organizations</a></li>
 <li><a href="#_example_graph_shipments_and_regions">3.2. Example graph: Shipments and Regions</a></li>
 <li><a href="#_what_is_provenance_and_how_to_read_it">3.3. What is provenance and how to read it</a></li>
+<li><a href="#_querying_ontologies">3.4. Querying Ontologies</a>
+<ul class="sectlevel3">
+<li><a href="#_biapi_query_language_functions_hasedge_and_hasincomingedge">3.4.1. BIAPI Query Language Functions: hasEdge and hasIncomingEdge</a></li>
+<li><a href="#_programmatic_querying_with_edgedao">3.4.2. Programmatic Querying with EdgeDao</a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li><a href="#ontology-integration-morphia-permissions">4. Integrating Ontology with Morphia, Permissions, and Multi-tenancy</a>
@@ -562,19 +568,22 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_rule_language_add_hasedge">4.2. Rule language: add hasEdge()</a></li>
 <li><a href="#_passing_tenantid_correctly">4.3. Passing tenantId correctly</a></li>
 <li><a href="#_morphia_repository_integration_patterns">4.4. Morphia repository integration patterns</a></li>
-<li><a href="#_where_ontology_materialization_happens">4.5. Where ontology materialization happens</a>
+<li><a href="#_where_ontology_materialization_happens">4.5. Where ontology materialization happens</a></li>
+<li><a href="#custom-edge-providers">4.6. Custom Edge Providers: OntologyEdgeProvider and HierarchyListEdgeProvider</a>
 <ul class="sectlevel3">
-<li><a href="#property-chains-vs-computed-providers">4.5.1. When to use Property Chains vs ComputedEdgeProvider</a></li>
-<li><a href="#_extending_materialization_with_computededgeprovider_advanced">4.5.2. Extending materialization with ComputedEdgeProvider (Advanced)</a></li>
-<li><a href="#_extending_materialization_with_ontologyedgeprovider_spi">4.5.3. Extending materialization with OntologyEdgeProvider (SPI)</a></li>
-<li><a href="#_configuration">4.5.4. Configuration</a></li>
-<li><a href="#_example_annotate_and_save_edges_are_materialized_automatically">4.5.5. Example: annotate and save — edges are materialized automatically</a></li>
+<li><a href="#_ontologyedgeprovider_the_core_spi">4.6.1. OntologyEdgeProvider: The Core SPI</a></li>
+<li><a href="#_hierarchylistedgeprovider_handling_complex_hierarchies">4.6.2. HierarchyListEdgeProvider: Handling Complex Hierarchies</a></li>
+<li><a href="#property-chains-vs-computed-providers">4.6.3. When to use Property Chains vs ComputedEdgeProvider</a></li>
+<li><a href="#_extending_materialization_with_computededgeprovider_advanced">4.6.4. Extending materialization with ComputedEdgeProvider (Advanced)</a></li>
+<li><a href="#_extending_materialization_with_ontologyedgeprovider_spi">4.6.5. Extending materialization with OntologyEdgeProvider (SPI)</a></li>
+<li><a href="#_configuration">4.6.6. Configuration</a></li>
+<li><a href="#_example_annotate_and_save_edges_are_materialized_automatically">4.6.7. Example: annotate and save — edges are materialized automatically</a></li>
 </ul>
 </li>
-<li><a href="#_security_and_multi_tenant_considerations">4.6. Security and multi-tenant considerations</a></li>
-<li><a href="#_developer_workflow_and_dx_checklist">4.7. Developer workflow and DX checklist</a></li>
-<li><a href="#_cookbook_end_to_end_example_with_orders_org">4.8. Cookbook: end-to-end example with Orders + Org</a></li>
-<li><a href="#_migration_notes_for_teams_using_reference">4.9. Migration notes for teams using @Reference</a></li>
+<li><a href="#_security_and_multi_tenant_considerations">4.7. Security and multi-tenant considerations</a></li>
+<li><a href="#_developer_workflow_and_dx_checklist">4.8. Developer workflow and DX checklist</a></li>
+<li><a href="#_cookbook_end_to_end_example_with_orders_org">4.9. Cookbook: end-to-end example with Orders + Org</a></li>
+<li><a href="#_migration_notes_for_teams_using_reference">4.10. Migration notes for teams using @Reference</a></li>
 </ul>
 </li>
 <li><a href="#_primer_first_time_guide_to_core_relationship_semantics">5. Primer: First-time guide to core relationship semantics</a></li>
@@ -1482,6 +1491,61 @@ Provenance is for explanation and maintenance. The runtime edges you query on re
 </table>
 </div>
 </div>
+<div class="sect2">
+<h3 id="_querying_ontologies">3.4. Querying Ontologies</h3>
+<div class="paragraph">
+<p>Quantum provides several ways to leverage ontology relationships in your queries and business logic.</p>
+</div>
+<div class="sect3">
+<h4 id="_biapi_query_language_functions_hasedge_and_hasincomingedge">3.4.1. BIAPI Query Language Functions: hasEdge and hasIncomingEdge</h4>
+<div class="paragraph">
+<p>The query language (BIAPIQuery) includes built-in functions to filter entities based on their ontology edges. These are the preferred way to perform ontology-aware queries from REST APIs or permission rules.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><strong><code>hasEdge(predicate, dst)</code></strong>: Filters for entities (sources) that have an edge pointing TO a specific destination.</p>
+</li>
+<li>
+<p><strong><code>hasIncomingEdge(predicate, src)</code></strong>: Filters for entities (targets) that have an edge coming FROM a specific source.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Example BIAPI queries:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># Find orders placed in OrgA
+hasEdge(placedInOrg, &quot;OrgA&quot;)
+
+# Find locations accessible by a specific associate
+hasIncomingEdge(canAccessLocation, &quot;associate-123&quot;)
+
+# Combine with other filters
+hasEdge(placedInOrg, &quot;OrgA&quot;) &amp;&amp; status:PENDING</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_programmatic_querying_with_edgedao">3.4.2. Programmatic Querying with EdgeDao</h4>
+<div class="paragraph">
+<p>For more complex scenarios in Java code, you can use the <code>EdgeDao</code> directly:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@Inject</span>
+EdgeDao edgeDao;
+
+<span class="comment">// Find all destination IDs for a given source and predicate</span>
+<span class="predefined-type">Set</span>&lt;<span class="predefined-type">String</span>&gt; targetIds = edgeDao.dstIdsBySrc(tenantId, <span class="string"><span class="delimiter">&quot;</span><span class="content">Associate</span><span class="delimiter">&quot;</span></span>, associateId, <span class="string"><span class="delimiter">&quot;</span><span class="content">canAccessLocation</span><span class="delimiter">&quot;</span></span>);
+
+<span class="comment">// Find all source IDs for a given destination and predicate</span>
+<span class="predefined-type">Set</span>&lt;<span class="predefined-type">String</span>&gt; sourceIds = edgeDao.srcIdsByDst(tenantId, <span class="string"><span class="delimiter">&quot;</span><span class="content">canAccessLocation</span><span class="delimiter">&quot;</span></span>, locationId);</code></pre>
+</div>
+</div>
+</div>
+</div>
 </div>
 </div>
 <div class="sect1">
@@ -1677,8 +1741,104 @@ query.filter(Filters.in(&quot;_id&quot;, ids));</code></pre>
 </li>
 </ul>
 </div>
+</div>
+<div class="sect2">
+<h3 id="custom-edge-providers">4.6. Custom Edge Providers: OntologyEdgeProvider and HierarchyListEdgeProvider</h3>
+<div class="paragraph">
+<p>While annotations (<code>@OntologyProperty</code>) and property chains cover many use cases, some relationships require custom logic to determine edges. Quantum provides an SPI for implementing custom edge providers that are automatically discovered and integrated into the materialization process.</p>
+</div>
 <div class="sect3">
-<h4 id="property-chains-vs-computed-providers">4.5.1. When to use Property Chains vs ComputedEdgeProvider</h4>
+<h4 id="_ontologyedgeprovider_the_core_spi">4.6.1. OntologyEdgeProvider: The Core SPI</h4>
+<div class="paragraph">
+<p>The <code>OntologyEdgeProvider</code> interface allows you to contribute explicit edges for any entity instance. These edges are merged with annotation-derived edges before being passed to the reasoner.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="directive">public</span> <span class="type">interface</span> <span class="class">OntologyEdgeProvider</span> {
+    <span class="comment">/** @return true if this provider supports the given entity type */</span>
+    <span class="type">boolean</span> supports(<span class="predefined-type">Class</span>&lt;?&gt; entityType);
+
+    <span class="comment">/** Produce explicit edges for the given entity instance */</span>
+    <span class="predefined-type">List</span>&lt;Reasoner.Edge&gt; edges(<span class="predefined-type">String</span> realmId, DataDomainInfo dataDomainInfo, <span class="predefined-type">Object</span> entity);
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Implementations should be annotated with <code>@ApplicationScoped</code> for CDI discovery.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_hierarchylistedgeprovider_handling_complex_hierarchies">4.6.2. HierarchyListEdgeProvider: Handling Complex Hierarchies</h4>
+<div class="paragraph">
+<p>A common pattern in SaaS applications is assigning users/entities to nodes in a hierarchy (e.g., Territories, Organizations) where they should also "inherit" relationships from descendant nodes. <code>HierarchyListEdgeProvider</code> is a specialized base class designed for this purpose.</p>
+</div>
+<div class="paragraph">
+<p>Key features:
+- <strong>Hierarchy Traversal</strong>: Automatically expands relationships through parent-child links.
+- <strong>List Resolution</strong>: Resolves <code>StaticDynamicList</code> fields to concrete entity IDs.
+- <strong>Change Tracking</strong>: Informs the framework which entities need re-materialization when a hierarchy node or list changes.</p>
+</div>
+<div class="sect4">
+<h5 id="_example_territory_location_materialization">Example: Territory → Location Materialization</h5>
+<div class="paragraph">
+<p>Consider a scenario where:
+1. <strong>Associates</strong> are assigned to <strong>Territories</strong>.
+2. <strong>Territories</strong> form a hierarchy.
+3. Each <strong>Territory</strong> has a list of <strong>Locations</strong>.
+4. We want to materialize <code>Associate --canAccessLocation-&#8594; Location</code> edges.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@ApplicationScoped</span>
+<span class="directive">public</span> <span class="type">class</span> <span class="class">TerritoryLocationEdgeProvider</span>
+        <span class="directive">extends</span> HierarchyListEdgeProvider&lt;Territory, Territory, Location&gt; {
+
+    <span class="annotation">@Inject</span> TerritoryRepo territoryRepo;
+    <span class="annotation">@Inject</span> LocationListResolver listResolver;
+
+    <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">Class</span>&lt;Territory&gt; getSourceType() { <span class="keyword">return</span> Territory.class; }
+    <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> getPredicate() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">hasLocation</span><span class="delimiter">&quot;</span></span>; }
+    <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> getTargetTypeName() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">Location</span><span class="delimiter">&quot;</span></span>; }
+
+    <span class="annotation">@Override</span>
+    <span class="directive">protected</span> <span class="predefined-type">List</span>&lt;<span class="predefined-type">String</span>&gt; getAssignedNodeIds(Territory source) {
+        <span class="keyword">return</span> <span class="predefined-type">List</span>.of(source.getId().toString());
+    }
+
+    <span class="annotation">@Override</span>
+    <span class="directive">protected</span> <span class="predefined-type">List</span>&lt;Territory&gt; getChildNodes(ComputationContext context, <span class="predefined-type">String</span> nodeId) {
+        <span class="keyword">return</span> territoryRepo.getAllChildren(context.dataDomainInfo(), nodeId);
+    }
+
+    <span class="annotation">@Override</span>
+    <span class="directive">protected</span> <span class="predefined-type">List</span>&lt;Location&gt; resolveListItems(ComputationContext context, Territory node) {
+        <span class="keyword">return</span> listResolver.resolve(context.dataDomainInfo(), node.getStaticDynamicList());
+    }
+
+    <span class="annotation">@Override</span>
+    <span class="directive">protected</span> <span class="predefined-type">String</span> extractTargetId(Location target) {
+        <span class="keyword">return</span> target.getRefName();
+    }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Combined with a Property Chain:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml"><span class="key">chains</span>:
+  - <span class="string"><span class="content">chain: [hasTerritory, hasLocation]</span></span>
+    <span class="key">implies</span>: <span class="string"><span class="content">canAccessLocation</span></span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This setup ensures that when an Associate is linked to a Territory, they automatically get <code>canAccessLocation</code> edges to all locations in that territory and its descendants.</p>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="property-chains-vs-computed-providers">4.6.3. When to use Property Chains vs ComputedEdgeProvider</h4>
 <div class="paragraph">
 <p>Understanding when to use property chains versus <code>ComputedEdgeProvider</code> is critical for modeling your ontology effectively. This section provides clear guidance on which approach to use.</p>
 </div>
@@ -1988,7 +2148,7 @@ query.filter(Filters.in(&quot;_id&quot;, ids));</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_extending_materialization_with_computededgeprovider_advanced">4.5.2. Extending materialization with ComputedEdgeProvider (Advanced)</h4>
+<h4 id="_extending_materialization_with_computededgeprovider_advanced">4.6.4. Extending materialization with ComputedEdgeProvider (Advanced)</h4>
 <div class="paragraph">
 <p>While <code>OntologyEdgeProvider</code> is sufficient for simple, direct edges, many real-world use cases require edges computed from complex logic, such as hierarchy traversal or dynamic list resolution. <code>ComputedEdgeProvider</code> is a more robust base class that provides:</p>
 </div>
@@ -2072,7 +2232,7 @@ query.filter(Filters.in(&quot;_id&quot;, ids));</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_extending_materialization_with_ontologyedgeprovider_spi">4.5.3. Extending materialization with OntologyEdgeProvider (SPI)</h4>
+<h4 id="_extending_materialization_with_ontologyedgeprovider_spi">4.6.5. Extending materialization with OntologyEdgeProvider (SPI)</h4>
 <div class="paragraph">
 <p>The write hook is annotation-first and SPI-second:</p>
 </div>
@@ -2223,7 +2383,7 @@ query.filter(Filters.in(&quot;_id&quot;, ids));</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_configuration">4.5.4. Configuration</h4>
+<h4 id="_configuration">4.6.6. Configuration</h4>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="properties"># default is true
@@ -2232,7 +2392,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_example_annotate_and_save_edges_are_materialized_automatically">4.5.5. Example: annotate and save — edges are materialized automatically</h4>
+<h4 id="_example_annotate_and_save_edges_are_materialized_automatically">4.6.7. Example: annotate and save — edges are materialized automatically</h4>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@OntologyClass</span>(id = <span class="string"><span class="delimiter">&quot;</span><span class="content">Order</span><span class="delimiter">&quot;</span></span>)
@@ -2262,7 +2422,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_security_and_multi_tenant_considerations">4.6. Security and multi-tenant considerations</h3>
+<h3 id="_security_and_multi_tenant_considerations">4.7. Security and multi-tenant considerations</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -2278,7 +2438,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_developer_workflow_and_dx_checklist">4.7. Developer workflow and DX checklist</h3>
+<h3 id="_developer_workflow_and_dx_checklist">4.8. Developer workflow and DX checklist</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -2297,7 +2457,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_cookbook_end_to_end_example_with_orders_org">4.8. Cookbook: end-to-end example with Orders + Org</h3>
+<h3 id="_cookbook_end_to_end_example_with_orders_org">4.9. Cookbook: end-to-end example with Orders + Org</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -2315,7 +2475,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_migration_notes_for_teams_using_reference">4.9. Migration notes for teams using @Reference</h3>
+<h3 id="_migration_notes_for_teams_using_reference">4.10. Migration notes for teams using @Reference</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -3933,7 +4093,7 @@ curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=defau
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2026-01-22 11:04:34 -0500
+Last updated 2026-01-26 13:37:58 -0500
 </div>
 </div>
 </body>

@@ -529,7 +529,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Permissions: Rule Bases, SecurityURIHeader, and SecurityURIBody</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2026-01-26T02:45:26Z</span>
+<span id="revdate">2026-01-26T19:19:15Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -2263,6 +2263,26 @@ resp.setRoleAssignments(roleAssignments);
 <td class="tableblock halign-left valign-top"><p class="tableblock">ResourceContext.area</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">The functional area</p></td>
 </tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${dcTenantId}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">DomainContext.tenantId</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Tenant ID from the current domain context</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${dcOrgRefName}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">DomainContext.orgRefName</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Organization reference name from domain context</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${dcAccountId}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">DomainContext.accountId</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Account ID from domain context</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${dcDataSegment}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">DomainContext.dataSegment</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Data segment number from domain context</p></td>
+</tr>
 </tbody>
 </table>
 <div class="paragraph">
@@ -3384,6 +3404,9 @@ resp.setRoleAssignments(roleAssignments);
 <li>
 <p>hasEdge(predicate, dstIdOrVar)</p>
 </li>
+<li>
+<p>hasIncomingEdge(predicate, srcIdOrVar)</p>
+</li>
 </ul>
 </div>
 <div class="paragraph">
@@ -3395,7 +3418,7 @@ resp.setRoleAssignments(roleAssignments);
 <p>predicate: String name of the ontology predicate (e.g., "placedInOrg", "orderShipsToRegion").</p>
 </li>
 <li>
-<p>dstIdOrVar: Either a concrete destination id/refName or a variable resolved from RuleContext (e.g., principal.orgRefName, request.region).</p>
+<p>dstIdOrVar / srcIdOrVar: Either a concrete id/refName or a variable resolved from RuleContext (e.g., principal.orgRefName, request.region, ${principalId}).</p>
 </li>
 </ul>
 </div>
@@ -3405,7 +3428,10 @@ resp.setRoleAssignments(roleAssignments);
 <div class="ulist">
 <ul>
 <li>
-<p>The rule grants/filters entities for which an edge exists: (tenantId, src = entity._id, p = predicate, dst = resolvedDst).</p>
+<p><strong>hasEdge</strong>: The rule grants/filters entities (sources) for which an edge exists: (tenantId, src = entity._id, p = predicate, dst = resolvedDst).</p>
+</li>
+<li>
+<p><strong>hasIncomingEdge</strong>: The rule grants/filters entities (targets) for which an edge exists: (tenantId, src = resolvedSrc, p = predicate, dst = entity._id). Useful for finding entities that are destinations of a relationship (e.g., "find locations reachable FROM an associate").</p>
 </li>
 <li>
 <p>Multi-tenant safety: tenantId is always taken from RuleContext/DomainContext.</p>
@@ -3418,7 +3444,7 @@ resp.setRoleAssignments(roleAssignments);
 <div class="ulist">
 <ul>
 <li>
-<p>hasEdge can be combined with existing rule clauses (and/or/not) and other filters (states, tags, ownerId, etc.).</p>
+<p>hasEdge and hasIncomingEdge can be combined with existing rule clauses (and/or/not) and other filters (states, tags, ownerId, etc.).</p>
 </li>
 </ul>
 </div>
@@ -3439,7 +3465,27 @@ resp.setRoleAssignments(roleAssignments);
 <li>
 <p>allow LIST Order when hasEdge("orderShipsToRegion", request.region)</p>
 </li>
+<li>
+<p>Allow viewing Locations reachable from the current user:</p>
+</li>
+<li>
+<p>allow VIEW Location when hasIncomingEdge("canAccessLocation", ${principalId})</p>
+</li>
 </ul>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<div class="paragraph">
+<p>In <code>andFilterString</code> and <code>orFilterString</code>, use standard BIAPI syntax for these functions: <code>hasEdge(predicate, dst)</code> and <code>hasIncomingEdge(predicate, src)</code>. In <code>postconditionScript</code>, use the JavaScript helper counterparts: <code>hasEdge(predicate, dst)</code> and <code>hasIncomingEdge(predicate, src)</code>.</p>
+</div>
+</td>
+</tr>
+</table>
 </div>
 <div class="paragraph">
 <p>Under the hood</p>
@@ -3447,10 +3493,10 @@ resp.setRoleAssignments(roleAssignments);
 <div class="ulist">
 <ul>
 <li>
-<p>Policy evaluation resolves dstIdOrVar against RuleContext (for example, principal.orgRefName → "OrgP").</p>
+<p>Policy evaluation resolves dstIdOrVar / srcIdOrVar against RuleContext (for example, principal.orgRefName → "OrgP").</p>
 </li>
 <li>
-<p>The list/filter query is rewritten using ListQueryRewriter.rewriteForHasEdge(&#8230;&#8203;), which turns the predicate into a set of source ids and merges it with the base query efficiently.</p>
+<p>The list/filter query is rewritten using ListQueryRewriter.rewriteForHasEdge(&#8230;&#8203;) or rewriteForHasIncomingEdge(&#8230;&#8203;), which turns the predicate and resolved ID into a set of target/source IDs and merges it with the base query efficiently.</p>
 </li>
 <li>
 <p>OntologyEdgeDao must be indexed on (tenantId, p, dst) and (tenantId, src, p) for performance.</p>
@@ -3486,6 +3532,24 @@ resp.setRoleAssignments(roleAssignments);
 </div>
 </div>
 <div class="paragraph">
+<p>Another example using <code>hasIncomingEdge</code>:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml">- <span class="string"><span class="content">name: view-reachable-locations</span></span>
+  <span class="key">priority</span>: <span class="string"><span class="content">110</span></span>
+  <span class="key">securityURI</span>:
+    <span class="key">header</span>:
+      <span class="key">identity</span>: <span class="string"><span class="content">USER</span></span>
+      <span class="key">area</span>: <span class="string"><span class="content">core</span></span>
+      <span class="key">functionalDomain</span>: <span class="string"><span class="content">location</span></span>
+      <span class="key">action</span>: <span class="string"><span class="content">view</span></span>
+  <span class="key">effect</span>: <span class="string"><span class="content">ALLOW</span></span>
+  <span class="comment"># Find locations that the current user has a &quot;canAccessLocation&quot; edge to</span>
+  <span class="key">andFilterString</span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">hasIncomingEdge(canAccessLocation, ${principalId})</span><span class="delimiter">&quot;</span></span></code></pre>
+</div>
+</div>
+<div class="paragraph">
 <p>2) Evaluate policy and apply constraint in the repository/list path</p>
 </div>
 <div class="listingblock">
@@ -3506,7 +3570,10 @@ ListQueryRewriter rewriter = <span class="keyword">new</span> ListQueryRewriter(
 
 Bson base = Filters.and(existingFilters...);
 Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, predicate, orgRefName);
-<span class="type">var</span> results = datastore.getDatabase().getCollection(<span class="string"><span class="delimiter">&quot;</span><span class="content">orders</span><span class="delimiter">&quot;</span></span>).find(rewritten).iterator();</code></pre>
+<span class="type">var</span> results = datastore.getDatabase().getCollection(<span class="string"><span class="delimiter">&quot;</span><span class="content">orders</span><span class="delimiter">&quot;</span></span>).find(rewritten).iterator();
+
+<span class="comment">// Example for hasIncomingEdge in code</span>
+Bson locationRewritten = rewriter.rewriteForHasIncomingEdge(locationBase, tenantId, <span class="string"><span class="delimiter">&quot;</span><span class="content">canAccessLocation</span><span class="delimiter">&quot;</span></span>, principalId);</code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -3758,6 +3825,21 @@ hasEdge(<span class="string"><span class="delimiter">&quot;</span><span class="c
 </div>
 </li>
 <li>
+<p>hasIncomingEdge(predicate: String, src: String|null) &#8594; Boolean</p>
+</li>
+<li>
+<p>Purpose: True if an ontology edge with property p=predicate exists from src to the current resource. If src is null, true if any src exists for the predicate.</p>
+</li>
+<li>
+<p>Example:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="javascript"><span class="comment">// Permit view if the current resource is a location reachable from the caller</span>
+hasIncomingEdge(<span class="string"><span class="delimiter">&quot;</span><span class="content">canAccessLocation</span><span class="delimiter">&quot;</span></span>, principalId)</code></pre>
+</div>
+</div>
+</li>
+<li>
 <p>hasAnyEdge(predicate: String, dsts: Collection&lt;String&gt;) &#8594; Boolean</p>
 </li>
 <li>
@@ -3838,7 +3920,7 @@ noViolations() === <span class="predefined-constant">true</span></code></pre>
 <div id="footer">
 <div id="footer-text">
 Version 1.2.2-SNAPSHOT<br>
-Last updated 2026-01-07 16:10:40 -0500
+Last updated 2026-01-26 13:37:58 -0500
 </div>
 </div>
 </body>

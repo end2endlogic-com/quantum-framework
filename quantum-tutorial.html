@@ -529,7 +529,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Tutorial: Build a Multi-tenant SaaS with Quantum</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2026-01-26T02:45:26Z</span>
+<span id="revdate">2026-01-26T19:19:15Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -672,7 +672,6 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <ul class="sectlevel3">
 <li><a href="#_basic_syntax">9.1.1. Basic Syntax</a></li>
 <li><a href="#_common_patterns">9.1.2. Common Patterns</a></li>
-<li><a href="#_relationships_and_ontology_aware_queries">9.1.3. Relationships and Ontology-aware Queries</a></li>
 </ul>
 </li>
 <li><a href="#_hands_on_relationships_and_ontology_aware_queries">9.2. Hands-on: Relationships and Ontology-aware queries</a>
@@ -6308,219 +6307,62 @@ id:^${idsByPlacedInOrg}</code></pre>
 </li>
 </ul>
 </div>
-<div class="paragraph">
-<p>Option B: Function-style helper (if you wire one)</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Some applications register a hasEdge(predicate, value) function into the filter translation path.</p>
-</li>
-<li>
-<p>Example (conceptual): hasEdge("placedInOrg", ${principal.orgRefName})</p>
-</li>
-<li>
-<p>Under the hood, it translates to id IN edgeDao.srcIdsByDst(tenantId, predicate, dst).</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Notes</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Ontology is optional; these patterns only apply when enabled and materialization is active.</p>
-</li>
-<li>
-<p>Always scope edge lookups by tenantId from RuleContext.</p>
-</li>
-<li>
-<p>See <a href="ontology.html#ontology-integration-morphia-permissions">Integrating Ontology</a> for wiring examples.</p>
-</li>
-</ul>
-</div>
-<div class="admonitionblock note">
-<table>
-<tr>
-<td class="icon">
-<i class="fa icon-note" title="Note"></i>
-</td>
-<td class="content">
-<div class="paragraph">
-<p>Policy function hasEdge()</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>The hasEdge(predicate, dstIdOrVar) operator is a policy-level function evaluated before query translation. It is not part of the BIAPI grammar parsed in this document.</p>
-</li>
-<li>
-<p>When present in a policy, the repository typically applies it by calling ListQueryRewriter.rewriteForHasEdge(&#8230;&#8203;), which constrains results by the set of IDs that have the specified ontology edge.</p>
-</li>
-<li>
-<p>See <a href="permissions.html#rule-hasedge">Rule language: add hasEdge()</a> for signature, semantics, and a full end-to-end example.</p>
-</li>
-</ul>
-</div>
-</td>
-</tr>
-</table>
-</div>
-</div>
-</div>
-<div class="sect3">
-<h4 id="_relationships_and_ontology_aware_queries">9.1.3. Relationships and Ontology-aware Queries</h4>
-<div class="sect4">
-<h5 id="_hydrating_related_data_with_expandpath">Hydrating related data with expand(path)</h5>
-<div class="paragraph">
-<p>The query language supports a compact, non-SQL directive to request hydration (materialization) of related entities referenced by the root documents.</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Syntax: <code>expand(path)</code></p>
-</li>
-<li>
-<p>Path: a dotted path; array segments may use <code>[*]</code> to indicate an array of references.</p>
-</li>
-<li>
-<p>Variables: segments may be literal field names or <code>${var}</code> placeholders that are substituted before planning.</p>
-</li>
-<li>
-<p>Examples:</p>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code># Single reference
-expand(customer)
-
-# Parameterized segment (for tenant-specific collections)
-expand(${tenantRoot}.sites[*])
-
-# Array of references
-expand(items[*].product)
-
-# Nested paths (bounded by first non-reference boundary)
-expand(patient.visits[*].diagnoses[*])</code></pre>
-</div>
-</div>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Semantics</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Presence of <code>expand(&#8230;&#8203;)</code> informs the planner to choose an aggregation-based execution plan (e.g., MongoDB $lookup) rather than a simple single-collection filter.</p>
-</li>
-<li>
-<p>Filters remain expressed with the existing primitives and compose as usual. For example:</p>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code># Filter roots by status AND hydrate the related customer
-expand(customer) &amp;&amp; status:active</code></pre>
-</div>
-</div>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Notes and limits (v1)</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Backend: MongoDB only in this release. The planner selects aggregation mode when <code>expand(&#8230;&#8203;)</code> appears.</p>
-</li>
-<li>
-<p>Depth: for mixed arrays/objects, traversal stops at the first non-reference boundary.</p>
-</li>
-<li>
-<p>Projection: a concise projection form <code>fields:[+a,+b,-c]</code> can be used at the root (see below). Per-expansion projections and related-entity filters are documented in <a href="query-expansion.html">Query Expansion</a> and may be introduced incrementally.</p>
-</li>
-<li>
-<p>Errors: unknown projection paths (when using <code>fields:[…]</code>) are hard errors.</p>
-</li>
-<li>
-<p>Variables: <code>${var}</code> placeholders in expand paths leverage the same substitution map (request variables plus resolver outputs) as other filter expressions.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>See also</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p><a href="query-expansion.html">Query Expansion</a> for more examples and planner behavior.</p>
-</li>
-<li>
-<p><a href="planner-and-query-gateway.html">Planner and QueryGateway</a> for how execution mode is chosen.</p>
-</li>
-</ul>
-</div>
 </div>
 <div class="sect4">
-<h5 id="_ontology_operator_hasedgepredicate_dst">Ontology operator: hasEdge(predicate, dst)</h5>
+<h5 id="_ontology_operators_hasedge_and_hasincomingedge">Ontology operators: hasEdge and hasIncomingEdge</h5>
 <div class="paragraph">
-<p>When the ontology module is enabled and edges are materialized, you can constrain results by semantic relationships using <code>hasEdge</code>.</p>
+<p>When the ontology module is enabled and edges are materialized, you can constrain results by semantic relationships using <code>hasEdge</code> and <code>hasIncomingEdge</code>.</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p>Syntax: <code>hasEdge(predicate, dst)</code> where</p>
+<p>Syntax: <code>hasEdge(predicate, dst)</code></p>
 </li>
 <li>
-<p><code>predicate</code> can be an unquoted string, a quoted string, or a <code>${var}</code> placeholder supplied by the caller</p>
+<p>Finds entities (sources) that have an edge with the specified <code>predicate</code> pointing TO the <code>dst</code>.</p>
 </li>
 <li>
-<p><code>dst</code> can be a literal id, a variable like <code>${principalId}</code>, an ObjectId, or a reference literal <code>@@&#8230;&#8203;</code></p>
+<p>Syntax: <code>hasIncomingEdge(predicate, src)</code></p>
 </li>
 <li>
+<p>Finds entities (targets) that have an edge with the specified <code>predicate</code> coming FROM the <code>src</code>.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Arguments:
+- <code>predicate</code> can be an unquoted string, a quoted string, or a <code>${var}</code> placeholder.
+- <code>dst</code> / <code>src</code> can be a literal id, a variable like <code>${principalId}</code>, an ObjectId, or a reference literal <code>@@&#8230;&#8203;</code>.</p>
+</div>
+<div class="paragraph">
 <p>Examples:</p>
+</div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code># Orders placed in a specific organization
+<pre class="CodeRay highlight"><code># Orders placed in a specific organization (find sources)
 hasEdge(&quot;placedInOrg&quot;, ${orgRefName})
 
 # Tickets routed to a region by id
-hasEdge(&quot;routedToRegion&quot;, 507f1f77bcf86cd799439011)</code></pre>
+hasEdge(routedToRegion, @@507f1f77bcf86cd799439011)
+
+# Find locations that an associate can access (find targets)
+# assumes an edge exists: Associate --canAccessLocation--&gt; Location
+hasIncomingEdge(canAccessLocation, ${principalId})</code></pre>
 </div>
-</div>
-</li>
-</ul>
 </div>
 <div class="paragraph">
-<p>Semantics</p>
+<p>Semantics:</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p><code>hasEdge</code> narrows the result set to entities that have the specified ontology edge from the entity (source) to the destination id/value.</p>
+<p>These operators narrow the result set based on the existence of edges in the ontology edges collection.</p>
 </li>
 <li>
-<p>It composes with other filters using <code>&amp;&amp;</code>, <code>||</code>, and <code>!!</code> like any other expression.</p>
+<p>They compose with other filters using <code>&amp;&amp;</code>, <code>||</code>, and <code>!!</code>.</p>
 </li>
 <li>
-<p>Tenancy: edge resolution is always scoped by tenant/realm per your configuration.</p>
-</li>
-<li>
-<p>Variables: both arguments participate in the standard substitution flow, so resolver output such as <code>${accessibleOrgPredicate}</code> and <code>${orgIds}</code> can drive ontology constraints without manual string building.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>See also</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p><a href="permissions.html#rule-hasedge">Rule language: add hasEdge()</a> for a deep dive and policy usage.</p>
-</li>
-<li>
-<p><a href="ontology.html#ontology-integration-morphia-permissions">Ontology integration</a> for repository wiring and examples.</p>
+<p>Tenancy: edge resolution is always scoped by tenant/realm.</p>
 </li>
 </ul>
 </div>
@@ -9139,6 +8981,26 @@ resp.setRoleAssignments(roleAssignments);
 <td class="tableblock halign-left valign-top"><p class="tableblock">ResourceContext.area</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">The functional area</p></td>
 </tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${dcTenantId}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">DomainContext.tenantId</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Tenant ID from the current domain context</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${dcOrgRefName}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">DomainContext.orgRefName</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Organization reference name from domain context</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${dcAccountId}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">DomainContext.accountId</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Account ID from domain context</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${dcDataSegment}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">DomainContext.dataSegment</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Data segment number from domain context</p></td>
+</tr>
 </tbody>
 </table>
 <div class="paragraph">
@@ -10256,6 +10118,9 @@ resp.setRoleAssignments(roleAssignments);
 <li>
 <p>hasEdge(predicate, dstIdOrVar)</p>
 </li>
+<li>
+<p>hasIncomingEdge(predicate, srcIdOrVar)</p>
+</li>
 </ul>
 </div>
 <div class="paragraph">
@@ -10267,7 +10132,7 @@ resp.setRoleAssignments(roleAssignments);
 <p>predicate: String name of the ontology predicate (e.g., "placedInOrg", "orderShipsToRegion").</p>
 </li>
 <li>
-<p>dstIdOrVar: Either a concrete destination id/refName or a variable resolved from RuleContext (e.g., principal.orgRefName, request.region).</p>
+<p>dstIdOrVar / srcIdOrVar: Either a concrete id/refName or a variable resolved from RuleContext (e.g., principal.orgRefName, request.region, ${principalId}).</p>
 </li>
 </ul>
 </div>
@@ -10277,7 +10142,10 @@ resp.setRoleAssignments(roleAssignments);
 <div class="ulist">
 <ul>
 <li>
-<p>The rule grants/filters entities for which an edge exists: (tenantId, src = entity._id, p = predicate, dst = resolvedDst).</p>
+<p><strong>hasEdge</strong>: The rule grants/filters entities (sources) for which an edge exists: (tenantId, src = entity._id, p = predicate, dst = resolvedDst).</p>
+</li>
+<li>
+<p><strong>hasIncomingEdge</strong>: The rule grants/filters entities (targets) for which an edge exists: (tenantId, src = resolvedSrc, p = predicate, dst = entity._id). Useful for finding entities that are destinations of a relationship (e.g., "find locations reachable FROM an associate").</p>
 </li>
 <li>
 <p>Multi-tenant safety: tenantId is always taken from RuleContext/DomainContext.</p>
@@ -10290,7 +10158,7 @@ resp.setRoleAssignments(roleAssignments);
 <div class="ulist">
 <ul>
 <li>
-<p>hasEdge can be combined with existing rule clauses (and/or/not) and other filters (states, tags, ownerId, etc.).</p>
+<p>hasEdge and hasIncomingEdge can be combined with existing rule clauses (and/or/not) and other filters (states, tags, ownerId, etc.).</p>
 </li>
 </ul>
 </div>
@@ -10311,7 +10179,27 @@ resp.setRoleAssignments(roleAssignments);
 <li>
 <p>allow LIST Order when hasEdge("orderShipsToRegion", request.region)</p>
 </li>
+<li>
+<p>Allow viewing Locations reachable from the current user:</p>
+</li>
+<li>
+<p>allow VIEW Location when hasIncomingEdge("canAccessLocation", ${principalId})</p>
+</li>
 </ul>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<div class="paragraph">
+<p>In <code>andFilterString</code> and <code>orFilterString</code>, use standard BIAPI syntax for these functions: <code>hasEdge(predicate, dst)</code> and <code>hasIncomingEdge(predicate, src)</code>. In <code>postconditionScript</code>, use the JavaScript helper counterparts: <code>hasEdge(predicate, dst)</code> and <code>hasIncomingEdge(predicate, src)</code>.</p>
+</div>
+</td>
+</tr>
+</table>
 </div>
 <div class="paragraph">
 <p>Under the hood</p>
@@ -10319,10 +10207,10 @@ resp.setRoleAssignments(roleAssignments);
 <div class="ulist">
 <ul>
 <li>
-<p>Policy evaluation resolves dstIdOrVar against RuleContext (for example, principal.orgRefName → "OrgP").</p>
+<p>Policy evaluation resolves dstIdOrVar / srcIdOrVar against RuleContext (for example, principal.orgRefName → "OrgP").</p>
 </li>
 <li>
-<p>The list/filter query is rewritten using ListQueryRewriter.rewriteForHasEdge(&#8230;&#8203;), which turns the predicate into a set of source ids and merges it with the base query efficiently.</p>
+<p>The list/filter query is rewritten using ListQueryRewriter.rewriteForHasEdge(&#8230;&#8203;) or rewriteForHasIncomingEdge(&#8230;&#8203;), which turns the predicate and resolved ID into a set of target/source IDs and merges it with the base query efficiently.</p>
 </li>
 <li>
 <p>OntologyEdgeDao must be indexed on (tenantId, p, dst) and (tenantId, src, p) for performance.</p>
@@ -10358,6 +10246,24 @@ resp.setRoleAssignments(roleAssignments);
 </div>
 </div>
 <div class="paragraph">
+<p>Another example using <code>hasIncomingEdge</code>:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml">- <span class="string"><span class="content">name: view-reachable-locations</span></span>
+  <span class="key">priority</span>: <span class="string"><span class="content">110</span></span>
+  <span class="key">securityURI</span>:
+    <span class="key">header</span>:
+      <span class="key">identity</span>: <span class="string"><span class="content">USER</span></span>
+      <span class="key">area</span>: <span class="string"><span class="content">core</span></span>
+      <span class="key">functionalDomain</span>: <span class="string"><span class="content">location</span></span>
+      <span class="key">action</span>: <span class="string"><span class="content">view</span></span>
+  <span class="key">effect</span>: <span class="string"><span class="content">ALLOW</span></span>
+  <span class="comment"># Find locations that the current user has a &quot;canAccessLocation&quot; edge to</span>
+  <span class="key">andFilterString</span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">hasIncomingEdge(canAccessLocation, ${principalId})</span><span class="delimiter">&quot;</span></span></code></pre>
+</div>
+</div>
+<div class="paragraph">
 <p>2) Evaluate policy and apply constraint in the repository/list path</p>
 </div>
 <div class="listingblock">
@@ -10378,7 +10284,10 @@ ListQueryRewriter rewriter = <span class="keyword">new</span> ListQueryRewriter(
 
 Bson base = Filters.and(existingFilters...);
 Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, predicate, orgRefName);
-<span class="type">var</span> results = datastore.getDatabase().getCollection(<span class="string"><span class="delimiter">&quot;</span><span class="content">orders</span><span class="delimiter">&quot;</span></span>).find(rewritten).iterator();</code></pre>
+<span class="type">var</span> results = datastore.getDatabase().getCollection(<span class="string"><span class="delimiter">&quot;</span><span class="content">orders</span><span class="delimiter">&quot;</span></span>).find(rewritten).iterator();
+
+<span class="comment">// Example for hasIncomingEdge in code</span>
+Bson locationRewritten = rewriter.rewriteForHasIncomingEdge(locationBase, tenantId, <span class="string"><span class="delimiter">&quot;</span><span class="content">canAccessLocation</span><span class="delimiter">&quot;</span></span>, principalId);</code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -10624,6 +10533,21 @@ hasLabel(<span class="string"><span class="delimiter">&quot;</span><span class="
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="javascript"><span class="comment">// Require that this resource is placed in the caller's org</span>
 hasEdge(<span class="string"><span class="delimiter">&quot;</span><span class="content">placedInOrg</span><span class="delimiter">&quot;</span></span>, pcontext?.dataDomain?.orgRefName)</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>hasIncomingEdge(predicate: String, src: String|null) &#8594; Boolean</p>
+</li>
+<li>
+<p>Purpose: True if an ontology edge with property p=predicate exists from src to the current resource. If src is null, true if any src exists for the predicate.</p>
+</li>
+<li>
+<p>Example:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="javascript"><span class="comment">// Permit view if the current resource is a location reachable from the caller</span>
+hasIncomingEdge(<span class="string"><span class="delimiter">&quot;</span><span class="content">canAccessLocation</span><span class="delimiter">&quot;</span></span>, principalId)</code></pre>
 </div>
 </div>
 </li>
