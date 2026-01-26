@@ -7,6 +7,8 @@ import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
 import com.e2eq.framework.securityrules.RuleContext;
 import com.e2eq.framework.rest.models.*;
 import com.e2eq.framework.rest.models.Collection;
+import com.e2eq.framework.model.persistent.imports.ImportProfile;
+import com.e2eq.framework.model.persistent.morphia.ImportProfileRepo;
 import com.e2eq.framework.util.CSVExportHelper;
 import com.e2eq.framework.util.CSVImportHelper;
 import com.e2eq.framework.util.FilterUtils;
@@ -477,6 +479,9 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
     @Inject
     protected com.e2eq.framework.model.persistent.morphia.ImportSessionRowRepo importSessionRowRepo;
 
+    @Inject
+    protected ImportProfileRepo importProfileRepo;
+
     @GET
     @Path("csv/session/{sessionId}/rows")
     @Produces(MediaType.APPLICATION_JSON)
@@ -517,6 +522,66 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
             RestError error = RestError.builder()
                     .status(Response.Status.BAD_REQUEST.getStatusCode())
                     .statusMessage("Error fetching session rows: " + e.getMessage())
+                    .build();
+            return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+        }
+    }
+
+    @POST
+    @Path("csv/session/profile")
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    @Produces(MediaType.APPLICATION_JSON)
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(summary = "Create an import session with ImportProfile support",
+            description = "Analyzes CSV with value mappings, lookups, and transformations defined in the profile")
+    @APIResponses({
+            @APIResponse(responseCode = "200", description = "CSV analyzed with profile; session created and preview returned"),
+            @APIResponse(responseCode = "400", description = "Bad request - invalid CSV file, profile, or parameters")
+    })
+    public Response createCsvImportSessionWithProfile(
+            @Context HttpHeaders headers,
+            @Context UriInfo info,
+            @BeanParam FileUpload fileUpload,
+            @Parameter(description = "The refName of the ImportProfile to use for transformations")
+            @QueryParam("profileRefName") String profileRefName,
+            @Parameter(description = "A non-empty list of the names of the columns expected in the CSV file (optional if profile provides mappings)")
+            @QueryParam("requestedColumns") List<String> requestedColumns
+    ) {
+        try {
+            if (fileUpload.file == null) {
+                throw new WebApplicationException("No file uploaded", Response.Status.BAD_REQUEST);
+            }
+            rejectUnrecognizedQueryParams(info, "profileRefName", "requestedColumns");
+
+            String realmId = headers.getHeaderString("X-Realm");
+
+            // Load import profile if specified
+            ImportProfile profile = null;
+            if (profileRefName != null && !profileRefName.isEmpty()) {
+                profile = importProfileRepo.findByRefName(profileRefName, realmId)
+                        .orElseThrow(() -> new ValidationException(
+                                "ImportProfile not found: " + profileRefName));
+            }
+
+            CSVImportHelper.ImportResult<T> preview = csvImportHelper.analyzeCSVWithProfile(
+                    repo,
+                    new FileInputStream(fileUpload.file),
+                    profile,
+                    requestedColumns,
+                    realmId
+            );
+
+            return Response.ok(preview).build();
+        } catch (ValidationException e) {
+            RestError error = RestError.builder()
+                    .status(Response.Status.BAD_REQUEST.getStatusCode())
+                    .statusMessage(e.getMessage())
+                    .build();
+            return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+        } catch (Exception e) {
+            RestError error = RestError.builder()
+                    .status(Response.Status.BAD_REQUEST.getStatusCode())
+                    .statusMessage("Error analyzing CSV file with profile: " + e.getMessage())
                     .build();
             return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
         }

@@ -862,6 +862,22 @@ The following standard variables are available in andFilterString/orFilterString
 |`${area}`
 |ResourceContext.area
 |The functional area
+
+|`${dcTenantId}`
+|DomainContext.tenantId
+|Tenant ID from the current domain context
+
+|`${dcOrgRefName}`
+|DomainContext.orgRefName
+|Organization reference name from domain context
+
+|`${dcAccountId}`
+|DomainContext.accountId
+|Account ID from domain context
+
+|`${dcDataSegment}`
+|DomainContext.dataSegment
+|Data segment number from domain context
 |===
 
 **X-Realm integration**: When `X-Realm` is used, `${defaultRealm}` automatically reflects the target realm. This enables permission filters to dynamically scope data based on the active realm:
@@ -1512,20 +1528,22 @@ We introduce a policy function/operator to reference ontology edges directly fro
 Signature
 
 - hasEdge(predicate, dstIdOrVar)
+- hasIncomingEdge(predicate, srcIdOrVar)
 
 Parameters
 
 - predicate: String name of the ontology predicate (e.g., "placedInOrg", "orderShipsToRegion").
-- dstIdOrVar: Either a concrete destination id/refName or a variable resolved from RuleContext (e.g., principal.orgRefName, request.region).
+- dstIdOrVar / srcIdOrVar: Either a concrete id/refName or a variable resolved from RuleContext (e.g., principal.orgRefName, request.region, ${principalId}).
 
 Semantics
 
-- The rule grants/filters entities for which an edge exists: (tenantId, src = entity._id, p = predicate, dst = resolvedDst).
+- **hasEdge**: The rule grants/filters entities (sources) for which an edge exists: (tenantId, src = entity._id, p = predicate, dst = resolvedDst).
+- **hasIncomingEdge**: The rule grants/filters entities (targets) for which an edge exists: (tenantId, src = resolvedSrc, p = predicate, dst = entity._id). Useful for finding entities that are destinations of a relationship (e.g., "find locations reachable FROM an associate").
 - Multi-tenant safety: tenantId is always taken from RuleContext/DomainContext.
 
 Composition
 
-- hasEdge can be combined with existing rule clauses (and/or/not) and other filters (states, tags, ownerId, etc.).
+- hasEdge and hasIncomingEdge can be combined with existing rule clauses (and/or/not) and other filters (states, tags, ownerId, etc.).
 
 Examples
 
@@ -1533,11 +1551,18 @@ Examples
   - allow VIEW Order when hasEdge("placedInOrg", principal.orgRefName)
 - Restrict list to Orders shipping to a region chosen in request:
   - allow LIST Order when hasEdge("orderShipsToRegion", request.region)
+- Allow viewing Locations reachable from the current user:
+  - allow VIEW Location when hasIncomingEdge("canAccessLocation", ${principalId})
+
+[NOTE]
+====
+In `andFilterString` and `orFilterString`, use standard BIAPI syntax for these functions: `hasEdge(predicate, dst)` and `hasIncomingEdge(predicate, src)`. In `postconditionScript`, use the JavaScript helper counterparts: `hasEdge(predicate, dst)` and `hasIncomingEdge(predicate, src)`.
+====
 
 Under the hood
 
-- Policy evaluation resolves dstIdOrVar against RuleContext (for example, principal.orgRefName → "OrgP").
-- The list/filter query is rewritten using ListQueryRewriter.rewriteForHasEdge(...), which turns the predicate into a set of source ids and merges it with the base query efficiently.
+- Policy evaluation resolves dstIdOrVar / srcIdOrVar against RuleContext (for example, principal.orgRefName → "OrgP").
+- The list/filter query is rewritten using ListQueryRewriter.rewriteForHasEdge(...) or rewriteForHasIncomingEdge(...), which turns the predicate and resolved ID into a set of target/source IDs and merges it with the base query efficiently.
 - OntologyEdgeDao must be indexed on (tenantId, p, dst) and (tenantId, src, p) for performance.
 
 Full end-to-end example (implementation pattern)
@@ -1566,6 +1591,23 @@ Full end-to-end example (implementation pattern)
   postconditionScript: hasEdge("placedInOrg", pcontext?.dataDomain?.orgRefName) === true
 ----
 
+Another example using `hasIncomingEdge`:
+
+[source,yaml]
+----
+- name: view-reachable-locations
+  priority: 110
+  securityURI:
+    header:
+      identity: USER
+      area: core
+      functionalDomain: location
+      action: view
+  effect: ALLOW
+  # Find locations that the current user has a "canAccessLocation" edge to
+  andFilterString: "hasIncomingEdge(canAccessLocation, ${principalId})"
+----
+
 2) Evaluate policy and apply constraint in the repository/list path
 
 [source,java]
@@ -1587,6 +1629,9 @@ String orgRefName = pctx.getDataDomain().getOrgRefName(); // resolves principal.
 Bson base = Filters.and(existingFilters...);
 Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, predicate, orgRefName);
 var results = datastore.getDatabase().getCollection("orders").find(rewritten).iterator();
+
+// Example for hasIncomingEdge in code
+Bson locationRewritten = rewriter.rewriteForHasIncomingEdge(locationBase, tenantId, "canAccessLocation", principalId);
 ----
 
 3) Morphia-typed queries alternative
@@ -1760,6 +1805,16 @@ hasLabel("PUBLIC")
 ----
 // Require that this resource is placed in the caller's org
 hasEdge("placedInOrg", pcontext?.dataDomain?.orgRefName)
+----
+
+- hasIncomingEdge(predicate: String, src: String|null) -> Boolean
+  - Purpose: True if an ontology edge with property p=predicate exists from src to the current resource. If src is null, true if any src exists for the predicate.
+  - Example:
++
+[source,javascript]
+----
+// Permit view if the current resource is a location reachable from the caller
+hasIncomingEdge("canAccessLocation", principalId)
 ----
 
 - hasAnyEdge(predicate: String, dsts: Collection<String>) -> Boolean

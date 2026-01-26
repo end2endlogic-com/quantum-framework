@@ -31,6 +31,11 @@ include::tutorials/quantum-tutorial.adoc[]
 
 include::user-guide/reference-guide.adoc[]
 
+[[ontology-chapter]]
+== Ontology Modeling
+
+include::user-guide/ontology.adoc[]
+
 == Samples
 
 include::tutorials/supply-chain.adoc[]

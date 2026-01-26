@@ -3,7 +3,7 @@ grammar BIAPIQuery;
 query: (exprGroup | compoundExpr) (exprOp (exprGroup | compoundExpr))*;
 exprGroup: lp=LPAREN (exprGroup | compoundExpr) (exprOp (exprGroup | compoundExpr))* rp=RPAREN;
 compoundExpr: allowedExpr (exprOp allowedExpr)*;
-allowedExpr:   inExpr |  basicExpr |  nullExpr | existsExpr | booleanExpr | notExpr | regexExpr | elemMatchExpr | hasEdgeExpr | hasIncomingEdgeExpr | expandExpr | textExpr;
+allowedExpr:   inExpr |  basicExpr |  nullExpr | existsExpr | booleanExpr | notExpr | regexExpr | elemMatchExpr | hasEdgeExpr | hasOutgoingEdgeExpr | hasIncomingEdgeExpr | expandExpr | textExpr;
 exprOp: op=(AND | OR);
 existsExpr: field=STRING op=EXISTS;
 booleanExpr: field=STRING op=(EQ | NEQ) value=(TRUE | FALSE);
@@ -37,8 +37,12 @@ nullExpr: field=STRING op=(EQ | NEQ) value=NULL;
 elemMatchExpr: field=STRING op=EQ lp=LBRCE nested=query rp=RBRCE;
 
 // Ontology functions
-// hasEdge(predicate, dst) - find entities that have edges TO the given destination
+// hasEdge(predicate, dst) - find entities that have outgoing edges TO the given destination
+// Example: hasEdge(assignedTo, territoryId) finds associates assigned to that territory
 hasEdgeExpr: HASEDGE LPAREN predicate=(STRING|QUOTED_STRING|VARIABLE) COMMA dst=(STRING|QUOTED_STRING|VARIABLE|OID|REFERENCE) RPAREN;
+// hasOutgoingEdge(predicate, dst) - alias for hasEdge for symmetry with hasIncomingEdge
+// Example: hasOutgoingEdge(assignedTo, territoryId) finds associates assigned to that territory
+hasOutgoingEdgeExpr: HASOUTGOINGEDGE LPAREN predicate=(STRING|QUOTED_STRING|VARIABLE) COMMA dst=(STRING|QUOTED_STRING|VARIABLE|OID|REFERENCE) RPAREN;
 // hasIncomingEdge(predicate, src) - find entities that the given source has edges TO (inverse direction)
 // Example: hasIncomingEdge(canSeeLocation, associateId) finds locations the associate can see
 hasIncomingEdgeExpr: HASINCOMGINEDGE LPAREN predicate=(STRING|QUOTED_STRING|VARIABLE) COMMA src=(STRING|QUOTED_STRING|VARIABLE|OID|REFERENCE) RPAREN;
@@ -50,6 +54,7 @@ expandExpr: EXPAND LPAREN head=(STRING|VARIABLE) (LBRKT WILDCARD RBRKT)? ((seg=(
 textExpr: TEXT LPAREN value=(STRING|QUOTED_STRING|VARIABLE) RPAREN;
 
 HASEDGE: 'hasEdge';
+HASOUTGOINGEDGE: 'hasOutgoingEdge';
 HASINCOMGINEDGE: 'hasIncomingEdge';
 EXPAND: 'expand';
 TEXT: 'text';

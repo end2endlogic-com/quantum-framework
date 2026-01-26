@@ -869,6 +869,94 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         }
     }
 
+    // Ontology function: hasOutgoingEdge(predicate, dst) - alias for hasEdge
+    // This is provided for symmetry with hasIncomingEdge. It does the same thing as hasEdge.
+    @Override
+    public void enterHasOutgoingEdgeExpr(BIAPIQueryParser.HasOutgoingEdgeExprContext ctx) {
+        // Delegate to the same logic as hasEdge - create a synthetic HasEdgeExprContext would be complex,
+        // so we just duplicate the core logic here
+        String predicate = ctx.predicate.getText();
+        String dst = ctx.dst.getText();
+        if (sub != null) {
+            predicate = sub.replace(predicate);
+            dst = sub.replace(dst);
+        }
+        String tenantId = null;
+        if (variableMap != null) {
+            tenantId = variableMap.get("pTenantId");
+            if (tenantId == null) tenantId = variableMap.get("tenantId");
+        }
+
+        // Try to canonicalize predicate using OntologyAliasResolver if available via CDI
+        try {
+            var cdi = jakarta.enterprise.inject.spi.CDI.current();
+            if (cdi != null) {
+                Class<?> aliasCls = Class.forName("com.e2eq.ontology.core.OntologyAliasResolver");
+                var aliasSel = cdi.select(aliasCls);
+                Object resolver = aliasSel.isUnsatisfied() ? null : aliasSel.get();
+                if (resolver != null) {
+                    java.lang.reflect.Method cm = aliasCls.getMethod("canonical", String.class);
+                    Object can = cm.invoke(resolver, predicate);
+                    if (can instanceof String s) predicate = s;
+                }
+            }
+        } catch (Throwable ignored) { /* continue if resolver not present */ }
+
+        // Optional safety: validate that the predicate's domain matches the current model class
+        try {
+            if (modelClass != null) {
+                var cdi = jakarta.enterprise.inject.spi.CDI.current();
+                if (cdi != null) {
+                    Class<?> regIface = Class.forName("com.e2eq.ontology.core.OntologyRegistry");
+                    var regSel = cdi.select(regIface);
+                    Object registry = regSel.isUnsatisfied() ? null : regSel.get();
+                    if (registry != null) {
+                        if (!isPredicateApplicableToModel(registry, regIface, predicate, modelClass)) {
+                            filterStack.push(Filters.eq("_id", "__none__"));
+                            return;
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) { /* if ontology not wired, continue with best-effort behavior */ }
+
+        Set<String> ids = Collections.emptySet();
+        if (tenantId != null && !tenantId.isBlank()) {
+            try {
+                var cdi = jakarta.enterprise.inject.spi.CDI.current();
+                if (cdi != null) {
+                    Class<?> edgeIface = Class.forName("com.e2eq.ontology.repo.OntologyEdgeRepo");
+                    var sel = cdi.select(edgeIface);
+                    Object store = sel.isUnsatisfied() ? null : sel.get();
+                    if (store != null) {
+                        java.lang.reflect.Method m = edgeIface.getMethod("srcIdsByDst", String.class, String.class, String.class);
+                        Object result = m.invoke(store, tenantId, predicate, dst);
+                        if (result instanceof java.util.Set) {
+                            ids = (Set<String>) result;
+                        }
+                    }
+                }
+            } catch (Throwable t) {
+                // ignore and fail closed below
+            }
+        }
+        if (ids == null || ids.isEmpty()) {
+            filterStack.push(Filters.eq("_id", "__none__"));
+        } else {
+            // Convert String IDs to ObjectIds for proper matching against _id field
+            List<Object> objectIds = new ArrayList<>();
+            for (String id : ids) {
+                try {
+                    objectIds.add(new ObjectId(id));
+                } catch (IllegalArgumentException e) {
+                    // If not a valid ObjectId, use as-is (might be refName-based key)
+                    objectIds.add(id);
+                }
+            }
+            filterStack.push(Filters.in("_id", objectIds));
+        }
+    }
+
     // Ontology function: hasIncomingEdge(predicate, src)
     // This finds entities that the given source has edges TO (inverse direction from hasEdge).
     // Example: hasIncomingEdge(canSeeLocation, associateId) finds locations the associate can see.
