@@ -26,6 +26,12 @@ public final class ScriptHelpers {
             }
             return false;
         });
+        scriptBindings.put("hasIncomingEdge", (Bi2<String,String,Boolean>) (p, src) -> {
+            for (Map<String,Object> e : edges){
+                if (Objects.equals(e.get("p"), p) && (src == null || Objects.equals(e.get("src"), src))) return true;
+            }
+            return false;
+        });
        scriptBindings.put("hasAnyEdge", (Bi2<String, Collection<String>, Boolean>) (p, dsts) -> {
           if (p == null || dsts == null || dsts.isEmpty()) return false;
           for (Map<String,Object> e : edges){

@@ -513,7 +513,7 @@ BIAPIQueryLexer lexer = new BIAPIQueryLexer(CharStreams.fromString(query));
 CommonTokenStream tokens = new CommonTokenStream(lexer);
 BIAPIQueryParser parser = new BIAPIQueryParser(tokens);
 
-ValidatingQueryToFilterListener listener = 
+ValidatingQueryToFilterListener listener =
     new ValidatingQueryToFilterListener(UserProfile.class);
 ParseTreeWalker.DEFAULT.walk(listener, parser.query());
 
@@ -538,7 +538,7 @@ public class SearchRequest {
     @NotNull
     @ValidQueryFilter(modelClass = UserProfile.class)
     private String filterQuery;
-    
+
     // getters/setters
 }
 ----
@@ -551,7 +551,7 @@ REST endpoint example:
 ----
 @Path("/users")
 public class UserResource {
-    
+
     @GET
     public Response searchUsers(@Valid @BeanParam SearchParams params) {
         // filterQuery is validated before this method executes
@@ -572,10 +572,10 @@ Persisted filter example:
 ----
 public class SavedSearch extends BaseModel {
     private String name;
-    
+
     @ValidQueryFilter(modelClass = Order.class)
     private String filterExpression;
-    
+
     // When saved, ValidationInterceptor validates the filter
 }
 ----
@@ -637,111 +637,39 @@ Option A: Variable from an AccessListResolver
 id:^${idsByPlacedInOrg}
 ----
 
-Option B: Function-style helper (if you wire one)
+==== Ontology operators: hasEdge and hasIncomingEdge
 
-- Some applications register a hasEdge(predicate, value) function into the filter translation path.
-- Example (conceptual): hasEdge("placedInOrg", ${principal.orgRefName})
-- Under the hood, it translates to id IN edgeDao.srcIdsByDst(tenantId, predicate, dst).
+When the ontology module is enabled and edges are materialized, you can constrain results by semantic relationships using `hasEdge` and `hasIncomingEdge`.
 
-Notes
+- Syntax: `hasEdge(predicate, dst)`
+  - Finds entities (sources) that have an edge with the specified `predicate` pointing TO the `dst`.
+- Syntax: `hasIncomingEdge(predicate, src)`
+  - Finds entities (targets) that have an edge with the specified `predicate` coming FROM the `src`.
 
-- Ontology is optional; these patterns only apply when enabled and materialization is active.
-- Always scope edge lookups by tenantId from RuleContext.
-- See xref:ontology.adoc#ontology-integration-morphia-permissions[Integrating Ontology] for wiring examples.
+Arguments:
+- `predicate` can be an unquoted string, a quoted string, or a `${var}` placeholder.
+- `dst` / `src` can be a literal id, a variable like `${principalId}`, an ObjectId, or a reference literal `@@...`.
 
+Examples:
 
-[NOTE]
-====
-Policy function hasEdge()
-
-- The hasEdge(predicate, dstIdOrVar) operator is a policy-level function evaluated before query translation. It is not part of the BIAPI grammar parsed in this document.
-- When present in a policy, the repository typically applies it by calling ListQueryRewriter.rewriteForHasEdge(...), which constrains results by the set of IDs that have the specified ontology edge.
-- See xref:permissions.adoc#rule-hasedge[Rule language: add hasEdge()] for signature, semantics, and a full end-to-end example.
-====
-
-
-
-=== Relationships and Ontology-aware Queries
-
-==== Hydrating related data with expand(path)
-
-The query language supports a compact, non-SQL directive to request hydration (materialization) of related entities referenced by the root documents.
-
-- Syntax: `expand(path)`
-- Path: a dotted path; array segments may use `[*]` to indicate an array of references.
-- Variables: segments may be literal field names or `${var}` placeholders that are substituted before planning.
-- Examples:
-+
 [source]
 ----
-# Single reference
-expand(customer)
-
-# Parameterized segment (for tenant-specific collections)
-expand(${tenantRoot}.sites[*])
-
-# Array of references
-expand(items[*].product)
-
-# Nested paths (bounded by first non-reference boundary)
-expand(patient.visits[*].diagnoses[*])
-----
-
-Semantics
-
-- Presence of `expand(...)` informs the planner to choose an aggregation-based execution plan (e.g., MongoDB $lookup) rather than a simple single-collection filter.
-- Filters remain expressed with the existing primitives and compose as usual. For example:
-+
-[source]
-----
-# Filter roots by status AND hydrate the related customer
-expand(customer) && status:active
-----
-
-Notes and limits (v1)
-
-- Backend: MongoDB only in this release. The planner selects aggregation mode when `expand(...)` appears.
-- Depth: for mixed arrays/objects, traversal stops at the first non-reference boundary.
-- Projection: a concise projection form `fields:[+a,+b,-c]` can be used at the root (see below). Per-expansion projections and related-entity filters are documented in xref:query-expansion.adoc[Query Expansion] and may be introduced incrementally.
-- Errors: unknown projection paths (when using `fields:[…]`) are hard errors.
-- Variables: `${var}` placeholders in expand paths leverage the same substitution map (request variables plus resolver outputs) as other filter expressions.
-
-See also
-
-- xref:query-expansion.adoc[Query Expansion] for more examples and planner behavior.
-- xref:planner-and-query-gateway.adoc[Planner and QueryGateway] for how execution mode is chosen.
-
-
-==== Ontology operator: hasEdge(predicate, dst)
-
-When the ontology module is enabled and edges are materialized, you can constrain results by semantic relationships using `hasEdge`.
-
-- Syntax: `hasEdge(predicate, dst)` where
-  - `predicate` can be an unquoted string, a quoted string, or a `${var}` placeholder supplied by the caller
-  - `dst` can be a literal id, a variable like `${principalId}`, an ObjectId, or a reference literal `@@...`
-- Examples:
-+
-[source]
-----
-# Orders placed in a specific organization
+# Orders placed in a specific organization (find sources)
 hasEdge("placedInOrg", ${orgRefName})
 
 # Tickets routed to a region by id
-hasEdge("routedToRegion", 507f1f77bcf86cd799439011)
+hasEdge(routedToRegion, @@507f1f77bcf86cd799439011)
+
+# Find locations that an associate can access (find targets)
+# assumes an edge exists: Associate --canAccessLocation--> Location
+hasIncomingEdge(canAccessLocation, ${principalId})
 ----
 
-Semantics
+Semantics:
 
-- `hasEdge` narrows the result set to entities that have the specified ontology edge from the entity (source) to the destination id/value.
-- It composes with other filters using `&&`, `||`, and `!!` like any other expression.
-- Tenancy: edge resolution is always scoped by tenant/realm per your configuration.
-- Variables: both arguments participate in the standard substitution flow, so resolver output such as `${accessibleOrgPredicate}` and `${orgIds}` can drive ontology constraints without manual string building.
-
-See also
-
-- xref:permissions.adoc#rule-hasedge[Rule language: add hasEdge()] for a deep dive and policy usage.
-- xref:ontology.adoc#ontology-integration-morphia-permissions[Ontology integration] for repository wiring and examples.
-
+- These operators narrow the result set based on the existence of edges in the ontology edges collection.
+- They compose with other filters using `&&`, `||`, and `!!`.
+- Tenancy: edge resolution is always scoped by tenant/realm.
 
 ==== Root projection recap: fields:[+…,-…]
 
