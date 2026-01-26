@@ -152,7 +152,7 @@ public class DriftRepairJob {
                     }
                 }
                 if (!req.dryRun) {
-                    materializer.apply(dataDomain, srcId, entityType, explicit);
+                    materializer.apply(req.realmId, dataDomain, srcId, entityType, explicit);
                     derivedApplied++; // approximate counter; materializer handles diffing
                 }
                 // track cursor
