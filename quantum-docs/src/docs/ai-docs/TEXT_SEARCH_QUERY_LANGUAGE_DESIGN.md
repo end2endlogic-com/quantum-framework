@@ -24,9 +24,11 @@ text("search terms")
 ### Examples
 ```
 text("john doe") && status:Assigned
-(text("priority")) || ownerId:@@5f3b...
+text("priority") && (status:"OPEN" || status:"PENDING")
 text(${"query"}) && type:^ ["user", "group"]
 ```
+
+**Note**: `text(...)` cannot be used inside OR expressions. Use AND to combine text search with other conditions, and place OR logic in a separate grouping.
 
 ### Rationale
 - Mirrors existing function-style expressions (`hasEdge`, `expand`).
@@ -89,9 +91,15 @@ File: `quantum-framework/.../ValidatingQueryToPredicateJsonListener.java`
 - Optionally allow per-query overrides via a `TextSearchConfig` object passed into `QueryPredicates.compilePredicate(...)`.
 
 ## Validation Rules
-- Allow `text(...)` inside parentheses and in compound expressions.
-- Reject multiple `text(...)` expressions in a single query.
-- Reject empty search strings.
+MongoDB requires `$text` to be a top-level query operator. The following constraints are enforced at parse time:
+
+- **Multiple text clauses**: Reject multiple `text(...)` expressions in a single query.
+- **Empty search strings**: Reject `text("")` (empty search string).
+- **Inside NOT**: Reject `text(...)` inside NOT (`!!`) expressions. MongoDB does not support `$text` inside `$not` or `$nor`.
+- **Inside OR**: Reject `text(...)` inside OR (`||`) expressions. MongoDB does not allow `$text` inside `$or`.
+- **Inside elemMatch**: Reject `text(...)` inside elemMatch expressions (`field:{...}`). MongoDB does not support `$text` inside `$elemMatch`.
+
+**Valid usage**: `text(...)` combined with `&&` (AND) at the top level is supported because MongoDB allows `$text` alongside other top-level conditions.
 
 ## Documentation Updates
 - Add `text(...)` to the query language guide with syntax and examples.
