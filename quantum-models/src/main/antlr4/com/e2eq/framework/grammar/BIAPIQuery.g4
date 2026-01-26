@@ -3,7 +3,7 @@ grammar BIAPIQuery;
 query: (exprGroup | compoundExpr) (exprOp (exprGroup | compoundExpr))*;
 exprGroup: lp=LPAREN (exprGroup | compoundExpr) (exprOp (exprGroup | compoundExpr))* rp=RPAREN;
 compoundExpr: allowedExpr (exprOp allowedExpr)*;
-allowedExpr:   inExpr |  basicExpr |  nullExpr | existsExpr | booleanExpr | notExpr | regexExpr | elemMatchExpr | hasEdgeExpr | hasOutgoingEdgeExpr | hasIncomingEdgeExpr | expandExpr;
+allowedExpr:   inExpr |  basicExpr |  nullExpr | existsExpr | booleanExpr | notExpr | regexExpr | elemMatchExpr | hasEdgeExpr | hasOutgoingEdgeExpr | hasIncomingEdgeExpr | expandExpr | textExpr;
 exprOp: op=(AND | OR);
 existsExpr: field=STRING op=EXISTS;
 booleanExpr: field=STRING op=(EQ | NEQ) value=(TRUE | FALSE);
@@ -51,11 +51,13 @@ hasIncomingEdgeExpr: HASINCOMGINEDGE LPAREN predicate=(STRING|QUOTED_STRING|VARI
 // Support simple dotted paths and optional array wildcards [*] between segments.
 // Tokens come in as: STRING ('[' '*' ']')? (STRING ('[' '*' ']')? )*
 expandExpr: EXPAND LPAREN head=(STRING|VARIABLE) (LBRKT WILDCARD RBRKT)? ((seg=(STRING|VARIABLE)) (LBRKT WILDCARD RBRKT)? )* RPAREN;
+textExpr: TEXT LPAREN value=(STRING|QUOTED_STRING|VARIABLE) RPAREN;
 
 HASEDGE: 'hasEdge';
 HASOUTGOINGEDGE: 'hasOutgoingEdge';
 HASINCOMGINEDGE: 'hasIncomingEdge';
 EXPAND: 'expand';
+TEXT: 'text';
 
 // Operators
 EQ: ':';

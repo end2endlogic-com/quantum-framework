@@ -198,4 +198,16 @@ public class TestGrammar {
          parser.query();
       }
    }
+
+   @Test
+   public void testTextSearchSingleClause() {
+      Filter f = MorphiaUtils.convertToFilter("text(\"priority escalation\")&&status:OPEN", UserProfile.class);
+      assertNotNull(f);
+   }
+
+   @Test
+   public void testTextSearchDuplicateClauseRejected() {
+      assertThrows(IllegalStateException.class,
+              () -> MorphiaUtils.convertToFilter("text(\"one\")&&text(\"two\")", UserProfile.class));
+   }
 }
