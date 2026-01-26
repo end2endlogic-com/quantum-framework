@@ -3,7 +3,6 @@ package com.e2eq.framework.model.persistent.morphia;
 import com.e2eq.framework.annotations.StateGraph;
 import com.e2eq.framework.annotations.Stateful;
 import com.e2eq.framework.annotations.TrackReferences;
-import com.e2eq.ontology.annotations.OntologyProperty;
 import com.e2eq.framework.model.persistent.InvalidStateTransitionException;
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.StateNode;
@@ -106,6 +105,19 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                 Log.warn("PostDeleteHook threw exception: " + t.getMessage());
             }
         }
+    }
+
+    /**
+     * Check if a field has the OntologyProperty annotation without requiring
+     * the ontology module as a compile-time dependency.
+     */
+    private static boolean hasOntologyPropertyAnnotation(java.lang.reflect.Field field) {
+        for (java.lang.annotation.Annotation ann : field.getAnnotations()) {
+            if (ann.annotationType().getName().equals("com.e2eq.ontology.annotations.OntologyProperty")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Inject
@@ -1453,8 +1465,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                     Log.warn("Update to class that contains references");
                     throw new NotSupportedException("Field:" + field + " is a managed reference, and not updatable via put. Use Post");
                 }
-                OntologyProperty ontologyProp = field.getAnnotation(OntologyProperty.class);
-                if (ontologyProp != null) {
+                if (hasOntologyPropertyAnnotation(field)) {
                     Log.warn("Update to class that contains ontology properties");
                     throw new NotSupportedException("Field:" + field + " is an ontology property, and not updatable via put. Use save() to update relationships");
                 }
@@ -1534,8 +1545,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
              if (ref != null) {
                 throw new NotSupportedException("Field:" + field + " is a managed reference, and not updatable via put. Use Post");
              }
-             OntologyProperty ontologyProp = field.getAnnotation(OntologyProperty.class);
-             if (ontologyProp != null) {
+             if (hasOntologyPropertyAnnotation(field)) {
                 throw new NotSupportedException("Field:" + field + " is an ontology property, and not updatable via put. Use save() to update relationships");
              }
 
@@ -1605,8 +1615,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                 if (ref != null) {
                     throw new NotSupportedException("Field:" + field + " is a managed reference, and not updatable via put. Use Post");
                 }
-                OntologyProperty ontologyProp = field.getAnnotation(OntologyProperty.class);
-                if (ontologyProp != null) {
+                if (hasOntologyPropertyAnnotation(field)) {
                     throw new NotSupportedException("Field:" + field + " is an ontology property, and not updatable via put. Use save() to update relationships");
                 }
 
@@ -1807,8 +1816,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                 if (ref != null) {
                     throw new NotSupportedException("Field:" + field + " is a managed reference, and not updatable via put. Use Post");
                 }
-                OntologyProperty ontologyProp = field.getAnnotation(OntologyProperty.class);
-                if (ontologyProp != null) {
+                if (hasOntologyPropertyAnnotation(field)) {
                     throw new NotSupportedException("Field:" + field + " is an ontology property, and not updatable via put. Use save() to update relationships");
                 }
                 if (field.getType().isEnum()) {
