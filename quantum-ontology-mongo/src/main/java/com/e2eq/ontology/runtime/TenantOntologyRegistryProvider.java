@@ -140,7 +140,7 @@ public class TenantOntologyRegistryProvider {
         try {
             var tenantTBox = tenantTboxRepo.findActiveTBox(dataDomain);
             if (tenantTBox.isPresent()) {
-                Log.infof("Loaded TBox for DataDomain %s from TenantOntologyTBox (hash: %s)", 
+                Log.infof("Loaded TBox for DataDomain %s from TenantOntologyTBox (hash: %s)",
                         buildDataDomainCacheKey(dataDomain), tenantTBox.get().getTboxHash());
                 return new PersistedOntologyRegistry(
                     tenantTBox.get().toTBox(),
@@ -152,11 +152,13 @@ public class TenantOntologyRegistryProvider {
         } catch (Throwable t) {
             Log.warnf("Failed to load TenantOntologyTBox for DataDomain: %s", t.getMessage());
         }
-        
-        // Fall back to realm-level TBox
-        Log.debugf("No DataDomain-specific TBox found, falling back to realm-level for: %s", 
-                buildDataDomainCacheKey(dataDomain));
-        return getRegistryForRealm(getCurrentRealm());
+
+        // Fall back to realm-level TBox using tenantId from the DataDomain
+        // (not getCurrentRealm() which depends on SecurityContext)
+        String realm = dataDomain.getTenantId();
+        Log.debugf("No DataDomain-specific TBox found, falling back to realm-level for: %s (realm: %s)",
+                buildDataDomainCacheKey(dataDomain), realm);
+        return getRegistryForRealm(realm);
     }
 
     /**

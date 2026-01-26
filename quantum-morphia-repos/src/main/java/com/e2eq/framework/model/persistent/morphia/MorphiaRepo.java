@@ -3,6 +3,7 @@ package com.e2eq.framework.model.persistent.morphia;
 import com.e2eq.framework.annotations.StateGraph;
 import com.e2eq.framework.annotations.Stateful;
 import com.e2eq.framework.annotations.TrackReferences;
+import com.e2eq.ontology.annotations.OntologyProperty;
 import com.e2eq.framework.model.persistent.InvalidStateTransitionException;
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.StateNode;
@@ -195,10 +196,16 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                             area2RealmOverrides = creds.getArea2RealmOverrides();
                         }
                     } else {
-                        //dataDomain = securityUtils.getSystemDataDomain();
-                        //userId = principalName;
-                        //contextRealm = envConfigUtils.getSystemRealm();
-                        throw new IllegalStateException("Unable to locate credentials for userId:" + principalName);
+                        Log.warnf("Unable to locate credentials for userId:%s in realm:%s. Falling back to identity defaults.", principalName, envConfigUtils.getSystemRealm());
+                        dataDomain = new com.e2eq.framework.model.persistent.base.DataDomain();
+                        dataDomain.setOwnerId(principalName);
+                        dataDomain.setTenantId(envConfigUtils.getSystemTenantId());
+                        dataDomain.setOrgRefName(envConfigUtils.getSystemOrgRefName());
+                        dataDomain.setAccountNum(envConfigUtils.getSystemAccountNumber());
+                        dataDomain.setDataSegment(0);
+
+                        userId = principalName;
+                        contextRealm = envConfigUtils.getSystemRealm();
                     }
 
                     var pcontext = new com.e2eq.framework.model.securityrules.PrincipalContext.Builder()
@@ -1153,7 +1160,9 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
        }
        setDefaultValues(value);
        value.validate();
-       return datastore.save(value);
+       T saved = datastore.save(value);
+       callPostPersistHooks(getSecurityContextRealmId(), saved);
+       return saved;
     }
 
    @Override
@@ -1440,10 +1449,14 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
             try {
                 field = getFieldFromHierarchy(getPersistentClass(),pair.getKey());
                 Reference ref = field.getAnnotation(Reference.class);
-                if (ref!= null) {
-                    //TODO fix this case where there is an update to a reference field
+                if (ref != null) {
                     Log.warn("Update to class that contains references");
-                    throw new NotSupportedException("Field:" + field + " is a managed reference, and not updatable via put.  Use Post");
+                    throw new NotSupportedException("Field:" + field + " is a managed reference, and not updatable via put. Use Post");
+                }
+                OntologyProperty ontologyProp = field.getAnnotation(OntologyProperty.class);
+                if (ontologyProp != null) {
+                    Log.warn("Update to class that contains ontology properties");
+                    throw new NotSupportedException("Field:" + field + " is an ontology property, and not updatable via put. Use save() to update relationships");
                 }
 
                 if (field.getType().isEnum()) {
@@ -1521,6 +1534,10 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
              if (ref != null) {
                 throw new NotSupportedException("Field:" + field + " is a managed reference, and not updatable via put. Use Post");
              }
+             OntologyProperty ontologyProp = field.getAnnotation(OntologyProperty.class);
+             if (ontologyProp != null) {
+                throw new NotSupportedException("Field:" + field + " is an ontology property, and not updatable via put. Use save() to update relationships");
+             }
 
              if (field.getType().isEnum()) {
                 if (!Arrays.stream(field.getType().getEnumConstants())
@@ -1585,8 +1602,12 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
             try {
                 field = getFieldFromHierarchy(getPersistentClass(),pair.getKey());
                 Reference ref = field.getAnnotation(Reference.class);
-                if (ref!= null) {
-                    throw new NotSupportedException("Field:" + field + " is a managed reference, and not updatable via put.  Use Post");
+                if (ref != null) {
+                    throw new NotSupportedException("Field:" + field + " is a managed reference, and not updatable via put. Use Post");
+                }
+                OntologyProperty ontologyProp = field.getAnnotation(OntologyProperty.class);
+                if (ontologyProp != null) {
+                    throw new NotSupportedException("Field:" + field + " is an ontology property, and not updatable via put. Use save() to update relationships");
                 }
 
                 if (field.getType().isEnum()) {
@@ -1785,6 +1806,10 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                 Reference ref = field.getAnnotation(Reference.class);
                 if (ref != null) {
                     throw new NotSupportedException("Field:" + field + " is a managed reference, and not updatable via put. Use Post");
+                }
+                OntologyProperty ontologyProp = field.getAnnotation(OntologyProperty.class);
+                if (ontologyProp != null) {
+                    throw new NotSupportedException("Field:" + field + " is an ontology property, and not updatable via put. Use save() to update relationships");
                 }
                 if (field.getType().isEnum()) {
                     if (!Arrays.stream(field.getType().getEnumConstants())

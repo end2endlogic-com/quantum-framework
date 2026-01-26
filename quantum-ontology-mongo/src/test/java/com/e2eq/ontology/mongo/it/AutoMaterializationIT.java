@@ -10,10 +10,6 @@ import org.bson.Document;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 @QuarkusTest
@@ -29,7 +25,7 @@ public class AutoMaterializationIT {
 
     @Inject
     OntologyWriteHook writeHook;
-    
+
     private DataDomain testDataDomain;
 
     @BeforeEach
@@ -39,7 +35,7 @@ public class AutoMaterializationIT {
         datastore.getDatabase().getCollection("it_orders").deleteMany(new Document());
         datastore.getDatabase().getCollection("it_customers").deleteMany(new Document());
         datastore.getDatabase().getCollection("it_orgs").deleteMany(new Document());
-        
+
         // Create test DataDomain
         testDataDomain = new DataDomain();
         testDataDomain.setOrgRefName("test-org");
@@ -74,8 +70,8 @@ public class AutoMaterializationIT {
         writeHook.afterPersist(TENANT, order);
 
         // Then: infer inverse for placedBy: (customer) placed order
-        var invEdges = edgeRepo.findBySrc(testDataDomain, "CUST-1");
-        boolean hasInverse = invEdges.stream().anyMatch(e -> e.getP().equals("placed") && e.getDst().equals("ORDER-1"));
+        var invEdges = edgeRepo.findBySrc(testDataDomain, cust.getId().toString());
+        boolean hasInverse = invEdges.stream().anyMatch(e -> e.getP().equals("placed") && e.getDst().equals(order.getId().toString()));
         assertTrue(hasInverse, "inverse edge 'placed' should be inferred for customer -> order");
     }
 }

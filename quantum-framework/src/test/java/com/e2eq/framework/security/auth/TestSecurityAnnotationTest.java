@@ -49,15 +49,17 @@ public class TestSecurityAnnotationTest {
     @Test
     @TestSecurity(user = "another-nonexistent@system.com", roles = {"admin","user"})
     public void testAuthenticatedWithoutSecuritySession_RepoFallback() {
+        // This user does NOT exist in the database.
+        // Previously, this would throw an IllegalStateException.
+        // Now, it should fall back to identity defaults and successfully set the context.
         try {
             credentialRepo.findByUserId("test@system.com", testUtils.getTestRealm(), false);
-        } catch (Throwable notFound) {
-           // should throw because nonexistent is not configured
-           return;
+        } catch (Throwable t) {
+            Assertions.fail("Should not have thrown exception: " + t.getMessage());
         }
 
-
-       Assertions.fail("Should have thrown exception");
-
+        Assertions.assertTrue(SecurityContext.getPrincipalContext().isPresent(), "PrincipalContext should be present via fallback");
+        Assertions.assertEquals("another-nonexistent@system.com", SecurityContext.getPrincipalContext().get().getUserId());
+        Assertions.assertArrayEquals(new String[]{"admin", "user"}, SecurityContext.getPrincipalContext().get().getRoles());
     }
 }
