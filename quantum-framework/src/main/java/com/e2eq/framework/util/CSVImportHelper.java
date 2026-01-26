@@ -1,10 +1,13 @@
 package com.e2eq.framework.util;
 
 
+import com.e2eq.framework.imports.dynamic.DynamicAttributeImportService;
 import com.e2eq.framework.imports.service.ImportProfileService;
 import com.e2eq.framework.imports.spi.ImportContext;
 import com.e2eq.framework.imports.spi.PreValidationTransformer;
 import com.e2eq.framework.model.persistent.base.BaseModel;
+import com.e2eq.framework.model.persistent.base.DynamicAttributeSet;
+import com.e2eq.framework.model.persistent.base.DynamicAttributeSupport;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.imports.ImportIntent;
 import com.e2eq.framework.model.persistent.imports.ImportProfile;
@@ -67,6 +70,9 @@ public class CSVImportHelper {
 
     @Inject
     ImportProfileService importProfileService;
+
+    @Inject
+    DynamicAttributeImportService dynamicAttributeImportService;
 
     public <T> void validateBean(T bean) {
         Set<ConstraintViolation<T>> violations = validator.validate(bean);
@@ -1233,6 +1239,13 @@ public class CSVImportHelper {
             CellProcessor[] processors = buildProcessorsWithProfile(
                     repo.getPersistentClass(), effectiveColumns, profile, realmId);
 
+            // Initialize dynamic attribute processing context if enabled
+            DynamicAttributeImportService.RowContext dynamicAttrContext = null;
+            if (profile != null && dynamicAttributeImportService != null &&
+                    dynamicAttributeImportService.isEnabled(profile)) {
+                dynamicAttrContext = dynamicAttributeImportService.initializeContext(rawHeaders, profile);
+            }
+
             List<T> batchBeans = new ArrayList<>(BATCH_SIZE);
             List<Integer> batchRowNums = new ArrayList<>(BATCH_SIZE);
             Map<Integer, String> batchRawByRowNum = new HashMap<>(BATCH_SIZE);
@@ -1315,6 +1328,25 @@ public class CSVImportHelper {
                         result.incrementTotalRows();
                         rowNum++;
                         continue;
+                    }
+
+                    // Process dynamic attributes if enabled and model supports it
+                    if (dynamicAttrContext != null && baseModel instanceof DynamicAttributeSupport dynamicModel) {
+                        // Create full row data map including raw headers for dynamic attribute extraction
+                        Map<String, Object> fullRowData = new HashMap<>(rowData);
+                        // Also populate with raw header values for dynamic attribute columns
+                        String untokenized = beanReader.getUntokenizedRow();
+                        if (untokenized != null) {
+                            String[] rawValues = untokenized.split(String.valueOf(fieldSeparator), -1);
+                            for (int idx = 0; idx < Math.min(rawHeaders.length, rawValues.length); idx++) {
+                                fullRowData.put(rawHeaders[idx], rawValues[idx]);
+                            }
+                        }
+
+                        List<DynamicAttributeSet> existingSets = dynamicModel.getDynamicAttributeSets();
+                        List<DynamicAttributeSet> mergedSets = dynamicAttributeImportService.processRow(
+                                fullRowData, dynamicAttrContext, existingSets);
+                        dynamicModel.setDynamicAttributeSets(mergedSets);
                     }
 
                     // Apply pre-validation transformers
