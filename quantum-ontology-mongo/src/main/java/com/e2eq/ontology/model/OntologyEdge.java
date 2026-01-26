@@ -13,7 +13,7 @@ import java.util.Map;
 @Data
 @NoArgsConstructor
 @EqualsAndHashCode(callSuper = true)
-@Entity(value = "edges")
+@Entity(value = "edges", useDiscriminator = false)
 @Indexes({
     // DataDomain-scoped unique index: prevents collisions across orgs/accounts within same tenant
     @Index(options = @IndexOptions(name = "uniq_domain_src_p_dst", unique = true),
