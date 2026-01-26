@@ -7,12 +7,22 @@ import java.util.Map;
  * Unlike static lookups, this allows arbitrary code to process each row
  * and compute a value dynamically.
  *
- * <p>Implementations are discovered via CDI and invoked by name in ColumnMapping.</p>
+ * <h2>Arc CDI Bean Integration</h2>
+ * <p>Implementations are discovered as Arc CDI beans, which means you can:</p>
+ * <ul>
+ *   <li>Inject any other CDI beans (services, repositories, etc.)</li>
+ *   <li>Use @ConfigProperty for configuration</li>
+ *   <li>Access the full Quarkus/Arc ecosystem</li>
+ *   <li>Update multiple collections from a single row by injecting multiple repositories</li>
+ * </ul>
  *
- * <p>Example implementation:</p>
+ * <p>Mark your implementation with {@code @ApplicationScoped} (recommended) or
+ * {@code @Dependent} scope. The resolver is discovered via CDI's {@code Instance}
+ * mechanism and invoked by name as specified in the ColumnMapping configuration.</p>
+ *
+ * <h2>Basic Example</h2>
  * <pre>{@code
  * @ApplicationScoped
- * @Named("skuResolver")
  * public class SkuResolver implements RowValueResolver {
  *     @Inject
  *     ProductService productService;
@@ -24,11 +34,9 @@ import java.util.Map;
  *
  *     @Override
  *     public ResolveResult resolve(String inputValue, Map<String, Object> rowData, ImportContext context) {
- *         // Access multiple columns from the row
  *         String category = (String) rowData.get("category");
  *         String vendor = (String) rowData.get("vendor");
  *
- *         // Run arbitrary logic
  *         String resolvedSku = productService.findOrCreateSku(inputValue, category, vendor);
  *
  *         if (resolvedSku != null) {
@@ -40,7 +48,50 @@ import java.util.Map;
  * }
  * }</pre>
  *
- * <p>Configuration in ColumnMapping:</p>
+ * <h2>Multi-Collection Update Example</h2>
+ * <p>Since resolvers are Arc beans, you can inject multiple repositories and update
+ * multiple collections from a single CSV row:</p>
+ * <pre>{@code
+ * @ApplicationScoped
+ * public class OrderLineResolver implements RowValueResolver {
+ *     @Inject
+ *     OrderRepo orderRepo;
+ *
+ *     @Inject
+ *     InventoryRepo inventoryRepo;
+ *
+ *     @Inject
+ *     AuditLogRepo auditLogRepo;
+ *
+ *     @Override
+ *     public String getName() {
+ *         return "orderLineResolver";
+ *     }
+ *
+ *     @Override
+ *     public ResolveResult resolve(String inputValue, Map<String, Object> rowData, ImportContext context) {
+ *         String orderId = (String) rowData.get("order_id");
+ *         String productSku = (String) rowData.get("product_sku");
+ *         Integer quantity = Integer.parseInt((String) rowData.get("quantity"));
+ *
+ *         // Update inventory (different collection)
+ *         inventoryRepo.decrementStock(productSku, quantity, context.getRealmId());
+ *
+ *         // Create audit log entry (another collection)
+ *         AuditLog log = AuditLog.builder()
+ *             .action("IMPORT_ORDER_LINE")
+ *             .entityRef(orderId)
+ *             .details("Imported line for SKU: " + productSku)
+ *             .build();
+ *         auditLogRepo.save(log);
+ *
+ *         // Return the value for the main entity being imported
+ *         return ResolveResult.success(productSku);
+ *     }
+ * }
+ * }</pre>
+ *
+ * <h2>Configuration in ColumnMapping</h2>
  * <pre>{@code
  * {
  *   "sourceColumn": "product_code",
@@ -48,6 +99,26 @@ import java.util.Map;
  *   "rowValueResolverName": "skuResolver"
  * }
  * }</pre>
+ *
+ * <h2>Available Context Information</h2>
+ * <p>The {@code ImportContext} provides access to:</p>
+ * <ul>
+ *   <li>{@code getProfile()} - The ImportProfile configuration</li>
+ *   <li>{@code getTargetClass()} - The class being imported</li>
+ *   <li>{@code getRealmId()} - The realm/tenant ID</li>
+ *   <li>{@code getRowNumber()} - Current row number (1-based)</li>
+ *   <li>{@code getSessionId()} - The import session ID</li>
+ * </ul>
+ *
+ * <h2>Result Types</h2>
+ * <ul>
+ *   <li>{@code ResolveResult.success(value)} - Use the resolved value</li>
+ *   <li>{@code ResolveResult.passthrough(original)} - Keep the original value</li>
+ *   <li>{@code ResolveResult.nullValue()} - Set field to null</li>
+ *   <li>{@code ResolveResult.skip()} - Skip this row (no error)</li>
+ *   <li>{@code ResolveResult.skip(reason)} - Skip with reason logged</li>
+ *   <li>{@code ResolveResult.error(message)} - Mark row as error</li>
+ * </ul>
  */
 public interface RowValueResolver {
 
