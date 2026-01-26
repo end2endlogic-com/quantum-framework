@@ -346,6 +346,258 @@ Notes and constraints:
 - Very large exports should prefer streaming with sensible length settings or server‑side filters to reduce memory and time.
 - Imports run under the same security rules as POST / (save). Ensure the caller has permission to create/update the target entities in the chosen realm.
 
+=== Enhanced Import with ImportProfile
+
+ImportProfile provides reusable, configurable transformation and mapping rules for CSV imports. Profiles are persistent entities that can be created via REST and referenced during imports.
+
+==== Key Features
+
+- **Value Mapping**: Transform CSV values before type conversion (e.g., "Y" → `true`, "Active" → `ACTIVE`)
+- **Lookup Resolution**: Resolve foreign references by looking up values in other collections
+- **String Transformations**: Trim, case conversion, regex replacement
+- **Intent Control**: Specify INSERT vs UPDATE per row via an intent column
+- **Header Modifiers**: Mark fields as required (*), optional (?), calculated (~), or key (#)
+
+==== Using a Profile
+
+Create a profile first, then reference it during import:
+
+[source,bash]
+----
+# Create profile
+curl -X POST \
+  -H "Authorization: Bearer $JWT" \
+  -H "Content-Type: application/json" \
+  "https://host/api/integration/import-profiles" \
+  -d @product-import-profile.json
+
+# Import using profile
+curl -X POST \
+  -H "Authorization: Bearer $JWT" \
+  -F "file=@products.csv" \
+  "https://host/api/products/csv/session/profile?profileRefName=product-import-v1"
+----
+
+==== Profile with Session Flow
+
+* POST /{entity}/csv/session/profile (multipart): analyzes the file using the specified profile
+  - Query param: `profileRefName` - reference to an existing ImportProfile
+  - Returns preview ImportResult including sessionId, totals, and row-level findings
+* POST /{entity}/csv/session/{sessionId}/commit: imports valid rows (same as basic flow)
+
+==== Example ImportProfile (JSON)
+
+[source,json]
+----
+{
+  "refName": "product-import-v1",
+  "displayName": "Product Import Profile",
+  "targetType": "com.example.Product",
+  "columnMappings": [
+    {
+      "sourceColumn": "Status",
+      "targetField": "status",
+      "valueMappings": {
+        "A": "ACTIVE",
+        "I": "INACTIVE",
+        "D": "DISCONTINUED"
+      },
+      "unmappedValueBehavior": "FAIL"
+    },
+    {
+      "sourceColumn": "Category",
+      "targetField": "categoryRefName",
+      "lookup": {
+        "lookupCollection": "Category",
+        "lookupMatchField": "displayName",
+        "lookupReturnField": "refName",
+        "onNotFound": "FAIL"
+      }
+    }
+  ],
+  "intentColumn": "_action",
+  "defaultIntent": "UPSERT"
+}
+----
+
+==== Intent Column
+
+When `intentColumn` is configured, each row can specify its own intent:
+
+[cols="1,3"]
+|===
+|Intent |Behavior
+
+|`INSERT`
+|Insert new record. Fails if refName already exists.
+
+|`UPDATE`
+|Update existing record. Fails if refName does not exist.
+
+|`UPSERT`
+|Auto-detect: INSERT if new, UPDATE if exists.
+
+|`SKIP`
+|Skip this row entirely.
+|===
+
+NOTE: `MERGE` and `DELETE` are intentionally not supported for safety reasons.
+
+For complete ImportProfile documentation, see xref:../design/csv-import-enhancements.adoc[CSV Import Enhancements].
+
+=== RowValueResolver: Custom Per-Row Logic
+
+The `RowValueResolver` SPI allows arbitrary code execution for each row during import. Unlike static lookups, RowValueResolvers have access to all columns in the row and can invoke external services.
+
+==== Key Features
+
+- **Arc CDI Beans**: Full dependency injection support
+- **Multi-Collection Updates**: Update multiple collections from a single CSV row
+- **Full Row Access**: Read any column value, not just the mapped column
+- **Context Awareness**: Access to realm, session, row number, and profile
+
+==== Example Implementation
+
+[source,java]
+----
+@ApplicationScoped
+public class GeocodeResolver implements RowValueResolver {
+
+    @Inject
+    GeocodingService geocodingService;
+
+    @Override
+    public String getName() {
+        return "geocodeResolver";
+    }
+
+    @Override
+    public ResolveResult resolve(String inputValue, Map<String, Object> rowData, ImportContext context) {
+        String street = (String) rowData.get("street");
+        String city = (String) rowData.get("city");
+        String state = (String) rowData.get("state");
+
+        GeocodingResult result = geocodingService.geocode(
+            String.format("%s, %s, %s", street, city, state));
+
+        if (result != null && result.isValid()) {
+            return ResolveResult.success(new GeoPoint(result.getLatitude(), result.getLongitude()));
+        }
+        return ResolveResult.nullValue();
+    }
+}
+----
+
+==== Configuration in ImportProfile
+
+[source,json]
+----
+{
+  "columnMappings": [
+    {
+      "sourceColumn": "street",
+      "targetField": "location",
+      "rowValueResolverName": "geocodeResolver"
+    }
+  ]
+}
+----
+
+==== Result Types
+
+[cols="1,3"]
+|===
+|Method |Description
+
+|`ResolveResult.success(value)`
+|Set the field to the resolved value
+
+|`ResolveResult.passthrough(original)`
+|Keep the original value unchanged
+
+|`ResolveResult.nullValue()`
+|Set the field to null
+
+|`ResolveResult.skip()`
+|Skip this row (not an error)
+
+|`ResolveResult.error(message)`
+|Mark the row as an error
+|===
+
+For complete RowValueResolver documentation, see xref:../design/csv-import-enhancements.adoc[CSV Import Enhancements].
+
+=== Dynamic Attribute Import
+
+For entities with dynamic attributes (schema-less, nested key-value structures), Quantum supports multiple import strategies.
+
+==== Import Strategies
+
+[cols="1,3"]
+|===
+|Strategy |Description
+
+|**DOT_NOTATION**
+|Use `dyn.setName.attrName[:type]` column headers. Best for spreadsheet-friendly imports.
+
+|**JSON_COLUMN**
+|Single JSON column containing all attributes. Best for programmatic imports.
+
+|**VERTICAL**
+|Multiple rows per entity with one attribute per row. Best for attribute-centric workflows.
+
+|**HYBRID**
+|Combines DOT_NOTATION and JSON_COLUMN in the same import.
+|===
+
+==== DOT_NOTATION Example
+
+[source,csv]
+----
+name,sku,dyn.logistics.weight:Double,dyn.logistics.hazmat:Boolean,dyn.compliance.ce_mark:Boolean
+"Widget Pro","WGT-001",2.5,false,true
+"Gadget X","GDG-002",1.2,false,true
+----
+
+==== JSON_COLUMN Example
+
+[source,csv]
+----
+name,sku,dynamicAttributes
+"Widget Pro","WGT-001","{""logistics"":{""weight"":2.5,""hazmat"":false},""compliance"":{""ce_mark"":true}}"
+----
+
+==== Configuration in ImportProfile
+
+[source,json]
+----
+{
+  "refName": "product-import-dynamic",
+  "dynamicAttributeStrategy": "DOT_NOTATION",
+  "dynamicAttributePrefix": "dyn.",
+  "enableDynamicAttributeDiscovery": true,
+  "dynamicAttributeMergeStrategy": "MERGE"
+}
+----
+
+==== Merge Strategies
+
+[cols="1,3"]
+|===
+|Strategy |Behavior
+
+|`REPLACE`
+|Remove all existing attributes, replace with imported
+
+|`MERGE`
+|Keep existing attributes, update matching, add new
+
+|`APPEND`
+|Keep existing attributes, only add new (no updates)
+|===
+
+For complete dynamic attribute import documentation, see xref:../design/csv-dynamic-attributes-design.adoc[CSV Dynamic Attributes Design].
+
 [[rest-crud-auth]]
 = Authentication and Authorization
 
