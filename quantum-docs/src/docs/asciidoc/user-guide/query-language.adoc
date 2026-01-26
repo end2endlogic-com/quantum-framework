@@ -88,6 +88,31 @@ Notes:
 - MongoDB allows only one `text(...)` clause per query.
 - Text search must be backed by a text index on the target collection.
 
+IMPORTANT: MongoDB requires `$text` to be a top-level query operator. The following usages are **not allowed** and will be rejected at parse time:
+
+[cols="1,2,3"]
+|===
+|Invalid Usage |Example |Reason
+
+|Inside NOT
+|`!!text("foo")`
+|MongoDB does not support `$text` inside `$not` or `$nor`
+
+|Inside OR
+|`text("foo") \|\| status:"OPEN"`
+|MongoDB does not allow `$text` inside `$or`
+
+|Inside elemMatch
+|`tags:{text("foo")}`
+|MongoDB does not support `$text` inside `$elemMatch`
+
+|Multiple text clauses
+|`text("foo") && text("bar")`
+|Only one `$text` operator is allowed per query
+|===
+
+Valid usage: `text(...)` combined with `&&` (AND) at the top level is supported because MongoDB allows `$text` alongside other top-level conditions.
+
 ==== Numeric Ranges
 
 [source]
@@ -345,6 +370,21 @@ createdDate:2024-12-25
 (active:true && price:>##10
 # Right:
 (active:true && price:>##10)
+
+# Wrong: text() inside NOT
+!!text("search")
+# Right: Use text() at top level only
+text("search") && status:!"DELETED"
+
+# Wrong: text() inside OR
+text("search") || status:"ACTIVE"
+# Right: Use text() with AND only
+text("search") && (status:"ACTIVE" || status:"PENDING")
+
+# Wrong: Multiple text() clauses
+text("foo") && text("bar")
+# Right: Combine search terms in a single text()
+text("foo bar")
 ----
 
 ==== See Also
@@ -369,7 +409,7 @@ Key characteristics:
 - Output type: Morphia Filter
 - Execution: database-side (MongoDB)
 - Semantics: identical to grammar (comparisons, IN/NIN, exists, null, regex with wildcards, elemMatch, boolean &&/||/!!)
-- Text search: `text("...")` is supported when a collection has a text index; only one text clause is allowed per query.
+- Text search: `text("...")` is supported when a collection has a text index; only one text clause is allowed per query, and it must be at the top level (cannot be inside OR, NOT, or elemMatch).
 - Variable expansion: supports ${vars} and single-variable IN list expansion (e.g., [${ids}] can expand to a collection/array or a comma-separated string)
 
 Example:
