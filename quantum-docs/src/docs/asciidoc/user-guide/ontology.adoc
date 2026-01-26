@@ -1,4 +1,4 @@
-= Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast
+= Ontology Modeling
 :toclevels: 3
 
 [[ontologies-in-quantum]]
@@ -468,6 +468,46 @@ For a transitive example, an O1 --placedInOrg--> OrgParent edge could have:
 
 TIP: Provenance is for explanation and maintenance. The runtime edges you query on remain simple (src, p, dst) with optional type fields for validation and indexing.
 
+=== Querying Ontologies
+
+Quantum provides several ways to leverage ontology relationships in your queries and business logic.
+
+==== BIAPI Query Language Functions: hasEdge and hasIncomingEdge
+
+The query language (BIAPIQuery) includes built-in functions to filter entities based on their ontology edges. These are the preferred way to perform ontology-aware queries from REST APIs or permission rules.
+
+- **`hasEdge(predicate, dst)`**: Filters for entities (sources) that have an edge pointing TO a specific destination.
+- **`hasIncomingEdge(predicate, src)`**: Filters for entities (targets) that have an edge coming FROM a specific source.
+
+Example BIAPI queries:
+[source]
+----
+# Find orders placed in OrgA
+hasEdge(placedInOrg, "OrgA")
+
+# Find locations accessible by a specific associate
+hasIncomingEdge(canAccessLocation, "associate-123")
+
+# Combine with other filters
+hasEdge(placedInOrg, "OrgA") && status:PENDING
+----
+
+==== Programmatic Querying with EdgeDao
+
+For more complex scenarios in Java code, you can use the `EdgeDao` directly:
+
+[source,java]
+----
+@Inject
+EdgeDao edgeDao;
+
+// Find all destination IDs for a given source and predicate
+Set<String> targetIds = edgeDao.dstIdsBySrc(tenantId, "Associate", associateId, "canAccessLocation");
+
+// Find all source IDs for a given destination and predicate
+Set<String> sourceIds = edgeDao.srcIdsByDst(tenantId, "canAccessLocation", locationId);
+----
+
 [[ontology-integration-morphia-permissions]]
 == Integrating Ontology with Morphia, Permissions, and Multi-tenancy
 
@@ -564,6 +604,90 @@ public final class OntologyFilterHelper {
     - extracts explicit edges from fields/getters annotated with @OntologyProperty using a startup-built metadata cache (no per-call reflection), and
     - calls OntologyMaterializer to infer inverse, transitive, symmetric, and super-property edges and upsert them to the edges collection.
   - This is enabled by default. To disable temporarily (e.g., for bulk loads), set: ontology.auto-materialize=false
+
+[[custom-edge-providers]]
+=== Custom Edge Providers: OntologyEdgeProvider and HierarchyListEdgeProvider
+
+While annotations (`@OntologyProperty`) and property chains cover many use cases, some relationships require custom logic to determine edges. Quantum provides an SPI for implementing custom edge providers that are automatically discovered and integrated into the materialization process.
+
+==== OntologyEdgeProvider: The Core SPI
+
+The `OntologyEdgeProvider` interface allows you to contribute explicit edges for any entity instance. These edges are merged with annotation-derived edges before being passed to the reasoner.
+
+[source,java]
+----
+public interface OntologyEdgeProvider {
+    /** @return true if this provider supports the given entity type */
+    boolean supports(Class<?> entityType);
+
+    /** Produce explicit edges for the given entity instance */
+    List<Reasoner.Edge> edges(String realmId, DataDomainInfo dataDomainInfo, Object entity);
+}
+----
+
+Implementations should be annotated with `@ApplicationScoped` for CDI discovery.
+
+==== HierarchyListEdgeProvider: Handling Complex Hierarchies
+
+A common pattern in SaaS applications is assigning users/entities to nodes in a hierarchy (e.g., Territories, Organizations) where they should also "inherit" relationships from descendant nodes. `HierarchyListEdgeProvider` is a specialized base class designed for this purpose.
+
+Key features:
+- **Hierarchy Traversal**: Automatically expands relationships through parent-child links.
+- **List Resolution**: Resolves `StaticDynamicList` fields to concrete entity IDs.
+- **Change Tracking**: Informs the framework which entities need re-materialization when a hierarchy node or list changes.
+
+===== Example: Territory → Location Materialization
+
+Consider a scenario where:
+1. **Associates** are assigned to **Territories**.
+2. **Territories** form a hierarchy.
+3. Each **Territory** has a list of **Locations**.
+4. We want to materialize `Associate --canAccessLocation--> Location` edges.
+
+[source,java]
+----
+@ApplicationScoped
+public class TerritoryLocationEdgeProvider
+        extends HierarchyListEdgeProvider<Territory, Territory, Location> {
+
+    @Inject TerritoryRepo territoryRepo;
+    @Inject LocationListResolver listResolver;
+
+    @Override public Class<Territory> getSourceType() { return Territory.class; }
+    @Override public String getPredicate() { return "hasLocation"; }
+    @Override public String getTargetTypeName() { return "Location"; }
+
+    @Override
+    protected List<String> getAssignedNodeIds(Territory source) {
+        return List.of(source.getId().toString());
+    }
+
+    @Override
+    protected List<Territory> getChildNodes(ComputationContext context, String nodeId) {
+        return territoryRepo.getAllChildren(context.dataDomainInfo(), nodeId);
+    }
+
+    @Override
+    protected List<Location> resolveListItems(ComputationContext context, Territory node) {
+        return listResolver.resolve(context.dataDomainInfo(), node.getStaticDynamicList());
+    }
+
+    @Override
+    protected String extractTargetId(Location target) {
+        return target.getRefName();
+    }
+}
+----
+
+Combined with a Property Chain:
+[source,yaml]
+----
+chains:
+  - chain: [hasTerritory, hasLocation]
+    implies: canAccessLocation
+----
+
+This setup ensures that when an Associate is linked to a Territory, they automatically get `canAccessLocation` edges to all locations in that territory and its descendants.
 
 [[property-chains-vs-computed-providers]]
 ==== When to use Property Chains vs ComputedEdgeProvider
