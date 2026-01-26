@@ -42,6 +42,11 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
     protected boolean complete = false;
     private boolean textClauseSeen = false;
 
+    // Track nesting context to prevent $text in invalid positions
+    // MongoDB requires $text to be a top-level query operator
+    private int notNestingDepth = 0;
+    private int elemMatchNestingDepth = 0;
+
     Map<String, String> variableMap = null;
     StringSubstitutor sub = null;
 
@@ -82,9 +87,67 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
 
     public Filter getFilter() {
         if (complete) {
-            return filterStack.peek();
+            Filter result = filterStack.peek();
+            // Final validation: ensure $text is not nested inside $or anywhere in the filter tree
+            validateNoTextInsideOr(result);
+            return result;
         } else {
             throw new IllegalStateException("Filter is incomplete");
+        }
+    }
+
+    /**
+     * Recursively validate that $text is not nested inside any $or filter.
+     * MongoDB requires $text to be a top-level query operator.
+     */
+    private void validateNoTextInsideOr(Filter filter) {
+        if (filter == null) return;
+        String name = filter.getName();
+
+        // If this is an $or filter, check that none of its children contain $text
+        if ("$or".equals(name)) {
+            Object value = filter.getValue();
+            if (value instanceof List<?> list) {
+                for (Object item : list) {
+                    if (item instanceof Filter nested) {
+                        if (containsTextFilter(nested)) {
+                            throw new IllegalStateException(
+                                "text(...) cannot be used inside an OR expression. " +
+                                "MongoDB requires $text to be a top-level query operator. " +
+                                "Example invalid query: text(\"foo\") || status:OPEN");
+                        }
+                        // Also recursively validate nested structures
+                        validateNoTextInsideOr(nested);
+                    }
+                }
+            }
+            if (value instanceof Filter[] arr) {
+                for (Filter nested : arr) {
+                    if (containsTextFilter(nested)) {
+                        throw new IllegalStateException(
+                            "text(...) cannot be used inside an OR expression. " +
+                            "MongoDB requires $text to be a top-level query operator. " +
+                            "Example invalid query: text(\"foo\") || status:OPEN");
+                    }
+                    validateNoTextInsideOr(nested);
+                }
+            }
+        }
+        // Recursively check other compound filters ($and, $nor)
+        else if ("$and".equals(name) || "$nor".equals(name)) {
+            Object value = filter.getValue();
+            if (value instanceof List<?> list) {
+                for (Object item : list) {
+                    if (item instanceof Filter nested) {
+                        validateNoTextInsideOr(nested);
+                    }
+                }
+            }
+            if (value instanceof Filter[] arr) {
+                for (Filter nested : arr) {
+                    validateNoTextInsideOr(nested);
+                }
+            }
         }
     }
 
@@ -92,7 +155,63 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         if (textClauseSeen) {
             throw new IllegalStateException("Multiple text(...) clauses are not supported in a single query.");
         }
+        // MongoDB requires $text to be a top-level query operator.
+        // It cannot be nested inside $not/$nor or $elemMatch.
+        // Note: OR validation is done in buildCompositeSince when we actually create the $or filter,
+        // because the grammar parses left-to-right and we don't know about OR until after text() is parsed.
+        if (notNestingDepth > 0) {
+            throw new IllegalStateException(
+                "text(...) cannot be negated with NOT (!). " +
+                "MongoDB requires $text to be a top-level query operator. " +
+                "Example invalid query: !text(\"foo\")");
+        }
+        if (elemMatchNestingDepth > 0) {
+            throw new IllegalStateException(
+                "text(...) cannot be used inside an elemMatch expression. " +
+                "MongoDB requires $text to be a top-level query operator. " +
+                "Example invalid query: arrayField:{text(\"foo\")}");
+        }
         textClauseSeen = true;
+    }
+
+    /**
+     * Check if any filter in the list contains a $text filter.
+     * MongoDB requires $text to be a top-level operator and cannot be inside $or.
+     */
+    private void validateNoTextInOrFilters(List<Filter> filters, String context) {
+        for (Filter f : filters) {
+            if (containsTextFilter(f)) {
+                throw new IllegalStateException(
+                    "text(...) cannot be used inside an OR expression. " +
+                    "MongoDB requires $text to be a top-level query operator. " +
+                    "Example invalid query: text(\"foo\") || status:OPEN");
+            }
+        }
+    }
+
+    /**
+     * Recursively check if a filter or any of its children is a $text filter.
+     */
+    private boolean containsTextFilter(Filter filter) {
+        if (filter == null) return false;
+        if ("$text".equals(filter.getName())) return true;
+        // Check if it's a compound filter ($and, $or, $nor) that might contain $text
+        // The Filter.getValue() for compound filters is typically a List<Filter>
+        Object value = filter.getValue();
+        if (value instanceof List<?> list) {
+            for (Object item : list) {
+                if (item instanceof Filter nested) {
+                    if (containsTextFilter(nested)) return true;
+                }
+            }
+        }
+        // Also check array form
+        if (value instanceof Filter[] arr) {
+            for (Filter nested : arr) {
+                if (containsTextFilter(nested)) return true;
+            }
+        }
+        return false;
     }
 
     @Override
@@ -293,6 +412,8 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
                 if (orFilters.size() == 1) {
                    filterStack.push(orFilters.get(0));
                 } else if (orFilters.size() > 1) {
+                   // Validate: MongoDB $text cannot be inside $or
+                   validateNoTextInOrFilters(orFilters, "grouped OR expression");
                    filterStack.push(Filters.or(orFilters.toArray(Filter[]::new)));
                 } else {
                    throw new IllegalStateException("OrCriteria is empty; expected at least one filter in group");
@@ -318,6 +439,8 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
 
           if (!orFilters.isEmpty()) {
              orFilters.add(andCombined);
+             // Validate: MongoDB $text cannot be inside $or
+             validateNoTextInOrFilters(orFilters, "OR expression with AND");
              filterStack.push(Filters.or(orFilters.toArray(Filter[]::new)));
           } else {
              filterStack.push(andCombined);
@@ -341,6 +464,8 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
              // The left side should be first logically, but order doesn't affect semantics
              orFilters.add(leftCombined);
           }
+          // Validate: MongoDB $text cannot be inside $or
+          validateNoTextInOrFilters(orFilters, "OR expression");
           filterStack.push(Filters.or(orFilters.toArray(Filter[]::new)));
           return;
        }
@@ -559,7 +684,15 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
    }
 
     @Override
+    public void enterNotExpr(BIAPIQueryParser.NotExprContext ctx) {
+        // Track NOT nesting for $text validation
+        notNestingDepth++;
+    }
+
+    @Override
     public void exitNotExpr(BIAPIQueryParser.NotExprContext ctx) {
+        // Decrement NOT nesting when exiting
+        notNestingDepth--;
         if (filterStack.isEmpty()) {
             throw new IllegalStateException("NOT expression found but filter stack is empty");
         }
@@ -604,10 +737,14 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         }
         opTypeMarkers.push(opTypeStack.size());
         filterStackMarkers.push(filterStack.size());
+        // Track elemMatch nesting for $text validation
+        elemMatchNestingDepth++;
     }
 
     @Override
     public void exitElemMatchExpr(BIAPIQueryParser.ElemMatchExprContext ctx) {
+        // Decrement elemMatch nesting when exiting
+        elemMatchNestingDepth--;
         // Build composite for nested part only, then wrap it in elemMatch
         int startOp = opTypeMarkers.pop();
         int startFilter = filterStackMarkers.pop();
