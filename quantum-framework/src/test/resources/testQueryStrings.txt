@@ -163,3 +163,7 @@ field:"*15"" LAPTOP SLEEVE-Black Twill*"
 
 #--Has Edge
 hasEdge(placedInOrg, ORG-ACME)
+
+#-- Text search
+text("priority escalation")
+text("priority escalation")&&status:"OPEN"
