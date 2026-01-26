@@ -10,6 +10,7 @@ import com.e2eq.ontology.repo.OntologyEdgeRepo;
 import com.e2eq.ontology.core.OntologyAliasResolver;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
+import org.bson.conversions.Bson;
 
 /**
  * Rewrites list queries to incorporate ontology edge constraints.
@@ -63,6 +64,11 @@ public class ListQueryRewriter {
         return getRepo().srcIdsByDstIn(dataDomain, p, dstIds);
     }
 
+    private Set<String> dstIdsBySrc(DataDomain dataDomain, String predicate, String srcId) {
+        String p = canon(predicate);
+        return getRepo().dstIdsBySrc(dataDomain, p, srcId);
+    }
+
     /**
      * Build a Morphia filter for entities that have an edge with the given predicate pointing to dstId.
      * 
@@ -81,8 +87,50 @@ public class ListQueryRewriter {
     }
 
     /**
+     * Build a Morphia filter for entities (targets) that have an edge with the given predicate coming FROM srcId.
+     *
+     * @param dataDomain the DataDomain context
+     * @param predicate  the edge predicate/property
+     * @param srcId      the source entity ID
+     * @return a Filter that matches entities being the target of the edge
+     */
+    public Filter hasIncomingEdge(DataDomain dataDomain, String predicate, String srcId) {
+        Set<String> dstIds = dstIdsBySrc(dataDomain, predicate, srcId);
+        if (dstIds.isEmpty()) {
+            return Filters.eq("_id", "__none__");
+        }
+        return Filters.in("_id", dstIds);
+    }
+
+    /**
+     * Rewrites a base BSON filter to include a hasEdge constraint.
+     */
+    public Bson rewriteForHasEdge(Bson base, String tenantId, String predicate, String dstId) {
+        DataDomain dd = new DataDomain();
+        dd.setTenantId(tenantId);
+        dd.setOrgRefName("ontology");
+        dd.setAccountNum("0000000000");
+        Set<String> ids = srcIdsByDst(dd, predicate, dstId);
+        if (ids.isEmpty()) return com.mongodb.client.model.Filters.and(base, com.mongodb.client.model.Filters.eq("_id", "__none__"));
+        return com.mongodb.client.model.Filters.and(base, com.mongodb.client.model.Filters.in("_id", ids));
+    }
+
+    /**
+     * Rewrites a base BSON filter to include a hasIncomingEdge constraint.
+     */
+    public Bson rewriteForHasIncomingEdge(Bson base, String tenantId, String predicate, String srcId) {
+        DataDomain dd = new DataDomain();
+        dd.setTenantId(tenantId);
+        dd.setOrgRefName("ontology");
+        dd.setAccountNum("0000000000");
+        Set<String> ids = dstIdsBySrc(dd, predicate, srcId);
+        if (ids.isEmpty()) return com.mongodb.client.model.Filters.and(base, com.mongodb.client.model.Filters.eq("_id", "__none__"));
+        return com.mongodb.client.model.Filters.and(base, com.mongodb.client.model.Filters.in("_id", ids));
+    }
+
+    /**
      * Build a Morphia filter for entities that have an edge with the given predicate pointing to any of the dstIds.
-     * 
+     *
      * @param dataDomain the DataDomain context
      * @param predicate  the edge predicate/property
      * @param dstIds     the set of destination entity IDs (OR semantics)
@@ -101,7 +149,7 @@ public class ListQueryRewriter {
 
     /**
      * Build a Morphia filter for entities that have edges to ALL the provided dstIds for the same predicate.
-     * 
+     *
      * @param dataDomain the DataDomain context
      * @param predicate  the edge predicate/property
      * @param dstIds     the set of destination entity IDs (AND semantics via set intersection)
@@ -131,7 +179,7 @@ public class ListQueryRewriter {
 
     /**
      * Build a Morphia filter for entities satisfying ALL predicates with ALL their respective destinations.
-     * 
+     *
      * @param dataDomain       the DataDomain context
      * @param predicateToDstIds map from predicate to collection of destination IDs
      * @return a Filter combining all constraints with AND
@@ -149,7 +197,7 @@ public class ListQueryRewriter {
 
     /**
      * Build a Morphia filter for entities that do NOT have an edge with the given predicate pointing to dstId.
-     * 
+     *
      * @param dataDomain the DataDomain context
      * @param predicate  the edge predicate/property
      * @param dstId      the destination entity ID to exclude
@@ -166,7 +214,7 @@ public class ListQueryRewriter {
 
     /**
      * Get the set of source IDs that have an edge with the given predicate pointing to dstId.
-     * 
+     *
      * @param dataDomain the DataDomain context
      * @param predicate  the edge predicate/property
      * @param dstId      the destination entity ID
@@ -178,7 +226,7 @@ public class ListQueryRewriter {
 
     /**
      * Get the set of source IDs that have an edge with the given predicate pointing to any of the dstIds.
-     * 
+     *
      * @param dataDomain the DataDomain context
      * @param predicate  the edge predicate/property
      * @param dstIds     the set of destination entity IDs

@@ -46,6 +46,9 @@ public class ImportSession extends BaseModel {
     /** When the session was started (UTC) */
     private java.time.Instant startedAt;
 
+    /** Reference to the ImportProfile used for this import (if any) */
+    private String profileRefName;
+
     @Override
     public String bmFunctionalArea() {
         return "IMPORTS";

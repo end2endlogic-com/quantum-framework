@@ -1,7 +1,14 @@
 package com.e2eq.framework.util;
 
 
+import com.e2eq.framework.imports.service.ImportProfileService;
+import com.e2eq.framework.imports.spi.ImportContext;
+import com.e2eq.framework.imports.spi.PreValidationTransformer;
+import com.e2eq.framework.model.persistent.base.BaseModel;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
+import com.e2eq.framework.model.persistent.imports.ImportIntent;
+import com.e2eq.framework.model.persistent.imports.ImportProfile;
+import com.e2eq.framework.model.persistent.imports.ParsedHeader;
 import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
 import com.e2eq.framework.model.persistent.morphia.ImportSessionRepo;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -28,6 +35,7 @@ import org.supercsv.util.CsvContext;
 import java.io.*;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Set;
 import java.util.Map;
@@ -56,6 +64,9 @@ public class CSVImportHelper {
 
     @Inject
     io.quarkus.security.identity.SecurityIdentity securityIdentity;
+
+    @Inject
+    ImportProfileService importProfileService;
 
     public <T> void validateBean(T bean) {
         Set<ConstraintViolation<T>> violations = validator.validate(bean);
@@ -1132,6 +1143,465 @@ public class CSVImportHelper {
             }
             // do not increase skip since we delete as we go; always fetch from 0 until empty
             skip = 0;
+        }
+    }
+
+    // ==================== ImportProfile-enabled methods ====================
+
+    /**
+     * Analyze CSV with ImportProfile support.
+     * This method applies value mappings, lookups, and transformations defined in the profile.
+     *
+     * @param repo the repository for the target entity
+     * @param inputStream the CSV input stream
+     * @param profile the import profile (may be null for backward compatibility)
+     * @param requestedColumns the columns to import (used when profile is null)
+     * @param realmId the realm ID for lookups
+     * @return the analysis result with session ID for preview/commit workflow
+     */
+    public <T extends UnversionedBaseModel> ImportResult<T> analyzeCSVWithProfile(
+            BaseMorphiaRepo<T> repo,
+            InputStream inputStream,
+            ImportProfile profile,
+            List<String> requestedColumns,
+            String realmId) throws IOException {
+
+        // Use profile settings or defaults
+        char fieldSeparator = profile != null ? profile.getDelimiterChar() : ',';
+        char quoteChar = profile != null ? profile.getQuoteCharChar() : '"';
+        boolean skipHeaderRow = profile == null || profile.hasHeaderRow();
+        Charset charset = Charset.forName(profile != null ? profile.getEncodingOrDefault() : "UTF-8");
+
+        ImportResult<T> result = new ImportResult<>(0, 0);
+        boolean memMode = (importSessionRepo == null || importSessionRowRepo == null);
+        List<ImportRowResult<T>> memRows = memMode ? new ArrayList<>() : null;
+
+        String sessionId = java.util.UUID.randomUUID().toString();
+        result.setSessionId(sessionId);
+
+        com.e2eq.framework.model.persistent.imports.ImportSession session = null;
+        if (!memMode) {
+            session = new com.e2eq.framework.model.persistent.imports.ImportSession();
+            session.setRefName(sessionId);
+            session.setDisplayName("Import Session " + sessionId);
+            session.setTargetType(repo.getPersistentClass().getName());
+            session.setStatus("OPEN");
+            String currentUser = null;
+            try {
+                if (securityIdentity != null && securityIdentity.getPrincipal() != null) {
+                    currentUser = securityIdentity.getPrincipal().getName();
+                }
+            } catch (Exception ignored) {
+            }
+            if (currentUser == null || currentUser.isEmpty()) currentUser = "anonymous";
+            session.setUserId(currentUser);
+            session.setCollectionName(repo.getPersistentClass().getSimpleName());
+            session.setStartedAt(java.time.Instant.now());
+            if (profile != null) {
+                session.setProfileRefName(profile.getRefName());
+            }
+            importSessionRepo.save(session);
+        }
+
+        try (Reader reader = makeReader(inputStream, charset, false)) {
+            ICsvDozerBeanReader beanReader = new CsvDozerBeanReader(reader,
+                    new CsvPreference.Builder(quoteChar, fieldSeparator, "\r\n")
+                            .useQuoteMode(new NormalQuoteMode())
+                            .build());
+
+            String[] rawHeaders = beanReader.getHeader(skipHeaderRow);
+            if (skipHeaderRow && rawHeaders == null) {
+                throw new IllegalArgumentException("CSV file does not contain a header row");
+            }
+
+            // Parse headers with modifiers if enabled
+            List<ParsedHeader> parsedHeaders = importProfileService.parseHeaders(profile, rawHeaders);
+
+            // Build field mapping from parsed headers
+            List<String> effectiveColumns = requestedColumns;
+            if (effectiveColumns == null || effectiveColumns.isEmpty()) {
+                effectiveColumns = new ArrayList<>();
+                for (ParsedHeader ph : parsedHeaders) {
+                    effectiveColumns.add(ph.getFieldName());
+                }
+            }
+
+            final String[] fieldMapping = effectiveColumns.toArray(new String[0]);
+            beanReader.configureBeanMapping(repo.getPersistentClass(), fieldMapping);
+
+            // Build processors with profile transformations
+            CellProcessor[] processors = buildProcessorsWithProfile(
+                    repo.getPersistentClass(), effectiveColumns, profile, realmId);
+
+            List<T> batchBeans = new ArrayList<>(BATCH_SIZE);
+            List<Integer> batchRowNums = new ArrayList<>(BATCH_SIZE);
+            Map<Integer, String> batchRawByRowNum = new HashMap<>(BATCH_SIZE);
+            Map<Integer, Map<String, Object>> batchRowDataByRowNum = new HashMap<>(BATCH_SIZE);
+
+            int rowNum = 1;
+            while (true) {
+                T bean;
+                Map<String, Object> rowData = new HashMap<>();
+
+                try {
+                    bean = beanReader.read(repo.getPersistentClass(), processors);
+
+                    // Capture row data for field calculators
+                    if (bean != null) {
+                        String[] currentRow = beanReader.getUntokenizedRow() != null ?
+                            beanReader.getUntokenizedRow().split(String.valueOf(fieldSeparator)) : new String[0];
+                        for (int i = 0; i < Math.min(fieldMapping.length, currentRow.length); i++) {
+                            rowData.put(fieldMapping[i], currentRow[i]);
+                        }
+                    }
+                } catch (SuperCsvException ex) {
+                    String field = resolveFieldFromParseException(ex, fieldMapping);
+                    ImportRowResult<T> rr = new ImportRowResult<>();
+                    rr.setRowNumber(rowNum);
+                    rr.setIntent(Intent.SKIP);
+                    rr.setRawData(safeRaw(beanReader));
+                    rr.getErrors().add(new FieldError(field, ex.getMessage(), FieldErrorCode.PARSE));
+
+                    persistOrStoreRow(memMode, sessionId, rr, memRows, result);
+                    rowNum++;
+                    continue;
+                } catch (Exception ex) {
+                    ImportRowResult<T> rr = new ImportRowResult<>();
+                    rr.setRowNumber(rowNum);
+                    rr.setIntent(Intent.SKIP);
+                    rr.setRawData(safeRaw(beanReader));
+                    rr.getErrors().add(new FieldError(null, ex.getMessage(), FieldErrorCode.PARSE));
+
+                    persistOrStoreRow(memMode, sessionId, rr, memRows, result);
+                    rowNum++;
+                    continue;
+                }
+
+                if (bean == null) break; // EOF
+
+                // Apply field calculators and row value resolvers if profile is set
+                if (profile != null && bean instanceof BaseModel baseModel) {
+                    ImportContext context = ImportContext.builder()
+                            .profile(profile)
+                            .targetClass(repo.getPersistentClass())
+                            .realmId(realmId)
+                            .rowNumber(rowNum)
+                            .sessionId(sessionId)
+                            .build();
+
+                    // Apply field calculators
+                    importProfileService.applyFieldCalculators(profile, baseModel, rowData, context);
+
+                    // Apply row value resolvers (arbitrary code per-column with full row access)
+                    com.e2eq.framework.imports.spi.RowValueResolver.ResolveResult resolverResult =
+                            importProfileService.applyRowValueResolvers(profile, baseModel, rowData, context);
+
+                    if (!resolverResult.isSuccess()) {
+                        ImportRowResult<T> rr = new ImportRowResult<>();
+                        rr.setRowNumber(rowNum);
+                        rr.setIntent(Intent.SKIP);
+                        rr.setRawData(safeRaw(beanReader));
+                        rr.getErrors().add(new FieldError(null, resolverResult.getErrorMessage(), FieldErrorCode.VALIDATION));
+                        persistOrStoreRow(memMode, sessionId, rr, memRows, result);
+                        rowNum++;
+                        continue;
+                    }
+
+                    if (resolverResult.isSkip()) {
+                        ImportRowResult<T> rr = new ImportRowResult<>();
+                        rr.setRowNumber(rowNum);
+                        rr.setIntent(Intent.SKIP);
+                        rr.setRawData(safeRaw(beanReader));
+                        result.incrementTotalRows();
+                        rowNum++;
+                        continue;
+                    }
+
+                    // Apply pre-validation transformers
+                    PreValidationTransformer.TransformResult transformResult =
+                            importProfileService.applyPreValidationTransformers(profile, baseModel, rowData, context);
+
+                    if (!transformResult.isSuccess()) {
+                        ImportRowResult<T> rr = new ImportRowResult<>();
+                        rr.setRowNumber(rowNum);
+                        rr.setIntent(Intent.SKIP);
+                        rr.setRawData(safeRaw(beanReader));
+                        rr.getErrors().add(new FieldError(null, transformResult.getErrorMessage(), FieldErrorCode.VALIDATION));
+                        persistOrStoreRow(memMode, sessionId, rr, memRows, result);
+                        rowNum++;
+                        continue;
+                    }
+
+                    if (transformResult.isSkip()) {
+                        ImportRowResult<T> rr = new ImportRowResult<>();
+                        rr.setRowNumber(rowNum);
+                        rr.setIntent(Intent.SKIP);
+                        rr.setRawData(safeRaw(beanReader));
+                        // Skip is not an error, just don't process
+                        result.incrementTotalRows();
+                        rowNum++;
+                        continue;
+                    }
+                }
+
+                batchRawByRowNum.put(rowNum, safeRaw(beanReader));
+                batchRowDataByRowNum.put(rowNum, rowData);
+                batchBeans.add(bean);
+                batchRowNums.add(rowNum);
+
+                if (batchBeans.size() >= BATCH_SIZE) {
+                    List<ImportRowResult<T>> annotated = new ArrayList<>();
+                    annotateIntentsAndValidateWithProfile(repo, batchBeans, batchRowNums,
+                            batchRawByRowNum, batchRowDataByRowNum, annotated, result, profile);
+
+                    for (ImportRowResult<T> ar : annotated) {
+                        persistOrStoreAnnotatedRow(memMode, sessionId, ar, memRows, result);
+                    }
+
+                    batchBeans.clear();
+                    batchRowNums.clear();
+                    batchRawByRowNum.clear();
+                    batchRowDataByRowNum.clear();
+                }
+
+                rowNum++;
+            }
+
+            // Process remaining batch
+            if (!batchBeans.isEmpty()) {
+                List<ImportRowResult<T>> annotated = new ArrayList<>();
+                annotateIntentsAndValidateWithProfile(repo, batchBeans, batchRowNums,
+                        batchRawByRowNum, batchRowDataByRowNum, annotated, result, profile);
+
+                for (ImportRowResult<T> ar : annotated) {
+                    persistOrStoreAnnotatedRow(memMode, sessionId, ar, memRows, result);
+                }
+            }
+        } catch (IOException e) {
+            throw new WebApplicationException("Error analyzing CSV: " + e.getMessage(), e, 400);
+        }
+
+        // Update session with final counts
+        if (!memMode && session != null) {
+            session.setTotalRows(result.getTotalRows());
+            session.setValidRows(result.getValidRows());
+            session.setErrorRows(result.getErrorRows());
+            session.setInsertCount(result.getInsertCount());
+            session.setUpdateCount(result.getUpdateCount());
+            importSessionRepo.save(session);
+        } else if (memMode) {
+            MEMORY_SESSIONS.put(sessionId, new ImportSession<>(sessionId, repo.getPersistentClass(), memRows));
+        }
+
+        return result;
+    }
+
+    /**
+     * Build cell processors with ImportProfile transformations.
+     */
+    private CellProcessor[] buildProcessorsWithProfile(Class<?> clazz, List<String> cols,
+                                                        ImportProfile profile, String realmId) {
+        CellProcessor[] processors = new CellProcessor[cols.size()];
+        ListCellProcessor listProcessor = new ListCellProcessor();
+
+        for (int i = 0; i < cols.size(); i++) {
+            String fieldName = cols.get(i);
+
+            // Build base processor for the field type
+            CellProcessor baseProcessor;
+            if (fieldName.contains("[")) {
+                baseProcessor = new org.supercsv.cellprocessor.Optional(listProcessor);
+            } else {
+                Class<?> type = getFieldType(clazz, fieldName);
+                if (type == int.class || type == Integer.class) {
+                    baseProcessor = new org.supercsv.cellprocessor.Optional(new ParseInt());
+                } else if (type == long.class || type == Long.class) {
+                    baseProcessor = new org.supercsv.cellprocessor.Optional(new ParseLong());
+                } else if (type == double.class || type == Double.class ||
+                        type == float.class || type == Float.class) {
+                    baseProcessor = new org.supercsv.cellprocessor.Optional(new ParseDouble());
+                } else if (type == java.math.BigDecimal.class) {
+                    baseProcessor = new org.supercsv.cellprocessor.Optional(new ParseBigDecimal());
+                } else if (type != null && type.isEnum()) {
+                    @SuppressWarnings("unchecked")
+                    Class<? extends Enum<?>> e = (Class<? extends Enum<?>>) type;
+                    baseProcessor = new Optional(new ParseEnum(e));
+                } else {
+                    baseProcessor = new org.supercsv.cellprocessor.Optional();
+                }
+            }
+
+            // Wrap with profile transformations if available
+            if (profile != null && importProfileService != null) {
+                processors[i] = importProfileService.buildProcessorForColumn(profile, fieldName, realmId, baseProcessor);
+            } else {
+                processors[i] = baseProcessor;
+            }
+        }
+
+        return processors;
+    }
+
+    /**
+     * Helper to persist or store error rows.
+     */
+    private <T extends UnversionedBaseModel> void persistOrStoreRow(
+            boolean memMode, String sessionId, ImportRowResult<T> rr,
+            List<ImportRowResult<T>> memRows, ImportResult<T> result) {
+
+        result.incrementTotalRows();
+        result.incrementErrorRows();
+
+        if (result.getRowResults().size() < PREVIEW_LIMIT) {
+            result.getRowResults().add(rr);
+        }
+
+        if (!memMode) {
+            com.e2eq.framework.model.persistent.imports.ImportSessionRow row =
+                    new com.e2eq.framework.model.persistent.imports.ImportSessionRow();
+            row.setSessionRefName(sessionId);
+            row.setRowNumber(rr.getRowNumber());
+            row.setRefName(rr.getRefName());
+            row.setIntent(rr.getIntent().name());
+            row.setHasErrors(true);
+            row.setRawLine(rr.getRawData());
+            try {
+                row.setErrorsJson(objectMapper.writeValueAsString(rr.getErrors()));
+            } catch (Exception ignore) {
+            }
+            importSessionRowRepo.save(row);
+        } else {
+            memRows.add(rr);
+        }
+    }
+
+    /**
+     * Helper to persist or store annotated rows.
+     */
+    private <T extends UnversionedBaseModel> void persistOrStoreAnnotatedRow(
+            boolean memMode, String sessionId, ImportRowResult<T> ar,
+            List<ImportRowResult<T>> memRows, ImportResult<T> result) {
+
+        result.incrementTotalRows();
+        boolean hasErrors = ar.hasErrors();
+
+        if (hasErrors) {
+            result.incrementErrorRows();
+        } else {
+            result.incrementValidRows();
+            if (ar.getIntent() == Intent.INSERT) {
+                result.setInsertCount(result.getInsertCount() + 1);
+            } else if (ar.getIntent() == Intent.UPDATE) {
+                result.setUpdateCount(result.getUpdateCount() + 1);
+            }
+        }
+
+        if (result.getRowResults().size() < PREVIEW_LIMIT) {
+            result.getRowResults().add(ar);
+        }
+
+        if (!memMode) {
+            com.e2eq.framework.model.persistent.imports.ImportSessionRow row =
+                    new com.e2eq.framework.model.persistent.imports.ImportSessionRow();
+            row.setSessionRefName(sessionId);
+            row.setRowNumber(ar.getRowNumber());
+            row.setRefName(ar.getRefName());
+            row.setIntent(ar.getIntent().name());
+            row.setHasErrors(hasErrors);
+            row.setRawLine(ar.getRawData());
+            try {
+                row.setErrorsJson(objectMapper.writeValueAsString(ar.getErrors()));
+                row.setRecordJson(objectMapper.writeValueAsString(ar.getRecord()));
+            } catch (Exception ignore) {
+            }
+            importSessionRowRepo.save(row);
+        } else {
+            memRows.add(ar);
+        }
+    }
+
+    /**
+     * Annotate intents and validate with ImportProfile support.
+     */
+    private <T extends UnversionedBaseModel> void annotateIntentsAndValidateWithProfile(
+            BaseMorphiaRepo<T> repo,
+            List<T> batchBeans,
+            List<Integer> batchRowNums,
+            Map<Integer, String> rawByRowNum,
+            Map<Integer, Map<String, Object>> rowDataByRowNum,
+            List<ImportRowResult<T>> outRows,
+            ImportResult<T> aggregate,
+            ImportProfile profile) {
+
+        List<String> refNames = batchBeans.stream().map(T::getRefName).toList();
+        List<T> found = repo.getListFromRefNames(refNames);
+        java.util.Set<String> existing = found.stream()
+                .map(T::getRefName)
+                .collect(java.util.stream.Collectors.toSet());
+
+        for (int i = 0; i < batchBeans.size(); i++) {
+            T bean = batchBeans.get(i);
+            int rn = batchRowNums.get(i);
+            Map<String, Object> rowData = rowDataByRowNum.get(rn);
+
+            ImportRowResult<T> rr = new ImportRowResult<>();
+            rr.setRowNumber(rn);
+            rr.setRefName(bean.getRefName());
+            rr.setRecord(bean);
+
+            // Determine intent from profile or default
+            Intent intent;
+            if (profile != null && profile.getIntentColumn() != null && rowData != null) {
+                ImportIntent profileIntent = importProfileService.parseIntent(profile, rowData);
+                intent = mapProfileIntent(profileIntent, existing.contains(bean.getRefName()));
+            } else {
+                intent = existing.contains(bean.getRefName()) ? Intent.UPDATE : Intent.INSERT;
+            }
+            rr.setIntent(intent);
+
+            // Attach raw data
+            String raw = rawByRowNum != null ? rawByRowNum.get(rn) : null;
+            if (raw != null) {
+                rr.setRawData(raw);
+            }
+
+            // Validate
+            try {
+                Set<ConstraintViolation<T>> violations = validator.validate(bean);
+                if (violations != null) {
+                    for (ConstraintViolation<T> v : violations) {
+                        rr.getErrors().add(new FieldError(
+                                v.getPropertyPath() != null ? v.getPropertyPath().toString() : null,
+                                v.getMessage(),
+                                FieldErrorCode.VALIDATION));
+                    }
+                }
+            } catch (Exception ex) {
+                rr.getErrors().add(new FieldError(null, ex.getMessage(), FieldErrorCode.VALIDATION));
+            }
+
+            outRows.add(rr);
+        }
+    }
+
+    /**
+     * Map ImportIntent from profile to internal Intent enum.
+     */
+    private Intent mapProfileIntent(ImportIntent profileIntent, boolean exists) {
+        if (profileIntent == null) {
+            return exists ? Intent.UPDATE : Intent.INSERT;
+        }
+
+        switch (profileIntent) {
+            case INSERT:
+                return Intent.INSERT;
+            case UPDATE:
+                return Intent.UPDATE;
+            case SKIP:
+                return Intent.SKIP;
+            case UPSERT:
+            default:
+                return exists ? Intent.UPDATE : Intent.INSERT;
         }
     }
 }

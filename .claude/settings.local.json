@@ -28,7 +28,12 @@
       "Bash(echo:*)",
       "Bash(zsh -c 'source ~/.zshrc 2>/dev/null; java -version; echo \"\"JAVA_HOME=$JAVA_HOME\"\"')",
       "Bash(zsh:*)",
-      "Bash(mvn install:*)"
+      "Bash(mvn install:*)",
+      "Bash(grep:*)",
+      "Bash(git stash:*)",
+      "Bash(./mvnw compile:*)",
+      "Bash(mvn:*)",
+      "Bash(JAVA_HOME=/Library/Java/JavaVirtualMachines/graalvm-community-openjdk-23+37.1/Contents/Home mvn:*)"
     ]
   }
 }
