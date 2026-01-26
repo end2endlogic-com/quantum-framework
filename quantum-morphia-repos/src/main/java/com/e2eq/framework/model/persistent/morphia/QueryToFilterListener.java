@@ -40,6 +40,7 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
     protected Stack<Integer> filterStackMarkers = new Stack<>();
 
     protected boolean complete = false;
+    private boolean textClauseSeen = false;
 
     Map<String, String> variableMap = null;
     StringSubstitutor sub = null;
@@ -85,6 +86,13 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         } else {
             throw new IllegalStateException("Filter is incomplete");
         }
+    }
+
+    private void registerTextClause() {
+        if (textClauseSeen) {
+            throw new IllegalStateException("Multiple text(...) clauses are not supported in a single query.");
+        }
+        textClauseSeen = true;
     }
 
     @Override
@@ -171,6 +179,20 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         } else {
             throw new IllegalArgumentException("Operator not recognized: " + ctx.op.getText());
         }
+    }
+
+    @Override
+    public void enterTextExpr(BIAPIQueryParser.TextExprContext ctx) {
+        registerTextClause();
+        String raw = ctx.value.getText();
+        String search = raw;
+        if (sub != null) {
+            search = sub.replace(raw);
+        }
+        if (search == null || search.isBlank()) {
+            throw new IllegalArgumentException("text(...) search value must be non-empty.");
+        }
+        filterStack.push(Filters.text(search));
     }
 
 

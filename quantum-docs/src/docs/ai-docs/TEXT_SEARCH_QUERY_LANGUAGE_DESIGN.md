@@ -60,11 +60,8 @@ File: `quantum-morphia-repos/.../ValidatingQueryToFilterListener.java`
 ### In-Memory Predicate
 File: `quantum-framework/.../QueryToPredicateJsonListener.java`
 - Define a fallback evaluation method for `text(...)`.
-- Option A (recommended for parity with existing features):
-  - Treat `text("foo bar")` as **tokenized contains-any** across a configured field list.
-  - Field list could be supplied by a new `TextSearchConfig` with defaults or per-query override.
-- Option B (simpler):
-  - Treat `text(...)` as a regex across a concatenated field representation.
+- Implement `text("foo bar")` as **tokenized contains-any** across all textual values in the JSON payload.
+- Perform case-insensitive matches.
 
 ### In-Memory Validation
 File: `quantum-framework/.../ValidatingQueryToPredicateJsonListener.java`
@@ -79,18 +76,17 @@ File: `quantum-framework/.../ValidatingQueryToPredicateJsonListener.java`
 
 ### In-Memory Behavior
 - Behavior should be clearly documented to avoid mismatches with MongoDB tokenization.
-- Recommended: split search string into tokens by whitespace and require **any token match**.
-- Perform case-insensitive matches.
-- Limit to a configured field list to avoid searching unrelated data.
+- Split search string into tokens by whitespace and require **any token match**.
+- Perform case-insensitive matches across textual values in the JSON payload.
 
 ## Index Requirements
 - MongoDB allows **one text index per collection**, which can cover multiple fields.
 - The index must be provisioned via existing Morphia annotations and/or migration tooling.
 - Ensure documentation includes example index configuration and notes about weights.
 
-## API / Configuration Hooks
-- Add a config entry (e.g., `quantum.query.textSearch.fields`) to specify default fields for in-memory evaluation.
-- Optionally allow per-query override via a `TextSearchConfig` object passed into `QueryPredicates.compilePredicate(...)`.
+## API / Configuration Hooks (Future)
+- Consider a config entry (e.g., `quantum.query.textSearch.fields`) to restrict in-memory evaluation to a specific field list.
+- Optionally allow per-query overrides via a `TextSearchConfig` object passed into `QueryPredicates.compilePredicate(...)`.
 
 ## Validation Rules
 - Allow `text(...)` inside parentheses and in compound expressions.
