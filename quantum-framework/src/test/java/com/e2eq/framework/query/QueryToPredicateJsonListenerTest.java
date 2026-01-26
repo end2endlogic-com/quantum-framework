@@ -134,4 +134,36 @@ public class QueryToPredicateJsonListenerTest {
         Predicate<JsonNode> p2 = QueryPredicates.compilePredicate("arr:^[$%7Bvals%7D]".replace("%7B", "{").replace("%7D", "}"), null, obj);
         assertTrue(p2.test(n));
     }
+
+    @Test
+    void testTextSearchMatchesAnyTokenCaseInsensitive() {
+        Map<String, Object> m = Map.of(
+                "title", "Priority Escalation Runbook",
+                "description", "Escalate to on-call"
+        );
+        JsonNode n = nodeOf(m);
+
+        assertTrue(pred("text(\"priority escalation\")").test(n));
+        assertTrue(pred("text(\"ESCALATION\")").test(n));
+        assertFalse(pred("text(\"unrelated\")").test(n));
+    }
+
+    @Test
+    void testTextSearchCombinedWithOtherFilters() {
+        Map<String, Object> m = Map.of(
+                "title", "Priority Escalation Runbook",
+                "status", "OPEN"
+        );
+        JsonNode n = nodeOf(m);
+
+        assertTrue(pred("text(\"priority escalation\")&&status:OPEN").test(n));
+        assertFalse(pred("text(\"priority escalation\")&&status:CLOSED").test(n));
+    }
+
+    @Test
+    void testDuplicateTextSearchThrows() {
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> pred("text(\"one\")&&text(\"two\")"));
+        assertTrue(ex.getMessage().contains("text"));
+    }
 }

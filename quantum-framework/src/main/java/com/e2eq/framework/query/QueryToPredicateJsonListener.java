@@ -32,6 +32,7 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
 
     private boolean complete = false;
     private int queryDepth = 0;
+    private boolean textClauseSeen = false;
 
     private static final Pattern SPECIAL_REGEX_CHARS = Pattern.compile("[{}()\\[\\].+*?^$\\\\|\\-]");
 
@@ -70,6 +71,13 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
     public Predicate<JsonNode> getPredicate() {
         if (!complete) throw new IllegalStateException("Predicate is incomplete");
         return predicateStack.peek();
+    }
+
+    private void registerTextClause() {
+        if (textClauseSeen) {
+            throw new IllegalStateException("Multiple text(...) clauses are not supported in a single query.");
+        }
+        textClauseSeen = true;
     }
 
     // ---- Parsing lifecycle ----
@@ -230,6 +238,22 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
     }
 
     /** {@inheritDoc} */
+    @Override public void enterTextExpr(BIAPIQueryParser.TextExprContext ctx) {
+        registerTextClause();
+        String raw = resolveTextValue(ctx.value);
+        String trimmed = raw == null ? "" : raw.trim();
+        if (trimmed.isBlank()) {
+            throw new IllegalArgumentException("text(...) search value must be non-empty.");
+        }
+        List<String> terms = Arrays.stream(trimmed.split("\\s+"))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .map(String::toLowerCase)
+                .toList();
+        predicateStack.push(node -> matchesTextSearch(node, terms));
+    }
+
+    /** {@inheritDoc} */
     @Override public void enterInExpr(BIAPIQueryParser.InExprContext ctx) {
         String field = ctx.field.getText();
         List<Object> values = collectInValues(ctx.value, field);
@@ -327,6 +351,20 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
         return coerceValue(tokenOrValue);
     }
 
+    private String resolveTextValue(Object tokenOrValue) {
+        if (tokenOrValue instanceof CommonToken tok) {
+            String text = tok.getText();
+            if (tok.getType() == BIAPIQueryParser.VARIABLE) {
+                return (sub != null) ? sub.replace(text) : text;
+            }
+            if (sub != null) {
+                return sub.replace(text);
+            }
+            return text;
+        }
+        return tokenOrValue == null ? null : tokenOrValue.toString();
+    }
+
     private Object coerceValue(Object v) {
         if (v == null) return null;
         if (v instanceof org.bson.types.ObjectId) return v;
@@ -347,6 +385,38 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
     private String escapeRegexChars(String input) {
         if (input == null) return null;
         return SPECIAL_REGEX_CHARS.matcher(input).replaceAll("\\\\$0");
+    }
+
+    private boolean matchesTextSearch(JsonNode node, List<String> terms) {
+        if (node == null || terms == null || terms.isEmpty()) return false;
+        List<String> values = new ArrayList<>();
+        collectTextValues(node, values);
+        if (values.isEmpty()) return false;
+        for (String term : terms) {
+            for (String value : values) {
+                if (value.toLowerCase().contains(term)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private void collectTextValues(JsonNode node, List<String> values) {
+        if (node == null) return;
+        if (node.isTextual()) {
+            values.add(node.asText());
+            return;
+        }
+        if (node.isArray()) {
+            for (JsonNode el : node) {
+                collectTextValues(el, values);
+            }
+            return;
+        }
+        if (node.isObject()) {
+            node.fields().forEachRemaining(entry -> collectTextValues(entry.getValue(), values));
+        }
     }
 
     private boolean containsMatch(Set<Object> set, Object candidate) {

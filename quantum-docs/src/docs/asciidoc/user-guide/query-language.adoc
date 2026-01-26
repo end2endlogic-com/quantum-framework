@@ -71,6 +71,23 @@ name:w?dget          # single character wildcard
 name:"WIDGET"        # may or may not match "widget"
 ----
 
+==== Text Search
+
+[source]
+----
+# Full-text search (requires MongoDB text index)
+text("priority escalation")
+
+# Combine text search with other filters
+text("priority escalation") && status:"OPEN"
+----
+
+Notes:
+
+- `text(...)` maps to MongoDB `$text` queries and is case-insensitive by default.
+- MongoDB allows only one `text(...)` clause per query.
+- Text search must be backed by a text index on the target collection.
+
 ==== Numeric Ranges
 
 [source]
@@ -352,6 +369,7 @@ Key characteristics:
 - Output type: Morphia Filter
 - Execution: database-side (MongoDB)
 - Semantics: identical to grammar (comparisons, IN/NIN, exists, null, regex with wildcards, elemMatch, boolean &&/||/!!)
+- Text search: `text("...")` is supported when a collection has a text index; only one text clause is allowed per query.
 - Variable expansion: supports ${vars} and single-variable IN list expansion (e.g., [${ids}] can expand to a collection/array or a comma-separated string)
 
 Example:
