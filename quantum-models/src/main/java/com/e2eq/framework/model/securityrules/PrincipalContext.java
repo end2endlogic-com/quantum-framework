@@ -9,6 +9,8 @@ import org.graalvm.polyglot.HostAccess;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -27,6 +29,9 @@ public final class PrincipalContext {
 
    @NotNull(message = "userId must be non null, needs to be the userId of the principal")
    String userId;          // The userId, of this principal
+
+   String subjectId;
+
    @NotNull(message = "roles must be non null, needs to be the roles of the principal, pass an empty array if there are no roles")
    @HostAccess.Export
    @NotNull String[] roles;
@@ -40,7 +45,7 @@ public final class PrincipalContext {
    Map<String, String> area2RealmOverrides;
    // Optional: data domain policy attached to the principal's credential
    DataDomainPolicy dataDomainPolicy;
-   
+
    // Realm override tracking - when X-Realm header is used
    boolean realmOverrideActive;       // True if X-Realm override is in effect
    DataDomain originalDataDomain;     // The caller's original DataDomain before realm override (for audit)
@@ -48,6 +53,10 @@ public final class PrincipalContext {
    // DomainContext provides complete realm context including tenantId, orgRefName, accountId, dataSegment
    // When set, getDefaultRealm() delegates to domainContext.getDefaultRealm()
    DomainContext domainContext;
+
+   // Custom properties contributed by PrincipalContextPropertiesResolver implementations
+   // These are available in policy rules via ${propertyName} syntax
+   Map<String, Object> customProperties;
 
    PrincipalContext(@NotNull String defaultRealm,
                     @Valid @NotNull DataDomain dataDomain,
@@ -57,6 +66,7 @@ public final class PrincipalContext {
       this.defaultRealm = defaultRealm;
       this.dataDomain = dataDomain;
       this.userId = userId;
+      this.subjectId = null;
       this.roles = roles;
       this.scope = scope;
       this.impersonatedBySubject = null;
@@ -77,6 +87,7 @@ public final class PrincipalContext {
       this.defaultRealm = defaultRealm;
       this.dataDomain = dataDomain;
       this.userId = userId;
+      this.subjectId= null;
       this.roles = roles;
       this.scope = scope;
       this.impersonatedBySubject = impersonatedBySubject;
@@ -92,6 +103,7 @@ public final class PrincipalContext {
       String defaultRealm = null;
       DataDomain dataDomain = null;
       String userId = null;
+      String subjectId = null;
       String[] roles = null;
       String scope= null;
       String impersonatedBySubject;
@@ -103,6 +115,7 @@ public final class PrincipalContext {
       boolean realmOverrideActive;
       DataDomain originalDataDomain;
       DomainContext domainContext;
+      Map<String, Object> customProperties = new HashMap<>();
 
       public Builder withDefaultRealm(String realm) {
          this.defaultRealm = realm;
@@ -114,6 +127,11 @@ public final class PrincipalContext {
       }
       public Builder withUserId(String userId) {
          this.userId = userId;
+         return this;
+      }
+
+      public Builder withSubjectId(String subjectId) {
+         this.subjectId = subjectId;
          return this;
       }
       public Builder withRoles(String[] roles) {
@@ -190,6 +208,29 @@ public final class PrincipalContext {
          return this;
       }
 
+      /**
+       * Sets all custom properties at once. This replaces any previously set properties.
+       * @param properties the custom properties map
+       * @return this builder
+       */
+      public Builder withCustomProperties(Map<String, Object> properties) {
+         if (properties != null) {
+            this.customProperties = new HashMap<>(properties);
+         }
+         return this;
+      }
+
+      /**
+       * Adds a single custom property.
+       * @param key the property name
+       * @param value the property value
+       * @return this builder
+       */
+      public Builder withCustomProperty(String key, Object value) {
+         this.customProperties.put(key, value);
+         return this;
+      }
+
       public PrincipalContext build() {
          PrincipalContext pc =
             new PrincipalContext(defaultRealm, dataDomain, userId, roles, scope,
@@ -199,6 +240,7 @@ public final class PrincipalContext {
          pc.realmOverrideActive = this.realmOverrideActive;
          pc.originalDataDomain = this.originalDataDomain;
          pc.domainContext = this.domainContext;
+         pc.customProperties = this.customProperties.isEmpty() ? Collections.emptyMap() : new HashMap<>(this.customProperties);
          return pc;
       }
 
@@ -345,6 +387,45 @@ public final class PrincipalContext {
       this.domainContext = domainContext;
    }
 
+   /**
+    * Returns custom properties contributed by PrincipalContextPropertiesResolver implementations.
+    * These properties are available in policy rules via ${propertyName} syntax.
+    *
+    * @return unmodifiable map of custom properties, never null
+    */
+   @HostAccess.Export
+   public Map<String, Object> getCustomProperties() {
+      return customProperties != null ? Collections.unmodifiableMap(customProperties) : Collections.emptyMap();
+   }
+
+   /**
+    * Returns a specific custom property by name.
+    *
+    * @param key the property name
+    * @return the property value, or null if not present
+    */
+   @HostAccess.Export
+   public Object getCustomProperty(String key) {
+      return customProperties != null ? customProperties.get(key) : null;
+   }
+
+   /**
+    * Returns a custom property cast to the expected type.
+    *
+    * @param key the property name
+    * @param type the expected type class
+    * @param <T> the type parameter
+    * @return the property value cast to type T, or null if not present or wrong type
+    */
+   @SuppressWarnings("unchecked")
+   public <T> T getCustomProperty(String key, Class<T> type) {
+      Object value = getCustomProperty(key);
+      if (value != null && type.isInstance(value)) {
+         return (T) value;
+      }
+      return null;
+   }
+
    @HostAccess.Export
    @Override
    public boolean equals (Object o) {
@@ -367,6 +448,7 @@ public final class PrincipalContext {
       if (realmOverrideActive != that.realmOverrideActive) return false;
       if (originalDataDomain != null ? !originalDataDomain.equals(that.originalDataDomain) : that.originalDataDomain != null) return false;
       if (domainContext != null ? !domainContext.equals(that.domainContext) : that.domainContext != null) return false;
+      if (customProperties != null ? !customProperties.equals(that.customProperties) : that.customProperties != null) return false;
       return true;
    }
 
@@ -386,6 +468,7 @@ public final class PrincipalContext {
       result = 31 * result + (realmOverrideActive ? 1 : 0);
       result = 31 * result + (originalDataDomain != null ? originalDataDomain.hashCode() : 0);
       result = 31 * result + (domainContext != null ? domainContext.hashCode() : 0);
+      result = 31 * result + (customProperties != null ? customProperties.hashCode() : 0);
       return result;
    }
 
@@ -404,6 +487,7 @@ public final class PrincipalContext {
                ", realmOverrideActive=" + realmOverrideActive +
                ", originalDataDomain=" + originalDataDomain +
                ", domainContext=" + domainContext +
+               ", customProperties=" + customProperties +
                '}';
    }
 }

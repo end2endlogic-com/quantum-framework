@@ -102,6 +102,9 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     @Inject
     com.e2eq.framework.securityrules.RuleContext ruleContext;
 
+    @Inject
+    jakarta.enterprise.inject.Instance<com.e2eq.framework.model.securityrules.PrincipalContextPropertiesResolver> propertyResolvers;
+
     private static final java.util.concurrent.atomic.AtomicBoolean WARNED_PERMISSIVE = new java.util.concurrent.atomic.AtomicBoolean(false);
 
 
@@ -530,44 +533,42 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         String realm = requestContext.getHeaderString("X-Realm");
         String authHeader = requestContext.getHeaderString(HttpHeaders.AUTHORIZATION);
 
-        PrincipalContext baseContext = buildBaseContext(authHeader, realm);
+        // Build context and track credentials for property resolvers
+        ContextBuildResult buildResult = buildBaseContextWithCredentials(authHeader, realm);
+        PrincipalContext baseContext = buildResult.context;
+        CredentialUserIdPassword credentials = buildResult.credentials;
+
         PrincipalContext contextWithImpersonation = handleImpersonation(requestContext, baseContext);
-        return applyRealmOverride(contextWithImpersonation, realm);
+        PrincipalContext contextWithRealm = applyRealmOverride(contextWithImpersonation, realm);
+
+        // Apply custom property resolvers
+        return applyCustomProperties(requestContext, contextWithRealm, credentials);
     }
 
-    private void validateContextInputs(ContainerRequestContext requestContext) {
-        String impersonateSubject = requestContext.getHeaderString("X-Impersonate-Subject");
-        String impersonateUserId = requestContext.getHeaderString("X-Impersonate-UserId");
+    /**
+     * Result holder for context building that includes both the context and credentials.
+     */
+    private static class ContextBuildResult {
+        final PrincipalContext context;
+        final CredentialUserIdPassword credentials;
 
-        if (impersonateSubject != null && impersonateUserId != null) {
-            throw new IllegalArgumentException(String.format(
-                "Impersonation Subject: %s and impersonate UserId:%s can only pass one of them but not both",
-                impersonateSubject, impersonateUserId));
+        ContextBuildResult(PrincipalContext context, CredentialUserIdPassword credentials) {
+            this.context = context;
+            this.credentials = credentials;
         }
     }
 
-    private PrincipalContext buildBaseContext(String authHeader, String realm) {
+    private ContextBuildResult buildBaseContextWithCredentials(String authHeader, String realm) {
         if (authHeader != null && jwt != null) {
-            return buildJwtContext(authHeader, realm);
+            return buildJwtContextWithCredentials(authHeader, realm);
         } else if (securityIdentity != null && !securityIdentity.isAnonymous()) {
-            return buildIdentityContext(realm);
+            return buildIdentityContextWithCredentials(realm);
         } else {
-            return buildAnonymousContext(realm);
+            return new ContextBuildResult(buildAnonymousContext(realm), null);
         }
     }
 
-    private PrincipalContext buildAnonymousContext(String realm) {
-        String contextRealm = (realm != null) ? realm : envConfigUtils.getSystemRealm();
-        return new PrincipalContext.Builder()
-                .withDefaultRealm(contextRealm)
-                .withDataDomain(securityUtils.getSystemDataDomain())
-                .withUserId(envConfigUtils.getAnonymousUserId())
-                .withRoles(new String[]{"ANONYMOUS"})
-                .withScope("systemGenerated")
-                .build();
-    }
-
-    private PrincipalContext buildIdentityContext(String realm) {
+    private ContextBuildResult buildIdentityContextWithCredentials(String realm) {
         String principalName = securityIdentity.getPrincipal() != null ?
             securityIdentity.getPrincipal().getName() : envConfigUtils.getAnonymousUserId();
         String[] roles = resolveEffectiveRoles(securityIdentity, null);
@@ -585,7 +586,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             DataDomain dataDomain = creds.getDomainContext().toDataDomain(creds.getUserId());
             roles = resolveEffectiveRoles(securityIdentity, creds);
 
-            return new PrincipalContext.Builder()
+            PrincipalContext context = new PrincipalContext.Builder()
                     .withDefaultRealm(contextRealm)
                     .withDomainContext(creds.getDomainContext())
                     .withDataDomain(dataDomain)
@@ -594,18 +595,20 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                     .withScope("AUTHENTICATED")
                     .withDataDomainPolicy(creds.getDataDomainPolicy())
                     .build();
+            return new ContextBuildResult(context, creds);
         } else {
-            return new PrincipalContext.Builder()
+            PrincipalContext context = new PrincipalContext.Builder()
                     .withDefaultRealm(contextRealm)
                     .withDataDomain(securityUtils.getSystemDataDomain())
                     .withUserId(principalName)
                     .withRoles(roles)
                     .withScope("AUTHENTICATED")
                     .build();
+            return new ContextBuildResult(context, null);
         }
     }
 
-    private PrincipalContext buildJwtContext(String authHeader, String realm) {
+    private ContextBuildResult buildJwtContextWithCredentials(String authHeader, String realm) {
         // Extract token (variable kept for potential future use)
         @SuppressWarnings("unused")
         String token = authHeader.substring(AUTHENTICATION_SCHEME.length()).trim();
@@ -633,7 +636,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         DataDomain dataDomain = creds.getDomainContext().toDataDomain(creds.getUserId());
 
         String effectiveRealm = (realm != null) ? realm : creds.getDomainContext().getDefaultRealm();
-        return new PrincipalContext.Builder()
+        PrincipalContext context = new PrincipalContext.Builder()
                 .withDefaultRealm(effectiveRealm)
                 .withDomainContext(creds.getDomainContext())
                 .withDataDomain(dataDomain)
@@ -643,6 +646,92 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 .withArea2RealmOverrides(creds.getArea2RealmOverrides())
                 .withDataDomainPolicy(creds.getDataDomainPolicy())
                 .build();
+        return new ContextBuildResult(context, creds);
+    }
+
+    /**
+     * Applies custom properties from PrincipalContextPropertiesResolver implementations.
+     */
+    private PrincipalContext applyCustomProperties(
+            ContainerRequestContext requestContext,
+            PrincipalContext context,
+            CredentialUserIdPassword credentials) {
+
+        if (propertyResolvers == null || propertyResolvers.isUnsatisfied()) {
+            return context;
+        }
+
+        // Build resolution context
+        com.e2eq.framework.model.securityrules.ResolutionContext resolutionContext =
+            new ResolutionContextImpl(
+                securityIdentity,
+                credentials,
+                context.getDefaultRealm(),
+                context.getUserId(),
+                jwt,
+                requestContext,
+                context.getDataDomain(),
+                context.getDomainContext()
+            );
+
+        // Collect properties from all resolvers (sorted by priority)
+        java.util.Map<String, Object> allProperties = new java.util.LinkedHashMap<>();
+
+        java.util.List<com.e2eq.framework.model.securityrules.PrincipalContextPropertiesResolver> sortedResolvers =
+            new java.util.ArrayList<>();
+        propertyResolvers.forEach(sortedResolvers::add);
+        sortedResolvers.sort(java.util.Comparator.comparingInt(
+            com.e2eq.framework.model.securityrules.PrincipalContextPropertiesResolver::priority));
+
+        for (com.e2eq.framework.model.securityrules.PrincipalContextPropertiesResolver resolver : sortedResolvers) {
+            try {
+                java.util.Map<String, Object> props = resolver.resolve(resolutionContext);
+                if (props != null && !props.isEmpty()) {
+                    allProperties.putAll(props);
+                    if (Log.isDebugEnabled()) {
+                        Log.debugf("PrincipalContextPropertiesResolver %s contributed properties: %s",
+                            resolver.getClass().getSimpleName(), props.keySet());
+                    }
+                }
+            } catch (Exception e) {
+                Log.warnf(e, "PrincipalContextPropertiesResolver %s failed; skipping",
+                    resolver.getClass().getName());
+            }
+        }
+
+        if (allProperties.isEmpty()) {
+            return context;
+        }
+
+        // Rebuild context with custom properties
+        return new PrincipalContext.Builder()
+                .withDefaultRealm(context.getDefaultRealm())
+                .withDataDomain(context.getDataDomain())
+                .withDomainContext(context.getDomainContext())
+                .withUserId(context.getUserId())
+                .withRoles(context.getRoles())
+                .withScope(context.getScope())
+                .withArea2RealmOverrides(context.getArea2RealmOverrides())
+                .withDataDomainPolicy(context.getDataDomainPolicy())
+                .withImpersonatedBySubject(context.getImpersonatedBySubject())
+                .withImpersonatedByUserId(context.getImpersonatedByUserId())
+                .withActingOnBehalfOfSubject(context.getActingOnBehalfOfSubject())
+                .withActingOnBehalfOfUserId(context.getActingOnBehalfOfUserId())
+                .withRealmOverrideActive(context.isRealmOverrideActive())
+                .withOriginalDataDomain(context.getOriginalDataDomain())
+                .withCustomProperties(allProperties)
+                .build();
+    }
+
+    private void validateContextInputs(ContainerRequestContext requestContext) {
+        String impersonateSubject = requestContext.getHeaderString("X-Impersonate-Subject");
+        String impersonateUserId = requestContext.getHeaderString("X-Impersonate-UserId");
+
+        if (impersonateSubject != null && impersonateUserId != null) {
+            throw new IllegalArgumentException(String.format(
+                "Impersonation Subject: %s and impersonate UserId:%s can only pass one of them but not both",
+                impersonateSubject, impersonateUserId));
+        }
     }
 
     private Optional<CredentialUserIdPassword> findCredentialByUsername(String sub, String realm) {

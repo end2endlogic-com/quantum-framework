@@ -138,6 +138,21 @@ public class MorphiaUtils {
          variableMap.put("dcDataSegment", String.valueOf(dc.getDataSegment()));
       }
 
+      // Add custom properties from PrincipalContextPropertiesResolver implementations
+      // These are converted to strings for use in filter string substitution
+      Map<String, Object> customProps = pcontext.getCustomProperties();
+      if (customProps != null && !customProps.isEmpty()) {
+         for (Map.Entry<String, Object> entry : customProps.entrySet()) {
+            Object value = entry.getValue();
+            if (value instanceof String) {
+               variableMap.put(entry.getKey(), (String) value);
+            } else if (value != null) {
+               // For collections and other objects, convert to string representation
+               variableMap.put(entry.getKey(), String.valueOf(value));
+            }
+         }
+      }
+
       return variableMap;
    }
 
@@ -149,6 +164,14 @@ public class MorphiaUtils {
       Map<String, String> s = createStandardVariableMapFrom(pcontext, rcontext);
       Map<String, Object> o = new HashMap<>();
       o.putAll(s);
+
+      // Add custom properties to objects map (preserving their original types for typed filter construction)
+      // This allows collections to be used directly in $in queries
+      Map<String, Object> customProps = pcontext.getCustomProperties();
+      if (customProps != null && !customProps.isEmpty()) {
+         o.putAll(customProps);
+      }
+
       if (extraObjects != null) {
          o.putAll(extraObjects);
          extraObjects.forEach((k, v) -> {
