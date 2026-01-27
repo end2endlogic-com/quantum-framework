@@ -21,7 +21,7 @@ import java.util.*;
  *   <li>Triggers recomputation for each affected source</li>
  * </ol>
  *
- * <h2>Usage</h2>
+ * <b>Usage</b>
  * <p>This handler is typically called from entity persistence hooks when a
  * dependency entity is modified:</p>
  * <pre>{@code

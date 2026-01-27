@@ -29,7 +29,7 @@ import java.util.*;
  * <p>Implementations are registered as CDI beans (e.g., @ApplicationScoped) and
  * discovered automatically by the framework.</p>
  *
- * <h2>Example Implementation</h2>
+ * <b>Example Implementation</b>
  * <pre>{@code
  * @ApplicationScoped
  * public class AssociateCanSeeLocationProvider extends ComputedEdgeProvider<Associate> {

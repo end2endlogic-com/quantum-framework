@@ -18,7 +18,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  *
  * <p>This enables efficient incremental updates rather than full recomputation.</p>
  *
- * <h2>Usage</h2>
+ * <b>Usage</b>
  * <pre>{@code
  * @Inject ComputedEdgeRegistry registry;
  *

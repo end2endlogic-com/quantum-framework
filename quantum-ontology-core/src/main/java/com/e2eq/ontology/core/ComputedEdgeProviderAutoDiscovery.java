@@ -22,13 +22,13 @@ import java.util.List;
  * <p>This enables automatic discovery of custom providers in application code without
  * requiring explicit registration calls.</p>
  *
- * <h2>Validation</h2>
+ * <b>Validation</b>
  * <p>During registration, this class validates that provider source types are properly
  * annotated with {@link OntologyClass}. If a provider's source type is not an ontology
  * class, a warning is logged because the provider's edges will not be processed when
  * entities are saved (since OntologyWriteHook requires @OntologyClass).</p>
  *
- * <h2>How It Works</h2>
+ * <b>How It Works</b>
  * <ol>
  *   <li>At application startup, CDI discovers all @ApplicationScoped classes
  *       implementing OntologyEdgeProvider</li>
@@ -37,7 +37,7 @@ import java.util.List;
  *       and registers it with the ComputedEdgeRegistry</li>
  * </ol>
  *
- * <h2>Usage</h2>
+ * <b>Usage</b>
  * <p>Application code just needs to create an @ApplicationScoped class extending
  * ComputedEdgeProvider - this class will automatically discover and register it:</p>
  * <pre>{@code

@@ -14,7 +14,7 @@ import java.util.Collection;
  * a resolver that returns {@code key() = "accessibleLocationIds"} can be used in a rule's
  * andFilterString as: {@code locationId:^[${accessibleLocationIds}]}</p>
  *
- * <h2>Important: supports() Method Behavior</h2>
+ * <b>Important: supports() Method Behavior</b>
  * <p>The {@link #supports(PrincipalContext, ResourceContext, Class)} method is called with
  * the <strong>current request's ResourceContext</strong>, not the Rule's scope. This means:</p>
  * <ul>
@@ -24,7 +24,7 @@ import java.util.Collection;
  *   <li>This results in an unresolved variable error at runtime</li>
  * </ul>
  *
- * <h2>Best Practices for supports()</h2>
+ * <b>Best Practices for supports()</b>
  * <ul>
  *   <li><strong>Be permissive:</strong> Return true for ALL contexts where your variable
  *       might be used in a rule filter, not just the "primary" context</li>
@@ -36,7 +36,7 @@ import java.util.Collection;
  *       resolver's variable so supports() can be configured correctly</li>
  * </ul>
  *
- * <h2>Example Implementation</h2>
+ * <b>Example Implementation</b>
  * <pre>{@code
  * @ApplicationScoped
  * public class TerritoryLocationResolver implements AccessListResolver {
