@@ -568,6 +568,17 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         }
     }
 
+    private PrincipalContext buildAnonymousContext(String realm) {
+        String contextRealm = (realm != null) ? realm : envConfigUtils.getSystemRealm();
+        return new PrincipalContext.Builder()
+                .withDefaultRealm(contextRealm)
+                .withDataDomain(securityUtils.getSystemDataDomain())
+                .withUserId(envConfigUtils.getAnonymousUserId())
+                .withRoles(new String[]{"ANONYMOUS"})
+                .withScope("systemGenerated")
+                .build();
+    }
+
     private ContextBuildResult buildIdentityContextWithCredentials(String realm) {
         String principalName = securityIdentity.getPrincipal() != null ?
             securityIdentity.getPrincipal().getName() : envConfigUtils.getAnonymousUserId();
