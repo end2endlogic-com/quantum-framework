@@ -971,6 +971,189 @@ Guidance:
 - Always scope resolver queries by tenant/realm from PrincipalContext/ResourceContext.
 - Return empty collections instead of null. An empty IN list yields no matches, which is safe by default.
 
+=== PrincipalContextPropertiesResolver (SPI) for custom principal properties
+
+[plantuml]
+....
+@startuml
+participant SF as "SecurityFilter"
+participant Res as "PrincipalContextPropertiesResolver(s)"
+participant PC as "PrincipalContext"
+participant MU as "MorphiaUtils"
+
+SF ->> Res: resolve(ResolutionContext)
+Res -->> SF: Map<String, Object> props
+SF ->> PC: withCustomProperties(props)
+note right: Properties cached for request lifetime
+...
+MU ->> PC: getCustomProperties()
+PC -->> MU: customProperties map
+note right: Available as ${key} in filter strings
+@enduml
+....
+
+PrincipalContextPropertiesResolver allows applications to enrich PrincipalContext with custom, domain-specific properties during authentication. Unlike AccessListResolver (which is invoked per-query and scoped to specific resources), these properties are resolved once when the principal context is built and are available throughout the request lifecycle.
+
+Use cases:
+
+- **Associate/Sales Rep binding**: Link a UserProfile to an Associate entity and expose `associateId` for filtering
+- **Territory assignments**: Expose `accessibleTerritoryIds` based on the user's role assignments
+- **Organizational hierarchies**: Expose `accessibleLocationIds` via ontology relationships
+- **Custom attributes**: Any domain-specific property needed for security filtering
+
+How it works:
+
+- SPI: `com.e2eq.framework.model.securityrules.PrincipalContextPropertiesResolver`
+  - `priority()`: Execution order (lower = earlier). Default: 1000.
+  - `resolve(ResolutionContext)`: Return a Map<String, Object> of properties to add to PrincipalContext.
+- `ResolutionContext` provides access to:
+  - `isAnonymous()`, `getPrincipalName()`, `getIdentityRoles()`: Security identity info
+  - `getUserId()`, `getSubjectId()`: User identifiers
+  - `getRealm()`, `getDataDomain()`, `getDomainContext()`: Realm and domain context
+  - `getHeader(name)`: HTTP request headers
+  - `getJwtClaim(name)`: JWT token claims
+  - `hasCredentials()`, `getCredentialUserId()`, `getCredentialRoles()`: Database credentials
+- SecurityFilter discovers all resolvers via CDI, invokes them in priority order, and merges results into PrincipalContext.customProperties.
+- MorphiaUtils.createStandardVariableMapFrom includes custom properties, making them available as `${key}` in filter strings.
+
+Example implementation:
+
+[source,java]
+----
+package com.myapp.security;
+
+import com.e2eq.framework.model.securityrules.PrincipalContextPropertiesResolver;
+import com.e2eq.framework.model.securityrules.ResolutionContext;
+import com.e2eq.ontology.repo.OntologyEdgeRepo;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import java.util.*;
+
+@ApplicationScoped
+public class AssociatePropertiesResolver implements PrincipalContextPropertiesResolver {
+
+    @Inject
+    OntologyEdgeRepo edgeRepo;
+
+    @Override
+    public int priority() {
+        return 100; // Run early
+    }
+
+    @Override
+    public Map<String, Object> resolve(ResolutionContext context) {
+        Map<String, Object> properties = new HashMap<>();
+
+        // Skip for anonymous users
+        if (context.isAnonymous()) {
+            return properties;
+        }
+
+        String userProfileId = context.getSubjectId().orElse(context.getUserId());
+
+        // Find Associate linked to this UserProfile via hasUser relationship
+        // Associate.hasUser -> UserProfile (functional/1:1)
+        Optional<String> associateId = edgeRepo.singleSrcIdByDst(
+            context.getDataDomain(), "hasUser", userProfileId);
+
+        if (associateId.isPresent()) {
+            properties.put("associateId", associateId.get());
+
+            // Get territories this associate can access
+            Set<String> territoryIds = edgeRepo.dstIdsBySrc(
+                context.getDataDomain(), "assignedToTerritory", associateId.get());
+            properties.put("accessibleTerritoryIds", territoryIds);
+
+            // Get locations via inferred canSeeLocation edge
+            Set<String> locationIds = edgeRepo.dstIdsBySrc(
+                context.getDataDomain(), "canSeeLocation", associateId.get());
+            properties.put("accessibleLocationIds", locationIds);
+        }
+
+        return properties;
+    }
+}
+----
+
+Using custom properties in rules:
+
+[source,yaml]
+----
+# Filter locations to those the associate can see
+- name: associate-location-access
+  securityURI:
+    header: { identity: sales-rep, area: sales, functionalDomain: location, action: view }
+    body:   { realm: '*', orgRefName: '*', accountNumber: '*', tenantId: '*', ownerId: '*', dataSegment: '*', resourceId: '*' }
+  andFilterString: "dataDomain.tenantId:${pTenantId}"
+  orFilterString: "_id:^${accessibleLocationIds}"
+  effect: ALLOW
+  priority: 200
+----
+
+[source,yaml]
+----
+# Filter orders by territory
+- name: territory-order-access
+  securityURI:
+    header: { identity: sales-rep, area: sales, functionalDomain: order, action: view }
+    body:   { realm: '*', orgRefName: '*', accountNumber: '*', tenantId: '*', ownerId: '*', dataSegment: '*', resourceId: '*' }
+  andFilterString: "dataDomain.tenantId:${pTenantId} AND territoryId:^${accessibleTerritoryIds}"
+  effect: ALLOW
+  priority: 200
+----
+
+Accessing properties programmatically:
+
+[source,java]
+----
+// In application code or postconditionScript
+PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
+
+// Get a single property
+String associateId = (String) pctx.getCustomProperty("associateId");
+
+// Get with type safety
+Set<String> locationIds = pctx.getCustomProperty("accessibleLocationIds", Set.class);
+
+// Get all custom properties
+Map<String, Object> allProps = pctx.getCustomProperties();
+----
+
+Comparison: PrincipalContextPropertiesResolver vs AccessListResolver
+
+[cols="1,2,2"]
+|===
+| Aspect | PrincipalContextPropertiesResolver | AccessListResolver
+
+| When invoked
+| Once during authentication (eager)
+| Per query during rule evaluation (lazy)
+
+| Context available
+| SecurityIdentity, JWT claims, HTTP headers, Credentials
+| PrincipalContext, ResourceContext, ModelClass
+
+| Caching
+| Cached in PrincipalContext for request lifetime
+| Per-request via RuleContext
+
+| Use case
+| User-level properties constant across all queries
+| Resource-specific access lists that vary by model/action
+
+| Performance
+| Single invocation per request
+| Invoked per repository call
+|===
+
+Guidance:
+
+- Use PrincipalContextPropertiesResolver for properties that apply to the user regardless of what resource they're accessing (e.g., associate ID, territory assignments).
+- Use AccessListResolver when the access list depends on the specific resource type or action being performed.
+- Both mechanisms can coexist and complement each other.
+- Return empty maps (not null) from resolvers; resolver failures are logged and skipped, not propagated.
+- Properties should not override built-in PrincipalContext fields (userId, roles, etc.).
+
 Where filters are applied (MorphiaRepo methods):
 
 [plantuml]
