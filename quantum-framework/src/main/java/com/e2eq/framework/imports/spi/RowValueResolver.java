@@ -7,7 +7,7 @@ import java.util.Map;
  * Unlike static lookups, this allows arbitrary code to process each row
  * and compute a value dynamically.
  *
- * <h2>Arc CDI Bean Integration</h2>
+ * <b>Arc CDI Bean Integration</b>
  * <p>Implementations are discovered as Arc CDI beans, which means you can:</p>
  * <ul>
  *   <li>Inject any other CDI beans (services, repositories, etc.)</li>
@@ -20,7 +20,7 @@ import java.util.Map;
  * {@code @Dependent} scope. The resolver is discovered via CDI's {@code Instance}
  * mechanism and invoked by name as specified in the ColumnMapping configuration.</p>
  *
- * <h2>Basic Example</h2>
+ * <b>Basic Example</b>
  * <pre>{@code
  * @ApplicationScoped
  * public class SkuResolver implements RowValueResolver {
@@ -48,7 +48,7 @@ import java.util.Map;
  * }
  * }</pre>
  *
- * <h2>Multi-Collection Update Example</h2>
+ * <b>Multi-Collection Update Example</b>
  * <p>Since resolvers are Arc beans, you can inject multiple repositories and update
  * multiple collections from a single CSV row:</p>
  * <pre>{@code
@@ -91,7 +91,7 @@ import java.util.Map;
  * }
  * }</pre>
  *
- * <h2>Configuration in ColumnMapping</h2>
+ * <b>Configuration in ColumnMapping</b>
  * <pre>{@code
  * {
  *   "sourceColumn": "product_code",
@@ -100,7 +100,7 @@ import java.util.Map;
  * }
  * }</pre>
  *
- * <h2>Available Context Information</h2>
+ * <b>Available Context Information</b>
  * <p>The {@code ImportContext} provides access to:</p>
  * <ul>
  *   <li>{@code getProfile()} - The ImportProfile configuration</li>
@@ -110,7 +110,7 @@ import java.util.Map;
  *   <li>{@code getSessionId()} - The import session ID</li>
  * </ul>
  *
- * <h2>Result Types</h2>
+ * <b>Result Types</b>
  * <ul>
  *   <li>{@code ResolveResult.success(value)} - Use the resolved value</li>
  *   <li>{@code ResolveResult.passthrough(original)} - Keep the original value</li>

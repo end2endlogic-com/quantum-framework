@@ -12,7 +12,7 @@ import java.util.Map;
  * <p>Properties are made available in policy rules via ${propertyName} syntax
  * in andFilterString/orFilterString fields.</p>
  *
- * <h3>Example Implementation:</h3>
+ * <b>Example Implementation:</b>
  * <pre>{@code
  * @ApplicationScoped
  * public class AssociatePropertiesResolver implements PrincipalContextPropertiesResolver {
@@ -42,7 +42,7 @@ import java.util.Map;
  * }
  * }</pre>
  *
- * <h3>Using in Policy Rules:</h3>
+ * <b>Using in Policy Rules:</b>
  * <pre>{@code
  * {
  *   "andFilterString": "_id:${accessibleLocationIds}"

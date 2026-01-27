@@ -160,7 +160,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
         // Pre-authorization check: enforce policy rules before endpoint execution
         boolean skipPreAuth = isPermitAllEndPoint || isAuthenticatedEndPoint;
-        
+
         // For system-level endpoints with bypassDataScoping=true, we trust Jakarta Security's
         // @RolesAllowed check and skip the policy rule evaluation entirely.
         // This avoids issues where rule matching depends on complex role resolution that may
@@ -177,7 +177,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             }
             skipPreAuth = true;
         }
-        
+
         if (!skipPreAuth && enforcePreAuth) {
             enforcePreAuthorization(principalContext, resourceContext, requestContext);
         }
@@ -1011,7 +1011,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                     resourceContext.getFunctionalDomain(),
                     resourceContext.getAction());
             }
-            
+
             com.e2eq.framework.model.securityrules.SecurityCheckResponse response =
                 ruleContext.checkRules(principalContext, resourceContext, com.e2eq.framework.model.securityrules.RuleEffect.DENY);
 

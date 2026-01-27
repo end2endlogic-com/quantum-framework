@@ -21,7 +21,7 @@ import java.util.stream.Collectors;
  *   <li>Manager → canViewReport → Report (via Department hierarchy)</li>
  * </ul>
  *
- * <h2>Example Implementation</h2>
+ * <b>Example Implementation</b>
  * <pre>{@code
  * @ApplicationScoped
  * public class AssociateCanSeeLocationProvider
