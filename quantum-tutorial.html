@@ -529,7 +529,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Tutorial: Build a Multi-tenant SaaS with Quantum</h1>
 <div class="details">
 <span id="revnumber">version 1.2.2-SNAPSHOT,</span>
-<span id="revdate">2026-01-26T22:50:09Z</span>
+<span id="revdate">2026-01-27T20:44:49Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -725,9 +725,10 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_model_shape_policy">12.14.1. Model shape (Policy)</a></li>
 <li><a href="#_how_rule_contributed_filters_work_andfilterstring_orfilterstring_joinop">12.14.2. How rule-contributed filters work (andFilterString, orFilterString, joinOp)</a></li>
 <li><a href="#_accesslistresolvers_spi_for_list_based_access">12.14.3. AccessListResolvers (SPI) for list-based access</a></li>
-<li><a href="#_endpoints">12.14.4. Endpoints</a></li>
-<li><a href="#_examples">12.14.5. Examples</a></li>
-<li><a href="#_how_changes_affect_rule_bases_and_enforcement">12.14.6. How changes affect rule bases and enforcement</a></li>
+<li><a href="#_principalcontextpropertiesresolver_spi_for_custom_principal_properties">12.14.4. PrincipalContextPropertiesResolver (SPI) for custom principal properties</a></li>
+<li><a href="#_endpoints">12.14.5. Endpoints</a></li>
+<li><a href="#_examples">12.14.6. Examples</a></li>
+<li><a href="#_how_changes_affect_rule_bases_and_enforcement">12.14.7. How changes affect rule bases and enforcement</a></li>
 </ul>
 </li>
 <li><a href="#_realm_override_x_realm_and_impersonation_x_impersonate">12.15. Realm override (X-Realm) and Impersonation (X-Impersonate)</a>
@@ -9597,6 +9598,251 @@ resp.setRoleAssignments(roleAssignments);
 - Always scope resolver queries by tenant/realm from PrincipalContext/ResourceContext.
 - Return empty collections instead of null. An empty IN list yields no matches, which is safe by default.</p>
 </div>
+</div>
+<div class="sect3">
+<h4 id="_principalcontextpropertiesresolver_spi_for_custom_principal_properties">12.14.4. PrincipalContextPropertiesResolver (SPI) for custom principal properties</h4>
+<div class="imageblock">
+<div class="content">
+<img src="diag-plantuml-md5-3f301d1907337043041d1f30cc0a065b.svg" alt="Diagram" width="873" height="278">
+</div>
+</div>
+<div class="paragraph">
+<p>PrincipalContextPropertiesResolver allows applications to enrich PrincipalContext with custom, domain-specific properties during authentication. Unlike AccessListResolver (which is invoked per-query and scoped to specific resources), these properties are resolved once when the principal context is built and are available throughout the request lifecycle.</p>
+</div>
+<div class="paragraph">
+<p>Use cases:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>Associate/Sales Rep binding</strong>: Link a UserProfile to an Associate entity and expose <code>associateId</code> for filtering</p>
+</li>
+<li>
+<p><strong>Territory assignments</strong>: Expose <code>accessibleTerritoryIds</code> based on the user&#8217;s role assignments</p>
+</li>
+<li>
+<p><strong>Organizational hierarchies</strong>: Expose <code>accessibleLocationIds</code> via ontology relationships</p>
+</li>
+<li>
+<p><strong>Custom attributes</strong>: Any domain-specific property needed for security filtering</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>How it works:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>SPI: <code>com.e2eq.framework.model.securityrules.PrincipalContextPropertiesResolver</code></p>
+</li>
+<li>
+<p><code>priority()</code>: Execution order (lower = earlier). Default: 1000.</p>
+</li>
+<li>
+<p><code>resolve(ResolutionContext)</code>: Return a Map&lt;String, Object&gt; of properties to add to PrincipalContext.</p>
+</li>
+<li>
+<p><code>ResolutionContext</code> provides access to:</p>
+</li>
+<li>
+<p><code>isAnonymous()</code>, <code>getPrincipalName()</code>, <code>getIdentityRoles()</code>: Security identity info</p>
+</li>
+<li>
+<p><code>getUserId()</code>, <code>getSubjectId()</code>: User identifiers</p>
+</li>
+<li>
+<p><code>getRealm()</code>, <code>getDataDomain()</code>, <code>getDomainContext()</code>: Realm and domain context</p>
+</li>
+<li>
+<p><code>getHeader(name)</code>: HTTP request headers</p>
+</li>
+<li>
+<p><code>getJwtClaim(name)</code>: JWT token claims</p>
+</li>
+<li>
+<p><code>hasCredentials()</code>, <code>getCredentialUserId()</code>, <code>getCredentialRoles()</code>: Database credentials</p>
+</li>
+<li>
+<p>SecurityFilter discovers all resolvers via CDI, invokes them in priority order, and merges results into PrincipalContext.customProperties.</p>
+</li>
+<li>
+<p>MorphiaUtils.createStandardVariableMapFrom includes custom properties, making them available as <code>${key}</code> in filter strings.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Example implementation:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">package</span> <span class="namespace">com.myapp.security</span>;
+
+<span class="keyword">import</span> <span class="include">com.e2eq.framework.model.securityrules.PrincipalContextPropertiesResolver</span>;
+<span class="keyword">import</span> <span class="include">com.e2eq.framework.model.securityrules.ResolutionContext</span>;
+<span class="keyword">import</span> <span class="include">com.e2eq.ontology.repo.OntologyEdgeRepo</span>;
+<span class="keyword">import</span> <span class="include">jakarta.enterprise.context.ApplicationScoped</span>;
+<span class="keyword">import</span> <span class="include">jakarta.inject.Inject</span>;
+<span class="keyword">import</span> <span class="include">java.util</span>.*;
+
+<span class="annotation">@ApplicationScoped</span>
+<span class="directive">public</span> <span class="type">class</span> <span class="class">AssociatePropertiesResolver</span> <span class="directive">implements</span> PrincipalContextPropertiesResolver {
+
+    <span class="annotation">@Inject</span>
+    OntologyEdgeRepo edgeRepo;
+
+    <span class="annotation">@Override</span>
+    <span class="directive">public</span> <span class="type">int</span> priority() {
+        <span class="keyword">return</span> <span class="integer">100</span>; <span class="comment">// Run early</span>
+    }
+
+    <span class="annotation">@Override</span>
+    <span class="directive">public</span> <span class="predefined-type">Map</span>&lt;<span class="predefined-type">String</span>, <span class="predefined-type">Object</span>&gt; resolve(ResolutionContext context) {
+        <span class="predefined-type">Map</span>&lt;<span class="predefined-type">String</span>, <span class="predefined-type">Object</span>&gt; properties = <span class="keyword">new</span> <span class="predefined-type">HashMap</span>&lt;&gt;();
+
+        <span class="comment">// Skip for anonymous users</span>
+        <span class="keyword">if</span> (context.isAnonymous()) {
+            <span class="keyword">return</span> properties;
+        }
+
+        <span class="predefined-type">String</span> userProfileId = context.getSubjectId().orElse(context.getUserId());
+
+        <span class="comment">// Find Associate linked to this UserProfile via hasUser relationship</span>
+        <span class="comment">// Associate.hasUser -&gt; UserProfile (functional/1:1)</span>
+        Optional&lt;<span class="predefined-type">String</span>&gt; associateId = edgeRepo.singleSrcIdByDst(
+            context.getDataDomain(), <span class="string"><span class="delimiter">&quot;</span><span class="content">hasUser</span><span class="delimiter">&quot;</span></span>, userProfileId);
+
+        <span class="keyword">if</span> (associateId.isPresent()) {
+            properties.put(<span class="string"><span class="delimiter">&quot;</span><span class="content">associateId</span><span class="delimiter">&quot;</span></span>, associateId.get());
+
+            <span class="comment">// Get territories this associate can access</span>
+            <span class="predefined-type">Set</span>&lt;<span class="predefined-type">String</span>&gt; territoryIds = edgeRepo.dstIdsBySrc(
+                context.getDataDomain(), <span class="string"><span class="delimiter">&quot;</span><span class="content">assignedToTerritory</span><span class="delimiter">&quot;</span></span>, associateId.get());
+            properties.put(<span class="string"><span class="delimiter">&quot;</span><span class="content">accessibleTerritoryIds</span><span class="delimiter">&quot;</span></span>, territoryIds);
+
+            <span class="comment">// Get locations via inferred canSeeLocation edge</span>
+            <span class="predefined-type">Set</span>&lt;<span class="predefined-type">String</span>&gt; locationIds = edgeRepo.dstIdsBySrc(
+                context.getDataDomain(), <span class="string"><span class="delimiter">&quot;</span><span class="content">canSeeLocation</span><span class="delimiter">&quot;</span></span>, associateId.get());
+            properties.put(<span class="string"><span class="delimiter">&quot;</span><span class="content">accessibleLocationIds</span><span class="delimiter">&quot;</span></span>, locationIds);
+        }
+
+        <span class="keyword">return</span> properties;
+    }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Using custom properties in rules:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml"><span class="comment"># Filter locations to those the associate can see</span>
+- <span class="string"><span class="content">name: associate-location-access</span></span>
+  <span class="key">securityURI</span>:
+    <span class="key">header</span>: <span class="string"><span class="content">{ identity: sales-rep, area: sales, functionalDomain: location, action: view }</span></span>
+    <span class="key">body</span>:   <span class="string"><span class="content">{ realm: '*', orgRefName: '*', accountNumber: '*', tenantId: '*', ownerId: '*', dataSegment: '*', resourceId: '*' }</span></span>
+  <span class="key">andFilterString</span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">dataDomain.tenantId:${pTenantId}</span><span class="delimiter">&quot;</span></span>
+  <span class="key">orFilterString</span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">_id:^${accessibleLocationIds}</span><span class="delimiter">&quot;</span></span>
+  <span class="key">effect</span>: <span class="string"><span class="content">ALLOW</span></span>
+  <span class="key">priority</span>: <span class="string"><span class="content">200</span></span></code></pre>
+</div>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml"><span class="comment"># Filter orders by territory</span>
+- <span class="string"><span class="content">name: territory-order-access</span></span>
+  <span class="key">securityURI</span>:
+    <span class="key">header</span>: <span class="string"><span class="content">{ identity: sales-rep, area: sales, functionalDomain: order, action: view }</span></span>
+    <span class="key">body</span>:   <span class="string"><span class="content">{ realm: '*', orgRefName: '*', accountNumber: '*', tenantId: '*', ownerId: '*', dataSegment: '*', resourceId: '*' }</span></span>
+  <span class="key">andFilterString</span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">dataDomain.tenantId:${pTenantId} AND territoryId:^${accessibleTerritoryIds}</span><span class="delimiter">&quot;</span></span>
+  <span class="key">effect</span>: <span class="string"><span class="content">ALLOW</span></span>
+  <span class="key">priority</span>: <span class="string"><span class="content">200</span></span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Accessing properties programmatically:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="comment">// In application code or postconditionScript</span>
+PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
+
+<span class="comment">// Get a single property</span>
+<span class="predefined-type">String</span> associateId = (<span class="predefined-type">String</span>) pctx.getCustomProperty(<span class="string"><span class="delimiter">&quot;</span><span class="content">associateId</span><span class="delimiter">&quot;</span></span>);
+
+<span class="comment">// Get with type safety</span>
+<span class="predefined-type">Set</span>&lt;<span class="predefined-type">String</span>&gt; locationIds = pctx.getCustomProperty(<span class="string"><span class="delimiter">&quot;</span><span class="content">accessibleLocationIds</span><span class="delimiter">&quot;</span></span>, <span class="predefined-type">Set</span>.class);
+
+<span class="comment">// Get all custom properties</span>
+<span class="predefined-type">Map</span>&lt;<span class="predefined-type">String</span>, <span class="predefined-type">Object</span>&gt; allProps = pctx.getCustomProperties();</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Comparison: PrincipalContextPropertiesResolver vs AccessListResolver</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 20%;">
+<col style="width: 40%;">
+<col style="width: 40%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Aspect</th>
+<th class="tableblock halign-left valign-top">PrincipalContextPropertiesResolver</th>
+<th class="tableblock halign-left valign-top">AccessListResolver</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">When invoked</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Once during authentication (eager)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Per query during rule evaluation (lazy)</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Context available</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">SecurityIdentity, JWT claims, HTTP headers, Credentials</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PrincipalContext, ResourceContext, ModelClass</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Caching</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Cached in PrincipalContext for request lifetime</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Per-request via RuleContext</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Use case</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">User-level properties constant across all queries</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Resource-specific access lists that vary by model/action</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Performance</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Single invocation per request</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Invoked per repository call</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>Guidance:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Use PrincipalContextPropertiesResolver for properties that apply to the user regardless of what resource they&#8217;re accessing (e.g., associate ID, territory assignments).</p>
+</li>
+<li>
+<p>Use AccessListResolver when the access list depends on the specific resource type or action being performed.</p>
+</li>
+<li>
+<p>Both mechanisms can coexist and complement each other.</p>
+</li>
+<li>
+<p>Return empty maps (not null) from resolvers; resolver failures are logged and skipped, not propagated.</p>
+</li>
+<li>
+<p>Properties should not override built-in PrincipalContext fields (userId, roles, etc.).</p>
+</li>
+</ul>
+</div>
 <div class="paragraph">
 <p>Where filters are applied (MorphiaRepo methods):</p>
 </div>
@@ -9714,7 +9960,7 @@ resp.setRoleAssignments(roleAssignments);
 </div>
 </div>
 <div class="sect3">
-<h4 id="_endpoints">12.14.4. Endpoints</h4>
+<h4 id="_endpoints">12.14.5. Endpoints</h4>
 <div class="paragraph">
 <p>All endpoints are relative to /security/permission/policies. These are inherited from BaseResource and are consistent across entity resources.</p>
 </div>
@@ -9908,7 +10154,7 @@ resp.setRoleAssignments(roleAssignments);
 </div>
 </div>
 <div class="sect3">
-<h4 id="_examples">12.14.5. Examples</h4>
+<h4 id="_examples">12.14.6. Examples</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -9957,7 +10203,7 @@ resp.setRoleAssignments(roleAssignments);
 </div>
 </div>
 <div class="sect3">
-<h4 id="_how_changes_affect_rule_bases_and_enforcement">12.14.6. How changes affect rule bases and enforcement</h4>
+<h4 id="_how_changes_affect_rule_bases_and_enforcement">12.14.7. How changes affect rule bases and enforcement</h4>
 <div class="ulist">
 <ul>
 <li>
