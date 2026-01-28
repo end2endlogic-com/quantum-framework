@@ -1768,3 +1768,6 @@ replay_pid*
 /quantum-docs/node_modules/yargs-parser/package.json
 /quantum-docs/node_modules/yargs-parser/README.md
 /quantum-docs/node_modules/.package-lock.json
+
+# Claude Code settings
+.claude/

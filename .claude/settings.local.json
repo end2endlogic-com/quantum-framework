@@ -34,7 +34,9 @@
       "Bash(./mvnw compile:*)",
       "Bash(mvn:*)",
       "Bash(JAVA_HOME=/Library/Java/JavaVirtualMachines/graalvm-community-openjdk-23+37.1/Contents/Home mvn:*)",
-      "Bash(JAVA_HOME=/Library/Java/JavaVirtualMachines/graalvm-community-openjdk-23+37.1/Contents/Home ./mvnw compile:*)"
+      "Bash(JAVA_HOME=/Library/Java/JavaVirtualMachines/graalvm-community-openjdk-23+37.1/Contents/Home ./mvnw compile:*)",
+      "Bash(JAVA_HOME=/Library/Java/JavaVirtualMachines/graalvm-jdk-21.0.4+8.1/Contents/Home ./mvnw compile:*)",
+      "Bash(JAVA_HOME=/Library/Java/JavaVirtualMachines/graalvm-jdk-21.0.4+8.1/Contents/Home mvn compile:*)"
     ]
   }
 }
