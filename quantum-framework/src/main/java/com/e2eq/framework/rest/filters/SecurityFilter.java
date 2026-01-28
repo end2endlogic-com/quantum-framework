@@ -582,20 +582,21 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     private ContextBuildResult buildIdentityContextWithCredentials(String realm) {
         String principalName = securityIdentity.getPrincipal() != null ?
             securityIdentity.getPrincipal().getName() : envConfigUtils.getAnonymousUserId();
-        String[] roles = resolveEffectiveRoles(securityIdentity, null);
+        String[] roles = resolveEffectiveRoles(securityIdentity, null, realm);
         String contextRealm = (realm != null) ? realm : envConfigUtils.getSystemRealm();
 
-        Optional<CredentialUserIdPassword> ocreds = (realm == null)
-                ? credentialRepo.findByUserId(principalName, envConfigUtils.getSystemRealm(), true)
-                : credentialRepo.findByUserId(principalName, realm, true);
+        // Credentials are always looked up from system-com (global)
+        Optional<CredentialUserIdPassword> ocreds = credentialRepo.findByUserId(principalName, envConfigUtils.getSystemRealm(), true);
 
         if (ocreds.isPresent()) {
             CredentialUserIdPassword creds = ocreds.get();
             validateRealmAccess(creds, realm);
 
-            contextRealm = (realm == null) ? creds.getDomainContext().getDefaultRealm() : realm;
+            // Use X-Realm if provided, otherwise fall back to credential's default realm
+            contextRealm = (realm != null) ? realm : creds.getDomainContext().getDefaultRealm();
             DataDomain dataDomain = creds.getDomainContext().toDataDomain(creds.getUserId());
-            roles = resolveEffectiveRoles(securityIdentity, creds);
+            // Pass the effective realm for UserProfile/UserGroup lookups
+            roles = resolveEffectiveRoles(securityIdentity, creds, contextRealm);
 
             PrincipalContext context = new PrincipalContext.Builder()
                     .withDefaultRealm(contextRealm)
@@ -643,10 +644,11 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         CredentialUserIdPassword creds = ocreds.get();
         validateRealmAccess(creds, realm);
 
-        String[] roles = resolveEffectiveRoles(securityIdentity, creds);
-        DataDomain dataDomain = creds.getDomainContext().toDataDomain(creds.getUserId());
-
+        // Use X-Realm if provided, otherwise fall back to credential's default realm
         String effectiveRealm = (realm != null) ? realm : creds.getDomainContext().getDefaultRealm();
+        // Pass the effective realm for UserProfile/UserGroup lookups
+        String[] roles = resolveEffectiveRoles(securityIdentity, creds, effectiveRealm);
+        DataDomain dataDomain = creds.getDomainContext().toDataDomain(creds.getUserId());
         PrincipalContext context = new PrincipalContext.Builder()
                 .withDefaultRealm(effectiveRealm)
                 .withDomainContext(creds.getDomainContext())
@@ -763,10 +765,28 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     @jakarta.inject.Inject
     IdentityRoleResolver identityRoleResolver;
 
+    /**
+     * @deprecated Use {@link #resolveEffectiveRoles(SecurityIdentity, CredentialUserIdPassword, String)} with explicit realm
+     */
+    @Deprecated
     private String[] resolveEffectiveRoles(SecurityIdentity identity, CredentialUserIdPassword credential) {
+        // Fallback: use credential's domain context realm if available
+        String realm = (credential != null && credential.getDomainContext() != null)
+            ? credential.getDomainContext().getDefaultRealm()
+            : null;
+        return resolveEffectiveRoles(identity, credential, realm);
+    }
+
+    /**
+     * Resolve effective roles for a user within a specific realm.
+     * @param identity the security identity from the token
+     * @param credential the user's credential
+     * @param realm the target realm for UserProfile/UserGroup lookups (e.g., from X-Realm header)
+     */
+    private String[] resolveEffectiveRoles(SecurityIdentity identity, CredentialUserIdPassword credential, String realm) {
         // Delegate to centralized resolver to keep logic consistent across endpoints and filter
         if (identityRoleResolver != null) {
-            return identityRoleResolver.resolveEffectiveRoles(identity, credential);
+            return identityRoleResolver.resolveEffectiveRoles(identity, credential, realm);
         }
         // Fallback for unit tests that construct SecurityFilter without CDI injection
         java.util.Set<String> rolesSet = new java.util.LinkedHashSet<>();
@@ -781,7 +801,13 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             rolesSet.addAll(java.util.Arrays.asList(credential.getRoles()));
         }
         if (credential != null) {
-            java.util.Optional<com.e2eq.framework.model.security.UserProfile> userProfile = userProfileRepo.getBySubject(credential.getSubject());
+            // Use the provided realm, or fall back to credential's realm context
+            String effectiveRealm = (realm != null && !realm.isBlank())
+                ? realm
+                : (credential.getDomainContext() != null)
+                    ? credential.getDomainContext().getDefaultRealm()
+                    : envConfigUtils.getSystemRealm();
+            java.util.Optional<com.e2eq.framework.model.security.UserProfile> userProfile = userProfileRepo.getBySubject(effectiveRealm, credential.getSubject());
             if (userProfile.isPresent()) {
                 java.util.List<com.e2eq.framework.model.security.UserGroup> userGroups = userGroupRepo.findByUserProfileRef(userProfile.get().createEntityReference());
                 if (!userGroups.isEmpty()) {
@@ -884,11 +910,13 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
     private PrincipalContext buildImpersonatedContext(CredentialUserIdPassword targetCreds, CredentialUserIdPassword originalCreds,
                                                      String actingOnBehalfOfSubject, String actingOnBehalfOfUserId) {
-        String[] roles = resolveEffectiveRoles(securityIdentity, targetCreds);
+        // Use the target credential's realm for UserProfile/UserGroup lookups during impersonation
+        String targetRealm = targetCreds.getDomainContext().getDefaultRealm();
+        String[] roles = resolveEffectiveRoles(securityIdentity, targetCreds, targetRealm);
         DataDomain dataDomain = targetCreds.getDomainContext().toDataDomain(targetCreds.getUserId());
 
         return new PrincipalContext.Builder()
-                .withDefaultRealm(targetCreds.getDomainContext().getDefaultRealm())
+                .withDefaultRealm(targetRealm)
                 .withDomainContext(targetCreds.getDomainContext())
                 .withDataDomain(dataDomain)
                 .withUserId(targetCreds.getUserId())

@@ -54,6 +54,8 @@ public class SecurityFilterResolveEffectiveRolesTest {
         private final Map<String, UserProfile> bySubject = new HashMap<>();
         public void put(UserProfile up, String subject) { bySubject.put(subject, up); }
         @Override
+        public Optional<UserProfile> getBySubject(String realm, String subject) { return Optional.ofNullable(bySubject.get(subject)); }
+        @Override
         public Optional<UserProfile> getBySubject(String subject) { return Optional.ofNullable(bySubject.get(subject)); }
     }
 
