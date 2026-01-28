@@ -37,8 +37,25 @@ public class IdentityRoleResolver {
      * and user group memberships. This delegates to the centralized provenance builder to avoid duplicated logic.
      * Note: This method does not perform a realm lookup by userId; callers should ensure the identity corresponds
      * to the current principal when intending to include TOKEN roles.
+     * @deprecated Use {@link #resolveEffectiveRoles(SecurityIdentity, CredentialUserIdPassword, String)} with explicit realm
      */
+    @Deprecated
     public String[] resolveEffectiveRoles(SecurityIdentity identity, CredentialUserIdPassword credential) {
+        // Fallback: use credential's domain context realm if available
+        String realm = (credential != null && credential.getDomainContext() != null)
+            ? credential.getDomainContext().getDefaultRealm()
+            : null;
+        return resolveEffectiveRoles(identity, credential, realm);
+    }
+
+    /**
+     * Resolve the effective roles for an already resolved credential within a specific realm,
+     * also considering the access token roles and user group memberships.
+     * @param identity the security identity from the token
+     * @param credential the user's credential
+     * @param realm the target realm for UserProfile/UserGroup lookups (e.g., from X-Realm header or credential's default)
+     */
+    public String[] resolveEffectiveRoles(SecurityIdentity identity, CredentialUserIdPassword credential, String realm) {
         // Best-effort identity value for provenance: prefer principal name; otherwise credential userId
         String identityValue = null;
         if (identity != null && identity.getPrincipal() != null) {
@@ -72,9 +89,15 @@ public class IdentityRoleResolver {
         // USERGROUP roles via UserProfile -> UserGroup definitions
         try {
             if (credential != null) {
-                // Try realm-aware lookup first if the credential's userId matches current principal realm context is unknown here
-                // We do NOT have a realm parameter in this overload; callers that know the realm should use resolveRoleSources
-                Optional<UserProfile> userProfileOpt = userProfileRepo.getBySubject(credential.getSubject());
+                // Use the provided realm for UserProfile/UserGroup lookups
+                // This ensures we query the correct tenant's datastore, not just system-com
+                Optional<UserProfile> userProfileOpt;
+                if (realm != null && !realm.isBlank()) {
+                    userProfileOpt = userProfileRepo.getBySubject(realm, credential.getSubject());
+                } else {
+                    // Fallback to no-realm method (will use security context realm)
+                    userProfileOpt = userProfileRepo.getBySubject(credential.getSubject());
+                }
                 if (userProfileOpt.isPresent()) {
                     var groups = userGroupRepo.findByUserProfileRef(userProfileOpt.get().createEntityReference());
                     if (groups != null) {
@@ -87,10 +110,10 @@ public class IdentityRoleResolver {
                         }
                     }
                 }
-                //else {
+                else {
                     // No matching UserProfile found, assume anonymous
-                    // Log.warnf("No matching UserProfile found for subject %s", credential.getSubject());
-                //}
+                     Log.warnf("No matching UserProfile found for subject %s when attempting to resolve groups in role resolver", credential.getSubject());
+                }
             }
         } catch (Exception e) {
             Log.warn("Failed to expand roles via user groups; continuing", e);

@@ -479,12 +479,15 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                   SecurityIdentity identity = validateAccessToken(authToken);
                   // Compute role provenance locally for login response: IDP + CREDENTIAL + USERGROUP
                   // Auth plugins do NOT need to do this; it's optional for login response only.
-                  String realm = envConfigUtils.getSystemRealm();
+                  // Use the credential's realm context instead of hardcoded system realm
+                  String realm = (credential.getDomainContext() != null)
+                     ? credential.getDomainContext().getDefaultRealm()
+                     : envConfigUtils.getSystemRealm();
                   java.util.Set<String> idpRoles = (identity != null) ? new java.util.LinkedHashSet<>(identity.getRoles()) : java.util.Set.of();
                   java.util.Set<String> credentialRoles = new java.util.LinkedHashSet<>(Arrays.asList(credential.getRoles()));
                   java.util.Set<String> userGroupRoles = new java.util.LinkedHashSet<>();
                   try {
-                     var userProfileOpt = userProfileRepo.getBySubject(subject);
+                     var userProfileOpt = userProfileRepo.getBySubject(realm, subject);
                      if (userProfileOpt.isPresent()) {
                         var userGroups = userGroupRepo.findByUserProfileRef(userProfileOpt.get().createEntityReference());
                         if (userGroups != null) {
@@ -587,7 +590,11 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                    }
                }
                try {
-                  userProfileRepo.getBySubject(cred.getSubject()).ifPresent(profile -> {
+                  // Use the credential's realm context instead of defaulting to system realm
+                  String credRealm = (cred.getDomainContext() != null)
+                     ? cred.getDomainContext().getDefaultRealm()
+                     : envConfigUtils.getSystemRealm();
+                  userProfileRepo.getBySubject(credRealm, cred.getSubject()).ifPresent(profile -> {
                      var userGroups = userGroupRepo.findByUserProfileRef(profile.createEntityReference());
                      if (userGroups != null) {
                         for (UserGroup g : userGroups) {

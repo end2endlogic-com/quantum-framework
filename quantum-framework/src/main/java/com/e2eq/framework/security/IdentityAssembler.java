@@ -73,6 +73,10 @@ public class IdentityAssembler {
                 for (String r : cred.getRoles()) if (r != null && !r.isBlank()) mergedRoles.add(r);
             }
             // merge user group roles via profile
+            // Use the credential's realm context instead of hardcoded system realm
+            String credentialRealm = (cred.getDomainContext() != null)
+                ? cred.getDomainContext().getDefaultRealm()
+                : systemRealm;
             try {
                 var userProfileOpt = userProfileRepo.getBySubject(cred.getSubject());
                 if (userProfileOpt.isPresent()) {
@@ -84,6 +88,8 @@ public class IdentityAssembler {
                             }
                         }
                     }
+                } else {
+                    Log.warnf("No user profile found for credential subject=%s when trying to resolve roles / user groups", cred.getSubject());
                 }
             } catch (Exception e) {
                 Log.warn("Failed to expand roles via user groups; continuing with token/credential roles", e);
