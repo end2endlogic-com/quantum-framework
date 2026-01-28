@@ -14,6 +14,7 @@ import com.e2eq.ontology.model.OntologyEdge;
 import com.e2eq.framework.annotations.FunctionalMapping;
 import com.e2eq.ontology.repo.OntologyEdgeRepo;
 import com.e2eq.ontology.runtime.TenantOntologyRegistryProvider;
+import io.smallrye.mutiny.Multi;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -22,10 +23,13 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.sse.Sse;
+import jakarta.ws.rs.sse.SseEventSink;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement;
 
 import java.util.*;
+import java.util.concurrent.Executor;
 import java.util.stream.Collectors;
 
 /**
@@ -52,6 +56,9 @@ public class OntologyResource {
 
     @Inject
     TenantOntologyRegistryProvider registryProvider;
+
+    @Inject
+    Executor managedExecutor;
 
     @GET
     @Path("registry")
@@ -125,11 +132,71 @@ public class OntologyResource {
         return Response.ok(registry.propertyChains()).build();
     }
 
+    /**
+     * Trigger full ontology reindex with Server-Sent Events for real-time progress streaming.
+     * This is the preferred method for reindexing as it provides real-time feedback.
+     *
+     * @param realm the realm to reindex
+     * @param force if true, purge derived edges before reindexing
+     * @param eventSink SSE event sink for streaming progress
+     * @param sse SSE factory
+     */
+    @POST
+    @Path("reindex/stream")
+    @RolesAllowed({"admin", "system"})
+    @Consumes(MediaType.WILDCARD)
+    @Produces(MediaType.SERVER_SENT_EVENTS)
+    @Operation(summary = "Trigger full ontology reindex with SSE progress streaming")
+    @SecurityRequirement(name = "bearerAuth")
+    @FunctionalAction("RE-INDEX")
+    public void triggerReindexStream(@QueryParam("realm") @DefaultValue("default") String realm,
+                                     @QueryParam("force") @DefaultValue("false") boolean force,
+                                     @Context SseEventSink eventSink,
+                                     @Context Sse sse) {
+        Multi.createFrom().emitter(emitter -> {
+            try {
+                com.e2eq.ontology.service.OntologyReindexer reindexer =
+                        io.quarkus.arc.Arc.container().instance(com.e2eq.ontology.service.OntologyReindexer.class).get();
+                reindexer.runAsync(realm, force, emitter);
+            } catch (Throwable t) {
+                emitter.fail(t);
+            }
+        }).emitOn(managedExecutor)
+          .subscribe().with(
+              message -> {
+                  if (!eventSink.isClosed()) {
+                      eventSink.send(sse.newEvent((String) message));
+                  }
+              },
+              failure -> {
+                  if (!eventSink.isClosed()) {
+                      eventSink.send(sse.newEvent("Error: " + failure.getMessage()));
+                      eventSink.close();
+                  }
+              },
+              () -> {
+                  if (!eventSink.isClosed()) {
+                      eventSink.send(sse.newEvent("Reindex task completed"));
+                      eventSink.close();
+                  }
+              }
+          );
+    }
+
+    /**
+     * Trigger full ontology reindex (legacy endpoint - returns immediately).
+     * For real-time progress, use POST /reindex/stream instead.
+     *
+     * @param realm the realm to reindex
+     * @param force if true, purge derived edges before reindexing
+     * @return accepted response with current status
+     */
     @POST
     @Path("reindex")
     @RolesAllowed({"admin", "system"})
     @Consumes(MediaType.WILDCARD)
-    @Operation(summary = "Trigger full ontology reindex")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Operation(summary = "Trigger full ontology reindex (returns immediately, use /reindex/stream for real-time progress)")
     @SecurityRequirement(name = "bearerAuth")
     @FunctionalAction("RE-INDEX")
     public Response triggerReindex(@QueryParam("realm") @DefaultValue("default") String realm,
@@ -138,7 +205,12 @@ public class OntologyResource {
             // Delegate to service
             com.e2eq.ontology.service.OntologyReindexer reindexer = io.quarkus.arc.Arc.container().instance(com.e2eq.ontology.service.OntologyReindexer.class).get();
             reindexer.runAsync(realm, force);
-            return Response.accepted(reindexer.getResult()).build();
+            return Response.accepted(Map.of(
+                    "message", "Reindex started. Use GET /ontology/reindex/status to poll for progress, or use POST /ontology/reindex/stream for real-time SSE updates.",
+                    "status", reindexer.status(),
+                    "realm", realm,
+                    "force", force
+            )).build();
         } catch (Exception e) {
             return Response.serverError().entity(Map.of("error", e.getMessage())).build();
         }

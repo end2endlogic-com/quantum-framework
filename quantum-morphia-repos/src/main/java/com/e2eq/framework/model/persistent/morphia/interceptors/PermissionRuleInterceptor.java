@@ -46,7 +46,7 @@ public class PermissionRuleInterceptor implements EntityListener {
          // Bypass when a test seeder marks the operation explicitly as a seed write
          ResourceContext rc = SecurityContext.getResourceContext().get();
          if (rc.getAction() != null && rc.getAction().equalsIgnoreCase("seed")) {
-            if (Log.isDebugEnabled()) Log.debug("[PermissionRuleInterceptor] bypass for action=seed");
+            if (Log.isDebugEnabled()) Log.debugf("[PermissionRuleInterceptor] bypass for action=seed for fd:%s, id:%s", rc.getFunctionalDomain(), rc.getResourceId());
             return;
          }
          if (!(SecurityContext.getResourceContext().get().getAction().equalsIgnoreCase("save") ||

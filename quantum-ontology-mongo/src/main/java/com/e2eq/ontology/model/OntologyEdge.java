@@ -54,6 +54,25 @@ import java.util.Map;
                @Field("dataDomain.tenantId"),
                @Field("dataDomain.dataSegment"),
                @Field("derived")
+           }),
+    // Index for findByDst() queries - prevents collection scan
+    @Index(options = @IndexOptions(name = "idx_domain_dst"),
+           fields = {
+               @Field("dataDomain.orgRefName"),
+               @Field("dataDomain.accountNum"),
+               @Field("dataDomain.tenantId"),
+               @Field("dataDomain.dataSegment"),
+               @Field("dst")
+           }),
+    // Index for efficient inferred edge pruning during reindex
+    @Index(options = @IndexOptions(name = "idx_domain_src_inferred"),
+           fields = {
+               @Field("dataDomain.orgRefName"),
+               @Field("dataDomain.accountNum"),
+               @Field("dataDomain.tenantId"),
+               @Field("dataDomain.dataSegment"),
+               @Field("src"),
+               @Field("inferred")
            })
 })
 public class OntologyEdge extends UnversionedBaseModel {

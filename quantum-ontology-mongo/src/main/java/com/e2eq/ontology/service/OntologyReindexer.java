@@ -15,6 +15,7 @@ import com.e2eq.ontology.mongo.DataDomainConverter;
 import com.e2eq.ontology.mongo.OntologyMaterializer;
 import com.e2eq.ontology.spi.OntologyEdgeProvider;
 import io.quarkus.logging.Log;
+import io.smallrye.mutiny.subscription.MultiEmitter;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
@@ -23,6 +24,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 
 /**
  * Background/full reindex service that recomputes ontology edges for all participating entities.
@@ -137,16 +139,43 @@ public class OntologyReindexer {
     }
 
     public void runAsync(String realmId, boolean force) {
+        runAsync(realmId, force, null);
+    }
+
+    /**
+     * Run reindex asynchronously with optional SSE emitter for progress streaming.
+     *
+     * @param realmId the realm to reindex
+     * @param force if true, purge derived edges before reindexing
+     * @param emitter optional SSE emitter for streaming progress updates
+     */
+    public void runAsync(String realmId, boolean force, MultiEmitter<? super String> emitter) {
         if (!running.compareAndSet(false, true)) {
-            Log.info("OntologyReindexer: already running; ignoring new request");
+            String msg = "OntologyReindexer: already running; ignoring new request";
+            Log.info(msg);
+            if (emitter != null) {
+                emitter.emit(msg);
+                emitter.complete();
+            }
             return;
         }
         status = "RUNNING";
         lastChanges = EdgeChanges.empty();
         entitiesProcessed = 0;
         participatingClasses = new ArrayList<>();
+
+        // Create a message consumer that logs and optionally emits to SSE
+        Consumer<String> messageConsumer = (msg) -> {
+            Log.info(msg);
+            if (emitter != null) {
+                emitter.emit(msg);
+            }
+        };
+
         new Thread(() -> {
             try {
+                messageConsumer.accept("Starting ontology reindex for realm: " + realmId + (force ? " (force mode)" : ""));
+
                 DataDomain dd = new DataDomain();
                 dd.setOrgRefName("ontology");
                 dd.setAccountNum("0000000000");
@@ -160,11 +189,12 @@ public class OntologyReindexer {
                         .withRealm(realmId)
                         .withArea("*")
                         .withFunctionalDomain("*")
+                        .withResourceId("*")
                         .withAction("seed")
                         .build();
 
                 SecurityCallScope.runWithContexts(principal, resource, () -> {
-                    runInternal(realmId, force);
+                    runInternal(realmId, force, messageConsumer);
                     // After successful reindex, mark the observed YAML hash as applied
                     Optional<String> src = metaService.getMeta(realmId).map(m -> m.getSource());
                     Optional<Path> p = src.filter(s -> s != null && !s.equals("<none>")).map(Path::of).filter(Files::exists);
@@ -175,29 +205,52 @@ public class OntologyReindexer {
                     metaService.markApplied(realmId, res.currentHash(), tboxHash, yamlVersion);
                 });
                 status = "COMPLETED";
+
+                // Emit final summary
+                String summary = String.format("Reindex completed: %d entities processed, %d edges added, %d edges removed",
+                        entitiesProcessed, lastChanges.added().size(), lastChanges.removed().size());
+                messageConsumer.accept(summary);
+
+                if (emitter != null) {
+                    emitter.complete();
+                }
             } catch (Throwable t) {
                 status = "FAILED: " + t.getMessage();
                 Log.error("Ontology reindex failed", t);
+                if (emitter != null) {
+                    emitter.fail(t);
+                }
             } finally {
                 running.set(false);
             }
         }, "ontology-reindexer").start();
     }
 
-    private void runInternal(String realmId, boolean force) {
+    private void runInternal(String realmId, boolean force, Consumer<String> messageConsumer) {
         // First pass: materialize explicit edges and direct inferences
-        processAll(realmId, force);
+        messageConsumer.accept("Starting first pass: materializing explicit edges and direct inferences");
+        processAll(realmId, force, messageConsumer);
+        messageConsumer.accept("First pass complete. Starting second pass for inverses and complex inferences");
         // Second pass: catch inverses and more complex inferences that depend on the first pass
-        processAll(realmId, false);
+        processAll(realmId, false, messageConsumer);
+        messageConsumer.accept("Second pass complete");
     }
 
-    private void processAll(String realmId, boolean force) {
+    // Keep the old signature for backward compatibility (internal use)
+    private void runInternal(String realmId, boolean force) {
+        runInternal(realmId, force, (msg) -> Log.info(msg));
+    }
+
+    private void processAll(String realmId, boolean force, Consumer<String> messageConsumer) {
+        // Configurable batch size for bulk operations
+        final int BATCH_SIZE = 100;
+
         // Discover ontology participant classes from Morphia mapper
         var datastore = morphiaDataStoreWrapper.getDataStore(realmId);
         Collection<Class<?>> entityClasses = discoverEntityClasses(datastore.getMapper());
         List<Class<?>> participants = new ArrayList<>();
         for (Class<?> c : entityClasses) if (c.isAnnotationPresent(OntologyClass.class)) participants.add(c);
-        Log.infof("OntologyReindexer: found %d ontology participant classes", participants.size());
+        messageConsumer.accept(String.format("Found %d ontology participant classes", participants.size()));
 
         // Track participating classes (only add on first pass to avoid duplicates)
         if (participatingClasses.isEmpty()) {
@@ -207,18 +260,30 @@ public class OntologyReindexer {
                     participatingClasses.add(classId);
                 }
             }
+            messageConsumer.accept("Participating classes: " + String.join(", ", participatingClasses));
         }
 
         // If force, collect all unique DataDomains we'll encounter and purge derived edges for each
         Set<DataDomain> processedDataDomains = new HashSet<>();
 
-        // For each class, load all instances (ids only if possible) and recompute edges
+        // For each class, load all instances and process in batches
+        int classIndex = 0;
         for (Class<?> clazz : participants) {
-            status = "Scanning " + clazz.getSimpleName();
+            classIndex++;
+            String classStatus = String.format("Processing class %d/%d: %s", classIndex, participants.size(), clazz.getSimpleName());
+            status = classStatus;
+            messageConsumer.accept(classStatus);
+
             var ds = morphiaDataStoreWrapper.getDataStore(realmId);
             var q = ds.find(clazz);
             int processed = 0;
             var list = q.iterator().toList();
+            int totalForClass = list.size();
+            messageConsumer.accept(String.format("  Found %d entities of type %s (batch size: %d)", totalForClass, clazz.getSimpleName(), BATCH_SIZE));
+
+            // Collect entity contexts in batches
+            List<OntologyMaterializer.EntityEdgeContext> batch = new ArrayList<>(BATCH_SIZE);
+
             for (Object entity : list) {
                 try {
                     String srcId = extractor.idOf(entity);
@@ -229,11 +294,20 @@ public class OntologyReindexer {
 
                     // If force mode and first time seeing this DataDomain, purge derived edges
                     if (force && processedDataDomains.add(dataDomain)) {
+                        // Flush current batch before purging to avoid data loss
+                        if (!batch.isEmpty()) {
+                            EdgeChanges batchChanges = materializer.applyBulk(batch);
+                            lastChanges.addAll(batchChanges);
+                            batch.clear();
+                        }
                         try {
-                            status = "PURGE_DERIVED for " + dataDomain.getTenantId();
+                            String purgeMsg = "  Purging derived edges for DataDomain: " + dataDomain.getTenantId();
+                            status = purgeMsg;
+                            messageConsumer.accept(purgeMsg);
                             edgeRepo.deleteDerivedByDataDomain(realmId, dataDomain);
                         } catch (Throwable t) {
-                            Log.warn("Failed to purge derived edges for DataDomain " + dataDomain.getTenantId() + ": " + t.getMessage());
+                            String warnMsg = "  Warning: Failed to purge derived edges for DataDomain " + dataDomain.getTenantId() + ": " + t.getMessage();
+                            messageConsumer.accept(warnMsg);
                         }
                     }
 
@@ -251,22 +325,50 @@ public class OntologyReindexer {
                             }
                         }
                     } catch (Throwable t) {
-                        Log.warn("OntologyReindexer: provider extension failed for " + clazz.getSimpleName(), t);
+                        messageConsumer.accept("  Warning: Provider extension failed for " + clazz.getSimpleName() + ": " + t.getMessage());
                     }
 
-                    EdgeChanges entityChanges = materializer.apply(realmId, dataDomain, srcId, entityType, explicit);
-                    lastChanges.addAll(entityChanges);
+                    // Add to batch
+                    batch.add(new OntologyMaterializer.EntityEdgeContext(realmId, dataDomain, srcId, entityType, explicit));
                     processed++;
                     entitiesProcessed++;
-                    if (processed % 100 == 0) {
-                        status = String.format(Locale.ROOT, "Materialized %d %s (total: %d)", processed, clazz.getSimpleName(), entitiesProcessed);
+
+                    // Process batch when full
+                    if (batch.size() >= BATCH_SIZE) {
+                        EdgeChanges batchChanges = materializer.applyBulk(batch);
+                        lastChanges.addAll(batchChanges);
+                        batch.clear();
+
+                        String progressMsg = String.format("  Materialized %d/%d %s (total: %d, edges: +%d/~%d)",
+                                processed, totalForClass, clazz.getSimpleName(), entitiesProcessed,
+                                batchChanges.added().size(), batchChanges.modified().size());
+                        status = progressMsg;
+                        messageConsumer.accept(progressMsg);
                     }
                 } catch (Throwable t) {
-                    Log.warnf("OntologyReindexer: failed to materialize for %s due to %s", clazz.getSimpleName(), t.getMessage());
+                    messageConsumer.accept(String.format("  Warning: Failed to prepare %s for materialization: %s", clazz.getSimpleName(), t.getMessage()));
                 }
             }
-            Log.infof("OntologyReindexer: completed %s (%d entities)", clazz.getSimpleName(), processed);
+
+            // Process remaining batch
+            if (!batch.isEmpty()) {
+                try {
+                    EdgeChanges batchChanges = materializer.applyBulk(batch);
+                    lastChanges.addAll(batchChanges);
+                    batch.clear();
+                } catch (Throwable t) {
+                    messageConsumer.accept(String.format("  Warning: Failed to process final batch for %s: %s", clazz.getSimpleName(), t.getMessage()));
+                }
+            }
+
+            String completedMsg = String.format("  Completed %s: %d entities processed", clazz.getSimpleName(), processed);
+            messageConsumer.accept(completedMsg);
         }
+    }
+
+    // Keep old signature for backward compatibility
+    private void processAll(String realmId, boolean force) {
+        processAll(realmId, force, (msg) -> Log.info(msg));
     }
 
     /**
