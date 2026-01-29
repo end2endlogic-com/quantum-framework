@@ -78,7 +78,7 @@ public class IdentityAssembler {
                 ? cred.getDomainContext().getDefaultRealm()
                 : systemRealm;
             try {
-                var userProfileOpt = userProfileRepo.getBySubject(cred.getSubject());
+                var userProfileOpt = userProfileRepo.getBySubject(credentialRealm, cred.getSubject());
                 if (userProfileOpt.isPresent()) {
                     var groups = userGroupRepo.findByUserProfileRef(userProfileOpt.get().createEntityReference());
                     if (groups != null) {
