@@ -25,12 +25,10 @@ public class SecurityCheckResponse {
    public SecurityCheckResponse(PrincipalContext principalContext,  ResourceContext resourceContext) {
       this.principalContext = principalContext;
       this.resourceContext = resourceContext;
-      // derive roleAssignments by default from principalContext roles as CREDENTIAL when available
-      if (this.principalContext != null && this.principalContext.getRoles() != null) {
-         for (String r : this.principalContext.getRoles()) {
-            this.roleAssignments.add(new RoleAssignment(r, EnumSet.of(RoleSource.CREDENTIAL)));
-         }
-      }
+      // NOTE: Do NOT default roleAssignments here - the source (TOKEN, CREDENTIAL, USERGROUP)
+      // must be determined by the caller using setRoleAssignments() with correct provenance.
+      // Previously this defaulted all roles to CREDENTIAL which was incorrect for roles
+      // that actually come from UserGroups or the access token.
    }
 
    protected PrincipalContext principalContext;

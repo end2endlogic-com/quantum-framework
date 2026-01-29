@@ -74,6 +74,7 @@ public class RuleContext {
     @ConfigProperty(name = "quantum.security.rules.index.enabled", defaultValue = "false")
     boolean indexEnabled;
     private volatile RuleIndex compiledIndex;
+    private volatile String compiledIndexRealm; // tracks which realm the index was built for
 
     @ConfigProperty(name = "quantum.realmConfig.defaultRealm", defaultValue = "system-com")
     protected String defaultRealm;
@@ -543,6 +544,7 @@ public class RuleContext {
     public void clear() {
         defaultSystemRules.clear();
         compiledIndex = null;
+        compiledIndexRealm = null;
     }
 
     private volatile long policyVersion = 0L;
@@ -560,7 +562,52 @@ public class RuleContext {
         policyVersion = System.nanoTime();
         Log.infof("RuleContext: reloaded default system rules for realm %s", realm);
 
+        // Build the compiled index if enabled
+        if (indexEnabled) {
+            rebuildIndex(realm);
+        }
+
         // Note: Database policies are NOT cached - they are fetched fresh on each checkRules call
+    }
+
+    /**
+     * Rebuilds the compiled rule index from all effective rules (system defaults + database policies).
+     * This should be called when policies change or when the index needs to be refreshed.
+     * @param realm the realm to load database policies from
+     */
+    public synchronized void rebuildIndex(@NotNull String realm) {
+        if (!indexEnabled) {
+            Log.debug("RuleContext: index rebuild skipped - indexEnabled is false");
+            return;
+        }
+
+        try {
+            // Collect all rules from effective rules (defaults + database policies)
+            Map<String, List<Rule>> effectiveRules;
+            if (policyRepo != null) {
+                List<Policy> defaults = getDefaultSystemPolicies();
+                effectiveRules = policyRepo.getEffectiveRules(realm, defaults);
+            } else {
+                effectiveRules = new HashMap<>(defaultSystemRules);
+            }
+
+            // Flatten all rules into a single collection for indexing
+            List<Rule> allRules = new ArrayList<>();
+            for (List<Rule> ruleList : effectiveRules.values()) {
+                if (ruleList != null) {
+                    allRules.addAll(ruleList);
+                }
+            }
+
+            // Build the index
+            compiledIndex = RuleIndex.build(allRules);
+            compiledIndexRealm = realm;
+            Log.infof("RuleContext: rebuilt compiled index with %d rules for realm %s", allRules.size(), realm);
+        } catch (Exception e) {
+            Log.warnf(e, "RuleContext: failed to rebuild index for realm %s; index will remain null", realm);
+            compiledIndex = null;
+            compiledIndexRealm = null;
+        }
     }
 
     /**
@@ -808,13 +855,27 @@ public class RuleContext {
         // Get fresh effective rules (defaults + database policies)
         Map<String, List<Rule>> effectiveRules = getEffectiveRulesForRequest(pcontext);
 
-        // If the compiled index is enabled and available, use it to quickly gather candidates
-        if (indexEnabled && compiledIndex != null) {
-           Log.warn("<< checking with index enabled >>");
-            try {
-                return compiledIndex.getApplicableRules(pcontext, rcontext);
-            } catch (Throwable t) {
-                Log.warn("RuleContext: compiled index lookup failed; falling back to list scan", t);
+        // Determine the request realm
+        String requestRealm = pcontext != null && pcontext.getDefaultRealm() != null
+            ? pcontext.getDefaultRealm()
+            : defaultRealm;
+
+        // If the compiled index is enabled, check if we need to rebuild for a different realm
+        if (indexEnabled) {
+            // Rebuild index if it's null or was built for a different realm
+            if (compiledIndex == null || !requestRealm.equals(compiledIndexRealm)) {
+                Log.debugf("RuleContext: index rebuild needed - current realm=%s, index realm=%s",
+                    requestRealm, compiledIndexRealm);
+                rebuildIndex(requestRealm);
+            }
+
+            if (compiledIndex != null) {
+                Log.debug("\n<< -----  checking with index enabled ------ >>\n");
+                try {
+                    return compiledIndex.getApplicableRules(pcontext, rcontext);
+                } catch (Throwable t) {
+                    Log.warn("RuleContext: compiled index lookup failed; falling back to list scan", t);
+                }
             }
         }
 
