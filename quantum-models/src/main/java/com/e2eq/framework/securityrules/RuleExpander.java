@@ -55,8 +55,12 @@ public final class RuleExpander {
 
         SecurityURI newUri = new SecurityURI(newHeader, srcUri.getBody().clone());
 
+        // Generate a unique name for the expanded rule by appending the header values
+        // This ensures each expanded rule has a distinct name for debugging and logging
+        String expandedName = String.format("%s[%s:%s:%s:%s]", src.getName(), identity, area, domain, action);
+
         return new Rule.Builder()
-                .withName(src.getName())
+                .withName(expandedName)
                 .withDescription(src.getDescription())
                 .withSecurityURI(newUri)
                 .withPreconditionScript(src.getPreconditionScript())
