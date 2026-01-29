@@ -583,6 +583,8 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         String principalName = securityIdentity.getPrincipal() != null ?
             securityIdentity.getPrincipal().getName() : envConfigUtils.getAnonymousUserId();
 
+        Log.debugf("buildIdentityContextWithCredentials: principalName=%s, realmOverride=%s", principalName, realmOverride);
+
         // Credentials are always looked up from system-com (global)
         Optional<CredentialUserIdPassword> ocreds = credentialRepo.findByUserId(principalName, envConfigUtils.getSystemRealm(), true);
 
@@ -591,13 +593,19 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
             // Start with credential's default realm, then optionally override with X-Realm if authorized
             String effectiveRealm = creds.getDomainContext().getDefaultRealm();
+            Log.debugf("buildIdentityContextWithCredentials: credential found for userId=%s, domainContext.defaultRealm=%s",
+                creds.getUserId(), effectiveRealm);
+
             if (realmOverride != null) {
                 validateRealmAccess(creds, realmOverride);
                 effectiveRealm = realmOverride;
+                Log.debugf("buildIdentityContextWithCredentials: X-Realm override applied, effectiveRealm=%s", effectiveRealm);
             }
 
             DataDomain dataDomain = creds.getDomainContext().toDataDomain(creds.getUserId());
             // Pass the effective realm for UserProfile/UserGroup lookups
+            Log.debugf("buildIdentityContextWithCredentials: resolving roles with effectiveRealm=%s, subject=%s",
+                effectiveRealm, creds.getSubject());
             String[] roles = resolveEffectiveRoles(securityIdentity, creds, effectiveRealm);
 
             PrincipalContext context = new PrincipalContext.Builder()
@@ -631,6 +639,8 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         String token = authHeader.substring(AUTHENTICATION_SCHEME.length()).trim();
         String sub = jwt.getClaim("sub");
 
+        Log.debugf("buildJwtContextWithCredentials: sub=%s, realmOverride=%s", sub, realmOverride);
+
         if (sub == null) {
             throw new IllegalStateException("sub attribute not provided but is required in token claims");
         }
@@ -651,12 +661,18 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
         // Start with credential's default realm, then optionally override with X-Realm if authorized
         String effectiveRealm = creds.getDomainContext().getDefaultRealm();
+        Log.debugf("buildJwtContextWithCredentials: credential found for userId=%s, domainContext.defaultRealm=%s",
+            creds.getUserId(), effectiveRealm);
+
         if (realmOverride != null) {
             validateRealmAccess(creds, realmOverride);
             effectiveRealm = realmOverride;
+            Log.debugf("buildJwtContextWithCredentials: X-Realm override applied, effectiveRealm=%s", effectiveRealm);
         }
 
         // Pass the effective realm for UserProfile/UserGroup lookups
+        Log.debugf("buildJwtContextWithCredentials: resolving roles with effectiveRealm=%s, subject=%s",
+            effectiveRealm, creds.getSubject());
         String[] roles = resolveEffectiveRoles(securityIdentity, creds, effectiveRealm);
         DataDomain dataDomain = creds.getDomainContext().toDataDomain(creds.getUserId());
         PrincipalContext context = new PrincipalContext.Builder()

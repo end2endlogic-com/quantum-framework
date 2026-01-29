@@ -91,28 +91,40 @@ public class IdentityRoleResolver {
             if (credential != null) {
                 // Use the provided realm for UserProfile/UserGroup lookups
                 // This ensures we query the correct tenant's datastore, not just system-com
+                Log.debugf("IdentityRoleResolver: looking up UserProfile for subject=%s in realm=%s",
+                    credential.getSubject(), realm);
+
                 Optional<UserProfile> userProfileOpt;
                 if (realm != null && !realm.isBlank()) {
                     userProfileOpt = userProfileRepo.getBySubject(realm, credential.getSubject());
                 } else {
                     // Fallback to no-realm method (will use security context realm)
+                    Log.warnf("IdentityRoleResolver: realm is null/blank, falling back to context realm for subject=%s",
+                        credential.getSubject());
                     userProfileOpt = userProfileRepo.getBySubject(credential.getSubject());
                 }
                 if (userProfileOpt.isPresent()) {
+                    Log.debugf("IdentityRoleResolver: UserProfile found for subject=%s, looking up UserGroups",
+                        credential.getSubject());
                     var groups = userGroupRepo.findByUserProfileRef(userProfileOpt.get().createEntityReference());
-                    if (groups != null) {
+                    if (groups != null && !groups.isEmpty()) {
+                        Log.debugf("IdentityRoleResolver: found %d UserGroups for subject=%s", groups.size(), credential.getSubject());
                         for (UserGroup g : groups) {
                             if (g == null || g.getRoles() == null) continue;
+                            Log.debugf("IdentityRoleResolver: UserGroup '%s' has roles: %s", g.getRefName(), java.util.Arrays.toString(g.getRoles().toArray()));
                             for (String r : g.getRoles()) {
                                 if (r == null || r.isBlank()) continue;
                                 provenance.computeIfAbsent(r, k -> EnumSet.noneOf(RoleSource.class)).add(RoleSource.USERGROUP);
                             }
                         }
+                    } else {
+                        Log.debugf("IdentityRoleResolver: no UserGroups found for subject=%s", credential.getSubject());
                     }
                 }
                 else {
                     // No matching UserProfile found, assume anonymous
-                     Log.warnf("No matching UserProfile found for subject %s when attempting to resolve groups in role resolver", credential.getSubject());
+                    Log.warnf("No matching UserProfile found for subject=%s in realm=%s when attempting to resolve groups in role resolver",
+                        credential.getSubject(), realm);
                 }
             }
         } catch (Exception e) {
