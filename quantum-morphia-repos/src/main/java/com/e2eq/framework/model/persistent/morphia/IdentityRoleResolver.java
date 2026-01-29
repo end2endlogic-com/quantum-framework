@@ -115,8 +115,10 @@ public class IdentityRoleResolver {
                         credential.getSubject(), realm);
                     // IMPORTANT: Pass the realm to findByUserProfileRef to query the correct database
                     // The security context may be different (e.g., system-com during login)
+                    // Use findByUserProfileRefWithIgnoreRules to bypass security context check
+                    // since we're in the process of building the PrincipalContext
                     var groups = (realm != null && !realm.isBlank())
-                        ? userGroupRepo.findByUserProfileRef(realm, userProfileOpt.get().createEntityReference())
+                        ? userGroupRepo.findByUserProfileRefWithIgnoreRules(realm, userProfileOpt.get().createEntityReference())
                         : userGroupRepo.findByUserProfileRef(userProfileOpt.get().createEntityReference());
                     if (groups != null && !groups.isEmpty()) {
                         Log.debugf("IdentityRoleResolver: found %d UserGroups for subject=%s", groups.size(), credential.getSubject());
@@ -234,11 +236,12 @@ public class IdentityRoleResolver {
                     }
                     if (userProfileOpt.isPresent()) {
                         Log.debugf("resolveRoleSources: UserProfile found for subject=%s, looking up UserGroups in realm=%s", cred.getSubject(), realm);
-                        // IMPORTANT: Pass the realm to findByUserProfileRef to query the correct database
+                        // IMPORTANT: Pass the realm to findByUserProfileRefWithIgnoreRules to query the correct database
                         // The security context may be different (e.g., system-com during login)
-                        // If realm is null/blank, fall back to the no-realm method
+                        // Use findByUserProfileRefWithIgnoreRules to bypass security context check
+                        // since we're in the process of building the PrincipalContext
                         var groups = (realm != null && !realm.isBlank())
-                            ? userGroupRepo.findByUserProfileRef(realm, userProfileOpt.get().createEntityReference())
+                            ? userGroupRepo.findByUserProfileRefWithIgnoreRules(realm, userProfileOpt.get().createEntityReference())
                             : userGroupRepo.findByUserProfileRef(userProfileOpt.get().createEntityReference());
                         if (groups != null) {
                             Log.debugf("resolveRoleSources: found %d UserGroups for subject=%s", groups.size(), cred.getSubject());
