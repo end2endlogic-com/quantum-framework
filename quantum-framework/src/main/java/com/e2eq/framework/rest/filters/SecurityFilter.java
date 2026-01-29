@@ -579,27 +579,29 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 .build();
     }
 
-    private ContextBuildResult buildIdentityContextWithCredentials(String realm) {
+    private ContextBuildResult buildIdentityContextWithCredentials(String realmOverride) {
         String principalName = securityIdentity.getPrincipal() != null ?
             securityIdentity.getPrincipal().getName() : envConfigUtils.getAnonymousUserId();
-        String[] roles = resolveEffectiveRoles(securityIdentity, null, realm);
-        String contextRealm = (realm != null) ? realm : envConfigUtils.getSystemRealm();
 
         // Credentials are always looked up from system-com (global)
         Optional<CredentialUserIdPassword> ocreds = credentialRepo.findByUserId(principalName, envConfigUtils.getSystemRealm(), true);
 
         if (ocreds.isPresent()) {
             CredentialUserIdPassword creds = ocreds.get();
-            validateRealmAccess(creds, realm);
 
-            // Use X-Realm if provided, otherwise fall back to credential's default realm
-            contextRealm = (realm != null) ? realm : creds.getDomainContext().getDefaultRealm();
+            // Start with credential's default realm, then optionally override with X-Realm if authorized
+            String effectiveRealm = creds.getDomainContext().getDefaultRealm();
+            if (realmOverride != null) {
+                validateRealmAccess(creds, realmOverride);
+                effectiveRealm = realmOverride;
+            }
+
             DataDomain dataDomain = creds.getDomainContext().toDataDomain(creds.getUserId());
             // Pass the effective realm for UserProfile/UserGroup lookups
-            roles = resolveEffectiveRoles(securityIdentity, creds, contextRealm);
+            String[] roles = resolveEffectiveRoles(securityIdentity, creds, effectiveRealm);
 
             PrincipalContext context = new PrincipalContext.Builder()
-                    .withDefaultRealm(contextRealm)
+                    .withDefaultRealm(effectiveRealm)
                     .withDomainContext(creds.getDomainContext())
                     .withDataDomain(dataDomain)
                     .withUserId(creds.getUserId())
@@ -609,6 +611,9 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                     .build();
             return new ContextBuildResult(context, creds);
         } else {
+            // No credential found - fall back to system realm or override
+            String contextRealm = (realmOverride != null) ? realmOverride : envConfigUtils.getSystemRealm();
+            String[] roles = resolveEffectiveRoles(securityIdentity, null, contextRealm);
             PrincipalContext context = new PrincipalContext.Builder()
                     .withDefaultRealm(contextRealm)
                     .withDataDomain(securityUtils.getSystemDataDomain())
@@ -620,7 +625,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         }
     }
 
-    private ContextBuildResult buildJwtContextWithCredentials(String authHeader, String realm) {
+    private ContextBuildResult buildJwtContextWithCredentials(String authHeader, String realmOverride) {
         // Extract token (variable kept for potential future use)
         @SuppressWarnings("unused")
         String token = authHeader.substring(AUTHENTICATION_SCHEME.length()).trim();
@@ -630,9 +635,10 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             throw new IllegalStateException("sub attribute not provided but is required in token claims");
         }
 
+        // Credentials are always looked up from system-com (global)
         Optional<CredentialUserIdPassword> ocreds = credentialRepo.findBySubject(sub, envConfigUtils.getSystemRealm(), true);
         if (!ocreds.isPresent()) {
-            ocreds = findCredentialByUsername(sub, realm);
+            ocreds = findCredentialByUsername(sub, realmOverride);
         }
 
         if (!ocreds.isPresent()) {
@@ -642,10 +648,14 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         }
 
         CredentialUserIdPassword creds = ocreds.get();
-        validateRealmAccess(creds, realm);
 
-        // Use X-Realm if provided, otherwise fall back to credential's default realm
-        String effectiveRealm = (realm != null) ? realm : creds.getDomainContext().getDefaultRealm();
+        // Start with credential's default realm, then optionally override with X-Realm if authorized
+        String effectiveRealm = creds.getDomainContext().getDefaultRealm();
+        if (realmOverride != null) {
+            validateRealmAccess(creds, realmOverride);
+            effectiveRealm = realmOverride;
+        }
+
         // Pass the effective realm for UserProfile/UserGroup lookups
         String[] roles = resolveEffectiveRoles(securityIdentity, creds, effectiveRealm);
         DataDomain dataDomain = creds.getDomainContext().toDataDomain(creds.getUserId());
