@@ -15,6 +15,8 @@ import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
@@ -38,6 +40,58 @@ public class PolicyResource extends BaseResource<Policy, PolicyRepo>{
 
    protected PolicyResource (PolicyRepo repo) {
       super(repo);
+   }
+
+   /**
+    * Override save to automatically refresh the rule context cache after policy modifications.
+    * This ensures that any changes to policies are immediately reflected in security evaluations.
+    */
+   @Override
+   public Policy save(@Context HttpHeaders headers, Policy model) {
+      String realmId = headers.getHeaderString("X-Realm");
+      Policy saved = super.save(headers, model);
+      // Refresh rule context for the affected realm
+      String effectiveRealm = (realmId != null && !realmId.isBlank()) ? realmId : ruleContext.getDefaultRealm();
+      io.quarkus.logging.Log.infof("PolicyResource: policy saved (refName=%s), refreshing rule context for realm=%s",
+          saved.getRefName(), effectiveRealm);
+      ruleContext.reloadFromRepo(effectiveRealm);
+      return saved;
+   }
+
+   /**
+    * Override delete by refName to automatically refresh the rule context cache after policy deletion.
+    */
+   @Override
+   public Response deleteByRefName(@Context HttpHeaders headers, String refName)
+           throws com.e2eq.framework.exceptions.ReferentialIntegrityViolationException {
+      String realmId = headers.getHeaderString("X-Realm");
+      Response response = super.deleteByRefName(headers, refName);
+      // Only refresh if delete was successful (status 200)
+      if (response.getStatus() == Response.Status.OK.getStatusCode()) {
+         String effectiveRealm = (realmId != null && !realmId.isBlank()) ? realmId : ruleContext.getDefaultRealm();
+         io.quarkus.logging.Log.infof("PolicyResource: policy deleted (refName=%s), refreshing rule context for realm=%s",
+             refName, effectiveRealm);
+         ruleContext.reloadFromRepo(effectiveRealm);
+      }
+      return response;
+   }
+
+   /**
+    * Override delete by id to automatically refresh the rule context cache after policy deletion.
+    */
+   @Override
+   public Response delete(@Context HttpHeaders headers, String id)
+           throws com.e2eq.framework.exceptions.ReferentialIntegrityViolationException {
+      String realmId = headers.getHeaderString("X-Realm");
+      Response response = super.delete(headers, id);
+      // Only refresh if delete was successful (status 200)
+      if (response.getStatus() == Response.Status.OK.getStatusCode()) {
+         String effectiveRealm = (realmId != null && !realmId.isBlank()) ? realmId : ruleContext.getDefaultRealm();
+         io.quarkus.logging.Log.infof("PolicyResource: policy deleted (id=%s), refreshing rule context for realm=%s",
+             id, effectiveRealm);
+         ruleContext.reloadFromRepo(effectiveRealm);
+      }
+      return response;
    }
 
    @Override
