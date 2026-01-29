@@ -5,6 +5,7 @@ import com.e2eq.framework.model.auth.RoleSource;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.UserGroup;
 import com.e2eq.framework.model.security.UserProfile;
+import com.e2eq.framework.util.EnvConfigUtils;
 import io.quarkus.logging.Log;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -19,6 +20,9 @@ import java.util.*;
  *   - roles stored on the credential document
  *   - roles from any UserGroup memberships of the associated UserProfile
  * - If a role is provided (no credential), no expansion is performed.
+ *
+ * Note: Credentials are always stored in system-com (global). The realm parameter
+ * is used for UserProfile/UserGroup lookups in the tenant's database.
  */
 @ApplicationScoped
 public class IdentityRoleResolver {
@@ -31,6 +35,9 @@ public class IdentityRoleResolver {
 
     @Inject
     UserGroupRepo userGroupRepo;
+
+    @Inject
+    EnvConfigUtils envConfigUtils;
 
     /**
      * Resolve the effective roles for an already resolved credential, also considering the access token roles
@@ -91,28 +98,44 @@ public class IdentityRoleResolver {
             if (credential != null) {
                 // Use the provided realm for UserProfile/UserGroup lookups
                 // This ensures we query the correct tenant's datastore, not just system-com
+                Log.debugf("IdentityRoleResolver: looking up UserProfile for subject=%s in realm=%s",
+                    credential.getSubject(), realm);
+
                 Optional<UserProfile> userProfileOpt;
                 if (realm != null && !realm.isBlank()) {
                     userProfileOpt = userProfileRepo.getBySubject(realm, credential.getSubject());
                 } else {
                     // Fallback to no-realm method (will use security context realm)
+                    Log.warnf("IdentityRoleResolver: realm is null/blank, falling back to context realm for subject=%s",
+                        credential.getSubject());
                     userProfileOpt = userProfileRepo.getBySubject(credential.getSubject());
                 }
                 if (userProfileOpt.isPresent()) {
-                    var groups = userGroupRepo.findByUserProfileRef(userProfileOpt.get().createEntityReference());
-                    if (groups != null) {
+                    Log.debugf("IdentityRoleResolver: UserProfile found for subject=%s, looking up UserGroups in realm=%s",
+                        credential.getSubject(), realm);
+                    // IMPORTANT: Pass the realm to findByUserProfileRef to query the correct database
+                    // The security context may be different (e.g., system-com during login)
+                    var groups = (realm != null && !realm.isBlank())
+                        ? userGroupRepo.findByUserProfileRef(realm, userProfileOpt.get().createEntityReference())
+                        : userGroupRepo.findByUserProfileRef(userProfileOpt.get().createEntityReference());
+                    if (groups != null && !groups.isEmpty()) {
+                        Log.debugf("IdentityRoleResolver: found %d UserGroups for subject=%s", groups.size(), credential.getSubject());
                         for (UserGroup g : groups) {
                             if (g == null || g.getRoles() == null) continue;
+                            Log.debugf("IdentityRoleResolver: UserGroup '%s' has roles: %s", g.getRefName(), java.util.Arrays.toString(g.getRoles().toArray()));
                             for (String r : g.getRoles()) {
                                 if (r == null || r.isBlank()) continue;
                                 provenance.computeIfAbsent(r, k -> EnumSet.noneOf(RoleSource.class)).add(RoleSource.USERGROUP);
                             }
                         }
+                    } else {
+                        Log.debugf("IdentityRoleResolver: no UserGroups found for subject=%s", credential.getSubject());
                     }
                 }
                 else {
                     // No matching UserProfile found, assume anonymous
-                     Log.warnf("No matching UserProfile found for subject %s when attempting to resolve groups in role resolver", credential.getSubject());
+                    Log.warnf("No matching UserProfile found for subject=%s in realm=%s when attempting to resolve groups in role resolver",
+                        credential.getSubject(), realm);
                 }
             }
         } catch (Exception e) {
@@ -148,9 +171,14 @@ public class IdentityRoleResolver {
      * Resolve role provenance (role -> sources) for a given identity within a realm.
      * If the identity matches a credential, include sources from IDP, CREDENTIAL, and USERGROUP.
      * If no credential exists, only IDP roles can be derived.
+     *
+     * Note: Credentials are always looked up from system-com (global). The realm parameter
+     * is used for UserProfile/UserGroup lookups in the tenant's database.
      */
     public Map<String, EnumSet<RoleSource>> resolveRoleSources(String identity, String realm, SecurityIdentity securityIdentity) {
         LinkedHashMap<String, EnumSet<RoleSource>> out = new LinkedHashMap<>();
+
+        Log.debugf("resolveRoleSources: identity=%s, realm=%s", identity, realm);
 
         // TOKEN roles from the current security identity (include when the current identity matches by principal name or augmented userId attribute)
         if (securityIdentity != null) {
@@ -175,9 +203,16 @@ public class IdentityRoleResolver {
         }
 
         try {
-            var ocreds = credentialRepo.findByUserId(identity, realm, true);
+            // IMPORTANT: Credentials are ALWAYS stored in system-com (global), not in tenant realms.
+            // Use envConfigUtils.getSystemRealm() for credential lookup, regardless of the realm parameter.
+            String systemRealm = envConfigUtils.getSystemRealm();
+            Log.debugf("resolveRoleSources: looking up credential in systemRealm=%s for identity=%s", systemRealm, identity);
+
+            var ocreds = credentialRepo.findByUserId(identity, systemRealm, true);
             if (ocreds.isPresent()) {
                 var cred = ocreds.get();
+                Log.debugf("resolveRoleSources: credential found for identity=%s, subject=%s", identity, cred.getSubject());
+
                 // Credential roles
                 if (cred.getRoles() != null) {
                     for (String r : cred.getRoles()) {
@@ -187,29 +222,52 @@ public class IdentityRoleResolver {
                 }
                 // User group roles via profile (always unioned when credential exists)
                 try {
-                    // Use the provided realm to ensure we read the profile from the correct datastore
-                    var userProfileOpt = userProfileRepo.getBySubject(realm, cred.getSubject());
+                    // Use the provided realm to ensure we read the profile from the correct tenant datastore
+                    // If realm is null/blank, fall back to the no-realm method (uses security context realm)
+                    Log.debugf("resolveRoleSources: looking up UserProfile in realm=%s for subject=%s", realm, cred.getSubject());
+                    Optional<UserProfile> userProfileOpt;
+                    if (realm != null && !realm.isBlank()) {
+                        userProfileOpt = userProfileRepo.getBySubject(realm, cred.getSubject());
+                    } else {
+                        Log.warnf("resolveRoleSources: realm is null/blank, falling back to context realm for subject=%s", cred.getSubject());
+                        userProfileOpt = userProfileRepo.getBySubject(cred.getSubject());
+                    }
                     if (userProfileOpt.isPresent()) {
-                        var groups = userGroupRepo.findByUserProfileRef(userProfileOpt.get().createEntityReference());
+                        Log.debugf("resolveRoleSources: UserProfile found for subject=%s, looking up UserGroups in realm=%s", cred.getSubject(), realm);
+                        // IMPORTANT: Pass the realm to findByUserProfileRef to query the correct database
+                        // The security context may be different (e.g., system-com during login)
+                        // If realm is null/blank, fall back to the no-realm method
+                        var groups = (realm != null && !realm.isBlank())
+                            ? userGroupRepo.findByUserProfileRef(realm, userProfileOpt.get().createEntityReference())
+                            : userGroupRepo.findByUserProfileRef(userProfileOpt.get().createEntityReference());
                         if (groups != null) {
+                            Log.debugf("resolveRoleSources: found %d UserGroups for subject=%s", groups.size(), cred.getSubject());
                             for (UserGroup g : groups) {
                                 if (g != null && g.getRoles() != null) {
+                                    Log.debugf("resolveRoleSources: UserGroup '%s' has roles: %s", g.getRefName(), g.getRoles());
                                     for (String r : g.getRoles()) {
                                         if (r == null || r.isEmpty()) continue;
                                         out.computeIfAbsent(r, k -> EnumSet.noneOf(RoleSource.class)).add(RoleSource.USERGROUP);
                                     }
                                 }
                             }
+                        } else {
+                            Log.debugf("resolveRoleSources: no UserGroups found for subject=%s", cred.getSubject());
                         }
+                    } else {
+                        Log.debugf("resolveRoleSources: no UserProfile found in realm=%s for subject=%s", realm, cred.getSubject());
                     }
                 } catch (Exception e) {
                     Log.warn("Failed to expand user-group roles; continuing", e);
                 }
+            } else {
+                Log.debugf("resolveRoleSources: no credential found in systemRealm=%s for identity=%s", systemRealm, identity);
             }
         } catch (Exception e) {
             Log.warnf(e, "Error resolving role sources for identity %s in realm %s", identity, realm);
         }
 
+        Log.debugf("resolveRoleSources: returning roles=%s", out.keySet());
         return out;
     }
 
