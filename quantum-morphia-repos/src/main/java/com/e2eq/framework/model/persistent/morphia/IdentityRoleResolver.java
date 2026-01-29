@@ -223,13 +223,23 @@ public class IdentityRoleResolver {
                 // User group roles via profile (always unioned when credential exists)
                 try {
                     // Use the provided realm to ensure we read the profile from the correct tenant datastore
+                    // If realm is null/blank, fall back to the no-realm method (uses security context realm)
                     Log.debugf("resolveRoleSources: looking up UserProfile in realm=%s for subject=%s", realm, cred.getSubject());
-                    var userProfileOpt = userProfileRepo.getBySubject(realm, cred.getSubject());
+                    Optional<UserProfile> userProfileOpt;
+                    if (realm != null && !realm.isBlank()) {
+                        userProfileOpt = userProfileRepo.getBySubject(realm, cred.getSubject());
+                    } else {
+                        Log.warnf("resolveRoleSources: realm is null/blank, falling back to context realm for subject=%s", cred.getSubject());
+                        userProfileOpt = userProfileRepo.getBySubject(cred.getSubject());
+                    }
                     if (userProfileOpt.isPresent()) {
                         Log.debugf("resolveRoleSources: UserProfile found for subject=%s, looking up UserGroups in realm=%s", cred.getSubject(), realm);
                         // IMPORTANT: Pass the realm to findByUserProfileRef to query the correct database
                         // The security context may be different (e.g., system-com during login)
-                        var groups = userGroupRepo.findByUserProfileRef(realm, userProfileOpt.get().createEntityReference());
+                        // If realm is null/blank, fall back to the no-realm method
+                        var groups = (realm != null && !realm.isBlank())
+                            ? userGroupRepo.findByUserProfileRef(realm, userProfileOpt.get().createEntityReference())
+                            : userGroupRepo.findByUserProfileRef(userProfileOpt.get().createEntityReference());
                         if (groups != null) {
                             Log.debugf("resolveRoleSources: found %d UserGroups for subject=%s", groups.size(), cred.getSubject());
                             for (UserGroup g : groups) {
