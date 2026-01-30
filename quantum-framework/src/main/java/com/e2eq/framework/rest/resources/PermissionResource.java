@@ -1,5 +1,7 @@
 package com.e2eq.framework.rest.resources;
 
+import com.e2eq.framework.annotations.FunctionalMapping;
+import com.e2eq.framework.annotations.FunctionalAction;
 import com.e2eq.framework.model.auth.AuthProviderFactory;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.auth.RoleAssignment;
@@ -31,6 +33,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 
 @Path("/system/permissions")
+@FunctionalMapping(area="system", domain="permission")
 public class PermissionResource {
 
    @Inject
@@ -190,6 +193,7 @@ public class PermissionResource {
    @Path("/role-provenance")
    @Consumes(MediaType.APPLICATION_JSON)
    @Produces(MediaType.APPLICATION_JSON)
+   @FunctionalAction("roleProvenance")
    public Response roleProvenance(RoleProvenanceRequest req) {
       if (req == null || req.userId == null || req.userId.isBlank()) {
          return Response.status(Response.Status.BAD_REQUEST).entity("userId is required").build();
@@ -397,6 +401,7 @@ public class PermissionResource {
    @GET
    @Path("/entities")
    @Produces(MediaType.APPLICATION_JSON)
+   @FunctionalAction("entities")
    public Response entities() {
       return Response.ok(getInfoList()).build();
    }
@@ -435,7 +440,7 @@ public class PermissionResource {
             Set<String> actions = ensureAreaDomain(areaDomainActions, area, domain);
             if (includeActions) {
                if (fd.getFunctionalActions() != null) {
-                  for (FunctionalAction a : fd.getFunctionalActions()) {
+                  for (com.e2eq.framework.model.security.FunctionalAction a : fd.getFunctionalActions()) {
                      if (a == null) continue;
                      String ref = safe(a.getRefName());
                      if (!ref.isEmpty()) actions.add(ref);
@@ -516,6 +521,7 @@ public class PermissionResource {
    @Authenticated
    @Consumes(MediaType.APPLICATION_JSON)
    @Produces(MediaType.APPLICATION_JSON)
+   @FunctionalAction("check")
    public Response check(CheckRequest req) {
       if (req == null || req.identity == null || req.identity.isBlank()) {
          return Response.status(Response.Status.BAD_REQUEST).entity("identity is required").build();
@@ -632,6 +638,7 @@ public class PermissionResource {
    @Authenticated
    @Consumes(MediaType.APPLICATION_JSON)
    @Produces(MediaType.APPLICATION_JSON)
+   @FunctionalAction("check-with-index")
    public Response checkWithIndex(CheckRequest req) {
       if (req == null || req.identity == null || req.identity.isBlank()) {
          return Response.status(Response.Status.BAD_REQUEST).entity("identity is required").build();
@@ -717,6 +724,7 @@ public class PermissionResource {
    @Authenticated
    @Consumes(MediaType.APPLICATION_JSON)
    @Produces(MediaType.APPLICATION_JSON)
+   @FunctionalAction("evaluate")
    public Response evaluateFunctionalAccess(@QueryParam("useIndex") @DefaultValue("true") boolean useIndex, EvaluateRequest req) {
       if (req == null || req.identity == null || req.identity.isBlank()) {
          return Response.status(Response.Status.BAD_REQUEST).entity("identity is required").build();
@@ -783,7 +791,7 @@ public class PermissionResource {
             if (a.isEmpty() || d.isEmpty()) continue;
             Set<String> actions = ensureAreaDomain(discovered, a, d);
             if (fd.getFunctionalActions() != null) {
-               for (FunctionalAction fa : fd.getFunctionalActions()) {
+               for (com.e2eq.framework.model.security.FunctionalAction fa : fd.getFunctionalActions()) {
                   if (fa == null) continue;
                   String ref = safe(fa.getRefName());
                   if (!ref.isEmpty()) actions.add(ref);

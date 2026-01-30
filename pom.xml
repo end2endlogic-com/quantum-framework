@@ -57,7 +57,7 @@
         <skipITs>true</skipITs>
         <surefire-plugin.version>3.2.5</surefire-plugin.version>
         <lombrok.version>1.18.34</lombrok.version>
-        <quantum.version>1.2.3</quantum.version>
+        <quantum.version>1.2.4-SNAPSHOT</quantum.version>
         <apachecommons.lang3.version>3.18.0</apachecommons.lang3.version>
     </properties>
 
@@ -264,28 +264,7 @@
                         </configuration>
                     </plugin>
 
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-gpg-plugin</artifactId>
-                        <version>3.0.1</version>
-                        <executions>
-                            <execution>
-                                <id>sign-artifacts</id>
-                                <phase>verify</phase>
-                                <goals>
-                                    <goal>sign</goal>
-                                </goals>
-                            </execution>
-                        </executions>
-                        <configuration>
-                            <gpgArguments>
-                                <arg>--pinentry-mode</arg>
-                                <arg>loopback</arg>
-                            </gpgArguments>
-                            <passphraseServerId
-                            >gpg.passphrase</passphraseServerId>
-                        </configuration>
-                    </plugin>
+
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-source-plugin</artifactId>

@@ -175,7 +175,28 @@
            <!-- <plugin>
                 <groupId>org.sonatype.central</groupId>
                 <artifactId>central-publishing-maven-plugin</artifactId>
-                <configuration>
+                   <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>3.0.1</version>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <gpgArguments>
+                             FIX THIS TO USE TWO DASHES -pinentry-mode</arg>
+                                <arg>loopback</arg>
+                            </gpgArguments>
+                            <passphraseServerId
+                            >gpg.passphrase</passphraseServerId>
+                        </configuration>
+                    </plugin>    <configuration>
                     <skipPublishing>true</skipPublishing>
                 </configuration>
             </plugin> -->

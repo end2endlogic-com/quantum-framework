@@ -1,6 +1,8 @@
 package com.e2eq.framework.rest.resources;
 
 
+import com.e2eq.framework.annotations.FunctionalAction;
+import com.e2eq.framework.annotations.FunctionalMapping;
 import io.quarkus.logging.Log;
 import jakarta.annotation.security.PermitAll;
 import jakarta.annotation.security.RolesAllowed;
@@ -19,6 +21,7 @@ import java.util.Arrays;
 import java.util.List;
 
 @Path("/hello")
+@FunctionalMapping(area = "SYSTEM", domain="HEARTBEAT")
 public class GreetingResource {
 
     @Inject
@@ -27,6 +30,7 @@ public class GreetingResource {
 
     @GET
     @Produces(MediaType.TEXT_PLAIN)
+    @FunctionalAction("HELLO")
     public String hello(@Context UriInfo uriInfo) {
         return "Hello From Server";
     }
@@ -34,6 +38,7 @@ public class GreetingResource {
     @Path("/list")
     @GET
     @RolesAllowed({ "user", "admin", "system" })
+    @FunctionalAction("HELLO_LIST")
     @Produces(MediaType.TEXT_PLAIN)
     public List<String> helloList() {
         return Arrays.asList("Test", "Test1", "Test2");
@@ -42,6 +47,7 @@ public class GreetingResource {
 
     @GET
     @Path("/context")
+    @FunctionalAction("SECURE_CONTEXT")
     @PermitAll
     @Produces(MediaType.TEXT_PLAIN)
     public String secureContext(@Context SecurityContext ctx) {

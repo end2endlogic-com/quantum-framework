@@ -1,0 +1,4 @@
+{"refName":"rule1","runAsUserId":"admin@{tenantId}","realm":"{realm}","description":"Rule for {tenantId}"}
+{"refName":"rule2","runAsUserId":"system@{orgRefName}","config":{"owner":"{ownerId}","account":"{accountId}"}}
+{"refName":"rule3","runAsUserId":"novar@example.com","description":"No variables here"}
+{"refName":"rule4","runAsUserId":"{unknownVar}","description":"Unknown variable should remain as-is"}
