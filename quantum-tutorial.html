@@ -529,7 +529,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Tutorial: Build a Multi-tenant SaaS with Quantum</h1>
 <div class="details">
 <span id="revnumber">version 1.2.4-SNAPSHOT,</span>
-<span id="revdate">2026-01-29T20:52:57Z</span>
+<span id="revdate">2026-01-30T20:08:08Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -794,6 +794,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_transforms_in_depth">14.12. Transforms in depth</a>
 <ul class="sectlevel3">
 <li><a href="#_creating_your_own_transforms_example_dropiftransform">14.12.1. Creating your own transforms (example: DropIfTransform)</a></li>
+<li><a href="#_custom_variable_resolvers_for_stringinterpolation">14.12.2. Custom variable resolvers for stringInterpolation</a></li>
 </ul>
 </li>
 <li><a href="#_test_walkthrough_seedloaderintegrationtest">14.13. Test walkthrough: SeedLoaderIntegrationTest</a></li>
@@ -12296,20 +12297,84 @@ quantum.seeds.apply.on-startup=true</code></pre>
 - Interaction with naturalKey and indexes: transforms run before naturalKey validation and index creation; do not remove fields listed in naturalKey, otherwise an error will be thrown during write</p>
 </div>
 <div class="paragraph">
-<p>Built-in transform types:
-- tenantSubstitution: Injects identifiers from SeedContext into the record&#8217;s dataDomain.* fields (tenant/org/owner/account) and sets realmId at the record root. Config keys in the manifest (defaults target dataDomain.*):
-  - tenantField: key inside dataDomain to receive tenantId (default: tenantId)
-  - orgField: key inside dataDomain to receive orgRefName (default: orgRefName)
-  - ownerField: key inside dataDomain to receive ownerId (default: ownerId)
-  - accountField: key inside dataDomain to receive account number (default: accountNum)
-  - realmField: root-level field to receive realmId (default: realmId)</p>
+<p>Built-in transform types:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>tenantSubstitution: Injects identifiers from SeedContext into the record&#8217;s dataDomain.* fields (tenant/org/owner/account) and sets realmId at the record root. Config keys in the manifest (defaults target dataDomain.*):</p>
+</li>
+<li>
+<p>tenantField: key inside dataDomain to receive tenantId (default: tenantId)</p>
+</li>
+<li>
+<p>orgField: key inside dataDomain to receive orgRefName (default: orgRefName)</p>
+</li>
+<li>
+<p>ownerField: key inside dataDomain to receive ownerId (default: ownerId)</p>
+</li>
+<li>
+<p>accountField: key inside dataDomain to receive account number (default: accountNum)</p>
+</li>
+<li>
+<p>realmField: root-level field to receive realmId (default: realmId)</p>
+</li>
+<li>
+<p>stringInterpolation: Performs variable substitution on string fields using <code>{variableName}</code> syntax. Walks through all string fields (including nested maps and lists) and replaces variable references with resolved values. Config keys:</p>
+</li>
+<li>
+<p>fields: optional list of field names to interpolate; if omitted, all string fields are processed</p>
+</li>
+<li>
+<p>failOnMissing: if true, throws an exception when a variable cannot be resolved; if false (default), unresolved variables are left as-is</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Built-in variables available from SeedContext:
+  - <code>{realm}</code> or <code>{realmId}</code>: the realm/database identifier
+  - <code>{tenantId}</code>: the tenant identifier
+  - <code>{orgRefName}</code>: the organization reference name
+  - <code>{accountId}</code>: the account identifier
+  - <code>{ownerId}</code>: the owner identifier</p>
+</div>
+<div class="paragraph">
+<p>Example manifest usage:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml"><span class="key">transforms</span>:
+  - <span class="string"><span class="content">type: stringInterpolation</span></span>
+    <span class="key">config</span>:
+      <span class="key">fields</span>: <span class="string"><span class="content">[&quot;runAsUserId&quot;, &quot;description&quot;]</span></span>
+      <span class="key">failOnMissing</span>: <span class="string"><span class="content">false</span></span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Example dataset with variables:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{<span class="key"><span class="delimiter">&quot;</span><span class="content">refName</span><span class="delimiter">&quot;</span></span>:<span class="string"><span class="delimiter">&quot;</span><span class="content">adminRule</span><span class="delimiter">&quot;</span></span>,<span class="key"><span class="delimiter">&quot;</span><span class="content">runAsUserId</span><span class="delimiter">&quot;</span></span>:<span class="string"><span class="delimiter">&quot;</span><span class="content">admin@{tenantId}</span><span class="delimiter">&quot;</span></span>,<span class="key"><span class="delimiter">&quot;</span><span class="content">realm</span><span class="delimiter">&quot;</span></span>:<span class="string"><span class="delimiter">&quot;</span><span class="content">{realm}</span><span class="delimiter">&quot;</span></span>}
+{<span class="key"><span class="delimiter">&quot;</span><span class="content">refName</span><span class="delimiter">&quot;</span></span>:<span class="string"><span class="delimiter">&quot;</span><span class="content">systemRule</span><span class="delimiter">&quot;</span></span>,<span class="key"><span class="delimiter">&quot;</span><span class="content">config</span><span class="delimiter">&quot;</span></span>:{<span class="key"><span class="delimiter">&quot;</span><span class="content">owner</span><span class="delimiter">&quot;</span></span>:<span class="string"><span class="delimiter">&quot;</span><span class="content">{ownerId}</span><span class="delimiter">&quot;</span></span>,<span class="key"><span class="delimiter">&quot;</span><span class="content">account</span><span class="delimiter">&quot;</span></span>:<span class="string"><span class="delimiter">&quot;</span><span class="content">{accountId}</span><span class="delimiter">&quot;</span></span>}}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>After interpolation with tenantId="acme-corp" and realm="acme-realm":</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{<span class="key"><span class="delimiter">&quot;</span><span class="content">refName</span><span class="delimiter">&quot;</span></span>:<span class="string"><span class="delimiter">&quot;</span><span class="content">adminRule</span><span class="delimiter">&quot;</span></span>,<span class="key"><span class="delimiter">&quot;</span><span class="content">runAsUserId</span><span class="delimiter">&quot;</span></span>:<span class="string"><span class="delimiter">&quot;</span><span class="content">admin@acme-corp</span><span class="delimiter">&quot;</span></span>,<span class="key"><span class="delimiter">&quot;</span><span class="content">realm</span><span class="delimiter">&quot;</span></span>:<span class="string"><span class="delimiter">&quot;</span><span class="content">acme-realm</span><span class="delimiter">&quot;</span></span>}
+{<span class="key"><span class="delimiter">&quot;</span><span class="content">refName</span><span class="delimiter">&quot;</span></span>:<span class="string"><span class="delimiter">&quot;</span><span class="content">systemRule</span><span class="delimiter">&quot;</span></span>,<span class="key"><span class="delimiter">&quot;</span><span class="content">config</span><span class="delimiter">&quot;</span></span>:{<span class="key"><span class="delimiter">&quot;</span><span class="content">owner</span><span class="delimiter">&quot;</span></span>:<span class="string"><span class="delimiter">&quot;</span><span class="content">owner-123</span><span class="delimiter">&quot;</span></span>,<span class="key"><span class="delimiter">&quot;</span><span class="content">account</span><span class="delimiter">&quot;</span></span>:<span class="string"><span class="delimiter">&quot;</span><span class="content">account-456</span><span class="delimiter">&quot;</span></span>}}</code></pre>
+</div>
 </div>
 <div class="paragraph">
 <p>Notes and guarantees:
 - Optional values missing from SeedContext are simply omitted; existing record values are preserved unless you target the same field
 - Transforms operate on in-memory maps and cannot perform I/O by default; keep them deterministic so re-runs are idempotent
 - Compose multiple transforms when needed (for example: first tenantSubstitution, then a custom id computation)
-- To add new transform types, implement SeedTransformFactory and register it during SeedLoader.builder() with registerTransformFactory("myType", new MyFactory()); then declare - type: myType in the manifest</p>
+- To add new transform types, implement SeedTransformFactory and register it during SeedLoader.builder() with registerTransformFactory("myType", new MyFactory()); then declare - type: myType in the manifest
+- To add custom variables for stringInterpolation, implement SeedVariableResolver and register it with the builder using addVariableResolver(resolver) or make it a CDI bean for automatic discovery</p>
 </div>
 <div class="paragraph">
 <p>When to use transforms (and why):
@@ -12533,6 +12598,118 @@ Manifest snippet:</p>
 - Short-circuit: returning null or an empty map drops the record; otherwise, the next transform in the list will receive the (possibly mutated) map.
 - Composition: you can chain several transforms; for example, first dropIf, then tenantSubstitution, then a custom deterministicId.
 - Packaging: test-only transforms can live under test sources; production transforms should be in main sources and registered where you construct the SeedLoader (for example, in a ChangeSet or a provisioning service).</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_custom_variable_resolvers_for_stringinterpolation">14.12.2. Custom variable resolvers for stringInterpolation</h4>
+<div class="paragraph">
+<p>The <code>stringInterpolation</code> transform supports custom variable resolution via the <code>SeedVariableResolver</code> SPI. This allows you to define application-specific variables that can be used in seed data alongside the built-in context variables.</p>
+</div>
+<div class="paragraph">
+<p>SeedVariableResolver interface:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="directive">public</span> <span class="type">interface</span> <span class="class">SeedVariableResolver</span> {
+    <span class="comment">/**
+     * Attempts to resolve a variable by name.
+     * @param variableName the name of the variable (without braces)
+     * @param context the seed context
+     * @return Optional containing the resolved value, or empty if not handled
+     */</span>
+    Optional&lt;<span class="predefined-type">String</span>&gt; resolve(<span class="predefined-type">String</span> variableName, SeedContext context);
+
+    <span class="comment">/**
+     * Returns the priority of this resolver. Higher priority = consulted first.
+     * Default is 0. Built-in context resolver has priority -100 (lowest).
+     */</span>
+    <span class="keyword">default</span> <span class="type">int</span> priority() {
+        <span class="keyword">return</span> <span class="integer">0</span>;
+    }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Implementation example (environment-based resolver):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">package</span> <span class="namespace">com.example.seed</span>;
+
+<span class="keyword">import</span> <span class="include">com.e2eq.framework.service.seed</span>.*;
+<span class="keyword">import</span> <span class="include">jakarta.enterprise.context.ApplicationScoped</span>;
+<span class="keyword">import</span> <span class="include">java.util.Optional</span>;
+
+<span class="annotation">@ApplicationScoped</span>  <span class="comment">// CDI auto-discovery</span>
+<span class="directive">public</span> <span class="type">class</span> <span class="class">EnvironmentVariableResolver</span> <span class="directive">implements</span> SeedVariableResolver {
+
+    <span class="annotation">@Override</span>
+    <span class="directive">public</span> Optional&lt;<span class="predefined-type">String</span>&gt; resolve(<span class="predefined-type">String</span> variableName, SeedContext context) {
+        <span class="comment">// Resolve variables prefixed with &quot;env.&quot;</span>
+        <span class="keyword">if</span> (variableName.startsWith(<span class="string"><span class="delimiter">&quot;</span><span class="content">env.</span><span class="delimiter">&quot;</span></span>)) {
+            <span class="predefined-type">String</span> envName = variableName.substring(<span class="integer">4</span>);
+            <span class="keyword">return</span> Optional.ofNullable(<span class="predefined-type">System</span>.getenv(envName));
+        }
+        <span class="keyword">return</span> Optional.empty();
+    }
+
+    <span class="annotation">@Override</span>
+    <span class="directive">public</span> <span class="type">int</span> priority() {
+        <span class="keyword">return</span> <span class="integer">10</span>; <span class="comment">// Higher than context resolver (-100)</span>
+    }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>With the above resolver, you can use environment variables in seed data:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{<span class="key"><span class="delimiter">&quot;</span><span class="content">apiEndpoint</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">{env.API_BASE_URL}</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">adminEmail</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">admin@{tenantId}</span><span class="delimiter">&quot;</span></span>}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Manual registration (alternative to CDI):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java">SeedLoader loader = SeedLoader.builder()
+    .addSeedSource(<span class="keyword">new</span> FileSeedSource(<span class="string"><span class="delimiter">&quot;</span><span class="content">local</span><span class="delimiter">&quot;</span></span>, Paths.get(<span class="string"><span class="delimiter">&quot;</span><span class="content">seed-packs</span><span class="delimiter">&quot;</span></span>)))
+    .seedRepository(<span class="keyword">new</span> MongoSeedRepository(mongoClient))
+    .seedRegistry(<span class="keyword">new</span> MongoSeedRegistry(mongoClient))
+    .addVariableResolver(<span class="keyword">new</span> EnvironmentVariableResolver())
+    .build();</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Priority and override behavior:
+- Resolvers are consulted in priority order (highest first)
+- The first resolver that returns a non-empty Optional wins
+- Custom resolvers can override built-in context values by using a higher priority
+- The built-in <code>SeedContextVariableResolver</code> has priority -100, so any resolver with priority &gt;= 0 will be consulted first</p>
+</div>
+<div class="paragraph">
+<p>Example: overriding a context variable:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@ApplicationScoped</span>
+<span class="directive">public</span> <span class="type">class</span> <span class="class">TenantOverrideResolver</span> <span class="directive">implements</span> SeedVariableResolver {
+    <span class="annotation">@Override</span>
+    <span class="directive">public</span> Optional&lt;<span class="predefined-type">String</span>&gt; resolve(<span class="predefined-type">String</span> variableName, SeedContext context) {
+        <span class="keyword">if</span> (<span class="string"><span class="delimiter">&quot;</span><span class="content">tenantId</span><span class="delimiter">&quot;</span></span>.equals(variableName)) {
+            <span class="comment">// Override tenantId with a computed value</span>
+            <span class="keyword">return</span> Optional.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">custom-</span><span class="delimiter">&quot;</span></span> + context.getTenantId().orElse(<span class="string"><span class="delimiter">&quot;</span><span class="content">unknown</span><span class="delimiter">&quot;</span></span>));
+        }
+        <span class="keyword">return</span> Optional.empty();
+    }
+
+    <span class="annotation">@Override</span>
+    <span class="directive">public</span> <span class="type">int</span> priority() {
+        <span class="keyword">return</span> <span class="integer">100</span>; <span class="comment">// Higher than context resolver</span>
+    }
+}</code></pre>
+</div>
 </div>
 </div>
 </div>
