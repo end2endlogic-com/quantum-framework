@@ -18,7 +18,7 @@ import io.quarkus.logging.Log;
  *
  * <p>Variable syntax: {@code {variableName}}</p>
  *
- * <p>Example seed data:
+ * <p>Example seed data:</p>
  * <pre>
  * {
  *   "runAsUserId": "admin@{tenantId}",
@@ -28,9 +28,8 @@ import io.quarkus.logging.Log;
  *   }
  * }
  * </pre>
- * </p>
  *
- * <h3>Configuration options:</h3>
+ * <p><strong>Configuration options:</strong></p>
  * <ul>
  *   <li>{@code fields} (optional) - List of field names to interpolate. If not specified,
  *       all string fields are processed.</li>
@@ -38,7 +37,7 @@ import io.quarkus.logging.Log;
  *       a variable cannot be resolved. If false, unresolved variables are left as-is.</li>
  * </ul>
  *
- * <h3>Manifest example:</h3>
+ * <p><strong>Manifest example:</strong></p>
  * <pre>
  * transforms:
  *   - type: stringInterpolation

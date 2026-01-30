@@ -5,7 +5,7 @@ import java.util.Optional;
 /**
  * Built-in variable resolver that provides variables from the SeedContext.
  *
- * <p>Supported variables:
+ * <p>Supported variables:</p>
  * <ul>
  *   <li>{@code realm} - the realm/database identifier</li>
  *   <li>{@code tenantId} - the tenant identifier</li>
@@ -13,7 +13,6 @@ import java.util.Optional;
  *   <li>{@code accountId} - the account identifier</li>
  *   <li>{@code ownerId} - the owner identifier</li>
  * </ul>
- * </p>
  *
  * <p>This resolver has the lowest priority (-100) so custom resolvers can override
  * context values if needed.</p>

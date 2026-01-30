@@ -11,7 +11,7 @@ import java.util.Optional;
  * <p>Variables are referenced in seed data using the {@code {variableName}} syntax.
  * For example: {@code "admin@{tenantId}"} would resolve the {@code tenantId} variable.</p>
  *
- * <p>Built-in variables from SeedContext include:
+ * <p>Built-in variables from SeedContext include:</p>
  * <ul>
  *   <li>{@code realm} - the realm/database identifier</li>
  *   <li>{@code tenantId} - the tenant identifier</li>
@@ -19,7 +19,6 @@ import java.util.Optional;
  *   <li>{@code accountId} - the account identifier</li>
  *   <li>{@code ownerId} - the owner identifier</li>
  * </ul>
- * </p>
  *
  * @see StringInterpolationTransform
  */
