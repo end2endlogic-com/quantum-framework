@@ -1,0 +1,12 @@
+seedPack: interpolation-seed
+version: 1.0.0
+
+datasets:
+  - collection: securityRules
+    file: datasets/securityRules.ndjson
+    naturalKey: [ refName ]
+    upsert: true
+    transforms:
+      - type: stringInterpolation
+        config:
+          failOnMissing: false

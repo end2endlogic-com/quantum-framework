@@ -66,15 +66,39 @@ public class RuleContext {
 
     /**
      * This holds ONLY the default system rules, indexed by identity.
-     * Database policies are fetched fresh on each request.
+     * Using ConcurrentHashMap for thread-safe access during concurrent requests.
      */
-    private final Map<String, List<Rule>> defaultSystemRules = new HashMap<>();
+    private final java.util.concurrent.ConcurrentHashMap<String, List<Rule>> defaultSystemRules = new java.util.concurrent.ConcurrentHashMap<>();
 
     // Optional compiled discrimination index (off by default)
+    // When enabled, uses RuleIndex trie for faster rule lookups
+    // When disabled, uses cachedEffectiveRules map for simple list-based lookups
     @ConfigProperty(name = "quantum.security.rules.index.enabled", defaultValue = "false")
     boolean indexEnabled;
+
+    // Maximum number of realms to cache (applies to both index and rules cache)
+    @ConfigProperty(name = "quantum.security.rules.index.maxRealms", defaultValue = "10")
+    int indexMaxRealms;
+
+    // Per-realm compiled indexes - used when indexEnabled=true
+    private final java.util.concurrent.ConcurrentHashMap<String, RuleIndex> compiledIndexes = new java.util.concurrent.ConcurrentHashMap<>();
+
+    // Per-realm effective rules cache - used when indexEnabled=false (legacy path)
+    // This prevents hitting the database on every request
+    private final java.util.concurrent.ConcurrentHashMap<String, Map<String, List<Rule>>> cachedEffectiveRules = new java.util.concurrent.ConcurrentHashMap<>();
+
+    // Per-realm locks for cache building - prevents multiple threads from building same realm's cache
+    private final java.util.concurrent.ConcurrentHashMap<String, Object> realmBuildLocks = new java.util.concurrent.ConcurrentHashMap<>();
+
+    // Track access order for LRU eviction - protected by evictionLock
+    private final java.util.LinkedHashMap<String, Boolean> realmAccessOrder = new java.util.LinkedHashMap<>(16, 0.75f, true);
+    private final Object evictionLock = new Object();
+
+    // Legacy single-index fields kept for backward compatibility
+    @Deprecated
     private volatile RuleIndex compiledIndex;
-    private volatile String compiledIndexRealm; // tracks which realm the index was built for
+    @Deprecated
+    private volatile String compiledIndexRealm;
 
     @ConfigProperty(name = "quantum.realmConfig.defaultRealm", defaultValue = "system-com")
     protected String defaultRealm;
@@ -539,12 +563,49 @@ public class RuleContext {
     }
 
     /**
-     * clears the default system rule base
+     * Clears the default system rule base and all caches (indexes and effective rules).
+     * Thread-safe: uses atomic clear operations.
      */
     public void clear() {
         defaultSystemRules.clear();
+        // Clear all per-realm caches
+        compiledIndexes.clear();
+        cachedEffectiveRules.clear();
+        realmBuildLocks.clear();
+        synchronized (evictionLock) {
+            realmAccessOrder.clear();
+        }
+        // Legacy fields
         compiledIndex = null;
         compiledIndexRealm = null;
+    }
+
+    /**
+     * Clears the cache for a specific realm only (both index and effective rules).
+     * Other realm caches remain. Thread-safe.
+     */
+    public void clearCacheForRealm(String realm) {
+        if (realm != null) {
+            compiledIndexes.remove(realm);
+            cachedEffectiveRules.remove(realm);
+            realmBuildLocks.remove(realm);
+            synchronized (evictionLock) {
+                realmAccessOrder.remove(realm);
+            }
+            // Also clear legacy single-index if it matches
+            if (realm.equals(compiledIndexRealm)) {
+                compiledIndex = null;
+                compiledIndexRealm = null;
+            }
+        }
+    }
+
+    /**
+     * @deprecated Use {@link #clearCacheForRealm(String)} instead
+     */
+    @Deprecated
+    public void clearIndexForRealm(String realm) {
+        clearCacheForRealm(realm);
     }
 
     private volatile long policyVersion = 0L;
@@ -552,61 +613,145 @@ public class RuleContext {
     public long getPolicyVersion() { return policyVersion; }
 
     /**
-     * Reloads the default system rules only. Database policies are fetched fresh on each request.
+     * Reloads the default system rules and invalidates the cache for the specified realm.
+     *
+     * Note: Default system rules are shared across all realms, but database policies are
+     * realm-specific. When a policy changes in a specific realm, we only need to invalidate
+     * that realm's cache since other realms' database policies haven't changed.
+     *
+     * Thread-safe: Uses synchronized to ensure atomic reload of system rules.
      */
     public synchronized void reloadFromRepo(@NotNull String realm) {
-        // Reset and reload default system rules only
-        clear();
+        // Reset and reload default system rules only (these are shared across realms)
+        // ConcurrentHashMap.clear() is atomic, safe for concurrent readers
+        defaultSystemRules.clear();
         addSystemRules();
 
+        // Invalidate ONLY the specified realm's cache since only that realm's
+        // database policies may have changed. Other realms keep their cache.
+        clearCacheForRealm(realm);
+
         policyVersion = System.nanoTime();
-        Log.infof("RuleContext: reloaded default system rules for realm %s", realm);
+        Log.infof("RuleContext: reloaded default system rules, invalidated cache for realm %s", realm);
 
-        // Build the compiled index if enabled
-        if (indexEnabled) {
-            rebuildIndex(realm);
+        // Don't proactively rebuild - let it rebuild lazily on next request for this realm
+        // This avoids unnecessary work if no requests come for this realm
+    }
+
+    /**
+     * Invalidates ALL cached data (indexes and effective rules) across all realms.
+     * Use this when a change affects all realms (e.g., system-wide policy update).
+     */
+    public void invalidateAllCaches() {
+        compiledIndexes.clear();
+        cachedEffectiveRules.clear();
+        realmBuildLocks.clear();
+        synchronized (evictionLock) {
+            realmAccessOrder.clear();
         }
+        compiledIndex = null;
+        compiledIndexRealm = null;
+        policyVersion = System.nanoTime();
+        Log.info("RuleContext: invalidated all caches");
+    }
 
-        // Note: Database policies are NOT cached - they are fetched fresh on each checkRules call
+    /**
+     * @deprecated Use {@link #invalidateAllCaches()} instead
+     */
+    @Deprecated
+    public void invalidateAllIndexes() {
+        invalidateAllCaches();
     }
 
     /**
      * Rebuilds the compiled rule index from all effective rules (system defaults + database policies).
-     * This should be called when policies change or when the index needs to be refreshed.
+     * Stores the index in a per-realm cache with LRU eviction when maxRealms is exceeded.
+     *
+     * Thread-safe: Uses per-realm locking so different realms can build concurrently,
+     * but multiple threads requesting the same realm will wait for the first to complete.
+     *
      * @param realm the realm to load database policies from
+     * @return the built RuleIndex, or null if building failed
      */
-    public synchronized void rebuildIndex(@NotNull String realm) {
+    public RuleIndex rebuildIndex(@NotNull String realm) {
         if (!indexEnabled) {
             Log.debug("RuleContext: index rebuild skipped - indexEnabled is false");
-            return;
+            return null;
         }
 
-        try {
-            // Collect all rules from effective rules (defaults + database policies)
-            Map<String, List<Rule>> effectiveRules;
-            if (policyRepo != null) {
-                List<Policy> defaults = getDefaultSystemPolicies();
-                effectiveRules = policyRepo.getEffectiveRules(realm, defaults);
-            } else {
-                effectiveRules = new HashMap<>(defaultSystemRules);
+        // Get or create a lock object for this specific realm
+        // This allows different realms to build indexes concurrently
+        Object realmLock = realmBuildLocks.computeIfAbsent(realm, k -> new Object());
+
+        synchronized (realmLock) {
+            // Double-check: another thread may have built the index while we were waiting
+            RuleIndex existingIndex = compiledIndexes.get(realm);
+            if (existingIndex != null) {
+                Log.debugf("RuleContext: index for realm %s was built by another thread", realm);
+                return existingIndex;
             }
 
-            // Flatten all rules into a single collection for indexing
-            List<Rule> allRules = new ArrayList<>();
-            for (List<Rule> ruleList : effectiveRules.values()) {
-                if (ruleList != null) {
-                    allRules.addAll(ruleList);
+            try {
+                // Collect all rules from effective rules (defaults + database policies)
+                Map<String, List<Rule>> effectiveRules;
+                if (policyRepo != null) {
+                    List<Policy> defaults = getDefaultSystemPolicies();
+                    effectiveRules = policyRepo.getEffectiveRules(realm, defaults);
+                } else {
+                    effectiveRules = new HashMap<>(defaultSystemRules);
                 }
-            }
 
-            // Build the index
-            compiledIndex = RuleIndex.build(allRules);
-            compiledIndexRealm = realm;
-            Log.infof("RuleContext: rebuilt compiled index with %d rules for realm %s", allRules.size(), realm);
-        } catch (Exception e) {
-            Log.warnf(e, "RuleContext: failed to rebuild index for realm %s; index will remain null", realm);
-            compiledIndex = null;
-            compiledIndexRealm = null;
+                // Flatten all rules into a single collection for indexing
+                List<Rule> allRules = new ArrayList<>();
+                for (List<Rule> ruleList : effectiveRules.values()) {
+                    if (ruleList != null) {
+                        allRules.addAll(ruleList);
+                    }
+                }
+
+                // Build the index (this is the expensive operation)
+                RuleIndex newIndex = RuleIndex.build(allRules);
+
+                // Store in per-realm cache (atomic put)
+                compiledIndexes.put(realm, newIndex);
+
+                // Update LRU tracking and handle eviction
+                synchronized (evictionLock) {
+                    // LinkedHashMap with accessOrder=true automatically moves accessed entries to end
+                    realmAccessOrder.put(realm, Boolean.TRUE);
+
+                    // Evict oldest entries if we exceed maxRealms
+                    if (realmAccessOrder.size() > indexMaxRealms) {
+                        Iterator<String> it = realmAccessOrder.keySet().iterator();
+                        while (it.hasNext() && realmAccessOrder.size() > indexMaxRealms) {
+                            String oldestRealm = it.next();
+                            if (!oldestRealm.equals(realm)) {
+                                it.remove();
+                                compiledIndexes.remove(oldestRealm);
+                                realmBuildLocks.remove(oldestRealm);
+                                Log.debugf("RuleContext: evicted index for realm %s (LRU)", oldestRealm);
+                            }
+                        }
+                    }
+                }
+
+                // Update legacy single-index fields for backward compatibility
+                compiledIndex = newIndex;
+                compiledIndexRealm = realm;
+
+                Log.infof("RuleContext: rebuilt compiled index with %d rules for realm %s (cached realms: %d)",
+                    allRules.size(), realm, compiledIndexes.size());
+                return newIndex;
+            } catch (Exception e) {
+                Log.warnf(e, "RuleContext: failed to rebuild index for realm %s; index will remain null", realm);
+                compiledIndexes.remove(realm);
+                synchronized (evictionLock) {
+                    realmAccessOrder.remove(realm);
+                }
+                compiledIndex = null;
+                compiledIndexRealm = null;
+                return null;
+            }
         }
     }
 
@@ -852,32 +997,41 @@ public class RuleContext {
 
 
     List<Rule> getApplicableRulesForPrincipalAndAssociatedRoles(PrincipalContext pcontext, ResourceContext rcontext) {
-        // Get fresh effective rules (defaults + database policies)
-        Map<String, List<Rule>> effectiveRules = getEffectiveRulesForRequest(pcontext);
-
         // Determine the request realm
         String requestRealm = pcontext != null && pcontext.getDefaultRealm() != null
             ? pcontext.getDefaultRealm()
             : defaultRealm;
 
-        // If the compiled index is enabled, check if we need to rebuild for a different realm
+        // If the compiled index is enabled, try to use per-realm cached index
         if (indexEnabled) {
-            // Rebuild index if it's null or was built for a different realm
-            if (compiledIndex == null || !requestRealm.equals(compiledIndexRealm)) {
-                Log.debugf("RuleContext: index rebuild needed - current realm=%s, index realm=%s",
-                    requestRealm, compiledIndexRealm);
-                rebuildIndex(requestRealm);
+            // Check per-realm cache first (atomic get from ConcurrentHashMap)
+            RuleIndex realmIndex = compiledIndexes.get(requestRealm);
+
+            if (realmIndex == null) {
+                // No cached index for this realm - rebuild it
+                // rebuildIndex handles its own locking per-realm
+                Log.debugf("RuleContext: no cached index for realm=%s, building...", requestRealm);
+                realmIndex = rebuildIndex(requestRealm);
+            } else {
+                // Update LRU tracking for cache hit (lightweight operation)
+                synchronized (evictionLock) {
+                    // LinkedHashMap with accessOrder=true moves entry to end on access
+                    realmAccessOrder.get(requestRealm);
+                }
             }
 
-            if (compiledIndex != null) {
-                Log.debug("\n<< -----  checking with index enabled ------ >>\n");
+            if (realmIndex != null) {
+                Log.debugf("RuleContext: using cached index for realm=%s", requestRealm);
                 try {
-                    return compiledIndex.getApplicableRules(pcontext, rcontext);
+                    return realmIndex.getApplicableRules(pcontext, rcontext);
                 } catch (Throwable t) {
                     Log.warn("RuleContext: compiled index lookup failed; falling back to list scan", t);
                 }
             }
         }
+
+        // Legacy/fallback behavior: get fresh effective rules and gather by identity/roles
+        Map<String, List<Rule>> effectiveRules = getEffectiveRulesForRequest(pcontext);
 
         // Legacy behavior: gather rules by identity and roles, then sort by priority
         List<Rule> applicableRules = new ArrayList<Rule>();
@@ -918,6 +1072,13 @@ public class RuleContext {
      * Gets effective rules for the current request by merging cached default system rules
      * with fresh database policies.
      */
+    /**
+     * Gets effective rules for the current request, using cached data when available.
+     * This method is used by the legacy (non-index) path and caches results per-realm
+     * to avoid hitting the database on every request.
+     *
+     * Thread-safe: Uses per-realm locking for cache building.
+     */
     private Map<String, List<Rule>> getEffectiveRulesForRequest(PrincipalContext pcontext) {
         // In test contexts without CDI, fall back to in-memory rules only
         if (policyRepo == null) {
@@ -928,8 +1089,56 @@ public class RuleContext {
             ? pcontext.getDefaultRealm()
             : defaultRealm;
 
-        List<Policy> defaults = getDefaultSystemPolicies();
-        return policyRepo.getEffectiveRules(realm, defaults);
+        // Check cache first
+        Map<String, List<Rule>> cached = cachedEffectiveRules.get(realm);
+        if (cached != null) {
+            // Update LRU tracking for cache hit
+            synchronized (evictionLock) {
+                realmAccessOrder.get(realm);
+            }
+            return cached;
+        }
+
+        // Cache miss - need to build. Use per-realm lock to prevent duplicate work
+        Object realmLock = realmBuildLocks.computeIfAbsent(realm, k -> new Object());
+
+        synchronized (realmLock) {
+            // Double-check after acquiring lock
+            cached = cachedEffectiveRules.get(realm);
+            if (cached != null) {
+                return cached;
+            }
+
+            // Fetch from database
+            List<Policy> defaults = getDefaultSystemPolicies();
+            Map<String, List<Rule>> effectiveRules = policyRepo.getEffectiveRules(realm, defaults);
+
+            // Store in cache
+            cachedEffectiveRules.put(realm, effectiveRules);
+
+            // Update LRU tracking and handle eviction
+            synchronized (evictionLock) {
+                realmAccessOrder.put(realm, Boolean.TRUE);
+
+                // Evict oldest entries if we exceed maxRealms
+                if (realmAccessOrder.size() > indexMaxRealms) {
+                    Iterator<String> it = realmAccessOrder.keySet().iterator();
+                    while (it.hasNext() && realmAccessOrder.size() > indexMaxRealms) {
+                        String oldestRealm = it.next();
+                        if (!oldestRealm.equals(realm)) {
+                            it.remove();
+                            cachedEffectiveRules.remove(oldestRealm);
+                            compiledIndexes.remove(oldestRealm);
+                            realmBuildLocks.remove(oldestRealm);
+                            Log.debugf("RuleContext: evicted cache for realm %s (LRU)", oldestRealm);
+                        }
+                    }
+                }
+            }
+
+            Log.debugf("RuleContext: cached effective rules for realm %s", realm);
+            return effectiveRules;
+        }
     }
 
 

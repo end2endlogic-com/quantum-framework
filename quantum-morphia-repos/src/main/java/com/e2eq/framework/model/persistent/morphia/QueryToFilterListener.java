@@ -245,25 +245,62 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         filterStack.push(Filters.eq(field, new ObjectId(oid)));
     }*/
 
+    /**
+     * Builds a reference object for use in Morphia queries.
+     * Supports both single reference fields and array/collection reference fields.
+     *
+     * For arrays like `@Reference Associate[] associates`, this extracts the component type
+     * and creates an instance of the element type (Associate) with the given OID.
+     *
+     * @param fieldName the field name (may include dot notation for nested fields)
+     * @param oid the ObjectId string to set on the reference
+     * @return an object instance with the ID set, suitable for Morphia query matching
+     */
     Object buildReference(String fieldName, String oid) {
         try {
-            Field field = modelClass.getDeclaredField(fieldName);
+            // Handle dot notation - get the base field name for reflection
+            String baseFieldName = fieldName.contains(".") ? fieldName.substring(0, fieldName.indexOf('.')) : fieldName;
+
+            Field field = modelClass.getDeclaredField(baseFieldName);
             field.setAccessible(true);
             Annotation annotation = field.getAnnotation(Reference.class);
-            if (annotation != null) {
-                Object object = field.getType().getDeclaredConstructor().newInstance();
-                if (object instanceof BaseModel) {
-                    ((BaseModel) object).setId(new ObjectId(oid));
-                }
-                return object;
-            } else {
-                throw new IllegalArgumentException("Field:" + fieldName + " is not annotated as a reference field");
+            if (annotation == null) {
+                throw new IllegalArgumentException("Field:" + fieldName + " is not annotated as a @Reference field");
             }
-        } catch (NoSuchFieldException | NoSuchMethodException | InstantiationException | IllegalAccessException |
-                 InvocationTargetException e) {
-            throw new IllegalStateException(e);
-        }
 
+            // Determine the target class - handle arrays, collections, and single references
+            Class<?> targetClass = field.getType();
+
+            // Handle array types: Associate[] -> Associate.class
+            if (targetClass.isArray()) {
+                targetClass = targetClass.getComponentType();
+            }
+            // Handle Collection types: List<Associate> -> Associate.class
+            else if (Collection.class.isAssignableFrom(targetClass)) {
+                java.lang.reflect.Type genericType = field.getGenericType();
+                if (genericType instanceof java.lang.reflect.ParameterizedType pt) {
+                    java.lang.reflect.Type[] typeArgs = pt.getActualTypeArguments();
+                    if (typeArgs.length > 0 && typeArgs[0] instanceof Class<?> elementClass) {
+                        targetClass = elementClass;
+                    }
+                }
+            }
+
+            // Create instance and set the ID
+            Object object = targetClass.getDeclaredConstructor().newInstance();
+            if (object instanceof BaseModel bm) {
+                bm.setId(new ObjectId(oid));
+            } else if (object instanceof UnversionedBaseModel ubm) {
+                ubm.setId(new ObjectId(oid));
+            }
+            return object;
+
+        } catch (NoSuchFieldException e) {
+            throw new IllegalArgumentException("Field not found: " + fieldName + " on class " + modelClass.getName(), e);
+        } catch (NoSuchMethodException | InstantiationException | IllegalAccessException |
+                 InvocationTargetException e) {
+            throw new IllegalStateException("Failed to instantiate reference type for field: " + fieldName, e);
+        }
     }
 
     @Override

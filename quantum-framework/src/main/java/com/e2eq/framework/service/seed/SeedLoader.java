@@ -549,6 +549,7 @@ public final class SeedLoader {
     public static final class Builder {
         private final List<SeedSource> seedSources = new ArrayList<>();
         private final Map<String, SeedTransformFactory> transformFactories = new HashMap<>();
+        private final List<SeedVariableResolver> variableResolvers = new ArrayList<>();
         private SeedRepository seedRepository;
         private SeedRegistry seedRegistry = SeedRegistry.noop();
         private ObjectMapper objectMapper = new ObjectMapper();
@@ -562,6 +563,7 @@ public final class SeedLoader {
             registerTransformFactory("tenantSubstitution", new TenantSubstitutionTransform.Factory());
             // Secure credential upsert via UserManagement
             registerTransformFactory("credentialUpsert", new CredentialUpsertTransform.Factory());
+            // String interpolation with SPI-based variable resolution - will be re-registered in build() with resolvers
         }
 
         public Builder addSeedSource(SeedSource source) {
@@ -612,10 +614,29 @@ public final class SeedLoader {
             return this;
         }
 
+        /**
+         * Registers a custom variable resolver for string interpolation in seed data.
+         *
+         * <p>Variable resolvers are consulted in priority order (highest first) when
+         * interpolating {@code {variableName}} placeholders in seed record fields.</p>
+         *
+         * @param resolver the variable resolver to register
+         * @return this builder
+         * @see SeedVariableResolver
+         * @see StringInterpolationTransform
+         */
+        public Builder addVariableResolver(SeedVariableResolver resolver) {
+            this.variableResolvers.add(Objects.requireNonNull(resolver, "resolver"));
+            return this;
+        }
+
         public SeedLoader build() {
             if (seedRepository == null) {
                 throw new IllegalStateException("SeedRepository is required");
             }
+            // Register stringInterpolation transform with configured resolvers
+            registerTransformFactory("stringInterpolation",
+                    new StringInterpolationTransform.Factory(variableResolvers));
             return new SeedLoader(this);
         }
     }

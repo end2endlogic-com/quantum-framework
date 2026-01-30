@@ -30,6 +30,9 @@ public class SeedLoaderService {
     Instance<SeedSource> seedSources; // Auto-discover CDI-managed seed sources
 
     @Inject
+    Instance<SeedVariableResolver> variableResolvers; // Auto-discover CDI-managed variable resolvers
+
+    @Inject
     ObjectMapper objectMapper;
 
     @Inject
@@ -73,6 +76,13 @@ public class SeedLoaderService {
         for (SeedSource source : seedSources) {
             Log.debugf("SeedLoaderService: adding CDI-discovered seed source: %s", source.getId());
             builder.addSeedSource(source);
+        }
+
+        // Add auto-discovered CDI-managed variable resolvers for string interpolation
+        for (SeedVariableResolver resolver : variableResolvers) {
+            Log.debugf("SeedLoaderService: adding CDI-discovered variable resolver: %s (priority=%d)",
+                    resolver.getClass().getSimpleName(), resolver.priority());
+            builder.addVariableResolver(resolver);
         }
 
         return builder.build();
