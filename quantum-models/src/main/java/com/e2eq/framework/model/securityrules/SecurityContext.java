@@ -15,6 +15,9 @@ public class SecurityContext {
    private static final ThreadLocal<Deque<ResourceContext>> tlResourceContextStack = ThreadLocal.withInitial(ArrayDeque::new);
    private static final ThreadLocal<Deque<PrincipalContext>> tlPrincipalContextStack = ThreadLocal.withInitial(ArrayDeque::new);
 
+   // Stack for ignoreRules mode - when depth > 0, security rules are bypassed
+   private static final ThreadLocal<Integer> tlIgnoreRulesDepth = ThreadLocal.withInitial(() -> 0);
+
    public static Optional<PrincipalContext> getPrincipalContext() {
       return Optional.ofNullable(tlPrincipalContext.get());
    }
@@ -192,6 +195,56 @@ public class SecurityContext {
             Log.debug("===== POP Principal Context: stack empty, cleared context");
          }
       }
+   }
+
+   /**
+    * Enters "ignore rules" mode. While in this mode, security rule evaluation
+    * is bypassed by repository queries. This is useful for internal queries
+    * from AccessListResolvers or other privileged code that needs to query
+    * entities without applying security filters.
+    *
+    * <p>Supports nesting: each call increments a depth counter, and rules
+    * are only re-enabled when the counter returns to zero.</p>
+    *
+    * <p>Must be paired with {@link #exitIgnoreRulesMode()} in a finally block,
+    * or use {@link SecurityCallScope#openIgnoringRules()} for automatic cleanup.</p>
+    */
+   public static void enterIgnoreRulesMode() {
+      int current = tlIgnoreRulesDepth.get();
+      tlIgnoreRulesDepth.set(current + 1);
+      if (Log.isDebugEnabled()) {
+         Log.debugf("===== ENTER Ignore Rules Mode (depth: %d)", current + 1);
+      }
+   }
+
+   /**
+    * Exits "ignore rules" mode. Decrements the depth counter; rules are
+    * re-enabled when the counter reaches zero.
+    *
+    * <p>Must be called in a finally block after {@link #enterIgnoreRulesMode()}.</p>
+    */
+   public static void exitIgnoreRulesMode() {
+      int current = tlIgnoreRulesDepth.get();
+      if (current > 0) {
+         tlIgnoreRulesDepth.set(current - 1);
+         if (Log.isDebugEnabled()) {
+            Log.debugf("===== EXIT Ignore Rules Mode (depth: %d)", current - 1);
+         }
+      } else {
+         if (Log.isDebugEnabled()) {
+            Log.debug("===== EXIT Ignore Rules Mode called but depth was already 0");
+         }
+      }
+   }
+
+   /**
+    * Returns true if security rules should be ignored for the current thread.
+    * This is checked by repository query methods to bypass rule evaluation.
+    *
+    * @return true if in ignore rules mode (depth > 0)
+    */
+   public static boolean isIgnoringRules() {
+      return tlIgnoreRulesDepth.get() > 0;
    }
 
    /*
