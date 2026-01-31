@@ -6,12 +6,12 @@ import java.util.Optional;
  * SPI interface for resolving variables during seed string interpolation.
  *
  * <p>Implementations can be registered via Java ServiceLoader or CDI discovery
- * to provide custom variable resolution for seed data interpolation.</p>
+ * to provide custom variable resolution for seed data interpolation.
  *
  * <p>Variables are referenced in seed data using the {@code {variableName}} syntax.
- * For example: {@code "admin@{tenantId}"} would resolve the {@code tenantId} variable.</p>
+ * For example: {@code "admin@{tenantId}"} would resolve the {@code tenantId} variable.
  *
- * <p>Built-in variables from SeedContext include:</p>
+ * <p>Built-in variables from SeedContext include:
  * <ul>
  *   <li>{@code realm} - the realm/database identifier</li>
  *   <li>{@code tenantId} - the tenant identifier</li>

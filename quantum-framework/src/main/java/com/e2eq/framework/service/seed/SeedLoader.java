@@ -679,7 +679,7 @@ public final class SeedLoader {
          * Registers a custom variable resolver for string interpolation in seed data.
          *
          * <p>Variable resolvers are consulted in priority order (highest first) when
-         * interpolating {@code {variableName}} placeholders in seed record fields.</p>
+         * interpolating {@code {variableName}} placeholders in seed record fields.
          *
          * @param resolver the variable resolver to register
          * @return this builder
@@ -696,7 +696,7 @@ public final class SeedLoader {
          *
          * <p>Listeners are invoked after records have been successfully persisted
          * to the database. They can be used to synchronize application state with
-         * seeded data, such as registering scheduled jobs or updating caches.</p>
+         * seeded data, such as registering scheduled jobs or updating caches.
          *
          * @param listener the listener to register
          * @return this builder
