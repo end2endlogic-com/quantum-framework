@@ -80,6 +80,12 @@ public class RuleContext {
     @ConfigProperty(name = "quantum.security.rules.index.maxRealms", defaultValue = "10")
     int indexMaxRealms;
 
+    // Enable/disable per-realm caching of effective rules
+    // When disabled, queries only fetch policies matching the user's identities (userId + roles)
+    // This reduces memory usage but increases database queries
+    @ConfigProperty(name = "quantum.security.rules.realmCache.enabled", defaultValue = "false")
+    boolean realmCacheEnabled;
+
     // Per-realm compiled indexes - used when indexEnabled=true
     private final java.util.concurrent.ConcurrentHashMap<String, RuleIndex> compiledIndexes = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -1069,13 +1075,40 @@ public class RuleContext {
     }
 
     /**
-     * Gets effective rules for the current request by merging cached default system rules
-     * with fresh database policies.
+     * Builds the set of effective identities for a principal.
+     * This includes the userId and all roles (from token, credential, UserGroup).
+     * Used to filter database queries for policies.
+     *
+     * Wildcard matching for area/domain/action in the SecurityURI is handled at rule
+     * evaluation time via WildCardMatcher, not at the database query level.
+     *
+     * @param pcontext the principal context
+     * @return set of identities to query for
      */
+    private java.util.Set<String> buildEffectiveIdentities(PrincipalContext pcontext) {
+        java.util.Set<String> identities = new java.util.HashSet<>();
+        if (pcontext != null) {
+            if (pcontext.getUserId() != null && !pcontext.getUserId().isBlank()) {
+                identities.add(pcontext.getUserId());
+            }
+            if (pcontext.getRoles() != null) {
+                for (String role : pcontext.getRoles()) {
+                    if (role != null && !role.isBlank()) {
+                        identities.add(role);
+                    }
+                }
+            }
+        }
+        return identities;
+    }
+
     /**
      * Gets effective rules for the current request, using cached data when available.
      * This method is used by the legacy (non-index) path and caches results per-realm
      * to avoid hitting the database on every request.
+     *
+     * When realmCacheEnabled=false, queries only fetch policies matching the user's
+     * effective identities (userId + roles), reducing memory usage and database load.
      *
      * Thread-safe: Uses per-realm locking for cache building.
      */
@@ -1088,6 +1121,24 @@ public class RuleContext {
         String realm = pcontext != null && pcontext.getDefaultRealm() != null
             ? pcontext.getDefaultRealm()
             : defaultRealm;
+
+        // If realm caching is disabled, fetch only rules matching this user's identities
+        if (!realmCacheEnabled) {
+            java.util.Set<String> identities = buildEffectiveIdentities(pcontext);
+            List<Policy> defaults = getDefaultSystemPolicies();
+            if (Log.isDebugEnabled()) {
+                Log.debugf("RuleContext: realm cache disabled, fetching rules for userId=%s, roles=%s, identities=%s in realm=%s",
+                    pcontext != null ? pcontext.getUserId() : "null",
+                    pcontext != null ? java.util.Arrays.toString(pcontext.getRoles()) : "null",
+                    identities, realm);
+            }
+            Map<String, List<Rule>> result = policyRepo.getEffectiveRulesForIdentities(realm, defaults, identities);
+            if (Log.isDebugEnabled()) {
+                Log.debugf("RuleContext: getEffectiveRulesForIdentities returned %d identity->rules mappings: %s",
+                    result.size(), result.keySet());
+            }
+            return result;
+        }
 
         // Check cache first
         Map<String, List<Rule>> cached = cachedEffectiveRules.get(realm);
@@ -2032,7 +2083,17 @@ public class RuleContext {
         if (resolvers != null) {
             for (AccessListResolver r : resolvers) {
                 try {
-                    if (r.supports(pcontext, rcontext, modelClass)) {
+                    boolean supported = r.supports(pcontext, rcontext, modelClass);
+                    if (Log.isDebugEnabled()) {
+                        Log.debugf("AccessListResolver '%s' key='%s' supports(area=%s, domain=%s, action=%s, model=%s) = %s",
+                            r.getClass().getSimpleName(), r.key(),
+                            rcontext != null ? rcontext.getArea() : "null",
+                            rcontext != null ? rcontext.getFunctionalDomain() : "null",
+                            rcontext != null ? rcontext.getAction() : "null",
+                            modelClass != null ? modelClass.getSimpleName() : "null",
+                            supported);
+                    }
+                    if (supported) {
                         extraObjects.put(r.key(), r.resolve(pcontext, rcontext, modelClass));
                     }
                 } catch (Exception e) {
@@ -2040,7 +2101,14 @@ public class RuleContext {
                 }
             }
         }
-        return MorphiaUtils.buildVariableBundle(pcontext, rcontext, extraObjects);
+        MorphiaUtils.VariableBundle bundle = MorphiaUtils.buildVariableBundle(pcontext, rcontext, extraObjects);
+        if (Log.isDebugEnabled()) {
+            Log.debugf("resolveVariableBundle: customProperties=%s, extraObjects=%s, final objects keys=%s",
+                pcontext != null ? pcontext.getCustomProperties().keySet() : "null",
+                extraObjects.keySet(),
+                bundle.objects.keySet());
+        }
+        return bundle;
     }
 
     /**

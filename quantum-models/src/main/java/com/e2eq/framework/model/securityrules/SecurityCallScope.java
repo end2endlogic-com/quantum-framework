@@ -38,45 +38,58 @@ public final class SecurityCallScope {
 
   /**
    * Opens a scope that sets the provided contexts and restores any previously set contexts on close.
-   * Supports nested usage safely. Example:
+   * Supports nested usage safely via push/pop. Example:
    * try (SecurityCallScope.Scope scope = SecurityCallScope.open(p, r)) { ... }
    */
   public static Scope open(PrincipalContext principal, ResourceContext resource) {
     Objects.requireNonNull(principal, "principal context cannot be null");
     Objects.requireNonNull(resource, "resource context cannot be null");
 
-    Optional<PrincipalContext> prevP = SecurityContext.getPrincipalContext();
-    Optional<ResourceContext> prevR = SecurityContext.getResourceContext();
+    // Use push to properly support nesting - previous contexts are saved on a stack
+    SecurityContext.pushPrincipalContext(principal);
+    SecurityContext.pushResourceContext(resource);
 
-    SecurityContext.setPrincipalContext(principal); // validates fields
-    SecurityContext.setResourceContext(resource);   // validates fields
-
-    return new Scope(prevP.orElse(null), prevR.orElse(null));
+    return new Scope();
   }
 
-  /** Restores previous contexts on close (supports nesting). */
-  public static final class Scope implements AutoCloseable {
-    private final PrincipalContext previousPrincipal;
-    private final ResourceContext previousResource;
+  /**
+   * Opens a scope that sets only a new ResourceContext, keeping the current PrincipalContext.
+   * Useful for internal queries that need a different area/domain/action.
+   * Example:
+   * try (SecurityCallScope.Scope scope = SecurityCallScope.openResourceOnly(r)) { ... }
+   */
+  public static Scope openResourceOnly(ResourceContext resource) {
+    Objects.requireNonNull(resource, "resource context cannot be null");
 
-    private Scope(PrincipalContext previousPrincipal, ResourceContext previousResource) {
-      this.previousPrincipal = previousPrincipal;
-      this.previousResource = previousResource;
+    // Only push ResourceContext - PrincipalContext remains unchanged
+    SecurityContext.pushResourceContext(resource);
+
+    return new Scope(false, true);
+  }
+
+  /** Restores previous contexts on close (supports nesting via pop). */
+  public static final class Scope implements AutoCloseable {
+    private final boolean popPrincipal;
+    private final boolean popResource;
+
+    private Scope() {
+      this.popPrincipal = true;
+      this.popResource = true;
+    }
+
+    private Scope(boolean popPrincipal, boolean popResource) {
+      this.popPrincipal = popPrincipal;
+      this.popResource = popResource;
     }
 
     @Override
     public void close() {
-      // Restore prior contexts if present; otherwise clear TLs
-      if (previousPrincipal != null) {
-        SecurityContext.setPrincipalContext(previousPrincipal);
-      } else {
-        SecurityContext.clearPrincipalContext();
+      // Pop restores previous contexts from the stack
+      if (popResource) {
+        SecurityContext.popResourceContext();
       }
-
-      if (previousResource != null) {
-        SecurityContext.setResourceContext(previousResource);
-      } else {
-        SecurityContext.clearResourceContext();
+      if (popPrincipal) {
+        SecurityContext.popPrincipalContext();
       }
     }
   }
