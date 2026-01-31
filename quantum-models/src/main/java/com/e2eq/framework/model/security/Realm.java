@@ -60,6 +60,14 @@ public class Realm extends BaseModel {
    @NonNull
    protected DomainContext domainContext;
 
+   /**
+    * When true, seed packs will be automatically applied to this realm on startup.
+    * This flag is unioned with the quantum.seed-pack.apply.realms configuration property.
+    * Defaults to false.
+    */
+   @Builder.Default
+   protected boolean applySeedsOnStartup = false;
+
    @Override
    public String bmFunctionalArea() {
       return "SECURITY";
