@@ -707,6 +707,139 @@ public class TenantOverrideResolver implements SeedVariableResolver {
 }
 ----
 
+=== Seed record listeners (reacting to seed data)
+
+The `SeedRecordListener` SPI allows application components to react when seed records are applied to the database. This is useful for synchronizing application state with seeded data, such as registering scheduled jobs, updating caches, or triggering other side effects.
+
+IMPORTANT: The framework provides only the SPI interface. Applications must implement their own listeners for collections they care about. Listeners run within the security context established by the seed operation, so they have access to the tenant/realm context.
+
+SeedRecordListener interface:
+[source,java]
+----
+public interface SeedRecordListener {
+    /**
+     * Determines whether this listener should receive callbacks for the given collection.
+     */
+    boolean appliesTo(String collection, SeedContext context);
+
+    /**
+     * Called after seed records have been successfully applied to the database.
+     */
+    void onRecordsApplied(SeedRecordEvent event);
+
+    /**
+     * Returns the priority of this listener. Higher priority = invoked first.
+     */
+    default int priority() { return 0; }
+
+    /**
+     * If true, listener runs asynchronously in a separate thread.
+     */
+    default boolean async() { return false; }
+}
+----
+
+==== Application-level implementation example
+
+The following example shows how an application can implement a listener to synchronize job configurations when seeds are applied. This code would live in the application, not the framework:
+
+[source,java]
+----
+@ApplicationScoped
+public class JobRunnerSeedListener implements SeedRecordListener {
+
+    @Inject
+    JobScheduler jobScheduler;
+
+    @Override
+    public boolean appliesTo(String collection, SeedContext context) {
+        return "autoPublishConfig".equals(collection) ||
+               "scheduledJobs".equals(collection);
+    }
+
+    @Override
+    public void onRecordsApplied(SeedRecordEvent event) {
+        Log.infof("Syncing %d job config records from seed to JobRunner",
+                event.getRecordCount());
+        for (Map<String, Object> record : event.getRecords()) {
+            jobScheduler.registerOrUpdate(record);
+        }
+    }
+
+    @Override
+    public int priority() {
+        return 100; // High priority to run early
+    }
+}
+----
+
+With the above listener (implemented in your application), whenever the `autoPublishConfig` collection receives seed data, the JobRunner will automatically sync its internal state with the database.
+
+==== Security context
+
+Listeners run within the security context established by the seed operation (`SeedStartupRunner` or `SeedLoaderService`). This means:
+
+- The `SecurityContext.getPrincipalContext()` is available with tenant/realm information
+- Any repository operations or service calls will execute with appropriate permissions
+- Listeners can access tenant-specific data and perform tenant-aware operations
+
+Example accessing security context in a listener:
+[source,java]
+----
+@Override
+public void onRecordsApplied(SeedRecordEvent event) {
+    Optional<PrincipalContext> principal = SecurityContext.getPrincipalContext();
+    if (principal.isPresent()) {
+        String tenantId = principal.get().getDataDomain().getTenantId();
+        String userId = principal.get().getUserId();
+        Log.infof("Processing seeds for tenant %s as user %s", tenantId, userId);
+    }
+    // Process records with proper tenant context...
+}
+----
+
+==== SeedRecordEvent properties
+
+- `getCollection()`: The collection/entity name
+- `getSeedPack()`: The seed pack that provided the data
+- `getVersion()`: The seed pack version
+- `getContext()`: The SeedContext with realm/tenant info
+- `getRealm()`: Shortcut for `getContext().getRealm()`
+- `getRecords()`: List of applied records (transformed, final form)
+- `isUpsert()`: Whether upsert (true) or insert-only (false)
+- `getRecordCount()`: Number of records applied
+
+==== Registration
+
+CDI auto-discovery (recommended):
+[source,java]
+----
+// Just annotate your listener with @ApplicationScoped
+// It will be automatically discovered and registered
+@ApplicationScoped
+public class MyAppSeedListener implements SeedRecordListener { ... }
+----
+
+Manual registration (alternative):
+[source,java]
+----
+SeedLoader loader = SeedLoader.builder()
+    .addSeedSource(new FileSeedSource("local", Paths.get("seed-packs")))
+    .seedRepository(new MongoSeedRepository(mongoClient))
+    .seedRegistry(new MongoSeedRegistry(mongoClient))
+    .addRecordListener(new MyAppSeedListener())
+    .build();
+----
+
+==== Best practices
+
+- Listeners are invoked after records have been persisted to the database
+- Listener exceptions are caught and logged; they don't interrupt the seeding process
+- Async listeners (`async() = true`) run in separate threads and don't block seeding
+- CDI-discovered listeners are automatically registered when using `SeedLoaderService`
+- Keep listener logic fast and idempotent since seeds may be re-applied
+- Use the security context to ensure tenant-aware operations
+
 == Test walkthrough: SeedLoaderIntegrationTest
 
 The `SeedLoaderIntegrationTest` demonstrates end-to-end seeding using the demo seed pack at `src/main/resources/seed-packs/demo-seed`.

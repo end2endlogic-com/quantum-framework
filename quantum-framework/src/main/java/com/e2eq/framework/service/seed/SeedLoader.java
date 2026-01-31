@@ -53,6 +53,7 @@ public final class SeedLoader {
     private final SeedMetrics seedMetrics;
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
     private final SeedDatasetValidator seedDatasetValidator;
+    private final List<SeedRecordListener> recordListeners;
 
     private SeedLoader(Builder builder) {
         this.seedSources = List.copyOf(builder.seedSources);
@@ -65,6 +66,10 @@ public final class SeedLoader {
         this.batchSize = builder.batchSize;
         this.seedMetrics = builder.seedMetrics;
         this.seedDatasetValidator = builder.seedDatasetValidator;
+        // Sort listeners by priority (highest first)
+        List<SeedRecordListener> sorted = new ArrayList<>(builder.recordListeners);
+        sorted.sort(Comparator.comparingInt(SeedRecordListener::priority).reversed());
+        this.recordListeners = List.copyOf(sorted);
     }
 
     public static Builder builder() {
@@ -271,6 +276,8 @@ public final class SeedLoader {
             int appliedCount = 0;
             int dropCount = 0;
             List<Map<String, Object>> buffer = new ArrayList<>(Math.max(16, batchSize));
+            // Track all applied records for listener notification
+            List<Map<String, Object>> allAppliedRecords = new ArrayList<>();
             for (Map<String, Object> record : payload.records()) {
                 Map<String, Object> current = new LinkedHashMap<>(record);
                 for (SeedTransform transform : transforms) {
@@ -291,6 +298,7 @@ public final class SeedLoader {
                     continue;
                 }
                 buffer.add(current);
+                allAppliedRecords.add(current);
                 if (buffer.size() >= batchSize) {
                     long bwStart = System.currentTimeMillis();
                     boolean up = dataset.isUpsert();
@@ -335,6 +343,11 @@ public final class SeedLoader {
                 buffer.clear();
             }
             seedRegistry.recordApplied(context, descriptor.getManifest(), dataset, payload.checksum(), appliedCount);
+
+            // Notify listeners after all records have been persisted
+            if (!allAppliedRecords.isEmpty()) {
+                notifyListeners(descriptor, dataset, context, allAppliedRecords);
+            }
             Log.infov("Applied {0} records to {1}", appliedCount, dataset.getCollection());
             if (seedMetrics != null) {
                 seedMetrics.recordDatasetApplication(
@@ -367,6 +380,53 @@ public final class SeedLoader {
             transforms.add(factory.create(transformDef));
         }
         return transforms;
+    }
+
+    /**
+     * Notifies registered listeners after records have been applied to a collection.
+     */
+    private void notifyListeners(SeedPackDescriptor descriptor,
+                                  Dataset dataset,
+                                  SeedContext context,
+                                  List<Map<String, Object>> appliedRecords) {
+        if (recordListeners.isEmpty()) {
+            return;
+        }
+
+        String collection = dataset.getCollection();
+        SeedRecordEvent event = SeedRecordEvent.builder()
+                .collection(collection)
+                .seedPack(descriptor.getManifest().getSeedPack())
+                .version(descriptor.getManifest().getVersion())
+                .context(context)
+                .records(appliedRecords)
+                .upsert(dataset.isUpsert())
+                .build();
+
+        for (SeedRecordListener listener : recordListeners) {
+            try {
+                if (!listener.appliesTo(collection, context)) {
+                    continue;
+                }
+                if (listener.async()) {
+                    // Run async listeners in a separate thread
+                    new Thread(() -> {
+                        try {
+                            listener.onRecordsApplied(event);
+                        } catch (Exception e) {
+                            Log.warnf("Async seed record listener %s failed for %s: %s",
+                                    listener.getClass().getSimpleName(), collection, e.getMessage());
+                        }
+                    }, "seed-listener-" + listener.getClass().getSimpleName()).start();
+                } else {
+                    listener.onRecordsApplied(event);
+                }
+            } catch (Exception e) {
+                Log.warnf("Seed record listener %s failed for %s: %s",
+                        listener.getClass().getSimpleName(), collection, e.getMessage());
+                // Continue with other listeners
+            }
+        }
     }
 
    private DatasetPayload readDataset(SeedPackDescriptor descriptor, Dataset dataset) {
@@ -550,6 +610,7 @@ public final class SeedLoader {
         private final List<SeedSource> seedSources = new ArrayList<>();
         private final Map<String, SeedTransformFactory> transformFactories = new HashMap<>();
         private final List<SeedVariableResolver> variableResolvers = new ArrayList<>();
+        private final List<SeedRecordListener> recordListeners = new ArrayList<>();
         private SeedRepository seedRepository;
         private SeedRegistry seedRegistry = SeedRegistry.noop();
         private ObjectMapper objectMapper = new ObjectMapper();
@@ -627,6 +688,23 @@ public final class SeedLoader {
          */
         public Builder addVariableResolver(SeedVariableResolver resolver) {
             this.variableResolvers.add(Objects.requireNonNull(resolver, "resolver"));
+            return this;
+        }
+
+        /**
+         * Registers a listener to be notified when seed records are applied.
+         *
+         * <p>Listeners are invoked after records have been successfully persisted
+         * to the database. They can be used to synchronize application state with
+         * seeded data, such as registering scheduled jobs or updating caches.</p>
+         *
+         * @param listener the listener to register
+         * @return this builder
+         * @see SeedRecordListener
+         * @see SeedRecordEvent
+         */
+        public Builder addRecordListener(SeedRecordListener listener) {
+            this.recordListeners.add(Objects.requireNonNull(listener, "listener"));
             return this;
         }
 

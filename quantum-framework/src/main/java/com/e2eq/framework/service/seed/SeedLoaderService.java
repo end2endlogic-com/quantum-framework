@@ -33,6 +33,9 @@ public class SeedLoaderService {
     Instance<SeedVariableResolver> variableResolvers; // Auto-discover CDI-managed variable resolvers
 
     @Inject
+    Instance<SeedRecordListener> recordListeners; // Auto-discover CDI-managed record listeners
+
+    @Inject
     ObjectMapper objectMapper;
 
     @Inject
@@ -83,6 +86,13 @@ public class SeedLoaderService {
             Log.debugf("SeedLoaderService: adding CDI-discovered variable resolver: %s (priority=%d)",
                     resolver.getClass().getSimpleName(), resolver.priority());
             builder.addVariableResolver(resolver);
+        }
+
+        // Add auto-discovered CDI-managed record listeners
+        for (SeedRecordListener listener : recordListeners) {
+            Log.debugf("SeedLoaderService: adding CDI-discovered record listener: %s (priority=%d, async=%s)",
+                    listener.getClass().getSimpleName(), listener.priority(), listener.async());
+            builder.addRecordListener(listener);
         }
 
         return builder.build();
