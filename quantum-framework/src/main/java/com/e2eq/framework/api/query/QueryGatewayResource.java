@@ -1,5 +1,7 @@
 package com.e2eq.framework.api.query;
 
+import com.e2eq.framework.annotations.FunctionalAction;
+import com.e2eq.framework.annotations.FunctionalMapping;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
@@ -8,10 +10,17 @@ import com.e2eq.framework.model.persistent.morphia.planner.PlannedQuery;
 import com.e2eq.framework.model.persistent.morphia.planner.PlannerResult;
 import com.e2eq.framework.model.persistent.morphia.query.QueryGateway;
 import com.e2eq.framework.model.persistent.morphia.query.QueryGatewayImpl;
+import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.rest.models.Collection;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.morphia.Datastore;
+import dev.morphia.MorphiaDatastore;
+import dev.morphia.mapping.Mapper;
+import dev.morphia.mapping.codec.pojo.EntityModel;
 import dev.morphia.query.FindOptions;
 import dev.morphia.query.Query;
+import dev.morphia.query.filters.Filters;
 import io.quarkus.logging.Log;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -19,23 +28,70 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.bson.types.ObjectId;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 
 /**
- * REST facade for the planner-driven query path.
- * - POST /api/query/plan: returns planner mode and expand paths.
- * - POST /api/query/find: executes query in FILTER mode and returns Collection
- *   If AGGREGATION mode is selected, returns 501 until aggregation compiler is implemented.
+ * REST facade for generic entity operations via a unified query API.
+ *
+ * <p>This resource provides CRUD operations for any Morphia-mapped entity type
+ * using dynamic type resolution. Entity types can be specified by their simple name
+ * (e.g., "Location") or fully qualified class name (e.g., "com.example.models.Location").</p>
+ *
+ * <h2>Available Endpoints</h2>
+ * <ul>
+ *   <li><b>GET /api/query/rootTypes</b> - Lists all available entity types</li>
+ *   <li><b>POST /api/query/plan</b> - Returns query execution plan (FILTER vs AGGREGATION mode)</li>
+ *   <li><b>POST /api/query/find</b> - Executes a query and returns matching entities</li>
+ *   <li><b>POST /api/query/save</b> - Saves (inserts or updates) an entity</li>
+ *   <li><b>POST /api/query/delete</b> - Deletes an entity by ID</li>
+ *   <li><b>POST /api/query/deleteMany</b> - Deletes multiple entities matching a query</li>
+ * </ul>
+ *
+ * <h2>Query Syntax</h2>
+ * <p>Queries use the BIAPI query syntax, supporting:</p>
+ * <ul>
+ *   <li>Field matching: {@code status:active}, {@code name:"John Doe"}</li>
+ *   <li>Wildcards: {@code name:*Smith*}</li>
+ *   <li>Comparisons: {@code age>21}, {@code createdAt>=2024-01-01}</li>
+ *   <li>Logical operators: {@code &&}, {@code ||}</li>
+ *   <li>Expand (joins): {@code expand(customer) && status:active}</li>
+ * </ul>
+ *
+ * <h2>Example Usage</h2>
+ * <pre>{@code
+ * // List available types
+ * GET /api/query/rootTypes
+ *
+ * // Find entities
+ * POST /api/query/find
+ * { "rootType": "Location", "query": "status:ACTIVE", "page": { "limit": 10 } }
+ *
+ * // Save an entity
+ * POST /api/query/save
+ * { "rootType": "Location", "entity": { "refName": "LOC-001", "name": "Warehouse" } }
+ *
+ * // Delete by ID
+ * POST /api/query/delete
+ * { "rootType": "Location", "id": "507f1f77bcf86cd799439011" }
+ *
+ * // Delete by query
+ * POST /api/query/deleteMany
+ * { "rootType": "Location", "query": "status:INACTIVE" }
+ * }</pre>
  */
 @Path("/api/query")
 @Consumes(MediaType.APPLICATION_JSON)
 @Produces(MediaType.APPLICATION_JSON)
 @ApplicationScoped
+@FunctionalMapping(area="integration",domain="query" )
 public class QueryGatewayResource {
 
     private final QueryGateway gateway = new QueryGatewayImpl();
@@ -43,11 +99,15 @@ public class QueryGatewayResource {
     @Inject
     MorphiaDataStoreWrapper morphiaDataStoreWrapper;
 
+    @Inject
+    ObjectMapper objectMapper;
+
     @ConfigProperty(name = "quantum.realm.testRealm", defaultValue = "defaultRealm")
     String defaultRealm;
 
     @POST
     @Path("/plan")
+    @FunctionalAction("plan")
     public PlanResponse plan(PlanRequest req) {
         Class<? extends UnversionedBaseModel> root = resolveRoot(req.rootType);
         PlannerResult pr = gateway.plan(req.query, root);
@@ -57,11 +117,47 @@ public class QueryGatewayResource {
         return out;
     }
 
+    /**
+     * Returns a list of valid rootType values that can be used with /plan and /find endpoints.
+     * Each entry includes the fully qualified class name, simple name, and collection name.
+     *
+     * @return list of available root types with metadata
+     */
+    @GET
+    @Path("/rootTypes")
+    @FunctionalAction("listRootTypes")
+    public RootTypesResponse listRootTypes() {
+        MorphiaDatastore ds = morphiaDataStoreWrapper.getDataStore(defaultRealm);
+        Mapper mapper = ds.getMapper();
+
+        List<RootTypeInfo> rootTypes = new ArrayList<>();
+        for (EntityModel em : mapper.getMappedEntities()) {
+            Class<?> type = em.getType();
+            // Only include classes that extend UnversionedBaseModel
+            if (UnversionedBaseModel.class.isAssignableFrom(type)) {
+                RootTypeInfo info = new RootTypeInfo();
+                info.className = type.getName();
+                info.simpleName = type.getSimpleName();
+                info.collectionName = em.collectionName();
+                rootTypes.add(info);
+            }
+        }
+
+        // Sort by simple name for easier reading
+        rootTypes.sort(Comparator.comparing(r -> r.simpleName));
+
+        RootTypesResponse response = new RootTypesResponse();
+        response.rootTypes = rootTypes;
+        response.count = rootTypes.size();
+        return response;
+    }
+
     @ConfigProperty(name = "feature.queryGateway.execution.enabled", defaultValue = "false")
     boolean aggregationExecutionEnabled;
 
     @POST
     @Path("/find")
+    @FunctionalAction("find")
     public Response find(FindRequest req) {
         Class<? extends UnversionedBaseModel> root = resolveRoot(req.rootType);
         // Build planned query, passing paging/sort through so the compiler can emit root stages
@@ -99,7 +195,7 @@ public class QueryGatewayResource {
                 return Response.status(422).entity(body).build();
             }
             // Execute aggregation pipeline against the root collection
-            String realm = (req.realm == null || req.realm.isBlank()) ? defaultRealm : req.realm;
+            String realm = resolveRealm(req.realm);
             Datastore ds = morphiaDataStoreWrapper.getDataStore(realm);
             String rootCollection = resolveCollectionName(root);
 
@@ -125,7 +221,7 @@ public class QueryGatewayResource {
             return Response.ok(col).build();
         }
         // FILTER path using Morphia
-        String realm = (req.realm == null || req.realm.isBlank()) ? defaultRealm : req.realm;
+        String realm = resolveRealm(req.realm);
         Datastore ds = morphiaDataStoreWrapper.getDataStore(realm);
         Query<? extends UnversionedBaseModel> q = ds.find(root);
         if (planned.getFilter() != null) {
@@ -139,6 +235,194 @@ public class QueryGatewayResource {
         return Response.ok(col).build();
     }
 
+    // ========================================================================
+    // SAVE ENDPOINT
+    // ========================================================================
+
+    /**
+     * Saves (inserts or updates) an entity of the specified rootType.
+     *
+     * <p>If the entity has an _id field, it will be updated if it exists or inserted if not.
+     * If no _id is provided, a new entity will be inserted.</p>
+     *
+     * <p>Example request:</p>
+     * <pre>{@code
+     * POST /api/query/save
+     * {
+     *   "rootType": "Location",
+     *   "realm": "my-tenant",
+     *   "entity": {
+     *     "refName": "LOC-001",
+     *     "name": "Main Warehouse",
+     *     "status": "ACTIVE"
+     *   }
+     * }
+     * }</pre>
+     *
+     * @param req the save request containing rootType, optional realm, and entity data
+     * @return the saved entity with its generated/updated _id
+     */
+    @POST
+    @Path("/save")
+    @FunctionalAction("save")
+    public Response save(SaveRequest req) {
+        if (req.entity == null) {
+            throw new BadRequestException("entity is required");
+        }
+
+        Class<? extends UnversionedBaseModel> root = resolveRoot(req.rootType);
+        String realm = resolveRealm(req.realm);
+        Datastore ds = morphiaDataStoreWrapper.getDataStore(realm);
+
+        try {
+            // Convert the Map to the target entity type
+            UnversionedBaseModel entity = objectMapper.convertValue(req.entity, root);
+
+            // Save (insert or update)
+            UnversionedBaseModel saved = ds.save(entity);
+
+            SaveResponse response = new SaveResponse();
+            response.id = saved.getId() != null ? saved.getId().toHexString() : null;
+            response.entity = objectMapper.convertValue(saved, Map.class);
+            response.rootType = root.getName();
+
+            return Response.ok(response).build();
+        } catch (IllegalArgumentException e) {
+            Log.errorf(e, "Failed to convert entity to type %s", root.getName());
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "InvalidEntity");
+            error.put("message", "Failed to convert entity to " + root.getSimpleName() + ": " + e.getMessage());
+            return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+        } catch (Exception e) {
+            Log.errorf(e, "Failed to save entity of type %s", root.getName());
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "SaveFailed");
+            error.put("message", "Failed to save entity: " + e.getMessage());
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(error).build();
+        }
+    }
+
+    // ========================================================================
+    // DELETE ENDPOINTS
+    // ========================================================================
+
+    /**
+     * Deletes an entity by its ID.
+     *
+     * <p>Example request:</p>
+     * <pre>{@code
+     * DELETE /api/query/delete
+     * {
+     *   "rootType": "Location",
+     *   "realm": "my-tenant",
+     *   "id": "507f1f77bcf86cd799439011"
+     * }
+     * }</pre>
+     *
+     * @param req the delete request containing rootType, optional realm, and entity id
+     * @return success status with deleted count
+     */
+    @POST
+    @Path("/delete")
+    @FunctionalAction("delete")
+    public Response delete(DeleteRequest req) {
+        if (req.id == null || req.id.isBlank()) {
+            throw new BadRequestException("id is required");
+        }
+
+        Class<? extends UnversionedBaseModel> root = resolveRoot(req.rootType);
+        String realm = resolveRealm(req.realm);
+        Datastore ds = morphiaDataStoreWrapper.getDataStore(realm);
+
+        try {
+            ObjectId objectId = new ObjectId(req.id);
+            Query<? extends UnversionedBaseModel> query = ds.find(root).filter(Filters.eq("_id", objectId));
+            var result = query.delete();
+
+            DeleteResponse response = new DeleteResponse();
+            response.deletedCount = result.getDeletedCount();
+            response.id = req.id;
+            response.rootType = root.getName();
+            response.success = result.getDeletedCount() > 0;
+
+            if (result.getDeletedCount() == 0) {
+                return Response.status(Response.Status.NOT_FOUND).entity(response).build();
+            }
+            return Response.ok(response).build();
+        } catch (IllegalArgumentException e) {
+            Log.errorf(e, "Invalid ObjectId format: %s", req.id);
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "InvalidId");
+            error.put("message", "Invalid ObjectId format: " + req.id);
+            return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+        } catch (Exception e) {
+            Log.errorf(e, "Failed to delete entity of type %s with id %s", root.getName(), req.id);
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "DeleteFailed");
+            error.put("message", "Failed to delete entity: " + e.getMessage());
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(error).build();
+        }
+    }
+
+    /**
+     * Deletes multiple entities matching a query.
+     *
+     * <p>Example request:</p>
+     * <pre>{@code
+     * POST /api/query/deleteMany
+     * {
+     *   "rootType": "Location",
+     *   "realm": "my-tenant",
+     *   "query": "status:INACTIVE"
+     * }
+     * }</pre>
+     *
+     * @param req the delete request containing rootType, optional realm, and query
+     * @return success status with deleted count
+     */
+    @POST
+    @Path("/deleteMany")
+    @FunctionalAction("deleteMany")
+    public Response deleteMany(DeleteManyRequest req) {
+        Class<? extends UnversionedBaseModel> root = resolveRoot(req.rootType);
+        String realm = resolveRealm(req.realm);
+        Datastore ds = morphiaDataStoreWrapper.getDataStore(realm);
+
+        try {
+            Query<? extends UnversionedBaseModel> query = ds.find(root);
+
+            // Apply query filter if provided
+            if (req.query != null && !req.query.isBlank()) {
+                PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(req.query, root, null, null, null);
+                if (planned.getMode() == PlannerResult.Mode.AGGREGATION) {
+                    Map<String, Object> error = new HashMap<>();
+                    error.put("error", "InvalidQuery");
+                    error.put("message", "Delete queries cannot use expand() - only simple filter queries are supported");
+                    return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+                }
+                if (planned.getFilter() != null) {
+                    query = query.filter(planned.getFilter());
+                }
+            }
+
+            var result = query.delete(new dev.morphia.DeleteOptions().multi(true));
+
+            DeleteManyResponse response = new DeleteManyResponse();
+            response.deletedCount = result.getDeletedCount();
+            response.query = req.query;
+            response.rootType = root.getName();
+            response.success = true;
+
+            return Response.ok(response).build();
+        } catch (Exception e) {
+            Log.errorf(e, "Failed to delete entities of type %s with query %s", root.getName(), req.query);
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "DeleteFailed");
+            error.put("message", "Failed to delete entities: " + e.getMessage());
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(error).build();
+        }
+    }
+
     private String resolveCollectionName(Class<? extends UnversionedBaseModel> root) {
         dev.morphia.annotations.Entity e = root.getAnnotation(dev.morphia.annotations.Entity.class);
         if (e != null && e.value() != null && !e.value().isBlank()) {
@@ -147,21 +431,111 @@ public class QueryGatewayResource {
         return root.getSimpleName();
     }
 
+    // The functional area for this resource (from @FunctionalMapping)
+    private static final String FUNCTIONAL_AREA = "integration";
+
+    /**
+     * Resolves the realm to use for queries.
+     *
+     * <p>Priority order:</p>
+     * <ol>
+     *   <li>Explicit realm from request (if non-null and non-blank)</li>
+     *   <li>Area-specific realm override from principal's area2RealmOverrides (if configured)</li>
+     *   <li>SecurityContext principal's default realm (from logged-in user, includes X-Realm override)</li>
+     *   <li>Configured default realm (quantum.realm.testRealm property)</li>
+     * </ol>
+     *
+     * @param requestRealm the realm from the request (may be null or blank)
+     * @return the resolved realm to use
+     */
+    private String resolveRealm(String requestRealm) {
+        // 1. Explicit realm from request takes highest priority
+        if (requestRealm != null && !requestRealm.isBlank()) {
+            return requestRealm;
+        }
+
+        // 2. Try to get from SecurityContext
+        return SecurityContext.getPrincipalContext()
+                .map(pc -> {
+                    // 2a. Check for area-specific realm override
+                    if (pc.getArea2RealmOverrides() != null) {
+                        String areaOverride = pc.getArea2RealmOverrides().get(FUNCTIONAL_AREA);
+                        if (areaOverride != null && !areaOverride.isBlank()) {
+                            Log.debugf("Using area2RealmOverride for area '%s': %s", FUNCTIONAL_AREA, areaOverride);
+                            return areaOverride;
+                        }
+                    }
+                    // 2b. Use principal's default realm (includes X-Realm override if applied)
+                    return pc.getDefaultRealm();
+                })
+                .orElse(defaultRealm);
+    }
+
+    /**
+     * Resolves a rootType string to its corresponding entity class.
+     *
+     * <p>Supports two formats:</p>
+     * <ul>
+     *   <li>Fully qualified class name (e.g., "com.example.models.Location")</li>
+     *   <li>Simple class name (e.g., "Location") - resolved from mapped entities if unique</li>
+     * </ul>
+     *
+     * <p>When using simple names, the method searches all mapped Morphia entities for a match.
+     * If multiple entities have the same simple name, a BadRequestException is thrown with
+     * the list of matching fully qualified names.</p>
+     *
+     * @param rootType the class name (simple or fully qualified)
+     * @return the resolved entity class
+     * @throws BadRequestException if rootType is null/blank, not found, ambiguous, or not a valid entity
+     */
     @SuppressWarnings("unchecked")
     private Class<? extends UnversionedBaseModel> resolveRoot(String rootType) {
         if (rootType == null || rootType.isBlank()) {
             throw new BadRequestException("rootType is required");
         }
-        try {
-            Class<?> c = Class.forName(rootType);
-            if (!UnversionedBaseModel.class.isAssignableFrom(c)) {
-                throw new BadRequestException("rootType must extend UnversionedBaseModel: " + rootType);
+
+        // First, try as a fully qualified class name
+        if (rootType.contains(".")) {
+            try {
+                Class<?> c = Class.forName(rootType);
+                if (!UnversionedBaseModel.class.isAssignableFrom(c)) {
+                    throw new BadRequestException("rootType must extend UnversionedBaseModel: " + rootType);
+                }
+                return (Class<? extends UnversionedBaseModel>) c;
+            } catch (ClassNotFoundException e) {
+                Log.errorf(e, "Unknown rootType %s", rootType);
+                throw new BadRequestException("Unknown rootType: " + rootType);
             }
-            return (Class<? extends UnversionedBaseModel>) c;
-        } catch (ClassNotFoundException e) {
-            Log.errorf(e, "Unknown rootType %s", rootType);
-            throw new BadRequestException("Unknown rootType: " + rootType);
         }
+
+        // Treat as simple name - search mapped entities
+        MorphiaDatastore ds = morphiaDataStoreWrapper.getDataStore(defaultRealm);
+        Mapper mapper = ds.getMapper();
+
+        List<Class<?>> matches = new ArrayList<>();
+        for (EntityModel em : mapper.getMappedEntities()) {
+            Class<?> type = em.getType();
+            if (UnversionedBaseModel.class.isAssignableFrom(type)
+                    && type.getSimpleName().equals(rootType)) {
+                matches.add(type);
+            }
+        }
+
+        if (matches.isEmpty()) {
+            throw new BadRequestException("Unknown rootType: '" + rootType + "'. " +
+                "Use GET /api/query/rootTypes to see available types.");
+        }
+
+        if (matches.size() > 1) {
+            List<String> fqns = matches.stream()
+                .map(Class::getName)
+                .sorted()
+                .toList();
+            throw new BadRequestException("Ambiguous rootType: '" + rootType + "' matches multiple classes: " +
+                fqns + ". Please use the fully qualified class name.");
+        }
+
+        return (Class<? extends UnversionedBaseModel>) matches.get(0);
     }
 
     // DTOs
@@ -182,4 +556,86 @@ public class QueryGatewayResource {
     public static class Page { public Integer limit; public Integer skip; }
     @RegisterForReflection
     public static class SortSpec { public String field; public String dir; } // dir: ASC|DESC
+
+    @RegisterForReflection
+    public static class RootTypesResponse {
+        public List<RootTypeInfo> rootTypes;
+        public int count;
+    }
+    @RegisterForReflection
+    public static class RootTypeInfo {
+        /** Fully qualified class name - use this value for rootType parameter */
+        public String className;
+        /** Simple class name for display */
+        public String simpleName;
+        /** MongoDB collection name */
+        public String collectionName;
+    }
+
+    // Save DTOs
+    @RegisterForReflection
+    public static class SaveRequest {
+        /** The entity type (simple or fully qualified class name) */
+        public String rootType;
+        /** Optional realm; if absent default realm is used */
+        public String realm;
+        /** The entity data as a Map (will be converted to the target type) */
+        public Map<String, Object> entity;
+    }
+
+    @RegisterForReflection
+    public static class SaveResponse {
+        /** The ID of the saved entity */
+        public String id;
+        /** The fully qualified class name */
+        public String rootType;
+        /** The saved entity data */
+        @SuppressWarnings("rawtypes")
+        public Map entity;
+    }
+
+    // Delete DTOs
+    @RegisterForReflection
+    public static class DeleteRequest {
+        /** The entity type (simple or fully qualified class name) */
+        public String rootType;
+        /** Optional realm; if absent default realm is used */
+        public String realm;
+        /** The ObjectId of the entity to delete (hex string) */
+        public String id;
+    }
+
+    @RegisterForReflection
+    public static class DeleteResponse {
+        /** Whether the delete was successful */
+        public boolean success;
+        /** The ID that was deleted */
+        public String id;
+        /** The fully qualified class name */
+        public String rootType;
+        /** Number of documents deleted (0 or 1) */
+        public long deletedCount;
+    }
+
+    @RegisterForReflection
+    public static class DeleteManyRequest {
+        /** The entity type (simple or fully qualified class name) */
+        public String rootType;
+        /** Optional realm; if absent default realm is used */
+        public String realm;
+        /** Query to match entities to delete (same syntax as /find) */
+        public String query;
+    }
+
+    @RegisterForReflection
+    public static class DeleteManyResponse {
+        /** Whether the operation completed successfully */
+        public boolean success;
+        /** The query that was used */
+        public String query;
+        /** The fully qualified class name */
+        public String rootType;
+        /** Number of documents deleted */
+        public long deletedCount;
+    }
 }

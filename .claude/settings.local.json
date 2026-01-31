@@ -39,7 +39,8 @@
       "Bash(JAVA_HOME=/Library/Java/JavaVirtualMachines/graalvm-jdk-21.0.4+8.1/Contents/Home mvn compile:*)",
       "Bash(gh pr create:*)",
       "Bash(git pull:*)",
-      "Bash(gh pr comment:*)"
+      "Bash(gh pr comment:*)",
+      "Bash(curl:*)"
     ]
   }
 }
