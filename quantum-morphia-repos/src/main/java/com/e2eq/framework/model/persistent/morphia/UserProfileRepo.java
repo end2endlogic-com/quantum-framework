@@ -83,6 +83,30 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
       return getByUserId(  morphiaDataStoreWrapper.getDataStore(realm), userId );
    }
 
+   /**
+    * Gets a UserProfile by userId WITHOUT applying security rules.
+    * Use this for internal lookups (e.g., from AccessListResolvers) where you need
+    * to bypass rule evaluation to avoid recursion or circular dependencies.
+    *
+    * @param realm the realm/database to query
+    * @param userId the userId to search for
+    * @return the UserProfile if found
+    */
+   public Optional<UserProfile> getByUserIdWithIgnoreRules(@NotNull String realm, @NotNull String userId) {
+      Log.debugf("UserProfileRepo.getByUserIdWithIgnoreRules: querying realm=%s for userId=%s (bypassing security rules)",
+          realm, userId);
+
+      Datastore ds = morphiaDataStoreWrapper.getDataStore(realm);
+      Query<UserProfile> q = ds.find(getPersistentClass()).filter(
+         Filters.or(
+            Filters.eq("userId", userId),
+            Filters.eq("credentialUserIdPasswordRef.entityRefName", userId),
+            Filters.eq("email", userId))
+      );
+
+      return Optional.ofNullable(q.first());
+   }
+
    @Override
    protected void setDefaultValues (UserProfile model) {
       if (model.getUserId() == null ) {

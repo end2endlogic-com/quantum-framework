@@ -51,7 +51,8 @@ public class PolicyResource extends BaseResource<Policy, PolicyRepo>{
       String realmId = headers.getHeaderString("X-Realm");
       Policy saved = super.save(headers, model);
       // Refresh rule context for the affected realm
-      String effectiveRealm = (realmId != null && !realmId.isBlank()) ? realmId : ruleContext.getDefaultRealm();
+      // Use X-Realm if provided, otherwise use the realm from SecurityContext (where the policy was actually saved)
+      String effectiveRealm = (realmId != null && !realmId.isBlank()) ? realmId : repo.getSecurityContextRealmId();
       io.quarkus.logging.Log.infof("PolicyResource: policy saved (refName=%s), refreshing rule context for realm=%s",
           saved.getRefName(), effectiveRealm);
       ruleContext.reloadFromRepo(effectiveRealm);
@@ -68,7 +69,8 @@ public class PolicyResource extends BaseResource<Policy, PolicyRepo>{
       Response response = super.deleteByRefName(headers, refName);
       // Only refresh if delete was successful (status 200)
       if (response.getStatus() == Response.Status.OK.getStatusCode()) {
-         String effectiveRealm = (realmId != null && !realmId.isBlank()) ? realmId : ruleContext.getDefaultRealm();
+         // Use X-Realm if provided, otherwise use the realm from SecurityContext (where the policy was actually deleted)
+         String effectiveRealm = (realmId != null && !realmId.isBlank()) ? realmId : repo.getSecurityContextRealmId();
          io.quarkus.logging.Log.infof("PolicyResource: policy deleted (refName=%s), refreshing rule context for realm=%s",
              refName, effectiveRealm);
          ruleContext.reloadFromRepo(effectiveRealm);
@@ -86,7 +88,8 @@ public class PolicyResource extends BaseResource<Policy, PolicyRepo>{
       Response response = super.delete(headers, id);
       // Only refresh if delete was successful (status 200)
       if (response.getStatus() == Response.Status.OK.getStatusCode()) {
-         String effectiveRealm = (realmId != null && !realmId.isBlank()) ? realmId : ruleContext.getDefaultRealm();
+         // Use X-Realm if provided, otherwise use the realm from SecurityContext (where the policy was actually deleted)
+         String effectiveRealm = (realmId != null && !realmId.isBlank()) ? realmId : repo.getSecurityContextRealmId();
          io.quarkus.logging.Log.infof("PolicyResource: policy deleted (id=%s), refreshing rule context for realm=%s",
              id, effectiveRealm);
          ruleContext.reloadFromRepo(effectiveRealm);
@@ -170,7 +173,8 @@ public class PolicyResource extends BaseResource<Policy, PolicyRepo>{
    @POST
    @Path("/refreshRuleContext")
    public Response refreshRuleContext(@HeaderParam("X-Realm") String realm) {
-      String effectiveRealm = (realm == null || realm.isBlank()) ? ruleContext.getDefaultRealm() : realm;
+      // Use X-Realm if provided, otherwise use the realm from SecurityContext (user's default realm)
+      String effectiveRealm = (realm == null || realm.isBlank()) ? repo.getSecurityContextRealmId() : realm;
       ruleContext.reloadFromRepo(effectiveRealm);
       return Response.ok().build();
    }
@@ -181,7 +185,8 @@ public class PolicyResource extends BaseResource<Policy, PolicyRepo>{
    @Produces(MediaType.APPLICATION_JSON)
    @RolesAllowed({"admin", "system"})
    public Response importPolicies(@HeaderParam("X-Realm") String realm, String yamlPayload) {
-      String effectiveRealm = (realm == null || realm.isBlank()) ? ruleContext.getDefaultRealm() : realm;
+      // Use X-Realm if provided, otherwise use the realm from SecurityContext (user's default realm)
+      String effectiveRealm = (realm == null || realm.isBlank()) ? repo.getSecurityContextRealmId() : realm;
 
       if (yamlPayload == null || yamlPayload.isBlank()) {
          return Response.status(Response.Status.BAD_REQUEST)

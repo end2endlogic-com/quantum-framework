@@ -637,11 +637,11 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
             // Option 2: Check if variable was not resolved (still contains ${...} pattern)
             if (substituted != null && substituted.contains("${")) {
                unresolvedVars.add(varTokenText);
-               Log.errorf("Unresolved variable '%s' in IN clause for field '%s'. " +
-                        "This likely means the AccessListResolver's supports() method returned false for the current context. " +
-                        "The resolver must return true for all contexts where this variable is used in rule filters. " +
-                        "Check that your resolver's supports() method matches the area/functionalDomain/action of the request.",
-                        varTokenText, field);
+               // Warn level with model class info to help diagnose unexpected resolver/rule mismatches
+               Log.warnf("Unresolved variable '%s' in IN clause for field '%s' (modelClass=%s). " +
+                        "The AccessListResolver's supports() method returned false for this context. " +
+                        "This rule's filter will be skipped for this model class.",
+                        varTokenText, field, modelClass != null ? modelClass.getSimpleName() : "null");
                // Don't add unresolved variable as literal - it would never match any document
             } else if (substituted != null && !substituted.isBlank()) {
                for (String part : substituted.split(",")) {
@@ -679,10 +679,10 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
                   // Only check when we have a substitutor - if no substitutor, variables are expected to remain unresolved
                   if (sub != null && replaced != null && replaced.contains("${")) {
                      unresolvedVars.add(tn.getText());
-                     Log.errorf("Unresolved variable '%s' in IN clause for field '%s'. " +
-                              "This likely means the AccessListResolver's supports() method returned false for the current context. " +
-                              "The resolver must return true for all contexts where this variable is used in rule filters.",
-                              tn.getText(), field);
+                     // Warn level with model class info to help diagnose unexpected resolver/rule mismatches
+                     Log.warnf("Unresolved variable '%s' in IN clause for field '%s' (modelClass=%s). " +
+                              "The AccessListResolver's supports() method returned false for this context.",
+                              tn.getText(), field, modelClass != null ? modelClass.getSimpleName() : "null");
                      // Don't add unresolved variable as literal
                   } else if (replaced != null && !replaced.isBlank()) {
                      // Note: this branch treats variable expansion as scalar(s) to be coerced
