@@ -208,7 +208,7 @@ public class SeedDiscoveryService {
     public String calculateChecksum(SeedPackDescriptor descriptor, SeedPackManifest.Dataset dataset) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            try (InputStream in = descriptor.getSource().openDataset(descriptor, dataset.getFile())) {
+            try (InputStream in = openDataset(descriptor, dataset.getFile())) {
                 byte[] bytes = in.readAllBytes();
                 return java.util.HexFormat.of().formatHex(digest.digest(bytes));
             }
@@ -217,6 +217,48 @@ public class SeedDiscoveryService {
                     descriptor.getManifest().getSeedPack(), dataset.getFile(), e.getMessage());
             return "";
         }
+    }
+
+    /**
+     * Opens a dataset file, handling classpath:, URI, and relative path references.
+     *
+     * @param descriptor the seed pack descriptor
+     * @param pathOrUri the file path or URI
+     * @return an input stream for the dataset
+     * @throws IOException if the dataset cannot be opened
+     */
+    private InputStream openDataset(SeedPackDescriptor descriptor, String pathOrUri) throws IOException {
+        if (isClasspath(pathOrUri)) {
+            String cp = pathOrUri.substring("classpath:".length());
+            ClassLoader cl = Thread.currentThread().getContextClassLoader();
+            InputStream in = cl.getResourceAsStream(cp);
+            if (in == null) {
+                throw new IOException("Classpath dataset not found: " + cp);
+            }
+            return in;
+        }
+        if (isUri(pathOrUri)) {
+            java.net.URI uri = java.net.URI.create(pathOrUri);
+            String scheme = uri.getScheme();
+            for (SeedSource source : seedSources) {
+                if (source instanceof SchemeAware sa && sa.supportsScheme(scheme)) {
+                    return sa.openUri(uri, descriptor);
+                }
+            }
+            throw new IOException("No SeedSource found for URI scheme '" + scheme + "'");
+        }
+        // Backward compatible relative path resolution via owning source
+        return descriptor.getSource().openDataset(descriptor, pathOrUri);
+    }
+
+    private static boolean isClasspath(String value) {
+        return value != null && value.startsWith("classpath:");
+    }
+
+    private static boolean isUri(String value) {
+        if (value == null) return false;
+        int i = value.indexOf(":");
+        return i > 1 && value.contains("://");
     }
 
     /**

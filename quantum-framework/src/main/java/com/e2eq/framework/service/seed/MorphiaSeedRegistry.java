@@ -86,7 +86,7 @@ public class MorphiaSeedRegistry implements SeedRegistry {
         entry.setVersion(manifest.getVersion());
         entry.setDataset(dataset.getCollection());
         entry.setChecksum(checksum);
-        entry.setRecordsApplied(recordsApplied);
+        entry.setRecords(recordsApplied);
         entry.setAppliedAt(Instant.now());
         entry.setAppliedToRealm(context.getRealm());
 

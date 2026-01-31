@@ -82,7 +82,7 @@ public class SeedAdminResource {
             e.version = entry.getVersion();
             e.dataset = entry.getDataset();
             e.checksum = entry.getChecksum();
-            e.records = entry.getRecordsApplied();
+            e.records = entry.getRecords();
             e.appliedAt = entry.getAppliedAt() != null ? entry.getAppliedAt().toString() : null;
             result.add(e);
         }
