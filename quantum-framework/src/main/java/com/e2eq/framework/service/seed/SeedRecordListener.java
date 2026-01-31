@@ -9,16 +9,16 @@ import java.util.Map;
  * <p>Implementations of this interface can react to seed data being inserted or updated,
  * enabling application components to synchronize their state with the database content.
  * For example, a JobRunner could implement this interface to register scheduled jobs
- * when job configuration seeds are applied.</p>
+ * when job configuration seeds are applied.
  *
  * <p>Listeners are invoked after records have been successfully persisted to the database.
  * They receive the collection name, the applied records, and contextual information about
- * the seed operation.</p>
+ * the seed operation.
  *
  * <h2>Usage</h2>
  * <p>Implement this interface and register as a CDI bean (using {@code @ApplicationScoped}
  * or similar) for automatic discovery, or manually register with
- * {@link SeedLoader.Builder#addRecordListener(SeedRecordListener)}.</p>
+ * {@link SeedLoader.Builder#addRecordListener(SeedRecordListener)}.
  *
  * <h2>Example</h2>
  * <pre>{@code
@@ -52,7 +52,7 @@ public interface SeedRecordListener {
      * Determines whether this listener should receive callbacks for the given collection.
      *
      * <p>This method is called before records are applied to allow listeners to
-     * efficiently filter which collections they care about.</p>
+     * efficiently filter which collections they care about.
      *
      * @param collection the name of the collection/entity being seeded
      * @param context the seed context with realm and tenant information
@@ -65,10 +65,10 @@ public interface SeedRecordListener {
      *
      * <p>This callback is invoked after the batch write completes successfully.
      * Implementations should handle any exceptions internally and log appropriately,
-     * as throwing exceptions may interrupt the seeding process.</p>
+     * as throwing exceptions may interrupt the seeding process.
      *
      * <p>The records in the event are the final transformed records that were
-     * persisted to the database.</p>
+     * persisted to the database.
      *
      * @param event the event containing the applied records and context
      */

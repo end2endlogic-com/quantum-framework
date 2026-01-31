@@ -16,7 +16,6 @@ import java.util.Objects;
  *   <li>The actual records that were persisted</li>
  *   <li>Whether the operation was an upsert or insert</li>
  * </ul>
- * </p>
  *
  * @see SeedRecordListener
  */
@@ -89,7 +88,7 @@ public final class SeedRecordEvent {
      * Returns the records that were applied to the database.
      *
      * <p>These are the final transformed records after all transforms have been applied.
-     * The list is unmodifiable.</p>
+     * The list is unmodifiable.
      *
      * @return unmodifiable list of applied records
      */

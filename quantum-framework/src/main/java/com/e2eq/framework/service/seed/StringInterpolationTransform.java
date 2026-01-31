@@ -14,11 +14,11 @@ import io.quarkus.logging.Log;
  * placeholders with resolved values.
  *
  * <p>This transform walks through all string fields in a record (including nested maps and lists)
- * and replaces variable references with their resolved values.</p>
+ * and replaces variable references with their resolved values.
  *
- * <p>Variable syntax: {@code {variableName}}</p>
+ * <p>Variable syntax: {@code {variableName}}
  *
- * <p>Example seed data:</p>
+ * <p>Example seed data:
  * <pre>
  * {
  *   "runAsUserId": "admin@{tenantId}",
@@ -29,7 +29,7 @@ import io.quarkus.logging.Log;
  * }
  * </pre>
  *
- * <p><strong>Configuration options:</strong></p>
+ * <p><strong>Configuration options:</strong>
  * <ul>
  *   <li>{@code fields} (optional) - List of field names to interpolate. If not specified,
  *       all string fields are processed.</li>
@@ -37,7 +37,7 @@ import io.quarkus.logging.Log;
  *       a variable cannot be resolved. If false, unresolved variables are left as-is.</li>
  * </ul>
  *
- * <p><strong>Manifest example:</strong></p>
+ * <p><strong>Manifest example:</strong>
  * <pre>
  * transforms:
  *   - type: stringInterpolation
@@ -189,7 +189,7 @@ public final class StringInterpolationTransform implements SeedTransform {
      * Factory for creating StringInterpolationTransform instances.
      *
      * <p>The factory accepts a list of SeedVariableResolver instances that will be used
-     * for variable resolution. The built-in SeedContextVariableResolver is always included.</p>
+     * for variable resolution. The built-in SeedContextVariableResolver is always included.
      */
     public static final class Factory implements SeedTransformFactory {
 
