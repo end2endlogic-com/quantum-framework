@@ -39,8 +39,7 @@ public class SeedRegistryEntry extends UnversionedBaseModel {
     @Property("checksum")
     private String checksum;
 
-    @Property("records")
-    private Integer recordsApplied;
+    private Integer records;
 
     @Property("appliedAt")
     private Instant appliedAt;
