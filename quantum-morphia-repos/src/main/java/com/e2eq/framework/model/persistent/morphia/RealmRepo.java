@@ -113,7 +113,7 @@ public class RealmRepo extends MorphiaRepo<Realm> {
 
    /**
     * Find a realm by its database name (which is typically the same as the realm refName).
-    * 
+    *
     * @param databaseName the database name to search for
     * @param ignoreRules if true, bypass security rules
     * @param realmId the realm/database to search in
@@ -132,6 +132,21 @@ public class RealmRepo extends MorphiaRepo<Realm> {
       Query<Realm> query = morphiaDataStoreWrapper.getDataStore(realmId).find(getPersistentClass()).filter(qfilters);
       Realm obj = query.first();
       return Optional.ofNullable(obj);
+   }
+
+   /**
+    * Find all realms that have applySeedsOnStartup=true.
+    * Always queries from the system realm since that's where all realm records are stored.
+    *
+    * @return List of realms with applySeedsOnStartup enabled
+    */
+   public List<Realm> findRealmsWithSeedsEnabled() {
+      MorphiaDatastore ds = morphiaDataStoreWrapper.getDataStore(envConfigUtils.getSystemRealm());
+      Query<Realm> query = ds.find(getPersistentClass())
+              .filter(Filters.eq("applySeedsOnStartup", true));
+      try (dev.morphia.query.MorphiaCursor<Realm> cursor = query.iterator()) {
+         return cursor.toList();
+      }
    }
 
 }

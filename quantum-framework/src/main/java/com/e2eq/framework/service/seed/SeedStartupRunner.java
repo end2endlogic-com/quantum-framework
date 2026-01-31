@@ -5,7 +5,9 @@ import com.coditory.sherlock.Sherlock;
 import com.coditory.sherlock.mongo.MongoSherlock;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
+import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
+import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.util.SecurityUtils;
 import com.mongodb.client.MongoClient;
@@ -39,6 +41,9 @@ public class SeedStartupRunner {
     CredentialRepo credRepo;
 
     @Inject
+    RealmRepo realmRepo;
+
+    @Inject
     SeedLoaderService seedLoaderService;
 
     @Inject
@@ -62,20 +67,32 @@ public class SeedStartupRunner {
     @ConfigProperty(name = "quantum.seed.apply.filter")
     Optional<String> seedFilterCsv;
 
+    /**
+     * Comma-separated list of realms to apply seeds to on startup.
+     * This list is unioned with realms that have applySeedsOnStartup=true
+     * in the Realm collection (stored in system-com).
+     *
+     * If not specified and no realms have the flag set, defaults to system/default/test realms.
+     * Set to empty string or "none" to disable CSV-based realms (flag-based realms will still apply).
+     * Example: "system-com,mycompany-com,test-com"
+     */
+    @ConfigProperty(name = "quantum.seed-pack.apply.realms")
+    Optional<String> startupRealmsCsv;
+
     @PostConstruct
     public void onStart() {
         if (!enabled || !applyOnStartup) {
             Log.info("SeedStartupRunner disabled by configuration (quantum.seed-pack.enabled / quantum.seed-pack.apply.on-startup)");
             return;
         }
-        // Run for system realm, and if distinct, also default and test
-        List<String> realms = new ArrayList<>();
-        String system = envConfigUtils.getSystemRealm();
-        String def = envConfigUtils.getDefaultRealm();
-        String test = envConfigUtils.getTestRealm();
-        realms.add(system);
-        if (!Objects.equals(system, def)) realms.add(def);
-        if (!Objects.equals(system, test) && !Objects.equals(def, test)) realms.add(test);
+
+        List<String> realms = resolveStartupRealms();
+        if (realms.isEmpty()) {
+            Log.info("SeedStartupRunner: no realms configured for startup seeding");
+            return;
+        }
+
+        Log.infof("SeedStartupRunner: will apply seeds to realms: %s", realms);
         for (String realm : realms) {
             try {
                 // Wait for database to be ready before applying seeds
@@ -244,6 +261,69 @@ public class SeedStartupRunner {
         int idx = realm.lastIndexOf('-');
         if (idx < 0) return realm; // fallback
         return realm.substring(0, idx) + "." + realm.substring(idx + 1);
+    }
+
+    /**
+     * Resolves which realms should receive seeds on startup.
+     * Unions realms from:
+     * 1. Configuration property quantum.seed-pack.apply.realms (CSV list)
+     * 2. Realms with applySeedsOnStartup=true flag in the Realm collection
+     *
+     * If quantum.seed-pack.apply.realms is set to "none" or empty, only realms
+     * with the applySeedsOnStartup flag will receive seeds.
+     *
+     * If neither is configured, falls back to system/default/test realms.
+     *
+     * @return list of realm names to seed (deduped)
+     */
+    private List<String> resolveStartupRealms() {
+        List<String> realms = new ArrayList<>();
+
+        // First, check the CSV configuration
+        boolean csvConfigured = false;
+        if (startupRealmsCsv.isPresent()) {
+            String csv = startupRealmsCsv.get().trim();
+            // "none" or empty string means skip CSV config but still check realm flags
+            if (!csv.isEmpty() && !csv.equalsIgnoreCase("none")) {
+                csvConfigured = true;
+                for (String part : csv.split(",")) {
+                    String realm = part.trim();
+                    if (!realm.isEmpty() && !realms.contains(realm)) {
+                        realms.add(realm);
+                    }
+                }
+            }
+        }
+
+        // Second, query realms with applySeedsOnStartup=true from system-com
+        try {
+            List<Realm> flaggedRealms = realmRepo.findRealmsWithSeedsEnabled();
+            for (Realm r : flaggedRealms) {
+                String realmName = r.getDatabaseName();
+                if (realmName != null && !realmName.isEmpty() && !realms.contains(realmName)) {
+                    realms.add(realmName);
+                    Log.debugf("SeedStartupRunner: adding realm %s (applySeedsOnStartup=true)", realmName);
+                }
+            }
+        } catch (Exception e) {
+            Log.warnf("SeedStartupRunner: failed to query realms with applySeedsOnStartup flag: %s", e.getMessage());
+        }
+
+        // If we found realms from config or flags, use them
+        if (!realms.isEmpty()) {
+            return realms;
+        }
+
+        // Default behavior only if nothing was configured: system/default/test realms (deduped)
+        if (!csvConfigured) {
+            String system = envConfigUtils.getSystemRealm();
+            String def = envConfigUtils.getDefaultRealm();
+            String test = envConfigUtils.getTestRealm();
+            realms.add(system);
+            if (!Objects.equals(system, def)) realms.add(def);
+            if (!Objects.equals(system, test) && !Objects.equals(def, test)) realms.add(test);
+        }
+        return realms;
     }
 
 
