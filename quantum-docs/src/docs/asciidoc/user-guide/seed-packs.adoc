@@ -278,6 +278,64 @@ quantum.seeds.enabled=true
 quantum.seeds.apply.on-startup=true
 ----
 
+=== Configuring which realms receive seeds on startup
+
+By default, `SeedStartupRunner` applies seeds to the system, default, and test realms. You can customize this behavior using a combination of:
+
+1. **Configuration property** (`quantum.seed-pack.apply.realms`): A comma-separated list of realm names to seed on startup.
+2. **Realm flag** (`applySeedsOnStartup`): A boolean field on the Realm model/entity that, when set to `true`, includes that realm for automatic seeding.
+
+The startup runner unions both sources: realms from the config property plus realms with the `applySeedsOnStartup` flag enabled.
+
+Configuration examples:
+
+[source,properties]
+----
+# Explicit list of realms to seed
+quantum.seed-pack.apply.realms=system-com,production-com,staging-com
+
+# Disable config-based realms (only flag-based realms will be seeded)
+quantum.seed-pack.apply.realms=none
+----
+
+Setting the flag on a Realm entity:
+
+[source,java]
+----
+Realm realm = Realm.builder()
+    .emailDomain("acme.com")
+    .databaseName("acme-com")
+    .domainContext(domainContext)
+    .applySeedsOnStartup(true)  // This realm will receive seeds on startup
+    .build();
+realmRepo.save(realm);
+----
+
+Or update an existing realm:
+
+[source,java]
+----
+Optional<Realm> realmOpt = realmRepo.findByDatabaseName("acme-com", true, systemRealm);
+if (realmOpt.isPresent()) {
+    Realm realm = realmOpt.get();
+    realm.setApplySeedsOnStartup(true);
+    realmRepo.save(realm);
+}
+----
+
+Resolution logic:
+
+- If `quantum.seed-pack.apply.realms` is configured with realm names (not "none" or empty), those realms are added to the list.
+- The runner then queries the Realm collection in the system realm for all realms with `applySeedsOnStartup=true` and adds those to the list.
+- The union of both sources (deduped) determines which realms receive seeds.
+- If neither is configured, the default behavior applies: system, default, and test realms.
+
+Notes:
+
+- The Realm collection is always stored in the system realm (e.g., `system-com`).
+- The `applySeedsOnStartup` flag defaults to `false` for all realms.
+- This allows dynamic realm configuration without redeploying the application—just update the Realm entity in the database.
+
 == Transforms in depth
 
 Transforms are small, composable functions that shape each dataset record just before it is written to the database. They let you keep dataset files generic and inject environment/tenant specifics or perform repeatable rewrites at apply time.
