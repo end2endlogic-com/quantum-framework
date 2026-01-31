@@ -280,6 +280,15 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
     public Filter[] getFilterArray(@NotNull List<Filter> filters, Class<? extends UnversionedBaseModel> modelClass) {
+       // Check if we're in ignore-rules mode (e.g., from AccessListResolver internal queries)
+       if (SecurityContext.isIgnoringRules()) {
+          if (Log.isDebugEnabled()) {
+             Log.debugf("getFilterArray: ignoring rules mode active, skipping rule evaluation for %s",
+                 modelClass != null ? modelClass.getSimpleName() : "null");
+          }
+          return filters.toArray(new Filter[filters.size()]);
+       }
+
        if (!SecurityContext.getResourceContext().isPresent() || !SecurityContext.getPrincipalContext().isPresent()) {
           // Ensure context exists for repo calls executed under @TestSecurity (no SecuritySession)
           ensureSecurityContextFromIdentity();
