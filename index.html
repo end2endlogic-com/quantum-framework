@@ -529,7 +529,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Framework Documentation</h1>
 <div class="details">
 <span id="revnumber">version 1.2.4-SNAPSHOT,</span>
-<span id="revdate">2026-01-30T20:08:08Z</span>
+<span id="revdate">2026-01-31T02:57:24Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -812,11 +812,16 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </ul>
 </li>
 <li><a href="#_troubleshooting">24.10. Troubleshooting</a></li>
-<li><a href="#_how_seeds_are_applied_automatically_at_startup">24.11. How seeds are applied automatically at startup</a></li>
+<li><a href="#_how_seeds_are_applied_automatically_at_startup">24.11. How seeds are applied automatically at startup</a>
+<ul class="sectlevel3">
+<li><a href="#_configuring_which_realms_receive_seeds_on_startup">24.11.1. Configuring which realms receive seeds on startup</a></li>
+</ul>
+</li>
 <li><a href="#_transforms_in_depth">24.12. Transforms in depth</a>
 <ul class="sectlevel3">
 <li><a href="#_creating_your_own_transforms_example_dropiftransform">24.12.1. Creating your own transforms (example: DropIfTransform)</a></li>
 <li><a href="#_custom_variable_resolvers_for_stringinterpolation">24.12.2. Custom variable resolvers for stringInterpolation</a></li>
+<li><a href="#_seed_record_listeners_reacting_to_seed_data">24.12.3. Seed record listeners (reacting to seed data)</a></li>
 </ul>
 </li>
 <li><a href="#_test_walkthrough_seedloaderintegrationtest">24.13. Test walkthrough: SeedLoaderIntegrationTest</a></li>
@@ -12774,6 +12779,99 @@ quantum.seeds.enabled=true
 quantum.seeds.apply.on-startup=true</code></pre>
 </div>
 </div>
+<div class="sect3">
+<h4 id="_configuring_which_realms_receive_seeds_on_startup">24.11.1. Configuring which realms receive seeds on startup</h4>
+<div class="paragraph">
+<p>By default, <code>SeedStartupRunner</code> applies seeds to the system, default, and test realms. You can customize this behavior using a combination of:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p><strong>Configuration property</strong> (<code>quantum.seed-pack.apply.realms</code>): A comma-separated list of realm names to seed on startup.</p>
+</li>
+<li>
+<p><strong>Realm flag</strong> (<code>applySeedsOnStartup</code>): A boolean field on the Realm model/entity that, when set to <code>true</code>, includes that realm for automatic seeding.</p>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p>The startup runner unions both sources: realms from the config property plus realms with the <code>applySeedsOnStartup</code> flag enabled.</p>
+</div>
+<div class="paragraph">
+<p>Configuration examples:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="properties"># Explicit list of realms to seed
+quantum.seed-pack.apply.realms=system-com,production-com,staging-com
+
+# Disable config-based realms (only flag-based realms will be seeded)
+quantum.seed-pack.apply.realms=none</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Setting the flag on a Realm entity:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java">Realm realm = Realm.builder()
+    .emailDomain(<span class="string"><span class="delimiter">&quot;</span><span class="content">acme.com</span><span class="delimiter">&quot;</span></span>)
+    .databaseName(<span class="string"><span class="delimiter">&quot;</span><span class="content">acme-com</span><span class="delimiter">&quot;</span></span>)
+    .domainContext(domainContext)
+    .applySeedsOnStartup(<span class="predefined-constant">true</span>)  <span class="comment">// This realm will receive seeds on startup</span>
+    .build();
+realmRepo.save(realm);</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Or update an existing realm:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java">Optional&lt;Realm&gt; realmOpt = realmRepo.findByDatabaseName(<span class="string"><span class="delimiter">&quot;</span><span class="content">acme-com</span><span class="delimiter">&quot;</span></span>, <span class="predefined-constant">true</span>, systemRealm);
+<span class="keyword">if</span> (realmOpt.isPresent()) {
+    Realm realm = realmOpt.get();
+    realm.setApplySeedsOnStartup(<span class="predefined-constant">true</span>);
+    realmRepo.save(realm);
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Resolution logic:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>If <code>quantum.seed-pack.apply.realms</code> is configured with realm names (not "none" or empty), those realms are added to the list.</p>
+</li>
+<li>
+<p>The runner then queries the Realm collection in the system realm for all realms with <code>applySeedsOnStartup=true</code> and adds those to the list.</p>
+</li>
+<li>
+<p>The union of both sources (deduped) determines which realms receive seeds.</p>
+</li>
+<li>
+<p>If neither is configured, the default behavior applies: system, default, and test realms.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Notes:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>The Realm collection is always stored in the system realm (e.g., <code>system-com</code>).</p>
+</li>
+<li>
+<p>The <code>applySeedsOnStartup</code> flag defaults to <code>false</code> for all realms.</p>
+</li>
+<li>
+<p>This allows dynamic realm configuration without redeploying the application—just update the Realm entity in the database.</p>
+</li>
+</ul>
+</div>
+</div>
 </div>
 <div class="sect2">
 <h3 id="_transforms_in_depth">24.12. Transforms in depth</h3>
@@ -13226,6 +13324,210 @@ Manifest snippet:</p>
         <span class="keyword">return</span> <span class="integer">100</span>; <span class="comment">// Higher than context resolver</span>
     }
 }</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_seed_record_listeners_reacting_to_seed_data">24.12.3. Seed record listeners (reacting to seed data)</h4>
+<div class="paragraph">
+<p>The <code>SeedRecordListener</code> SPI allows application components to react when seed records are applied to the database. This is useful for synchronizing application state with seeded data, such as registering scheduled jobs, updating caches, or triggering other side effects.</p>
+</div>
+<div class="admonitionblock important">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-important" title="Important"></i>
+</td>
+<td class="content">
+The framework provides only the SPI interface. Applications must implement their own listeners for collections they care about. Listeners run within the security context established by the seed operation, so they have access to the tenant/realm context.
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>SeedRecordListener interface:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="directive">public</span> <span class="type">interface</span> <span class="class">SeedRecordListener</span> {
+    <span class="comment">/**
+     * Determines whether this listener should receive callbacks for the given collection.
+     */</span>
+    <span class="type">boolean</span> appliesTo(<span class="predefined-type">String</span> collection, SeedContext context);
+
+    <span class="comment">/**
+     * Called after seed records have been successfully applied to the database.
+     */</span>
+    <span class="type">void</span> onRecordsApplied(SeedRecordEvent event);
+
+    <span class="comment">/**
+     * Returns the priority of this listener. Higher priority = invoked first.
+     */</span>
+    <span class="keyword">default</span> <span class="type">int</span> priority() { <span class="keyword">return</span> <span class="integer">0</span>; }
+
+    <span class="comment">/**
+     * If true, listener runs asynchronously in a separate thread.
+     */</span>
+    <span class="keyword">default</span> <span class="type">boolean</span> async() { <span class="keyword">return</span> <span class="predefined-constant">false</span>; }
+}</code></pre>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_application_level_implementation_example">Application-level implementation example</h5>
+<div class="paragraph">
+<p>The following example shows how an application can implement a listener to synchronize job configurations when seeds are applied. This code would live in the application, not the framework:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@ApplicationScoped</span>
+<span class="directive">public</span> <span class="type">class</span> <span class="class">JobRunnerSeedListener</span> <span class="directive">implements</span> SeedRecordListener {
+
+    <span class="annotation">@Inject</span>
+    JobScheduler jobScheduler;
+
+    <span class="annotation">@Override</span>
+    <span class="directive">public</span> <span class="type">boolean</span> appliesTo(<span class="predefined-type">String</span> collection, SeedContext context) {
+        <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">autoPublishConfig</span><span class="delimiter">&quot;</span></span>.equals(collection) ||
+               <span class="string"><span class="delimiter">&quot;</span><span class="content">scheduledJobs</span><span class="delimiter">&quot;</span></span>.equals(collection);
+    }
+
+    <span class="annotation">@Override</span>
+    <span class="directive">public</span> <span class="type">void</span> onRecordsApplied(SeedRecordEvent event) {
+        Log.infof(<span class="string"><span class="delimiter">&quot;</span><span class="content">Syncing %d job config records from seed to JobRunner</span><span class="delimiter">&quot;</span></span>,
+                event.getRecordCount());
+        <span class="keyword">for</span> (<span class="predefined-type">Map</span>&lt;<span class="predefined-type">String</span>, <span class="predefined-type">Object</span>&gt; record : event.getRecords()) {
+            jobScheduler.registerOrUpdate(record);
+        }
+    }
+
+    <span class="annotation">@Override</span>
+    <span class="directive">public</span> <span class="type">int</span> priority() {
+        <span class="keyword">return</span> <span class="integer">100</span>; <span class="comment">// High priority to run early</span>
+    }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>With the above listener (implemented in your application), whenever the <code>autoPublishConfig</code> collection receives seed data, the JobRunner will automatically sync its internal state with the database.</p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_security_context">Security context</h5>
+<div class="paragraph">
+<p>Listeners run within the security context established by the seed operation (<code>SeedStartupRunner</code> or <code>SeedLoaderService</code>). This means:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>The <code>SecurityContext.getPrincipalContext()</code> is available with tenant/realm information</p>
+</li>
+<li>
+<p>Any repository operations or service calls will execute with appropriate permissions</p>
+</li>
+<li>
+<p>Listeners can access tenant-specific data and perform tenant-aware operations</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Example accessing security context in a listener:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@Override</span>
+<span class="directive">public</span> <span class="type">void</span> onRecordsApplied(SeedRecordEvent event) {
+    Optional&lt;PrincipalContext&gt; principal = SecurityContext.getPrincipalContext();
+    <span class="keyword">if</span> (principal.isPresent()) {
+        <span class="predefined-type">String</span> tenantId = principal.get().getDataDomain().getTenantId();
+        <span class="predefined-type">String</span> userId = principal.get().getUserId();
+        Log.infof(<span class="string"><span class="delimiter">&quot;</span><span class="content">Processing seeds for tenant %s as user %s</span><span class="delimiter">&quot;</span></span>, tenantId, userId);
+    }
+    <span class="comment">// Process records with proper tenant context...</span>
+}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_seedrecordevent_properties">SeedRecordEvent properties</h5>
+<div class="ulist">
+<ul>
+<li>
+<p><code>getCollection()</code>: The collection/entity name</p>
+</li>
+<li>
+<p><code>getSeedPack()</code>: The seed pack that provided the data</p>
+</li>
+<li>
+<p><code>getVersion()</code>: The seed pack version</p>
+</li>
+<li>
+<p><code>getContext()</code>: The SeedContext with realm/tenant info</p>
+</li>
+<li>
+<p><code>getRealm()</code>: Shortcut for <code>getContext().getRealm()</code></p>
+</li>
+<li>
+<p><code>getRecords()</code>: List of applied records (transformed, final form)</p>
+</li>
+<li>
+<p><code>isUpsert()</code>: Whether upsert (true) or insert-only (false)</p>
+</li>
+<li>
+<p><code>getRecordCount()</code>: Number of records applied</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_registration">Registration</h5>
+<div class="paragraph">
+<p>CDI auto-discovery (recommended):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="comment">// Just annotate your listener with @ApplicationScoped</span>
+<span class="comment">// It will be automatically discovered and registered</span>
+<span class="annotation">@ApplicationScoped</span>
+<span class="directive">public</span> <span class="type">class</span> <span class="class">MyAppSeedListener</span> <span class="directive">implements</span> SeedRecordListener { ... }</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Manual registration (alternative):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java">SeedLoader loader = SeedLoader.builder()
+    .addSeedSource(<span class="keyword">new</span> FileSeedSource(<span class="string"><span class="delimiter">&quot;</span><span class="content">local</span><span class="delimiter">&quot;</span></span>, Paths.get(<span class="string"><span class="delimiter">&quot;</span><span class="content">seed-packs</span><span class="delimiter">&quot;</span></span>)))
+    .seedRepository(<span class="keyword">new</span> MongoSeedRepository(mongoClient))
+    .seedRegistry(<span class="keyword">new</span> MongoSeedRegistry(mongoClient))
+    .addRecordListener(<span class="keyword">new</span> MyAppSeedListener())
+    .build();</code></pre>
+</div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_best_practices_2">Best practices</h5>
+<div class="ulist">
+<ul>
+<li>
+<p>Listeners are invoked after records have been persisted to the database</p>
+</li>
+<li>
+<p>Listener exceptions are caught and logged; they don&#8217;t interrupt the seeding process</p>
+</li>
+<li>
+<p>Async listeners (<code>async() = true</code>) run in separate threads and don&#8217;t block seeding</p>
+</li>
+<li>
+<p>CDI-discovered listeners are automatically registered when using <code>SeedLoaderService</code></p>
+</li>
+<li>
+<p>Keep listener logic fast and idempotent since seeds may be re-applied</p>
+</li>
+<li>
+<p>Use the security context to ensure tenant-aware operations</p>
+</li>
+</ul>
 </div>
 </div>
 </div>
