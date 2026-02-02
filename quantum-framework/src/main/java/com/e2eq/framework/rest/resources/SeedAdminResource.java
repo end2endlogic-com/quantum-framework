@@ -1,5 +1,8 @@
 package com.e2eq.framework.rest.resources;
 
+import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.service.seed.SeedContext;
 import com.e2eq.framework.service.seed.SeedPackDescriptor;
 import com.e2eq.framework.service.seed.SeedPackManifest;
@@ -45,7 +48,7 @@ public class SeedAdminResource {
     @Path("/pending/{realm}")
     public List<PendingSeedPack> listPending(@PathParam("realm") String realm,
                                              @QueryParam("filter") String filterCsv) {
-        SeedContext context = SeedContext.builder(realm).build();
+        SeedContext context = buildSeedContext(realm);
         Map<String, SeedPackDescriptor> latestByPack;
         try {
             latestByPack = seedDiscoveryService.discoverLatestApplicable(context, filterCsv);
@@ -93,7 +96,7 @@ public class SeedAdminResource {
     @Path("/apply/{realm}")
     public ApplyResult applyAll(@PathParam("realm") String realm,
                                 @QueryParam("filter") String filterCsv) {
-        SeedContext context = SeedContext.builder(realm).build();
+        SeedContext context = buildSeedContext(realm);
 
         Map<String, SeedPackDescriptor> latestByPack;
         try {
@@ -115,7 +118,7 @@ public class SeedAdminResource {
     @Path("/{realm}/{seedPack}/apply")
     public ApplyResult applyOne(@PathParam("realm") String realm,
                                 @PathParam("seedPack") String seedPack) {
-        SeedContext context = SeedContext.builder(realm).build();
+        SeedContext context = buildSeedContext(realm);
 
         // Discover and find latest version of the given pack
         List<SeedPackDescriptor> descriptors;
@@ -140,6 +143,36 @@ public class SeedAdminResource {
     }
 
     // ----- Helpers -----
+
+    /**
+     * Builds a SeedContext for the given realm, populating DataDomain fields from the current
+     * security context. This ensures that seed records receive proper tenantId, orgRefName,
+     * accountNum, and ownerId values required by validation.
+     *
+     * @param realm the target realm for seeding
+     * @return a fully populated SeedContext
+     */
+    private SeedContext buildSeedContext(String realm) {
+        SeedContext.Builder builder = SeedContext.builder(realm);
+
+        // Extract DataDomain from security context if available
+        Optional<PrincipalContext> principalContext = SecurityContext.getPrincipalContext();
+        if (principalContext.isPresent()) {
+            PrincipalContext pc = principalContext.get();
+            DataDomain dd = pc.getDataDomain();
+            if (dd != null) {
+                builder.tenantId(dd.getTenantId())
+                       .orgRefName(dd.getOrgRefName())
+                       .accountId(dd.getAccountNum())
+                       .ownerId(pc.getUserId());
+            }
+        } else {
+            Log.warnf("SeedAdminResource: No security context available for realm %s. " +
+                      "Seed records may fail validation if DataDomain fields are required.", realm);
+        }
+
+        return builder.build();
+    }
 
     private PendingSeedPack computePendingForDescriptor(SeedRegistry registry,
                                                         SeedContext context,
