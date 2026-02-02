@@ -3,6 +3,7 @@ package com.e2eq.framework.service.seed;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
 
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -135,7 +136,11 @@ public class ClasspathSeedSource implements SeedSource, SchemeAware {
                         String candidate = baseEntry.isEmpty() ? relativePath : baseEntry + "/" + relativePath;
                         JarEntry je = jar.getJarEntry(candidate);
                         if (je != null) {
-                            return jar.getInputStream(je);
+                            // Read bytes within try block since JarFile will be closed after
+                            try (InputStream jarIn = jar.getInputStream(je)) {
+                                byte[] data = jarIn.readAllBytes();
+                                return new ByteArrayInputStream(data);
+                            }
                         }
                         // If not found, search within the same pack root
                         String packRoot = null;
@@ -167,7 +172,11 @@ public class ClasspathSeedSource implements SeedSource, SchemeAware {
                             }
                         }
                         if (best != null) {
-                            return jar.getInputStream(best);
+                            // Read bytes within try block since JarFile will be closed after
+                            try (InputStream jarIn = jar.getInputStream(best)) {
+                                byte[] data = jarIn.readAllBytes();
+                                return new ByteArrayInputStream(data);
+                            }
                         }
                         Log.warnf("ClasspathSeedSource: dataset not found in JAR for pack=%s manifest=%s relative=%s", seedPack, entryName, relativePath);
                         throw new IOException("Classpath dataset not found in jar: " + relativePath);
