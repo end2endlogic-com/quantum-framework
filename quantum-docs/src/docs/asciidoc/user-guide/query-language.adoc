@@ -190,6 +190,107 @@ description:!null
 description:~ && description:!""
 ----
 
+=== Querying Dynamic Attributes
+
+Models that implement `DynamicAttributeSupport` can store flexible, user-defined attributes organized into named sets. These can be queried using the elemMatch syntax for array fields.
+
+==== Dynamic Attribute Structure
+
+Dynamic attributes are stored as:
+
+[source,json]
+----
+{
+  "dynamicAttributeSets": [
+    {
+      "name": "logistics",
+      "attributes": [
+        { "id": "uuid-1", "name": "weight", "value": 25.5, "type": "NUMBER" },
+        { "id": "uuid-2", "name": "hazmat", "value": false, "type": "BOOLEAN" }
+      ]
+    },
+    {
+      "name": "compliance",
+      "attributes": [
+        { "id": "uuid-3", "name": "certNumber", "value": "CERT-123", "type": "STRING" }
+      ]
+    }
+  ]
+}
+----
+
+==== Querying by Attribute ID and Value
+
+Use elemMatch syntax `{...}` to query attributes within the array:
+
+[source]
+----
+# Find records where a specific attribute (by ID) has a specific value
+dynamicAttributeSets.attributes:{id:21f63b90-08b4-4280-a28d-f003f9c114b3 && value:"Conference hall"}
+
+# Find records with a numeric attribute value
+dynamicAttributeSets.attributes:{id:94138c39-2115-4681-8c18-aa0c0596b065 && value:#99}
+
+# Find records with a decimal attribute value
+dynamicAttributeSets.attributes:{id:uuid-1 && value:##25.5}
+----
+
+==== Querying by Attribute Name and Value
+
+[source]
+----
+# Find records where an attribute named "weight" has value > 10
+dynamicAttributeSets.attributes:{name:"weight" && value:>##10}
+
+# Find records with a specific attribute name and string value
+dynamicAttributeSets.attributes:{name:"certNumber" && value:"CERT-123"}
+
+# Boolean attribute query
+dynamicAttributeSets.attributes:{name:"hazmat" && value:true}
+----
+
+==== Combining Multiple Dynamic Attribute Conditions
+
+[source]
+----
+# Multiple attributes must match (separate elemMatch conditions)
+dynamicAttributeSets.attributes:{name:"weight" && value:>##10} &&
+dynamicAttributeSets.attributes:{name:"hazmat" && value:false}
+
+# OR within a single attribute query
+dynamicAttributeSets.attributes:{value:"A" || value:"B"}
+
+# Combined with regular field queries
+status:"ACTIVE" && dynamicAttributeSets.attributes:{name:"priority" && value:"HIGH"}
+----
+
+==== Querying by Set Name
+
+To filter by the set name itself:
+
+[source]
+----
+# Records that have a "logistics" attribute set
+dynamicAttributeSets:{name:"logistics"}
+
+# Combine set name with attribute value
+dynamicAttributeSets:{name:"logistics"} &&
+dynamicAttributeSets.attributes:{name:"weight" && value:>##50}
+----
+
+==== Advanced Tags (Simple Key-Value)
+
+For simpler tag-based filtering, use `advancedTags`:
+
+[source]
+----
+# Find by tag name and value
+advancedTags:{name:"priority" && value:"urgent"}
+
+# Multiple tag conditions
+advancedTags:{name:"region" && value:"US"} && advancedTags:{name:"tier" && value:"premium"}
+----
+
 ==== Advanced Examples
 
 ===== Complex Business Logic

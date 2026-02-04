@@ -1,7 +1,10 @@
 package com.e2eq.framework.api.security;
 
+import com.e2eq.framework.model.auth.AuthProviderFactory;
+import com.e2eq.framework.model.auth.UserManagement;
 import com.e2eq.framework.model.persistent.migration.base.MigrationService;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
+import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.securityrules.SecurityCheckException;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.securityrules.SecuritySession;
@@ -23,8 +26,10 @@ import jakarta.inject.Inject;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static com.ibm.icu.impl.Assert.fail;
 
@@ -51,6 +56,8 @@ public class TestUserProfile extends BaseRepoTest {
     TestUtils testUtils;
     @Inject
     MorphiaDataStoreWrapper morphiaDataStoreWrapper;
+    @Inject
+    AuthProviderFactory authProviderFactory;
 
 
     @Test
@@ -63,20 +70,47 @@ public class TestUserProfile extends BaseRepoTest {
                 Log.info("======   No migration required ======");
             } catch (DatabaseMigrationException ex) {
                 ex.printStackTrace();
+                Log.info("==== Migration required, running migrations ======");
+            }
 
-                Log.info("==== Attempting to run migration scripts ======");
-                // attempt to mitigate by running migrations
-                Multi.createFrom().emitter(emitter -> {
+            // Always run migrations for system realm so AddSystemUserCredential runs (idempotent).
+            // When checkMigrationRequired did not throw, we still need to ensure system user exists.
+            Multi.createFrom().emitter(emitter -> {
+                try {
                     migrationService.runAllUnRunMigrations(testUtils.getSystemRealm(), emitter);
                     migrationService.runAllUnRunMigrations(testUtils.getDefaultRealm(), emitter);
                     migrationService.runAllUnRunMigrations(testUtils.getTestRealm(), emitter);
-                }).subscribe().with(
-                   item -> System.out.println("Emitting: " + item),
-                   failure ->fail("Failed with: " + failure)
-                );
-            }
+                } finally {
+                    emitter.complete();
+                }
+            }).collect().asList()
+              .await().atMost(Duration.ofSeconds(120));
 
-            Optional<CredentialUserIdPassword> opCreds = credentialRepo.findByUserId(envConfigUtils.getSystemUserId());
+            // Use ignoreRules=true so we see the system credential even when test principal's rules would filter it out
+            Optional<CredentialUserIdPassword> opCreds = credentialRepo.findByUserId(
+                    envConfigUtils.getSystemUserId(), envConfigUtils.getSystemRealm(), true);
+            if (opCreds.isEmpty()) {
+                // DB may already be at 1.0.4 with no pending changesets, so AddSystemUserCredential did not run. Create system user via auth provider.
+                UserManagement userManagement = authProviderFactory.getUserManager();
+                // Check again with ignoreRules so we don't create when credential exists but was hidden by rules (would cause E11000 duplicate key)
+                boolean existsIgnoringRules = credentialRepo.findByUserId(
+                        envConfigUtils.getSystemUserId(), envConfigUtils.getSystemRealm(), true).isPresent();
+                if (!existsIgnoringRules) {
+                    DomainContext dc = DomainContext.builder()
+                            .tenantId(envConfigUtils.getSystemTenantId())
+                            .orgRefName(envConfigUtils.getSystemOrgRefName())
+                            .defaultRealm(envConfigUtils.getSystemRealm())
+                            .accountId(envConfigUtils.getSystemAccountNumber())
+                            .build();
+                    userManagement.createUser(
+                            envConfigUtils.getSystemUserId(),
+                            testUtils.getDefaultSystemPassword(),
+                            false,
+                            Set.of("system", "admin", "user"),
+                            dc);
+                }
+                opCreds = credentialRepo.findByUserId(envConfigUtils.getSystemUserId(), envConfigUtils.getSystemRealm(), true);
+            }
             if (opCreds.isPresent()) {
                 Log.debug("Found it");
             } else {

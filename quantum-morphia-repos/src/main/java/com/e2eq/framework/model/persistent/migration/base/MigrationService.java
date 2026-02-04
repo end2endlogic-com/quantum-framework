@@ -46,11 +46,12 @@ public class MigrationService {
 
    @ConfigProperty(name = "quantum.database.scope")
    protected String databaseScope;
-   @ConfigProperty(name = "quantum.realmConfig.defaultRealm")
+   @ConfigProperty(name = "quantum.realmConfig.defaultRealm", defaultValue = "mycompanyxyz-com")
    protected String defaultRealm;
-   @ConfigProperty(name = "quantum.realmConfig.testRealm")
+   @ConfigProperty(name = "quantum.realmConfig.testRealm", defaultValue = "test-system-com")
    protected String testRealm;
-   @ConfigProperty(name = "quantum.realmConfig.systemRealm")
+   /** System realm database name; must match quantum.realmConfig.systemRealm in application.properties (e.g. system-psa-com). */
+   @ConfigProperty(name = "quantum.realmConfig.systemRealm", defaultValue = "system-com")
    protected String systemRealm;
 
    @ConfigProperty(name = "quantum.database.migration.enabled")
@@ -110,10 +111,17 @@ public class MigrationService {
       if (!databaseNames.contains(systemRealm)) {
          Log.warnf("    ### System realm %s does not exist, creating it", systemRealm);
          Multi<String> multi = Multi.createFrom().emitter(emitter -> {
-            SecurityCallScope.runWithContexts(securityUtils.getSystemPrincipalContext(),
-               securityUtils.getSystemSecurityResourceContext(), () -> {
-               runAllUnRunMigrations(systemRealm, emitter);
-            });
+            try {
+               SecurityCallScope.runWithContexts(securityUtils.getSystemPrincipalContext(),
+                  securityUtils.getSystemSecurityResourceContext(), () -> {
+                  runAllUnRunMigrations(systemRealm, emitter);
+                  applyAllIndexes(systemRealm);
+               });
+               emitter.complete();
+            } catch (Throwable t) {
+               emitter.fail(t);
+               throw t;
+            }
          });
          multi.subscribe().with(
             item -> System.out.println(">: " + item),
@@ -127,9 +135,24 @@ public class MigrationService {
             checkInitialized(systemRealm);
          } catch (DatabaseMigrationException e) {
             Log.warnf("    ### System realm %s is not initialized, initializing it", systemRealm);
-            Multi.createFrom().emitter(emitter -> {
-               runAllUnRunMigrations(systemRealm, emitter);
+            Multi<String> multi = Multi.createFrom().emitter(emitter -> {
+               try {
+                  SecurityCallScope.runWithContexts(securityUtils.getSystemPrincipalContext(),
+                     securityUtils.getSystemSecurityResourceContext(), () -> {
+                     runAllUnRunMigrations(systemRealm, emitter);
+                     applyAllIndexes(systemRealm);
+                  });
+                  emitter.complete();
+               } catch (Throwable t) {
+                  emitter.fail(t);
+                  throw t;
+               }
             });
+            multi.subscribe().with(
+               item -> System.out.println(">: " + item),
+               failure -> failure.printStackTrace(),
+               () -> System.out.println(">: Done")
+            );
          }
       }
    }
@@ -182,11 +205,26 @@ public class MigrationService {
       morphiaDataStoreWrapper.getDataStore(realmId).ensureIndexes(em.get().getType());
    }
 
+   /**
+    * Ensures all Morphia-mapped entity collections exist in the realm database by applying indexes.
+    * This creates any missing collections (MongoDB creates a collection when the first index is created).
+    * Called after migrations so the system realm has all expected collections (e.g. credentialUserIdPassword, userProfile, policy, realm).
+    */
    public void applyAllIndexes(String realmId) {
-     Objects.requireNonNull(realmId);
-      morphiaDataStoreWrapper.getDataStore(realmId).getMapper().getMappedEntities().forEach(entity -> {
-         morphiaDataStoreWrapper.getDataStore(realmId).ensureIndexes(entity.getType());
-      });
+      Objects.requireNonNull(realmId);
+      var datastore = morphiaDataStoreWrapper.getDataStore(realmId);
+      var entities = datastore.getMapper().getMappedEntities();
+      Log.infof("applyAllIndexes: ensuring indexes for %d mapped entity types in realm %s", entities.size(), realmId);
+      for (var entity : entities) {
+         try {
+            datastore.ensureIndexes(entity.getType());
+            Log.debugf("applyAllIndexes: ensured indexes for %s in %s", entity.collectionName(), realmId);
+         } catch (Exception e) {
+            Log.warnf(e, "applyAllIndexes: failed to ensure indexes for %s in %s", entity.collectionName(), realmId);
+         }
+      }
+      datastore.applyIndexes();
+      Log.infof("applyAllIndexes: completed for realm %s", realmId);
    }
 
    public void dropAllIndexes (String realmId) {

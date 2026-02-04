@@ -25,6 +25,7 @@ Use it to jump directly to a subject and then explore details in context.
 
 - REST CRUD: xref:../tutorials/quantum-tutorial.adoc#sec-rest-crud[Building RESTful CRUD APIs]
 - Query language: xref:../tutorials/quantum-tutorial.adoc#sec-query-language[Query language and filtering]
+- AI Agent integration: xref:./ai-agent-integration.adoc[AI Agent Integration] (tools discovery, schema, execute, session/trace)
 
 == Security
 

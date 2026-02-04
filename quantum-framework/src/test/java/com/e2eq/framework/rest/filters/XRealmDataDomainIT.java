@@ -201,7 +201,11 @@ public class XRealmDataDomainIT extends BaseRepoTest {
             Log.infof("Running migrations for realm: %s", realm);
             try {
                 Multi.createFrom().emitter(emitter -> {
-                    migrationService.runAllUnRunMigrations(realm, emitter);
+                    try {
+                        migrationService.runAllUnRunMigrations(realm, emitter);
+                    } finally {
+                        emitter.complete();
+                    }
                 })
                 .collect().asList()
                 .await().indefinitely();

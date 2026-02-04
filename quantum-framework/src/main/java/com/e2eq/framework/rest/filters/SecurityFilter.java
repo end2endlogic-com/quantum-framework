@@ -585,7 +585,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
         Log.debugf("buildIdentityContextWithCredentials: principalName=%s, realmOverride=%s", principalName, realmOverride);
 
-        // Credentials are always looked up from system-com (global)
+        // Credentials are looked up from the configured system realm (global credential store)
         Optional<CredentialUserIdPassword> ocreds = credentialRepo.findByUserId(principalName, envConfigUtils.getSystemRealm(), true);
 
         if (ocreds.isPresent()) {
@@ -645,7 +645,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             throw new IllegalStateException("sub attribute not provided but is required in token claims");
         }
 
-        // Credentials are always looked up from system-com (global)
+        // Credentials are looked up from the configured system realm (global credential store)
         Optional<CredentialUserIdPassword> ocreds = credentialRepo.findBySubject(sub, envConfigUtils.getSystemRealm(), true);
         if (!ocreds.isPresent()) {
             ocreds = findCredentialByUsername(sub, realmOverride);

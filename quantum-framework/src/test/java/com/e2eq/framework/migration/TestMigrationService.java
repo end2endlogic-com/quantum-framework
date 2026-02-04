@@ -131,7 +131,11 @@ public class TestMigrationService extends BaseRepoTest {
         try (final SecuritySession ss = new SecuritySession(pContext, rContext)) {
             Log.infof("Running all unrun migrations for tenant: %s", testUtils.getTestTenantId());
             Multi.createFrom().emitter(emitter -> {
-                migrationService.runAllUnRunMigrations(testUtils.getTestRealm(), emitter);
+                try {
+                    migrationService.runAllUnRunMigrations(testUtils.getTestRealm(), emitter);
+                } finally {
+                    emitter.complete();
+                }
             });
 
         }

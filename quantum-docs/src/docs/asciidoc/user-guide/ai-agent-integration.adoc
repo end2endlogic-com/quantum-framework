@@ -1,0 +1,316 @@
+// AI Agent Integration
+// Recommendations for framework APIs to support AI agents similar to
+// Palantir AIP / agentic enterprise patterns (e.g. AIPCon 6 – Agentic Operating System for the Enterprise).
+
+[[ai-agent-integration]]
+= AI Agent Integration
+
+This section describes APIs to add to the framework to support AI agent integration, aligned with patterns discussed in agentic enterprise systems (e.g. Palantir AIP: session management, retrieval context, and tools for action-taking agents).
+
+Reference: https://www.youtube.com/watch?v=SePXznjZ-1A["Agentic Operating System for the Enterprise | Palantir's AIP Lead Jack Dobson at AIPCon 6"].
+
+== Goals
+
+* Let agents *discover* what they can do (tools, schema) without hard-coding endpoint URLs.
+* Let agents *execute* governed actions (query, save, delete) with existing security (realm, permissions, `@FunctionalAction`).
+* *Multi-tenant:* Each tenant (realm) has its own agent configuration and tool instances; tools list and execute are scoped by tenant.
+* *Tenant runAs:* Tenant configuration can specify a `runAsUserId` so tool execution runs under that user's security context (PrincipalContext), integrating with the overall security and policy framework.
+* Provide *retrieval context* (ontology, type schemas) so the agent can build valid requests and inject context into the LLM.
+* Support *session/trace* for audit and multi-turn correlation.
+
+== Query Gateway as the Single Integration Point (CRUDL)
+
+For **CRUDL** (Create, Read, Update, Delete, List) over entity data, agents and MCP should integrate with the **Query Gateway** only—not across the broader REST API space. The gateway is generic and acts as a single integration point for all Morphia-mapped entity types.
+
+**Why the gateway is sufficient:**
+
+* **One set of endpoints** — `GET /api/query/rootTypes`, `POST /api/query/plan`, `POST /api/query/find`, `POST /api/query/save`, `POST /api/query/delete`, `POST /api/query/deleteMany` cover List (rootTypes + find), Read (find), Create/Update (save), and Delete (delete, deleteMany).
+* **Type-agnostic** — The gateway accepts a `rootType` (e.g. `Location`, `Order`) and a query or entity body; there is no need for the agent to know or call domain-specific resources (e.g. `/orders`, `/products`). The same six operations work for every entity type.
+* **Single security surface** — One resource (`QueryGatewayResource`) with one `@FunctionalMapping` (area/domain) and method-level `@FunctionalAction`; permission and realm resolution are consistent for all CRUDL.
+* **Simpler agents and bridges** — An AI agent or MCP bridge can implement exactly six tool shapes (rootTypes, plan, find, save, delete, deleteMany) and one base path (`/api/query`). No need to discover or maintain many REST paths per domain.
+
+**Implications for agent and MCP design:**
+
+* **Tools** — Agent/MCP tools should map directly to gateway operations (query_rootTypes, query_plan, query_find, query_save, query_delete, query_deleteMany). No separate tools per entity or per domain resource.
+* **Schema** — Discovery and schema can be gateway-derived: `rootTypes` lists available types; optional per-type schema (e.g. `GET /api/agent/schema/{rootType}`) can be built from the same Morphia metadata the gateway uses.
+* **Optional agent layer** — A thin layer (`GET /api/agent/tools`, `POST /api/agent/execute`, `GET /api/agent/schema`) can sit on top of the gateway to provide tool discovery, unified execute, and schema for LLMs; implementation delegates to the gateway and does not duplicate logic.
+* **Domain REST resources** — Domain-specific resources (e.g. `BaseResource`/`OntologyAwareResource` subclasses with paths like `/orders`, `/shipments`) remain for human-driven UIs and workflows. Agents and MCP use the gateway for CRUDL unless a future design explicitly adds agent-only tools that call those resources.
+
+See xref:rest-crud.adoc[REST CRUD] and xref:planner-and-query-gateway.adoc[Planner and Query Gateway] for the gateway API and query syntax.
+
+== Multi-Tenancy and Tenant-Specific Configuration
+
+Agent integration is **multi-tenant**: each tenant (realm) has its own configuration and tool instances.
+
+* **Realm scope** — Tools list and execute are scoped by tenant (realm). The effective realm is resolved from the request (e.g. `realm` query param, `arguments.realm`, or `X-Realm` header), then the principal's default realm, then configured default.
+* **Per-tenant configuration** — Each tenant can have:
+  * _runAsUserId_ (optional): The userId to use as the security context when executing agent tools for that tenant. When set, the backend runs the gateway under that user's PrincipalContext so that permissions and data scoping apply as that user (same pattern as impersonation). This integrates with the overall security and policy framework.
+  * _enabledTools_ (optional): List of tool names enabled for that tenant; GET /api/agent/tools returns only those tools for the requested realm.
+  * _limits_ (optional): Per-tenant limits (e.g. max find limit).
+* **Caller permission** — The caller must be allowed to use the agent API for the target tenant; the actual execution runs under the tenant's runAs user (if configured) or the caller. Audit logs record both caller and runAs user when runAs is used.
+
+See the implementation design (`docs/design/AI_AGENT_INTEGRATION_DESIGN.md`) for the data model (e.g. AgentTenantConfig), storage options, and runAs resolution.
+
+== APIs to Add (Gateway-Centric)
+
+=== 1. Agent Tools / Capabilities (Discovery)
+
+**Purpose:** One endpoint that returns a machine-readable list of "tools" the agent can call—scoped to **Query Gateway operations only** so the agent has a single, consistent CRUDL surface.
+
+**Suggested endpoint:** `GET /api/agent/tools` (or `GET /api/agent/capabilities`).
+
+**Response shape (conceptual):**
+
+* List of tools, one per gateway operation:
+  * `query_rootTypes` — list entity types (maps to `GET /api/query/rootTypes`).
+  * `query_plan` — get execution plan for a query (maps to `POST /api/query/plan`).
+  * `query_find` — list/read entities (maps to `POST /api/query/find`).
+  * `query_save` — create or update an entity (maps to `POST /api/query/save`).
+  * `query_delete` — delete one entity by id (maps to `POST /api/query/delete`).
+  * `query_deleteMany` — delete many by query (maps to `POST /api/query/deleteMany`).
+* Each tool includes: `name`, `description` (for the LLM), `parameters` (JSON Schema for the request body), and optional `area`/`domain`/`action` for permission alignment.
+
+**Implementation notes:**
+
+* Implement by enumerating the six gateway operations (and their request DTOs) from `QueryGatewayResource`; no need to scan the rest of the REST API space.
+* Only include tools the current principal is allowed to use (e.g. permission for integration/query and the corresponding action).
+* Response format can align with OpenAI function calling or MCP tool definitions so agents and MCP bridges consume it directly.
+
+**Why:** Agents discover a single CRUDL surface (the gateway) instead of many domain endpoints; aligns with "Tools" in Palantir AIP while keeping integration simple.
+
+---
+
+=== 2. Schema / Ontology for Agents (Retrieval Context)
+
+**Purpose:** Expose type schemas (and optional ontology metadata) so the agent can build valid gateway payloads: `rootType`, `query`, and entity bodies. All schema is **gateway-derived**—the same types the gateway already uses.
+
+**Suggested endpoints:**
+
+* `GET /api/agent/schema` — list of entity types; **reuse or wrap `GET /api/query/rootTypes`** so there is a single source of truth. Optionally add per-type field metadata (name, type, required).
+* `GET /api/agent/schema/{rootType}` — JSON Schema (or equivalent) for one root type (fields, types, constraints) so the agent can construct valid `find`/`save` bodies. Derive from the same Morphia `EntityModel` the gateway uses.
+* Optional: `GET /api/agent/ontology` — high-level ontology summary (entity kinds, relations) for retrieval context; can wrap ontology modules if present, but CRUDL schema stays gateway-centric.
+
+**Implementation notes:**
+
+* Schema should be derived from the same Morphia mapping the gateway uses (e.g. `EntityModel`, `@Property`, `@Reference`); no separate schema store.
+* Keep responses concise so they fit in LLM context windows.
+* Agents that only use the gateway need only `rootTypes` and optional per-type schema; ontology is an optional enrichment.
+
+**Why:** Single source of truth (gateway + Morphia); agents get valid `rootType` and field names without integrating with domain-specific REST docs.
+
+---
+
+=== 3. Unified Agent Action API (Optional)
+
+**Purpose:** Single HTTP entry point for the agent to execute a gateway "tool" by name and arguments, so the agent does not need to know the six gateway paths. The implementation **delegates only to the Query Gateway**.
+
+**Suggested endpoint:** `POST /api/agent/execute` (or `POST /api/agent/tools/execute`).
+
+**Request shape (conceptual):**
+
+* `tool` (or `name`): one of `query_rootTypes`, `query_plan`, `query_find`, `query_save`, `query_delete`, `query_deleteMany`.
+* `arguments` (or `params`): JSON object matching the gateway request body for that operation (e.g. `rootType`, `query`, `page` for `query_find`; `rootType`, `entity` for `query_save`).
+* Optional: `sessionId`, `traceId` for audit and multi-turn correlation.
+
+**Response:** Same as the underlying gateway operation (e.g. find result, save result, delete result, or error).
+
+**Implementation notes:**
+
+* **Delegate only to `QueryGatewayResource`** — no branching to domain resources. Map `tool` to the corresponding gateway method (plan, find, save, delete, deleteMany, rootTypes) and pass `arguments` as the request body. One integration point, one security surface.
+* Security: same realm resolution, permission checks (`@FunctionalAction`), and data scoping as the gateway.
+* Optional: validate `tool` and `arguments` against the schema from `GET /api/agent/tools` to return clear errors.
+
+**Why:** Agent calls one execute endpoint; the server translates to the appropriate gateway call. No need for the agent (or MCP bridge) to integrate across the REST API space for CRUDL.
+
+---
+
+=== 4. Session / Trace Headers (Audit and Multi-Turn)
+
+**Purpose:** Allow agent runtimes to pass a session and/or trace ID so that all requests belonging to one conversation or run can be correlated and audited.
+
+**Suggested approach:**
+
+* Request headers: e.g. `X-Agent-Session-Id`, `X-Agent-Trace-Id` (or `X-Request-Trace-Id`).
+* Store or log these in existing audit / request logging so that support and compliance can filter by session or trace.
+* No new endpoint required; only header handling and propagation to logging or audit tables.
+
+**Implementation notes:**
+
+* Security filter or request filter: read headers, put values into `SecurityContext` or request-scoped context so that any downstream code (e.g. query gateway, permission checks) can attach them to logs or audit events.
+* Optional: include `sessionId` / `traceId` in error responses (e.g. in a response header or a small JSON envelope) so the agent runtime can correlate failures.
+
+**Why:** Matches multi-turn and session management in agentic APIs; supports debugging and compliance.
+
+---
+
+=== 5. Retrieval Context Endpoint (Optional, RAG-Like)
+
+**Purpose:** Allow the agent to request a chunk of "context" (e.g. entities or ontology neighborhood) to inject into the LLM. Prefer **gateway-based** context where possible.
+
+**Suggested endpoint:** `POST /api/agent/context` (or `GET /api/agent/context` with query params).
+
+**Request (conceptual):**
+
+* `type`: e.g. `entity_by_id`, `search`, or optional `ontology_edges`.
+* Parameters: e.g. `rootType`, `query`, `limit`, `id` (for entity_by_id); optional `entityId` for ontology edges.
+
+**Response:** Structured context (e.g. list of entities, or ontology edges) in a stable, concise format.
+
+**Implementation notes:**
+
+* **Gateway-first** — For `entity_by_id` or `search`, implement by calling the gateway: e.g. `POST /api/query/find` with `rootType`, `query` (e.g. `_id:...` for by-id), and a small `limit`. No need to call domain-specific list endpoints.
+* Optional: for `ontology_edges`, wrap `OntologyAwareResource`/ontology services if the app uses them; otherwise omit or keep context to gateway find results.
+* Limit size (e.g. `limit` cap) to avoid overwhelming the LLM context window.
+* Enforce same security and realm as the gateway.
+
+**Why:** Retrieval context stays aligned with the single integration point (gateway find); optional ontology enriches when available.
+
+---
+
+== MCP Integration (Cursor, ChatGPT, Gemini)
+
+The https://modelcontextprotocol.io[Model Context Protocol (MCP)] is an open standard that lets AI clients (Cursor, Claude Desktop, ChatGPT, Gemini, etc.) discover and call *tools* and read *resources* from a server. Integrating MCP with the **Query Gateway as the single integration point** means the MCP bridge talks only to the gateway (and optional thin agent layer) for CRUDL—no integration across the rest of the REST API space.
+
+=== How MCP Maps to the Framework (Gateway-Centric)
+
+| MCP concept | Purpose | Framework equivalent (gateway-only for CRUDL) |
+|-------------|---------|------------------------------------------------|
+| **Tools** | Actions the LLM can call (`tools/list`, `tools/call`) | Six tools: `query_rootTypes`, `query_plan`, `query_find`, `query_save`, `query_delete`, `query_deleteMany` → `GET /api/query/rootTypes`, `POST /api/query/plan`, `POST /api/query/find`, etc. (or `POST /api/agent/execute`) |
+| **Resources** | Read-only data for context (`resources/list`, `resources/read`) | `GET /api/query/rootTypes` or `GET /api/agent/schema`; `GET /api/agent/schema/{rootType}` for per-type schema. No need to expose domain REST paths as resources. |
+| **Prompts** (optional) | Parameterized prompt templates | Domain prompts that invoke the six gateway tools (e.g. "List active locations", "Find orders for customer X") |
+
+MCP uses JSON-RPC over stdio (local) or HTTP (SSE / Streamable HTTP) for remote servers. Cursor and Claude support both; ChatGPT and Gemini can use remote MCP when they support the protocol.
+
+=== Two Integration Approaches
+
+==== Option A: MCP Bridge Server (recommended to start)
+
+Run a *standalone MCP server* that talks to your Quantum REST APIs. The AI client (Cursor, Claude, etc.) connects to the MCP server; the MCP server calls your backend (e.g. `https://your-app.example.com`).
+
+**Pros:**
+
+* No changes to the Java/Quarkus app; reuse existing REST APIs (and future `/api/agent/*` endpoints).
+* Same security: backend still enforces realm, permissions, and `@FunctionalAction`.
+* Works with Cursor (stdio or remote SSE), Claude Desktop (stdio), Claude in browser (Custom Connector / remote), and any MCP client.
+* Can be implemented in TypeScript, Python, or another language using official MCP SDKs.
+
+**How it works:**
+
+1. **MCP tools** — The bridge implements exactly **six tools** (query_rootTypes, query_plan, query_find, query_save, query_delete, query_deleteMany), each mapping to one Query Gateway endpoint. No tools for domain resources (e.g. no `/orders` or `/products`). `tools/list` can call `GET /api/agent/tools` when available, or return a fixed list of these six. `tools/call` forwards to `POST /api/agent/execute` or directly to `POST /api/query/find`, `POST /api/query/save`, etc., with the same JSON bodies. **Single integration point:** one base path (`/api/query`) and optionally `/api/agent/*`.
+2. **Auth** — The bridge is configured with a base URL and an auth token (env). Every request to the backend includes that token. The backend (gateway) authenticates and authorizes as for any REST client.
+3. **MCP resources** (optional) — Expose gateway-derived schema only: e.g. `quantum://schema` → `GET /api/query/rootTypes` (or `GET /api/agent/schema`), `quantum://schema/{rootType}` → `GET /api/agent/schema/{rootType}`. No need to expose domain REST paths as MCP resources for CRUDL.
+
+**Example tool mapping (bridge → backend):**
+
+| MCP tool name | Bridge action |
+|---------------|----------------|
+| `query_rootTypes` | `GET /api/query/rootTypes` |
+| `query_plan` | `POST /api/query/plan` with `rootType`, `query` |
+| `query_find` | `POST /api/query/find` with `rootType`, `query`, `page`, `sort`, optional `realm` |
+| `query_save` | `POST /api/query/save` with `rootType`, `entity`, optional `realm` |
+| `query_delete` | `POST /api/query/delete` with `rootType`, `id`, optional `realm` |
+| `query_deleteMany` | `POST /api/query/deleteMany` with `rootType`, `query`, optional `realm` |
+
+**Where to put the bridge:**
+
+* **Separate repo or module** (e.g. `quantum-mcp-bridge`): TypeScript or Python app that uses the MCP SDK; **only** calls the Query Gateway (and optional agent schema/execute) — one base URL, six operations. Configurable base URL and auth via env; run locally (stdio) or as HTTP MCP (SSE) for remote clients.
+* **Same repo, optional package**: e.g. `quantum-mcp-bridge/` with its own `package.json` or `pyproject.toml`; document that CRUDL integration is gateway-only so adopters do not add per-domain REST calls.
+
+==== Option B: Native MCP in the Backend
+
+Expose an MCP-compatible HTTP endpoint (e.g. Streamable HTTP or SSE) from the Quarkus application. The MCP endpoint would speak the MCP JSON-RPC protocol and delegate **all tool calls to the Query Gateway** (and resource reads to gateway-derived schema). No delegation to domain REST resources for CRUDL.
+
+**Pros:** Single deployment; no separate bridge process. **Cons:** Requires an MCP server implementation in Java (or a small sidecar); more invasive. Can be a later phase once the gateway-centric agent APIs are stable.
+
+=== Client Configuration
+
+**Cursor**
+
+* Project-level: create `.cursor/mcp.json` in the repo.
+* For a *local* bridge (stdio): point to the bridge command (e.g. `npx` / `node` or `uv run` for Python).
+* For a *remote* bridge (SSE): use the SSE transport and the bridge’s URL (e.g. `https://mcp-bridge.example.com/sse`).
+
+Example (local bridge, stdio):
+
+```json
+{
+  "mcpServers": {
+    "quantum": {
+      "command": "node",
+      "args": ["path/to/quantum-mcp-bridge/build/index.js"],
+      "env": {
+        "QUANTUM_BASE_URL": "https://your-api.example.com",
+        "QUANTUM_AUTH_TOKEN": "<bearer-or-api-key>"
+      }
+    }
+  }
+}
+```
+
+**Claude (Desktop)** — Same idea: add the bridge under `mcpServers` in the Claude Desktop config (e.g. `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS), with `command`/`args` for stdio or use Custom Connector for a remote URL.
+
+**Claude (browser)** — Use Custom Connectors: add the remote MCP server URL (your bridge’s SSE endpoint) and complete authentication as required by your bridge (e.g. API key or OAuth).
+
+**ChatGPT / Gemini** — When they support MCP, use the remote (SSE) URL of your bridge and any documented auth (header or OAuth). No changes needed on the Quantum backend.
+
+=== Auth and Security (Bridge)
+
+* **Token storage:** The bridge should receive the backend auth token via environment variable (or a secure config), not hardcoded. Cursor/Claude inject env when starting the bridge (e.g. `QUANTUM_AUTH_TOKEN`).
+* **Backend unchanged:** Realm resolution, permission checks, and data scoping remain in the framework; the bridge is a transparent HTTP client.
+* **Optional:** Support `X-Realm` (or equivalent) in tool arguments so the user/agent can scope requests to a tenant when allowed by the principal.
+
+=== Implementation Order for MCP
+
+1. Implement the **agent REST APIs** (tools discovery, schema, optional execute) as in the Summary Table.
+2. Build and document a **bridge** (Option A): one MCP server that implements tools (and optionally resources) by calling those REST APIs; document base URL and auth env vars.
+3. Add **Cursor/Claude config examples** to the framework docs (e.g. in this guide or a dedicated MCP section).
+4. Optionally add **native MCP** in the backend (Option B) later for a single-deployment story.
+
+=== MCP References
+
+* Specification: https://modelcontextprotocol.io/specification[Model Context Protocol]
+* Server concepts (tools, resources, prompts): https://modelcontextprotocol.io/docs/learn/server-concepts[Understanding MCP servers]
+* Build a server: https://modelcontextprotocol.io/docs/develop/build-server[Build an MCP server]
+* SDKs: https://modelcontextprotocol.io/docs/sdk[MCP SDKs] (TypeScript, Python, Java, etc.)
+* Remote servers: https://modelcontextprotocol.io/docs/develop/connect-remote-servers[Connect to remote MCP servers]
+* Cursor MCP: https://cursor.com/docs/context/mcp[Cursor – Model Context Protocol]
+
+---
+
+== Summary Table
+
+**CRUDL is fully covered by the Query Gateway** (`/api/query`). The agent APIs below are a thin discovery/schema/execute layer on top of the gateway; they do not introduce a second CRUDL surface or require integration across domain REST resources.
+
+| API | Method | Purpose |
+|-----|--------|--------|
+| `/api/query/*` (existing) | GET/POST | **Single integration point:** rootTypes, plan, find, save, delete, deleteMany for all entity types. |
+| `/api/agent/tools` | GET | Discover the six gateway tools (names, descriptions, parameters); permission-filtered. |
+| `/api/agent/schema` | GET | List entity types (wrap or reuse `GET /api/query/rootTypes`) and optional field metadata. |
+| `/api/agent/schema/{rootType}` | GET | JSON Schema for one root type (gateway-derived Morphia metadata). |
+| `/api/agent/ontology` | GET | Optional: ontology summary for retrieval context. |
+| `/api/agent/execute` | POST | Optional: execute one of the six gateway tools by name + arguments (delegate only to `QueryGatewayResource`). |
+| `/api/agent/context` | POST/GET | Optional: retrieval context (gateway find or optional ontology). |
+| (headers) | - | `X-Agent-Session-Id`, `X-Agent-Trace-Id` for audit and multi-turn. |
+
+== Implementation Order
+
+1. *Treat the gateway as the single CRUDL integration point* — agents and MCP use only `/api/query` (and optional agent layer) for CRUDL; no per-domain REST integration.
+2. *Tools discovery* (`GET /api/agent/tools`) — enumerate the six gateway operations; enables agents to know what they can call.
+3. *Schema for agents* (`GET /api/agent/schema`, `GET /api/agent/schema/{rootType}`) — gateway-derived from `rootTypes` and Morphia metadata.
+4. *Session/trace headers* — low effort, high value for audit and debugging.
+5. *Unified execute* (`POST /api/agent/execute`) — optional; delegate only to `QueryGatewayResource`.
+6. *Retrieval context* (`POST /api/agent/context`) and *ontology summary* — optional; prefer gateway find for context.
+
+== Security and Governance
+
+* All new agent endpoints delegate to the **Query Gateway** for CRUDL; they use the same security filter, realm resolution, and data scoping as `QueryGatewayResource`.
+* Tools discovery lists only the six gateway tools and only if the current principal is allowed (e.g. integration/query area and corresponding action).
+* Unified execute must not bypass `@FunctionalAction` or permission checks; it calls the same gateway logic—no delegation to domain resources for CRUDL.
+* Prefer existing patterns: `PrincipalContext`, `SecurityContext`, and optional `X-Realm` for tenant isolation.
+
+== References
+
+* **Implementation design:** `docs/design/AI_AGENT_INTEGRATION_DESIGN.md` in the framework repo — API specs, DTOs, backend classes, MCP bridge, implementation phases, and testing strategy.
+* Palantir Foundry – Use AIP Agents through Foundry APIs: https://palantir.com/docs/foundry/agent-studio/foundry-apis/
+* AIP Agent Studio overview: https://www.palantir.com/docs/foundry/agent-studio/overview
+* Video: https://www.youtube.com/watch?v=SePXznjZ-1A["Agentic Operating System for the Enterprise | Palantir's AIP Lead Jack Dobson at AIPCon 6"]
