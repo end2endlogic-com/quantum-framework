@@ -871,3 +871,31 @@ Notes
 - Always scope by tenantId from DomainContext/RuleContext.
 - Index edges on (tenantId, p, dst) and (tenantId, src, p) to keep queries fast.
 - See xref:ontology.adoc#ontology-integration-morphia-permissions[Integrating Ontology] for more integration options.
+
+[[ontology-aware-resource]]
+==== OntologyAwareResource
+
+`OntologyAwareResource` is an abstract base class in the framework (package `com.e2eq.ontology.policy.rest`, quantum-ontology-policy-bridge) that extends `BaseResource` to add ontology-aware list and detail endpoints. Resources extending it expose standard CRUD plus:
+
+* *Ontology list endpoint*: `GET /{basePath}/ontology` — lists entities with optional ontology-based filtering (e.g. filter by related customer, project, or timesheet IDs via the ontology graph)
+* *Ontology context endpoint*: `GET /{basePath}/id/{id}/ontology` — returns ontology edges for a single entity
+* *Optional aggregation and expand*: when `feature.ontologyList.aggregation.enabled=true`, supports the `expand` query param to return combined attributes spanning collections (via MongoDB `$lookup`)
+
+===== Extending OntologyAwareResource
+
+1. Extend `OntologyAwareResource<T, R>` instead of `BaseResource<T, R>`.
+2. Add `GET @Path("ontology")` — call `getOntologyList(headers, skip, limit, filter, sort, projection, expand?, constraints...)`.
+3. Add `GET @Path("id/{id}/ontology")` — call `buildOntologyContextResponse(headers, id)`.
+4. For ontology filters, pass `constraint(predicate, ids)` where `predicate` is the ontology property (e.g. `invoicesCustomer`) and `ids` are destination entity IDs.
+5. Override `supportsExpandInOntologyList()` to return `true` if the entity has expandable references (e.g. `customerReference`, `projectReference`).
+
+===== Configuration
+
+|===
+|Property |Default |Description
+|`feature.ontologyList.aggregation.enabled` |`false` |When `true`, resources with `supportsExpandInOntologyList()=true` can use aggregation for the `expand` query param
+|===
+
+===== Dependencies
+
+OntologyAwareResource uses `ListQueryRewriter`, `OntologyContextEnricherMongo` (quantum-ontology-mongo), and `MorphiaDataStoreWrapper` (quantum-morphia-repos). It is provided by quantum-ontology-policy-bridge; applications must include that module (and thus quantum-ontology-mongo transitively) when using this base class.

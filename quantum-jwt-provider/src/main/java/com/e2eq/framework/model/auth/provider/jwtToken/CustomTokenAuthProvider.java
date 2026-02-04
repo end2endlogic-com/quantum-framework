@@ -426,11 +426,13 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
       return credentialRepo.findByUserId(userId).isPresent();
    }
 
-
    @Override
    public LoginResponse login (String userId, String password) {
       try {
-         Optional<CredentialUserIdPassword> ocredential = getCredentials(envConfigUtils.getSystemRealm(), userId);
+         String configuredRealm = envConfigUtils.getSystemRealm();
+         Log.infof("Checking for auth against %s realm", configuredRealm);
+         Optional<CredentialUserIdPassword> ocredential = getCredentials(configuredRealm, userId);
+
 
          if (ocredential.isPresent()) {
             CredentialUserIdPassword credential = ocredential.get();
@@ -451,7 +453,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                if (isCredentialValid) {
                   // String authToken = generateAuthToken(userId);
                   Set<String> groups = new HashSet<>(Arrays.asList(credential.getRoles()));
-                  
+
                   // Handle missing subject: use userId as fallback or generate one
                   String subject = credential.getSubject();
                   if (subject == null || subject.isEmpty()) {
@@ -467,7 +469,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                      credential.setSubject(subject);
                      credentialRepo.save(credential);
                   }
-                  
+
                   String authToken = TokenUtils.generateUserToken(
                      subject,
                      groups,
@@ -582,18 +584,21 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
          java.util.Set<String> idpRoles = (identity != null) ? new java.util.LinkedHashSet<>(identity.getRoles()) : java.util.Set.of();
          java.util.Set<String> credentialRoles = new java.util.LinkedHashSet<>();
          java.util.Set<String> userGroupRoles = new java.util.LinkedHashSet<>();
+         String configuredRealm = envConfigUtils.getSystemRealm();
+         Optional<CredentialUserIdPassword> ocred = getCredentials(configuredRealm, userId);
+         final String[] responseRealm = new String[] { envConfigUtils.getSystemRealm() };
          try {
-            credentialRepo.findByUserId(userId).ifPresent(cred -> {
+            ocred.ifPresent(cred -> {
                if (cred.getRoles() != null) {
                    for (String r : cred.getRoles()) {
                        if (r != null) credentialRoles.add(r);
                    }
                }
+               String credRealm = (cred.getDomainContext() != null)
+                  ? cred.getDomainContext().getDefaultRealm()
+                  : envConfigUtils.getSystemRealm();
+               responseRealm[0] = credRealm;
                try {
-                  // Use the credential's realm context instead of defaulting to system realm
-                  String credRealm = (cred.getDomainContext() != null)
-                     ? cred.getDomainContext().getDefaultRealm()
-                     : envConfigUtils.getSystemRealm();
                   userProfileRepo.getBySubject(credRealm, cred.getSubject()).ifPresent(profile -> {
                      var userGroups = userGroupRepo.findByUserProfileRef(profile.createEntityReference());
                      if (userGroups != null) {
@@ -640,7 +645,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
               newRefreshToken,
               TokenUtils.currentTimeInSecs() + durationInSeconds,
               mongodbConnectionString,
-              systemRealm));
+              responseRealm[0]));
       } catch (IOException | NoSuchAlgorithmException | InvalidKeySpecException e) {
          return new LoginResponse(false,
             new LoginNegativeResponse(userId,

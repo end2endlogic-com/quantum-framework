@@ -43,11 +43,15 @@ public class BaseRepoTest {
             } catch (DatabaseMigrationException ex) {
                 Log.info("==== Attempting to run migration scripts ======");
 
-                // Use MultiEmitter to print emitted items to System.out
+                // Use MultiEmitter to print emitted items to System.out; must complete emitter or stream never finishes
                 Multi.createFrom().emitter(emitter -> {
-                    migrationService.runAllUnRunMigrations(testUtils.getTestRealm(), emitter);
-                    migrationService.runAllUnRunMigrations(testUtils.getDefaultRealm(), emitter);
-                    migrationService.runAllUnRunMigrations(testUtils.getSystemRealm(), emitter);
+                    try {
+                        migrationService.runAllUnRunMigrations(testUtils.getTestRealm(), emitter);
+                        migrationService.runAllUnRunMigrations(testUtils.getDefaultRealm(), emitter);
+                        migrationService.runAllUnRunMigrations(testUtils.getSystemRealm(), emitter);
+                    } finally {
+                        emitter.complete();
+                    }
                 }).subscribe().with(
                    item -> System.out.println(item),
                    failure -> System.err.println("Failed: " + failure.getMessage()),

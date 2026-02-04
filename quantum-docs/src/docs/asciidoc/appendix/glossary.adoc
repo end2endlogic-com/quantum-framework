@@ -99,3 +99,5 @@
 **Ontology Materializer**:: A component that computes inferred edges for an entity snapshot and upserts them to the edges collection. Keeps edges fresh as data changes.
 
 **ListQueryRewriter**:: A helper that turns semantic constraints into efficient Mongo queries (e.g., id IN srcIdsByDst). Integrates with permission rules and Morphia repos.
+
+**OntologyAwareResource**:: An abstract REST base class (com.e2eq.ontology.policy.rest, quantum-ontology-policy-bridge) that extends BaseResource to add ontology list and detail context endpoints. Supports ontology constraints for filtering and optional aggregation/expand for combined attributes spanning collections.

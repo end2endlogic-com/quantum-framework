@@ -28,7 +28,11 @@ public class SystemAPITest extends BaseRepoTest {
       AtomicBoolean failed= new AtomicBoolean(false);
       try ( final SecuritySession ss = new SecuritySession(pContext, rContext)) {
          Multi.createFrom().emitter(emitter -> {
-            migrationService.runAllUnRunMigrations(testUtils.getDefaultRealm(), emitter);
+            try {
+               migrationService.runAllUnRunMigrations(testUtils.getDefaultRealm(), emitter);
+            } finally {
+               emitter.complete();
+            }
          }).subscribe().with(item -> {
             System.out.println(item);
          },
