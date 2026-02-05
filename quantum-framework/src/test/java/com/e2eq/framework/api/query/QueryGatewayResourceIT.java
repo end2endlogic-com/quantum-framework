@@ -321,6 +321,33 @@ public class QueryGatewayResourceIT {
             .body("limit", is(10));
     }
 
+    /**
+     * Verifies that find with an ontology predicate (hasEdge) receives tenant context via variableMap.
+     * The gateway builds variableMap from SecurityContext or from the request realm and passes it into
+     * planning so hasEdge/hasOutgoingEdge/hasIncomingEdge get pTenantId and can query the ontology store.
+     */
+    @Test
+    public void find_with_hasEdge_receives_tenant_context_and_returns_200() {
+        Map<String, Object> body = new HashMap<>();
+        body.put("rootType", CodeList.class.getName());
+        body.put("query", "hasEdge(somePredicate, someId)");
+        body.put("realm", realm);
+        Map<String, Object> page = new HashMap<>();
+        page.put("limit", 10);
+        page.put("skip", 0);
+        body.put("page", page);
+
+        given()
+            .contentType(ContentType.JSON)
+            .body(body)
+        .when()
+            .post("/api/query/find")
+        .then()
+            .statusCode(200)
+            .body("rows", notNullValue())
+            .body("limit", is(10));
+    }
+
     // ========================================================================
     // Tests for POST /api/query/save endpoint
     // ========================================================================

@@ -3,6 +3,8 @@ package com.e2eq.framework.api.query;
 import com.e2eq.framework.annotations.FunctionalAction;
 import com.e2eq.framework.annotations.FunctionalMapping;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
+import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
+import com.e2eq.framework.model.persistent.morphia.DeleteValidationService;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
 import com.e2eq.framework.model.persistent.morphia.planner.LogicalPlan;
@@ -11,6 +13,7 @@ import com.e2eq.framework.model.persistent.morphia.planner.PlannerResult;
 import com.e2eq.framework.model.persistent.morphia.query.QueryGateway;
 import com.e2eq.framework.model.persistent.morphia.query.QueryGatewayImpl;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.rest.models.Collection;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -100,10 +103,17 @@ public class QueryGatewayResource {
     MorphiaDataStoreWrapper morphiaDataStoreWrapper;
 
     @Inject
+    DeleteValidationService deleteValidationService;
+
+    @Inject
     ObjectMapper objectMapper;
 
     @ConfigProperty(name = "quantum.realm.testRealm", defaultValue = "defaultRealm")
     String defaultRealm;
+
+    /** Maximum number of entities to validate and delete in one deleteMany request. */
+    @ConfigProperty(name = "quantum.queryGateway.deleteMany.maxMatches", defaultValue = "2000")
+    int maxDeleteManyMatches;
 
     @POST
     @Path("/plan")
@@ -172,7 +182,8 @@ public class QueryGatewayResource {
         }
         Integer limit = (req.page != null) ? req.page.limit : null;
         Integer skip = (req.page != null) ? req.page.skip : null;
-        PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(req.query, root, limit, skip, sortFields);
+        Map<String, String> variableMap = variableMapForQuery(req.realm);
+        PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(req.query, root, limit, skip, sortFields, variableMap);
         if (planned.getMode() == PlannerResult.Mode.AGGREGATION) {
             if (!aggregationExecutionEnabled) {
                 Map<String, Object> body = new HashMap<>();
@@ -337,6 +348,16 @@ public class QueryGatewayResource {
         try {
             ObjectId objectId = new ObjectId(req.id);
             Query<? extends UnversionedBaseModel> query = ds.find(root).filter(Filters.eq("_id", objectId));
+            UnversionedBaseModel entity = query.first();
+            if (entity == null) {
+                DeleteResponse notFound = new DeleteResponse();
+                notFound.deletedCount = 0;
+                notFound.id = req.id;
+                notFound.rootType = root.getName();
+                notFound.success = false;
+                return Response.status(Response.Status.NOT_FOUND).entity(notFound).build();
+            }
+            deleteValidationService.validateBeforeDelete(realm, entity);
             var result = query.delete();
 
             DeleteResponse response = new DeleteResponse();
@@ -344,10 +365,6 @@ public class QueryGatewayResource {
             response.id = req.id;
             response.rootType = root.getName();
             response.success = result.getDeletedCount() > 0;
-
-            if (result.getDeletedCount() == 0) {
-                return Response.status(Response.Status.NOT_FOUND).entity(response).build();
-            }
             return Response.ok(response).build();
         } catch (IllegalArgumentException e) {
             Log.errorf(e, "Invalid ObjectId format: %s", req.id);
@@ -355,6 +372,16 @@ public class QueryGatewayResource {
             error.put("error", "InvalidId");
             error.put("message", "Invalid ObjectId format: " + req.id);
             return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+        } catch (ReferentialIntegrityViolationException e) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "ReferentialIntegrity");
+            error.put("message", e.getMessage());
+            return Response.status(409).entity(error).build();
+        } catch (RuntimeException e) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "DeleteBlocked");
+            error.put("message", e.getMessage());
+            return Response.status(409).entity(error).build();
         } catch (Exception e) {
             Log.errorf(e, "Failed to delete entity of type %s with id %s", root.getName(), req.id);
             Map<String, Object> error = new HashMap<>();
@@ -393,7 +420,8 @@ public class QueryGatewayResource {
 
             // Apply query filter if provided
             if (req.query != null && !req.query.isBlank()) {
-                PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(req.query, root, null, null, null);
+                Map<String, String> variableMap = variableMapForQuery(req.realm);
+                PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(req.query, root, null, null, null, variableMap);
                 if (planned.getMode() == PlannerResult.Mode.AGGREGATION) {
                     Map<String, Object> error = new HashMap<>();
                     error.put("error", "InvalidQuery");
@@ -405,7 +433,29 @@ public class QueryGatewayResource {
                 }
             }
 
-            var result = query.delete(new dev.morphia.DeleteOptions().multi(true));
+            // Load matching entities (capped) so we can validate each before delete
+            List<? extends UnversionedBaseModel> toDelete = query
+                    .iterator(new FindOptions().limit(maxDeleteManyMatches + 1))
+                    .toList();
+            if (toDelete.size() > maxDeleteManyMatches) {
+                Map<String, Object> error = new HashMap<>();
+                error.put("error", "TooManyMatches");
+                error.put("message", "Query matches more than " + maxDeleteManyMatches + " entities. Narrow the filter or increase quantum.queryGateway.deleteMany.maxMatches.");
+                return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+            }
+            for (UnversionedBaseModel entity : toDelete) {
+                deleteValidationService.validateBeforeDelete(realm, entity);
+            }
+            if (toDelete.isEmpty()) {
+                DeleteManyResponse empty = new DeleteManyResponse();
+                empty.deletedCount = 0;
+                empty.query = req.query;
+                empty.rootType = root.getName();
+                empty.success = true;
+                return Response.ok(empty).build();
+            }
+            var ids = toDelete.stream().map(UnversionedBaseModel::getId).filter(java.util.Objects::nonNull).toList();
+            var result = ds.find(root).filter(Filters.in("_id", ids)).delete(new dev.morphia.DeleteOptions().multi(true));
 
             DeleteManyResponse response = new DeleteManyResponse();
             response.deletedCount = result.getDeletedCount();
@@ -414,6 +464,16 @@ public class QueryGatewayResource {
             response.success = true;
 
             return Response.ok(response).build();
+        } catch (ReferentialIntegrityViolationException e) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "ReferentialIntegrity");
+            error.put("message", e.getMessage());
+            return Response.status(409).entity(error).build();
+        } catch (RuntimeException e) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "DeleteBlocked");
+            error.put("message", e.getMessage());
+            return Response.status(409).entity(error).build();
         } catch (Exception e) {
             Log.errorf(e, "Failed to delete entities of type %s with query %s", root.getName(), req.query);
             Map<String, Object> error = new HashMap<>();
@@ -448,6 +508,28 @@ public class QueryGatewayResource {
      * @param requestRealm the realm from the request (may be null or blank)
      * @return the resolved realm to use
      */
+    /**
+     * Builds a variable map for query planning so ontology predicates (hasEdge, hasOutgoingEdge, hasIncomingEdge)
+     * receive tenant/realm context. Uses SecurityContext when available; otherwise a minimal map from the resolved realm.
+     *
+     * @param requestRealm optional realm from the request (may be null)
+     * @return map of variable names to values (never null)
+     */
+    private Map<String, String> variableMapForQuery(String requestRealm) {
+        java.util.Optional<PrincipalContext> pc = SecurityContext.getPrincipalContext();
+        java.util.Optional<ResourceContext> rc = SecurityContext.getResourceContext();
+        if (pc.isPresent() && rc.isPresent()) {
+            return MorphiaUtils.createStandardVariableMapFrom(pc.get(), rc.get());
+        }
+        // Fallback: minimal map so ontology predicates get tenant/realm
+        String realm = resolveRealm(requestRealm);
+        Map<String, String> minimal = new HashMap<>();
+        minimal.put("pTenantId", realm);
+        minimal.put("tenantId", realm);
+        minimal.put("systemTenantId", realm);
+        return minimal;
+    }
+
     private String resolveRealm(String requestRealm) {
         // 1. Explicit realm from request takes highest priority
         if (requestRealm != null && !requestRealm.isBlank()) {

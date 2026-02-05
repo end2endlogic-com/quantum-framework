@@ -105,9 +105,26 @@ public class MorphiaUtils {
            Integer skip,
            java.util.List<com.e2eq.framework.model.persistent.morphia.planner.LogicalPlan.SortSpec.Field> sortFields
    ) {
+      return convertToPlannedQuery(queryString, modelClass, limit, skip, sortFields, null);
+   }
+
+   /**
+    * Overload that accepts a variable map for ontology predicates (e.g. hasEdge, hasOutgoingEdge).
+    * When variableMap is non-null, it is passed to the planner so filter conversion receives tenant/realm context.
+    *
+    * @param variableMap optional map of variable names to values (e.g. pTenantId, tenantId); may be null
+    */
+   public static <T extends UnversionedBaseModel> com.e2eq.framework.model.persistent.morphia.planner.PlannedQuery convertToPlannedQuery(
+           String queryString,
+           Class<T> modelClass,
+           Integer limit,
+           Integer skip,
+           java.util.List<com.e2eq.framework.model.persistent.morphia.planner.LogicalPlan.SortSpec.Field> sortFields,
+           java.util.Map<String, String> variableMap
+   ) {
       com.e2eq.framework.model.persistent.morphia.planner.QueryPlanner planner =
               new com.e2eq.framework.model.persistent.morphia.planner.QueryPlanner();
-      return planner.plan(queryString, modelClass, limit, skip, sortFields);
+      return planner.plan(queryString, modelClass, limit, skip, sortFields, variableMap);
    }
 
    public static Map<String, String> createStandardVariableMapFrom(PrincipalContext pcontext, ResourceContext rcontext) {

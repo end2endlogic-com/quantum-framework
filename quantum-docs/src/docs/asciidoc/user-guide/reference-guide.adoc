@@ -34,6 +34,7 @@ Use it to jump directly to a subject and then explore details in context.
 - Security annotations: xref:../tutorials/quantum-tutorial.adoc#sec-security[Security annotations]
 - Permission Resource Check APIs: xref:./permission-resource.adoc[Permission Resource: Check APIs and Client Usage]
 - Label resolution and script helpers: xref:./permissions.adoc#label-resolution-spi[Labels (SPI) and hasLabel()]
+- Secrets and vault (global vs tenant-level): xref:./secrets-and-vault.adoc[Secrets and Vault Configuration]
 
 == Data Seeding
 
@@ -44,6 +45,7 @@ Use it to jump directly to a subject and then explore details in context.
 
 - Migrations: xref:../tutorials/quantum-tutorial.adoc#sec-migrations[Migrations]
 - Testing: xref:../tutorials/quantum-tutorial.adoc#sec-testing[Testing]
+- Usage metering and token allocation: xref:./usage-and-token-allocation.adoc[Usage Metering and Token Allocation] (API/LLM usage, token pools per tenant, scoped to APIs and Tools/LLM configs)
 
 == Samples
 

@@ -12,6 +12,7 @@ import org.antlr.v4.runtime.tree.ParseTree;
 import org.antlr.v4.runtime.tree.ParseTreeWalker;
 import org.bson.conversions.Bson;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -79,7 +80,7 @@ public class QueryPlanner {
     }
 
     public <T extends UnversionedBaseModel> PlannedQuery plan(String query, Class<T> modelClass) {
-        return plan(query, modelClass, null, null, null);
+        return plan(query, modelClass, null, null, null, null);
     }
 
     // Remove expand(...) directives and fields:[...] projection from the raw query string
@@ -109,13 +110,34 @@ public class QueryPlanner {
             Integer skip,
             List<LogicalPlan.SortSpec.Field> sortFields
     ) {
+        return plan(query, modelClass, limit, skip, sortFields, null);
+    }
+
+    /**
+     * Plans the query with an optional variable map for ontology predicates (e.g. hasEdge, hasOutgoingEdge).
+     * When variableMap is non-null, it is passed to filter conversion so tenant/realm and other context
+     * are available to the query listener.
+     *
+     * @param variableMap optional map of variable names to values (e.g. pTenantId, tenantId); may be null
+     */
+    public <T extends UnversionedBaseModel> PlannedQuery plan(
+            String query,
+            Class<T> modelClass,
+            Integer limit,
+            Integer skip,
+            List<LogicalPlan.SortSpec.Field> sortFields,
+            Map<String, String> variableMap
+    ) {
         PlannerResult result = analyze(query);
         if (result.getMode() == PlannerResult.Mode.FILTER) {
-            // FILTER mode: use existing conversion to Morphia Filter
+            // FILTER mode: use existing conversion to Morphia Filter (with variableMap when provided)
             if (query == null || query.isBlank()) {
                 return PlannedQuery.forFilter(null);
             }
-            return PlannedQuery.forFilter(MorphiaUtils.convertToFilter(query, modelClass));
+            Filter filter = (variableMap != null && !variableMap.isEmpty())
+                    ? MorphiaUtils.convertToFilter(query, variableMap, null, modelClass)
+                    : MorphiaUtils.convertToFilter(query, modelClass);
+            return PlannedQuery.forFilter(filter);
         }
         // AGGREGATION mode: build a minimal LogicalPlan and compile it
         if (Log.isDebugEnabled()) {
@@ -157,7 +179,9 @@ public class QueryPlanner {
         String filterOnly = stripExpandAndProjection(query);
         if (filterOnly != null && !filterOnly.isBlank()) {
             try {
-                rootFilter = MorphiaUtils.convertToFilter(filterOnly, modelClass);
+                rootFilter = (variableMap != null && !variableMap.isEmpty())
+                        ? MorphiaUtils.convertToFilter(filterOnly, variableMap, null, modelClass)
+                        : MorphiaUtils.convertToFilter(filterOnly, modelClass);
             } catch (Exception ex) {
                 // If filter parsing fails, proceed without a root $match to avoid breaking behavior
                 if (Log.isDebugEnabled()) {
