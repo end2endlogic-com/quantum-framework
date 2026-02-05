@@ -1,0 +1,293 @@
+[INFO] Scanning for projects...
+[WARNING]
+[WARNING] Some problems were encountered while building the effective model for com.end2endlogic:quantum-util:jar:1.2.4-SNAPSHOT
+[WARNING] 'build.plugins.plugin.version' for org.apache.maven.plugins:maven-source-plugin is missing. @ line 510, column 29
+[WARNING]
+[WARNING] Some problems were encountered while building the effective model for com.end2endlogic:quantum-morphia-repos:jar:1.2.4-SNAPSHOT
+[WARNING] 'build.plugins.plugin.version' for org.apache.maven.plugins:maven-source-plugin is missing. @ line 520, column 19
+[WARNING]
+[WARNING] Some problems were encountered while building the effective model for com.end2endlogic:quantum-jwt-provider:jar:1.2.4-SNAPSHOT
+[WARNING] 'build.plugins.plugin.version' for org.apache.maven.plugins:maven-source-plugin is missing. @ line 521, column 29
+[WARNING]
+[WARNING] Some problems were encountered while building the effective model for com.end2endlogic:quantum-framework:jar:1.2.4-SNAPSHOT
+[WARNING] 'build.plugins.plugin.version' for org.apache.maven.plugins:maven-source-plugin is missing. @ line 552, column 19
+[WARNING]
+[WARNING] It is highly recommended to fix these problems because they threaten the stability of your build.
+[WARNING]
+[WARNING] For this reason, future Maven versions might no longer support building such malformed projects.
+[WARNING]
+[INFO] Inspecting build with total of 6 modules
+[INFO] Installing Central Publishing features
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Build Order:
+[INFO]
+[INFO] com.end2endlogic:quantum-parent                                    [pom]
+[INFO] com.end2endlogic:quantum-util                                      [jar]
+[INFO] Quantum Ontology Core                                              [jar]
+[INFO] com.end2endlogic:quantum-models                                    [jar]
+[INFO] com.end2endlogic:quantum-morphia-repos                             [jar]
+[INFO] com.end2endlogic:quantum-jwt-provider                              [jar]
+[INFO]
+[INFO] ------------------< com.end2endlogic:quantum-parent >-------------------
+[INFO] Building com.end2endlogic:quantum-parent 1.2.4-SNAPSHOT            [1/6]
+[INFO]   from pom.xml
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO]
+[INFO] --- buildnumber:3.2.1:create (default) @ quantum-parent ---
+[INFO] Executing: /bin/sh -c cd '/Users/mingardia/dev/mrisys/end2endlogic/quantum/framework' && 'git' 'log' '-1' '--no-merges' '--format=format:%H %aI %aE %aN'
+[INFO] Working directory: /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework
+[INFO] Storing buildNumber: 296f9790b15f3bceebc566f98180edc3decab1dd at timestamp: 1770247271835
+[INFO] Executing: /bin/sh -c cd '/Users/mingardia/dev/mrisys/end2endlogic/quantum/framework' && 'git' 'symbolic-ref' 'HEAD'
+[INFO] Working directory: /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework
+[INFO] Storing scmBranch: main
+[INFO]
+[INFO] -------------------< com.end2endlogic:quantum-util >--------------------
+[INFO] Building com.end2endlogic:quantum-util 1.2.4-SNAPSHOT              [2/6]
+[INFO]   from quantum-util/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+Downloading from central: https://repo.maven.apache.org/maven2/org/apache/maven/plugins/maven-source-plugin/maven-metadata.xml
+Downloaded from central: https://repo.maven.apache.org/maven2/org/apache/maven/plugins/maven-source-plugin/maven-metadata.xml (1.1 kB at 1.8 kB/s)
+Downloading from central: https://repo.maven.apache.org/maven2/org/apache/maven/plugins/maven-source-plugin/4.0.0-beta-1/maven-source-plugin-4.0.0-beta-1.pom
+Downloaded from central: https://repo.maven.apache.org/maven2/org/apache/maven/plugins/maven-source-plugin/4.0.0-beta-1/maven-source-plugin-4.0.0-beta-1.pom (34 kB at 553 kB/s)
+Downloading from central: https://repo.maven.apache.org/maven2/org/apache/maven/plugins/maven-source-plugin/4.0.0-beta-1/maven-source-plugin-4.0.0-beta-1.jar
+Downloaded from central: https://repo.maven.apache.org/maven2/org/apache/maven/plugins/maven-source-plugin/4.0.0-beta-1/maven-source-plugin-4.0.0-beta-1.jar (38 kB at 750 kB/s)
+[WARNING] Ignoring incompatible plugin version 4.0.0-beta-1:
+The plugin org.apache.maven.plugins:maven-source-plugin:4.0.0-beta-1 has unmet prerequisites:
+        Required Maven version 4.0.0-beta-3 is not met by current version 3.9.12
+[INFO] Latest version of plugin org.apache.maven.plugins:maven-source-plugin failed compatibility check
+[INFO] Looking for compatible RELEASE version of plugin org.apache.maven.plugins:maven-source-plugin
+Downloading from central: https://repo.maven.apache.org/maven2/org/apache/maven/plugins/maven-source-plugin/3.4.0/maven-source-plugin-3.4.0.pom
+Downloaded from central: https://repo.maven.apache.org/maven2/org/apache/maven/plugins/maven-source-plugin/3.4.0/maven-source-plugin-3.4.0.pom (6.8 kB at 137 kB/s)
+Downloading from central: https://repo.maven.apache.org/maven2/org/apache/maven/plugins/maven-source-plugin/3.4.0/maven-source-plugin-3.4.0.jar
+Downloaded from central: https://repo.maven.apache.org/maven2/org/apache/maven/plugins/maven-source-plugin/3.4.0/maven-source-plugin-3.4.0.jar (33 kB at 701 kB/s)
+[INFO] Selected plugin org.apache.maven.plugins:maven-source-plugin:3.4.0
+[INFO]
+[INFO] --- buildnumber:3.2.1:create (default) @ quantum-util ---
+[INFO] Executing: /bin/sh -c cd '/Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-util' && 'git' 'log' '-1' '--no-merges' '--format=format:%H %aI %aE %aN'
+[INFO] Working directory: /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-util
+[INFO] Storing buildNumber: 296f9790b15f3bceebc566f98180edc3decab1dd at timestamp: 1770247273266
+[INFO] Executing: /bin/sh -c cd '/Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-util' && 'git' 'symbolic-ref' 'HEAD'
+[INFO] Working directory: /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-util
+[INFO] Storing scmBranch: main
+[INFO]
+[INFO] --- enforcer:3.5.0:enforce (enforce-java) @ quantum-util ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.version.RequireJavaVersion passed
+[INFO] Rule 1: org.apache.maven.enforcer.rules.version.RequireMavenVersion passed
+[INFO]
+[INFO] --- resources:3.3.1:resources (default-resources) @ quantum-util ---
+[INFO] Copying 0 resource from src/main/resources to target/classes
+[INFO]
+[INFO] --- quarkus:3.19.4:generate-code (default) @ quantum-util ---
+[INFO]
+[INFO] --- compiler:3.14.0:compile (default-compile) @ quantum-util ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO]
+[INFO] ---------------< com.end2endlogic:quantum-ontology-core >---------------
+[INFO] Building Quantum Ontology Core 1.2.4-SNAPSHOT                      [3/6]
+[INFO]   from quantum-ontology-core/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] --- buildnumber:3.2.1:create (default) @ quantum-ontology-core ---
+[INFO] Executing: /bin/sh -c cd '/Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-ontology-core' && 'git' 'log' '-1' '--no-merges' '--format=format:%H %aI %aE %aN'
+[INFO] Working directory: /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-ontology-core
+[INFO] Storing buildNumber: 296f9790b15f3bceebc566f98180edc3decab1dd at timestamp: 1770247274193
+[INFO] Executing: /bin/sh -c cd '/Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-ontology-core' && 'git' 'symbolic-ref' 'HEAD'
+[INFO] Working directory: /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-ontology-core
+[INFO] Storing scmBranch: main
+[INFO]
+[INFO] --- resources:3.3.1:resources (default-resources) @ quantum-ontology-core ---
+[INFO] Copying 1 resource from src/main/resources to target/classes
+[INFO]
+[INFO] --- compiler:3.14.0:compile (default-compile) @ quantum-ontology-core ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO]
+[INFO] ------------------< com.end2endlogic:quantum-models >-------------------
+[INFO] Building com.end2endlogic:quantum-models 1.2.4-SNAPSHOT            [4/6]
+[INFO]   from quantum-models/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] --- buildnumber:3.2.1:create (default) @ quantum-models ---
+[INFO] Executing: /bin/sh -c cd '/Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-models' && 'git' 'log' '-1' '--no-merges' '--format=format:%H %aI %aE %aN'
+[INFO] Working directory: /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-models
+[INFO] Storing buildNumber: 296f9790b15f3bceebc566f98180edc3decab1dd at timestamp: 1770247274334
+[INFO] Executing: /bin/sh -c cd '/Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-models' && 'git' 'symbolic-ref' 'HEAD'
+[INFO] Working directory: /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-models
+[INFO] Storing scmBranch: main
+[INFO]
+[INFO] --- antlr4:4.13.2:antlr4 (default) @ quantum-models ---
+[INFO] No grammars to process
+[INFO] ANTLR 4: Processing source directory /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-models/src/main/antlr4
+[INFO]
+[INFO] --- resources:3.3.1:resources (default-resources) @ quantum-models ---
+[INFO] Copying 1 resource from src/main/resources to target/classes
+[INFO]
+[INFO] --- compiler:3.14.0:compile (default-compile) @ quantum-models ---
+[WARNING]  Parameter 'basedir' is read-only, must not be used in configuration
+[INFO] Nothing to compile - all classes are up to date.
+[INFO]
+[INFO] ---------------< com.end2endlogic:quantum-morphia-repos >---------------
+[INFO] Building com.end2endlogic:quantum-morphia-repos 1.2.4-SNAPSHOT     [5/6]
+[INFO]   from quantum-morphia-repos/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] --- buildnumber:3.2.1:create (default) @ quantum-morphia-repos ---
+[INFO] Executing: /bin/sh -c cd '/Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos' && 'git' 'log' '-1' '--no-merges' '--format=format:%H %aI %aE %aN'
+[INFO] Working directory: /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos
+[INFO] Storing buildNumber: 296f9790b15f3bceebc566f98180edc3decab1dd at timestamp: 1770247274480
+[INFO] Executing: /bin/sh -c cd '/Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos' && 'git' 'symbolic-ref' 'HEAD'
+[INFO] Working directory: /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos
+[INFO] Storing scmBranch: main
+[INFO]
+[INFO] --- antlr4:4.13.2:antlr4 (default) @ quantum-morphia-repos ---
+[INFO] No ANTLR 4 grammars to compile in /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/antlr4
+[INFO]
+[INFO] --- resources:3.3.1:resources (default-resources) @ quantum-morphia-repos ---
+[INFO] skip non existing resourceDirectory /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/resources
+[INFO]
+[INFO] --- quarkus:3.19.4:generate-code (default) @ quantum-morphia-repos ---
+[INFO]
+[INFO] --- compiler:3.14.0:compile (default-compile) @ quantum-morphia-repos ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 93 source files with javac [debug release 17] to target/classes
+[WARNING] No processor claimed any of these annotations: /jakarta.validation.constraints.NotNull,/dev.morphia.annotations.Indexes,/dev.morphia.annotations.Entity,/jakarta.validation.Valid,/jakarta.enterprise.context.ApplicationScoped,/dev.morphia.annotations.PrePersist,/jakarta.annotation.Nullable,/io.quarkus.runtime.Startup,/jakarta.validation.constraints.NotEmpty,/io.quarkus.runtime.annotations.RegisterForReflection,/dev.morphia.annotations.Reference,/jakarta.validation.constraints.Size,/jakarta.ws.rs.PathParam,/jakarta.inject.Inject,/org.jetbrains.annotations.NotNull,/org.eclipse.microprofile.config.inject.ConfigProperty,/jakarta.annotation.PostConstruct,/org.jetbrains.annotations.Nullable
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/migration/base/MigrationService.java:[335,12] found raw type: jakarta.enterprise.inject.spi.Bean
+  missing type arguments for generic class jakarta.enterprise.inject.spi.Bean<T>
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/migration/base/MigrationService.java:[336,86] unchecked method invocation: method createCreationalContext in interface jakarta.enterprise.inject.spi.BeanContainer is applied to given types
+  required: jakarta.enterprise.context.spi.Contextual<T>
+  found:    jakarta.enterprise.inject.spi.Bean
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/migration/base/MigrationService.java:[336,87] unchecked conversion
+  required: jakarta.enterprise.context.spi.Contextual<T>
+  found:    jakarta.enterprise.inject.spi.Bean
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/MorphiaRepo.java:[1221,133] unchecked cast
+  required: java.util.Collection<com.e2eq.framework.model.persistent.base.BaseModel>
+  found:    java.lang.Object
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/MorphiaRepo.java:[1426,40] Possible heap pollution from parameterized vararg type org.apache.commons.lang3.tuple.Pair<java.lang.String,java.lang.Object>
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/MorphiaRepo.java:[1438,42] Possible heap pollution from parameterized vararg type org.apache.commons.lang3.tuple.Pair<java.lang.String,java.lang.Object>
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/BaseMorphiaRepo.java:[576,31] Possible heap pollution from parameterized vararg type org.apache.commons.lang3.tuple.Pair<java.lang.String,java.lang.Object>
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/BaseMorphiaRepo.java:[585,40] Possible heap pollution from parameterized vararg type org.apache.commons.lang3.tuple.Pair<java.lang.String,java.lang.Object>
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/BaseMorphiaRepo.java:[595,33] Possible heap pollution from parameterized vararg type org.apache.commons.lang3.tuple.Pair<java.lang.String,java.lang.Object>
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/BaseMorphiaRepo.java:[605,31] Possible heap pollution from parameterized vararg type org.apache.commons.lang3.tuple.Pair<java.lang.String,java.lang.Object>
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/BaseMorphiaRepo.java:[614,38] Possible heap pollution from parameterized vararg type org.apache.commons.lang3.tuple.Pair<java.lang.String,java.lang.Object>
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/BaseMorphiaRepo.java:[622,42] Possible heap pollution from parameterized vararg type org.apache.commons.lang3.tuple.Pair<java.lang.String,java.lang.Object>
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/BaseMorphiaRepo.java:[631,33] Possible heap pollution from parameterized vararg type org.apache.commons.lang3.tuple.Pair<java.lang.String,java.lang.Object>
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/BaseMorphiaRepo.java:[639,38] Possible heap pollution from parameterized vararg type org.apache.commons.lang3.tuple.Pair<java.lang.String,java.lang.Object>
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/BaseMorphiaRepo.java:[645,52] Possible heap pollution from parameterized vararg type org.apache.commons.lang3.tuple.Pair<java.lang.String,java.lang.Object>
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/BaseMorphiaRepo.java:[649,51] Possible heap pollution from parameterized vararg type org.apache.commons.lang3.tuple.Pair<java.lang.String,java.lang.Object>
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/BaseMorphiaRepo.java:[653,54] Possible heap pollution from parameterized vararg type org.apache.commons.lang3.tuple.Pair<java.lang.String,java.lang.Object>
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/BaseMorphiaRepo.java:[657,54] Possible heap pollution from parameterized vararg type org.apache.commons.lang3.tuple.Pair<java.lang.String,java.lang.Object>
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/BaseMorphiaRepo.java:[664,67] Possible heap pollution from parameterized vararg type org.apache.commons.lang3.tuple.Pair<java.lang.String,java.lang.Object>
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/BaseMorphiaRepo.java:[668,49] Possible heap pollution from parameterized vararg type org.apache.commons.lang3.tuple.Pair<java.lang.String,java.lang.Object>
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/BaseMorphiaRepo.java:[672,52] Possible heap pollution from parameterized vararg type org.apache.commons.lang3.tuple.Pair<java.lang.String,java.lang.Object>
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/BaseMorphiaRepo.java:[676,52] Possible heap pollution from parameterized vararg type org.apache.commons.lang3.tuple.Pair<java.lang.String,java.lang.Object>
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/BaseMorphiaRepo.java:[683,164] Possible heap pollution from parameterized vararg type org.apache.commons.lang3.tuple.Pair<java.lang.String,java.lang.Object>
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/BaseMorphiaRepo.java:[688,58] Possible heap pollution from parameterized vararg type org.apache.commons.lang3.tuple.Pair<java.lang.String,java.lang.Object>
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/BaseMorphiaRepo.java:[694,61] Possible heap pollution from parameterized vararg type org.apache.commons.lang3.tuple.Pair<java.lang.String,java.lang.Object>
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/BaseMorphiaRepo.java:[700,61] Possible heap pollution from parameterized vararg type org.apache.commons.lang3.tuple.Pair<java.lang.String,java.lang.Object>
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/MorphiaDataStoreWrapper.java:[80,29] addInterceptor(dev.morphia.EntityListener<?>) in dev.morphia.mapping.Mapper has been deprecated and marked for removal
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/MorphiaDataStoreWrapper.java:[81,29] addInterceptor(dev.morphia.EntityListener<?>) in dev.morphia.mapping.Mapper has been deprecated and marked for removal
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/MorphiaDataStoreWrapper.java:[82,29] addInterceptor(dev.morphia.EntityListener<?>) in dev.morphia.mapping.Mapper has been deprecated and marked for removal
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/MorphiaDataStoreWrapper.java:[83,29] addInterceptor(dev.morphia.EntityListener<?>) in dev.morphia.mapping.Mapper has been deprecated and marked for removal
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/MorphiaDataStoreWrapper.java:[84,29] addInterceptor(dev.morphia.EntityListener<?>) in dev.morphia.mapping.Mapper has been deprecated and marked for removal
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/MorphiaDataStoreWrapper.java:[89,32] map(java.lang.String) in dev.morphia.mapping.Mapper has been deprecated and marked for removal
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/interceptors/PermissionRuleInterceptor.java:[18,51] found raw type: dev.morphia.EntityListener
+  missing type arguments for generic class dev.morphia.EntityListener<T>
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/interceptors/PermissionRuleInterceptor.java:[27,33] found raw type: java.lang.Class
+  missing type arguments for generic class java.lang.Class<T>
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/interceptors/PermissionRuleInterceptor.java:[35,38] unchecked call to prePersist(T,org.bson.Document,dev.morphia.Datastore) as a member of the raw type dev.morphia.EntityListener
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/interceptors/ReferenceInterceptor.java:[52,17] found raw type: java.lang.Class
+  missing type arguments for generic class java.lang.Class<T>
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/interceptors/ReferenceInterceptor.java:[99,114] unchecked cast
+  required: java.util.Collection<com.e2eq.framework.model.persistent.base.BaseModel>
+  found:    java.lang.Object
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/RepoUtils.java:[29,90] unchecked cast
+  required: java.lang.Class<? extends com.e2eq.framework.model.persistent.base.BaseModel>
+  found:    java.lang.Class<capture#1 of ?>
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/RepoUtils.java:[54,35] found raw type: java.lang.Class
+  missing type arguments for generic class java.lang.Class<T>
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/RepoUtils.java:[56,65] unchecked method invocation: method find in class dev.morphia.MorphiaDatastore is applied to given types
+  required: java.lang.Class<T>
+  found:    java.lang.Class
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/RepoUtils.java:[56,66] unchecked conversion
+  required: java.lang.Class<T>
+  found:    java.lang.Class
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/RepoUtils.java:[56,80] unchecked call to forEach(java.util.function.Consumer<? super T>) as a member of the raw type java.lang.Iterable
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/securityrules/RuleContext.java:[705,48] getEffectiveRules(java.lang.String,java.util.List<com.e2eq.framework.model.security.Policy>) in com.e2eq.framework.model.persistent.morphia.PolicyRepo has been deprecated
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/securityrules/RuleContext.java:[887,25] allowIO(boolean) in org.graalvm.polyglot.Context.Builder has been deprecated
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/securityrules/RuleContext.java:[1165,64] getEffectiveRules(java.lang.String,java.util.List<com.e2eq.framework.model.security.Policy>) in com.e2eq.framework.model.persistent.morphia.PolicyRepo has been deprecated
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/PolicyRepo.java:[121,35] deprecated item is not annotated with @Deprecated
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/CredentialRepo.java:[221,68] Possible heap pollution from parameterized vararg type org.apache.commons.lang3.tuple.Pair<java.lang.String,java.lang.Object>
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/mongodb/MonetaryAmountCodecProvider.java:[14,31] unchecked cast
+  required: org.bson.codecs.Codec<T>
+  found:    com.e2eq.framework.model.persistent.mongodb.MonetaryAmountCodec
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/HierarchicalRepo.java:[252,17] match(dev.morphia.query.filters.Filter...) in dev.morphia.aggregation.Aggregation has been deprecated
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/HierarchicalRepo.java:[253,17] graphLookup(dev.morphia.aggregation.stages.GraphLookup) in dev.morphia.aggregation.Aggregation has been deprecated
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/QueryToFilterListener.java:[1021,49] unchecked cast
+  required: java.util.Set<java.lang.String>
+  found:    java.lang.Object
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/QueryToFilterListener.java:[1109,49] unchecked cast
+  required: java.util.Set<java.lang.String>
+  found:    java.lang.Object
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/QueryToFilterListener.java:[1225,49] unchecked cast
+  required: java.util.Set<java.lang.String>
+  found:    java.lang.Object
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/QueryToFilterListener.java:[1340,110] unchecked cast
+  required: java.lang.Class<java.lang.annotation.Annotation>
+  found:    java.lang.Class<capture#2 of ?>
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/StaticDynamicListRepo.java:[21,114] found raw type: com.e2eq.framework.model.persistent.base.StaticDynamicList
+  missing type arguments for generic class com.e2eq.framework.model.persistent.base.StaticDynamicList<T>
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/StaticDynamicListRepo.java:[31,48] unchecked call to add(E) as a member of the raw type java.util.List
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/StaticDynamicListRepo.java:[50,24] unchecked method invocation: constructor <init> in class java.util.ArrayList is applied to given types
+  required: java.util.Collection<? extends E>
+  found:    java.util.List
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/StaticDynamicListRepo.java:[50,24] unchecked conversion
+  required: java.util.List<O>
+  found:    java.util.ArrayList
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/StaticDynamicListRepo.java:[62,49] unchecked conversion
+  required: java.util.List<O>
+  found:    java.util.List
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/codec/SemverCodecProvider.java:[12,31] unchecked cast
+  required: org.bson.codecs.Codec<T>
+  found:    com.e2eq.framework.model.persistent.morphia.codec.SemverCodec
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/interceptors/ddpolicy/DefaultDataDomainResolver.java:[75,21] possible fall-through into case
+[WARNING] /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/metadata/QueryMetadataException.java:[3,8] serializable class com.e2eq.framework.model.persistent.morphia.metadata.QueryMetadataException has no definition of serialVersionUID
+[INFO]
+[INFO] ---------------< com.end2endlogic:quantum-jwt-provider >----------------
+[INFO] Building com.end2endlogic:quantum-jwt-provider 1.2.4-SNAPSHOT      [6/6]
+[INFO]   from quantum-jwt-provider/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] --- buildnumber:3.2.1:create (default) @ quantum-jwt-provider ---
+[INFO] Executing: /bin/sh -c cd '/Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-jwt-provider' && 'git' 'log' '-1' '--no-merges' '--format=format:%H %aI %aE %aN'
+[INFO] Working directory: /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-jwt-provider
+[INFO] Storing buildNumber: 296f9790b15f3bceebc566f98180edc3decab1dd at timestamp: 1770247277556
+[INFO] Executing: /bin/sh -c cd '/Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-jwt-provider' && 'git' 'symbolic-ref' 'HEAD'
+[INFO] Working directory: /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-jwt-provider
+[INFO] Storing scmBranch: main
+[INFO]
+[INFO] --- antlr4:4.13.2:antlr4 (default) @ quantum-jwt-provider ---
+[INFO] No ANTLR 4 grammars to compile in /Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-jwt-provider/src/main/antlr4
+[INFO]
+[INFO] --- resources:3.3.1:resources (default-resources) @ quantum-jwt-provider ---
+[INFO] Copying 0 resource from src/main/resources to target/classes
+[INFO]
+[INFO] --- quarkus:3.19.4:generate-code (default) @ quantum-jwt-provider ---
+[INFO]
+[INFO] --- compiler:3.14.0:compile (default-compile) @ quantum-jwt-provider ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 2 source files with javac [debug release 17] to target/classes
+[WARNING] No processor claimed any of these annotations: /jakarta.inject.Inject,/org.eclipse.microprofile.config.inject.ConfigProperty,/jakarta.enterprise.context.ApplicationScoped
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Summary for com.end2endlogic:quantum-parent 1.2.4-SNAPSHOT:
+[INFO]
+[INFO] com.end2endlogic:quantum-parent .................... SUCCESS [  0.201 s]
+[INFO] com.end2endlogic:quantum-util ...................... SUCCESS [  2.295 s]
+[INFO] Quantum Ontology Core .............................. SUCCESS [  0.102 s]
+[INFO] com.end2endlogic:quantum-models .................... SUCCESS [  0.126 s]
+[INFO] com.end2endlogic:quantum-morphia-repos ............. SUCCESS [  3.095 s]
+[INFO] com.end2endlogic:quantum-jwt-provider .............. SUCCESS [  1.160 s]
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  7.715 s
+[INFO] Finished at: 2026-02-04T17:21:18-06:00
+[INFO] ------------------------------------------------------------------------
