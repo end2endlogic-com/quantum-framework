@@ -91,6 +91,15 @@ quarkus.oidc.roles.role-claim-path=groups
 
 ==== Quantum Framework Configuration
 
+===== Functional domains hide config
+[source,properties]
+----
+# YAML file path (classpath or file system) for hiding areas/domains/actions from discovery APIs
+quantum.functional-domains.hide-config=functional-domains-hide.yaml
+----
+
+When set, the framework loads the YAML and excludes hidden entries from GET `/system/permissions/entities`, GET `/system/permissions/fd`, and POST `/system/permissions/fd/evaluate`. See the user guide "Hiding functional areas/domains/actions from discovery" for the YAML schema.
+
 ===== Database Migration
 [source,properties]
 ----

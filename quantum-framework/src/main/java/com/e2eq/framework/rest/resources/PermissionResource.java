@@ -9,6 +9,7 @@ import com.e2eq.framework.model.auth.RoleSource;
 import com.e2eq.framework.model.persistent.morphia.UserGroupRepo;
 import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import com.e2eq.framework.model.security.*;
+import com.e2eq.framework.config.FunctionalDomainsHideFilter;
 import com.e2eq.framework.model.persistent.morphia.FunctionalDomainRepo;
 import com.e2eq.framework.model.securityrules.*;
 import com.e2eq.framework.model.persistent.morphia.IdentityRoleResolver;
@@ -42,6 +43,9 @@ public class PermissionResource {
 
    @Inject
    FunctionalDomainRepo functionalDomainRepo;
+
+   @Inject
+   FunctionalDomainsHideFilter functionalDomainsHideFilter;
 
    @Inject
    RuleContext ruleContext;
@@ -329,6 +333,11 @@ public class PermissionResource {
          List<String> actions = null;
          try {
             Class<?> clazz = em.getType();
+            // Exclude abstract classes: they are Morphia-mapped (e.g. base entities) but should not
+            // appear as selectable functional domains in REST lists, dropdowns, or permission references.
+            if (java.lang.reflect.Modifier.isAbstract(clazz.getModifiers())) {
+               continue;
+            }
             // Prefer annotations if present
             com.e2eq.framework.annotations.FunctionalMapping fm = clazz.getAnnotation(com.e2eq.framework.annotations.FunctionalMapping.class);
             if (fm != null) {
@@ -381,10 +390,15 @@ public class PermissionResource {
                acts.add("DELETE");
                acts.add("VIEW");
                acts.add("LIST");
-               actions = new ArrayList<>(acts);
+               // Filter out hidden actions (area/domain/action hide list)
+               actions = new ArrayList<>(functionalDomainsHideFilter.filterHiddenActions(area, domain, acts));
             }
          } catch (Throwable t) {
             // swallow and continue; this endpoint is informational only
+         }
+         // Skip entity if whole area or area/domain is hidden
+         if (area != null && domain != null && functionalDomainsHideFilter.isAreaDomainHidden(area, domain)) {
+            continue;
          }
          if (includeActions) {
             infoList.add(new EntityInfo(em.getName(), area, domain, actions));
@@ -413,22 +427,28 @@ public class PermissionResource {
       // Unified structure: area -> domain -> actions (case-insensitive)
       Map<String, Map<String, Set<String>>> areaDomainActions = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
 
-      // 1) From model discovery
+      // 1) From model discovery (getInfoList already excludes hidden area/domain and filters hidden actions)
       List<EntityInfo> infoList = getInfoList(includeActions);
       for (EntityInfo ei : infoList) {
          if (ei == null) continue;
          String area = safe(ei.bmFunctionalArea);
          String domain = safe(ei.bmFunctionalDomain);
          if (area.isEmpty() || domain.isEmpty()) continue;
+         if (functionalDomainsHideFilter.isAreaDomainHidden(area, domain)) continue;
 
          Set<String> actions = ensureAreaDomain(areaDomainActions, area, domain);
          if (includeActions) {
-            if (ei.actions != null) actions.addAll(ei.actions);
+            if (ei.actions != null) {
+               for (String act : ei.actions) {
+                  if (act != null && !act.isBlank() && !functionalDomainsHideFilter.isActionHidden(area, domain, act))
+                     actions.add(act);
+               }
+            }
             addDefaultActions(actions);
          }
       }
 
-      // 2) From DB (FunctionalDomain collection)
+      // 2) From DB (FunctionalDomain collection); respect hide config
       List<FunctionalDomain> stored = functionalDomainRepo.getAllList();
       if (stored != null) {
          for (FunctionalDomain fd : stored) {
@@ -436,6 +456,7 @@ public class PermissionResource {
             String area = safe(fd.getArea());
             String domain = safe(fd.getRefName());
             if (area.isEmpty() || domain.isEmpty()) continue;
+            if (functionalDomainsHideFilter.isAreaDomainHidden(area, domain)) continue;
 
             Set<String> actions = ensureAreaDomain(areaDomainActions, area, domain);
             if (includeActions) {
@@ -443,7 +464,8 @@ public class PermissionResource {
                   for (com.e2eq.framework.model.security.FunctionalAction a : fd.getFunctionalActions()) {
                      if (a == null) continue;
                      String ref = safe(a.getRefName());
-                     if (!ref.isEmpty()) actions.add(ref);
+                     if (!ref.isEmpty() && !functionalDomainsHideFilter.isActionHidden(area, domain, ref))
+                        actions.add(ref);
                   }
                }
                addDefaultActions(actions);
@@ -768,7 +790,7 @@ public class PermissionResource {
               .withScope(req.scope != null ? req.scope : "api")
               .build();
 
-      // Discover area->domain->actions the same way as /fd?includeActions=true
+      // Discover area->domain->actions the same way as /fd?includeActions=true (respect hide config)
       Map<String, Map<String, Set<String>>> discovered = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
       // 1) From model discovery
       List<EntityInfo> infoList = getInfoList(true);
@@ -777,8 +799,14 @@ public class PermissionResource {
          String area = safe(ei.bmFunctionalArea);
          String domain = safe(ei.bmFunctionalDomain);
          if (area.isEmpty() || domain.isEmpty()) continue;
+         if (functionalDomainsHideFilter.isAreaDomainHidden(area, domain)) continue;
          Set<String> actions = ensureAreaDomain(discovered, area, domain);
-         if (ei.actions != null) actions.addAll(ei.actions);
+         if (ei.actions != null) {
+            for (String act : ei.actions) {
+               if (act != null && !act.isBlank() && !functionalDomainsHideFilter.isActionHidden(area, domain, act))
+                  actions.add(act);
+            }
+         }
          addDefaultActions(actions);
       }
       // 2) From DB FunctionalDomain collection
@@ -789,12 +817,14 @@ public class PermissionResource {
             String a = safe(fd.getArea());
             String d = safe(fd.getRefName());
             if (a.isEmpty() || d.isEmpty()) continue;
+            if (functionalDomainsHideFilter.isAreaDomainHidden(a, d)) continue;
             Set<String> actions = ensureAreaDomain(discovered, a, d);
             if (fd.getFunctionalActions() != null) {
                for (com.e2eq.framework.model.security.FunctionalAction fa : fd.getFunctionalActions()) {
                   if (fa == null) continue;
                   String ref = safe(fa.getRefName());
-                  if (!ref.isEmpty()) actions.add(ref);
+                  if (!ref.isEmpty() && !functionalDomainsHideFilter.isActionHidden(a, d, ref))
+                     actions.add(ref);
                }
             }
             addDefaultActions(actions);
