@@ -1,5 +1,8 @@
 package com.e2eq.framework.api.agent;
 
+import com.e2eq.framework.api.tools.GatewayToolSeeder;
+import com.e2eq.framework.model.persistent.morphia.ToolDefinitionRepo;
+import com.e2eq.framework.model.persistent.tools.ToolDefinition;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -13,9 +16,9 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * Provides the list of agent tools (six Query Gateway operations) for discovery.
- * Used by GET /api/agent/tools. Tools can be filtered by tenant enabledTools
- * when tenant config is present.
+ * Provides the list of agent tools for discovery. When realm is set, tools are
+ * read from the {@link ToolDefinition} registry (after seeding gateway tools).
+ * Used by GET /api/agent/tools. Tools can be filtered by tenant enabledTools.
  */
 @ApplicationScoped
 public class AgentToolsProvider {
@@ -26,36 +29,82 @@ public class AgentToolsProvider {
     @Inject
     TenantAgentConfigResolver tenantAgentConfigResolver;
 
+    @Inject
+    ToolDefinitionRepo toolDefinitionRepo;
+
+    @Inject
+    GatewayToolSeeder gatewayToolSeeder;
+
     /**
-     * Returns the list of gateway tools (query_rootTypes, query_plan, query_find,
-     * query_save, query_delete, query_deleteMany) with name, description, and
-     * parameters (JSON Schema-like). When realm is set and tenant config has
-     * enabledTools, only those tools are returned.
+     * Returns the list of tools. When realm is set, delegates to the tool registry
+     * (seeds gateway tools if needed) and filters by tenant enabledTools. When realm
+     * is null, returns the six static gateway tools for backward compatibility.
      *
-     * @param realm optional realm for tenant config; if null, all six tools are returned
+     * @param realm optional realm; when set, tools come from registry and tenant filter applies
      * @return response with tools list and count
      */
     public AgentToolsResponse getTools(String realm) {
-        List<AgentToolInfo> tools = new ArrayList<>();
-        tools.add(buildQueryRootTypes());
-        tools.add(buildQueryPlan());
-        tools.add(buildQueryFind());
-        tools.add(buildQuerySave());
-        tools.add(buildQueryDelete());
-        tools.add(buildQueryDeleteMany());
-
+        List<AgentToolInfo> tools;
         if (realm != null && !realm.isBlank()) {
+            gatewayToolSeeder.seedRealm(realm);
+            List<ToolDefinition> defs = toolDefinitionRepo.list(realm);
+            tools = defs.stream()
+                .filter(ToolDefinition::isEnabled)
+                .map(this::toAgentToolInfo)
+                .toList();
+
             Optional<TenantAgentConfig> config = tenantAgentConfigResolver.resolve(realm);
             if (config.isPresent() && config.get().enabledTools != null && !config.get().enabledTools.isEmpty()) {
                 Set<String> enabled = config.get().enabledTools.stream().collect(Collectors.toSet());
                 tools = tools.stream().filter(t -> enabled.contains(t.name)).toList();
             }
+        } else {
+            tools = new ArrayList<>(List.of(
+                buildQueryRootTypes(), buildQueryPlan(), buildQueryFind(),
+                buildQuerySave(), buildQueryDelete(), buildQueryDeleteMany()));
         }
 
         AgentToolsResponse response = new AgentToolsResponse();
         response.tools = tools;
         response.count = tools.size();
         return response;
+    }
+
+    private AgentToolInfo toAgentToolInfo(ToolDefinition def) {
+        AgentToolInfo t = new AgentToolInfo();
+        t.name = def.getRefName();
+        t.description = def.getDescription() != null ? def.getDescription() : def.getName();
+        t.parameters = parametersForGatewayRefName(def.getRefName());
+        t.area = AREA;
+        t.domain = DOMAIN;
+        t.action = actionForRefName(def.getRefName());
+        return t;
+    }
+
+    private static String actionForRefName(String refName) {
+        if (refName == null) return "EXECUTE";
+        return switch (refName) {
+            case "query_rootTypes" -> "listRootTypes";
+            case "query_plan" -> "plan";
+            case "query_find" -> "find";
+            case "query_save" -> "save";
+            case "query_delete" -> "delete";
+            case "query_deleteMany" -> "deleteMany";
+            default -> "EXECUTE";
+        };
+    }
+
+    private static Map<String, Object> parametersForGatewayRefName(String refName) {
+        if (refName == null) return Map.of("type", "object", "properties", Map.of(), "required", List.of());
+        return switch (refName) {
+            case "query_rootTypes" -> Map.of("type", "object", "properties", Map.of(), "required", List.of());
+            case "query_plan" -> buildQueryPlan().parameters;
+            case "query_find" -> buildQueryFind().parameters;
+            case "query_save" -> buildQuerySave().parameters;
+            case "query_delete" -> buildQueryDelete().parameters;
+            case "query_deleteMany" -> buildQueryDeleteMany().parameters;
+            default -> Map.of("type", "object", "properties", Map.of(), "required", List.of());
+        };
     }
 
     private static AgentToolInfo buildQueryRootTypes() {

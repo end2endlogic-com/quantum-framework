@@ -108,6 +108,20 @@ The agent APIs and MCP bridge are abstract until you see how they are used in pr
 
 **Why it matters:** The test is both a regression guard and a living specification for “how to use the agent API like an MCP bridge.”
 
+=== Scenario 6: Suggesting regulatory obligations for an entity in a jurisdiction
+
+**Who:** A compliance or operations user in the PSA app (e.g. PSM frontend).  
+**What they need:** Given an entity (e.g. Legal Entity) in a jurisdiction/state, see *suggested* regulatory obligations to track; accept the ones that apply and have them created in the database.
+
+**Flow:**
+
+1. User is on a Jurisdiction or Legal Entity detail page and clicks "Suggest obligations."
+2. The frontend calls a *domain* endpoint (e.g. `POST /psa/obligations/suggest`) with jurisdiction (and optional entity). The backend uses jurisdiction requirements (and optionally an LLM) to produce a list of suggested obligations (details, due date, priority).
+3. The UI shows the suggestions; the user selects which to accept and clicks "Accept selected."
+4. The frontend calls the Query Gateway `POST /api/query/save` (rootType Obligation) for each accepted suggestion, persisting new Obligation records.
+
+**Why it matters:** The framework's agent tools (query_find, schema) can feed context into an LLM or rule engine; the "suggest" capability is implemented as a domain REST endpoint in the app (psa-app), not as a seventh gateway tool. User acceptance keeps humans in the loop before data is written. The full design is PSA-specific and lives in the psa-app repository: `doc/design/regulatory-obligations-agent-design.adoc` (Regulatory Obligations — Agent-Driven Suggestions and User Acceptance).
+
 == Integrating the query grammar into the agent framework
 
 Developers and agents need to know *what query string* to use for questions like "retrieve locations in Atlanta" or "get orders with their customer hydrated." The framework exposes the query grammar and **"did you know"** hints so the LLM can both *answer* "what is the query string to retrieve X?" and *suggest* expand/ontology usage.

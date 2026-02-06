@@ -60,17 +60,36 @@ public class AgentExecuteHandler {
         if (tool == null || tool.isBlank()) {
             throw new BadRequestException("tool is required");
         }
-
         String realm = resolveRealmFromArguments(arguments);
+        GatewayInvocationResult result = invokeGatewayTool(tool, arguments, realm);
+        if (result.getErrorMessage() != null && result.getStatusCode() >= 400) {
+            return Response.status(result.getStatusCode()).entity(result.getErrorMessage()).build();
+        }
+        return Response.status(result.getStatusCode()).entity(result.getEntity()).build();
+    }
+
+    /**
+     * Invokes a gateway tool and returns the result (status and entity). Used by REST layer and by
+     * {@link com.e2eq.framework.api.tools.ToolExecutor} for QUANTUM_QUERY tools.
+     *
+     * @param tool     tool name (query_rootTypes, query_plan, query_find, query_save, query_delete, query_deleteMany)
+     * @param arguments arguments for the gateway
+     * @param realm    realm to run in
+     * @return invocation result (status code, entity, optional error message)
+     */
+    public GatewayInvocationResult invokeGatewayTool(String tool, Map<String, Object> arguments, String realm) {
+        if (tool == null || tool.isBlank()) {
+            return GatewayInvocationResult.error(400, "tool is required");
+        }
         Optional<TenantAgentConfig> tenantConfig = tenantAgentConfigResolver.resolve(realm);
         Optional<PrincipalContext> runAsPrincipal = resolveRunAsPrincipal(tenantConfig);
 
         if (runAsPrincipal.isPresent()) {
             PrincipalContext asPrincipal = runAsPrincipal.get();
             ResourceContext resource = resourceContextForTool(asPrincipal, tool, realm);
-            return SecurityCallScope.runWithContexts(asPrincipal, resource, () -> dispatch(tool, arguments, realm, tenantConfig));
+            return SecurityCallScope.runWithContexts(asPrincipal, resource, () -> dispatchResult(tool, arguments, realm, tenantConfig));
         }
-        return dispatch(tool, arguments, realm, tenantConfig);
+        return dispatchResult(tool, arguments, realm, tenantConfig);
     }
 
     private String resolveRealmFromArguments(Map<String, Object> arguments) {
@@ -109,43 +128,54 @@ public class AgentExecuteHandler {
         };
     }
 
-    private Response dispatch(String tool, Map<String, Object> arguments, String realm, Optional<TenantAgentConfig> tenantConfig) {
-        switch (tool) {
-            case "query_rootTypes" -> {
-                return Response.ok(queryGatewayResource.listRootTypes()).build();
-            }
-            case "query_plan" -> {
-                QueryGatewayResource.PlanRequest req = objectMapper.convertValue(arguments != null ? arguments : Map.of(), QueryGatewayResource.PlanRequest.class);
-                return Response.ok(queryGatewayResource.plan(req)).build();
-            }
-            case "query_find" -> {
-                QueryGatewayResource.FindRequest req = objectMapper.convertValue(arguments != null ? arguments : Map.of(), QueryGatewayResource.FindRequest.class);
-                if (req.realm == null || req.realm.isBlank()) req.realm = realm;
-                Integer maxLimit = tenantConfig.map(c -> c.maxFindLimit).orElse(null);
-                if (maxLimit != null && req.page != null && req.page.limit != null && req.page.limit > maxLimit) {
-                    req.page.limit = maxLimit;
+    private GatewayInvocationResult dispatchResult(String tool, Map<String, Object> arguments, String realm, Optional<TenantAgentConfig> tenantConfig) {
+        try {
+            switch (tool) {
+                case "query_rootTypes" -> {
+                    return GatewayInvocationResult.ok(queryGatewayResource.listRootTypes());
                 }
-                return queryGatewayResource.find(req);
+                case "query_plan" -> {
+                    QueryGatewayResource.PlanRequest req = objectMapper.convertValue(arguments != null ? arguments : Map.of(), QueryGatewayResource.PlanRequest.class);
+                    return GatewayInvocationResult.ok(queryGatewayResource.plan(req));
+                }
+                case "query_find" -> {
+                    QueryGatewayResource.FindRequest req = objectMapper.convertValue(arguments != null ? arguments : Map.of(), QueryGatewayResource.FindRequest.class);
+                    if (req.realm == null || req.realm.isBlank()) req.realm = realm;
+                    Integer maxLimit = tenantConfig.map(c -> c.maxFindLimit).orElse(null);
+                    if (maxLimit != null && req.page != null && req.page.limit != null && req.page.limit > maxLimit) {
+                        req.page.limit = maxLimit;
+                    }
+                    Response findRes = queryGatewayResource.find(req);
+                    return new GatewayInvocationResult(findRes.getStatus(), findRes.getEntity(), findRes.getStatus() >= 400 ? String.valueOf(findRes.getEntity()) : null);
+                }
+                case "query_save" -> {
+                    QueryGatewayResource.SaveRequest req = objectMapper.convertValue(arguments != null ? arguments : Map.of(), QueryGatewayResource.SaveRequest.class);
+                    if (req.realm == null || req.realm.isBlank()) req.realm = realm;
+                    Response saveRes = queryGatewayResource.save(req);
+                    return new GatewayInvocationResult(saveRes.getStatus(), saveRes.getEntity(), saveRes.getStatus() >= 400 ? String.valueOf(saveRes.getEntity()) : null);
+                }
+                case "query_delete" -> {
+                    QueryGatewayResource.DeleteRequest req = objectMapper.convertValue(arguments != null ? arguments : Map.of(), QueryGatewayResource.DeleteRequest.class);
+                    if (req.realm == null || req.realm.isBlank()) req.realm = realm;
+                    Response delRes = queryGatewayResource.delete(req);
+                    return new GatewayInvocationResult(delRes.getStatus(), delRes.getEntity(), delRes.getStatus() >= 400 ? String.valueOf(delRes.getEntity()) : null);
+                }
+                case "query_deleteMany" -> {
+                    QueryGatewayResource.DeleteManyRequest req = objectMapper.convertValue(arguments != null ? arguments : Map.of(), QueryGatewayResource.DeleteManyRequest.class);
+                    if (req.realm == null || req.realm.isBlank()) req.realm = realm;
+                    Response delManyRes = queryGatewayResource.deleteMany(req);
+                    return new GatewayInvocationResult(delManyRes.getStatus(), delManyRes.getEntity(), delManyRes.getStatus() >= 400 ? String.valueOf(delManyRes.getEntity()) : null);
+                }
+                default -> {
+                    Log.warnf("Unknown agent tool: %s", tool);
+                    return GatewayInvocationResult.error(400, "Unknown tool: " + tool + ". Use query_rootTypes, query_plan, query_find, query_save, query_delete, query_deleteMany.");
+                }
             }
-            case "query_save" -> {
-                QueryGatewayResource.SaveRequest req = objectMapper.convertValue(arguments != null ? arguments : Map.of(), QueryGatewayResource.SaveRequest.class);
-                if (req.realm == null || req.realm.isBlank()) req.realm = realm;
-                return queryGatewayResource.save(req);
-            }
-            case "query_delete" -> {
-                QueryGatewayResource.DeleteRequest req = objectMapper.convertValue(arguments != null ? arguments : Map.of(), QueryGatewayResource.DeleteRequest.class);
-                if (req.realm == null || req.realm.isBlank()) req.realm = realm;
-                return queryGatewayResource.delete(req);
-            }
-            case "query_deleteMany" -> {
-                QueryGatewayResource.DeleteManyRequest req = objectMapper.convertValue(arguments != null ? arguments : Map.of(), QueryGatewayResource.DeleteManyRequest.class);
-                if (req.realm == null || req.realm.isBlank()) req.realm = realm;
-                return queryGatewayResource.deleteMany(req);
-            }
-            default -> {
-                Log.warnf("Unknown agent tool: %s", tool);
-                throw new BadRequestException("Unknown tool: " + tool + ". Use query_rootTypes, query_plan, query_find, query_save, query_delete, query_deleteMany.");
-            }
+        } catch (BadRequestException e) {
+            return GatewayInvocationResult.error(400, e.getMessage());
+        } catch (Exception e) {
+            Log.warnf(e, "Gateway tool %s failed", tool);
+            return GatewayInvocationResult.error(500, e.getMessage());
         }
     }
 }
