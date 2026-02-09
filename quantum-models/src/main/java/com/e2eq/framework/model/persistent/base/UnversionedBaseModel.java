@@ -142,6 +142,11 @@ public abstract  class UnversionedBaseModel {
   // }
   // }
 
+    /**
+     * Maps this class to a functional area for UI action grouping.
+     *
+     * @return the functional area identifier
+     */
     @Transient
     @JsonIgnore
     abstract public String bmFunctionalArea();

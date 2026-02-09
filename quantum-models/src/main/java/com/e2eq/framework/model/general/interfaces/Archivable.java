@@ -11,13 +11,17 @@ public interface Archivable {
    void setArchiveDate(Date archiveDate);
 
    /**
-    @return mark the record for archive
+    * Indicates whether the record is marked for archive.
+    *
+    * @return true if the record is marked for archive
     */
    boolean isMarkedForArchive();
    void setMarkedForArchive(boolean markArchive);
 
    /**
-    @return true indicates that the record has been archived
+    * Indicates whether the record has been archived.
+    *
+    * @return true if the record has been archived
     */
    boolean isArchived();
    void setArchived(boolean archived);

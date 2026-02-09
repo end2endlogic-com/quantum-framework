@@ -3,6 +3,7 @@ package com.e2eq.framework.api.csv;
 
 import com.e2eq.framework.model.persistent.base.DynamicAttribute;
 import com.e2eq.framework.model.persistent.base.DynamicAttributeSet;
+import com.e2eq.framework.model.persistent.imports.ImportProfile;
 import com.e2eq.framework.securityrules.SecuritySession;
 import com.e2eq.framework.persistent.BaseRepoTest;
 import com.e2eq.framework.persistent.TestCSVModelRepo;
@@ -261,6 +262,37 @@ public class TestCSVFeatures extends BaseRepoTest {
             for (Object r : result.getFailedRecordsFeedback()) {
                 System.out.println(r);
             }
+        }
+    }
+
+    @Test
+    public void testAnalyzeCSVWithProfileAndBatchHandler() throws IOException {
+        try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
+            // Profile with batchLifecycleHandlerNames (empty = no handlers, flow still works)
+            ImportProfile profile = ImportProfile.builder()
+                    .refName("test-csv-profile")
+                    .displayName("Test CSV Profile")
+                    .targetCollection(CSVModel.class.getName())
+                    .batchLifecycleHandlerNames(new ArrayList<>())
+                    .build();
+
+            InputStream inputStream = getClass().getClassLoader().getResourceAsStream("testData/TestImportCSV.csv");
+            assertNotNull(inputStream);
+
+            List<String> requestedColumns = List.of(
+                    "refName", "displayName", "testField", "testField2", "testField3",
+                    "testList[0]", "numberField", "decimalField");
+
+            CSVImportHelper.ImportResult<CSVModel> result = csvImportHelper.analyzeCSVWithProfile(
+                    repo,
+                    inputStream,
+                    profile,
+                    requestedColumns,
+                    "test-realm");
+
+            assertNotNull(result.getSessionId());
+            assertEquals(3, result.getTotalRows());
+            assertTrue(result.getValidRows() >= 1);
         }
     }
 

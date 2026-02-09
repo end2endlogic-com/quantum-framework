@@ -1,7 +1,9 @@
 package com.e2eq.framework.imports.service;
 
 import com.e2eq.framework.imports.processors.*;
+import com.e2eq.framework.imports.spi.BatchLifecycleHandler;
 import com.e2eq.framework.imports.spi.FieldCalculator;
+import com.e2eq.framework.imports.spi.ImportBatch;
 import com.e2eq.framework.imports.spi.ImportContext;
 import com.e2eq.framework.imports.spi.PreValidationTransformer;
 import com.e2eq.framework.imports.spi.RowValueResolver;
@@ -36,6 +38,9 @@ public class ImportProfileService {
 
     @Inject
     Instance<RowValueResolver> rowValueResolvers;
+
+    @Inject
+    Instance<BatchLifecycleHandler> batchLifecycleHandlers;
 
     /**
      * Build CellProcessors for a column based on the import profile.
@@ -388,6 +393,96 @@ public class ImportProfileService {
             }
         }
         return null;
+    }
+
+    /**
+     * Apply batch lifecycle handlers (beforeBatch) to an ImportBatch.
+     * Handlers are invoked in order; first failure stops processing.
+     *
+     * @param profile the import profile
+     * @param batch the import batch
+     * @param context import context (realm, session, profile; rowNumber can be first row in batch)
+     * @return result indicating success, partial failure, or abort
+     */
+    public BatchLifecycleHandler.BatchResult applyBatchLifecycleHandlers(
+            ImportProfile profile,
+            ImportBatch<?> batch,
+            ImportContext context) {
+
+        if (profile == null || batch == null || batch.size() == 0) {
+            return BatchLifecycleHandler.BatchResult.success();
+        }
+
+        List<String> handlerNames = profile.getBatchLifecycleHandlerNames();
+        if (handlerNames == null || handlerNames.isEmpty()) {
+            return BatchLifecycleHandler.BatchResult.success();
+        }
+
+        Class<?> targetClass = context.getTargetClass();
+        if (targetClass == null) {
+            return BatchLifecycleHandler.BatchResult.success();
+        }
+
+        List<BatchLifecycleHandler> applicableHandlers = new ArrayList<>();
+        for (BatchLifecycleHandler handler : batchLifecycleHandlers) {
+            if (handlerNames.contains(handler.getName()) && handler.appliesTo(targetClass)) {
+                applicableHandlers.add(handler);
+            }
+        }
+
+        applicableHandlers.sort(Comparator.comparingInt(BatchLifecycleHandler::getOrder));
+
+        for (BatchLifecycleHandler handler : applicableHandlers) {
+            try {
+                BatchLifecycleHandler.BatchResult result = handler.beforeBatch(batch, context);
+                if (!result.isSuccess()) {
+                    return result;
+                }
+            } catch (Exception e) {
+                LOG.warnf(e, "BatchLifecycleHandler '%s' failed", handler.getName());
+                return BatchLifecycleHandler.BatchResult.error(
+                        "Batch handler " + handler.getName() + " failed: " + e.getMessage());
+            }
+        }
+
+        return BatchLifecycleHandler.BatchResult.success();
+    }
+
+    /**
+     * Invoke afterBatch on all configured batch lifecycle handlers.
+     *
+     * @param profile the import profile
+     * @param batch the batch that was saved
+     * @param context import context
+     */
+    public void invokeBatchLifecycleAfterBatch(
+            ImportProfile profile,
+            ImportBatch<?> batch,
+            ImportContext context) {
+
+        if (profile == null || batch == null) {
+            return;
+        }
+
+        List<String> handlerNames = profile.getBatchLifecycleHandlerNames();
+        if (handlerNames == null || handlerNames.isEmpty()) {
+            return;
+        }
+
+        Class<?> targetClass = context.getTargetClass();
+        if (targetClass == null) {
+            return;
+        }
+
+        for (BatchLifecycleHandler handler : batchLifecycleHandlers) {
+            if (handlerNames.contains(handler.getName()) && handler.appliesTo(targetClass)) {
+                try {
+                    handler.afterBatch(batch, context);
+                } catch (Exception e) {
+                    LOG.warnf(e, "BatchLifecycleHandler '%s' afterBatch failed", handler.getName());
+                }
+            }
+        }
     }
 
     /**
