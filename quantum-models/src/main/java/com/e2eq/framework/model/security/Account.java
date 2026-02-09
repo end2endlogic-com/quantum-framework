@@ -55,6 +55,8 @@ public class Account extends FullBaseModel {
 
    /**
     * Returns the ten digit account number.
+    *
+    * @return the account number
     */
    public String getAccountNumber () {
       return accountNumber;
@@ -71,6 +73,8 @@ public class Account extends FullBaseModel {
 
    /**
     * Returns the organisation that owns this account.
+    *
+    * @return the owning organisation
     */
    public Organization getOwningOrg () {
       return owningOrg;

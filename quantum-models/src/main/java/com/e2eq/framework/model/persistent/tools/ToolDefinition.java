@@ -12,7 +12,7 @@ import java.util.Map;
 
 /**
  * Persisted definition of a tool: identity, schema, invocation, and behavioral hints.
- * Tools are realm-scoped; stored per realm via {@link com.e2eq.framework.model.persistent.morphia.ToolDefinitionRepo}.
+ * Tools are realm-scoped; stored per realm via {@code ToolDefinitionRepo} (in quantum-morphia-repos).
  * Used by the tool registry, tool executor, and agent tool resolution.
  */
 @RegisterForReflection

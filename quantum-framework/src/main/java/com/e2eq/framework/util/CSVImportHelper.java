@@ -3,6 +3,8 @@ package com.e2eq.framework.util;
 
 import com.e2eq.framework.imports.dynamic.DynamicAttributeImportService;
 import com.e2eq.framework.imports.service.ImportProfileService;
+import com.e2eq.framework.imports.spi.BatchLifecycleHandler;
+import com.e2eq.framework.imports.spi.ImportBatch;
 import com.e2eq.framework.imports.spi.ImportContext;
 import com.e2eq.framework.imports.spi.PreValidationTransformer;
 import com.e2eq.framework.model.persistent.base.BaseModel;
@@ -1383,8 +1385,14 @@ public class CSVImportHelper {
 
                 if (batchBeans.size() >= BATCH_SIZE) {
                     List<ImportRowResult<T>> annotated = new ArrayList<>();
-                    annotateIntentsAndValidateWithProfile(repo, batchBeans, batchRowNums,
-                            batchRawByRowNum, batchRowDataByRowNum, annotated, result, profile);
+                    if (applyBatchHandlersAndValidate(repo, batchBeans, batchRowNums,
+                            batchRawByRowNum, batchRowDataByRowNum, annotated, result, profile,
+                            realmId, sessionId)) {
+                        // Batch handler failed, annotated has errors
+                    } else {
+                        annotateIntentsAndValidateWithProfile(repo, batchBeans, batchRowNums,
+                                batchRawByRowNum, batchRowDataByRowNum, annotated, result, profile);
+                    }
 
                     for (ImportRowResult<T> ar : annotated) {
                         persistOrStoreAnnotatedRow(memMode, sessionId, ar, memRows, result);
@@ -1402,8 +1410,14 @@ public class CSVImportHelper {
             // Process remaining batch
             if (!batchBeans.isEmpty()) {
                 List<ImportRowResult<T>> annotated = new ArrayList<>();
-                annotateIntentsAndValidateWithProfile(repo, batchBeans, batchRowNums,
-                        batchRawByRowNum, batchRowDataByRowNum, annotated, result, profile);
+                if (applyBatchHandlersAndValidate(repo, batchBeans, batchRowNums,
+                        batchRawByRowNum, batchRowDataByRowNum, annotated, result, profile,
+                        realmId, sessionId)) {
+                    // Batch handler failed, annotated has errors
+                } else {
+                    annotateIntentsAndValidateWithProfile(repo, batchBeans, batchRowNums,
+                            batchRawByRowNum, batchRowDataByRowNum, annotated, result, profile);
+                }
 
                 for (ImportRowResult<T> ar : annotated) {
                     persistOrStoreAnnotatedRow(memMode, sessionId, ar, memRows, result);
@@ -1550,6 +1564,64 @@ public class CSVImportHelper {
         } else {
             memRows.add(ar);
         }
+    }
+
+    /**
+     * Apply batch lifecycle handlers (beforeBatch). If any handler fails,
+     * populate annotated with error rows and return true. Otherwise return false.
+     *
+     * @return true if batch handler failed (annotated has errors), false to proceed with validation
+     */
+    private <T extends UnversionedBaseModel> boolean applyBatchHandlersAndValidate(
+            BaseMorphiaRepo<T> repo,
+            List<T> batchBeans,
+            List<Integer> batchRowNums,
+            Map<Integer, String> rawByRowNum,
+            Map<Integer, Map<String, Object>> rowDataByRowNum,
+            List<ImportRowResult<T>> annotated,
+            ImportResult<T> result,
+            ImportProfile profile,
+            String realmId,
+            String sessionId) {
+
+        if (profile == null || profile.getBatchLifecycleHandlerNames() == null
+                || profile.getBatchLifecycleHandlerNames().isEmpty()) {
+            return false;
+        }
+
+        ImportBatch<T> batch = new ImportBatch<>(batchBeans, batchRowNums, rawByRowNum, rowDataByRowNum);
+        int firstRowNum = batchRowNums.isEmpty() ? 1 : batchRowNums.get(0);
+        ImportContext context = ImportContext.builder()
+                .profile(profile)
+                .targetClass(repo.getPersistentClass())
+                .realmId(realmId)
+                .rowNumber(firstRowNum)
+                .sessionId(sessionId)
+                .build();
+
+        BatchLifecycleHandler.BatchResult batchResult =
+                importProfileService.applyBatchLifecycleHandlers(profile, batch, context);
+
+        if (batchResult.isSuccess()) {
+            return false;
+        }
+
+        // Handler failed - add error row for each bean
+        String errorMsg = batchResult.getErrorMessage();
+        for (int i = 0; i < batchBeans.size(); i++) {
+            T bean = batchBeans.get(i);
+            int rn = i < batchRowNums.size() ? batchRowNums.get(i) : (firstRowNum + i);
+            ImportRowResult<T> rr = new ImportRowResult<>();
+            rr.setRowNumber(rn);
+            rr.setRefName(bean.getRefName());
+            rr.setRecord(bean);
+            rr.setIntent(Intent.SKIP);
+            rr.setRawData(rawByRowNum != null ? rawByRowNum.get(rn) : null);
+            rr.getErrors().add(new FieldError(null, errorMsg != null ? errorMsg : "Batch handler failed",
+                    FieldErrorCode.VALIDATION));
+            annotated.add(rr);
+        }
+        return true;
     }
 
     /**

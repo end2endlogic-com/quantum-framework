@@ -255,37 +255,6 @@ Field semantics
 - scopes[<key>].requiresServer: per-scope flag. If true, client should not rely on that scope’s matrix for final decisions and should call /permission/check when evaluating in that scope.
 - requestedScope / requestedFallback: convenience keys provided when the request included data-domain values. Clients should attempt lookup starting at requestedScope, then walk requestedFallback in order.
 
-== Hiding functional areas/domains/actions from discovery
-
-The functional domain discovery APIs (GET `/system/permissions/entities`, GET `/system/permissions/fd`, POST `/system/permissions/fd/evaluate`) list areas, domains, and actions by scanning the classpath for model classes with `@FunctionalMapping` or `bmFunctionalArea`/`bmFunctionalDomain` and for `@FunctionalAction` on methods. You can hide entries from these lists using a YAML config file so that internal or restricted areas/domains/actions are not exposed.
-
-Configure the file path with `quantum.functional-domains.hide-config` (default: `functional-domains-hide.yaml` on the classpath). The file can be on the classpath or an absolute/file path. Matching is case-insensitive.
-
-.YAML structure
-[source,yaml]
-----
-# Hide entire functional area (all domains under it)
-hideAreas:
-  - "internal"
-
-# Hide specific area/domain pair (all actions under that pair)
-hideAreaDomains:
-  - area: "ai"
-    domain: "tools"
-
-# Hide specific area/domain/action only
-hideActions:
-  - area: "system"
-    domain: "permission"
-    action: "roleProvenance"
-----
-
-* `hideAreas`: list of area names; any domain under that area is hidden.
-* `hideAreaDomains`: list of `area`/`domain` pairs; all actions under that pair are hidden.
-* `hideActions`: list of `area`/`domain`/`action`; only that action is hidden.
-
-An example empty file is provided in the framework at `functional-domains-hide.yaml`; copy it to your application and add entries as needed.
-
 == Data-Domain Scope and Fallback
 
 A scope key is a canonical string combining the data-domain dimensions:

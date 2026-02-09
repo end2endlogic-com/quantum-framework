@@ -91,15 +91,6 @@ quarkus.oidc.roles.role-claim-path=groups
 
 ==== Quantum Framework Configuration
 
-===== Functional domains hide config
-[source,properties]
-----
-# YAML file path (classpath or file system) for hiding areas/domains/actions from discovery APIs
-quantum.functional-domains.hide-config=functional-domains-hide.yaml
-----
-
-When set, the framework loads the YAML and excludes hidden entries from GET `/system/permissions/entities`, GET `/system/permissions/fd`, and POST `/system/permissions/fd/evaluate`. See the user guide "Hiding functional areas/domains/actions from discovery" for the YAML schema.
-
 ===== Database Migration
 [source,properties]
 ----
@@ -169,30 +160,10 @@ quantum.realmConfig.defaultOrgRefName=DEFAULT
 quantum.anonymousUserId=anonymous
 ----
 
-==== Secrets and vault (global vs tenant-level)
-
-Secrets are split into **global** (tenant-independent, resolved at startup) and **tenant-level** (per-realm, resolved at request time). Store global secrets in env or a single vault path; store tenant-level secrets in a vault path that includes the realm (e.g. `secret/myapp/tenant/<realm>/llm`) or in a tenant config store that references vault keys. LLM API keys and other per-tenant credentials should use tenant-level secrets. See xref:../user-guide/secrets-and-vault.adoc[Secrets and Vault Configuration] for HashiCorp Vault and AWS Secrets Manager.
-
-==== Usage metering (opt-in)
-
-Token metering is **disabled by default**. Enable it in `application.properties` to record API/LLM usage and enforce quotas. Per-tenant allocations support billing interval (MONTHLY, YEARLY) and replenishment amount; when tokens run out, associated APIs/tools are blocked with HTTP 402 and a message including the next replenishment date.
-
-[source,properties]
-----
-# Opt-in: enable token metering (default: false)
-quantum.metering.enabled=true
-# Block APIs/tools when allocation is exceeded (default: false)
-quantum.metering.enforce-quota=true
-----
-
-See xref:../user-guide/usage-and-token-allocation.adoc[Usage Metering and Token Allocation].
-
 ==== See Also
 
 - https://quarkus.io/guides/config-reference[Quarkus Configuration Guide]
 - xref:../user-guide/auth.adoc[Authentication Configuration]
-- xref:../user-guide/secrets-and-vault.adoc[Secrets and Vault Configuration]
-- xref:../user-guide/usage-and-token-allocation.adoc[Usage Metering and Token Allocation]
 
 
 ==== Ontology Configuration (optional)

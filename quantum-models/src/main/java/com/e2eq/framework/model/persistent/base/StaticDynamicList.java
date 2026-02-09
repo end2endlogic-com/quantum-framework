@@ -36,7 +36,7 @@ import java.util.Optional;
  * @see com.e2eq.framework.model.persistent.base.StaticDynamicList
  * @see com.e2eq.framework.model.persistent.base.BaseModel
  * @see com.e2eq.framework.model.persistent.base.UnversionedBaseModel
- * @param <T>
+ * @param <T> the type of elements in the list, must extend UnversionedBaseModel
  */
 @Data
 @Entity

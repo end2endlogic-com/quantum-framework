@@ -102,6 +102,14 @@ public class ImportProfile extends BaseModel {
     private List<String> preValidationTransformerNames;
 
     /**
+     * Names of BatchLifecycleHandler CDI beans to invoke.
+     * Handlers receive ImportBatch and run before validation (beforeBatch)
+     * and after successful save (afterBatch). Use for batch API calls
+     * (e.g., batch geocode), pre-loading lookups, cross-row validation.
+     */
+    private List<String> batchLifecycleHandlerNames;
+
+    /**
      * CSV delimiter character.
      * Default: comma
      */
@@ -248,6 +256,16 @@ public class ImportProfile extends BaseModel {
             preValidationTransformerNames = new ArrayList<>();
         }
         return preValidationTransformerNames;
+    }
+
+    /**
+     * Get batch lifecycle handler names, initializing if null.
+     */
+    public List<String> getBatchLifecycleHandlerNames() {
+        if (batchLifecycleHandlerNames == null) {
+            batchLifecycleHandlerNames = new ArrayList<>();
+        }
+        return batchLifecycleHandlerNames;
     }
 
     /**

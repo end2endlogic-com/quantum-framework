@@ -30,13 +30,17 @@ public interface Expirable {
    boolean isExpired();
 
    /**
-    Set this object to be removed by the system.  The implementation this will vary by the underlying
-    storage mechanism, ie. Mongo vs. S3 vs. Dynamo
+    * Set this object to be removed by the system.  The implementation will vary by the underlying
+    * storage mechanism, e.g. Mongo vs. S3 vs. Dynamo.
+    *
+    * @param markForDelete true to mark for deletion
     */
    void setMarkedForDelete(boolean markForDelete);
 
    /**
-    Determines if this object is already marked or not.
+    * Determines if this object is already marked for deletion.
+    *
+    * @return true if the object is marked for deletion
     */
    boolean isMarkedForDelete();
 }

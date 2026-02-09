@@ -1,6 +1,7 @@
 package com.e2eq.framework.security.annotations;
 
 import io.quarkus.test.junit.QuarkusTest;
+import io.quarkus.test.security.TestSecurity;
 import io.restassured.RestAssured;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -19,6 +20,7 @@ public class FunctionalAnnotationsTest {
     }
 
     @Test
+    @TestSecurity(user = "system@system.com", roles = {"admin"})
     public void testFunctionalMappingAndActionAnnotations() {
         RestAssured.given()
                 .when().get("/annotated/view")
@@ -28,6 +30,7 @@ public class FunctionalAnnotationsTest {
     }
 
     @Test
+    @TestSecurity(user = "system@system.com", roles = {"admin"})
     public void testFunctionalMappingWithHttpMethodInference() {
         RestAssured.given()
                 .when().post("/annotated/create")
