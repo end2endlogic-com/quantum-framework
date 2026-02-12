@@ -33,6 +33,10 @@ include::user-guide/auth.adoc[]
 include::user-guide/permissions.adoc[]
 include::user-guide/security-annotations.adoc[]
 
+== AI Integration
+
+include::user-guide/mcp-server-and-client.adoc[]
+
 == Advanced Features
 
 include::user-guide/migrations.adoc[]

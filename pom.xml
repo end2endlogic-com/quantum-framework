@@ -7,7 +7,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.end2endlogic</groupId>
     <artifactId>quantum-parent</artifactId>
-    <version>1.2.4-SNAPSHOT</version>
+    <version>1.3.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>${project.groupId}:${project.artifactId}</name>
@@ -44,7 +44,8 @@
         <antlr.version>4.13.2</antlr.version>
         <assembly-plugin.version>3.1.0</assembly-plugin.version>
         <compiler-plugin.version>3.13.0</compiler-plugin.version>
-        <jackson.version>2.18.2</jackson.version>
+        <jackson.version>2.20.1</jackson.version>
+        <jackson-annotations.version>2.20</jackson-annotations.version>
         <maven.compiler.release>17</maven.compiler.release>
         <morphia.version>3.0.0</morphia.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -53,11 +54,11 @@
         <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
         <quarkus.platform.group-id
         >io.quarkus.platform</quarkus.platform.group-id>
-        <quarkus.platform.version>3.19.4</quarkus.platform.version>
+        <quarkus.platform.version>3.31.2</quarkus.platform.version>
         <skipITs>true</skipITs>
         <surefire-plugin.version>3.2.5</surefire-plugin.version>
         <lombrok.version>1.18.34</lombrok.version>
-        <quantum.version>1.2.4-SNAPSHOT</quantum.version>
+        <quantum.version>1.3.0-SNAPSHOT</quantum.version>
         <apachecommons.lang3.version>3.18.0</apachecommons.lang3.version>
     </properties>
 
@@ -71,6 +72,7 @@
         <module>quantum-jwt-provider</module>
         <module>quantum-framework</module>
         <module>quantum-seed-s3</module>
+        <module>quantum-mcp-server</module>
     </modules>
 
 
@@ -132,7 +134,7 @@
                         <path>
                             <groupId>com.fasterxml.jackson.core</groupId>
                             <artifactId>jackson-annotations</artifactId>
-                            <version>${jackson.version}</version>
+                            <version>${jackson-annotations.version}</version>
                         </path>
                         <path>
                             <groupId>org.jetbrains</groupId>
@@ -250,6 +252,7 @@
                 <module>quantum-jwt-provider</module>
                 <module>quantum-framework</module>
                 <module>quantum-seed-s3</module>
+                <module>quantum-mcp-server</module>
                 <module>quantum-docs</module>
             </modules>
             <build>

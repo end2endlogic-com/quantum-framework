@@ -40,7 +40,32 @@
       "Bash(gh pr create:*)",
       "Bash(git pull:*)",
       "Bash(gh pr comment:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "WebFetch(domain:docs.quarkiverse.io)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:mvnrepository.com)",
+      "WebFetch(domain:central.sonatype.com)",
+      "WebFetch(domain:quarkus.io)",
+      "WebFetch(domain:www.baeldung.com)",
+      "Bash(git clone:*)",
+      "Bash(for version in 0.24.0 0.25.0 0.26.0 0.27.0 0.28.0 1.0.0 1.1.0)",
+      "Bash(do echo \"=== Checking version $version ===\")",
+      "Bash(for version in 0.26.1 0.26.2 1.0.1 1.0.2)",
+      "Bash(for version in 0.27.0.CR1 0.27.0.CR2)",
+      "Bash(gh repo clone:*)",
+      "Bash(jar tf:*)",
+      "Bash(javap:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(gh api:*)",
+      "Bash(export JAVA_HOME=/Library/Java/JavaVirtualMachines/graalvm-community-openjdk-23+37.1/Contents/Home)",
+      "Bash(JAVA_HOME=/Library/Java/JavaVirtualMachines/graalvm-community-openjdk-23+37.1/Contents/Home /opt/homebrew/bin/mvn compile:*)",
+      "Bash(/usr/bin/tail:*)",
+      "Bash(JAVA_HOME=/Library/Java/JavaVirtualMachines/graalvm-community-openjdk-23+37.1/Contents/Home $JAVA_HOME/bin/java:*)",
+      "Bash(JAVA_HOME=/Library/Java/JavaVirtualMachines/graalvm-community-openjdk-23+37.1/Contents/Home /Library/Java/JavaVirtualMachines/graalvm-community-openjdk-23+37.1/Contents/Home/bin/java:*)",
+      "Bash(JAVA_HOME=/Library/Java/JavaVirtualMachines/graalvm-community-openjdk-23+37.1/Contents/Home /opt/homebrew/bin/mvn clean deploy:*)",
+      "Bash(JAVA_HOME=/Library/Java/JavaVirtualMachines/graalvm-community-openjdk-23+37.1/Contents/Home /opt/homebrew/bin/mvn install:*)",
+      "Bash(JAVA_HOME=/Library/Java/JavaVirtualMachines/graalvm-community-openjdk-23+37.1/Contents/Home /opt/homebrew/bin/mvn:*)",
+      "Bash(jar xf:*)"
     ]
   }
 }
