@@ -528,8 +528,8 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div id="header">
 <h1>Ontology Modeling</h1>
 <div class="details">
-<span id="revnumber">version 1.2.4-SNAPSHOT,</span>
-<span id="revdate">2026-02-02T21:46:50Z</span>
+<span id="revnumber">version 1.3.0-SNAPSHOT,</span>
+<span id="revdate">2026-02-13T14:32:21Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -844,6 +844,12 @@ Looking for the short implementation plan? See PROPOSAL.md at the repository roo
 </li>
 <li>
 <p>This integrates ontology edges with RuleContext or policy decisions: policy asks for entities related by a predicate; the rewriter converts that into an efficient Mongo query.</p>
+</li>
+<li>
+<p>quantum-ontology-policy-bridge (package com.e2eq.ontology.policy.rest)</p>
+</li>
+<li>
+<p>OntologyAwareResource: Abstract REST base class that extends BaseResource to add ontology list (<code>GET /{path}/ontology</code>) and detail context (<code>GET /{path}/id/{id}/ontology</code>) endpoints. Supports ontology constraints and optional aggregation/expand for combined attributes spanning collections. See <a href="rest-crud.html#ontology-aware-resource">OntologyAwareResource in REST CRUD</a> for usage.</p>
 </li>
 </ul>
 </div>
@@ -4092,8 +4098,8 @@ curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=defau
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 1.2.4-SNAPSHOT<br>
-Last updated 2026-01-26 13:37:58 -0500
+Version 1.3.0-SNAPSHOT<br>
+Last updated 2026-02-06 10:45:00 -0500
 </div>
 </div>
 </body>

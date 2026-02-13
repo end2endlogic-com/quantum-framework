@@ -439,8 +439,8 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div id="header">
 <h1>Database Migrations and Index Management</h1>
 <div class="details">
-<span id="revnumber">version 1.2.4-SNAPSHOT,</span>
-<span id="revdate">2026-02-02T21:46:50Z</span>
+<span id="revnumber">version 1.3.0-SNAPSHOT,</span>
+<span id="revdate">2026-02-13T14:32:21Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -557,7 +557,13 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <p>quantum.database.migration.changeset.package: package containing change sets (CDI still discovers beans via type, but this property documents the intended package).</p>
 </li>
 <li>
-<p>quantum.realmConfig.systemRealm, quantum.realmConfig.defaultRealm, quantum.realmConfig.testRealm: well‑known realms used by MigrationResource when running migrations across environments.</p>
+<p>quantum.realmConfig.systemRealm, quantum.realmConfig.defaultRealm, quantum.realmConfig.testRealm: well‑known realms used by MigrationResource when running migrations across environments. On startup, MigrationService checks whether the <em>system realm</em> database exists and is initialized; if missing or uninitialized, it runs all pending change sets and applies indexes (creating all entity collections, including credentials). Set <code>quantum.realmConfig.systemRealm</code> to your application&#8217;s system database name (e.g. <code>system-psa-com</code>) in <code>application.properties</code> so the correct database is created and initialized when dropped or empty.</p>
+</li>
+<li>
+<p>quantum.defaultSystemPassword: initial password for the system user credential when created by the AddSystemUserCredential change set (default: <code>test123456</code>). Set in <code>application.properties</code>; the system user (quantum.realmConfig.systemUserId) is created in the credentials collection so login with that user works.</p>
+</li>
+<li>
+<p>quantum.database.version: target schema version (e.g. 1.0.4). Must be at least 1.0.4 for the system user credential to be created during migration.</p>
 </li>
 </ul>
 </div>
@@ -945,8 +951,8 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 1.2.4-SNAPSHOT<br>
-Last updated 2025-11-11 20:48:34 -0500
+Version 1.3.0-SNAPSHOT<br>
+Last updated 2026-02-06 10:45:00 -0500
 </div>
 </div>
 </body>

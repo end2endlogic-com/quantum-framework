@@ -545,16 +545,26 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_numeric_ranges">1.2.3. Numeric Ranges</a></li>
 <li><a href="#_date_and_time_queries">1.2.4. Date and Time Queries</a></li>
 <li><a href="#_list_membership">1.2.5. List Membership</a></li>
-<li><a href="#_advanced_examples">1.2.6. Advanced Examples</a></li>
-<li><a href="#_variables_in_filters">1.2.7. Variables in Filters</a></li>
-<li><a href="#_performance_tips">1.2.8. Performance Tips</a></li>
-<li><a href="#_integration_with_rest_apis">1.2.9. Integration with REST APIs</a></li>
-<li><a href="#_error_handling">1.2.10. Error Handling</a></li>
-<li><a href="#_see_also">1.2.11. See Also</a></li>
-<li><a href="#_execution_engines_and_listeners">1.2.12. Execution engines and listeners</a></li>
-<li><a href="#ontology-query-language">1.2.13. Expressing Ontology Constraints in Queries (optional)</a></li>
-<li><a href="#_ontology_operators_hasedge_and_hasincomingedge">1.2.14. Ontology operators: hasEdge and hasIncomingEdge</a></li>
-<li><a href="#_root_projection_recap_fields">1.2.15. Root projection recap: fields:[+…,-…]</a></li>
+</ul>
+</li>
+<li><a href="#_querying_dynamic_attributes">1.3. Querying Dynamic Attributes</a>
+<ul class="sectlevel3">
+<li><a href="#_dynamic_attribute_structure">1.3.1. Dynamic Attribute Structure</a></li>
+<li><a href="#_querying_by_attribute_id_and_value">1.3.2. Querying by Attribute ID and Value</a></li>
+<li><a href="#_querying_by_attribute_name_and_value">1.3.3. Querying by Attribute Name and Value</a></li>
+<li><a href="#_combining_multiple_dynamic_attribute_conditions">1.3.4. Combining Multiple Dynamic Attribute Conditions</a></li>
+<li><a href="#_querying_by_set_name">1.3.5. Querying by Set Name</a></li>
+<li><a href="#_advanced_tags_simple_key_value">1.3.6. Advanced Tags (Simple Key-Value)</a></li>
+<li><a href="#_advanced_examples">1.3.7. Advanced Examples</a></li>
+<li><a href="#_variables_in_filters">1.3.8. Variables in Filters</a></li>
+<li><a href="#_performance_tips">1.3.9. Performance Tips</a></li>
+<li><a href="#_integration_with_rest_apis">1.3.10. Integration with REST APIs</a></li>
+<li><a href="#_error_handling">1.3.11. Error Handling</a></li>
+<li><a href="#_see_also">1.3.12. See Also</a></li>
+<li><a href="#_execution_engines_and_listeners">1.3.13. Execution engines and listeners</a></li>
+<li><a href="#ontology-query-language">1.3.14. Expressing Ontology Constraints in Queries (optional)</a></li>
+<li><a href="#_ontology_operators_hasedge_and_hasincomingedge">1.3.15. Ontology operators: hasEdge and hasIncomingEdge</a></li>
+<li><a href="#_root_projection_recap_fields">1.3.16. Root projection recap: fields:[+…,-…]</a></li>
 </ul>
 </li>
 </ul>
@@ -924,8 +934,121 @@ description:~ &amp;&amp; description:!&quot;&quot;</code></pre>
 </div>
 </div>
 </div>
+</div>
+<div class="sect2">
+<h3 id="_querying_dynamic_attributes">1.3. Querying Dynamic Attributes</h3>
+<div class="paragraph">
+<p>Models that implement <code>DynamicAttributeSupport</code> can store flexible, user-defined attributes organized into named sets. These can be queried using the elemMatch syntax for array fields.</p>
+</div>
 <div class="sect3">
-<h4 id="_advanced_examples">1.2.6. Advanced Examples</h4>
+<h4 id="_dynamic_attribute_structure">1.3.1. Dynamic Attribute Structure</h4>
+<div class="paragraph">
+<p>Dynamic attributes are stored as:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">dynamicAttributeSets</span><span class="delimiter">&quot;</span></span>: [
+    {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">name</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">logistics</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">attributes</span><span class="delimiter">&quot;</span></span>: [
+        { <span class="key"><span class="delimiter">&quot;</span><span class="content">id</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">uuid-1</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">name</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">weight</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">value</span><span class="delimiter">&quot;</span></span>: <span class="float">25.5</span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">type</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">NUMBER</span><span class="delimiter">&quot;</span></span> },
+        { <span class="key"><span class="delimiter">&quot;</span><span class="content">id</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">uuid-2</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">name</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">hazmat</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">value</span><span class="delimiter">&quot;</span></span>: <span class="value">false</span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">type</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">BOOLEAN</span><span class="delimiter">&quot;</span></span> }
+      ]
+    },
+    {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">name</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">compliance</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">attributes</span><span class="delimiter">&quot;</span></span>: [
+        { <span class="key"><span class="delimiter">&quot;</span><span class="content">id</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">uuid-3</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">name</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">certNumber</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">value</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">CERT-123</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">type</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">STRING</span><span class="delimiter">&quot;</span></span> }
+      ]
+    }
+  ]
+}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_querying_by_attribute_id_and_value">1.3.2. Querying by Attribute ID and Value</h4>
+<div class="paragraph">
+<p>Use elemMatch syntax <code>{&#8230;&#8203;}</code> to query attributes within the array:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># Find records where a specific attribute (by ID) has a specific value
+dynamicAttributeSets.attributes:{id:21f63b90-08b4-4280-a28d-f003f9c114b3 &amp;&amp; value:&quot;Conference hall&quot;}
+
+# Find records with a numeric attribute value
+dynamicAttributeSets.attributes:{id:94138c39-2115-4681-8c18-aa0c0596b065 &amp;&amp; value:#99}
+
+# Find records with a decimal attribute value
+dynamicAttributeSets.attributes:{id:uuid-1 &amp;&amp; value:##25.5}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_querying_by_attribute_name_and_value">1.3.3. Querying by Attribute Name and Value</h4>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># Find records where an attribute named &quot;weight&quot; has value &gt; 10
+dynamicAttributeSets.attributes:{name:&quot;weight&quot; &amp;&amp; value:&gt;##10}
+
+# Find records with a specific attribute name and string value
+dynamicAttributeSets.attributes:{name:&quot;certNumber&quot; &amp;&amp; value:&quot;CERT-123&quot;}
+
+# Boolean attribute query
+dynamicAttributeSets.attributes:{name:&quot;hazmat&quot; &amp;&amp; value:true}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_combining_multiple_dynamic_attribute_conditions">1.3.4. Combining Multiple Dynamic Attribute Conditions</h4>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># Multiple attributes must match (separate elemMatch conditions)
+dynamicAttributeSets.attributes:{name:&quot;weight&quot; &amp;&amp; value:&gt;##10} &amp;&amp;
+dynamicAttributeSets.attributes:{name:&quot;hazmat&quot; &amp;&amp; value:false}
+
+# OR within a single attribute query
+dynamicAttributeSets.attributes:{value:&quot;A&quot; || value:&quot;B&quot;}
+
+# Combined with regular field queries
+status:&quot;ACTIVE&quot; &amp;&amp; dynamicAttributeSets.attributes:{name:&quot;priority&quot; &amp;&amp; value:&quot;HIGH&quot;}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_querying_by_set_name">1.3.5. Querying by Set Name</h4>
+<div class="paragraph">
+<p>To filter by the set name itself:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># Records that have a &quot;logistics&quot; attribute set
+dynamicAttributeSets:{name:&quot;logistics&quot;}
+
+# Combine set name with attribute value
+dynamicAttributeSets:{name:&quot;logistics&quot;} &amp;&amp;
+dynamicAttributeSets.attributes:{name:&quot;weight&quot; &amp;&amp; value:&gt;##50}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_advanced_tags_simple_key_value">1.3.6. Advanced Tags (Simple Key-Value)</h4>
+<div class="paragraph">
+<p>For simpler tag-based filtering, use <code>advancedTags</code>:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># Find by tag name and value
+advancedTags:{name:&quot;priority&quot; &amp;&amp; value:&quot;urgent&quot;}
+
+# Multiple tag conditions
+advancedTags:{name:&quot;region&quot; &amp;&amp; value:&quot;US&quot;} &amp;&amp; advancedTags:{name:&quot;tier&quot; &amp;&amp; value:&quot;premium&quot;}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_advanced_examples">1.3.7. Advanced Examples</h4>
 <div class="sect4">
 <h5 id="_complex_business_logic">Complex Business Logic</h5>
 <div class="listingblock">
@@ -976,7 +1099,7 @@ auditInfo.createdDate:!auditInfo.lastUpdatedDate # has been modified</code></pre
 </div>
 </div>
 <div class="sect3">
-<h4 id="_variables_in_filters">1.2.7. Variables in Filters</h4>
+<h4 id="_variables_in_filters">1.3.8. Variables in Filters</h4>
 <div class="paragraph">
 <p>Variables are resolved from the current security context and can be used in permission rules and access resolvers.</p>
 </div>
@@ -1054,7 +1177,7 @@ customerId:^[${accessibleCustomerIds}]</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_performance_tips">1.2.8. Performance Tips</h4>
+<h4 id="_performance_tips">1.3.9. Performance Tips</h4>
 <div class="sect4">
 <h5 id="_efficient_queries">Efficient Queries</h5>
 <div class="listingblock">
@@ -1081,7 +1204,7 @@ GET /products/list?filter=active:true&amp;projection=+id,+name,+price,-descripti
 </div>
 </div>
 <div class="sect3">
-<h4 id="_integration_with_rest_apis">1.2.9. Integration with REST APIs</h4>
+<h4 id="_integration_with_rest_apis">1.3.10. Integration with REST APIs</h4>
 <div class="sect4">
 <h5 id="_list_endpoints">List Endpoints</h5>
 <div class="listingblock">
@@ -1127,7 +1250,7 @@ andFilterString: <span class="string"><span class="delimiter">&quot;</span><span
 </div>
 </div>
 <div class="sect3">
-<h4 id="_error_handling">1.2.10. Error Handling</h4>
+<h4 id="_error_handling">1.3.11. Error Handling</h4>
 <div class="paragraph">
 <p>Common syntax errors and solutions:</p>
 </div>
@@ -1171,7 +1294,7 @@ text(&quot;foo bar&quot;)</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_see_also">1.2.11. See Also</h4>
+<h4 id="_see_also">1.3.12. See Also</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -1187,7 +1310,7 @@ text(&quot;foo bar&quot;)</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_execution_engines_and_listeners">1.2.12. Execution engines and listeners</h4>
+<h4 id="_execution_engines_and_listeners">1.3.13. Execution engines and listeners</h4>
 <div class="paragraph">
 <p>The BIAPI query syntax is parsed once (via ANTLR) and can be executed by different "listeners" depending on the use case. Quantum ships with two primary implementations that share the same grammar and semantics:</p>
 </div>
@@ -1586,7 +1709,7 @@ aggValidator.validateField(<span class="string"><span class="delimiter">&quot;</
 </div>
 </div>
 <div class="sect3">
-<h4 id="ontology-query-language">1.2.13. Expressing Ontology Constraints in Queries (optional)</h4>
+<h4 id="ontology-query-language">1.3.14. Expressing Ontology Constraints in Queries (optional)</h4>
 <div class="paragraph">
 <p>The BIAPI query language primarily targets fields on documents. When using the ontology modules, there are two ways to incorporate ontology relationships into queries:</p>
 </div>
@@ -1611,7 +1734,7 @@ id:^${idsByPlacedInOrg}</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_ontology_operators_hasedge_and_hasincomingedge">1.2.14. Ontology operators: hasEdge and hasIncomingEdge</h4>
+<h4 id="_ontology_operators_hasedge_and_hasincomingedge">1.3.15. Ontology operators: hasEdge and hasIncomingEdge</h4>
 <div class="paragraph">
 <p>When the ontology module is enabled and edges are materialized, you can constrain results by semantic relationships using <code>hasEdge</code> and <code>hasIncomingEdge</code>.</p>
 </div>
@@ -1670,7 +1793,7 @@ hasIncomingEdge(canAccessLocation, ${principalId})</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_root_projection_recap_fields">1.2.15. Root projection recap: fields:[+…,-…]</h4>
+<h4 id="_root_projection_recap_fields">1.3.16. Root projection recap: fields:[+…,-…]</h4>
 <div class="paragraph">
 <p>To include or exclude fields from the root documents:</p>
 </div>
@@ -1712,8 +1835,8 @@ expand(customer) &amp;&amp; fields:[+_id,+customer,+total]</code></pre>
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 1.2.4-SNAPSHOT<br>
-Last updated 2026-01-26 17:17:51 -0500
+Version 1.3.0-SNAPSHOT<br>
+Last updated 2026-02-02 19:08:34 -0500
 </div>
 </div>
 </body>

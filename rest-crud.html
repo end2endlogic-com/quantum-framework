@@ -595,7 +595,11 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_quarkus_oidc_out_of_the_box_and_integrating_with_common_idps">11. Quarkus OIDC out-of-the-box and integrating with common IdPs</a></li>
 <li><a href="#_authorization_via_rulecontext">12. Authorization via RuleContext</a>
 <ul class="sectlevel2">
-<li><a href="#ontology-rest-crud">12.1. Using Ontology Edges in List Endpoints (optional)</a></li>
+<li><a href="#ontology-rest-crud">12.1. Using Ontology Edges in List Endpoints (optional)</a>
+<ul class="sectlevel3">
+<li><a href="#ontology-aware-resource">12.1.1. OntologyAwareResource</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
@@ -2455,14 +2459,83 @@ collection.find(rewritten).iterator();</code></pre>
 </li>
 </ul>
 </div>
+<div class="sect3">
+<h4 id="ontology-aware-resource">12.1.1. OntologyAwareResource</h4>
+<div class="paragraph">
+<p><code>OntologyAwareResource</code> is an abstract base class in the framework (package <code>com.e2eq.ontology.policy.rest</code>, quantum-ontology-policy-bridge) that extends <code>BaseResource</code> to add ontology-aware list and detail endpoints. Resources extending it expose standard CRUD plus:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>Ontology list endpoint</strong>: <code>GET /{basePath}/ontology</code> — lists entities with optional ontology-based filtering (e.g. filter by related customer, project, or timesheet IDs via the ontology graph)</p>
+</li>
+<li>
+<p><strong>Ontology context endpoint</strong>: <code>GET /{basePath}/id/{id}/ontology</code> — returns ontology edges for a single entity</p>
+</li>
+<li>
+<p><strong>Optional aggregation and expand</strong>: when <code>feature.ontologyList.aggregation.enabled=true</code>, supports the <code>expand</code> query param to return combined attributes spanning collections (via MongoDB <code>$lookup</code>)</p>
+</li>
+</ul>
+</div>
+<div class="sect4">
+<h5 id="_extending_ontologyawareresource">Extending OntologyAwareResource</h5>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Extend <code>OntologyAwareResource&lt;T, R&gt;</code> instead of <code>BaseResource&lt;T, R&gt;</code>.</p>
+</li>
+<li>
+<p>Add <code>GET @Path("ontology")</code> — call <code>getOntologyList(headers, skip, limit, filter, sort, projection, expand?, constraints&#8230;&#8203;)</code>.</p>
+</li>
+<li>
+<p>Add <code>GET @Path("id/{id}/ontology")</code> — call <code>buildOntologyContextResponse(headers, id)</code>.</p>
+</li>
+<li>
+<p>For ontology filters, pass <code>constraint(predicate, ids)</code> where <code>predicate</code> is the ontology property (e.g. <code>invoicesCustomer</code>) and <code>ids</code> are destination entity IDs.</p>
+</li>
+<li>
+<p>Override <code>supportsExpandInOntologyList()</code> to return <code>true</code> if the entity has expandable references (e.g. <code>customerReference</code>, <code>projectReference</code>).</p>
+</li>
+</ol>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_configuration">Configuration</h5>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 33.3333%;">
+<col style="width: 33.3333%;">
+<col style="width: 33.3334%;">
+</colgroup>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Property</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Default</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Description</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>feature.ontologyList.aggregation.enabled</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">When <code>true</code>, resources with <code>supportsExpandInOntologyList()=true</code> can use aggregation for the <code>expand</code> query param</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect4">
+<h5 id="_dependencies">Dependencies</h5>
+<div class="paragraph">
+<p>OntologyAwareResource uses <code>ListQueryRewriter</code>, <code>OntologyContextEnricherMongo</code> (quantum-ontology-mongo), and <code>MorphiaDataStoreWrapper</code> (quantum-morphia-repos). It is provided by quantum-ontology-policy-bridge; applications must include that module (and thus quantum-ontology-mongo transitively) when using this base class.</p>
+</div>
+</div>
+</div>
 </div>
 </div>
 </div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 1.2.4-SNAPSHOT<br>
-Last updated 2026-01-26 17:21:16 -0500
+Version 1.3.0-SNAPSHOT<br>
+Last updated 2026-02-06 10:45:00 -0500
 </div>
 </div>
 </body>

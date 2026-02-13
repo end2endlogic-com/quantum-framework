@@ -528,8 +528,8 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div id="header">
 <h1>Quantum Framework Documentation</h1>
 <div class="details">
-<span id="revnumber">version 1.2.4-SNAPSHOT,</span>
-<span id="revdate">2026-02-02T21:46:50Z</span>
+<span id="revnumber">version 1.3.0-SNAPSHOT,</span>
+<span id="revdate">2026-02-13T14:32:21Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -697,6 +697,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <ul class="sectlevel3">
 <li><a href="#_basic_syntax">19.1.1. Basic Syntax</a></li>
 <li><a href="#_common_patterns">19.1.2. Common Patterns</a></li>
+<li><a href="#_querying_dynamic_attributes">19.1.3. Querying Dynamic Attributes</a></li>
 </ul>
 </li>
 <li><a href="#_hands_on_relationships_and_ontology_aware_queries">19.2. Hands-on: Relationships and Ontology-aware queries</a>
@@ -854,7 +855,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <ul class="sectlevel2">
 <li><a href="#_overview">26.1. Overview</a></li>
 <li><a href="#_semantic_versioning">26.2. Semantic Versioning</a></li>
-<li><a href="#_configuration_2">26.3. Configuration</a></li>
+<li><a href="#_configuration_3">26.3. Configuration</a></li>
 <li><a href="#_how_change_sets_are_discovered_and_executed">26.4. How change sets are discovered and executed</a></li>
 <li><a href="#_authoring_a_change_set">26.5. Authoring a change set</a></li>
 <li><a href="#_example_change_sets_in_the_framework">26.6. Example change sets in the framework</a></li>
@@ -948,7 +949,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#property-chains-vs-computed-providers">42.6.3. When to use Property Chains vs ComputedEdgeProvider</a></li>
 <li><a href="#_extending_materialization_with_computededgeprovider_advanced">42.6.4. Extending materialization with ComputedEdgeProvider (Advanced)</a></li>
 <li><a href="#_extending_materialization_with_ontologyedgeprovider_spi">42.6.5. Extending materialization with OntologyEdgeProvider (SPI)</a></li>
-<li><a href="#_configuration_3">42.6.6. Configuration</a></li>
+<li><a href="#_configuration_4">42.6.6. Configuration</a></li>
 <li><a href="#_example_annotate_and_save_edges_are_materialized_automatically">42.6.7. Example: annotate and save — edges are materialized automatically</a></li>
 </ul>
 </li>
@@ -1094,6 +1095,9 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </li>
 <li>
 <p>Ontologies in Quantum: <a href="#ontologies-in-quantum">Modeling relationships and cascading</a></p>
+</li>
+<li>
+<p>AI Agent Integration: <a href="user-guide/ai-agent-integration.html#ai-agent-integration">AI Agent APIs (tools, schema, execute)</a></p>
 </li>
 </ul>
 </div>
@@ -6243,6 +6247,75 @@ collection.find(rewritten).iterator();</code></pre>
 </li>
 </ul>
 </div>
+<div class="sect4">
+<h5 id="ontology-aware-resource">OntologyAwareResource</h5>
+<div class="paragraph">
+<p><code>OntologyAwareResource</code> is an abstract base class in the framework (package <code>com.e2eq.ontology.policy.rest</code>, quantum-ontology-policy-bridge) that extends <code>BaseResource</code> to add ontology-aware list and detail endpoints. Resources extending it expose standard CRUD plus:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>Ontology list endpoint</strong>: <code>GET /{basePath}/ontology</code> — lists entities with optional ontology-based filtering (e.g. filter by related customer, project, or timesheet IDs via the ontology graph)</p>
+</li>
+<li>
+<p><strong>Ontology context endpoint</strong>: <code>GET /{basePath}/id/{id}/ontology</code> — returns ontology edges for a single entity</p>
+</li>
+<li>
+<p><strong>Optional aggregation and expand</strong>: when <code>feature.ontologyList.aggregation.enabled=true</code>, supports the <code>expand</code> query param to return combined attributes spanning collections (via MongoDB <code>$lookup</code>)</p>
+</li>
+</ul>
+</div>
+<div class="sect5">
+<h6 id="_extending_ontologyawareresource">Extending OntologyAwareResource</h6>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Extend <code>OntologyAwareResource&lt;T, R&gt;</code> instead of <code>BaseResource&lt;T, R&gt;</code>.</p>
+</li>
+<li>
+<p>Add <code>GET @Path("ontology")</code> — call <code>getOntologyList(headers, skip, limit, filter, sort, projection, expand?, constraints&#8230;&#8203;)</code>.</p>
+</li>
+<li>
+<p>Add <code>GET @Path("id/{id}/ontology")</code> — call <code>buildOntologyContextResponse(headers, id)</code>.</p>
+</li>
+<li>
+<p>For ontology filters, pass <code>constraint(predicate, ids)</code> where <code>predicate</code> is the ontology property (e.g. <code>invoicesCustomer</code>) and <code>ids</code> are destination entity IDs.</p>
+</li>
+<li>
+<p>Override <code>supportsExpandInOntologyList()</code> to return <code>true</code> if the entity has expandable references (e.g. <code>customerReference</code>, <code>projectReference</code>).</p>
+</li>
+</ol>
+</div>
+</div>
+<div class="sect5">
+<h6 id="_configuration_2">Configuration</h6>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 33.3333%;">
+<col style="width: 33.3333%;">
+<col style="width: 33.3334%;">
+</colgroup>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Property</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Default</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Description</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>feature.ontologyList.aggregation.enabled</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">When <code>true</code>, resources with <code>supportsExpandInOntologyList()=true</code> can use aggregation for the <code>expand</code> query param</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect5">
+<h6 id="_dependencies">Dependencies</h6>
+<div class="paragraph">
+<p>OntologyAwareResource uses <code>ListQueryRewriter</code>, <code>OntologyContextEnricherMongo</code> (quantum-ontology-mongo), and <code>MorphiaDataStoreWrapper</code> (quantum-morphia-repos). It is provided by quantum-ontology-policy-bridge; applications must include that module (and thus quantum-ontology-mongo transitively) when using this base class.</p>
+</div>
+</div>
+</div>
 </div>
 </div>
 </div>
@@ -6619,6 +6692,119 @@ description:!null
 # Field exists and is not empty string
 description:~ &amp;&amp; description:!&quot;&quot;</code></pre>
 </div>
+</div>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_querying_dynamic_attributes">19.1.3. Querying Dynamic Attributes</h4>
+<div class="paragraph">
+<p>Models that implement <code>DynamicAttributeSupport</code> can store flexible, user-defined attributes organized into named sets. These can be queried using the elemMatch syntax for array fields.</p>
+</div>
+<div class="sect4">
+<h5 id="_dynamic_attribute_structure">Dynamic Attribute Structure</h5>
+<div class="paragraph">
+<p>Dynamic attributes are stored as:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">dynamicAttributeSets</span><span class="delimiter">&quot;</span></span>: [
+    {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">name</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">logistics</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">attributes</span><span class="delimiter">&quot;</span></span>: [
+        { <span class="key"><span class="delimiter">&quot;</span><span class="content">id</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">uuid-1</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">name</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">weight</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">value</span><span class="delimiter">&quot;</span></span>: <span class="float">25.5</span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">type</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">NUMBER</span><span class="delimiter">&quot;</span></span> },
+        { <span class="key"><span class="delimiter">&quot;</span><span class="content">id</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">uuid-2</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">name</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">hazmat</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">value</span><span class="delimiter">&quot;</span></span>: <span class="value">false</span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">type</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">BOOLEAN</span><span class="delimiter">&quot;</span></span> }
+      ]
+    },
+    {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">name</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">compliance</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">attributes</span><span class="delimiter">&quot;</span></span>: [
+        { <span class="key"><span class="delimiter">&quot;</span><span class="content">id</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">uuid-3</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">name</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">certNumber</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">value</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">CERT-123</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">type</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">STRING</span><span class="delimiter">&quot;</span></span> }
+      ]
+    }
+  ]
+}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_querying_by_attribute_id_and_value">Querying by Attribute ID and Value</h5>
+<div class="paragraph">
+<p>Use elemMatch syntax <code>{&#8230;&#8203;}</code> to query attributes within the array:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># Find records where a specific attribute (by ID) has a specific value
+dynamicAttributeSets.attributes:{id:21f63b90-08b4-4280-a28d-f003f9c114b3 &amp;&amp; value:&quot;Conference hall&quot;}
+
+# Find records with a numeric attribute value
+dynamicAttributeSets.attributes:{id:94138c39-2115-4681-8c18-aa0c0596b065 &amp;&amp; value:#99}
+
+# Find records with a decimal attribute value
+dynamicAttributeSets.attributes:{id:uuid-1 &amp;&amp; value:##25.5}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_querying_by_attribute_name_and_value">Querying by Attribute Name and Value</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># Find records where an attribute named &quot;weight&quot; has value &gt; 10
+dynamicAttributeSets.attributes:{name:&quot;weight&quot; &amp;&amp; value:&gt;##10}
+
+# Find records with a specific attribute name and string value
+dynamicAttributeSets.attributes:{name:&quot;certNumber&quot; &amp;&amp; value:&quot;CERT-123&quot;}
+
+# Boolean attribute query
+dynamicAttributeSets.attributes:{name:&quot;hazmat&quot; &amp;&amp; value:true}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_combining_multiple_dynamic_attribute_conditions">Combining Multiple Dynamic Attribute Conditions</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># Multiple attributes must match (separate elemMatch conditions)
+dynamicAttributeSets.attributes:{name:&quot;weight&quot; &amp;&amp; value:&gt;##10} &amp;&amp;
+dynamicAttributeSets.attributes:{name:&quot;hazmat&quot; &amp;&amp; value:false}
+
+# OR within a single attribute query
+dynamicAttributeSets.attributes:{value:&quot;A&quot; || value:&quot;B&quot;}
+
+# Combined with regular field queries
+status:&quot;ACTIVE&quot; &amp;&amp; dynamicAttributeSets.attributes:{name:&quot;priority&quot; &amp;&amp; value:&quot;HIGH&quot;}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_querying_by_set_name">Querying by Set Name</h5>
+<div class="paragraph">
+<p>To filter by the set name itself:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># Records that have a &quot;logistics&quot; attribute set
+dynamicAttributeSets:{name:&quot;logistics&quot;}
+
+# Combine set name with attribute value
+dynamicAttributeSets:{name:&quot;logistics&quot;} &amp;&amp;
+dynamicAttributeSets.attributes:{name:&quot;weight&quot; &amp;&amp; value:&gt;##50}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_advanced_tags_simple_key_value">Advanced Tags (Simple Key-Value)</h5>
+<div class="paragraph">
+<p>For simpler tag-based filtering, use <code>advancedTags</code>:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># Find by tag name and value
+advancedTags:{name:&quot;priority&quot; &amp;&amp; value:&quot;urgent&quot;}
+
+# Multiple tag conditions
+advancedTags:{name:&quot;region&quot; &amp;&amp; value:&quot;US&quot;} &amp;&amp; advancedTags:{name:&quot;tier&quot; &amp;&amp; value:&quot;premium&quot;}</code></pre>
 </div>
 </div>
 </div>
@@ -14288,7 +14474,7 @@ s3://my-seeds/seed-packs/customer/1.0.0/roles.json</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_configuration_2">26.3. Configuration</h3>
+<h3 id="_configuration_3">26.3. Configuration</h3>
 <div class="paragraph">
 <p>The following MicroProfile config properties influence migrations:</p>
 </div>
@@ -14304,7 +14490,13 @@ s3://my-seeds/seed-packs/customer/1.0.0/roles.json</code></pre>
 <p>quantum.database.migration.changeset.package: package containing change sets (CDI still discovers beans via type, but this property documents the intended package).</p>
 </li>
 <li>
-<p>quantum.realmConfig.systemRealm, quantum.realmConfig.defaultRealm, quantum.realmConfig.testRealm: well‑known realms used by MigrationResource when running migrations across environments.</p>
+<p>quantum.realmConfig.systemRealm, quantum.realmConfig.defaultRealm, quantum.realmConfig.testRealm: well‑known realms used by MigrationResource when running migrations across environments. On startup, MigrationService checks whether the <em>system realm</em> database exists and is initialized; if missing or uninitialized, it runs all pending change sets and applies indexes (creating all entity collections, including credentials). Set <code>quantum.realmConfig.systemRealm</code> to your application&#8217;s system database name (e.g. <code>system-psa-com</code>) in <code>application.properties</code> so the correct database is created and initialized when dropped or empty.</p>
+</li>
+<li>
+<p>quantum.defaultSystemPassword: initial password for the system user credential when created by the AddSystemUserCredential change set (default: <code>test123456</code>). Set in <code>application.properties</code>; the system user (quantum.realmConfig.systemUserId) is created in the credentials collection so login with that user works.</p>
+</li>
+<li>
+<p>quantum.database.version: target schema version (e.g. 1.0.4). Must be at least 1.0.4 for the system user credential to be created during migration.</p>
 </li>
 </ul>
 </div>
@@ -15098,6 +15290,9 @@ Use it to jump directly to a subject and then explore details in context.</p>
 <li>
 <p>Query language: <a href="../tutorials/quantum-tutorial.html#sec-query-language">Query language and filtering</a></p>
 </li>
+<li>
+<p>AI Agent integration: <a href="./ai-agent-integration.html">AI Agent Integration</a> (tools discovery, schema, execute, session/trace)</p>
+</li>
 </ul>
 </div>
 </div>
@@ -15121,6 +15316,9 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </li>
 <li>
 <p>Label resolution and script helpers: <a href="./permissions.html#label-resolution-spi">Labels (SPI) and hasLabel()</a></p>
+</li>
+<li>
+<p>Secrets and vault (global vs tenant-level): <a href="./secrets-and-vault.html">Secrets and Vault Configuration</a></p>
 </li>
 </ul>
 </div>
@@ -15151,6 +15349,9 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </li>
 <li>
 <p>Testing: <a href="../tutorials/quantum-tutorial.html#sec-testing">Testing</a></p>
+</li>
+<li>
+<p>Usage metering and token allocation: <a href="./usage-and-token-allocation.html">Usage Metering and Token Allocation</a> (API/LLM usage, token pools per tenant, scoped to APIs and Tools/LLM configs)</p>
 </li>
 </ul>
 </div>
@@ -15382,6 +15583,12 @@ Looking for the short implementation plan? See PROPOSAL.md at the repository roo
 </li>
 <li>
 <p>This integrates ontology edges with RuleContext or policy decisions: policy asks for entities related by a predicate; the rewriter converts that into an efficient Mongo query.</p>
+</li>
+<li>
+<p>quantum-ontology-policy-bridge (package com.e2eq.ontology.policy.rest)</p>
+</li>
+<li>
+<p>OntologyAwareResource: Abstract REST base class that extends BaseResource to add ontology list (<code>GET /{path}/ontology</code>) and detail context (<code>GET /{path}/id/{id}/ontology</code>) endpoints. Supports ontology constraints and optional aggregation/expand for combined attributes spanning collections. See <a href="rest-crud.html#ontology-aware-resource">OntologyAwareResource in REST CRUD</a> for usage.</p>
 </li>
 </ul>
 </div>
@@ -16921,7 +17128,7 @@ query.filter(Filters.in(&quot;_id&quot;, ids));</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_configuration_3">42.6.6. Configuration</h4>
+<h4 id="_configuration_4">42.6.6. Configuration</h4>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="properties"># default is true
@@ -19561,7 +19768,7 @@ quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pr
 </div>
 </div>
 <div class="sect4">
-<h5 id="_configuration_4">Configuration</h5>
+<h5 id="_configuration_5">Configuration</h5>
 <div class="paragraph">
 <p>Use <code>@RegisterForReflection</code> for classes accessed via reflection:</p>
 </div>
@@ -19867,6 +20074,10 @@ quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pr
 <dd>
 <p>A helper that turns semantic constraints into efficient Mongo queries (e.g., id IN srcIdsByDst). Integrates with permission rules and Morphia repos.</p>
 </dd>
+<dt class="hdlist1"><strong>OntologyAwareResource</strong></dt>
+<dd>
+<p>An abstract REST base class (com.e2eq.ontology.policy.rest, quantum-ontology-policy-bridge) that extends BaseResource to add ontology list and detail context endpoints. Supports ontology constraints for filtering and optional aggregation/expand for combined attributes spanning collections.</p>
+</dd>
 </dl>
 </div>
 </div>
@@ -19876,8 +20087,8 @@ quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pr
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 1.2.4-SNAPSHOT<br>
-Last updated 2026-01-26 13:37:58 -0500
+Version 1.3.0-SNAPSHOT<br>
+Last updated 2026-02-06 10:45:00 -0500
 </div>
 </div>
 </body>
