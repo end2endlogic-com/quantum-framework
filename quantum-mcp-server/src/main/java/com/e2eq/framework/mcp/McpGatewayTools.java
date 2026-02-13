@@ -70,6 +70,19 @@ public class McpGatewayTools {
         return executeAndSerialize("query_find", args);
     }
 
+    @Tool(description = "Count entities matching a BIAPI query. Returns only the count, not the entities themselves. "
+            + "More efficient than query_find when you only need the number of matching records.")
+    String query_count(
+            @ToolArg(description = "Entity type (e.g. Order, Location). Use query_rootTypes to discover valid values.") String rootType,
+            @ToolArg(description = "Optional BIAPI query string to filter which entities to count (e.g. 'status:ACTIVE'). If omitted, counts all entities of this type.") String query,
+            @ToolArg(description = "Optional tenant realm. When omitted, the caller's default realm is used.") String realm) {
+        Map<String, Object> args = new LinkedHashMap<>();
+        args.put("rootType", rootType);
+        if (query != null) args.put("query", query);
+        if (realm != null && !realm.isBlank()) args.put("realm", realm);
+        return executeAndSerialize("query_count", args);
+    }
+
     @Tool(description = "Save (insert or update) an entity. If the entity has an _id it will be updated; otherwise a new entity is inserted.")
     String query_save(
             @ToolArg(description = "Entity type (e.g. Location, Order)") String rootType,

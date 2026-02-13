@@ -247,6 +247,51 @@ public class QueryGatewayResource {
     }
 
     // ========================================================================
+    // COUNT ENDPOINT
+    // ========================================================================
+
+    @POST
+    @Path("/count")
+    @FunctionalAction("count")
+    public Response count(CountRequest req) {
+        Class<? extends UnversionedBaseModel> root = resolveRoot(req.rootType);
+        String realm = resolveRealm(req.realm);
+        Datastore ds = morphiaDataStoreWrapper.getDataStore(realm);
+
+        try {
+            Query<? extends UnversionedBaseModel> q = ds.find(root);
+
+            if (req.query != null && !req.query.isBlank()) {
+                Map<String, String> variableMap = variableMapForQuery(req.realm);
+                PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(req.query, root, null, null, null, variableMap);
+                if (planned.getMode() == PlannerResult.Mode.AGGREGATION) {
+                    Map<String, Object> error = new HashMap<>();
+                    error.put("error", "InvalidQuery");
+                    error.put("message", "Count queries cannot use expand() - only simple filter queries are supported");
+                    return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+                }
+                if (planned.getFilter() != null) {
+                    q = q.filter(planned.getFilter());
+                }
+            }
+
+            long count = q.count();
+
+            CountResponse response = new CountResponse();
+            response.count = count;
+            response.rootType = root.getName();
+            response.query = req.query;
+            return Response.ok(response).build();
+        } catch (Exception e) {
+            Log.errorf(e, "Failed to count entities of type %s", root.getName());
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "CountFailed");
+            error.put("message", "Failed to count entities: " + e.getMessage());
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(error).build();
+        }
+    }
+
+    // ========================================================================
     // SAVE ENDPOINT
     // ========================================================================
 
@@ -638,6 +683,27 @@ public class QueryGatewayResource {
     public static class Page { public Integer limit; public Integer skip; }
     @RegisterForReflection
     public static class SortSpec { public String field; public String dir; } // dir: ASC|DESC
+
+    // Count DTOs
+    @RegisterForReflection
+    public static class CountRequest {
+        /** The entity type (simple or fully qualified class name) */
+        public String rootType;
+        /** Optional BIAPI query string to filter which entities to count. If omitted, counts all. */
+        public String query;
+        /** Optional realm; if absent default realm is used */
+        public String realm;
+    }
+
+    @RegisterForReflection
+    public static class CountResponse {
+        /** The number of matching entities */
+        public long count;
+        /** The fully qualified class name */
+        public String rootType;
+        /** The query that was used (null if counting all) */
+        public String query;
+    }
 
     @RegisterForReflection
     public static class RootTypesResponse {

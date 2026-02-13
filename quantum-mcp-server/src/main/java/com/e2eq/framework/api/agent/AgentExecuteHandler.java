@@ -66,9 +66,13 @@ public class AgentExecuteHandler {
                 QueryGatewayResource.DeleteManyRequest req = objectMapper.convertValue(arguments, QueryGatewayResource.DeleteManyRequest.class);
                 yield queryGatewayResource.deleteMany(req);
             }
+            case "query_count" -> {
+                QueryGatewayResource.CountRequest req = objectMapper.convertValue(arguments, QueryGatewayResource.CountRequest.class);
+                yield queryGatewayResource.count(req);
+            }
             default -> Response.status(Response.Status.BAD_REQUEST)
                     .entity(Map.of("error", "UnknownTool", "message", "Unknown tool: " + tool,
-                            "availableTools", new String[]{"query_rootTypes", "query_plan", "query_find", "query_save", "query_delete", "query_deleteMany"}))
+                            "availableTools", new String[]{"query_rootTypes", "query_plan", "query_find", "query_count", "query_save", "query_delete", "query_deleteMany"}))
                     .build();
         };
     }

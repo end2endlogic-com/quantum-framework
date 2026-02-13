@@ -103,6 +103,21 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
       return new java.util.ArrayList<>(matches);
    }
 
+   /**
+    * Find all credentials that have the given subject as their parent.
+    * Used to retrieve all SERVICE_TOKEN credentials created by a PASSWORD credential owner.
+    */
+   public List<CredentialUserIdPassword> findByParentSubject(@NotNull String parentSubject) {
+      return findByParentSubject(parentSubject, envConfigUtils.getSystemRealm());
+   }
+
+   public List<CredentialUserIdPassword> findByParentSubject(@NotNull String parentSubject, @NotNull String realmId) {
+      Datastore ds = morphiaDataStoreWrapper.getDataStore(realmId);
+      Query<CredentialUserIdPassword> query = ds.find(CredentialUserIdPassword.class)
+              .filter(Filters.eq("parentCredentialSubject", parentSubject));
+      return query.stream().toList();
+   }
+
    public Optional<CredentialUserIdPassword> findBySubject(@NotNull String subject) {
       return findBySubject(subject, envConfigUtils.getSystemRealm(), false);
    }
