@@ -16,6 +16,9 @@ import lombok.*;
 import lombok.experimental.SuperBuilder;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import static dev.morphia.mapping.IndexType.DESC;
 
 
@@ -61,6 +64,11 @@ public  class UserProfile extends BaseModel {
     @ReferenceTarget(target = com.e2eq.framework.model.security.CredentialUserIdPassword.class, collection="credentialUserIdPassword")
     @OntologyProperty(id = "hasCredential", ref = "Credential", materializeEdge = true)
     protected EntityReference credentialUserIdPasswordRef;
+
+    /** Additional credentials (SERVICE_TOKEN, API_KEY, etc.) linked to this user profile. */
+    @ReferenceTarget(target = CredentialUserIdPassword.class, collection = "credentialUserIdPassword")
+    @Builder.Default
+    protected List<EntityReference> additionalCredentialRefs = new ArrayList<>();
 
     @OntologyProperty(id = "hasUserId", materializeEdge = false) // userId is a string, handled by provider
     protected String userId; // used to look up the credentialUserIdPassword by userId if need be

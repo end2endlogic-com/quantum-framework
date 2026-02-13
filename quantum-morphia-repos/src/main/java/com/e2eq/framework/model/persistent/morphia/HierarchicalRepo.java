@@ -316,8 +316,8 @@ public abstract class HierarchicalRepo<
                     }
                     objectSet.addAll(objectListRepo.getObjectsForList(objectList, new ArrayList<>()));
                 }
-                objects.addAll(objectSet);
             }
+            objects.addAll(objectSet);
             return objects;
         }
     }

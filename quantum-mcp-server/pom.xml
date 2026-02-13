@@ -71,6 +71,15 @@
     </dependency>
 
     <!-- ================================================================== -->
+    <!-- Quantum Ontology Mongo (OntologyEdgeRepo, registry provider)       -->
+    <!-- ================================================================== -->
+    <dependency>
+      <groupId>com.end2endlogic</groupId>
+      <artifactId>quantum-ontology-mongo</artifactId>
+      <version>${quantum.version}</version>
+    </dependency>
+
+    <!-- ================================================================== -->
     <!-- MCP Server - Streamable HTTP + legacy SSE (exposes /mcp endpoint)  -->
     <!-- ================================================================== -->
     <dependency>
