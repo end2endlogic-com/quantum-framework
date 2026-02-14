@@ -529,7 +529,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>AI Agent Integration</h1>
 <div class="details">
 <span id="revnumber">version 1.3.0-SNAPSHOT,</span>
-<span id="revdate">2026-02-13T14:32:21Z</span>
+<span id="revdate">2026-02-13T23:56:09Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -1832,14 +1832,15 @@ quantum.agent.tenant.defaultRealm.maxFindLimit=100</pre>
 <div class="paragraph">
 <p>| API | Method | Purpose |
 |-----|--------|--------|
-| <code>/api/query/*</code> (existing) | GET/POST | <strong>Single integration point:</strong> rootTypes, plan, find, save, delete, deleteMany for all entity types. |
+| <code>/api/query/<strong></code> (existing) | GET/POST | <strong>Single integration point:</strong> rootTypes, plan, find, save, delete, deleteMany for all entity types. |
 | <code>/api/agent/tools</code> | GET | Discover the six gateway tools (names, descriptions, parameters); permission-filtered. |
 | <code>/api/agent/schema</code> | GET | List entity types (wrap or reuse <code>GET /api/query/rootTypes</code>) and optional field metadata. |
 | <code>/api/agent/schema/{rootType}</code> | GET | JSON Schema for one root type (gateway-derived Morphia metadata). |
 | <code>/api/agent/query-hints</code> | GET | Query grammar summary, example queries by intent, and "did you know" hints (expand, ontology). Use so agents can answer "what query gets locations in Atlanta?" and suggest expand/ontology usage. |
 | <code>/api/agent/permission-hints</code> | GET | Permission check/evaluate API summary, area/domain/action mapping (e.g. Query Gateway), example check requests, and "did you know" hints. Use so agents can answer "can role X perform action Y on entity Z?" and "if not, why not?" (winningRuleName), suggest rule changes, and generate least-privilege rules for a scenario. |
 | <code>/api/agent/ontology</code> | GET | Optional: ontology summary for retrieval context. |
-| <code>/api/agent/execute</code> | POST | Optional: execute one of the six gateway tools by name + arguments (delegate only to <code>QueryGatewayResource</code>). |
+| <code>/api/agent/execute</code> | POST | Execute one of the gateway tools by name + arguments (delegate only to <code>QueryGatewayResource</code>). |
+| <code>/api/agent/config/</strong></code> | GET/POST/DELETE | CRUD for Agent configuration (LLM reference, prompt context, enabled tools). Realm-scoped. See <a href="mcp-server-and-client.html#agent-config-api">Agent Configuration API</a>. |
 | <code>/api/agent/context</code> | POST/GET | Optional: retrieval context (gateway find or optional ontology). |
 | (headers) | - | <code>X-Agent-Session-Id</code>, <code>X-Agent-Trace-Id</code> for audit and multi-turn. |</p>
 </div>
@@ -1863,7 +1864,10 @@ quantum.agent.tenant.defaultRealm.maxFindLimit=100</pre>
 <p><strong>Session/trace headers</strong> — low effort, high value for audit and debugging.</p>
 </li>
 <li>
-<p><strong>Unified execute</strong> (<code>POST /api/agent/execute</code>) — optional; delegate only to <code>QueryGatewayResource</code>.</p>
+<p><strong>Unified execute</strong> (<code>POST /api/agent/execute</code>) — delegate only to <code>QueryGatewayResource</code>.</p>
+</li>
+<li>
+<p><strong>Agent configuration</strong> (<code>/api/agent/config/*</code>) — CRUD for Agent entities (LLM ref, prompt context, tool filter); realm-scoped.</p>
 </li>
 <li>
 <p><strong>Retrieval context</strong> (<code>POST /api/agent/context</code>) and <strong>ontology summary</strong> — optional; prefer gateway find for context.</p>
@@ -1899,6 +1903,9 @@ quantum.agent.tenant.defaultRealm.maxFindLimit=100</pre>
 <div class="ulist">
 <ul>
 <li>
+<p><strong>Architecture design:</strong> <code>docs/design/AI_AGENT_TOOL_REFACTOR_CLARIFICATION.md</code> in the framework repo — current agent/tool architecture, data flow, key files, and what was removed.</p>
+</li>
+<li>
 <p><strong>Implementation design:</strong> <code>docs/design/AI_AGENT_INTEGRATION_DESIGN.md</code> in the framework repo — API specs, DTOs, backend classes, MCP bridge, implementation phases, and testing strategy.</p>
 </li>
 <li>
@@ -1918,7 +1925,7 @@ quantum.agent.tenant.defaultRealm.maxFindLimit=100</pre>
 <div id="footer">
 <div id="footer-text">
 Version 1.3.0-SNAPSHOT<br>
-Last updated 2026-02-06 10:45:00 -0500
+Last updated 2026-02-13 13:14:35 -0500
 </div>
 </div>
 </body>

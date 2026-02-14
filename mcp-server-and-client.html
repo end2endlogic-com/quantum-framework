@@ -556,7 +556,42 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_run_as_principal">1.5.1. Run-As Principal</a></li>
 </ul>
 </li>
-<li><a href="#mcp-architecture">1.6. Architecture</a></li>
+<li><a href="#agent-config-api">1.6. Agent Configuration API</a>
+<ul class="sectlevel3">
+<li><a href="#_agent_entity">1.6.1. Agent Entity</a></li>
+<li><a href="#_crud_endpoints">1.6.2. CRUD Endpoints</a></li>
+<li><a href="#_example_creating_an_agent">1.6.3. Example: Creating an Agent</a></li>
+</ul>
+</li>
+<li><a href="#mcp-architecture">1.7. Architecture</a></li>
+<li><a href="#ontology-tools">1.8. Ontology Tools</a></li>
+<li><a href="#claude-integration">1.9. Integrating with Claude</a>
+<ul class="sectlevel3">
+<li><a href="#_claude_desktop">1.9.1. Claude Desktop</a></li>
+<li><a href="#_claude_code_cli">1.9.2. Claude Code (CLI)</a></li>
+<li><a href="#_claude_ai_browser_with_custom_connectors">1.9.3. Claude.ai (Browser) with Custom Connectors</a></li>
+<li><a href="#_cursor_ide">1.9.4. Cursor IDE</a></li>
+</ul>
+</li>
+<li><a href="#agent-tool-concepts">1.10. How MCP Maps to Framework Agent and Tool Concepts</a>
+<ul class="sectlevel3">
+<li><a href="#_concept_mapping">1.10.1. Concept Mapping</a></li>
+<li><a href="#_execution_flow_comparison">1.10.2. Execution Flow Comparison</a></li>
+</ul>
+</li>
+<li><a href="#end-to-end-example">1.11. End-to-End Example: Claude Querying a Supply Chain Application</a>
+<ul class="sectlevel3">
+<li><a href="#_prerequisites">1.11.1. Prerequisites</a></li>
+<li><a href="#_step_1_add_the_mcp_server_module">1.11.2. Step 1: Add the MCP Server Module</a></li>
+<li><a href="#_step_2_configure_agent_properties">1.11.3. Step 2: Configure Agent Properties</a></li>
+<li><a href="#_step_3_start_the_application">1.11.4. Step 3: Start the Application</a></li>
+<li><a href="#_step_4_configure_claude">1.11.5. Step 4: Configure Claude</a></li>
+<li><a href="#_step_5_interact_with_claude">1.11.6. Step 5: Interact with Claude</a></li>
+<li><a href="#_what_happened_under_the_hood">1.11.7. What Happened Under the Hood</a></li>
+<li><a href="#_adding_ontology_context_for_richer_queries">1.11.8. Adding Ontology Context for Richer Queries</a></li>
+</ul>
+</li>
+<li><a href="#mcp-server-config-reference">1.12. MCP Server Configuration Reference</a></li>
 </ul>
 </li>
 </ul>
@@ -1025,7 +1060,143 @@ quantum.agent.tenant.acme.maxFindLimit=100</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="mcp-architecture">1.6. Architecture</h3>
+<h3 id="agent-config-api">1.6. Agent Configuration API</h3>
+<div class="paragraph">
+<p>The framework stores agent configurations as realm-scoped <code>Agent</code> entities in MongoDB (<code>agents</code> collection). Each agent pairs an LLM reference with a system prompt and a tool filter, enabling different personas for different use cases (e.g., a supply-chain analyst vs. a customer-service bot).</p>
+</div>
+<div class="sect3">
+<h4 id="_agent_entity">1.6.1. Agent Entity</h4>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 20%;">
+<col style="width: 20%;">
+<col style="width: 60%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Field</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>refName</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Unique reference name within the realm (e.g., <code>supply-chain-assistant</code>)</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>name</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Display name</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>llmConfigRef</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Reference to an LLM secret or config (e.g., <code>claude-sonnet</code>, <code>gpt-4o</code>)</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>context</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">list of PromptStep</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Ordered system/user prompt steps that define the agent&#8217;s persona</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>enabledTools</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">list of string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Tool names this agent can use (e.g., <code>["query_rootTypes", "query_find", "query_plan"]</code>)</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>Each <code>PromptStep</code> has <code>order</code> (int), <code>role</code> (string: <code>"system"</code> or <code>"user"</code>), and <code>content</code> (string: prompt text).</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_crud_endpoints">1.6.2. CRUD Endpoints</h4>
+<div class="paragraph">
+<p>All endpoints are at <code>/api/agent/config</code> and require a <code>realm</code> query parameter.</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 16.6666%;">
+<col style="width: 33.3333%;">
+<col style="width: 50.0001%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Method</th>
+<th class="tableblock halign-left valign-top">Path</th>
+<th class="tableblock halign-left valign-top">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">GET</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>/api/agent/config/list?realm=X</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">List all agents in the realm</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">GET</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>/api/agent/config/{refName}?realm=X</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Get an agent by reference name</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">GET</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>/api/agent/config/id/{id}?realm=X</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Get an agent by ObjectId</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">POST</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>/api/agent/config?realm=X</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Create or update an agent</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">DELETE</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>/api/agent/config/{refName}?realm=X</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Delete an agent by reference name</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">DELETE</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>/api/agent/config/id/{id}?realm=X</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Delete an agent by ObjectId</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect3">
+<h4 id="_example_creating_an_agent">1.6.3. Example: Creating an Agent</h4>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="bash">curl -sS -X POST \
+  -H 'Content-Type: application/json' \
+  'localhost:8080/api/agent/config?realm=acme-corp' \
+  -d '{
+    &quot;refName&quot;: &quot;supply-chain-assistant&quot;,
+    &quot;name&quot;: &quot;Supply Chain Assistant&quot;,
+    &quot;llmConfigRef&quot;: &quot;claude-sonnet&quot;,
+    &quot;context&quot;: [
+      { &quot;order&quot;: 1, &quot;role&quot;: &quot;system&quot;, &quot;content&quot;: &quot;You are a supply-chain analyst. Help users query orders, track shipments, and monitor inventory.&quot; }
+    ],
+    &quot;enabledTools&quot;: [&quot;query_rootTypes&quot;, &quot;query_plan&quot;, &quot;query_find&quot;, &quot;query_count&quot;]
+  }'</code></pre>
+</div>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Agent configuration complements the property-based tenant configuration (<a href="#tenant-agent-config">Per-Tenant Agent Configuration</a>). Properties set operator-level overrides (runAsUserId, maxFindLimit); Agent entities store per-use-case personas and tool filters that can be managed via API.
+</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="mcp-architecture">1.7. Architecture</h3>
 <div class="paragraph">
 <p>The following diagram shows how the MCP server, agent REST API, and MCP client relate:</p>
 </div>
@@ -1078,13 +1249,652 @@ quantum.agent.tenant.acme.maxFindLimit=100</code></pre>
 </ul>
 </div>
 </div>
+<div class="sect2">
+<h3 id="ontology-tools">1.8. Ontology Tools</h3>
+<div class="paragraph">
+<p>In addition to the six gateway tools, the MCP server exposes two ontology discovery tools via <code>McpOntologyTools</code>:</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Tool Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>query_relationships</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Find ontology edges (relationships) for an entity&#8201;&#8212;&#8201;outgoing, incoming, or both, with optional predicate filtering</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>query_predicates</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">List ontology predicates (relationship types) defined in the TBox schema, with optional domain/range filtering</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>These tools allow AI assistants to explore the entity relationship graph.
+For example, an agent can discover that an <code>Order</code> entity has a <code>placedInOrg</code> relationship to an <code>Organization</code>, then use <code>query_find</code> with appropriate filters to retrieve related data.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="claude-integration">1.9. Integrating with Claude</h3>
+<div class="paragraph">
+<p>Claude supports MCP through Claude Desktop, Claude Code (CLI), and the browser-based Claude.ai (via Custom Connectors).
+The Quantum MCP server works with all three.</p>
+</div>
+<div class="sect3">
+<h4 id="_claude_desktop">1.9.1. Claude Desktop</h4>
+<div class="paragraph">
+<p>Edit <code>~/Library/Application Support/Claude/claude_desktop_config.json</code> (macOS) or the equivalent on your platform:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">mcpServers</span><span class="delimiter">&quot;</span></span>: {
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">quantum</span><span class="delimiter">&quot;</span></span>: {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">url</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">http://localhost:8080/mcp</span><span class="delimiter">&quot;</span></span>
+    }
+  }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Restart Claude Desktop.
+The Quantum tools appear in the tool picker and Claude can call them during conversations.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_claude_code_cli">1.9.2. Claude Code (CLI)</h4>
+<div class="paragraph">
+<p>Claude Code discovers MCP servers from project-level or user-level configuration.</p>
+</div>
+<div class="paragraph">
+<p><strong>Project-level</strong>&#8201;&#8212;&#8201;create <code>.claude/settings.json</code> in your repository root:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">mcpServers</span><span class="delimiter">&quot;</span></span>: {
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">quantum-mcp</span><span class="delimiter">&quot;</span></span>: {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">url</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">http://localhost:8080/mcp</span><span class="delimiter">&quot;</span></span>
+    }
+  }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p><strong>User-level</strong>&#8201;&#8212;&#8201;edit <code>~/.claude/settings.local.json</code> to add the server globally:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">mcpServers</span><span class="delimiter">&quot;</span></span>: {
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">quantum-mcp</span><span class="delimiter">&quot;</span></span>: {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">url</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">http://localhost:8080/mcp</span><span class="delimiter">&quot;</span></span>
+    }
+  }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Once configured, Claude Code can use the Quantum tools in any conversation:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="text">&gt; Use query_rootTypes to list available entity types
+
+Claude calls query_rootTypes and returns:
+  Location, Order, CodeList, UserProfile, ...
+
+&gt; Find all active locations in the West region
+
+Claude calls query_find with:
+  rootType: &quot;Location&quot;
+  query: &quot;status:ACTIVE &amp;&amp; region:West&quot;
+  limit: 10
+
+Returns matching Location entities.</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_claude_ai_browser_with_custom_connectors">1.9.3. Claude.ai (Browser) with Custom Connectors</h4>
+<div class="paragraph">
+<p>For cloud-hosted deployments, expose the <code>/mcp</code> endpoint over HTTPS and configure a Claude Custom Connector:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>In Claude.ai, go to Settings &gt; Integrations &gt; Custom Connectors.</p>
+</li>
+<li>
+<p>Add a new connector with your server URL (e.g., <code><a href="https://api.mycompany.com/mcp" class="bare">https://api.mycompany.com/mcp</a></code>).</p>
+</li>
+<li>
+<p>Configure authentication headers if required by your deployment.</p>
+</li>
+</ol>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_cursor_ide">1.9.4. Cursor IDE</h4>
+<div class="paragraph">
+<p>Create <code>.cursor/mcp.json</code> in your project root:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">mcpServers</span><span class="delimiter">&quot;</span></span>: {
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">quantum</span><span class="delimiter">&quot;</span></span>: {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">url</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">http://localhost:8080/mcp</span><span class="delimiter">&quot;</span></span>
+    }
+  }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Or add the server URL in Cursor Settings &gt; MCP Servers.</p>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="agent-tool-concepts">1.10. How MCP Maps to Framework Agent and Tool Concepts</h3>
+<div class="paragraph">
+<p>The framework uses a layered architecture where MCP is one of several access paths to the same underlying tool execution engine.
+Understanding how these concepts relate helps when extending the framework or building custom integrations.</p>
+</div>
+<div class="sect3">
+<h4 id="_concept_mapping">1.10.1. Concept Mapping</h4>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 20%;">
+<col style="width: 20%;">
+<col style="width: 60%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">MCP Concept</th>
+<th class="tableblock halign-left valign-top">Framework Concept</th>
+<th class="tableblock halign-left valign-top">Relationship</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">MCP Tool</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>@Tool</code>-annotated method</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Each MCP tool is a Java method annotated with <code>@Tool</code> (Quarkiverse MCP Server extension) in <code>McpGatewayTools</code>.
+Tools are code-defined and discovered at startup via classpath scanning&#8201;&#8212;&#8201;there is no database-backed tool registry.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">MCP Tool Name</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Method-derived name</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The tool name used in MCP <code>tools/call</code> (e.g., <code>query_find</code>) is defined in the <code>@Tool</code> annotation or derived from the method name.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">MCP <code>tools/call</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>AgentExecuteHandler.execute(tool, arguments)</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Both the MCP server (<code>McpGatewayTools</code>) and the REST agent endpoint (<code>POST /api/agent/execute</code>) delegate to the same handler.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">MCP Resource</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>SchemaService</code> / <code>QueryHintsProvider</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">MCP resources (<code>quantum://schema</code>, <code>quantum://query-hints</code>, <code>quantum://permission-hints</code>) are backed by the same provider beans that serve the REST <code>/api/agent/schema</code> and <code>/api/agent/query-hints</code> endpoints.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">MCP Client</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>quarkus-langchain4j-mcp</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The framework can also <em>consume</em> tools from external MCP servers.
+External MCP servers are configured via <code>ToolProviderConfig</code> (connection details) and <code>quarkus.langchain4j.mcp.*</code> properties.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Agent Config</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>Agent</code> entity</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">An <code>Agent</code> is a realm-scoped configuration envelope that pairs an LLM reference with a system prompt (PromptSteps) and a tool filter (enabledTools).
+Managed via <code>/api/agent/config/*</code> CRUD API.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect3">
+<h4 id="_execution_flow_comparison">1.10.2. Execution Flow Comparison</h4>
+<div class="paragraph">
+<p>Both MCP and REST reach the same execution path:</p>
+</div>
+<div class="literalblock">
+<div class="content">
+<pre>MCP Client                           REST Client
+    |                                     |
+tools/call "query_find"           POST /api/agent/execute
+    |                             { "tool":"query_find", ... }
+    v                                     v
+McpGatewayTools                    AgentResource
+    |                                     |
+    +--------&gt; AgentExecuteHandler &lt;------+
+                      |
+                      v
+              QueryGatewayResource
+                      |
+                      v
+                   MongoDB</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Security (realm resolution, permission checks, <code>@FunctionalAction</code>) is enforced identically at the <code>QueryGatewayResource</code> level, regardless of whether the request came through MCP or REST.</p>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="end-to-end-example">1.11. End-to-End Example: Claude Querying a Supply Chain Application</h3>
+<div class="paragraph">
+<p>This walkthrough demonstrates a complete flow from starting the application to having Claude interact with live data through MCP.</p>
+</div>
+<div class="sect3">
+<h4 id="_prerequisites">1.11.1. Prerequisites</h4>
+<div class="ulist">
+<ul>
+<li>
+<p>Java 17+, Maven 3.9+</p>
+</li>
+<li>
+<p>MongoDB running locally (or via Quarkus Dev Services)</p>
+</li>
+<li>
+<p>Claude Desktop or Claude Code installed</p>
+</li>
+<li>
+<p>Your Quantum-based application (e.g., a supply chain app with <code>Location</code>, <code>Order</code>, <code>Shipment</code> entities)</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_step_1_add_the_mcp_server_module">1.11.2. Step 1: Add the MCP Server Module</h4>
+<div class="paragraph">
+<p>In your application POM, add the <code>quantum-mcp-server</code> dependency:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="xml"><span class="tag">&lt;dependency&gt;</span>
+    <span class="tag">&lt;groupId&gt;</span>com.end2endlogic<span class="tag">&lt;/groupId&gt;</span>
+    <span class="tag">&lt;artifactId&gt;</span>quantum-mcp-server<span class="tag">&lt;/artifactId&gt;</span>
+    <span class="tag">&lt;version&gt;</span>${quantum.version}<span class="tag">&lt;/version&gt;</span>
+<span class="tag">&lt;/dependency&gt;</span></code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_step_2_configure_agent_properties">1.11.3. Step 2: Configure Agent Properties</h4>
+<div class="paragraph">
+<p>In <code>src/main/resources/application.properties</code>:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="properties"># --- Authentication ---
+auth.provider=custom
+quarkus.smallrye-jwt.enabled=true
+mp.jwt.verify.publickey.location=publicKey.pem
+mp.jwt.verify.issuer=https://myapp.example.com/issuer
+mp.jwt.verify.audiences=my-api-client
+auth.jwt.secret=${JWT_SECRET:dev-secret-change-in-prod}
+auth.jwt.expiration=60
+auth.jwt.refresh-expiration=120
+
+# --- Per-tenant agent configuration ---
+# The &quot;default&quot; realm: agent runs as a service user, limited to read-only tools
+quantum.agent.tenant.default.runAsUserId=agent-svc@mycompany.com
+quantum.agent.tenant.default.enabledTools=query_rootTypes,query_plan,query_find,query_count
+quantum.agent.tenant.default.maxFindLimit=200
+
+# The &quot;acme-corp&quot; realm: full CRUDL access
+quantum.agent.tenant.acme-corp.runAsUserId=bot@acme-corp.com
+quantum.agent.tenant.acme-corp.enabledTools=query_rootTypes,query_plan,query_find,query_count,query_save,query_delete</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_step_3_start_the_application">1.11.4. Step 3: Start the Application</h4>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="bash">mvn quarkus:dev</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The MCP endpoint is available at <code><a href="http://localhost:8080/mcp" class="bare">http://localhost:8080/mcp</a></code>.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_step_4_configure_claude">1.11.5. Step 4: Configure Claude</h4>
+<div class="paragraph">
+<p><strong>Claude Desktop</strong>&#8201;&#8212;&#8201;edit <code>claude_desktop_config.json</code>:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">mcpServers</span><span class="delimiter">&quot;</span></span>: {
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">supply-chain</span><span class="delimiter">&quot;</span></span>: {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">url</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">http://localhost:8080/mcp</span><span class="delimiter">&quot;</span></span>
+    }
+  }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p><strong>Claude Code</strong>&#8201;&#8212;&#8201;create <code>.claude/settings.json</code> in the project root:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">mcpServers</span><span class="delimiter">&quot;</span></span>: {
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">supply-chain</span><span class="delimiter">&quot;</span></span>: {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">url</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">http://localhost:8080/mcp</span><span class="delimiter">&quot;</span></span>
+    }
+  }
+}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_step_5_interact_with_claude">1.11.6. Step 5: Interact with Claude</h4>
+<div class="paragraph">
+<p>Below is a realistic conversation showing how Claude uses the MCP tools:</p>
+</div>
+<div class="paragraph">
+<p><strong>User</strong>: What entity types are available in the supply chain system?</p>
+</div>
+<div class="paragraph">
+<p><strong>Claude</strong> calls <code>query_rootTypes</code> and responds:</p>
+</div>
+<div class="quoteblock">
+<blockquote>
+<div class="paragraph">
+<p>The system has these entity types: Location, Order, Shipment, Product, Customer, CodeList, UserProfile, Organization.</p>
+</div>
+</blockquote>
+</div>
+<div class="paragraph">
+<p><strong>User</strong>: Show me all active warehouses in the Southeast region.</p>
+</div>
+<div class="paragraph">
+<p><strong>Claude</strong> calls <code>query_find</code>:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>rootType</code>: <code>"Location"</code></p>
+</li>
+<li>
+<p><code>query</code>: <code>"status:ACTIVE &amp;&amp; type:WAREHOUSE &amp;&amp; region:Southeast"</code></p>
+</li>
+<li>
+<p><code>limit</code>: <code>20</code></p>
+</li>
+</ul>
+</div>
+<div class="quoteblock">
+<blockquote>
+<div class="paragraph">
+<p>Found 3 active warehouses in the Southeast:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>ATL-WH-01&#8201;&#8212;&#8201;Atlanta Distribution Center (Atlanta, GA)</p>
+</li>
+<li>
+<p>MIA-WH-03&#8201;&#8212;&#8201;Miami Fulfillment Hub (Miami, FL)</p>
+</li>
+<li>
+<p>CLT-WH-02&#8201;&#8212;&#8201;Charlotte Regional Warehouse (Charlotte, NC)</p>
+</li>
+</ol>
+</div>
+</blockquote>
+</div>
+<div class="paragraph">
+<p><strong>User</strong>: How many open orders are there for the Atlanta warehouse?</p>
+</div>
+<div class="paragraph">
+<p><strong>Claude</strong> calls <code>query_count</code>:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>rootType</code>: <code>"Order"</code></p>
+</li>
+<li>
+<p><code>query</code>: <code>"status:OPEN &amp;&amp; warehouseRef:ATL-WH-01"</code></p>
+</li>
+</ul>
+</div>
+<div class="quoteblock">
+<blockquote>
+<div class="paragraph">
+<p>There are 47 open orders for the Atlanta Distribution Center (ATL-WH-01).</p>
+</div>
+</blockquote>
+</div>
+<div class="paragraph">
+<p><strong>User</strong>: Show me the last 5 orders with their customer details expanded.</p>
+</div>
+<div class="paragraph">
+<p><strong>Claude</strong> calls <code>query_plan</code> first to check expand support:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>rootType</code>: <code>"Order"</code></p>
+</li>
+<li>
+<p><code>query</code>: <code>"expand(customer) &amp;&amp; warehouseRef:ATL-WH-01"</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Then calls <code>query_find</code>:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>rootType</code>: <code>"Order"</code></p>
+</li>
+<li>
+<p><code>query</code>: <code>"expand(customer) &amp;&amp; warehouseRef:ATL-WH-01"</code></p>
+</li>
+<li>
+<p><code>limit</code>: <code>5</code></p>
+</li>
+</ul>
+</div>
+<div class="quoteblock">
+<blockquote>
+<div class="paragraph">
+<p>Here are the 5 most recent orders for ATL-WH-01, with customer details:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>ORD-9921&#8201;&#8212;&#8201;Acme Corp (<a href="mailto:acme@example.com">acme@example.com</a>), 12 items, $2,340</p>
+</li>
+<li>
+<p>ORD-9918&#8201;&#8212;&#8201;Beta Industries (<a href="mailto:beta@example.com">beta@example.com</a>), 3 items, $890
+&#8230;&#8203;</p>
+</li>
+</ol>
+</div>
+</blockquote>
+</div>
+<div class="paragraph">
+<p><strong>User</strong>: What relationships does the Atlanta warehouse have?</p>
+</div>
+<div class="paragraph">
+<p><strong>Claude</strong> calls <code>query_relationships</code>:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>entityId</code>: <code>"ATL-WH-01"</code></p>
+</li>
+<li>
+<p><code>direction</code>: <code>"both"</code></p>
+</li>
+</ul>
+</div>
+<div class="quoteblock">
+<blockquote>
+<div class="paragraph">
+<p>The Atlanta warehouse has these relationships:</p>
+</div>
+<div class="paragraph">
+<p>Outgoing:
+- <code>locatedIn</code> &#8594; Organization "Southeast Division"
+- <code>servesRegion</code> &#8594; Region "Southeast"</p>
+</div>
+<div class="paragraph">
+<p>Incoming:
+- <code>fulfilledAt</code> &#8592; 47 open Orders
+- <code>shipsFrom</code> &#8592; 12 active Shipments</p>
+</div>
+</blockquote>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_what_happened_under_the_hood">1.11.7. What Happened Under the Hood</h4>
+<div class="literalblock">
+<div class="content">
+<pre>Claude Desktop / Claude Code
+    |
+    | (1) MCP tools/list -&gt; discovers 9 tools + 3 resources
+    |
+    | (2) MCP resources/read "quantum://query-hints"
+    |     -&gt; learns BIAPI query syntax, expand(), ontology edges
+    |
+    | (3) MCP tools/call "query_rootTypes"
+    |     -&gt; McpGatewayTools.query_rootTypes()
+    |        -&gt; AgentExecuteHandler.execute("query_rootTypes", {})
+    |           -&gt; QueryGatewayResource.listRootTypes()
+    |
+    | (4) MCP tools/call "query_find" { rootType, query, limit }
+    |     -&gt; McpGatewayTools.query_find(rootType, query, realm, limit, skip)
+    |        -&gt; AgentExecuteHandler.execute("query_find", args)
+    |           -&gt; QueryGatewayResource.find(FindRequest)
+    |              -&gt; Morphia Query -&gt; MongoDB
+    |
+    | (5) MCP tools/call "query_relationships" { entityId, direction }
+    |     -&gt; McpOntologyTools.query_relationships(entityId, direction, ...)
+    |        -&gt; OntologyEdgeRepo.findBySrc() / findByDst()
+    |           -&gt; MongoDB edges collection
+    |
+    v
+JSON response serialized and returned to Claude</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>At every step, the Quantum security filter validates the caller&#8217;s identity, resolves the realm, and applies permission rules.
+The agent never bypasses <code>@FunctionalAction</code> checks or data scoping.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_adding_ontology_context_for_richer_queries">1.11.8. Adding Ontology Context for Richer Queries</h4>
+<div class="paragraph">
+<p>When your application has an ontology TBox defined (see <a href="ontology.html">Ontologies in Quantum</a>), Claude can use the <code>query_predicates</code> tool to discover relationship types and then use <code>query_relationships</code> to traverse the graph.</p>
+</div>
+<div class="paragraph">
+<p>For example:</p>
+</div>
+<div class="paragraph">
+<p><strong>User</strong>: What types of relationships exist between Orders and Organizations?</p>
+</div>
+<div class="paragraph">
+<p><strong>Claude</strong> calls <code>query_predicates</code>:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>domainFilter</code>: <code>"Order"</code></p>
+</li>
+<li>
+<p><code>rangeFilter</code>: <code>"Organization"</code></p>
+</li>
+</ul>
+</div>
+<div class="quoteblock">
+<blockquote>
+<div class="paragraph">
+<p>Found 2 predicates:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p><code>placedByOrg</code>&#8201;&#8212;&#8201;Order &#8594; Organization (the org that placed the order)</p>
+</li>
+<li>
+<p><code>fulfilledByOrg</code>&#8201;&#8212;&#8201;Order &#8594; Organization (the org fulfilling the order)</p>
+</li>
+</ol>
+</div>
+</blockquote>
+</div>
+<div class="paragraph">
+<p>This lets Claude build more targeted queries and provide richer answers about entity relationships.</p>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="mcp-server-config-reference">1.12. MCP Server Configuration Reference</h3>
+<div class="paragraph">
+<p>The MCP server requires no additional configuration beyond including the <code>quantum-mcp-server</code> module.
+The <code>/mcp</code> endpoint is automatically registered by the Quarkus MCP Server extension.</p>
+</div>
+<div class="paragraph">
+<p>Optional properties:</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 20%;">
+<col style="width: 20%;">
+<col style="width: 60%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Property</th>
+<th class="tableblock halign-left valign-top">Default</th>
+<th class="tableblock halign-left valign-top">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>quarkus.mcp.server.traffic-logging</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>NONE</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Set to <code>ALL</code> to log MCP JSON-RPC messages for debugging</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>feature.queryGateway.execution.enabled</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Set to <code>true</code> to enable <code>expand()</code> (AGGREGATION mode) in <code>query_find</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>quantum.queryGateway.deleteMany.maxMatches</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>2000</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Maximum entities that <code>query_deleteMany</code> will delete in a single call</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>See <a href="ai-agent-integration.html">AI Agent Integration</a> for the full agent API design and additional scenarios.</p>
+</div>
+</div>
 </div>
 </div>
 </div>
 <div id="footer">
 <div id="footer-text">
 Version 1.3.0-SNAPSHOT<br>
-Last updated 2026-02-09 13:40:53 -0500
+Last updated 2026-02-13 13:14:09 -0500
 </div>
 </div>
 </body>
