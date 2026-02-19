@@ -8,9 +8,9 @@ import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.bson.types.ObjectId;
 
 /**
- * External tool provider configuration (REST, MCP). Agents and ToolDefinitions reference these
- * by refName to call external APIs or MCP servers. Framework entity; apps (e.g. psa-app) use
- * via ToolProviderConfigRepo and expose REST.
+ * External tool provider configuration (REST, MCP). Agents reference these by refName to call
+ * external APIs or MCP servers. Framework entity; apps (e.g. psa-app) use via
+ * ToolProviderConfigRepo and expose REST.
  */
 @RegisterForReflection
 @Entity(value = "tool_provider_configs", useDiscriminator = false)

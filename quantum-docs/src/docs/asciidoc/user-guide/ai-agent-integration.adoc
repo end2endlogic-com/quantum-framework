@@ -666,7 +666,8 @@ mvn -pl quantum-framework -Dtest=AgentMcpBridgeFlowIT test
 | `/api/agent/query-hints` | GET | Query grammar summary, example queries by intent, and "did you know" hints (expand, ontology). Use so agents can answer "what query gets locations in Atlanta?" and suggest expand/ontology usage. |
 | `/api/agent/permission-hints` | GET | Permission check/evaluate API summary, area/domain/action mapping (e.g. Query Gateway), example check requests, and "did you know" hints. Use so agents can answer "can role X perform action Y on entity Z?" and "if not, why not?" (winningRuleName), suggest rule changes, and generate least-privilege rules for a scenario. |
 | `/api/agent/ontology` | GET | Optional: ontology summary for retrieval context. |
-| `/api/agent/execute` | POST | Optional: execute one of the six gateway tools by name + arguments (delegate only to `QueryGatewayResource`). |
+| `/api/agent/execute` | POST | Execute one of the gateway tools by name + arguments (delegate only to `QueryGatewayResource`). |
+| `/api/agent/config/*` | GET/POST/DELETE | CRUD for Agent configuration (LLM reference, prompt context, enabled tools). Realm-scoped. See xref:mcp-server-and-client.adoc#agent-config-api[Agent Configuration API]. |
 | `/api/agent/context` | POST/GET | Optional: retrieval context (gateway find or optional ontology). |
 | (headers) | - | `X-Agent-Session-Id`, `X-Agent-Trace-Id` for audit and multi-turn. |
 
@@ -676,8 +677,9 @@ mvn -pl quantum-framework -Dtest=AgentMcpBridgeFlowIT test
 2. *Tools discovery* (`GET /api/agent/tools`) — enumerate the six gateway operations; enables agents to know what they can call.
 3. *Schema for agents* (`GET /api/agent/schema`, `GET /api/agent/schema/{rootType}`) — gateway-derived from `rootTypes` and Morphia metadata.
 4. *Session/trace headers* — low effort, high value for audit and debugging.
-5. *Unified execute* (`POST /api/agent/execute`) — optional; delegate only to `QueryGatewayResource`.
-6. *Retrieval context* (`POST /api/agent/context`) and *ontology summary* — optional; prefer gateway find for context.
+5. *Unified execute* (`POST /api/agent/execute`) — delegate only to `QueryGatewayResource`.
+6. *Agent configuration* (`/api/agent/config/*`) — CRUD for Agent entities (LLM ref, prompt context, tool filter); realm-scoped.
+7. *Retrieval context* (`POST /api/agent/context`) and *ontology summary* — optional; prefer gateway find for context.
 
 == Security and Governance
 
@@ -688,6 +690,7 @@ mvn -pl quantum-framework -Dtest=AgentMcpBridgeFlowIT test
 
 == References
 
+* **Architecture design:** `docs/design/AI_AGENT_TOOL_REFACTOR_CLARIFICATION.md` in the framework repo — current agent/tool architecture, data flow, key files, and what was removed.
 * **Implementation design:** `docs/design/AI_AGENT_INTEGRATION_DESIGN.md` in the framework repo — API specs, DTOs, backend classes, MCP bridge, implementation phases, and testing strategy.
 * Palantir Foundry – Use AIP Agents through Foundry APIs: https://palantir.com/docs/foundry/agent-studio/foundry-apis/
 * AIP Agent Studio overview: https://www.palantir.com/docs/foundry/agent-studio/overview

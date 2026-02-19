@@ -4,7 +4,9 @@ import com.e2eq.framework.annotations.FunctionalAction;
 import com.e2eq.framework.annotations.FunctionalMapping;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
+import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
 import com.e2eq.framework.model.persistent.morphia.DeleteValidationService;
+import com.e2eq.framework.model.persistent.morphia.ImportSessionRowRepo;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
 import com.e2eq.framework.model.persistent.morphia.planner.LogicalPlan;
@@ -12,10 +14,13 @@ import com.e2eq.framework.model.persistent.morphia.planner.PlannedQuery;
 import com.e2eq.framework.model.persistent.morphia.planner.PlannerResult;
 import com.e2eq.framework.model.persistent.morphia.query.QueryGateway;
 import com.e2eq.framework.model.persistent.morphia.query.QueryGatewayImpl;
+import com.e2eq.framework.model.persistent.imports.ImportSessionRow;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.rest.models.Collection;
+import com.e2eq.framework.util.CSVExportHelper;
+import com.e2eq.framework.util.CSVImportHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.morphia.Datastore;
 import dev.morphia.MorphiaDatastore;
@@ -27,13 +32,23 @@ import dev.morphia.query.filters.Filters;
 import io.quarkus.logging.Log;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.StreamingOutput;
 import org.bson.types.ObjectId;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -108,12 +123,25 @@ public class QueryGatewayResource {
     @Inject
     ObjectMapper objectMapper;
 
+    @Inject
+    Instance<BaseMorphiaRepo<? extends UnversionedBaseModel>> allRepos;
+
+    @Inject
+    CSVImportHelper csvImportHelper;
+
+    @Inject
+    ImportSessionRowRepo importSessionRowRepo;
+
     @ConfigProperty(name = "quantum.realm.testRealm", defaultValue = "defaultRealm")
     String defaultRealm;
 
     /** Maximum number of entities to validate and delete in one deleteMany request. */
     @ConfigProperty(name = "quantum.queryGateway.deleteMany.maxMatches", defaultValue = "2000")
     int maxDeleteManyMatches;
+
+    /** Row count threshold: results at or below this are returned inline; above are written to a file. */
+    @ConfigProperty(name = "quantum.queryGateway.export.inlineThreshold", defaultValue = "10000")
+    int exportInlineThreshold;
 
     @POST
     @Path("/plan")
@@ -528,6 +556,307 @@ public class QueryGatewayResource {
         }
     }
 
+    // ========================================================================
+    // IMPORT / EXPORT ENDPOINTS
+    // ========================================================================
+
+    /**
+     * Resolves a BaseMorphiaRepo for the given entity class by iterating all CDI-managed repos.
+     */
+    @SuppressWarnings("unchecked")
+    private <T extends UnversionedBaseModel> BaseMorphiaRepo<T> resolveRepo(Class<T> rootClass) {
+        for (BaseMorphiaRepo<? extends UnversionedBaseModel> repo : allRepos) {
+            if (repo.getPersistentClass() != null && repo.getPersistentClass().equals(rootClass)) {
+                return (BaseMorphiaRepo<T>) repo;
+            }
+        }
+        throw new BadRequestException("No repository found for type: " + rootClass.getName()
+                + ". Import/export requires a registered MorphiaRepo for this entity type.");
+    }
+
+    /**
+     * Analyze a CSV for import. Creates an import session with a preview of rows,
+     * their intents (INSERT/UPDATE/SKIP), and any validation errors.
+     *
+     * <p>Provide CSV data either inline via {@code csvContent} or as a server-side
+     * file path via {@code csvFilePath}. Exactly one must be specified.</p>
+     */
+    @POST
+    @Path("/import/analyze")
+    @FunctionalAction("importAnalyze")
+    public Response importAnalyze(ImportAnalyzeRequest req) {
+        if (req.columns == null || req.columns.isEmpty()) {
+            throw new BadRequestException("columns is required (ordered list of entity field names matching CSV columns)");
+        }
+        boolean hasContent = req.csvContent != null && !req.csvContent.isBlank();
+        boolean hasFile = req.csvFilePath != null && !req.csvFilePath.isBlank();
+        if (!hasContent && !hasFile) {
+            throw new BadRequestException("Either csvContent or csvFilePath is required");
+        }
+        if (hasContent && hasFile) {
+            throw new BadRequestException("Provide either csvContent or csvFilePath, not both");
+        }
+
+        Class<? extends UnversionedBaseModel> root = resolveRoot(req.rootType);
+        @SuppressWarnings("unchecked")
+        BaseMorphiaRepo<UnversionedBaseModel> repo = resolveRepo((Class<UnversionedBaseModel>) root);
+
+        char fieldSep = (req.fieldSeparator != null && !req.fieldSeparator.isEmpty()) ? req.fieldSeparator.charAt(0) : ',';
+        char quoteChar = (req.quoteChar != null && !req.quoteChar.isEmpty()) ? req.quoteChar.charAt(0) : '"';
+        Charset charset = (req.charset != null && !req.charset.isBlank()) ? Charset.forName(req.charset) : StandardCharsets.UTF_8;
+
+        try {
+            InputStream inputStream;
+            if (hasContent) {
+                inputStream = new ByteArrayInputStream(req.csvContent.getBytes(charset));
+            } else {
+                File csvFile = new File(req.csvFilePath);
+                if (!csvFile.exists() || !csvFile.isFile()) {
+                    throw new BadRequestException("CSV file not found: " + req.csvFilePath);
+                }
+                inputStream = new FileInputStream(csvFile);
+            }
+
+            CSVImportHelper.ImportResult<UnversionedBaseModel> result = csvImportHelper.analyzeCSV(
+                    repo, inputStream, fieldSep, quoteChar, true, req.columns, charset, false, "QUOTE_WHERE_ESSENTIAL");
+
+            ImportAnalyzeResponse response = new ImportAnalyzeResponse();
+            response.sessionId = result.getSessionId();
+            response.rootType = root.getName();
+            response.totalRows = result.getTotalRows();
+            response.validRows = result.getValidRows();
+            response.errorRows = result.getErrorRows();
+            response.insertCount = result.getInsertCount();
+            response.updateCount = result.getUpdateCount();
+
+            // Build preview from row results (up to 100)
+            response.previewRows = new ArrayList<>();
+            List<CSVImportHelper.ImportRowResult<UnversionedBaseModel>> rowResults = result.getRowResults();
+            int previewLimit = Math.min(rowResults.size(), 100);
+            for (int i = 0; i < previewLimit; i++) {
+                CSVImportHelper.ImportRowResult<UnversionedBaseModel> rr = rowResults.get(i);
+                ImportRowPreview preview = new ImportRowPreview();
+                preview.rowNumber = rr.getRowNumber();
+                preview.refName = rr.getRefName();
+                preview.intent = rr.getIntent() != null ? rr.getIntent().name() : null;
+                preview.hasErrors = rr.hasErrors();
+                if (rr.getErrors() != null && !rr.getErrors().isEmpty()) {
+                    preview.errors = new ArrayList<>();
+                    for (CSVImportHelper.FieldError fe : rr.getErrors()) {
+                        ImportFieldError ife = new ImportFieldError();
+                        ife.field = fe.getField();
+                        ife.message = fe.getMessage();
+                        ife.code = fe.getCode() != null ? fe.getCode().name() : null;
+                        preview.errors.add(ife);
+                    }
+                }
+                response.previewRows.add(preview);
+            }
+
+            return Response.ok(response).build();
+        } catch (BadRequestException e) {
+            throw e;
+        } catch (Exception e) {
+            Log.errorf(e, "Failed to analyze CSV import for type %s", req.rootType);
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "ImportAnalyzeFailed");
+            error.put("message", "Failed to analyze CSV: " + e.getMessage());
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(error).build();
+        }
+    }
+
+    /**
+     * Fetch analyzed CSV rows for an import session with pagination.
+     * Useful for reviewing errors or large imports before committing.
+     */
+    @POST
+    @Path("/import/rows")
+    @FunctionalAction("importRows")
+    public Response importRows(ImportRowsRequest req) {
+        if (req.sessionId == null || req.sessionId.isBlank()) {
+            throw new BadRequestException("sessionId is required");
+        }
+
+        try {
+            int skip = (req.skip != null) ? req.skip : 0;
+            int limit = (req.limit != null) ? req.limit : 50;
+            String realm = resolveRealm(req.realm);
+
+            // Build filter query for ImportSessionRow
+            StringBuilder filter = new StringBuilder("sessionRefName:" + req.sessionId);
+            if (req.onlyErrors != null && req.onlyErrors) {
+                filter.append(" && hasErrors:true");
+            }
+            if (req.intent != null && !req.intent.isBlank()) {
+                filter.append(" && intent:").append(req.intent);
+            }
+
+            List<ImportSessionRow> rows = importSessionRowRepo.getListByQuery(
+                    realm, skip, limit, filter.toString(), null, null);
+
+            ImportRowsResponse response = new ImportRowsResponse();
+            response.sessionId = req.sessionId;
+            response.rows = new ArrayList<>();
+            for (ImportSessionRow row : rows) {
+                Map<String, Object> rowMap = new HashMap<>();
+                rowMap.put("rowNumber", row.getRowNumber());
+                rowMap.put("intent", row.getIntent());
+                rowMap.put("hasErrors", row.isHasErrors());
+                rowMap.put("rawLine", row.getRawLine());
+                if (row.getErrorsJson() != null) {
+                    rowMap.put("errors", objectMapper.readValue(row.getErrorsJson(), List.class));
+                }
+                if (row.getRecordJson() != null) {
+                    rowMap.put("record", objectMapper.readValue(row.getRecordJson(), Map.class));
+                }
+                response.rows.add(rowMap);
+            }
+
+            return Response.ok(response).build();
+        } catch (BadRequestException e) {
+            throw e;
+        } catch (Exception e) {
+            Log.errorf(e, "Failed to fetch import session rows for session %s", req.sessionId);
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "ImportRowsFailed");
+            error.put("message", "Failed to fetch import rows: " + e.getMessage());
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(error).build();
+        }
+    }
+
+    /**
+     * Commit a previously analyzed CSV import session. Saves all valid (error-free)
+     * INSERT and UPDATE rows to the database.
+     */
+    @POST
+    @Path("/import/commit")
+    @FunctionalAction("importCommit")
+    public Response importCommit(ImportCommitRequest req) {
+        if (req.sessionId == null || req.sessionId.isBlank()) {
+            throw new BadRequestException("sessionId is required");
+        }
+
+        Class<? extends UnversionedBaseModel> root = resolveRoot(req.rootType);
+        @SuppressWarnings("unchecked")
+        BaseMorphiaRepo<UnversionedBaseModel> repo = resolveRepo((Class<UnversionedBaseModel>) root);
+
+        try {
+            CSVImportHelper.CommitResult result = csvImportHelper.commitImport(req.sessionId, repo);
+
+            ImportCommitResponse response = new ImportCommitResponse();
+            response.sessionId = req.sessionId;
+            response.imported = result.getImported();
+            response.failed = result.getFailed();
+            return Response.ok(response).build();
+        } catch (Exception e) {
+            Log.errorf(e, "Failed to commit import session %s for type %s", req.sessionId, req.rootType);
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "ImportCommitFailed");
+            error.put("message", "Failed to commit import: " + e.getMessage());
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(error).build();
+        }
+    }
+
+    /**
+     * Cancel a CSV import session, discarding all analyzed rows and session data.
+     */
+    @POST
+    @Path("/import/cancel")
+    @FunctionalAction("importCancel")
+    public Response importCancel(ImportCancelRequest req) {
+        if (req.sessionId == null || req.sessionId.isBlank()) {
+            throw new BadRequestException("sessionId is required");
+        }
+
+        try {
+            csvImportHelper.cancelImport(req.sessionId);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("sessionId", req.sessionId);
+            response.put("status", "cancelled");
+            return Response.ok(response).build();
+        } catch (Exception e) {
+            Log.errorf(e, "Failed to cancel import session %s", req.sessionId);
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "ImportCancelFailed");
+            error.put("message", "Failed to cancel import: " + e.getMessage());
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(error).build();
+        }
+    }
+
+    /**
+     * Export entities matching a query as CSV. Returns CSV inline for small results
+     * or writes to a temp file for large results (controlled by
+     * {@code quantum.queryGateway.export.inlineThreshold}).
+     */
+    @POST
+    @Path("/export")
+    @FunctionalAction("export")
+    public Response export(ExportRequest req) {
+        Class<? extends UnversionedBaseModel> root = resolveRoot(req.rootType);
+        @SuppressWarnings("unchecked")
+        BaseMorphiaRepo<UnversionedBaseModel> repo = resolveRepo((Class<UnversionedBaseModel>) root);
+
+        char fieldSep = (req.fieldSeparator != null && !req.fieldSeparator.isEmpty()) ? req.fieldSeparator.charAt(0) : ',';
+        char quoteChar = (req.quoteChar != null && !req.quoteChar.isEmpty()) ? req.quoteChar.charAt(0) : '"';
+        Charset charset = (req.charset != null && !req.charset.isBlank()) ? Charset.forName(req.charset) : StandardCharsets.UTF_8;
+        boolean includeHeader = (req.includeHeader == null || req.includeHeader);
+        int limit = (req.limit != null && req.limit > 0) ? req.limit : 0; // 0 = all
+        int skip = (req.skip != null) ? req.skip : 0;
+        String query = req.query;
+
+        try {
+            CSVExportHelper exportHelper = new CSVExportHelper();
+            StreamingOutput streamingOutput = exportHelper.streamCSVOut(
+                    repo, fieldSep, req.columns, "QUOTE_WHERE_ESSENTIAL",
+                    quoteChar, charset, false, query, skip, limit,
+                    includeHeader, null);
+
+            // Determine row count for threshold decision
+            String realm = resolveRealm(req.realm);
+            Datastore ds = morphiaDataStoreWrapper.getDataStore(realm);
+            Query<? extends UnversionedBaseModel> countQuery = ds.find(root);
+            if (query != null && !query.isBlank()) {
+                Map<String, String> variableMap = variableMapForQuery(req.realm);
+                PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(query, root, null, null, null, variableMap);
+                if (planned.getFilter() != null) {
+                    countQuery = countQuery.filter(planned.getFilter());
+                }
+            }
+            long rowCount = countQuery.count();
+
+            ExportResponse response = new ExportResponse();
+            response.rootType = root.getName();
+            response.rowCount = (int) Math.min(rowCount, limit > 0 ? limit : rowCount);
+
+            if (rowCount <= exportInlineThreshold) {
+                // Inline mode: capture CSV to string
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                streamingOutput.write(baos);
+                response.csvContent = baos.toString(charset.name());
+                response.mode = "inline";
+            } else {
+                // File mode: write to temp file
+                File tempFile = File.createTempFile("export-", ".csv");
+                try (FileOutputStream fos = new FileOutputStream(tempFile)) {
+                    streamingOutput.write(fos);
+                }
+                response.csvFilePath = tempFile.getAbsolutePath();
+                response.mode = "file";
+            }
+
+            return Response.ok(response).build();
+        } catch (BadRequestException e) {
+            throw e;
+        } catch (Exception e) {
+            Log.errorf(e, "Failed to export entities of type %s", req.rootType);
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "ExportFailed");
+            error.put("message", "Failed to export: " + e.getMessage());
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(error).build();
+        }
+    }
+
     private String resolveCollectionName(Class<? extends UnversionedBaseModel> root) {
         dev.morphia.annotations.Entity e = root.getAnnotation(dev.morphia.annotations.Entity.class);
         if (e != null && e.value() != null && !e.value().isBlank()) {
@@ -785,5 +1114,137 @@ public class QueryGatewayResource {
         public String rootType;
         /** Number of documents deleted */
         public long deletedCount;
+    }
+
+    // ========================================================================
+    // IMPORT DTOs
+    // ========================================================================
+
+    @RegisterForReflection
+    public static class ImportAnalyzeRequest {
+        /** Entity type (simple or fully qualified class name) */
+        public String rootType;
+        /** Optional realm; if absent default realm is used */
+        public String realm;
+        /** CSV content as a string (mutually exclusive with csvFilePath) */
+        public String csvContent;
+        /** Server-side file path to a CSV file (mutually exclusive with csvContent) */
+        public String csvFilePath;
+        /** Ordered list of entity field names matching CSV columns */
+        public List<String> columns;
+        /** Field separator character (default ',') */
+        public String fieldSeparator;
+        /** Quote character (default '"') */
+        public String quoteChar;
+        /** Character set (default UTF-8) */
+        public String charset;
+    }
+
+    @RegisterForReflection
+    public static class ImportAnalyzeResponse {
+        public String sessionId;
+        public String rootType;
+        public int totalRows;
+        public int validRows;
+        public int errorRows;
+        public int insertCount;
+        public int updateCount;
+        public List<ImportRowPreview> previewRows;
+    }
+
+    @RegisterForReflection
+    public static class ImportRowPreview {
+        public int rowNumber;
+        public String refName;
+        public String intent;
+        public boolean hasErrors;
+        public List<ImportFieldError> errors;
+    }
+
+    @RegisterForReflection
+    public static class ImportFieldError {
+        public String field;
+        public String message;
+        public String code;
+    }
+
+    @RegisterForReflection
+    public static class ImportRowsRequest {
+        public String sessionId;
+        public String rootType;
+        public String realm;
+        public Integer skip;
+        public Integer limit;
+        public Boolean onlyErrors;
+        public String intent;
+    }
+
+    @RegisterForReflection
+    public static class ImportRowsResponse {
+        public String sessionId;
+        public List<Map<String, Object>> rows;
+    }
+
+    @RegisterForReflection
+    public static class ImportCommitRequest {
+        public String sessionId;
+        public String rootType;
+        public String realm;
+    }
+
+    @RegisterForReflection
+    public static class ImportCommitResponse {
+        public String sessionId;
+        public int imported;
+        public int failed;
+    }
+
+    @RegisterForReflection
+    public static class ImportCancelRequest {
+        public String sessionId;
+        public String rootType;
+        public String realm;
+    }
+
+    // ========================================================================
+    // EXPORT DTOs
+    // ========================================================================
+
+    @RegisterForReflection
+    public static class ExportRequest {
+        /** Entity type (simple or fully qualified class name) */
+        public String rootType;
+        /** Optional realm; if absent default realm is used */
+        public String realm;
+        /** Optional BIAPI filter query */
+        public String query;
+        /** Ordered list of columns/projections to include in export */
+        public List<String> columns;
+        /** Max rows to export (default: all) */
+        public Integer limit;
+        /** Rows to skip (default 0) */
+        public Integer skip;
+        /** Field separator character (default ',') */
+        public String fieldSeparator;
+        /** Quote character (default '"') */
+        public String quoteChar;
+        /** Character set (default UTF-8) */
+        public String charset;
+        /** Whether to include a header row (default true) */
+        public Boolean includeHeader;
+    }
+
+    @RegisterForReflection
+    public static class ExportResponse {
+        /** Inline CSV content (when mode is "inline") */
+        public String csvContent;
+        /** File path where CSV was written (when mode is "file") */
+        public String csvFilePath;
+        /** Total rows exported */
+        public int rowCount;
+        /** The fully qualified class name */
+        public String rootType;
+        /** "inline" or "file" */
+        public String mode;
     }
 }
