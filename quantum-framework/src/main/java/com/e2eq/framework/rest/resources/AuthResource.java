@@ -101,7 +101,8 @@ public class AuthResource {
 
         return Response.ok(Map.of(
             "accessToken", loginResponse.positiveResponse().accessToken(),
-            "refreshToken", loginResponse.positiveResponse().refreshToken()
+            "refreshToken", loginResponse.positiveResponse().refreshToken(),
+            "authProvider", authProvider.getName()
         )).build();
     }
 
