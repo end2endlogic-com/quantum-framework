@@ -262,3 +262,416 @@ Authentication establishes identity; RuleContext enforces what the identity can 
 - Adjust UIActionList to reflect permitted next steps
 
 This division of responsibilities keeps providers focused on identity while policies remain centralized in RuleContext.
+
+[[jwt-tokens-for-api-access]]
+== Generating JWT Tokens for API Access
+
+Applications frequently need machine-to-machine access that does not go through an interactive login flow.
+The framework provides two mechanisms: **short-lived user tokens** generated via the login endpoint, and **long-lived service tokens** generated via the dedicated service-token endpoint.
+Both produce standard RS256-signed JWTs that carry identity, roles, and scope claims consumed by the `SecurityFilter` and the permission system.
+
+=== Token Anatomy
+
+Every JWT produced by the framework contains the following claims:
+
+[cols="1,1,3", options="header"]
+|===
+| Claim | Example | Purpose
+
+| `sub`
+| `a1b2c3d4-...` (UUID)
+| The subject -- a stable identifier for the principal. For user tokens, this is the user's `subject` from the credential store. For service tokens, a newly generated UUID.
+
+| `iss`
+| `https://myapp.example.com/issuer`
+| Issuer -- must match `mp.jwt.verify.issuer` in the consuming application's config for the token to be accepted.
+
+| `aud`
+| `b2bi-api-client`
+| Audience -- the intended recipient. Auth tokens use `b2bi-api-client`; refresh tokens use `b2bi-api-client-refresh`.
+
+| `groups`
+| `["admin", "user"]`
+| Roles embedded in the token. These are merged with roles from the credential store and user group membership at validation time.
+
+| `scope`
+| `authToken`
+| Distinguishes auth tokens (`authToken`) from refresh tokens (`refreshToken`).
+
+| `iat`
+| `1707849600`
+| Issued-at timestamp (seconds since epoch).
+
+| `exp`
+| `1707853200`
+| Expiration timestamp (seconds since epoch).
+|===
+
+The token is signed with the application's RSA private key using the RS256 algorithm.
+By default, the key is loaded from `privateKey.pem` on the classpath (provided by the `quantum-default-keys` module during development).
+In production, configure `quantum.jwt.private-key-location` to point at an externally managed key.
+Consumers validate the signature using the corresponding public key (`publicKey.pem` or the configured `quantum.jwt.public-key-location`).
+
+=== Generating User Tokens via Login
+
+The standard way to obtain a token is through the login endpoint:
+
+[source,bash]
+----
+curl -sS -X POST \
+  'http://localhost:8080/auth/login?userId=admin@example.com&password=secret'
+----
+
+Response:
+
+[source,json]
+----
+{
+  "accessToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6...",
+  "refreshToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6..."
+}
+----
+
+The access token expires after the configured duration (`com.b2bi.jwt.duration` in seconds).
+Use the refresh token to obtain a new access token without re-authenticating:
+
+[source,bash]
+----
+curl -sS -X POST \
+  -H 'Authorization: Bearer <refresh-token>' \
+  'http://localhost:8080/auth/refresh'
+----
+
+This flow is appropriate for interactive clients (UIs, CLI tools) that can handle periodic token refresh.
+
+[[service-tokens]]
+=== Service Tokens for System-to-System Integration
+
+For integrations that cannot perform interactive login -- MCP servers, cron jobs, webhook handlers, CI/CD pipelines, partner APIs -- the framework provides **service tokens**: long-lived JWTs with a dedicated credential record.
+
+==== Generating a Service Token
+
+[source,bash]
+----
+curl -sS -X POST \
+  -H 'Authorization: Bearer <admin-access-token>' \
+  -H 'Content-Type: application/json' \
+  http://localhost:8080/auth/service-token \
+  -d '{
+    "roles": ["user"],
+    "expirationSeconds": 31536000,
+    "description": "MCP server integration token"
+  }'
+----
+
+Response:
+
+[source,json]
+----
+{
+  "accessToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6...",
+  "issuer": "https://myapp.example.com/issuer",
+  "subject": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "credentialType": "SERVICE_TOKEN"
+}
+----
+
+==== Request Parameters
+
+[cols="1,1,1,3", options="header"]
+|===
+| Field | Type | Required | Description
+
+| `roles`
+| string array
+| Yes
+| Roles to embed in the token and store on the credential (e.g., `["user"]`, `["admin"]`, `["agent-read"]`).
+
+| `expirationSeconds`
+| long
+| No
+| Seconds until expiry. When `null`, the token is issued for approximately 100 years (effectively non-expiring).
+
+| `description`
+| string
+| No
+| Human-readable label for the credential (e.g., `"Nightly sync job"`, `"Claude MCP integration"`).
+|===
+
+==== What Happens on the Backend
+
+When you call `POST /auth/service-token`, the framework:
+
+1. **Validates the caller** -- the endpoint requires `admin` or `system` role (`@RolesAllowed({"admin", "system"})`). Only administrators can create service tokens.
+2. **Looks up the caller's credential** -- from the JWT `sub` claim, the framework finds the caller's `CredentialUserIdPassword` in the system realm.
+3. **Creates a new `SERVICE_TOKEN` credential** with:
+   * `userId`: `svc:<uuid>` (auto-generated, not user-controlled)
+   * `subject`: A new UUID
+   * `credentialType`: `SERVICE_TOKEN`
+   * `parentCredentialSubject`: The caller's subject (for audit trail)
+   * `roles`: From the request
+   * `domainContext`: Inherited from the caller's credential (same realm, tenant, org)
+   * `issuer`: The configured `mp.jwt.verify.issuer`
+4. **Saves the credential** to MongoDB.
+5. **Links it to the caller's UserProfile** via `additionalCredentialRefs` so the token can be traced to its creator.
+6. **Signs and returns the JWT**.
+
+==== Using a Service Token
+
+The service token is used like any other JWT -- pass it in the `Authorization` header:
+
+[source,bash]
+----
+curl -sS -X GET \
+  -H 'Authorization: Bearer <service-token>' \
+  http://localhost:8080/api/query/rootTypes
+----
+
+The `SecurityFilter` validates the token, looks up the `SERVICE_TOKEN` credential by its `sub` claim, and builds a `PrincipalContext` with the credential's `DomainContext`, roles, and realm -- exactly as it would for a user token.
+
+==== Example: Configuring an MCP Server with a Service Token
+
+Generate a token for your MCP integration:
+
+[source,bash]
+----
+# Login as admin first
+ACCESS_TOKEN=$(curl -sS -X POST \
+  'http://localhost:8080/auth/login?userId=admin@mycompany.com&password=admin-secret' \
+  | jq -r '.accessToken')
+
+# Generate a service token with read-only roles
+SERVICE_TOKEN=$(curl -sS -X POST \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H 'Content-Type: application/json' \
+  http://localhost:8080/auth/service-token \
+  -d '{
+    "roles": ["user"],
+    "expirationSeconds": 31536000,
+    "description": "Claude MCP integration - read-only"
+  }' | jq -r '.accessToken')
+
+echo "Service token: $SERVICE_TOKEN"
+----
+
+Then configure Claude Desktop to use it via a bridge that includes the token:
+
+[source,json]
+----
+{
+  "mcpServers": {
+    "quantum": {
+      "command": "node",
+      "args": ["/path/to/quantum-mcp-bridge/dist/index.js"],
+      "env": {
+        "QUANTUM_BASE_URL": "https://api.mycompany.com",
+        "QUANTUM_AUTH_TOKEN": "<paste-service-token-here>"
+      }
+    }
+  }
+}
+----
+
+For the native MCP server (when the Quantum app itself serves `/mcp`), authentication depends on your deployment.
+In development, the MCP endpoint may be accessible without a token if you configure it appropriately.
+In production, configure your MCP client or reverse proxy to include the service token as a Bearer header.
+
+=== How Tokens Scope to Security Policies
+
+A token does not grant unlimited access.
+Every API call passes through the same security pipeline regardless of whether it was made by a human user, an MCP client, or a service integration.
+
+==== Token-to-Policy Flow
+
+....
+JWT arrives in Authorization header
+    |
+    v
+SecurityFilter parses JWT
+    |
+    v
+Extract "sub" claim -> look up CredentialUserIdPassword in system realm
+    |
+    v
+Build PrincipalContext:
+    - userId (from credential)
+    - roles (merged from TOKEN + CREDENTIAL + USERGROUP)
+    - dataDomain (tenantId, orgRefName, accountNum, ownerId)
+    - defaultRealm (from credential's DomainContext)
+    - area2RealmOverrides (optional per-area realm routing)
+    |
+    v
+Determine ResourceContext:
+    - area (from @FunctionalMapping, e.g., "integration")
+    - functionalDomain (e.g., "query")
+    - action (from @FunctionalAction or HTTP method, e.g., "find")
+    |
+    v
+RuleContext.checkRules(principalContext, resourceContext):
+    - Match rules by identity (role or userId)
+    - Match by area, functionalDomain, action
+    - Apply DataDomain constraints (tenantId, orgRefName, etc.)
+    - Return ALLOW / DENY with winning rule name
+    |
+    v
+If DENY -> HTTP 403 with decision details
+If ALLOW (EXACT) -> proceed, no data filters
+If ALLOW (SCOPED) -> proceed with data-level filters applied at repo layer
+....
+
+==== Role Merging
+
+When a token is validated, the effective roles come from three sources:
+
+1. **TOKEN**: The `groups` claim in the JWT itself.
+2. **CREDENTIAL**: The `roles` array stored on the `CredentialUserIdPassword` document in MongoDB.
+3. **USERGROUP**: Roles inherited from `UserGroup` membership, resolved via the user's `UserProfile` in the target realm.
+
+The union of all three sources becomes the effective role set for the request.
+
+==== Data Scoping via DataDomain
+
+The credential's `DomainContext` determines which tenant, organization, and account the token operates within.
+This translates to a `DataDomain` that is applied as query filters at the repository layer:
+
+* **tenantId**: Isolates data by tenant. A service token created by an `acme-corp` admin can only access `acme-corp` data.
+* **orgRefName**: Scopes to an organization within the tenant.
+* **accountNum**: Scopes to an account.
+* **ownerId**: Set to the credential's userId; used for owner-based access rules.
+
+These constraints are enforced automatically by Morphia repositories and cannot be bypassed by the token holder.
+
+==== Realm Override with `X-Realm`
+
+If the service token's credential has `authorizedRealms` or a matching `realmRegEx`, the caller can pass `X-Realm: <target-realm>` to operate in a different realm.
+The `SecurityFilter` validates that the credential is authorized for the target realm, then rebuilds the `PrincipalContext` with the target realm's `DomainContext`.
+
+[source,bash]
+----
+curl -sS -X POST \
+  -H 'Authorization: Bearer <service-token>' \
+  -H 'X-Realm: acme-corp-staging' \
+  -H 'Content-Type: application/json' \
+  http://localhost:8080/api/agent/execute \
+  -d '{"tool": "query_find", "arguments": {"rootType": "Order", "query": "status:OPEN"}}'
+----
+
+==== Limiting Service Token Scope
+
+To follow the principle of least privilege:
+
+* **Assign minimal roles** -- give the service token only the roles it needs. If it only reads data, do not include `admin`.
+* **Use per-tenant agent configuration** -- configure `quantum.agent.tenant.<realm>.enabledTools` to restrict which gateway tools the agent can call.
+* **Set `maxFindLimit`** -- cap query results with `quantum.agent.tenant.<realm>.maxFindLimit`.
+* **Use `expirationSeconds`** -- even for long-lived tokens, set an expiration. A 1-year token (`31536000` seconds) is preferable to an effectively infinite one.
+* **Monitor and audit** -- the `parentCredentialSubject` on `SERVICE_TOKEN` credentials links every service token to the admin who created it. Token validation logs include the userId and realm for each request.
+
+=== Generating RSA Key Pairs
+
+The framework signs tokens with an RSA key pair.
+To generate a new key pair:
+
+[source,bash]
+----
+# Generate a 2048-bit RSA private key in PKCS#8 format
+openssl genpkey -algorithm RSA -out privateKey.pem -pkeyopt rsa_keygen_bits:2048
+
+# Extract the public key
+openssl rsa -pubout -in privateKey.pem -out publicKey.pem
+----
+
+IMPORTANT: The private key must be in PKCS#8 PEM format (begins with `-----BEGIN PRIVATE KEY-----`). PKCS#1 format (`-----BEGIN RSA PRIVATE KEY-----`) is not supported. If you have a PKCS#1 key, convert it:
+
+[source,bash]
+----
+openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt -in rsa_private.pem -out privateKey.pem
+----
+
+==== Where to Place the Keys
+
+There are three options, from simplest to most production-ready:
+
+**Option 1: Use the default keys (development only)**
+
+Add the `quantum-default-keys` module to your application POM.
+This places a pre-generated key pair on the classpath automatically — no files to copy.
+
+[source,xml]
+----
+<dependency>
+    <groupId>com.end2endlogic</groupId>
+    <artifactId>quantum-default-keys</artifactId>
+    <version>${quantum.version}</version>
+</dependency>
+----
+
+WARNING: The default keys are published in the open-source repository.
+Never use them in production.
+
+**Option 2: Classpath keys (simple deployments)**
+
+Place `privateKey.pem` and `publicKey.pem` in `src/main/resources/` of your application module.
+The framework loads them from the classpath at startup and caches them in memory.
+
+**Option 3: External keys via configuration (recommended for production)**
+
+Store the keys outside the application artifact and configure their locations in `application.properties`:
+
+[source,properties]
+----
+quantum.jwt.private-key-location=file:/etc/quantum/keys/privateKey.pem
+quantum.jwt.public-key-location=file:/etc/quantum/keys/publicKey.pem
+
+# SmallRye JWT validation also needs the public key path
+mp.jwt.verify.publickey.location=/etc/quantum/keys/publicKey.pem
+----
+
+This approach allows key rotation without rebuilding or redeploying the application.
+See xref:multiple-auth-providers.adoc#per-tenant-key-pairs[Key Pair Management] for the full configuration reference.
+
+=== Configuration Reference
+
+[cols="1,1,3", options="header"]
+|===
+| Property | Default | Description
+
+| `auth.provider`
+| (required)
+| Comma-separated list of provider names (e.g., `custom`, `custom,cognito`). See xref:multiple-auth-providers.adoc[Multiple Auth Providers].
+
+| `mp.jwt.verify.publickey.location`
+| (required)
+| Classpath location of the RSA public key PEM file (e.g., `publicKey.pem`).
+
+| `mp.jwt.verify.issuer`
+| (required)
+| Expected issuer claim in JWTs. Must match the issuer used during token generation.
+
+| `mp.jwt.verify.audiences`
+| (required)
+| Comma-separated list of accepted audience values (e.g., `b2bi-api-client,b2bi-api-client-refresh`).
+
+| `com.b2bi.jwt.duration`
+| `10000`
+| Access token duration in seconds for the custom JWT provider.
+
+| `auth.jwt.secret`
+| (required)
+| Secret for HMAC-based operations. Use an environment variable: `${JWT_SECRET}`.
+
+| `auth.jwt.expiration`
+| `15`
+| Fallback access token expiration in minutes.
+
+| `auth.jwt.refresh-expiration`
+| `30`
+| Refresh token expiration in minutes.
+
+| `quantum.jwt.private-key-location`
+| _(unset — defaults to classpath `privateKey.pem`)_
+| Path to the RSA private key for token signing. Supports `file:`, `classpath:`, or bare classpath resource names. See xref:multiple-auth-providers.adoc#per-tenant-key-pairs[Key Pair Management].
+
+| `quantum.jwt.public-key-location`
+| _(unset — defaults to classpath `publicKey.pem`)_
+| Path to the RSA public key for token verification. Same prefix conventions as the private key property. NOTE: also update `mp.jwt.verify.publickey.location` to match.
+|===

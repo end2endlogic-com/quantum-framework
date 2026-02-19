@@ -125,6 +125,99 @@ public class McpGatewayTools {
         return executeAndSerialize("query_deleteMany", args);
     }
 
+    // ========================================================================
+    // IMPORT / EXPORT TOOLS
+    // ========================================================================
+
+    @Tool(description = "Analyze a CSV for import into the specified entity type. Returns a session ID with "
+            + "a preview of rows, their intents (INSERT/UPDATE), and any validation errors. "
+            + "Use query_import_rows to paginate through all rows, and query_import_commit to save.")
+    String query_import_analyze(
+            @ToolArg(description = "Entity type (e.g. Location, Order). Use query_rootTypes to discover valid values.") String rootType,
+            @ToolArg(description = "CSV content as a string including a header row followed by data rows") String csvContent,
+            @ToolArg(description = "Comma-separated list of entity field names matching CSV columns (e.g. 'refName,displayName,status')") String columns,
+            @ToolArg(description = "Optional tenant realm") String realm,
+            @ToolArg(description = "Optional field separator character (default ',')") String fieldSeparator,
+            @ToolArg(description = "Optional quote character (default '\"')") String quoteChar) {
+        Map<String, Object> args = new LinkedHashMap<>();
+        args.put("rootType", rootType);
+        args.put("csvContent", csvContent);
+        if (columns != null) {
+            args.put("columns", java.util.Arrays.asList(columns.split(",")));
+        }
+        if (realm != null && !realm.isBlank()) args.put("realm", realm);
+        if (fieldSeparator != null && !fieldSeparator.isEmpty()) args.put("fieldSeparator", fieldSeparator);
+        if (quoteChar != null && !quoteChar.isEmpty()) args.put("quoteChar", quoteChar);
+        return executeAndSerialize("query_import_analyze", args);
+    }
+
+    @Tool(description = "Fetch analyzed CSV rows for an import session with pagination. "
+            + "Useful for reviewing errors or large imports before committing.")
+    String query_import_rows(
+            @ToolArg(description = "Session ID returned by query_import_analyze") String sessionId,
+            @ToolArg(description = "Entity type used in the original analyze call") String rootType,
+            @ToolArg(description = "Optional tenant realm") String realm,
+            @ToolArg(description = "Number of rows to skip (default 0)") Integer skip,
+            @ToolArg(description = "Max rows to return (default 50)") Integer limit,
+            @ToolArg(description = "Only return rows with errors (default false)") Boolean onlyErrors,
+            @ToolArg(description = "Filter by intent: INSERT, UPDATE, or SKIP") String intent) {
+        Map<String, Object> args = new LinkedHashMap<>();
+        args.put("sessionId", sessionId);
+        args.put("rootType", rootType);
+        if (realm != null && !realm.isBlank()) args.put("realm", realm);
+        if (skip != null) args.put("skip", skip);
+        if (limit != null) args.put("limit", limit);
+        if (onlyErrors != null) args.put("onlyErrors", onlyErrors);
+        if (intent != null && !intent.isBlank()) args.put("intent", intent);
+        return executeAndSerialize("query_import_rows", args);
+    }
+
+    @Tool(description = "Commit a previously analyzed CSV import session. Saves all valid (error-free) "
+            + "INSERT and UPDATE rows to the database. Returns imported and failed counts.")
+    String query_import_commit(
+            @ToolArg(description = "Session ID returned by query_import_analyze") String sessionId,
+            @ToolArg(description = "Entity type used in the original analyze call") String rootType,
+            @ToolArg(description = "Optional tenant realm") String realm) {
+        Map<String, Object> args = new LinkedHashMap<>();
+        args.put("sessionId", sessionId);
+        args.put("rootType", rootType);
+        if (realm != null && !realm.isBlank()) args.put("realm", realm);
+        return executeAndSerialize("query_import_commit", args);
+    }
+
+    @Tool(description = "Cancel a CSV import session, discarding all analyzed rows and session data.")
+    String query_import_cancel(
+            @ToolArg(description = "Session ID returned by query_import_analyze") String sessionId,
+            @ToolArg(description = "Entity type used in the original analyze call") String rootType,
+            @ToolArg(description = "Optional tenant realm") String realm) {
+        Map<String, Object> args = new LinkedHashMap<>();
+        args.put("sessionId", sessionId);
+        args.put("rootType", rootType);
+        if (realm != null && !realm.isBlank()) args.put("realm", realm);
+        return executeAndSerialize("query_import_cancel", args);
+    }
+
+    @Tool(description = "Export entities matching a BIAPI query as CSV. Returns CSV inline for small "
+            + "results or writes to a file for large results. Use query_count first to estimate size.")
+    String query_export(
+            @ToolArg(description = "Entity type (e.g. Location, Order). Use query_rootTypes to discover valid values.") String rootType,
+            @ToolArg(description = "Optional BIAPI query to filter exported entities (e.g. 'status:ACTIVE')") String query,
+            @ToolArg(description = "Comma-separated list of columns to include in export (e.g. 'refName,displayName,status')") String columns,
+            @ToolArg(description = "Optional tenant realm") String realm,
+            @ToolArg(description = "Optional max rows to export (default: all)") Integer limit,
+            @ToolArg(description = "Optional rows to skip (default 0)") Integer skip) {
+        Map<String, Object> args = new LinkedHashMap<>();
+        args.put("rootType", rootType);
+        if (query != null) args.put("query", query);
+        if (columns != null) {
+            args.put("columns", java.util.Arrays.asList(columns.split(",")));
+        }
+        if (realm != null && !realm.isBlank()) args.put("realm", realm);
+        if (limit != null) args.put("limit", limit);
+        if (skip != null) args.put("skip", skip);
+        return executeAndSerialize("query_export", args);
+    }
+
     /**
      * Delegates to {@link AgentExecuteHandler} and serializes the JAX-RS Response entity to JSON.
      */

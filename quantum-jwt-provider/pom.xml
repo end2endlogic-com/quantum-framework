@@ -65,6 +65,15 @@
     </dependencyManagement>
 
     <dependencies>
+        <!-- Default RSA key pair for dev/test convenience.
+             Remove this dependency in production and configure
+             quantum.jwt.private-key-location / quantum.jwt.public-key-location instead. -->
+        <dependency>
+            <groupId>com.end2endlogic</groupId>
+            <artifactId>quantum-default-keys</artifactId>
+            <version>${quantum.version}</version>
+            <optional>true</optional>
+        </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-arc</artifactId>

@@ -69,6 +69,7 @@
         <module>quantum-ontology-mongo</module>
         <module>quantum-models</module>
         <module>quantum-morphia-repos</module>
+        <module>quantum-default-keys</module>
         <module>quantum-jwt-provider</module>
         <module>quantum-framework</module>
         <module>quantum-seed-s3</module>
@@ -249,6 +250,7 @@
                 <module>quantum-ontology-policy-bridge</module>
                 <module>quantum-models</module>
                 <module>quantum-morphia-repos</module>
+                <module>quantum-default-keys</module>
                 <module>quantum-jwt-provider</module>
                 <module>quantum-framework</module>
                 <module>quantum-seed-s3</module>
