@@ -58,6 +58,6 @@ public class MenuItemHierarchyResource extends HierarchyResource<
 
       // The repo returns a model; we should convert it to a DTO for the response.
       // Assuming a treeService similar to what's in HierarchyResource for building DTOs.
-      return Response.ok(treeService.buildTree(filteredMenu.getId(), MenuHierarchyModel.class, 100)).build();
+      return Response.ok(treeService.buildTree(filteredMenu.getId(), repo, 100)).build();
    }
 }

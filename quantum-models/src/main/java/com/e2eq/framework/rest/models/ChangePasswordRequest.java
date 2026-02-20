@@ -23,4 +23,5 @@ public class ChangePasswordRequest {
     protected String passwordHint;
     protected boolean forgotPassword = false;
     protected String authorizationToken;
+    protected String authProvider;
 }

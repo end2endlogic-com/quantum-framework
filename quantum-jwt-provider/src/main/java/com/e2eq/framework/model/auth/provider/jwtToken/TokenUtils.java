@@ -1,5 +1,6 @@
 package com.e2eq.framework.model.auth.provider.jwtToken;
 
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -19,7 +20,16 @@ import jakarta.validation.ValidationException;
 
 
 /**
- * Utility class for token generation and validation
+ * Utility class for token generation and validation.
+ *
+ * Key locations are configurable via {@link #configure(String, String)}.
+ * Supported path prefixes:
+ * <ul>
+ *   <li>{@code classpath:} — load from the classpath (default)</li>
+ *   <li>{@code file:} — load from the filesystem</li>
+ *   <li>No prefix — treated as a classpath resource name (backward compatible)</li>
+ * </ul>
+ *
  * @author mingardia
  */
 public class TokenUtils {
@@ -29,12 +39,56 @@ public class TokenUtils {
         public static final String AUDIENCE = "b2bi-api-client";
         public static final int REFRESH_ADDITIONAL_DURATION_SECONDS= 10;
 
+        private static final String DEFAULT_PRIVATE_KEY_LOCATION = "privateKey.pem";
+        private static final String DEFAULT_PUBLIC_KEY_LOCATION = "publicKey.pem";
+
+        private static volatile String privateKeyLocation = DEFAULT_PRIVATE_KEY_LOCATION;
+        private static volatile String publicKeyLocation = DEFAULT_PUBLIC_KEY_LOCATION;
+
         private static volatile PrivateKey cachedPrivateKey;
         private static volatile PublicKey cachedPublicKey;
         private static final Object PRIVATE_KEY_LOCK = new Object();
         private static final Object PUBLIC_KEY_LOCK = new Object();
 
-	// add builder class for the generateUserToken method.
+        /**
+         * Configure the key file locations. Call this at startup (e.g., from a CDI {@code @Startup} bean)
+         * to override the default classpath locations.
+         *
+         * @param privateKeyLoc path to the private key (e.g., "file:/opt/keys/private.pem" or "classpath:myKey.pem")
+         * @param publicKeyLoc  path to the public key (e.g., "file:/opt/keys/public.pem" or "classpath:myKey.pub")
+         */
+        public static void configure(String privateKeyLoc, String publicKeyLoc) {
+                synchronized (PRIVATE_KEY_LOCK) {
+                        if (privateKeyLoc != null && !privateKeyLoc.isBlank()) {
+                                if (!privateKeyLoc.equals(privateKeyLocation)) {
+                                        cachedPrivateKey = null; // invalidate cache when location changes
+                                }
+                                privateKeyLocation = privateKeyLoc;
+                        }
+                }
+                synchronized (PUBLIC_KEY_LOCK) {
+                        if (publicKeyLoc != null && !publicKeyLoc.isBlank()) {
+                                if (!publicKeyLoc.equals(publicKeyLocation)) {
+                                        cachedPublicKey = null; // invalidate cache when location changes
+                                }
+                                publicKeyLocation = publicKeyLoc;
+                        }
+                }
+        }
+
+        /**
+         * Returns the currently configured private key location.
+         */
+        public static String getPrivateKeyLocation() {
+                return privateKeyLocation;
+        }
+
+        /**
+         * Returns the currently configured public key location.
+         */
+        public static String getPublicKeyLocation() {
+                return publicKeyLocation;
+        }
 
 
 	public static String generateUserToken ( String subject,
@@ -49,7 +103,6 @@ public class TokenUtils {
 			throw new ValidationException("Duration must be greater than" + REFRESH_ADDITIONAL_DURATION_SECONDS + " seconds");
 		}
 
-                String privateKeyLocation = "privateKey.pem";
                 PrivateKey privateKey = cachedPrivateKey != null ? cachedPrivateKey : readPrivateKey(privateKeyLocation);
 
 		JwtClaimsBuilder claimsBuilder = Jwt.claims();
@@ -62,22 +115,13 @@ public class TokenUtils {
 		claimsBuilder.audience(AUDIENCE);
 		claimsBuilder.expiresAt(expiresAt);
 		claimsBuilder.groups(groups);
-		//claimsBuilder.claim("username", subject);
 		claimsBuilder.claim("scope", AUTH_SCOPE);
-
-		/*Map<String, String> area2Realm = new HashMap<>();
-		area2Realm.put("security", "system-com");
-		area2Realm.put("signup", "system-com"); */
-
 
 		return claimsBuilder.jws().keyId(privateKeyLocation).sign(privateKey);
 	}
 
 	public static String generateRefreshToken(String subject,  long durationInSeconds, String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
 
-
-
-                String privateKeyLocation = "privateKey.pem";
                 PrivateKey privateKey = cachedPrivateKey != null ? cachedPrivateKey : readPrivateKey(privateKeyLocation);
 		JwtClaimsBuilder claimsBuilder = Jwt.claims();
 		long currentTimeInSecs = currentTimeInSecs();
@@ -86,21 +130,6 @@ public class TokenUtils {
 		claimsBuilder.issuedAt(currentTimeInSecs);
 		claimsBuilder.audience("b2bi-api-client-refresh");
 		claimsBuilder.expiresAt(currentTimeInSecs + durationInSeconds + REFRESH_ADDITIONAL_DURATION_SECONDS);
-		//claimsBuilder.claim("username", username );
-		/* claimsBuilder.claim("tenantId", credentialUserIdPassword.getTenantId());
-		claimsBuilder.claim("defaultRealm", credentialUserIdPassword.getDefaultRealm() );
-
-		claimsBuilder.claim("orgRefName", credentialUserIdPassword.getOrgRefName());
-		claimsBuilder.claim("accountId", credentialUserIdPassword.getAccountId());
-
-		Map<String, String> area2Realm = new HashMap<>();
-		area2Realm.put("security", "system-com");
-		area2Realm.put("signup", "system-com");
-		if (credentialUserIdPassword.getArea2RealmOverrides() != null &&
-				!credentialUserIdPassword.getArea2RealmOverrides().isEmpty()  ) {
-			area2Realm.putAll(credentialUserIdPassword.getArea2RealmOverrides());
-		}
-		claimsBuilder.claim("realmOverrides", area2Realm); */
 		claimsBuilder.claim("scope", REFRESH_SCOPE);
 		return claimsBuilder.jws().keyId(privateKeyLocation).sign(privateKey);
 	}
@@ -109,18 +138,8 @@ public class TokenUtils {
                 if (cachedPrivateKey == null) {
                         synchronized (PRIVATE_KEY_LOCK) {
                                 if (cachedPrivateKey == null) {
-                                        ClassLoader loader = Thread.currentThread().getContextClassLoader();
-                                        try (InputStream contentIS = loader.getResourceAsStream(pemResName)) {
-                                                if (contentIS == null) {
-                                                        throw new IOException("Could not find Private Key with ResourceName:" + pemResName);
-                                                }
-                                                byte[] tmp = new byte[4096];
-                                                int length = contentIS.read(tmp);
-                                                if (length == 0) {
-                                                        throw new IOException("Could not find private key");
-                                                }
-                                                cachedPrivateKey = decodePrivateKey(new String(tmp, 0, length, StandardCharsets.UTF_8));
-                                        }
+                                        byte[] keyBytes = readKeyBytes(pemResName);
+                                        cachedPrivateKey = decodePrivateKey(new String(keyBytes, StandardCharsets.UTF_8));
                                 }
                         }
                 }
@@ -131,19 +150,47 @@ public class TokenUtils {
                 if (cachedPublicKey == null) {
                         synchronized (PUBLIC_KEY_LOCK) {
                                 if (cachedPublicKey == null) {
-                                        ClassLoader loader = Thread.currentThread().getContextClassLoader();
-                                        try (InputStream contentIS = loader.getResourceAsStream(pemResName)) {
-                                                if (contentIS == null) {
-                                                        throw new Exception("Could not find Public Key with ResourceName:" + pemResName);
-                                                }
-                                                byte[] tmp = new byte[4096];
-                                                int length = contentIS.read(tmp);
-                                                cachedPublicKey = decodePublicKey(new String(tmp, 0, length));
-                                        }
+                                        byte[] keyBytes = readKeyBytes(pemResName);
+                                        cachedPublicKey = decodePublicKey(new String(keyBytes, StandardCharsets.UTF_8));
                                 }
                         }
                 }
                 return cachedPublicKey;
+        }
+
+        /**
+         * Reads key bytes from either a filesystem path (prefixed with "file:") or a classpath resource.
+         * Paths prefixed with "classpath:" have that prefix stripped and are loaded from the classpath.
+         * Paths with no recognized prefix are loaded from the classpath (backward compatible).
+         */
+        static byte[] readKeyBytes(String location) throws IOException {
+                if (location.startsWith("file:")) {
+                        String filePath = location.substring("file:".length());
+                        try (InputStream is = new FileInputStream(filePath)) {
+                                return readAllBytes(is, location);
+                        }
+                } else {
+                        // Strip optional "classpath:" prefix
+                        String resourceName = location.startsWith("classpath:")
+                                ? location.substring("classpath:".length())
+                                : location;
+                        ClassLoader loader = Thread.currentThread().getContextClassLoader();
+                        try (InputStream is = loader.getResourceAsStream(resourceName)) {
+                                if (is == null) {
+                                        throw new IOException("Could not find key resource: " + location);
+                                }
+                                return readAllBytes(is, location);
+                        }
+                }
+        }
+
+        private static byte[] readAllBytes(InputStream is, String location) throws IOException {
+                byte[] tmp = new byte[4096];
+                int length = is.read(tmp);
+                if (length <= 0) {
+                        throw new IOException("Key file is empty: " + location);
+                }
+                return java.util.Arrays.copyOf(tmp, length);
         }
 
 	public static PublicKey decodePublicKey(String pemEncoded) throws Exception {

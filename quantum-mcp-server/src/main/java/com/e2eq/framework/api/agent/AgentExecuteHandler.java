@@ -66,9 +66,38 @@ public class AgentExecuteHandler {
                 QueryGatewayResource.DeleteManyRequest req = objectMapper.convertValue(arguments, QueryGatewayResource.DeleteManyRequest.class);
                 yield queryGatewayResource.deleteMany(req);
             }
+            case "query_count" -> {
+                QueryGatewayResource.CountRequest req = objectMapper.convertValue(arguments, QueryGatewayResource.CountRequest.class);
+                yield queryGatewayResource.count(req);
+            }
+            case "query_import_analyze" -> {
+                QueryGatewayResource.ImportAnalyzeRequest req = objectMapper.convertValue(arguments, QueryGatewayResource.ImportAnalyzeRequest.class);
+                yield queryGatewayResource.importAnalyze(req);
+            }
+            case "query_import_rows" -> {
+                QueryGatewayResource.ImportRowsRequest req = objectMapper.convertValue(arguments, QueryGatewayResource.ImportRowsRequest.class);
+                yield queryGatewayResource.importRows(req);
+            }
+            case "query_import_commit" -> {
+                QueryGatewayResource.ImportCommitRequest req = objectMapper.convertValue(arguments, QueryGatewayResource.ImportCommitRequest.class);
+                yield queryGatewayResource.importCommit(req);
+            }
+            case "query_import_cancel" -> {
+                QueryGatewayResource.ImportCancelRequest req = objectMapper.convertValue(arguments, QueryGatewayResource.ImportCancelRequest.class);
+                yield queryGatewayResource.importCancel(req);
+            }
+            case "query_export" -> {
+                QueryGatewayResource.ExportRequest req = objectMapper.convertValue(arguments, QueryGatewayResource.ExportRequest.class);
+                yield queryGatewayResource.export(req);
+            }
             default -> Response.status(Response.Status.BAD_REQUEST)
                     .entity(Map.of("error", "UnknownTool", "message", "Unknown tool: " + tool,
-                            "availableTools", new String[]{"query_rootTypes", "query_plan", "query_find", "query_save", "query_delete", "query_deleteMany"}))
+                            "availableTools", new String[]{
+                                    "query_rootTypes", "query_plan", "query_find", "query_count",
+                                    "query_save", "query_delete", "query_deleteMany",
+                                    "query_import_analyze", "query_import_rows", "query_import_commit",
+                                    "query_import_cancel", "query_export"
+                            }))
                     .build();
         };
     }

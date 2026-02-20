@@ -264,7 +264,18 @@ public class SecurityResource {
 
         Log.infof("Logging in userid: %s realm: %s",authRequest.getUserId(), realm);
 
-        var authProvider = authProviderFactory.getAuthProvider();
+        AuthProvider authProvider;
+        Optional<CredentialUserIdPassword> credentialOptional = credentialRepo.findByUserId(authRequest.getUserId());
+        if (credentialOptional.isPresent()) {
+            CredentialUserIdPassword credential = credentialOptional.get();
+            if (credential.getAuthProviderName() != null && !credential.getAuthProviderName().isBlank()) {
+                authProvider = authProviderFactory.getProviderByName(credential.getAuthProviderName());
+            } else {
+                authProvider = authProviderFactory.getAuthProvider();
+            }
+        } else {
+            authProvider = authProviderFactory.getAuthProvider();
+        }
 
         try {
             AuthProvider.LoginResponse loginResponse;
@@ -278,7 +289,8 @@ public class SecurityResource {
                                         loginResponse.positiveResponse().expirationTime(),
                                         loginResponse.positiveResponse().mongodbUrl(),
                                         loginResponse.positiveResponse().realm(),
-                                        loginResponse.positiveResponse().roleAssignments().stream().map(RoleAssignment::toString).collect(Collectors.toList())
+                                        loginResponse.positiveResponse().roleAssignments().stream().map(RoleAssignment::toString).collect(Collectors.toList()),
+                                        authProvider.getName()
                                 )).build();
             }
             else {

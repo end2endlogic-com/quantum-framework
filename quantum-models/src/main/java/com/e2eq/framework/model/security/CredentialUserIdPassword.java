@@ -114,6 +114,26 @@ public class CredentialUserIdPassword extends BaseModel {
    protected String realmRegEx; // if the authorizedRealms is not found or null, then this is used if defined
    protected String authProviderName; // the provider this record belongs to.
 
+   /**
+    * Utility method to set the password hash from a plain text password.
+    * Uses the configured EncryptionUtils to hash the password.
+    * @param password the plain text password to hash and store
+    */
+   public void setPassword(String password) {
+      if (password != null) {
+         this.passwordHash = EncryptionUtils.hashPassword(password);
+         this.hashingAlgorithm = EncryptionUtils.hashAlgorithm();
+      }
+   }
+
+
+   /** Distinguishes PASSWORD credentials from SERVICE_TOKEN, API_KEY, etc. */
+   @Builder.Default
+   protected CredentialType credentialType = CredentialType.PASSWORD;
+
+   /** For SERVICE_TOKEN credentials: the subject of the owning PASSWORD credential. */
+   protected String parentCredentialSubject;
+
    @Override
    public void validate () {
       super.validate();

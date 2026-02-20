@@ -52,8 +52,11 @@ public class SecurityTest extends BaseRepoTest {
     @Test
     public void testPasswordEncryption() {
         String password = "test123456";
-        String encrypted = EncryptionUtils.hashPassword(password);
-        Assert.assertTrue(EncryptionUtils.checkPassword(password, encrypted));
+        CredentialUserIdPassword cred = new CredentialUserIdPassword();
+        cred.setPassword(password);
+        Assert.assertNotNull(cred.getPasswordHash());
+        Assert.assertNotNull(cred.getHashingAlgorithm());
+        Assert.assertTrue(EncryptionUtils.checkPassword(password, cred.getPasswordHash()));
     }
 
     @Test
@@ -81,7 +84,7 @@ public class SecurityTest extends BaseRepoTest {
             cred = new CredentialUserIdPassword();
             cred.setUserId(testUtils.getTestUserId());
           //  cred.setPasswordHash("$2a$12$76wQJLgSAdm6ZTHFHtzksuSkWG9eW0qe5YXMXaZIBo52ncXHO0EDy"); //Test123456
-            cred.setPasswordHash(EncryptionUtils.hashPassword(testUtils.getDefaultTestPassword()));
+            cred.setPassword(testUtils.getDefaultTestPassword());
 
             // determine what the subjectId for the user is:
             Optional<String> osubjectId = authProviderFactory.getUserManager().getSubjectForUserId(testUtils.getTestUserId());
@@ -179,7 +182,8 @@ public class SecurityTest extends BaseRepoTest {
             .body(value)
             .when().post("/security/login")
             .then()
-            .statusCode(200);
+            .statusCode(200)
+            .body("authProvider", org.hamcrest.Matchers.notNullValue());
 
         request.setPassword("incorrect");
         value = mapper.writeValueAsString(request);
@@ -226,9 +230,11 @@ public class SecurityTest extends BaseRepoTest {
 
         String accessToken = response.jsonPath().getString("access_token");
         String refreshToken = response.jsonPath().getString("refresh_token");
+        String authProviderRes = response.jsonPath().getString("authProvider");
 
         Assert.assertNotNull(accessToken);
         Assert.assertNotNull(refreshToken);
+        Assert.assertNotNull(authProviderRes);
 
         // make a GET request to the user profile API /userProfile/list
         Response response2 = given()

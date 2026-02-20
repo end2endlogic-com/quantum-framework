@@ -3,7 +3,10 @@ package com.e2eq.framework.model.persistent.morphia.changesets;
 import com.e2eq.framework.model.auth.AuthProviderFactory;
 import com.e2eq.framework.model.auth.UserManagement;
 import com.e2eq.framework.model.persistent.migration.base.ChangeSetBase;
+import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
+import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.DomainContext;
+import com.e2eq.framework.util.EncryptionUtils;
 import com.mongodb.client.MongoClient;
 import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.logging.Log;
@@ -13,6 +16,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+import java.util.Optional;
 import java.util.Set;
 import java.util.Collections;
 
@@ -28,6 +32,9 @@ public class AddSystemUserCredential extends ChangeSetBase {
 
     @Inject
     AuthProviderFactory authProviderFactory;
+
+    @Inject
+    CredentialRepo credentialRepo;
 
     @ConfigProperty(name = "quantum.realmConfig.systemUserId", defaultValue = "system@system.com")
     String systemUserId;
@@ -98,6 +105,11 @@ public class AddSystemUserCredential extends ChangeSetBase {
         return "ALL";
     }
 
+    @Override
+    public int getChangeSetVersion() {
+        return 2;
+    }
+
     /**
      * System user credential belongs only in the system realm. Running this change set
      * for other realms would attempt to create the same user in the system realm again,
@@ -116,8 +128,23 @@ public class AddSystemUserCredential extends ChangeSetBase {
 
         UserManagement userManagement = authProviderFactory.getUserManager();
         if (userManagement.userIdExists(systemUserId)) {
-            Log.infof("System user %s already exists in %s; database valid, skipping", systemUserId, realmName);
-            emitter.emit("System user already exists; database valid, skipping");
+            Log.infof("System user %s already exists in %s; checking password hash", systemUserId, realmName);
+            emitter.emit("System user already exists; checking password hash");
+
+            // Reset password hash to match the configured defaultSystemPassword
+            Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(systemUserId, systemRealm, true);
+            if (ocred.isPresent()) {
+                CredentialUserIdPassword cred = ocred.get();
+                if (!EncryptionUtils.checkPassword(defaultSystemPassword, cred.getPasswordHash())) {
+                    cred.setPasswordHash(EncryptionUtils.hashPassword(defaultSystemPassword));
+                    credentialRepo.save(systemRealm, cred);
+                    Log.infof("Password hash updated for system user %s in realm %s", systemUserId, realmName);
+                    emitter.emit("Password hash updated for system user");
+                } else {
+                    Log.infof("Password hash already matches for system user %s", systemUserId);
+                    emitter.emit("Password hash already matches; no update needed");
+                }
+            }
             return;
         }
 

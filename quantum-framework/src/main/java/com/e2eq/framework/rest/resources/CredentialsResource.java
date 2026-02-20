@@ -1,11 +1,15 @@
 package com.e2eq.framework.rest.resources;
 
+import com.e2eq.framework.model.auth.AuthProvider;
+import com.e2eq.framework.model.auth.AuthProviderFactory;
+import com.e2eq.framework.model.auth.UserManagement;
+import com.e2eq.framework.model.security.CredentialType;
 import com.e2eq.framework.rest.models.ChangePasswordRequest;
 import com.e2eq.framework.rest.models.FileUpload;
 import com.e2eq.framework.rest.models.RestError;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
-import com.e2eq.framework.util.EncryptionUtils;
+import jakarta.inject.Inject;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.*;
@@ -13,11 +17,15 @@ import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 import java.util.List;
+import java.util.Optional;
 
 @Path("/user/credentials")
 @RolesAllowed({ "user", "admin", "system" })
 @Tag(name = "user", description = "Operations related to managing users")
 public class CredentialsResource extends BaseResource<CredentialUserIdPassword, CredentialRepo> {
+
+    @Inject
+    AuthProviderFactory authProviderFactory;
 
     CredentialsResource (CredentialRepo repo ) {
         super(repo);
@@ -51,30 +59,16 @@ public class CredentialsResource extends BaseResource<CredentialUserIdPassword, 
     @RolesAllowed({ "user", "admin", "system" })
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public Response changePassword(SecurityContext securityContext, ChangePasswordRequest changePasswordRequest) {
+    public Response changePassword(SecurityContext securityContext,
+                                   ChangePasswordRequest changePasswordRequest,
+                                   @QueryParam("provider") @DefaultValue("") String provider) {
 
         if (!changePasswordRequest.getConfirmPassword().equals(changePasswordRequest.getNewPassword())) {
             return Response.status(Response.Status.BAD_REQUEST).entity("Passwords do not match password not changed").build();
         }
 
-        // retrieve the record for this user id
-        // check if the user is an admin if the user is an admin
-        // change the password, if not check that userId is the
-        // same as the logged in person
-        if (securityContext.isUserInRole("admin")) {
-            repo.findByUserId(changePasswordRequest.getUserId())
-                    .ifPresent(credentialUserIdPassword -> {
-                        credentialUserIdPassword.setPasswordHash(EncryptionUtils.hashPassword(changePasswordRequest.getNewPassword()));
-                        repo.save(credentialUserIdPassword);
-                    });
-        } else if (securityContext.isUserInRole("user")) {
-            if (securityContext.getUserPrincipal().getName().equals(changePasswordRequest.getUserId())) {
-                repo.findByUserId(changePasswordRequest.getUserId())
-                        .ifPresent(credentialUserIdPassword -> {
-                            credentialUserIdPassword.setPasswordHash(EncryptionUtils.hashPassword(changePasswordRequest.getNewPassword()));
-                            repo.save(credentialUserIdPassword);
-                        });
-            } else {
+        if (!securityContext.isUserInRole("admin") && !securityContext.isUserInRole("system") && securityContext.isUserInRole("user")) {
+            if (!securityContext.getUserPrincipal().getName().equals(changePasswordRequest.getUserId())) {
                 return Response.status(Response.Status.BAD_REQUEST).entity(RestError.builder()
                         .status(Response.Status.BAD_REQUEST.getStatusCode())
                         .statusMessage("Bad Request: User not authorized to change password, UserId was not the principal name")
@@ -82,13 +76,57 @@ public class CredentialsResource extends BaseResource<CredentialUserIdPassword, 
                         .debugMessage("User not authorized to change password: PrincipalId:" + securityContext.getUserPrincipal().getName() + " passed userId:" + changePasswordRequest.getUserId() + " not matching")
                         .build()
                 ).build();
-
             }
-        } else {
+        } else if (!securityContext.isUserInRole("admin") && !securityContext.isUserInRole("system") && !securityContext.isUserInRole("user")) {
             throw new RuntimeException("Bad Request: User is neither an admin or a user aborting");
         }
 
+        String requestedProvider = provider == null || provider.isBlank()
+                ? changePasswordRequest.getAuthProvider()
+                : provider;
+
+        try {
+            UserManagement userManager = resolveUserManager(changePasswordRequest.getUserId(), requestedProvider);
+            userManager.changePassword(
+                    changePasswordRequest.getUserId(),
+                    changePasswordRequest.getOldPassword(),
+                    changePasswordRequest.getNewPassword(),
+                    false
+            );
+        } catch (IllegalArgumentException e) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("Invalid auth provider configuration: " + e.getMessage())
+                    .build();
+        }
+
         return Response.status(Response.Status.OK).entity("Password changed").build();
+    }
+
+    private UserManagement resolveUserManager(String userId, String requestedProvider) {
+        if (requestedProvider != null && !requestedProvider.isBlank()) {
+            return authProviderFactory.getUserManager(requestedProvider);
+        }
+
+        Optional<CredentialUserIdPassword> credentialOptional = repo.findByUserId(userId);
+        if (credentialOptional.isPresent()) {
+            CredentialUserIdPassword credential = credentialOptional.get();
+            if (credential.getCredentialType() != null && credential.getCredentialType() != CredentialType.PASSWORD) {
+                return authProviderFactory.getUserManager();
+            }
+
+            if (credential.getIssuer() != null && !credential.getIssuer().isBlank()) {
+                AuthProvider issuerProvider = authProviderFactory.getProviderForIssuer(credential.getIssuer());
+                if (issuerProvider instanceof UserManagement userManagement) {
+                    return userManagement;
+                }
+            }
+
+            if (credential.getAuthProviderName() != null && !credential.getAuthProviderName().isBlank()) {
+                return authProviderFactory.getUserManager(credential.getAuthProviderName());
+            }
+        }
+
+        return authProviderFactory.getUserManager();
     }
 
     @GET

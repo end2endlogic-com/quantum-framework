@@ -170,20 +170,34 @@ public class MigrationService {
          throw new DatabaseMigrationException(realm, currentVersion.getCurrentVersionString(), targetDatabaseVersion);
       }
 
-      // Check for pending changesets with mismatched checksums
+      // Check for pending changesets with mismatched checksums or version bumps
       Datastore datastore = morphiaDataStoreWrapper.getDataStore(realm);
       List<ChangeSetBean> allChangeSets = getAllChangeSetBeans();
       for (ChangeSetBean chb : allChangeSets) {
-         Optional<ChangeSetRecord> record = changesetRecordRepo.findLatestByChangeSetName(datastore, chb.getName());
-         if (record.isPresent() && chb.getChecksum() != null && !chb.getChecksum().equals(record.get().getChecksum())) {
-            throw new DatabaseMigrationException(String.format("Database %s has changeset %s with mismatched checksum. Please run migrations.", realm, chb.getName()));
+         // Only check changesets applicable to this realm
+         Set<String> applicable = chb.getApplicableDatabases();
+         if (applicable != null && !applicable.isEmpty() && !applicable.contains(realm)) {
+            continue;
          }
+         Optional<ChangeSetRecord> record = changesetRecordRepo.findLatestByChangeSetName(datastore, chb.getName());
+         if (record.isPresent()) {
+            if (chb.getChecksum() != null && !chb.getChecksum().equals(record.get().getChecksum())) {
+               throw new DatabaseMigrationException(String.format("Database %s has changeset %s with mismatched checksum. Please run migrations.", realm, chb.getName()));
+            }
+            if (record.get().getChangeSetVersion() < chb.getChangeSetVersion()) {
+               throw new DatabaseMigrationException(String.format("Database %s has changeset %s with outdated version (recorded=%d, current=%d). Please run migrations.",
+                       realm, chb.getName(), record.get().getChangeSetVersion(), chb.getChangeSetVersion()));
+            }
+         }
+         // If no record exists, skip silently — the changeset may be new and not yet
+         // applicable, or the DB was initialized before this changeset was added.
+         // runAllUnRunMigrations() handles unrecorded changesets correctly.
       }
 
       if (currentSemVersion.compareTo(requiredSemVersion) > 0) {
          Log.warnf("Database %s version is higher than required. Current version: %s, required version: %s", realm, currentVersion.getCurrentVersionString(), targetDatabaseVersion);
       } else {
-         Log.infof("Database %s version is up to date. Current version: %s, required version: %s and all checksums match", realm, currentVersion.getCurrentVersionString(), targetDatabaseVersion);
+         Log.infof("Database %s version is up to date. Current version: %s, required version: %s — all changesets current", realm, currentVersion.getCurrentVersionString(), targetDatabaseVersion);
       }
    }
 
