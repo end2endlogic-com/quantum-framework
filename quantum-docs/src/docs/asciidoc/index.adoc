@@ -15,6 +15,8 @@ This documentation provides user guides and tutorials for mid-level Java develop
 - Tutorial Guide: xref:#tutorial-guide[Quantum Tutorial]
 - Reference Guide: xref:#reference-guide[Quantum Reference Guide]
 - Ontologies in Quantum: xref:user-guide/ontology.adoc#ontologies-in-quantum[Modeling relationships and cascading]
+- Multiple Auth Providers: xref:user-guide/multiple-auth-providers.adoc#multiple-auth-providers[Multi-provider auth, OIDC, and per-tenant key pairs]
+- MCP Server and Client: xref:user-guide/mcp-server-and-client.adoc#mcp-server-and-client[MCP integration with Claude, agent tools, and end-to-end examples]
 - AI Agent Integration: xref:user-guide/ai-agent-integration.adoc#ai-agent-integration[AI Agent APIs (tools, schema, execute)]
 
 [[executive-brief-section]]

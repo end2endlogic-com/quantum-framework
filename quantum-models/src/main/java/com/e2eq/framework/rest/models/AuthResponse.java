@@ -19,6 +19,7 @@ public class AuthResponse {
     protected String mongodburl;
     protected String realm;
     protected List<String> roles;
+    protected String authProvider;
 
     // Backward-compatible constructor
     public AuthResponse(String access_token, String refresh_token, long expires_at) {

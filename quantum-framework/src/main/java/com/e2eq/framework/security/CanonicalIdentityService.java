@@ -23,6 +23,20 @@ public class CanonicalIdentityService {
 
     public SecurityIdentity validateAccessTokenCanonical(String token) {
         AuthProvider provider = authProviderFactory.getAuthProvider();
+        return validateWithProvider(provider, token);
+    }
+
+    /**
+     * Validate a token using the provider that matches the given issuer.
+     * Used for multi-provider setups where tokens from different issuers
+     * must be routed to the correct provider.
+     */
+    public SecurityIdentity validateAccessTokenCanonical(String token, String issuer) {
+        AuthProvider provider = authProviderFactory.getProviderForIssuer(issuer);
+        return validateWithProvider(provider, token);
+    }
+
+    private SecurityIdentity validateWithProvider(AuthProvider provider, String token) {
         if (provider instanceof ClaimsAuthProvider claimsProvider) {
             ProviderClaims claims = claimsProvider.validateTokenToClaims(token);
             return identityAssembler.assemble(claims);

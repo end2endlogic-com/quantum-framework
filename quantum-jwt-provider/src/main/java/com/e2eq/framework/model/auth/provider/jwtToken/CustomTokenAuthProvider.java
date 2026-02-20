@@ -89,7 +89,26 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
       return "custom";
    }
 
+   @Override
+   public String getIssuer() {
+      return issuer;
+   }
 
+   /**
+    * Generate a long-lived service token for MCP servers, service accounts, etc.
+    * @param subject the token subject (user/service identity)
+    * @param roles   the roles to embed in the token
+    * @param expirationSeconds seconds until expiry, or null for non-expiring (100 years)
+    * @return signed JWT token string
+    */
+   public String generateServiceToken(String subject, Set<String> roles, Long expirationSeconds) {
+      long duration = (expirationSeconds != null) ? expirationSeconds : 60L * 60 * 24 * 365 * 100;
+      try {
+         return TokenUtils.generateUserToken(subject, roles, TokenUtils.expiresAt(duration), issuer);
+      } catch (IOException | NoSuchAlgorithmException | InvalidKeySpecException e) {
+         throw new RuntimeException("Failed to generate service token", e);
+      }
+   }
 
 
 

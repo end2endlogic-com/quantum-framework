@@ -64,8 +64,9 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
 
    public Optional<UserProfile> getBySubject(Datastore datastore,@NotNull String subject) {
       Query<UserProfile> q = datastore.find(this.getPersistentClass()).filter(
-         Filters.and(
-            Filters.eq("credentialUserIdPasswordRef.entityRefName", subject)
+         Filters.or(
+            Filters.eq("credentialUserIdPasswordRef.entityRefName", subject),
+            Filters.eq("additionalCredentialRefs.entityRefName", subject)
          )
       );
 
@@ -248,10 +249,29 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
    public long delete (String realmId, UserProfile obj) throws ReferentialIntegrityViolationException {
       long ret = 0;
 
+      // Delete primary credential
       Optional<CredentialUserIdPassword> ocred = credentialRepo.findByRefName( obj.getCredentialUserIdPasswordRef().getEntityRefName(), (obj.getCredentialUserIdPasswordRef().getRealm() != null) ? obj.getCredentialUserIdPasswordRef().getRealm() : envConfigUtils.getSystemRealm());
       if (ocred.isPresent()) {
          credentialRepo.delete(ocred.get());
       }
+
+      // Cascade-delete additional credentials (SERVICE_TOKEN, API_KEY, etc.)
+      if (obj.getAdditionalCredentialRefs() != null) {
+         for (EntityReference ref : obj.getAdditionalCredentialRefs()) {
+            Optional<CredentialUserIdPassword> additionalCred = credentialRepo.findByRefName(
+                    ref.getEntityRefName(),
+                    (ref.getRealm() != null) ? ref.getRealm() : envConfigUtils.getSystemRealm());
+            additionalCred.ifPresent(cred -> {
+               try {
+                  credentialRepo.delete(cred);
+               } catch (ReferentialIntegrityViolationException e) {
+                  Log.warnf("Failed to cascade-delete additional credential %s: %s",
+                          ref.getEntityRefName(), e.getMessage());
+               }
+            });
+         }
+      }
+
       ret= super.delete(realmId, obj);
 
       return ret;

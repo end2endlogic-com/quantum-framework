@@ -86,7 +86,7 @@ public class HierarchyResource<
             return Response.status(Response.Status.BAD_REQUEST).entity("Invalid id").build();
         }
         depth = Math.max(0, Math.min(depth, 5));
-        GenericHierarchyDto dto = treeService.buildTree(oid, repo.getPersistentClass(), depth);
+        GenericHierarchyDto dto = treeService.buildTree(oid, repo, depth);
         if (dto == null) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }

@@ -85,4 +85,10 @@ public interface AuthProvider {
 
     LoginResponse login(String userId, String password);
     LoginResponse refreshTokens(String refreshToken);
+
+    /**
+     * Returns the issuer URI this provider uses for tokens it issues/validates.
+     * Used for multi-provider routing based on JWT iss claim.
+     */
+    default String getIssuer() { return null; }
 }
