@@ -23,6 +23,7 @@ import java.util.List;
 @EqualsAndHashCode(callSuper = true)
 @RegisterForReflection
 @ToString
+@Schema(name="HierarchicalModel", description = "Base class for a hierarchical model with a parent/child relationship")
 public abstract class HierarchicalModel<T extends HierarchicalModel<T,O,L>,
         O extends UnversionedBaseModel,
         L extends StaticDynamicList<O>> extends BaseModel {
