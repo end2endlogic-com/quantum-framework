@@ -529,7 +529,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>AI Agent Integration</h1>
 <div class="details">
 <span id="revnumber">version 1.3.0-SNAPSHOT,</span>
-<span id="revdate">2026-02-19T17:58:27Z</span>
+<span id="revdate">2026-02-23T21:00:11Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -569,7 +569,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <ul class="sectlevel2">
 <li><a href="#_1_agent_tools_capabilities_discovery">7.1. 1. Agent Tools / Capabilities (Discovery)</a></li>
 <li><a href="#_2_schema_ontology_for_agents_retrieval_context">7.2. 2. Schema / Ontology for Agents (Retrieval Context)</a></li>
-<li><a href="#_3_unified_agent_action_api_optional">7.3. 3. Unified Agent Action API (Optional)</a></li>
+<li><a href="#_3_unified_agent_action_api">7.3. 3. Unified Agent Action API</a></li>
 <li><a href="#_4_session_trace_headers_audit_and_multi_turn">7.4. 4. Session / Trace Headers (Audit and Multi-Turn)</a></li>
 <li><a href="#_5_retrieval_context_endpoint_optional_rag_like">7.5. 5. Retrieval Context Endpoint (Optional, RAG-Like)</a></li>
 </ul>
@@ -579,8 +579,8 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_how_mcp_maps_to_the_framework_gateway_centric">8.1. How MCP Maps to the Framework (Gateway-Centric)</a></li>
 <li><a href="#_two_integration_approaches">8.2. Two Integration Approaches</a>
 <ul class="sectlevel3">
-<li><a href="#_option_a_mcp_bridge_server_recommended_to_start">8.2.1. Option A: MCP Bridge Server (recommended to start)</a></li>
-<li><a href="#_option_b_native_mcp_in_the_backend">8.2.2. Option B: Native MCP in the Backend</a></li>
+<li><a href="#_option_a_native_mcp_recommended">8.2.1. Option A: Native MCP (Recommended)</a></li>
+<li><a href="#_option_b_mcp_bridge_server">8.2.2. Option B: MCP Bridge Server</a></li>
 </ul>
 </li>
 <li><a href="#_client_configuration">8.3. Client Configuration</a></li>
@@ -1160,7 +1160,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div class="sect2">
 <h3 id="_1_agent_tools_capabilities_discovery">7.1. 1. Agent Tools / Capabilities (Discovery)</h3>
 <div class="paragraph">
-<p><strong>Purpose:</strong> One endpoint that returns a machine-readable list of "tools" the agent can call—scoped to <strong>Query Gateway operations only</strong> so the agent has a single, consistent CRUDL surface.</p>
+<p><strong>Purpose:</strong> One endpoint that returns a machine-readable list of "tools" the agent can call—scoped to <strong>Query Gateway operations</strong> so the agent has a single, consistent CRUDL surface.</p>
 </div>
 <div class="paragraph">
 <p><strong>Suggested endpoint:</strong> <code>GET /api/agent/tools</code> (or <code>GET /api/agent/capabilities</code>).</p>
@@ -1183,6 +1183,9 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <p><code>query_find</code> — list/read entities (maps to <code>POST /api/query/find</code>).</p>
 </li>
 <li>
+<p><code>query_count</code> — count entities (maps to <code>POST /api/query/count</code>).</p>
+</li>
+<li>
 <p><code>query_save</code> — create or update an entity (maps to <code>POST /api/query/save</code>).</p>
 </li>
 <li>
@@ -1190,6 +1193,21 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </li>
 <li>
 <p><code>query_deleteMany</code> — delete many by query (maps to <code>POST /api/query/deleteMany</code>).</p>
+</li>
+<li>
+<p><code>query_export</code> — export entities (maps to <code>POST /api/query/export</code>).</p>
+</li>
+<li>
+<p><code>query_import_analyze</code> — analyze CSV for import (maps to <code>POST /api/query/importAnalyze</code>).</p>
+</li>
+<li>
+<p><code>query_import_rows</code> — list import rows (maps to <code>POST /api/query/importRows</code>).</p>
+</li>
+<li>
+<p><code>query_import_commit</code> — commit import (maps to <code>POST /api/query/importCommit</code>).</p>
+</li>
+<li>
+<p><code>query_import_cancel</code> — cancel import (maps to <code>POST /api/query/importCancel</code>).</p>
 </li>
 <li>
 <p>Each tool includes: <code>name</code>, <code>description</code> (for the LLM), <code>parameters</code> (JSON Schema for the request body), and optional <code>area</code>/<code>domain</code>/<code>action</code> for permission alignment.</p>
@@ -1260,9 +1278,9 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <hr>
 </div>
 <div class="sect2">
-<h3 id="_3_unified_agent_action_api_optional">7.3. 3. Unified Agent Action API (Optional)</h3>
+<h3 id="_3_unified_agent_action_api">7.3. 3. Unified Agent Action API</h3>
 <div class="paragraph">
-<p><strong>Purpose:</strong> Single HTTP entry point for the agent to execute a gateway "tool" by name and arguments, so the agent does not need to know the six gateway paths. The implementation <strong>delegates only to the Query Gateway</strong>.</p>
+<p><strong>Purpose:</strong> Single HTTP entry point for the agent to execute a gateway "tool" by name and arguments, so the agent does not need to know individual gateway paths. The implementation <strong>delegates only to the Query Gateway</strong>.</p>
 </div>
 <div class="paragraph">
 <p><strong>Suggested endpoint:</strong> <code>POST /api/agent/execute</code> (or <code>POST /api/agent/tools/execute</code>).</p>
@@ -1273,7 +1291,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div class="ulist">
 <ul>
 <li>
-<p><code>tool</code> (or <code>name</code>): one of <code>query_rootTypes</code>, <code>query_plan</code>, <code>query_find</code>, <code>query_save</code>, <code>query_delete</code>, <code>query_deleteMany</code>.</p>
+<p><code>tool</code> (or <code>name</code>): one of <code>query_rootTypes</code>, <code>query_plan</code>, <code>query_find</code>, <code>query_count</code>, <code>query_save</code>, <code>query_delete</code>, <code>query_deleteMany</code>, <code>query_export</code>, <code>query_import_*</code>.</p>
 </li>
 <li>
 <p><code>arguments</code> (or <code>params</code>): JSON object matching the gateway request body for that operation (e.g. <code>rootType</code>, <code>query</code>, <code>page</code> for <code>query_find</code>; <code>rootType</code>, <code>entity</code> for <code>query_save</code>).</p>
@@ -1405,10 +1423,10 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div class="sect2">
 <h3 id="_how_mcp_maps_to_the_framework_gateway_centric">8.1. How MCP Maps to the Framework (Gateway-Centric)</h3>
 <div class="paragraph">
-<p>| MCP concept | Purpose | Framework equivalent (gateway-only for CRUDL) |
+<p>| MCP concept | Purpose | Framework equivalent (native or bridge) |
 |-------------|---------|------------------------------------------------|
-| <strong>Tools</strong> | Actions the LLM can call (<code>tools/list</code>, <code>tools/call</code>) | Six tools: <code>query_rootTypes</code>, <code>query_plan</code>, <code>query_find</code>, <code>query_save</code>, <code>query_delete</code>, <code>query_deleteMany</code> → <code>GET /api/query/rootTypes</code>, <code>POST /api/query/plan</code>, <code>POST /api/query/find</code>, etc. (or <code>POST /api/agent/execute</code>) |
-| <strong>Resources</strong> | Read-only data for context (<code>resources/list</code>, <code>resources/read</code>) | <code>GET /api/query/rootTypes</code> or <code>GET /api/agent/schema</code>; <code>GET /api/agent/schema/{rootType}</code> for per-type schema. No need to expose domain REST paths as resources. |
+| <strong>Tools</strong> | Actions the LLM can call (<code>tools/list</code>, <code>tools/call</code>) | 12+ tools: <code>query_rootTypes</code>, <code>query_plan</code>, <code>query_find</code>, <code>query_save</code>, <code>query_delete</code>, <code>query_deleteMany</code>, <code>query_count</code>, <code>query_export</code>, <code>query_import_*</code> → <code>QueryGatewayResource</code> (or <code>POST /api/agent/execute</code>) |
+| <strong>Resources</strong> | Read-only data for context (<code>resources/list</code>, <code>resources/read</code>) | <code>quantum://schema</code>, <code>quantum://query-hints</code>, <code>quantum://permission-hints</code>. |
 | <strong>Prompts</strong> (optional) | Parameterized prompt templates | Domain prompts that invoke the six gateway tools (e.g. "List active locations", "Find orders for customer X") |</p>
 </div>
 <div class="paragraph">
@@ -1418,79 +1436,15 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div class="sect2">
 <h3 id="_two_integration_approaches">8.2. Two Integration Approaches</h3>
 <div class="sect3">
-<h4 id="_option_a_mcp_bridge_server_recommended_to_start">8.2.1. Option A: MCP Bridge Server (recommended to start)</h4>
+<h4 id="_option_a_native_mcp_recommended">8.2.1. Option A: Native MCP (Recommended)</h4>
 <div class="paragraph">
-<p>Run a <strong>standalone MCP server</strong> that talks to your Quantum REST APIs. The AI client (Cursor, Claude, etc.) connects to the MCP server; the MCP server calls your backend (e.g. <code><a href="https://your-app.example.com" class="bare">https://your-app.example.com</a></code>).</p>
-</div>
-<div class="paragraph">
-<p><strong>Pros:</strong></p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>No changes to the Java/Quarkus app; reuse existing REST APIs (and future <code>/api/agent/*</code> endpoints).</p>
-</li>
-<li>
-<p>Same security: backend still enforces realm, permissions, and <code>@FunctionalAction</code>.</p>
-</li>
-<li>
-<p>Works with Cursor (stdio or remote SSE), Claude Desktop (stdio), Claude in browser (Custom Connector / remote), and any MCP client.</p>
-</li>
-<li>
-<p>Can be implemented in TypeScript, Python, or another language using official MCP SDKs.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p><strong>How it works:</strong></p>
-</div>
-<div class="olist arabic">
-<ol class="arabic">
-<li>
-<p><strong>MCP tools</strong> — The bridge implements exactly <strong>six tools</strong> (query_rootTypes, query_plan, query_find, query_save, query_delete, query_deleteMany), each mapping to one Query Gateway endpoint. No tools for domain resources (e.g. no <code>/orders</code> or <code>/products</code>). <code>tools/list</code> can call <code>GET /api/agent/tools</code> when available, or return a fixed list of these six. <code>tools/call</code> forwards to <code>POST /api/agent/execute</code> or directly to <code>POST /api/query/find</code>, <code>POST /api/query/save</code>, etc., with the same JSON bodies. <strong>Single integration point:</strong> one base path (<code>/api/query</code>) and optionally <code>/api/agent/*</code>.</p>
-</li>
-<li>
-<p><strong>Auth</strong> — The bridge is configured with a base URL and an auth token (env). Every request to the backend includes that token. The backend (gateway) authenticates and authorizes as for any REST client.</p>
-</li>
-<li>
-<p><strong>MCP resources</strong> (optional) — Expose gateway-derived schema only: e.g. <code>quantum://schema</code> → <code>GET /api/query/rootTypes</code> (or <code>GET /api/agent/schema</code>), <code>quantum://schema/{rootType}</code> → <code>GET /api/agent/schema/{rootType}</code>. No need to expose domain REST paths as MCP resources for CRUDL.</p>
-</li>
-</ol>
-</div>
-<div class="paragraph">
-<p><strong>Example tool mapping (bridge → backend):</strong></p>
-</div>
-<div class="paragraph">
-<p>| MCP tool name | Bridge action |
-|---------------|----------------|
-| <code>query_rootTypes</code> | <code>GET /api/query/rootTypes</code> |
-| <code>query_plan</code> | <code>POST /api/query/plan</code> with <code>rootType</code>, <code>query</code> |
-| <code>query_find</code> | <code>POST /api/query/find</code> with <code>rootType</code>, <code>query</code>, <code>page</code>, <code>sort</code>, optional <code>realm</code> |
-| <code>query_save</code> | <code>POST /api/query/save</code> with <code>rootType</code>, <code>entity</code>, optional <code>realm</code> |
-| <code>query_delete</code> | <code>POST /api/query/delete</code> with <code>rootType</code>, <code>id</code>, optional <code>realm</code> |
-| <code>query_deleteMany</code> | <code>POST /api/query/deleteMany</code> with <code>rootType</code>, <code>query</code>, optional <code>realm</code> |</p>
-</div>
-<div class="paragraph">
-<p><strong>Where to put the bridge:</strong></p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p><strong>Separate repo or module</strong> (e.g. <code>quantum-mcp-bridge</code>): TypeScript or Python app that uses the MCP SDK; <strong>only</strong> calls the Query Gateway (and optional agent schema/execute) — one base URL, six operations. Configurable base URL and auth via env; run locally (stdio) or as HTTP MCP (SSE) for remote clients.</p>
-</li>
-<li>
-<p><strong>Same repo, optional package</strong>: e.g. <code>quantum-mcp-bridge/</code> with its own <code>package.json</code> or <code>pyproject.toml</code>; document that CRUDL integration is gateway-only so adopters do not add per-domain REST calls.</p>
-</li>
-</ul>
+<p>Use the <code>quantum-mcp-server</code> module to expose the Query Gateway as a set of MCP tools and resources directly from your backend. This provides the most integrated experience and reuses your existing security, realm, and data-scoping logic. See <a href="mcp-server-and-client.html">MCP Server and Client</a> for details.</p>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_option_b_native_mcp_in_the_backend">8.2.2. Option B: Native MCP in the Backend</h4>
+<h4 id="_option_b_mcp_bridge_server">8.2.2. Option B: MCP Bridge Server</h4>
 <div class="paragraph">
-<p>Expose an MCP-compatible HTTP endpoint (e.g. Streamable HTTP or SSE) from the Quarkus application. The MCP endpoint would speak the MCP JSON-RPC protocol and delegate <strong>all tool calls to the Query Gateway</strong> (and resource reads to gateway-derived schema). No delegation to domain REST resources for CRUDL.</p>
-</div>
-<div class="paragraph">
-<p><strong>Pros:</strong> Single deployment; no separate bridge process. <strong>Cons:</strong> Requires an MCP server implementation in Java (or a small sidecar); more invasive. Can be a later phase once the gateway-centric agent APIs are stable.</p>
+<p>Run a <strong>standalone MCP server</strong> (e.g. in Node.js or Python) that talks to your Quantum REST APIs. This is useful if you cannot use the Java-based MCP module or need to consolidate multiple backend services into one MCP surface.</p>
 </div>
 </div>
 </div>
@@ -1832,14 +1786,14 @@ quantum.agent.tenant.defaultRealm.maxFindLimit=100</pre>
 <div class="paragraph">
 <p>| API | Method | Purpose |
 |-----|--------|--------|
-| <code>/api/query/<strong></code> (existing) | GET/POST | <strong>Single integration point:</strong> rootTypes, plan, find, save, delete, deleteMany for all entity types. |
-| <code>/api/agent/tools</code> | GET | Discover the six gateway tools (names, descriptions, parameters); permission-filtered. |
+| <code>/api/query/<strong></code> (existing) | GET/POST | <strong>Single integration point:</strong> rootTypes, plan, find, count, save, delete, deleteMany, export, import for all entity types. |
+| <code>/api/agent/tools</code> | GET | Discover the 12+ gateway tools (names, descriptions, parameters); permission-filtered. |
 | <code>/api/agent/schema</code> | GET | List entity types (wrap or reuse <code>GET /api/query/rootTypes</code>) and optional field metadata. |
 | <code>/api/agent/schema/{rootType}</code> | GET | JSON Schema for one root type (gateway-derived Morphia metadata). |
-| <code>/api/agent/query-hints</code> | GET | Query grammar summary, example queries by intent, and "did you know" hints (expand, ontology). Use so agents can answer "what query gets locations in Atlanta?" and suggest expand/ontology usage. |
-| <code>/api/agent/permission-hints</code> | GET | Permission check/evaluate API summary, area/domain/action mapping (e.g. Query Gateway), example check requests, and "did you know" hints. Use so agents can answer "can role X perform action Y on entity Z?" and "if not, why not?" (winningRuleName), suggest rule changes, and generate least-privilege rules for a scenario. |
+| <code>/api/agent/query-hints</code> | GET | Query grammar summary, example queries by intent, and "did you know" hints (expand, ontology). |
+| <code>/api/agent/permission-hints</code> | GET | Permission check/evaluate API summary, area/domain/action mapping. |
 | <code>/api/agent/ontology</code> | GET | Optional: ontology summary for retrieval context. |
-| <code>/api/agent/execute</code> | POST | Execute one of the gateway tools by name + arguments (delegate only to <code>QueryGatewayResource</code>). |
+| <code>/api/agent/execute</code> | POST | Execute one of the gateway tools by name + arguments (delegate to <code>QueryGatewayResource</code>). |
 | <code>/api/agent/config/</strong></code> | GET/POST/DELETE | CRUD for Agent configuration (LLM reference, prompt context, enabled tools). Realm-scoped. See <a href="mcp-server-and-client.html#agent-config-api">Agent Configuration API</a>. |
 | <code>/api/agent/context</code> | POST/GET | Optional: retrieval context (gateway find or optional ontology). |
 | (headers) | - | <code>X-Agent-Session-Id</code>, <code>X-Agent-Trace-Id</code> for audit and multi-turn. |</p>
@@ -1925,7 +1879,7 @@ quantum.agent.tenant.defaultRealm.maxFindLimit=100</pre>
 <div id="footer">
 <div id="footer-text">
 Version 1.3.0-SNAPSHOT<br>
-Last updated 2026-02-17 20:19:15 -0500
+Last updated 2026-02-23 15:55:05 -0500
 </div>
 </div>
 </body>
