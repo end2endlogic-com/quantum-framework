@@ -67,6 +67,24 @@ Tools are defined in `McpGatewayTools` using the Quarkiverse `@Tool` and `@ToolA
 
 | `query_deleteMany`
 | Delete multiple entities matching a BIAPI query
+
+| `query_count`
+| Count entities matching a BIAPI query
+
+| `query_export`
+| Export entities to a stream (CSV) matching a BIAPI query and column selection
+
+| `query_import_analyze`
+| Analyze a CSV file for import, returning a preview of rows and identifying potential errors
+
+| `query_import_rows`
+| List analyzed import rows from a session (supports filtering by error)
+
+| `query_import_commit`
+| Commit an analyzed import session, persisting the valid rows to the database
+
+| `query_import_cancel`
+| Cancel an import session and clean up temporary data
 |===
 
 ===== Tool parameters

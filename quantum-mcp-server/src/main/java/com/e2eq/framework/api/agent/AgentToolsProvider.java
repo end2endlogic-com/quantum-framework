@@ -29,12 +29,24 @@ public class AgentToolsProvider {
                     List.of(param("rootType", "string", "Entity type simple or FQCN"), param("query", "string", "BIAPI query string"))),
             tool("query_find", "Execute a query and return matching entities",
                     List.of(param("rootType", "string", "Entity type"), param("query", "string", "BIAPI query"), param("realm", "string", "Optional realm"), param("page", "object", "Optional { limit, skip }"), param("sort", "array", "Optional sort specs"))),
+            tool("query_count", "Count entities matching a query",
+                    List.of(param("rootType", "string", "Entity type"), param("realm", "string", "Optional realm"), param("query", "string", "BIAPI query"))),
             tool("query_save", "Save (insert or update) an entity",
                     List.of(param("rootType", "string", "Entity type"), param("realm", "string", "Optional realm"), param("entity", "object", "Entity data"))),
             tool("query_delete", "Delete an entity by ID",
                     List.of(param("rootType", "string", "Entity type"), param("realm", "string", "Optional realm"), param("id", "string", "ObjectId hex string"))),
             tool("query_deleteMany", "Delete multiple entities matching a query",
-                    List.of(param("rootType", "string", "Entity type"), param("realm", "string", "Optional realm"), param("query", "string", "BIAPI query")))
+                    List.of(param("rootType", "string", "Entity type"), param("realm", "string", "Optional realm"), param("query", "string", "BIAPI query"))),
+            tool("query_export", "Export entities to CSV",
+                    List.of(param("rootType", "string", "Entity type"), param("realm", "string", "Optional realm"), param("query", "string", "BIAPI query"), param("columns", "string", "Comma-separated list of columns"))),
+            tool("query_import_analyze", "Analyze a CSV file for import",
+                    List.of(param("rootType", "string", "Entity type"), param("realm", "string", "Optional realm"), param("csvContent", "string", "CSV content"), param("columns", "string", "Optional column mapping"))),
+            tool("query_import_rows", "List analyzed import rows",
+                    List.of(param("sessionId", "string", "Import session ID"), param("realm", "string", "Optional realm"), param("onlyErrors", "boolean", "Filter by errors"))),
+            tool("query_import_commit", "Commit an import session",
+                    List.of(param("sessionId", "string", "Import session ID"), param("realm", "string", "Optional realm"))),
+            tool("query_import_cancel", "Cancel an import session",
+                    List.of(param("sessionId", "string", "Import session ID"), param("realm", "string", "Optional realm")))
     );
 
     @Inject
