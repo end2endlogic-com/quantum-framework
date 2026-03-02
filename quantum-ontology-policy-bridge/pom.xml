@@ -13,7 +13,7 @@
     </parent>
 
     <artifactId>quantum-ontology-policy-bridge</artifactId>
-    <name>Quantum Ontology policy bridge</name>
+      <name>${project.groupId}:${project.artifactId}</name>
     <packaging>jar</packaging>
 
    <dependencies>
