@@ -1,31 +1,32 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
-                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project
+    xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd"
+>
 
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>com.end2endlogic</groupId>
+        <groupId>com.movista</groupId>
         <artifactId>quantum-parent</artifactId>
         <version>1.3.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>quantum-models</artifactId>
-    <groupId>com.end2endlogic</groupId>
+    <groupId>com.movista</groupId>
     <packaging>jar</packaging>
     <version>1.3.0-SNAPSHOT</version>
-
-    <name>com.end2endlogic:quantum-models</name>
+    <name>com.movista:quantum-models</name>
 
     <dependencies>
         <dependency>
-            <groupId>com.end2endlogic</groupId>
+            <groupId>com.movista</groupId>
             <artifactId>quantum-util</artifactId>
             <version>${quantum.version}</version>
         </dependency>
         <dependency>
-            <groupId>com.end2endlogic</groupId>
+            <groupId>com.movista</groupId>
             <artifactId>quantum-ontology-core</artifactId>
             <version>${quantum.version}</version>
         </dependency>
@@ -40,10 +41,10 @@
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
-            <artifactId>quarkus-junit5</artifactId>
+            <artifactId>quarkus-junit</artifactId>
+            <version>3.31.2</version>
             <scope>test</scope>
         </dependency>
-
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-smallrye-openapi</artifactId>
@@ -99,7 +100,8 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
                     <basedir>${project.basedir}</basedir>
-                    <outputDirectory>${project.build.outputDirectory}</outputDirectory>
+                    <outputDirectory
+                    >${project.build.outputDirectory}</outputDirectory>
                     <projectArtifact>${project.artifact}</projectArtifact>
                     <source>17</source>
                     <target>17</target>
@@ -145,7 +147,7 @@
             <configuration>
                 <indexName>jandex.idx</indexName>
                 <verbose>true</verbose>
-                <jar/>
+                <jar />
             </configuration>
         </plugin>
         </plugins>

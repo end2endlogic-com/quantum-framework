@@ -1,26 +1,32 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+<?xml version="1.0" encoding="UTF-8" ?>
+<project
+    xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd"
+>
     <modelVersion>4.0.0</modelVersion>
-    
-    <groupId>com.end2endlogic</groupId>
+
+    <groupId>com.movista</groupId>
     <artifactId>quantum-sales</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <packaging>jar</packaging>
     <name>Quantum Framework Sales Materials</name>
-    <description>Sales and marketing materials for the Quantum Framework</description>
+    <description
+    >Sales and marketing materials for the Quantum Framework</description>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        
-        <asciidoctor.maven.plugin.version>3.2.0</asciidoctor.maven.plugin.version>
+        <project.reporting.outputEncoding
+        >UTF-8</project.reporting.outputEncoding>
+
+        <asciidoctor.maven.plugin.version
+        >3.2.0</asciidoctor.maven.plugin.version>
         <asciidoctorj.pdf.version>2.3.9</asciidoctorj.pdf.version>
         <asciidoctorj.diagram.version>3.0.1</asciidoctorj.diagram.version>
-        <asciidoctorj.diagram.plantuml.version>1.2025.3</asciidoctorj.diagram.plantuml.version>
+        <asciidoctorj.diagram.plantuml.version
+        >1.2025.3</asciidoctorj.diagram.plantuml.version>
 
         <docs.output.dir>${project.reporting.outputDirectory}</docs.output.dir>
     </properties>
@@ -56,11 +62,13 @@
                      <dependency>
                         <groupId>org.asciidoctor</groupId>
                         <artifactId>asciidoctorj-diagram-plantuml</artifactId>
-                        <version>${asciidoctorj.diagram.plantuml.version}</version>
+                        <version
+                        >${asciidoctorj.diagram.plantuml.version}</version>
                     </dependency>
                 </dependencies>
                 <configuration>
-                    <sourceDirectory>${project.basedir}/src/docs/asciidoc</sourceDirectory>
+                    <sourceDirectory
+                    >${project.basedir}/src/docs/asciidoc</sourceDirectory>
                     <outputDirectory>${docs.output.dir}</outputDirectory>
                     <relativeBaseDir>true</relativeBaseDir>
                     <requires>
@@ -75,7 +83,8 @@
                         <revdate>${maven.build.timestamp}</revdate>
                         <doctype>book</doctype>
                         <pdf-theme>default</pdf-theme>
-                        <pdf-fontsdir>${project.basedir}/src/docs/fonts</pdf-fontsdir>
+                        <pdf-fontsdir
+                        >${project.basedir}/src/docs/fonts</pdf-fontsdir>
                         <source-highlighter>coderay</source-highlighter>
                         <!-- Ensure diagram outputs prefer SVG (often more robust with mmdc) -->
                         <diagram-format>svg</diagram-format>
