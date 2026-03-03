@@ -542,7 +542,11 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#mcp-client">1.3. MCP Client</a>
 <ul class="sectlevel3">
 <li><a href="#_configuration">1.3.1. Configuration</a></li>
-<li><a href="#_injecting_mcp_tools">1.3.2. Injecting MCP Tools</a></li>
+<li><a href="#_using_mcp_tools_in_ai_services">1.3.2. Using MCP Tools in AI Services</a></li>
+<li><a href="#_programmatic_access_to_mcp_clients">1.3.3. Programmatic Access to MCP Clients</a></li>
+<li><a href="#_dev_ui_testing_mcp_clients">1.3.4. Dev UI: Testing MCP Clients</a></li>
+<li><a href="#_optional_resources_as_tools">1.3.5. Optional: Resources as Tools</a></li>
+<li><a href="#_optional_headers_and_authorization">1.3.6. Optional: Headers and Authorization</a></li>
 </ul>
 </li>
 <li><a href="#agent-rest-api">1.4. Agent REST API</a>
@@ -857,37 +861,90 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div class="sect2">
 <h3 id="mcp-client">1.3. MCP Client</h3>
 <div class="paragraph">
-<p>The MCP client side uses the Quarkiverse LangChain4j MCP extension (<code>quarkus-langchain4j-mcp</code>) to connect to external MCP servers and consume their tools. This is used to integrate with external tool providers such as Helix MCP, Brain, or HelixAI.</p>
+<p>The MCP client side uses the Quarkiverse LangChain4j MCP extension (<code>quarkus-langchain4j-mcp</code>) to connect to external MCP servers and consume their tools. Use the MCP client when you need to:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Integrate with external tool providers (e.g. Helix MCP, Brain, HelixAI, or any MCP-compliant server)</p>
+</li>
+<li>
+<p>Let your AI services discover and invoke tools from those servers at runtime</p>
+</li>
+<li>
+<p>Access MCP resources (files, API responses, etc.) programmatically or expose them as tools to the LLM</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The client implements the <a href="https://modelcontextprotocol.io/specification/2025-11-25">MCP Specification</a> and works with any compatible MCP server (including the Quantum MCP server on another instance).</p>
 </div>
 <div class="sect3">
 <h4 id="_configuration">1.3.1. Configuration</h4>
 <div class="paragraph">
-<p>External MCP connections are configured in <code>application.properties</code> using the <code>quarkus.langchain4j.mcp.&lt;client-name&gt;</code> prefix:</p>
+<p>External MCP connections are configured in <code>application.properties</code> using the <code>quarkus.langchain4j.mcp.&lt;client-name&gt;</code> prefix. Each named block defines one MCP client (e.g. <code>helix</code>, <code>brain</code>, <code>filesystem</code>).</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="properties"># Example: connect to an external MCP server over Streamable HTTP
+<pre class="CodeRay highlight"><code data-lang="properties"># Streamable HTTP (recommended for remote servers)
 quarkus.langchain4j.mcp.helix.transport-type=streamable-http
 quarkus.langchain4j.mcp.helix.url=http://helix-mcp.example.com/mcp
 
-# Example: connect to a local MCP server via stdio
+# STDIO (for local subprocess servers, e.g. npm-based MCP servers)
 quarkus.langchain4j.mcp.brain.transport-type=stdio
-quarkus.langchain4j.mcp.brain.command=npx,-y,@brain/mcp-server</code></pre>
+quarkus.langchain4j.mcp.brain.command=npx,-y,@brain/mcp-server
+
+# Optional: pass environment variables to the STDIO subprocess
+quarkus.langchain4j.mcp.brain.environment.API_KEY=${EXTERNAL_API_KEY}</code></pre>
 </div>
 </div>
 <div class="paragraph">
-<p>Supported transport types: <code>stdio</code>, <code>http</code>, <code>streamable-http</code>, <code>websocket</code>.</p>
+<p>Supported transport types:</p>
 </div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Transport</th>
+<th class="tableblock halign-left valign-top">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>streamable-http</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Recommended for remote MCP servers; uses HTTP with the MCP streamable transport.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>http</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Legacy HTTP/SSE transport. URL typically ends with <code>/mcp/sse</code>.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>stdio</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Spawns the MCP server as a subprocess; communication via stdin/stdout. Use <code>command</code> (comma-separated parts) and optionally <code>environment.*</code> for env vars.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>websocket</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Bidirectional WebSocket. Supported by some servers (e.g. those built with <code>quarkus-mcp-server</code>).</p></td>
+</tr>
+</tbody>
+</table>
 </div>
 <div class="sect3">
-<h4 id="_injecting_mcp_tools">1.3.2. Injecting MCP Tools</h4>
+<h4 id="_using_mcp_tools_in_ai_services">1.3.2. Using MCP Tools in AI Services</h4>
 <div class="paragraph">
-<p>Inject tools from an external MCP server using <code>@McpToolBox</code>:</p>
+<p>Enable tools from one or more MCP servers on an AI service using <code>@McpToolBox</code>. The LLM can then discover and call those tools during the conversation.</p>
+</div>
+<div class="paragraph">
+<p><strong>Single MCP server:</strong></p>
 </div>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">io.quarkiverse.langchain4j.mcp.runtime.McpToolBox</span>;
 <span class="keyword">import</span> <span class="include">dev.langchain4j.service.SystemMessage</span>;
+<span class="keyword">import</span> <span class="include">dev.langchain4j.service.UserMessage</span>;
 <span class="keyword">import</span> <span class="include">io.quarkiverse.langchain4j.RegisterAiService</span>;
 
 <span class="annotation">@RegisterAiService</span>
@@ -895,22 +952,129 @@ quarkus.langchain4j.mcp.brain.command=npx,-y,@brain/mcp-server</code></pre>
 
     <span class="annotation">@SystemMessage</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">You are a helpful assistant.</span><span class="delimiter">&quot;</span></span>)
     <span class="annotation">@McpToolBox</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">helix</span><span class="delimiter">&quot;</span></span>)
-    <span class="predefined-type">String</span> chat(<span class="predefined-type">String</span> userMessage);
+    <span class="predefined-type">String</span> chat(<span class="annotation">@UserMessage</span> <span class="predefined-type">String</span> userMessage);
 }</code></pre>
 </div>
 </div>
 <div class="paragraph">
-<p>Or inject the client directly for programmatic use:</p>
+<p><strong>Multiple MCP servers:</strong> pass an array of client names to use tools from several servers in one service.</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">io.quarkiverse.langchain4j.mcp.runtime.McpClientName</span>;
-<span class="keyword">import</span> <span class="include">dev.langchain4j.mcp.client.McpClient</span>;
-
-<span class="annotation">@Inject</span>
-<span class="annotation">@McpClientName</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">helix</span><span class="delimiter">&quot;</span></span>)
-McpClient helixClient;</code></pre>
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@McpToolBox</span>({<span class="string"><span class="delimiter">&quot;</span><span class="content">helix</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">brain</span><span class="delimiter">&quot;</span></span>})
+<span class="predefined-type">String</span> chat(<span class="annotation">@UserMessage</span> <span class="predefined-type">String</span> userMessage);</code></pre>
 </div>
+</div>
+<div class="paragraph">
+<p><strong>All configured MCP servers:</strong> omit the value to expose every configured MCP client&#8217;s tools to the AI service.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@McpToolBox</span>
+<span class="predefined-type">String</span> chat(<span class="annotation">@UserMessage</span> <span class="predefined-type">String</span> userMessage);</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_programmatic_access_to_mcp_clients">1.3.3. Programmatic Access to MCP Clients</h4>
+<div class="paragraph">
+<p>For fine-grained control (custom tool filtering, non-AI workflows, or resource access), inject an <code>McpClient</code> directly with <code>@McpClientName</code>:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">dev.langchain4j.mcp.client.McpClient</span>;
+<span class="keyword">import</span> <span class="include">io.quarkiverse.langchain4j.mcp.runtime.McpClientName</span>;
+<span class="keyword">import</span> <span class="include">jakarta.enterprise.context.ApplicationScoped</span>;
+<span class="keyword">import</span> <span class="include">jakarta.inject.Inject</span>;
+
+<span class="annotation">@ApplicationScoped</span>
+<span class="directive">public</span> <span class="type">class</span> <span class="class">McpClientService</span> {
+
+    <span class="annotation">@Inject</span>
+    <span class="annotation">@McpClientName</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">helix</span><span class="delimiter">&quot;</span></span>)
+    McpClient helixClient;
+
+    <span class="directive">public</span> <span class="type">void</span> useClient() {
+        <span class="comment">// List tools exposed by the MCP server</span>
+        <span class="type">var</span> tools = helixClient.listTools();
+
+        <span class="comment">// Execute a tool by name with JSON arguments</span>
+        <span class="type">var</span> args = com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode().put(<span class="string"><span class="delimiter">&quot;</span><span class="content">key</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">value</span><span class="delimiter">&quot;</span></span>);
+        <span class="type">var</span> request = dev.langchain4j.mcp.client.protocol.McpCallToolRequest.builder()
+            .name(<span class="string"><span class="delimiter">&quot;</span><span class="content">some_tool_name</span><span class="delimiter">&quot;</span></span>)
+            .arguments(args)
+            .build();
+        <span class="type">var</span> result = helixClient.executeTool(request);
+
+        <span class="comment">// List and read resources (if the server exposes resources)</span>
+        <span class="type">var</span> resources = helixClient.listResources();
+        <span class="type">var</span> content = helixClient.readResource(<span class="string"><span class="delimiter">&quot;</span><span class="content">some://resource-uri</span><span class="delimiter">&quot;</span></span>);
+    }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Use programmatic access when you need to drive tool execution from non-AI code, filter or transform tool results, or integrate MCP resources into your own APIs.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_dev_ui_testing_mcp_clients">1.3.4. Dev UI: Testing MCP Clients</h4>
+<div class="paragraph">
+<p>In development mode (<code>mvn quarkus:dev</code>), open the Quarkus Dev UI at <code><a href="http://localhost:8080/q/dev-ui" class="bare">http://localhost:8080/q/dev-ui</a></code> and use the <strong>MCP clients</strong> card to:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>View all configured MCP clients</p>
+</li>
+<li>
+<p>Browse tools (names, descriptions, parameter schemas)</p>
+</li>
+<li>
+<p>Execute tools with custom arguments and inspect results</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>This is useful for exploring a new MCP server or debugging tool arguments before wiring it into an AI service.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_optional_resources_as_tools">1.3.5. Optional: Resources as Tools</h4>
+<div class="paragraph">
+<p>If an MCP server exposes resources, you can expose them as synthetic tools so the LLM can list and read resources:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="properties">quarkus.langchain4j.mcp.expose-resources-as-tools=true</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>When enabled, the client adds <code>list_resources</code> and <code>get_resource</code> to the tool set; your AI service can then answer questions like “List available resources” or “Show me the content of resource X” when using <code>@McpToolBox</code> for that client.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_optional_headers_and_authorization">1.3.6. Optional: Headers and Authorization</h4>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>Static headers:</strong> for HTTP-based clients, set headers via config:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="properties">quarkus.langchain4j.mcp.helix.header.X-Custom-Header=MyValue</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p><strong>Dynamic headers:</strong> implement <code>dev.langchain4j.mcp.client.McpHeadersSupplier</code> and provide a CDI bean; it will be used for Streamable HTTP clients to add headers per request.</p>
+</li>
+<li>
+<p><strong>Authorization:</strong> implement <code>io.quarkiverse.langchain4j.mcp.auth.McpClientAuthProvider</code> to supply a bearer token or API key. Use <code>@McpClientName</code> on the bean to restrict it to a specific client. For OIDC, add the dependency <code>quarkus-langchain4j-oidc-mcp-auth-provider</code> to propagate the user’s access token to the MCP server.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>See the <a href="https://docs.quarkiverse.io/quarkus-langchain4j/dev/mcp.html">Quarkus LangChain4j MCP documentation</a> for full details on transports, auth, and the MCP Registry client.</p>
 </div>
 </div>
 </div>
@@ -1918,7 +2082,7 @@ The <code>/mcp</code> endpoint is automatically registered by the Quarkus MCP Se
 <div id="footer">
 <div id="footer-text">
 Version 1.3.0-SNAPSHOT<br>
-Last updated 2026-02-23 15:55:09 -0500
+Last updated 2026-02-26 12:22:44 -0500
 </div>
 </div>
 </body>
