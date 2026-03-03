@@ -534,9 +534,10 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_module_overview">1.1. Module Overview</a></li>
 <li><a href="#mcp-server">1.2. MCP Server</a>
 <ul class="sectlevel3">
-<li><a href="#_tools">1.2.1. Tools</a></li>
-<li><a href="#_resources">1.2.2. Resources</a></li>
-<li><a href="#_connecting_an_mcp_client">1.2.3. Connecting an MCP Client</a></li>
+<li><a href="#_security">1.2.1. Security</a></li>
+<li><a href="#_tools">1.2.2. Tools</a></li>
+<li><a href="#_resources">1.2.3. Resources</a></li>
+<li><a href="#_connecting_an_mcp_client">1.2.4. Connecting an MCP Client</a></li>
 </ul>
 </li>
 <li><a href="#mcp-client">1.3. MCP Client</a>
@@ -666,9 +667,28 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <p>The MCP server exposes the Query Gateway as six tools and three resources at the <code>/mcp</code> endpoint. MCP clients discover these automatically via the <code>tools/list</code> and <code>resources/list</code> JSON-RPC methods.</p>
 </div>
 <div class="sect3">
-<h4 id="_tools">1.2.1. Tools</h4>
+<h4 id="_security">1.2.1. Security</h4>
 <div class="paragraph">
-<p>Tools are defined in <code>McpGatewayTools</code> using the Quarkiverse <code>@Tool</code> and <code>@ToolArg</code> annotations. Each tool delegates to <code>AgentExecuteHandler</code>, which routes to the <code>QueryGatewayResource</code>&#8201;&#8212;&#8201;reusing the same security, realm resolution, and query execution as the REST API.</p>
+<p>The MCP server and the agent REST API require an authorized user. All endpoints and tools are protected by Quarkus Security.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>REST API (<code>/api/agent/*</code>):</strong> Requires a valid Bearer JWT token in the <code>Authorization</code> header.</p>
+</li>
+<li>
+<p><strong>MCP Endpoint (<code>/mcp</code>):</strong> The MCP protocol transport (Streamable HTTP or SSE) must include the same authentication mechanism (typically a <code>Authorization: Bearer &lt;token&gt;</code> header) as other REST APIs.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>You can generate a long-lived service token for use with the MCP server using the <a href="#Using the Quantum CLI">Quantum CLI</a>.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_tools">1.2.2. Tools</h4>
+<div class="paragraph">
+<p>Tools are defined in <code>McpGatewayTools</code> using the Quarkiverse <code>@Tool</code> and <code>@ToolArg</code> annotations. Each tool is protected with <code>@Authenticated</code> and delegates to <code>AgentExecuteHandler</code>, which routes to the <code>QueryGatewayResource</code>&#8201;&#8212;&#8201;reusing the same security, realm resolution, and query execution as the REST API.</p>
 </div>
 <table class="tableblock frame-all grid-all stretch">
 <colgroup>
@@ -784,7 +804,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect3">
-<h4 id="_resources">1.2.2. Resources</h4>
+<h4 id="_resources">1.2.3. Resources</h4>
 <div class="paragraph">
 <p>Resources are defined in <code>McpSchemaResources</code> and <code>McpQueryHintsResource</code> using the <code>@Resource</code> annotation. MCP clients can read these to populate LLM context with schema information and query-building guidance.</p>
 </div>
@@ -816,7 +836,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </table>
 </div>
 <div class="sect3">
-<h4 id="_connecting_an_mcp_client">1.2.3. Connecting an MCP Client</h4>
+<h4 id="_connecting_an_mcp_client">1.2.4. Connecting an MCP Client</h4>
 <div class="paragraph">
 <p>Any MCP-compatible client can connect to the <code>/mcp</code> endpoint. Example configuration for Claude Desktop (<code>claude_desktop_config.json</code>):</p>
 </div>
@@ -2082,7 +2102,7 @@ The <code>/mcp</code> endpoint is automatically registered by the Quarkus MCP Se
 <div id="footer">
 <div id="footer-text">
 Version 1.3.0-SNAPSHOT<br>
-Last updated 2026-02-26 12:22:44 -0500
+Last updated 2026-03-03 15:58:57 -0500
 </div>
 </div>
 </body>
