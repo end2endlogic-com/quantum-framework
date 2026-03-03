@@ -4,6 +4,7 @@ import com.e2eq.framework.api.agent.AgentExecuteHandler;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkiverse.mcp.server.Tool;
 import io.quarkiverse.mcp.server.ToolArg;
+import io.quarkus.security.Authenticated;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.core.Response;
 
@@ -24,6 +25,7 @@ import java.util.Map;
  * @see AgentExecuteHandler
  * @see com.e2eq.framework.api.query.QueryGatewayResource
  */
+@Authenticated
 public class McpGatewayTools {
 
     @Inject
