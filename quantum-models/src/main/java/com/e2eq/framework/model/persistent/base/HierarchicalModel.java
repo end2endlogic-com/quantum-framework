@@ -38,7 +38,7 @@ public abstract class HierarchicalModel<T extends HierarchicalModel<T,O,L>,
     @EqualsAndHashCode.Exclude
     protected List<T> children;
 
-    @Schema(implementation = HierarchicalModel.class, description = "The parent of the HierarchicalModel, null if it is a root node")
+    @Schema(implementation = EntityReference.class, description = "The parent of the HierarchicalModel, null if it is a root node")
     protected EntityReference parent;
 
     @PrePersist

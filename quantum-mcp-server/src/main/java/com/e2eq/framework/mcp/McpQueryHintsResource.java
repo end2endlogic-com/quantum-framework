@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkiverse.mcp.server.Resource;
 import io.quarkiverse.mcp.server.ResourceResponse;
 import io.quarkiverse.mcp.server.TextResourceContents;
+import io.quarkus.security.Authenticated;
 import jakarta.inject.Inject;
 
 import java.util.List;
@@ -25,6 +26,7 @@ import java.util.List;
  * @see QueryHintsProvider
  * @see PermissionHintsProvider
  */
+@Authenticated
 public class McpQueryHintsResource {
 
     @Inject
