@@ -58,7 +58,7 @@ File: `quantum-morphia-repos/.../ValidatingQueryToFilterListener.java`
 - Throw a validation error on the second occurrence.
 
 ### In-Memory Predicate
-File: `quantum-framework/.../QueryToPredicateJsonListener.java`
+File: `quantum-framework/src/main/java/com/e2eq/framework/query/QueryToPredicateJsonListener.java`
 - Define a fallback evaluation method for `text(...)`.
 - Implement `text("foo bar")` as **tokenized contains-any** across all textual values in the JSON payload.
 - Perform case-insensitive matches.
