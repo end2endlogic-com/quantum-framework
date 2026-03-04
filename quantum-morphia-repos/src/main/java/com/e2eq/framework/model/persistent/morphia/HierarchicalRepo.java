@@ -189,7 +189,7 @@ public abstract class HierarchicalRepo<
 
     private TreeNode toTreeNode(T object) {
         TreeNode node = new TreeNode();
-        node.key = object.getId().toHexString();
+        node.key = object.getId() != null ? object.getId().toHexString() : null;
         node.label = object.getDisplayName();
         node.icon = getTreeNodeIcon(object);
         return node;
