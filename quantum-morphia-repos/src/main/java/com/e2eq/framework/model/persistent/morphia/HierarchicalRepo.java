@@ -180,11 +180,18 @@ public abstract class HierarchicalRepo<
         return nodes;
     }
 
+    /**
+     * Returns the icon CSS class for a tree node. Subclasses may override to use a model-specific icon.
+     */
+    protected String getTreeNodeIcon(T object) {
+        return "pi pi-map-marker";
+    }
+
     private TreeNode toTreeNode(T object) {
         TreeNode node = new TreeNode();
         node.key = object.getId().toHexString();
         node.label = object.getDisplayName();
-        node.icon = "pi pi-map-marker";
+        node.icon = getTreeNodeIcon(object);
         return node;
     }
 
