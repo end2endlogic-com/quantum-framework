@@ -1,10 +1,10 @@
 package com.e2eq.framework.model.persistent.morphia;
 
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
+import com.e2eq.framework.model.TreeNode;
 import com.e2eq.framework.model.persistent.base.StaticDynamicList;
 import com.e2eq.framework.model.persistent.base.HierarchicalModel;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
-import com.fasterxml.jackson.core.TreeNode;
 import com.mongodb.client.MongoCursor;
 import dev.morphia.Datastore;
 import dev.morphia.aggregation.Aggregation;
@@ -167,8 +167,8 @@ public abstract class HierarchicalRepo<
         return getAllChildren(oHierarchyNode.get().getId());
     }
 
-    public List<com.e2eq.framework.model.TreeNode> getTrees() {
-        List<com.e2eq.framework.model.TreeNode> nodes = new ArrayList<>();
+    public List<TreeNode> getTrees() {
+        List<TreeNode> nodes = new ArrayList<>();
         Document query = new Document("parent", new Document("$exists", false));
         try (MongoCursor<T> cursor = getMorphiaDataStore().getCollection(getPersistentClass()).find(query).iterator()) {
             while (cursor.hasNext()) {
@@ -180,32 +180,45 @@ public abstract class HierarchicalRepo<
         return nodes;
     }
 
-    private com.e2eq.framework.model.TreeNode toTreeNode(T object) {
-        com.e2eq.framework.model.TreeNode node = new com.e2eq.framework.model.TreeNode();
-        node.key = object.getId().toHexString();
+    /**
+     * Returns the icon CSS class for a tree node. Subclasses may override to use a model-specific icon.
+     */
+    protected String getTreeNodeIcon(T object) {
+        return "pi pi-map-marker";
+    }
+
+    private TreeNode toTreeNode(T object) {
+        TreeNode node = new TreeNode();
+        node.key = object.getId() != null ? object.getId().toHexString() : null;
         node.label = object.getDisplayName();
-        node.icon = "pi pi-map-marker";
+        node.icon = getTreeNodeIcon(object);
         return node;
     }
 
-    private com.e2eq.framework.model.TreeNode resolveToHierarchy(T object) {
-        // Convert object to TreeNode
-        com.e2eq.framework.model.TreeNode node = toTreeNode(object);
-
-        // Populate curated metadata only (avoid leaking internal fields)
+    /**
+     * Builds the curated metadata map for a tree node. Subclasses may override to add or change
+     * model-specific DTO fields (e.g. refName, entityType). Used by {@link #getTrees()} when
+     * resolving hierarchy to TreeNode.
+     */
+    protected Map<String, Object> buildTreeNodeData(T object) {
         Map<String, Object> data = new java.util.HashMap<>();
-        data.put("id", node.key);
+        data.put("id", object.getId() != null ? object.getId().toHexString() : null);
         data.put("displayName", object.getDisplayName());
         data.put("skipValidation", false);
         // TODO should pull this from functional domain definition
         data.put("defaultUIActions", List.of("CREATE", "UPDATE", "VIEW", "DELETE", "ARCHIVE"));
-        node.data = data;
+        return data;
+    }
 
+    private TreeNode resolveToHierarchy(T object) {
+        // Convert object to TreeNode
+        TreeNode node = toTreeNode(object);
+        node.data = buildTreeNodeData(object);
         // Guard against accidental cycles
         return resolveChildren(object, node, new java.util.HashSet<>());
     }
 
-    private com.e2eq.framework.model.TreeNode resolveChildren(T object, com.e2eq.framework.model.TreeNode node, java.util.Set<ObjectId> visited) {
+    private TreeNode resolveChildren(T object, TreeNode node, java.util.Set<ObjectId> visited) {
         if (object.getId() != null && !visited.add(object.getId())) {
             // already visited, break the cycle
             return node;
@@ -226,15 +239,8 @@ public abstract class HierarchicalRepo<
             for (ObjectId id : ids) {
                 T childObject = byId.get(id);
                 if (childObject != null) {
-                    com.e2eq.framework.model.TreeNode childNode = toTreeNode(childObject);
-                    // Curated child data
-                    java.util.Map<String, Object> childData = new java.util.HashMap<>();
-                    childData.put("id", childNode.key);
-                    childData.put("displayName", childObject.getDisplayName());
-                    childData.put("skipValidation", false);
-                    childData.put("defaultUIActions", List.of("CREATE", "UPDATE", "VIEW", "DELETE", "ARCHIVE"));
-                    childNode.data = childData;
-
+                    TreeNode childNode = toTreeNode(childObject);
+                    childNode.data = buildTreeNodeData(childObject);
                     node.children.add(resolveChildren(childObject, childNode, visited));
                 }
             }
