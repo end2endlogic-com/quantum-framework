@@ -1,5 +1,6 @@
 package com.e2eq.framework.rest.resources;
 
+import com.e2eq.framework.model.TreeNode;
 import com.e2eq.framework.model.persistent.base.HierarchicalModel;
 import com.e2eq.framework.model.persistent.base.StaticDynamicList;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
@@ -13,6 +14,11 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 import org.bson.Document;
 import org.bson.types.ObjectId;
 import com.e2eq.framework.rest.services.HierarchyTreeService;
@@ -46,10 +52,10 @@ public class HierarchyResource<
         O extends UnversionedBaseModel,
         L extends StaticDynamicList<O>,
         OR extends MorphiaRepo<O>,
-        LR extends ObjectListRepo<O,L,OR>,
+        LR extends ObjectListRepo<O, L, OR>,
         T extends HierarchicalModel<T, O, L>,
         TR extends HierarchicalRepo
-       <T, O, L, OR, LR>> extends BaseResource<T,TR>{
+                <T, O, L, OR, LR>> extends BaseResource<T, TR> {
 
     protected HierarchyResource(TR repo) {
         super(repo);
@@ -65,12 +71,17 @@ public class HierarchyResource<
     protected HierarchyTreeService treeService;
 
 
-
     @GET
     @Path("/trees")
+    @Operation(summary = "Get trees", hidden = true)
+    @APIResponses(value = {
+            @APIResponse(responseCode = "200", description = "Success",
+                    content = @Content(mediaType = "application/json",
+                            schema = @Schema(implementation = TreeNode.class)))
+    })
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public List<com.e2eq.framework.model.TreeNode> getTrees () {
+    public List<TreeNode> getTrees() {
         return repo.getTrees();
     }
 

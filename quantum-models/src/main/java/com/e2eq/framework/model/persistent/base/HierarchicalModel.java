@@ -11,6 +11,7 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.ToString;
 import org.bson.types.ObjectId;
+import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 import java.util.List;
@@ -23,8 +24,8 @@ import java.util.List;
 @EqualsAndHashCode(callSuper = true)
 @RegisterForReflection
 @ToString
-@Schema(name="HierarchicalModel", description = "Base class for a hierarchical model with a parent/child relationship")
-public abstract class HierarchicalModel<T extends HierarchicalModel<T,O,L>,
+@Schema(name = "HierarchicalModel", description = "Base class for a hierarchical model with a parent/child relationship")
+public abstract class HierarchicalModel<T extends HierarchicalModel<T, O, L>,
         O extends UnversionedBaseModel,
         L extends StaticDynamicList<O>> extends BaseModel {
 
@@ -33,7 +34,8 @@ public abstract class HierarchicalModel<T extends HierarchicalModel<T,O,L>,
     @Schema(implementation = String.class, description = "collection of child HierarchicalModel ids")
     protected List<ObjectId> descendants;
 
-    @Schema(implementation = HierarchicalModel.class, description = "this is calculated and not saved to the database and therefore should be read only")
+    // Hidden from OpenAPI so SmallRye does not resolve generic List<T> (which emits broken $ref HierarchicalModel1). Subclasses expose children via getChildren() override with @Schema(implementation = ConcreteClass.class).
+    @Schema(hidden = true)
     @JsonIgnore
     @EqualsAndHashCode.Exclude
     protected List<T> children;
