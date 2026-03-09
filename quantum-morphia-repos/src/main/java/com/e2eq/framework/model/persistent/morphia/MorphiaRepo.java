@@ -1418,7 +1418,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
       update = datastore.find(getPersistentClass()).filter(Filters.eq("_id", id))
                      .update(updateOp);
 
-     return update.getModifiedCount();
+     return update.getMatchedCount();
    }
 
    @Override

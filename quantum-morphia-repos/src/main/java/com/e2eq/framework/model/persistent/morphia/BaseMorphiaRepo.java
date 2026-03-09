@@ -555,7 +555,7 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
     * Updates the active status of an entity by id in the default realm.
     * @param id the entity id
     * @param activeStatus the desired status (ACTIVE, INACTIVE, or DELETED)
-    * @return the number of affected records (0 or 1)
+    * @return the number of documents matched (0 or 1); use this to distinguish not-found from idempotent no-op
     */
   long updateActiveStatus (@PathParam("id") ObjectId id, ActiveStatus activeStatus);
    /**
@@ -563,7 +563,7 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
     * @param datastore the datastore to use
     * @param id the entity id
     * @param activeStatus the desired status (ACTIVE, INACTIVE, or DELETED)
-    * @return the number of affected records (0 or 1)
+    * @return the number of documents matched (0 or 1); use this to distinguish not-found from idempotent no-op
     */
    long updateActiveStatus (Datastore datastore, @PathParam("id") ObjectId id, ActiveStatus activeStatus);
 
@@ -571,7 +571,7 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
     * Updates the active status of an entity by string id in the default realm (from security context).
     * @param id the entity id (string representation of ObjectId)
     * @param activeStatus the desired status (ACTIVE, INACTIVE, or DELETED)
-    * @return the number of affected records (0 or 1)
+    * @return the number of documents matched (0 or 1); use this to distinguish not-found from idempotent no-op
     */
    long updateActiveStatus (@NotNull String id, ActiveStatus activeStatus);
 
@@ -580,7 +580,7 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
     * @param realmId the realm identifier (e.g. from X-Realm header)
     * @param id the entity id (string representation of ObjectId)
     * @param activeStatus the desired status (ACTIVE, INACTIVE, or DELETED)
-    * @return the number of affected records (0 or 1)
+    * @return the number of documents matched (0 or 1); use this to distinguish not-found from idempotent no-op
     */
    long updateActiveStatus (@NotNull String realmId, @NotNull String id, ActiveStatus activeStatus);
 

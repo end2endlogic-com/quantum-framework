@@ -235,7 +235,7 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
 
    @Override
    public long updateActiveStatus(String realmId, String id, ActiveStatus activeStatus) {
-      return super.updateActiveStatus(envConfigUtils.getSystemRealm(), id, activeStatus);
+      return super.updateActiveStatus(realmId, id, activeStatus);
    }
 
    @Override
