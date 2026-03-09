@@ -34,7 +34,7 @@ public abstract class HierarchicalModel<T extends HierarchicalModel<T, O, L>,
     @Schema(implementation = String.class, description = "collection of child HierarchicalModel ids")
     protected List<ObjectId> descendants;
 
-    // Hidden from OpenAPI so SmallRye does not resolve generic List<T> (which emits broken $ref HierarchicalModel1). Subclasses expose children via getChildren() override with @Schema(implementation = ConcreteClass.class).
+    // Hidden from OpenAPI so SmallRye does not resolve generic List<T> (which emits broken $ref HierarchicalModel1) for TS gen. Subclasses expose children via getChildren() override with @Schema(implementation = ConcreteClass.class).
     @Schema(hidden = true)
     @JsonIgnore
     @EqualsAndHashCode.Exclude
