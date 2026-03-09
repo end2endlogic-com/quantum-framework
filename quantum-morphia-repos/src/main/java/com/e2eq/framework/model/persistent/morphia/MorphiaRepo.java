@@ -1407,13 +1407,13 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
     @Override
-    public long updateActiveStatus (@PathParam("id") ObjectId id, boolean active) {
-       return updateActiveStatus(morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()),id, active);
+    public long updateActiveStatus (@PathParam("id") ObjectId id, ActiveStatus activeStatus) {
+       return updateActiveStatus(morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()), id, activeStatus);
    }
 
    @Override
-   public long updateActiveStatus (Datastore datastore, @PathParam("id") ObjectId id, boolean active) {
-      UpdateOperator updateOp = UpdateOperators.set("active", active );
+   public long updateActiveStatus (Datastore datastore, @PathParam("id") ObjectId id, ActiveStatus activeStatus) {
+      UpdateOperator updateOp = UpdateOperators.set("activeStatus", activeStatus);
       UpdateResult update;
       update = datastore.find(getPersistentClass()).filter(Filters.eq("_id", id))
                      .update(updateOp);
@@ -1421,6 +1421,15 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
      return update.getModifiedCount();
    }
 
+   @Override
+   public long updateActiveStatus(@NotNull String id, ActiveStatus activeStatus) {
+      return updateActiveStatus(new ObjectId(id), activeStatus);
+   }
+
+   @Override
+   public long updateActiveStatus(@NotNull String realmId, @NotNull String id, ActiveStatus activeStatus) {
+      return updateActiveStatus(morphiaDataStoreWrapper.getDataStore(realmId), new ObjectId(id), activeStatus);
+   }
 
     @Override
     public long update(@NotNull String id, @NotNull Pair<String, Object>... pairs) throws InvalidStateTransitionException {
