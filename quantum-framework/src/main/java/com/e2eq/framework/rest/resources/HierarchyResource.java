@@ -74,7 +74,7 @@ public class HierarchyResource<
 
     @GET
     @Path("/trees")
-    @Operation(summary = "Get trees", hidden = true)
+    @Operation(summary = "Get trees")
     @APIResponses(value = {
             @APIResponse(responseCode = "200", description = "Success",
                     content = @Content(mediaType = "application/json",
