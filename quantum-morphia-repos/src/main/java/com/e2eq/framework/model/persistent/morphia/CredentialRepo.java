@@ -2,6 +2,7 @@ package com.e2eq.framework.model.persistent.morphia;
 
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.InvalidStateTransitionException;
+import com.e2eq.framework.model.persistent.base.ActiveStatus;
 import com.e2eq.framework.model.persistent.base.CloseableIterator;
 import com.e2eq.framework.model.persistent.base.EntityReference;
 import com.e2eq.framework.model.persistent.base.ProjectionField;
@@ -228,8 +229,13 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
    }
 
    @Override
-   public long updateActiveStatus (ObjectId id, boolean active) {
-      return super.updateActiveStatus(morphiaDataStoreWrapper.getDataStore(envConfigUtils.getSystemRealm()),id, active);
+   public long updateActiveStatus (ObjectId id, ActiveStatus activeStatus) {
+      return super.updateActiveStatus(morphiaDataStoreWrapper.getDataStore(envConfigUtils.getSystemRealm()), id, activeStatus);
+   }
+
+   @Override
+   public long updateActiveStatus(String realmId, String id, ActiveStatus activeStatus) {
+      return super.updateActiveStatus(realmId, id, activeStatus);
    }
 
    @Override

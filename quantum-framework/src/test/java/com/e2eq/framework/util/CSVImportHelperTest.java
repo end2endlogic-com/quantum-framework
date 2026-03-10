@@ -1,6 +1,7 @@
 package com.e2eq.framework.util;
 
 import com.e2eq.framework.model.persistent.InvalidStateTransitionException;
+import com.e2eq.framework.model.persistent.base.ActiveStatus;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
@@ -113,8 +114,10 @@ public class CSVImportHelperTest {
         @Override public long delete(String realmId, ObjectId id) { throw new UnsupportedOperationException(); }
         @Override public long delete(dev.morphia.Datastore datastore, TestItem aobj) { throw new UnsupportedOperationException(); }
         @Override public long delete(dev.morphia.transactions.MorphiaSession s, TestItem obj) { throw new UnsupportedOperationException(); }
-        @Override public long updateActiveStatus(ObjectId id, boolean active) { throw new UnsupportedOperationException(); }
-        @Override public long updateActiveStatus(dev.morphia.Datastore datastore, ObjectId id, boolean active) { throw new UnsupportedOperationException(); }
+        @Override public long updateActiveStatus(ObjectId id, ActiveStatus activeStatus) { throw new UnsupportedOperationException(); }
+        @Override public long updateActiveStatus(dev.morphia.Datastore datastore, ObjectId id, ActiveStatus activeStatus) { throw new UnsupportedOperationException(); }
+        @Override public long updateActiveStatus(String id, ActiveStatus activeStatus) { throw new UnsupportedOperationException(); }
+        @Override public long updateActiveStatus(String realmId, String id, ActiveStatus activeStatus) { throw new UnsupportedOperationException(); }
         @Override public long update(String realmId, String id, org.apache.commons.lang3.tuple.Pair<String, Object>... pairs) { throw new UnsupportedOperationException(); }
         @Override public long update(String id, org.apache.commons.lang3.tuple.Pair<String, Object>... pairs) { throw new UnsupportedOperationException(); }
         @Override public long update(dev.morphia.Datastore datastore, String id, org.apache.commons.lang3.tuple.Pair<String, Object>... pairs) { throw new UnsupportedOperationException(); }
