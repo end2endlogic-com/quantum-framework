@@ -20,6 +20,8 @@ import dev.morphia.query.ValidationException;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
+import jakarta.ws.rs.BadRequestException;
+import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.core.*;
 import org.apache.commons.lang3.tuple.Pair;
 import org.bson.types.ObjectId;
@@ -589,24 +591,54 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
 
     @PUT
     @Path("activeStatus/{id}")
-    public Response updateActiveStatus(@PathParam("id") ObjectId id, boolean active) {
-      long modifyCount = repo.updateActiveStatus(id, active);
-      if (modifyCount == 0) {
-         return Response.status(Response.Status.NOT_FOUND).build();
-      } else {
-         return Response.ok().build();
-      }
-    }
+    @Produces(MediaType.APPLICATION_JSON)
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(summary = "Toggle the active status of an entity",
+            description = "Sets the activeStatus of the entity to the given status (ACTIVE, INACTIVE, or DELETED). Returns 1 if the entity was matched, 0 otherwise.")
+    @APIResponses({
+            @APIResponse(responseCode = "200", description = "Entity active status updated; response body is 1 when the entity was matched", content = @Content(mediaType = "application/json", schema = @Schema(implementation = Long.class))),
+            @APIResponse(responseCode = "400", description = "Bad request - invalid id or missing activeStatus", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class))),
+            @APIResponse(responseCode = "404", description = "Entity not found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
+    })
+    public Response toggleActiveStatus(
+            @Context HttpHeaders headers,
+            @Parameter(description = "Id of the entity to update", required = true)
+            @PathParam("id") String id,
+            @Parameter(description = "The new active status to set")
+            @QueryParam("activeStatus") ActiveStatus activeStatus) {
+        String realmId = headers.getHeaderString("X-Realm");
 
+        if (id == null || id.isEmpty()) {
+            throw new BadRequestException("id is required to be non null and not empty");
+        }
+        if (activeStatus == null) {
+            throw new BadRequestException("activeStatus query parameter is required");
+        }
+        try {
+            new ObjectId(id);
+        } catch (IllegalArgumentException e) {
+            throw new BadRequestException("Invalid id: " + id);
+        }
+        long matched = (realmId == null)
+                ? repo.updateActiveStatus(id, activeStatus)
+                : repo.updateActiveStatus(realmId, id, activeStatus);
+        if (matched == 0) {
+            throw new NotFoundException("Entity not found");
+        }
+        return Response.ok(1L).build();
+    }
 
    @GET
    @Path("csv")
    @SecurityRequirement(name = "bearerAuth")
-   @Operation(summary = "Retrieve a list of Entities in CSV format")
-   @APIResponses({@APIResponse(responseCode = "401", description = "Not Authorized, caller does not have the privilege assigned to" +
-           " their id"),
-           @APIResponse(responseCode = "403", description = "Not authenticated caller did not authenticate before making the call"),
-           @APIResponse(responseCode = "500", description = "Internal System error, ask operator to check server side logs")})
+   @Operation(summary = "Retrieve a list of entities in CSV format",
+           description = "Returns entities as CSV with configurable columns, quoting, and charset.")
+   @APIResponses({
+           @APIResponse(responseCode = "200", description = "CSV data returned"),
+           @APIResponse(responseCode = "401", description = "Not authorized"),
+           @APIResponse(responseCode = "403", description = "Not authenticated"),
+           @APIResponse(responseCode = "500", description = "Internal server error")
+   })
    @Produces({"text/csv", MediaType.TEXT_PLAIN, MediaType.WILDCARD})
    public Response getListAsCSV(
            @Context UriInfo info,
