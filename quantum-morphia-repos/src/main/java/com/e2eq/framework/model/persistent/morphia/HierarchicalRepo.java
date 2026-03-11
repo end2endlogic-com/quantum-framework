@@ -21,6 +21,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 import static dev.morphia.aggregation.stages.GraphLookup.graphLookup;
+import static dev.morphia.aggregation.stages.Match.match;
 import static dev.morphia.query.filters.Filters.eq;
 
 // T - The hierarchical Model
@@ -250,19 +251,20 @@ public abstract class HierarchicalRepo<
 
 
     public List<T> getAllChildren(ObjectId nodeId) {
-        // Start the pipeline on the hierarchy collection for this entity class
+        // Start the pipeline on the hierarchy collection for this entity class.
+        // Use pipeline(match(), graphLookup()) so each stage is a separate pipeline element.
+        // Chained .match().graphLookup() can produce a single stage with multiple fields and
+        // trigger MongoDB error 40323: "A pipeline stage specification object must contain exactly one field."
         Class<T> entityClass = getPersistentClass();
-        Aggregation<T> pipeline = morphiaDataStoreWrapper
-                .getDataStore(getSecurityContextRealmId())
+        Aggregation<T> pipeline = getMorphiaDataStore()
                 .aggregate(entityClass)
-                .match(eq("_id", nodeId))
-                .graphLookup(
+                .pipeline(
+                        match(eq("_id", nodeId)),
                         graphLookup(entityClass)
                                 .startWith("$descendants")
                                 .connectFromField("descendants")
                                 .connectToField("_id")
                                 .as("children")
-                        // No .maxDepth() => unlimited depth
                 );
 
         // Execute and return the list of child documents
