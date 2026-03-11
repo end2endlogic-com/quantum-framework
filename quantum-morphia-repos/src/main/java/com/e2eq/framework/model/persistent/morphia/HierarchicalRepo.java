@@ -265,6 +265,7 @@ public abstract class HierarchicalRepo<
                                 .connectFromField("descendants")
                                 .connectToField("_id")
                                 .as("children")
+                                // No .maxDepth() => unlimited depth
                 );
 
         // Execute and return the list of child documents
