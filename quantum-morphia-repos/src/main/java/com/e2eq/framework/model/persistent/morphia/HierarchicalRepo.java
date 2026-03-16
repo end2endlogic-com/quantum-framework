@@ -23,6 +23,7 @@ import java.util.stream.Collectors;
 import static dev.morphia.aggregation.stages.GraphLookup.graphLookup;
 import static dev.morphia.aggregation.stages.Match.match;
 import static dev.morphia.query.filters.Filters.eq;
+import static dev.morphia.query.filters.Filters.in;
 
 // T - The hierarchical Model
 // O - The object that a static or dynamic list represents at each level in hiearchy
@@ -169,15 +170,65 @@ public abstract class HierarchicalRepo<
     }
 
     public List<TreeNode> getTrees() {
+        return getTrees(null);
+    }
+
+    /**
+     * Returns hierarchy trees, optionally restricted to nodes whose IDs are in the allowed set.
+     * When {@code allowedIds} is null, returns the full tree (all roots and descendants).
+     * When {@code allowedIds} is non-null and empty, returns an empty list.
+     * When {@code allowedIds} is non-null and non-empty, returns the forest of visible subtrees:
+     * each "effective root" is either a hierarchy root (no parent) in the set, or a node in the
+     * set whose parent is not in the set (e.g. user assigned to a leaf or branch sees that node
+     * as the top of their tree).
+     *
+     * @param allowedIds optional set of node IDs to include; null means no filter (full tree)
+     * @return list of tree nodes
+     */
+    public List<TreeNode> getTrees(Set<ObjectId> allowedIds) {
         List<TreeNode> nodes = new ArrayList<>();
-        Document query = new Document("parent", new Document("$exists", false));
-        try (MongoCursor<T> cursor = getMorphiaDataStore().getCollection(getPersistentClass()).find(query).iterator()) {
-            while (cursor.hasNext()) {
-                T root = cursor.next();
-                nodes.add(resolveToHierarchy(root));
+        if (allowedIds == null) {
+            Document query = new Document("parent", new Document("$exists", false));
+            try (MongoCursor<T> cursor = getMorphiaDataStore().getCollection(getPersistentClass()).find(query).iterator()) {
+                while (cursor.hasNext()) {
+                    T root = cursor.next();
+                    nodes.add(resolveToHierarchy(root, null));
+                }
+            }
+            return nodes;
+        }
+        if (allowedIds.isEmpty()) {
+            return nodes;
+        }
+        // Bulk-load all allowed nodes in one IN query to avoid N+1 (and reuse for tree building)
+        List<T> allowedNodesList = getMorphiaDataStore().find(getPersistentClass())
+                .filter(in("_id", allowedIds))
+                .iterator().toList();
+        Map<ObjectId, T> allowedNodesById = new HashMap<>();
+        for (T n : allowedNodesList) {
+            if (n.getId() != null) {
+                allowedNodesById.put(n.getId(), n);
             }
         }
-
+        Set<ObjectId> effectiveRootIds = new HashSet<>();
+        for (ObjectId id : allowedIds) {
+            T node = allowedNodesById.get(id);
+            if (node == null) continue;
+            if (node.getParent() == null) {
+                effectiveRootIds.add(id);
+                continue;
+            }
+            ObjectId parentId = node.getParent().getEntityId();
+            if (parentId == null || !allowedIds.contains(parentId)) {
+                effectiveRootIds.add(id);
+            }
+        }
+        for (ObjectId rootId : effectiveRootIds) {
+            T root = allowedNodesById.get(rootId);
+            if (root != null) {
+                nodes.add(resolveToHierarchy(root, allowedIds, allowedNodesById));
+            }
+        }
         return nodes;
     }
 
@@ -212,29 +263,41 @@ public abstract class HierarchicalRepo<
     }
 
     private TreeNode resolveToHierarchy(T object) {
-        // Convert object to TreeNode
-        TreeNode node = toTreeNode(object);
-        node.data = buildTreeNodeData(object);
-        // Guard against accidental cycles
-        return resolveChildren(object, node, new java.util.HashSet<>());
+        return resolveToHierarchy(object, null);
     }
 
-    private TreeNode resolveChildren(T object, TreeNode node, java.util.Set<ObjectId> visited) {
+    private TreeNode resolveToHierarchy(T object, Set<ObjectId> allowedIds) {
+        return resolveToHierarchy(object, allowedIds, null);
+    }
+
+    private TreeNode resolveToHierarchy(T object, Set<ObjectId> allowedIds, Map<ObjectId, T> allowedNodesById) {
+        TreeNode node = toTreeNode(object);
+        node.data = buildTreeNodeData(object);
+        return resolveChildren(object, node, new java.util.HashSet<>(), allowedIds, allowedNodesById);
+    }
+
+    private TreeNode resolveChildren(T object, TreeNode node, java.util.Set<ObjectId> visited, Set<ObjectId> allowedIds, Map<ObjectId, T> allowedNodesById) {
         if (object.getId() != null && !visited.add(object.getId())) {
-            // already visited, break the cycle
             return node;
         }
-
-        // Handle child nodes with one batch fetch per level
         if (object.getDescendants() != null && !object.getDescendants().isEmpty()) {
             List<ObjectId> ids = object.getDescendants();
-            List<T> children = getMorphiaDataStore().find(getPersistentClass())
-                                  .filter(dev.morphia.query.filters.Filters.in("_id", ids))
-                                  .iterator().toList();
-            java.util.Map<ObjectId, T> byId = new java.util.HashMap<>();
-            for (T c : children) {
-                if (c.getId() != null) {
-                    byId.put(c.getId(), c);
+            if (allowedIds != null && !allowedIds.isEmpty()) {
+                ids = ids.stream().filter(allowedIds::contains).collect(Collectors.toList());
+            }
+            if (ids.isEmpty()) return node;
+            java.util.Map<ObjectId, T> byId;
+            if (allowedNodesById != null) {
+                byId = allowedNodesById;
+            } else {
+                List<T> children = getMorphiaDataStore().find(getPersistentClass())
+                        .filter(in("_id", ids))
+                        .iterator().toList();
+                byId = new java.util.HashMap<>();
+                for (T c : children) {
+                    if (c.getId() != null) {
+                        byId.put(c.getId(), c);
+                    }
                 }
             }
             for (ObjectId id : ids) {
@@ -242,7 +305,7 @@ public abstract class HierarchicalRepo<
                 if (childObject != null) {
                     TreeNode childNode = toTreeNode(childObject);
                     childNode.data = buildTreeNodeData(childObject);
-                    node.children.add(resolveChildren(childObject, childNode, visited));
+                    node.children.add(resolveChildren(childObject, childNode, visited, allowedIds, allowedNodesById));
                 }
             }
         }
