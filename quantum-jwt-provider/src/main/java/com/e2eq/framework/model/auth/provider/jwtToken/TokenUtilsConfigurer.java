@@ -7,6 +7,7 @@ import io.quarkus.runtime.configuration.ConfigUtils;
 import io.smallrye.config.ConfigValue;
 import io.smallrye.config.SmallRyeConfig;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.ConfigProvider;
 
 import java.util.List;
@@ -22,6 +23,10 @@ public class TokenUtilsConfigurer {
 
     private static final String PRIVATE_KEY_CONFIG = "quantum.jwt.private-key-location";
     private static final String PUBLIC_KEY_CONFIG = "quantum.jwt.public-key-location";
+
+    @Inject
+    JwtKeyResolver jwtKeyResolver;
+
     void onStart(@jakarta.enterprise.event.Observes io.quarkus.runtime.StartupEvent ev) {
         List<String> activeProfiles = ConfigUtils.getProfiles();
         SmallRyeConfig config = ConfigProvider.getConfig().unwrap(SmallRyeConfig.class);
@@ -31,6 +36,7 @@ public class TokenUtilsConfigurer {
         String pubLoc = publicKeyConfig.getValue();
 
         validateConfiguredKeyLocations(activeProfiles, privateKeyConfig, publicKeyConfig);
+        TokenUtils.configureKeyResolver(jwtKeyResolver);
 
         if (privLoc != null || pubLoc != null) {
             Log.infof("Configuring TokenUtils key locations from %s/%s for profiles %s",
