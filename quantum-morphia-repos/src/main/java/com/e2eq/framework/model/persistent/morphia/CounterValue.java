@@ -21,7 +21,15 @@ public class CounterValue {
         this(value, null, null);
     }
 
+    public long getValue() {
+        return value;
+    }
 
+    public Integer getBase() {
+        return base;
+    }
 
-
+    public String getEncodedValue() {
+        return encodedValue;
+    }
 }

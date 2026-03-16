@@ -120,6 +120,9 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
    protected String defaultRealm;
 
    private TypeToken<T> paramClazz = new TypeToken<>(getClass()) {};
+   private transient volatile RepoLifecycleHooks cachedLifecycleHooks;
+   private transient volatile RepoSecurityContextResolver cachedSecurityContextResolver;
+   private transient volatile RepoSecurityFilterBuilder cachedSecurityFilterBuilder;
 
     @Inject
     protected MessageTemplateLocator messageTemplateLocator;
@@ -155,15 +158,30 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
     private RepoLifecycleHooks lifecycleHooks() {
-        return new RepoLifecycleHooks(autoMaterialize, postPersistHooks, preDeleteHooks, postDeleteHooks);
+        RepoLifecycleHooks hooks = cachedLifecycleHooks;
+        if (hooks == null) {
+            hooks = new RepoLifecycleHooks(autoMaterialize, postPersistHooks, preDeleteHooks, postDeleteHooks);
+            cachedLifecycleHooks = hooks;
+        }
+        return hooks;
     }
 
     private RepoSecurityContextResolver securityContextResolver() {
-        return new RepoSecurityContextResolver(securityIdentity, credentialRepo, envConfigUtils, ruleContext, defaultRealm);
+        RepoSecurityContextResolver resolver = cachedSecurityContextResolver;
+        if (resolver == null) {
+            resolver = new RepoSecurityContextResolver(securityIdentity, credentialRepo, envConfigUtils, ruleContext, defaultRealm);
+            cachedSecurityContextResolver = resolver;
+        }
+        return resolver;
     }
 
     private RepoSecurityFilterBuilder securityFilterBuilder() {
-        return new RepoSecurityFilterBuilder(securityContextResolver(), ruleContext);
+        RepoSecurityFilterBuilder builder = cachedSecurityFilterBuilder;
+        if (builder == null) {
+            builder = new RepoSecurityFilterBuilder(securityContextResolver(), ruleContext);
+            cachedSecurityFilterBuilder = builder;
+        }
+        return builder;
     }
 
     @Override

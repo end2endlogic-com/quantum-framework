@@ -25,6 +25,34 @@ public@Data class DatabaseVersion extends BaseModel {
    protected Date lastUpdated;
    protected List<String> compatibleScopes;
 
+   public Semver getCurrentSemVersion() {
+      return currentSemVersion;
+   }
+
+   public String getCurrentVersionString() {
+      return currentVersionString;
+   }
+
+   public int getCurrentVersionInt() {
+      return currentVersionInt;
+   }
+
+   public Date getLastUpdated() {
+      return lastUpdated;
+   }
+
+   public void setLastUpdated(Date lastUpdated) {
+      this.lastUpdated = lastUpdated;
+   }
+
+   public List<String> getCompatibleScopes() {
+      return compatibleScopes;
+   }
+
+   public void setCompatibleScopes(List<String> compatibleScopes) {
+      this.compatibleScopes = compatibleScopes;
+   }
+
 
    public void setCurrentVersionString(String currentVersion) {
       Semver semver = Semver.parse(currentVersion);

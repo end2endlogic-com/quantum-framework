@@ -29,7 +29,8 @@ final class RepoLifecycleHooks {
             try {
                 hook.afterPersist(realmId, entity);
             } catch (Throwable t) {
-                Log.warn("PostPersistHook threw exception: " + t.getMessage());
+                Log.warnf(t, "PostPersistHook threw exception for realm=%s entity=%s",
+                        realmId, entity != null ? entity.getClass().getName() : "<null>");
             }
         }
     }
@@ -55,7 +56,8 @@ final class RepoLifecycleHooks {
             try {
                 hook.afterDelete(realmId, entityClass, idAsString);
             } catch (Throwable t) {
-                Log.warn("PostDeleteHook threw exception: " + t.getMessage());
+                Log.warnf(t, "PostDeleteHook threw exception for realm=%s entityClass=%s id=%s",
+                        realmId, entityClass != null ? entityClass.getName() : "<null>", idAsString);
             }
         }
     }

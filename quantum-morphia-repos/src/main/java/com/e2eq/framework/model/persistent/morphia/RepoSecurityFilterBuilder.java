@@ -2,7 +2,7 @@ package com.e2eq.framework.model.persistent.morphia;
 
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.securityrules.SecurityContext;
-import com.e2eq.framework.securityrules.RuleContext;
+import com.e2eq.framework.security.runtime.RuleContext;
 import dev.morphia.query.filters.Filter;
 import io.quarkus.logging.Log;
 
@@ -27,8 +27,14 @@ final class RepoSecurityFilterBuilder {
             return ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get(), modelClass);
         }
 
-        Log.info("Context not set?");
-        throw new RuntimeException("Resource Context is not set in thread, check security configuration");
+        boolean missingPrincipalContext = SecurityContext.getPrincipalContext().isEmpty();
+        boolean missingResourceContext = SecurityContext.getResourceContext().isEmpty();
+        String missingContext = missingPrincipalContext && missingResourceContext
+                ? "PrincipalContext and ResourceContext"
+                : missingPrincipalContext ? "PrincipalContext" : "ResourceContext";
+        Log.warnf("SecurityContext is not set for %s; missing %s",
+                modelClass != null ? modelClass.getSimpleName() : "<unknown>", missingContext);
+        throw new RuntimeException("SecurityContext is not set in thread; missing " + missingContext + ". Check security configuration.");
     }
 
     Filter[] getFilterArray(List<Filter> filters, Class<? extends UnversionedBaseModel> modelClass) {
