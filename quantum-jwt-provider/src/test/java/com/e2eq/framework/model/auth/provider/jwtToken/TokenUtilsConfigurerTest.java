@@ -14,6 +14,7 @@ class TokenUtilsConfigurerTest {
 
     @AfterEach
     void resetDefaults() {
+        TokenUtils.configureKeyResolver(new DefaultJwtKeyResolver());
         TokenUtils.configure("privateKey.pem", "publicKey.pem");
     }
 
