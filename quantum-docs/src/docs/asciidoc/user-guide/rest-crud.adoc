@@ -870,7 +870,7 @@ Notes
 
 - Always scope by tenantId from DomainContext/RuleContext.
 - Index edges on (tenantId, p, dst) and (tenantId, src, p) to keep queries fast.
-- See xref:ontology.adoc#ontology-integration-morphia-permissions[Integrating Ontology] for more integration options.
+- See xref:ontology.adoc#ontology-integration-morphia-permissions-section[Integrating Ontology] for more integration options.
 
 [[ontology-aware-resource]]
 ==== OntologyAwareResource

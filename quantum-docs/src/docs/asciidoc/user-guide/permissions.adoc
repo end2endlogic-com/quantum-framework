@@ -166,7 +166,7 @@ participant "postconditionScript" as Script
 Client ->> SecurityFilter: HTTP request
 SecurityFilter ->> RuleContext: PrincipalContext + ResourceContext
 activate RuleContext
-note over RuleContext: Expand identities: userId ∪ roles
+note over RuleContext: Expand identities: userId union roles
 RuleContext -> RuleContext: Gather rules for each identity
 RuleContext -> RuleContext: Sort by ascending priority
 loop Each rule in order
@@ -430,7 +430,7 @@ Operating models:
 ** IdP carries authoritative roles/groups in the JWT. Keep `CredentialUserIdPassword.roles` minimal or empty.
 ** Use when enterprises require IdP as the source of truth for access groups.
 * Hybrid (recommended in many deployments):
-** Effective roles = JWT roles ∪ `CredentialUserIdPassword.roles`.
+** Effective roles = JWT roles union `CredentialUserIdPassword.roles`.
 ** Use JWT for enterprise groups (for example, `DEPT_SALES`, `ORG_ADMIN`) and Quantum roles for app-specific grants (for example, `REPORT_EXPORTER`, `BETA`).
 ** This avoids IdP churn for application-local concerns while respecting org policies.
 
@@ -1694,7 +1694,7 @@ Example (resolver + IN filter)
 See also
 
 - Ontology overview and examples: xref:ontology.adoc[Ontologies in Quantum]
-- Integration with Morphia and multi-tenancy: xref:ontology.adoc#ontology-integration-morphia-permissions[Integrating Ontology]
+- Integration with Morphia and multi-tenancy: xref:ontology.adoc#ontology-integration-morphia-permissions-section[Integrating Ontology]
 
 Operational notes
 

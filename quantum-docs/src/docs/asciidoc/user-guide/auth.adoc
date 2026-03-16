@@ -366,6 +366,7 @@ curl -sS -X POST \
 
 Alternatively, you can use the **Quantum CLI** tool to generate service tokens interactively or via command-line arguments.
 
+[[using-the-quantum-cli]]
 ===== Using the Quantum CLI
 
 The Quantum CLI (`quantum-cli` module) provides a `generate-token` command that handles authentication and token generation in a single step.

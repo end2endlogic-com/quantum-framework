@@ -12,7 +12,7 @@ These constructs allow:
 - Fine-grained sharing: Point specific functional areas to shared databases while others remain strictly segmented.
 - Policy composition: Apply RuleContext decisions at the level of area/domain/action.
 
-==== Prefer Annotations for Functional Mapping (recommended)
+=== Prefer Annotations for Functional Mapping (recommended)
 
 Starting with this version, you should use annotations to declare a model or resource's Functional Area/Domain and the Action being performed. The legacy bmFunctionalArea() and bmFunctionalDomain() methods are still supported for backward compatibility in this release, but they will be phased out soon.
 
@@ -81,7 +81,7 @@ Migration notes
 
 See also: xref:security-annotations.adoc#security-annotations[Security Annotations: FunctionalMapping and FunctionalAction]
 
-==== DataDomain on Models
+=== DataDomain on Models
 
 All persisted models carry DataDomain (tenantId, orgRefName, ownerId, etc.) for rule-based filtering and cross-tenant sharing.
 
@@ -113,7 +113,7 @@ public class Product extends BaseModel {
 }
 ----
 
-==== Persistence Repositories
+=== Persistence Repositories
 
 Define a repository to persist and query your model. With Morphia:
 
@@ -126,7 +126,7 @@ public interface ProductRepo extends MorphiaRepo<Product> {
 }
 ----
 
-==== Exposing REST Resources
+=== Exposing REST Resources
 
 Expose consistent CRUD endpoints by extending BaseResource.
 
@@ -144,7 +144,7 @@ public class ProductResource extends BaseResource<Product, ProductRepo> {
 With this minimal setup, you get standard REST APIs guarded by RuleContext/DataDomain and enriched with UIAction metadata.
 
 
-==== Lombok in Models
+=== Lombok in Models
 
 Lombok reduces boilerplate in Quantum models and supports inheritance-friendly builders.
 
@@ -173,7 +173,7 @@ Notes:
 - Prefer @SuperBuilder over @Builder when extending BaseModel/UnversionedBaseModel.
 - Keep equals/hashCode stable for collections and caches; include callSuper when needed.
 
-==== Validation with Jakarta Bean Validation
+=== Validation with Jakarta Bean Validation
 
 Quantum uses Jakarta Bean Validation to enforce invariants on models at persist time (and optionally at REST boundaries).
 
@@ -191,7 +191,7 @@ Where validation runs:
   - If DataDomain is null and SecurityContext has a principal, ValidationInterceptor will default the DataDomain from the principal context.
 - Optionally at REST boundaries: You may also annotate resource DTOs/parameters with Jakarta validation; Quarkus can validate them before the method executes.
 
-==== Jackson vs Jakarta Validation Annotations
+=== Jackson vs Jakarta Validation Annotations
 
 These two families of annotations serve different purposes and complement each other:
 
