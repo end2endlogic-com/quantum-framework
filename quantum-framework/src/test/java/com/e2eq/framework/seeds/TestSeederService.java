@@ -7,7 +7,7 @@ import com.e2eq.framework.model.persistent.morphia.PolicyRepo;
 import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import com.e2eq.framework.model.security.*;
 import com.e2eq.framework.model.securityrules.FilterJoinOp;
-import com.e2eq.framework.securityrules.RuleContext;
+import com.e2eq.framework.security.runtime.RuleContext;
 import com.e2eq.framework.model.securityrules.RuleEffect;
 import com.e2eq.framework.model.securityrules.SecurityURI;
 import com.e2eq.framework.model.securityrules.SecurityURIBody;

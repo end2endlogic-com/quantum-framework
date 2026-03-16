@@ -1,9 +1,10 @@
-package com.e2eq.framework.annotations;
+package com.e2eq.framework.validation;
 
+import com.e2eq.framework.annotations.ValidQueryFilter;
 import com.e2eq.framework.grammar.BIAPIQueryLexer;
 import com.e2eq.framework.grammar.BIAPIQueryParser;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
-import com.e2eq.framework.query.ValidatingQueryToPredicateJsonListener;
+import com.e2eq.framework.query.runtime.ValidatingQueryToPredicateJsonListener;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;

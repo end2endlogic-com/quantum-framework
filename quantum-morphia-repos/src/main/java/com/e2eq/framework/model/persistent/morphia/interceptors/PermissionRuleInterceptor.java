@@ -1,7 +1,7 @@
 package com.e2eq.framework.model.persistent.morphia.interceptors;
 
 import com.e2eq.framework.model.securityrules.*;
-import com.e2eq.framework.securityrules.RuleContext;
+import com.e2eq.framework.security.runtime.RuleContext;
 import dev.morphia.Datastore;
 import dev.morphia.EntityListener;
 import dev.morphia.annotations.PrePersist;

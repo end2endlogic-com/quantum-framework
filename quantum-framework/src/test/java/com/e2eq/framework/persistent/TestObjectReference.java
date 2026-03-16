@@ -1,8 +1,8 @@
 package com.e2eq.framework.persistent;
 
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
-import com.e2eq.framework.securityrules.RuleContext;
-import com.e2eq.framework.securityrules.SecuritySession;
+import com.e2eq.framework.security.runtime.RuleContext;
+import com.e2eq.framework.security.runtime.SecuritySession;
 import com.e2eq.framework.test.ObjectRefModel;
 import com.e2eq.framework.test.ParentModel;
 import io.quarkus.test.junit.QuarkusTest;

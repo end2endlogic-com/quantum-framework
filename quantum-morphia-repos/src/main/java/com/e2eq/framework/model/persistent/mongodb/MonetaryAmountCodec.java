@@ -23,15 +23,27 @@ public class MonetaryAmountCodec implements Codec<MonetaryAmount> {
     @Override
     public MonetaryAmount decode(BsonReader reader, DecoderContext decoderContext) {
         Document doc = documentCodec.decode(reader, decoderContext);
-        Decimal128 d = doc.get("amount", Decimal128.class);
+        Object amountObj = doc.get("amount");
         String currency = doc.getString("currency");
-        return Money.of(d, currency);
+        BigDecimal bd;
+        if (amountObj instanceof Decimal128) {
+            bd = ((Decimal128) amountObj).bigDecimalValue();
+        } else if (amountObj instanceof Number) {
+            bd = BigDecimal.valueOf(((Number) amountObj).doubleValue());
+        } else {
+            bd = BigDecimal.ZERO;
+        }
+        return Money.of(bd, currency);
     }
 
     @Override
     public void encode(BsonWriter writer, MonetaryAmount value, EncoderContext encoderContext) {
         if (value != null ) {
-            Decimal128 d = new Decimal128(BigDecimal.valueOf(value.getNumber().doubleValueExact()));
+            BigDecimal bd = value.getNumber().numberValue(BigDecimal.class);
+            if (bd == null) {
+                bd = BigDecimal.valueOf(value.getNumber().doubleValue());
+            }
+            Decimal128 d = new Decimal128(bd);
             Document doc = new Document();
             doc.put("amount", d);
             doc.put("currency", value.getCurrency().getCurrencyCode());

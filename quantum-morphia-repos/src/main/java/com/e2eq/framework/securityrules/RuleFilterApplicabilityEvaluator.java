@@ -1,4 +1,4 @@
-package com.e2eq.framework.securityrules;
+package com.e2eq.framework.security.runtime;
 
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
@@ -183,7 +183,7 @@ final class RuleFilterApplicabilityEvaluator {
             Map<String, String> vars,
             Map<String, Object> objectVars) {
         try {
-            Class<?> queryPredicates = Class.forName("com.e2eq.framework.query.QueryPredicates");
+            Class<?> queryPredicates = Class.forName("com.e2eq.framework.query.runtime.QueryPredicates");
             java.lang.reflect.Method compilePredicate = queryPredicates.getMethod("compilePredicate", String.class, Map.class, Map.class);
             Object predicate = compilePredicate.invoke(null, query, vars, objectVars);
             return Optional.of((Predicate<JsonNode>) predicate);

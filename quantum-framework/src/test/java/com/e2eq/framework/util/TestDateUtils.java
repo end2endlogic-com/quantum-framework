@@ -1,5 +1,6 @@
-package com.e2eq.framework.util;
+package com.e2eq.framework.tests.util;
 
+import com.e2eq.framework.util.DateUtils;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.logging.Log;

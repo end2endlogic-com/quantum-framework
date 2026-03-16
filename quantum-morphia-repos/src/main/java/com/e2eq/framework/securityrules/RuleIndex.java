@@ -1,4 +1,4 @@
-package com.e2eq.framework.securityrules;
+package com.e2eq.framework.security.runtime;
 
 import com.e2eq.framework.model.security.Rule;
 import com.e2eq.framework.model.securityrules.PrincipalContext;

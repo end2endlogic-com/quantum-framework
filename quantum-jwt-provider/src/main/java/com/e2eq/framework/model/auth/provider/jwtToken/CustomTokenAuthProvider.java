@@ -450,7 +450,8 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
       try {
          String configuredRealm = envConfigUtils.getSystemRealm();
          Log.infof("Checking for auth against %s realm", configuredRealm);
-         Optional<CredentialUserIdPassword> ocredential = getCredentials(configuredRealm, userId);
+         // Use ignoreRules=true so credential lookup succeeds for unauthenticated callers (login form)
+         Optional<CredentialUserIdPassword> ocredential = credentialRepo.findByUserId(userId, configuredRealm, true);
 
 
          if (ocredential.isPresent()) {

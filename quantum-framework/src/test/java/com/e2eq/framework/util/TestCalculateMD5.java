@@ -1,5 +1,6 @@
-package com.e2eq.framework.util;
+package com.e2eq.framework.tests.util;
 
+import com.e2eq.framework.util.CommonUtils;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 

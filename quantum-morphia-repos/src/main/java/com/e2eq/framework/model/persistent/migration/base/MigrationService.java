@@ -16,10 +16,8 @@ import dev.morphia.Datastore;
 import dev.morphia.mapping.codec.pojo.EntityModel;
 import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.logging.Log;
-import io.quarkus.runtime.Startup;
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.subscription.MultiEmitter;
-import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.context.spi.CreationalContext;
 import jakarta.enterprise.inject.spi.Bean;
@@ -38,7 +36,6 @@ import java.util.ArrayList;
 
 
 @ApplicationScoped
-@Startup
 public class MigrationService {
 
    @ConfigProperty(name = "quantum.database.version")
@@ -75,8 +72,7 @@ public class MigrationService {
    @Inject
    MorphiaDataStoreWrapper morphiaDataStoreWrapper;
 
-   @PostConstruct
-   public void ensureSystemRealmInitialized () {
+   public void initializeStartupRealms() {
       if (!enabled) {
          Log.warn("!!!! >>>> Database migration is disabled by configuration (quantum.database.migration.enabled=false)");
          return;
@@ -84,77 +80,64 @@ public class MigrationService {
          Log.info(">> Migration Service enabled");
       }
 
-      // Drop all indexes to avoid conflicts when re-running migrations
-      try {
-         for (String dbName : List.of(systemRealm, defaultRealm, testRealm)) {
-            if (mongoClient.listDatabaseNames().into(new ArrayList<>()).contains(dbName)) {
-               mongoClient.getDatabase(dbName).listCollectionNames().forEach(collName -> {
-                  try {
-                     mongoClient.getDatabase(dbName).getCollection(collName).dropIndexes();
-                  } catch (Exception e) {
-                     Log.debugf("Could not drop indexes on %s.%s: %s", dbName, collName, e.getMessage());
-                  }
-               });
-            }
-         }
-      } catch (Exception e) {
-         Log.warnf("Error dropping indexes: %s", e.getMessage());
-      }
-
       Log.infof(">> ### Checking if system realm %s is initialized ###", systemRealm);
-      // using the mongoClient check if the system realm exists
-      // if not, create it
-      // if it does, check if the database version is correct
-      // if not, throw an exception
-      // if it does, return
       List<String> databaseNames = mongoClient.listDatabaseNames().into(new ArrayList<>());
-      if (!databaseNames.contains(systemRealm)) {
-         Log.warnf("    ### System realm %s does not exist, creating it", systemRealm);
-         Multi<String> multi = Multi.createFrom().emitter(emitter -> {
-            try {
-               SecurityCallScope.runWithContexts(securityUtils.getSystemPrincipalContext(),
-                  securityUtils.getSystemSecurityResourceContext(), () -> {
-                  runAllUnRunMigrations(systemRealm, emitter);
-                  applyAllIndexes(systemRealm);
-               });
-               emitter.complete();
-            } catch (Throwable t) {
-               emitter.fail(t);
-               throw t;
-            }
-         });
-         multi.subscribe().with(
-            item -> System.out.println(">: " + item),
-            failure -> failure.printStackTrace(),
-            () -> System.out.println(">: Done")
-         );
+      ensureRealmInitializedOnStartup(systemRealm, databaseNames.contains(systemRealm));
 
-      } else {
-         Log.infof("###  System realm %s exists, checking if it is initialized", systemRealm);
-         try {
-            checkInitialized(systemRealm);
-         } catch (DatabaseMigrationException e) {
-            Log.warnf("    ### System realm %s is not initialized, initializing it", systemRealm);
-            Multi<String> multi = Multi.createFrom().emitter(emitter -> {
-               try {
-                  SecurityCallScope.runWithContexts(securityUtils.getSystemPrincipalContext(),
-                     securityUtils.getSystemSecurityResourceContext(), () -> {
-                     runAllUnRunMigrations(systemRealm, emitter);
-                     applyAllIndexes(systemRealm);
-                  });
-                  emitter.complete();
-               } catch (Throwable t) {
-                  emitter.fail(t);
-                  throw t;
-               }
-            });
-            multi.subscribe().with(
-               item -> System.out.println(">: " + item),
-               failure -> failure.printStackTrace(),
-               () -> System.out.println(">: Done")
-            );
-         }
+      // Ensure default realm is migrated when it exists and is behind (e.g. after app version bump).
+      if (databaseNames.contains(defaultRealm)) {
+         ensureRealmInitializedOnStartup(defaultRealm, true);
       }
+   }
+
+   private void ensureRealmInitializedOnStartup(String realm, boolean realmExists) {
+      if (!realmExists) {
+         Log.warnf("    ### Realm %s does not exist, creating it", realm);
+         migrateRealmSynchronously(realm);
+         return;
+      }
+
+      Log.infof("### Realm %s exists, checking if it is initialized", realm);
+      try {
+         checkInitialized(realm);
+      } catch (DatabaseMigrationException e) {
+         Log.warnf("    ### Realm %s is not initialized or is out of date (%s), initializing it", realm, e.getMessage());
+         migrateRealmSynchronously(realm);
+      }
+   }
+
+   private void migrateRealmSynchronously(String realm) {
+      MultiEmitter<String> emitter = newLoggingEmitter();
+      SecurityCallScope.runWithContexts(
+         securityUtils.getSystemPrincipalContext(),
+         securityUtils.getSystemSecurityResourceContext(),
+         () -> {
+            runAllUnRunMigrations(realm, emitter);
+            applyAllIndexes(realm);
+         }
+      );
+   }
+
+   @SuppressWarnings("unchecked")
+   private MultiEmitter<String> newLoggingEmitter() {
+      return (MultiEmitter<String>) java.lang.reflect.Proxy.newProxyInstance(
+         MultiEmitter.class.getClassLoader(),
+         new Class[]{MultiEmitter.class},
+         (proxy, method, args) -> {
+            String name = method.getName();
+            if ("emit".equals(name) && args != null && args.length == 1 && args[0] instanceof String value) {
+               Log.info(value);
+            } else if ("fail".equals(name) && args != null && args.length == 1 && args[0] instanceof Throwable failure) {
+               Log.error("Migration emitter failure", failure);
+            }
+            Class<?> returnType = method.getReturnType();
+            if (returnType == Void.TYPE) return null;
+            if (returnType == boolean.class || returnType == Boolean.class) return Boolean.FALSE;
+            if (returnType == long.class || returnType == Long.class) return 0L;
+            if (MultiEmitter.class.isAssignableFrom(returnType)) return proxy;
+            return null;
+         }
+      );
    }
 
 
@@ -482,16 +465,20 @@ public class MigrationService {
       log(String.format("-- Got Migration Lock Executing change sets on database / realm:%s --", realm), emitter);
       lock.runLocked(() -> {
          MorphiaSession ds = morphiaDataStoreWrapper.getDataStore(realm).startSession();
-         log(String.format("        Executing Change Set: %s in realm %s", changeSetBean.getName(), realm), emitter);
-         emitter.emit(String.format("        Executing Change Set: %s in realm %s", changeSetBean.getName(), realm));
          try {
-            changeSetBean.execute(ds, mongoClient, emitter);
-         } catch (Exception e) {
-            throw new RuntimeException(e);
+            log(String.format("        Executing Change Set: %s in realm %s", changeSetBean.getName(), realm), emitter);
+            emitter.emit(String.format("        Executing Change Set: %s in realm %s", changeSetBean.getName(), realm));
+            try {
+               changeSetBean.execute(ds, mongoClient, emitter);
+            } catch (Exception e) {
+               throw new RuntimeException(e);
+            }
+            log(String.format("        Executed Change Set: %s in realm %s", changeSetBean.getName(), realm), emitter);
+            emitter.emit(String.format("        Executed Change Set: %s in realm %s", changeSetBean.getName(), realm));
+            updateChangeLog(ds, realm, changeSetBean, emitter);
+         } finally {
+            ds.close();
          }
-         log(String.format("        Executed Change Set: %s in realm %s", changeSetBean.getName(), realm), emitter);
-         emitter.emit(String.format("        Executed Change Set: %s in realm %s", changeSetBean.getName(), realm));
-         updateChangeLog(ds, realm, changeSetBean, emitter);
       });
    }
 
@@ -547,14 +534,13 @@ public class MigrationService {
                               ods.commitTransaction();
                               Log.infof("        Committed Transaction for Change Set:%s", changeSetBean.getName());
                               emitter.emit(String.format("        Commited Transaction for Change Set:%s", changeSetBean.getName()));
-                              ods.commitTransaction();
-                              ods.close();
                            } catch (Throwable e) {
                               emitter.fail(e);
                               e.printStackTrace();
                               ods.abortTransaction();
-                              ods.close();
                               throw new RuntimeException(e);
+                           } finally {
+                              ods.close();
                            }
                         });
                      } else {
@@ -572,8 +558,9 @@ public class MigrationService {
                            emitter.fail(e);
                            e.printStackTrace();
                            ds.abortTransaction();
-                           ds.close();
                            throw new RuntimeException(e);
+                        } finally {
+                           ds.close();
                         }
                      }
                   } else {

@@ -3,7 +3,7 @@ package com.e2eq.framework.persistent;
 import com.e2eq.framework.model.persistent.morphia.MenuHierarchyRepo;
 import com.e2eq.framework.model.persistent.morphia.MenuItemRepo;
 import com.e2eq.framework.model.persistent.morphia.MenuItemStaticDynamicListRepo;
-import com.e2eq.framework.securityrules.SecuritySession;
+import com.e2eq.framework.security.runtime.SecuritySession;
 import com.e2eq.framework.model.general.MenuHierarchyModel;
 import com.e2eq.framework.model.general.MenuItemModel;
 import com.e2eq.framework.model.general.MenuItemStaticDynamicList;

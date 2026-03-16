@@ -12,7 +12,7 @@ import com.e2eq.framework.model.security.*;
 import com.e2eq.framework.model.persistent.morphia.FunctionalDomainRepo;
 import com.e2eq.framework.model.securityrules.*;
 import com.e2eq.framework.model.persistent.morphia.IdentityRoleResolver;
-import com.e2eq.framework.securityrules.RuleContext;
+import com.e2eq.framework.security.runtime.RuleContext;
 import com.e2eq.framework.util.ExceptionLoggingUtils;
 import com.e2eq.framework.util.SecurityUtils;
 import dev.morphia.MorphiaDatastore;
