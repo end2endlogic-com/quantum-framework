@@ -1,0 +1,43 @@
+# Quantum Framework CLI
+
+This module provides command-line tools for interacting with the Quantum Framework.
+
+## Service Token Generator
+
+The `generate-token` command allows you to generate long-lived service tokens.
+
+### Build
+
+To build the CLI:
+
+```bash
+mvn clean package -pl quantum-cli -am
+```
+
+The executable runner will be located at `quantum-cli/target/quarkus-app/quarkus-run.jar`.
+
+### Usage
+
+```bash
+java -jar quantum-cli/target/quarkus-app/quarkus-run.jar \
+  --user <userId> \
+  --roles admin,system \
+  --expires 3600 \
+  --description "My Service Token" \
+  --url http://localhost:8080
+```
+
+#### Parameters:
+
+*   `-u, --user`: (Required) The User ID to authenticate as.
+*   `-p, --password`: (Required) The password for authentication. You will be prompted for it if not provided.
+*   `-r, --roles`: Comma-separated list of roles to embed in the token.
+*   `-e, --expires`: Expiration in seconds. Use `-1` for a non-expiring token (defaults to 3600).
+*   `-d, --description`: Optional human-readable description for the service token.
+*   `--url`: The base URL of the Quantum Framework API (defaults to `http://localhost:8080`).
+
+### Example
+
+```bash
+java -jar quantum-cli/target/quarkus-app/quarkus-run.jar -u admin -p -r admin,system -e -1 -d "MCP Server Token"
+```

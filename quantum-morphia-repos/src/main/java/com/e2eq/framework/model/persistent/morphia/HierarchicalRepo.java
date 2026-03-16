@@ -1,10 +1,10 @@
 package com.e2eq.framework.model.persistent.morphia;
 
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
+import com.e2eq.framework.model.TreeNode;
 import com.e2eq.framework.model.persistent.base.StaticDynamicList;
 import com.e2eq.framework.model.persistent.base.HierarchicalModel;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
-import com.fasterxml.jackson.core.TreeNode;
 import com.mongodb.client.MongoCursor;
 import dev.morphia.Datastore;
 import dev.morphia.aggregation.Aggregation;
@@ -21,7 +21,9 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 import static dev.morphia.aggregation.stages.GraphLookup.graphLookup;
+import static dev.morphia.aggregation.stages.Match.match;
 import static dev.morphia.query.filters.Filters.eq;
+import static dev.morphia.query.filters.Filters.in;
 
 // T - The hierarchical Model
 // O - The object that a static or dynamic list represents at each level in hiearchy
@@ -167,75 +169,143 @@ public abstract class HierarchicalRepo<
         return getAllChildren(oHierarchyNode.get().getId());
     }
 
-    public List<com.e2eq.framework.model.TreeNode> getTrees() {
-        List<com.e2eq.framework.model.TreeNode> nodes = new ArrayList<>();
-        Document query = new Document("parent", new Document("$exists", false));
-        try (MongoCursor<T> cursor = getMorphiaDataStore().getCollection(getPersistentClass()).find(query).iterator()) {
-            while (cursor.hasNext()) {
-                T root = cursor.next();
-                nodes.add(resolveToHierarchy(root));
+    public List<TreeNode> getTrees() {
+        return getTrees(null);
+    }
+
+    /**
+     * Returns hierarchy trees, optionally restricted to nodes whose IDs are in the allowed set.
+     * When {@code allowedIds} is null, returns the full tree (all roots and descendants).
+     * When {@code allowedIds} is non-null and empty, returns an empty list.
+     * When {@code allowedIds} is non-null and non-empty, returns the forest of visible subtrees:
+     * each "effective root" is either a hierarchy root (no parent) in the set, or a node in the
+     * set whose parent is not in the set (e.g. user assigned to a leaf or branch sees that node
+     * as the top of their tree).
+     *
+     * @param allowedIds optional set of node IDs to include; null means no filter (full tree)
+     * @return list of tree nodes
+     */
+    public List<TreeNode> getTrees(Set<ObjectId> allowedIds) {
+        List<TreeNode> nodes = new ArrayList<>();
+        if (allowedIds == null) {
+            Document query = new Document("parent", new Document("$exists", false));
+            try (MongoCursor<T> cursor = getMorphiaDataStore().getCollection(getPersistentClass()).find(query).iterator()) {
+                while (cursor.hasNext()) {
+                    T root = cursor.next();
+                    nodes.add(resolveToHierarchy(root, null));
+                }
+            }
+            return nodes;
+        }
+        if (allowedIds.isEmpty()) {
+            return nodes;
+        }
+        // Bulk-load all allowed nodes in one IN query to avoid N+1 (and reuse for tree building)
+        List<T> allowedNodesList = getMorphiaDataStore().find(getPersistentClass())
+                .filter(in("_id", allowedIds))
+                .iterator().toList();
+        Map<ObjectId, T> allowedNodesById = new HashMap<>();
+        for (T n : allowedNodesList) {
+            if (n.getId() != null) {
+                allowedNodesById.put(n.getId(), n);
             }
         }
-
+        Set<ObjectId> effectiveRootIds = new HashSet<>();
+        for (ObjectId id : allowedIds) {
+            T node = allowedNodesById.get(id);
+            if (node == null) continue;
+            if (node.getParent() == null) {
+                effectiveRootIds.add(id);
+                continue;
+            }
+            ObjectId parentId = node.getParent().getEntityId();
+            if (parentId == null || !allowedIds.contains(parentId)) {
+                effectiveRootIds.add(id);
+            }
+        }
+        for (ObjectId rootId : effectiveRootIds) {
+            T root = allowedNodesById.get(rootId);
+            if (root != null) {
+                nodes.add(resolveToHierarchy(root, allowedIds, allowedNodesById));
+            }
+        }
         return nodes;
     }
 
-    private com.e2eq.framework.model.TreeNode toTreeNode(T object) {
-        com.e2eq.framework.model.TreeNode node = new com.e2eq.framework.model.TreeNode();
-        node.key = object.getId().toHexString();
+    /**
+     * Returns the icon CSS class for a tree node. Subclasses may override to use a model-specific icon.
+     */
+    protected String getTreeNodeIcon(T object) {
+        return "pi pi-map-marker";
+    }
+
+    private TreeNode toTreeNode(T object) {
+        TreeNode node = new TreeNode();
+        node.key = object.getId() != null ? object.getId().toHexString() : null;
         node.label = object.getDisplayName();
-        node.icon = "pi pi-map-marker";
+        node.icon = getTreeNodeIcon(object);
         return node;
     }
 
-    private com.e2eq.framework.model.TreeNode resolveToHierarchy(T object) {
-        // Convert object to TreeNode
-        com.e2eq.framework.model.TreeNode node = toTreeNode(object);
-
-        // Populate curated metadata only (avoid leaking internal fields)
+    /**
+     * Builds the curated metadata map for a tree node. Subclasses may override to add or change
+     * model-specific DTO fields (e.g. refName, entityType). Used by {@link #getTrees()} when
+     * resolving hierarchy to TreeNode.
+     */
+    protected Map<String, Object> buildTreeNodeData(T object) {
         Map<String, Object> data = new java.util.HashMap<>();
-        data.put("id", node.key);
+        data.put("id", object.getId() != null ? object.getId().toHexString() : null);
         data.put("displayName", object.getDisplayName());
         data.put("skipValidation", false);
         // TODO should pull this from functional domain definition
         data.put("defaultUIActions", List.of("CREATE", "UPDATE", "VIEW", "DELETE", "ARCHIVE"));
-        node.data = data;
-
-        // Guard against accidental cycles
-        return resolveChildren(object, node, new java.util.HashSet<>());
+        return data;
     }
 
-    private com.e2eq.framework.model.TreeNode resolveChildren(T object, com.e2eq.framework.model.TreeNode node, java.util.Set<ObjectId> visited) {
+    private TreeNode resolveToHierarchy(T object) {
+        return resolveToHierarchy(object, null);
+    }
+
+    private TreeNode resolveToHierarchy(T object, Set<ObjectId> allowedIds) {
+        return resolveToHierarchy(object, allowedIds, null);
+    }
+
+    private TreeNode resolveToHierarchy(T object, Set<ObjectId> allowedIds, Map<ObjectId, T> allowedNodesById) {
+        TreeNode node = toTreeNode(object);
+        node.data = buildTreeNodeData(object);
+        return resolveChildren(object, node, new java.util.HashSet<>(), allowedIds, allowedNodesById);
+    }
+
+    private TreeNode resolveChildren(T object, TreeNode node, java.util.Set<ObjectId> visited, Set<ObjectId> allowedIds, Map<ObjectId, T> allowedNodesById) {
         if (object.getId() != null && !visited.add(object.getId())) {
-            // already visited, break the cycle
             return node;
         }
-
-        // Handle child nodes with one batch fetch per level
         if (object.getDescendants() != null && !object.getDescendants().isEmpty()) {
             List<ObjectId> ids = object.getDescendants();
-            List<T> children = getMorphiaDataStore().find(getPersistentClass())
-                                  .filter(dev.morphia.query.filters.Filters.in("_id", ids))
-                                  .iterator().toList();
-            java.util.Map<ObjectId, T> byId = new java.util.HashMap<>();
-            for (T c : children) {
-                if (c.getId() != null) {
-                    byId.put(c.getId(), c);
+            if (allowedIds != null && !allowedIds.isEmpty()) {
+                ids = ids.stream().filter(allowedIds::contains).collect(Collectors.toList());
+            }
+            if (ids.isEmpty()) return node;
+            java.util.Map<ObjectId, T> byId;
+            if (allowedNodesById != null) {
+                byId = allowedNodesById;
+            } else {
+                List<T> children = getMorphiaDataStore().find(getPersistentClass())
+                        .filter(in("_id", ids))
+                        .iterator().toList();
+                byId = new java.util.HashMap<>();
+                for (T c : children) {
+                    if (c.getId() != null) {
+                        byId.put(c.getId(), c);
+                    }
                 }
             }
             for (ObjectId id : ids) {
                 T childObject = byId.get(id);
                 if (childObject != null) {
-                    com.e2eq.framework.model.TreeNode childNode = toTreeNode(childObject);
-                    // Curated child data
-                    java.util.Map<String, Object> childData = new java.util.HashMap<>();
-                    childData.put("id", childNode.key);
-                    childData.put("displayName", childObject.getDisplayName());
-                    childData.put("skipValidation", false);
-                    childData.put("defaultUIActions", List.of("CREATE", "UPDATE", "VIEW", "DELETE", "ARCHIVE"));
-                    childNode.data = childData;
-
-                    node.children.add(resolveChildren(childObject, childNode, visited));
+                    TreeNode childNode = toTreeNode(childObject);
+                    childNode.data = buildTreeNodeData(childObject);
+                    node.children.add(resolveChildren(childObject, childNode, visited, allowedIds, allowedNodesById));
                 }
             }
         }
@@ -244,19 +314,21 @@ public abstract class HierarchicalRepo<
 
 
     public List<T> getAllChildren(ObjectId nodeId) {
-        // Start the pipeline on the hierarchy collection for this entity class
+        // Start the pipeline on the hierarchy collection for this entity class.
+        // Use pipeline(match(), graphLookup()) so each stage is a separate pipeline element.
+        // Chained .match().graphLookup() can produce a single stage with multiple fields and
+        // trigger MongoDB error 40323: "A pipeline stage specification object must contain exactly one field."
         Class<T> entityClass = getPersistentClass();
-        Aggregation<T> pipeline = morphiaDataStoreWrapper
-                .getDataStore(getSecurityContextRealmId())
+        Aggregation<T> pipeline = getMorphiaDataStore()
                 .aggregate(entityClass)
-                .match(eq("_id", nodeId))
-                .graphLookup(
+                .pipeline(
+                        match(eq("_id", nodeId)),
                         graphLookup(entityClass)
                                 .startWith("$descendants")
                                 .connectFromField("descendants")
                                 .connectToField("_id")
                                 .as("children")
-                        // No .maxDepth() => unlimited depth
+                                // No .maxDepth() => unlimited depth
                 );
 
         // Execute and return the list of child documents

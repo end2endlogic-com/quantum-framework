@@ -42,9 +42,18 @@ Add the module to your application's POM:
 
 The MCP server exposes the Query Gateway as six tools and three resources at the `/mcp` endpoint. MCP clients discover these automatically via the `tools/list` and `resources/list` JSON-RPC methods.
 
+==== Security
+
+The MCP server and the agent REST API require an authorized user. All endpoints and tools are protected by Quarkus Security.
+
+* **REST API (`/api/agent/*`):** Requires a valid Bearer JWT token in the `Authorization` header.
+* **MCP Endpoint (`/mcp`):** The MCP protocol transport (Streamable HTTP or SSE) must include the same authentication mechanism (typically a `Authorization: Bearer <token>` header) as other REST APIs.
+
+You can generate a long-lived service token for use with the MCP server using the <<Using the Quantum CLI, Quantum CLI>>.
+
 ==== Tools
 
-Tools are defined in `McpGatewayTools` using the Quarkiverse `@Tool` and `@ToolArg` annotations. Each tool delegates to `AgentExecuteHandler`, which routes to the `QueryGatewayResource` -- reusing the same security, realm resolution, and query execution as the REST API.
+Tools are defined in `McpGatewayTools` using the Quarkiverse `@Tool` and `@ToolArg` annotations. Each tool is protected with `@Authenticated` and delegates to `AgentExecuteHandler`, which routes to the `QueryGatewayResource` -- reusing the same security, realm resolution, and query execution as the REST API.
 
 [cols="1,3", options="header"]
 |===
@@ -150,33 +159,62 @@ Once connected, the client can:
 [[mcp-client]]
 === MCP Client
 
-The MCP client side uses the Quarkiverse LangChain4j MCP extension (`quarkus-langchain4j-mcp`) to connect to external MCP servers and consume their tools. This is used to integrate with external tool providers such as Helix MCP, Brain, or HelixAI.
+The MCP client side uses the Quarkiverse LangChain4j MCP extension (`quarkus-langchain4j-mcp`) to connect to external MCP servers and consume their tools. Use the MCP client when you need to:
+
+* Integrate with external tool providers (e.g. Helix MCP, Brain, HelixAI, or any MCP-compliant server)
+* Let your AI services discover and invoke tools from those servers at runtime
+* Access MCP resources (files, API responses, etc.) programmatically or expose them as tools to the LLM
+
+The client implements the https://modelcontextprotocol.io/specification/2025-11-25[MCP Specification] and works with any compatible MCP server (including the Quantum MCP server on another instance).
 
 ==== Configuration
 
-External MCP connections are configured in `application.properties` using the `quarkus.langchain4j.mcp.<client-name>` prefix:
+External MCP connections are configured in `application.properties` using the `quarkus.langchain4j.mcp.<client-name>` prefix. Each named block defines one MCP client (e.g. `helix`, `brain`, `filesystem`).
 
 [source,properties]
 ----
-# Example: connect to an external MCP server over Streamable HTTP
+# Streamable HTTP (recommended for remote servers)
 quarkus.langchain4j.mcp.helix.transport-type=streamable-http
 quarkus.langchain4j.mcp.helix.url=http://helix-mcp.example.com/mcp
 
-# Example: connect to a local MCP server via stdio
+# STDIO (for local subprocess servers, e.g. npm-based MCP servers)
 quarkus.langchain4j.mcp.brain.transport-type=stdio
 quarkus.langchain4j.mcp.brain.command=npx,-y,@brain/mcp-server
+
+# Optional: pass environment variables to the STDIO subprocess
+quarkus.langchain4j.mcp.brain.environment.API_KEY=${EXTERNAL_API_KEY}
 ----
 
-Supported transport types: `stdio`, `http`, `streamable-http`, `websocket`.
+Supported transport types:
 
-==== Injecting MCP Tools
+[cols="1,3", options="header"]
+|===
+| Transport | Description
 
-Inject tools from an external MCP server using `@McpToolBox`:
+| `streamable-http`
+| Recommended for remote MCP servers; uses HTTP with the MCP streamable transport.
+
+| `http`
+| Legacy HTTP/SSE transport. URL typically ends with `/mcp/sse`.
+
+| `stdio`
+| Spawns the MCP server as a subprocess; communication via stdin/stdout. Use `command` (comma-separated parts) and optionally `environment.*` for env vars.
+
+| `websocket`
+| Bidirectional WebSocket. Supported by some servers (e.g. those built with `quarkus-mcp-server`).
+|===
+
+==== Using MCP Tools in AI Services
+
+Enable tools from one or more MCP servers on an AI service using `@McpToolBox`. The LLM can then discover and call those tools during the conversation.
+
+**Single MCP server:**
 
 [source,java]
 ----
 import io.quarkiverse.langchain4j.mcp.runtime.McpToolBox;
 import dev.langchain4j.service.SystemMessage;
+import dev.langchain4j.service.UserMessage;
 import io.quarkiverse.langchain4j.RegisterAiService;
 
 @RegisterAiService
@@ -184,21 +222,101 @@ public interface MyAiService {
 
     @SystemMessage("You are a helpful assistant.")
     @McpToolBox("helix")
-    String chat(String userMessage);
+    String chat(@UserMessage String userMessage);
 }
 ----
 
-Or inject the client directly for programmatic use:
+**Multiple MCP servers:** pass an array of client names to use tools from several servers in one service.
 
 [source,java]
 ----
-import io.quarkiverse.langchain4j.mcp.runtime.McpClientName;
-import dev.langchain4j.mcp.client.McpClient;
-
-@Inject
-@McpClientName("helix")
-McpClient helixClient;
+@McpToolBox({"helix", "brain"})
+String chat(@UserMessage String userMessage);
 ----
+
+**All configured MCP servers:** omit the value to expose every configured MCP client's tools to the AI service.
+
+[source,java]
+----
+@McpToolBox
+String chat(@UserMessage String userMessage);
+----
+
+==== Programmatic Access to MCP Clients
+
+For fine-grained control (custom tool filtering, non-AI workflows, or resource access), inject an `McpClient` directly with `@McpClientName`:
+
+[source,java]
+----
+import dev.langchain4j.mcp.client.McpClient;
+import io.quarkiverse.langchain4j.mcp.runtime.McpClientName;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+
+@ApplicationScoped
+public class McpClientService {
+
+    @Inject
+    @McpClientName("helix")
+    McpClient helixClient;
+
+    public void useClient() {
+        // List tools exposed by the MCP server
+        var tools = helixClient.listTools();
+
+        // Execute a tool by name with JSON arguments
+        var args = com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode().put("key", "value");
+        var request = dev.langchain4j.mcp.client.protocol.McpCallToolRequest.builder()
+            .name("some_tool_name")
+            .arguments(args)
+            .build();
+        var result = helixClient.executeTool(request);
+
+        // List and read resources (if the server exposes resources)
+        var resources = helixClient.listResources();
+        var content = helixClient.readResource("some://resource-uri");
+    }
+}
+----
+
+Use programmatic access when you need to drive tool execution from non-AI code, filter or transform tool results, or integrate MCP resources into your own APIs.
+
+==== Dev UI: Testing MCP Clients
+
+In development mode (`mvn quarkus:dev`), open the Quarkus Dev UI at `http://localhost:8080/q/dev-ui` and use the **MCP clients** card to:
+
+* View all configured MCP clients
+* Browse tools (names, descriptions, parameter schemas)
+* Execute tools with custom arguments and inspect results
+
+This is useful for exploring a new MCP server or debugging tool arguments before wiring it into an AI service.
+
+==== Optional: Resources as Tools
+
+If an MCP server exposes resources, you can expose them as synthetic tools so the LLM can list and read resources:
+
+[source,properties]
+----
+quarkus.langchain4j.mcp.expose-resources-as-tools=true
+----
+
+When enabled, the client adds `list_resources` and `get_resource` to the tool set; your AI service can then answer questions like “List available resources” or “Show me the content of resource X” when using `@McpToolBox` for that client.
+
+==== Optional: Headers and Authorization
+
+* **Static headers:** for HTTP-based clients, set headers via config:
+
++
+[source,properties]
+----
+quarkus.langchain4j.mcp.helix.header.X-Custom-Header=MyValue
+----
+
+* **Dynamic headers:** implement `dev.langchain4j.mcp.client.McpHeadersSupplier` and provide a CDI bean; it will be used for Streamable HTTP clients to add headers per request.
+
+* **Authorization:** implement `io.quarkiverse.langchain4j.mcp.auth.McpClientAuthProvider` to supply a bearer token or API key. Use `@McpClientName` on the bean to restrict it to a specific client. For OIDC, add the dependency `quarkus-langchain4j-oidc-mcp-auth-provider` to propagate the user’s access token to the MCP server.
+
+See the https://docs.quarkiverse.io/quarkus-langchain4j/dev/mcp.html[Quarkus LangChain4j MCP documentation] for full details on transports, auth, and the MCP Registry client.
 
 [[agent-rest-api]]
 === Agent REST API

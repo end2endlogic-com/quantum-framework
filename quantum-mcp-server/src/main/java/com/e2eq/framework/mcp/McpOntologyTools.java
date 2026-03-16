@@ -11,6 +11,7 @@ import com.e2eq.ontology.runtime.TenantOntologyRegistryProvider;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkiverse.mcp.server.Tool;
 import io.quarkiverse.mcp.server.ToolArg;
+import io.quarkus.security.Authenticated;
 import jakarta.inject.Inject;
 
 import java.util.*;
@@ -25,6 +26,7 @@ import java.util.*;
  * @see OntologyEdgeRepo
  * @see TenantOntologyRegistryProvider
  */
+@Authenticated
 public class McpOntologyTools {
 
     @Inject

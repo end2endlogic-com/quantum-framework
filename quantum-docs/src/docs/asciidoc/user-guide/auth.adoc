@@ -364,6 +364,42 @@ curl -sS -X POST \
   }'
 ----
 
+Alternatively, you can use the **Quantum CLI** tool to generate service tokens interactively or via command-line arguments.
+
+===== Using the Quantum CLI
+
+The Quantum CLI (`quantum-cli` module) provides a `generate-token` command that handles authentication and token generation in a single step.
+
+**Build the CLI:**
+
+[source,bash]
+----
+mvn clean package -pl quantum-cli -am
+----
+
+The executable JAR is located at `quantum-cli/target/quarkus-app/quarkus-run.jar`.
+
+**Usage:**
+
+[source,bash]
+----
+java -jar quantum-cli/target/quarkus-app/quarkus-run.jar \
+  --user admin@company.com \
+  --roles admin,system \
+  --expires -1 \
+  --description "MCP Server Token" \
+  --url http://localhost:8080
+----
+
+**Command Options:**
+
+*   `-u, --user`: (Required) The User ID to authenticate as.
+*   `-p, --password`: (Required) The password for authentication. You will be prompted for it if not provided.
+*   `-r, --roles`: Comma-separated list of roles to embed in the token.
+*   `-e, --expires`: Expiration in seconds. Use `-1` for a non-expiring token.
+*   `-d, --description`: Optional description for the service token.
+*   `--url`: The base URL of the Quantum API (defaults to `http://localhost:8080`).
+
 Response:
 
 [source,json]
