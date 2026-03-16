@@ -194,9 +194,17 @@ final class RuleScriptExecutor {
         resourceBindings.put("action", rcontext != null ? rcontext.getAction() : null);
         resourceBindings.put("resourceId", rcontext != null ? rcontext.getResourceId() : null);
         resourceBindings.put("ownerId", rcontext != null ? rcontext.getOwnerId() : null);
+        resourceBindings.put("realm", rcontext != null ? rcontext.getRealm() : null);
+        resourceBindings.put("getArea", (ProxyExecutable) args -> rcontext != null ? rcontext.getArea() : null);
+        resourceBindings.put("getFunctionalDomain", (ProxyExecutable) args -> rcontext != null ? rcontext.getFunctionalDomain() : null);
+        resourceBindings.put("getAction", (ProxyExecutable) args -> rcontext != null ? rcontext.getAction() : null);
+        resourceBindings.put("getResourceId", (ProxyExecutable) args -> rcontext != null ? rcontext.getResourceId() : null);
+        resourceBindings.put("getOwnerId", (ProxyExecutable) args -> rcontext != null ? rcontext.getOwnerId() : null);
+        resourceBindings.put("getRealm", (ProxyExecutable) args -> rcontext != null ? rcontext.getRealm() : null);
         try {
             Set<String> resourceLabels = labelService != null ? labelService.labelsFor(rcontext) : Set.of();
             resourceBindings.put("labels", new ArrayList<>(resourceLabels));
+            resourceBindings.put("getLabels", (ProxyExecutable) args -> new ArrayList<>(resourceLabels));
         } catch (Throwable ignored) {
         }
         return resourceBindings;
@@ -208,6 +216,10 @@ final class RuleScriptExecutor {
         principalBindings.put("defaultRealm", pcontext != null ? pcontext.getDefaultRealm() : null);
         principalBindings.put("scope", pcontext != null ? pcontext.getScope() : null);
         principalBindings.put("roles", extractRoles(pcontext));
+        principalBindings.put("getUserId", (ProxyExecutable) args -> pcontext != null ? pcontext.getUserId() : null);
+        principalBindings.put("getDefaultRealm", (ProxyExecutable) args -> pcontext != null ? pcontext.getDefaultRealm() : null);
+        principalBindings.put("getScope", (ProxyExecutable) args -> pcontext != null ? pcontext.getScope() : null);
+        principalBindings.put("getRoles", (ProxyExecutable) args -> extractRoles(pcontext));
         Map<String, Object> dataDomainBindings = new HashMap<>();
         try {
             if (pcontext != null && pcontext.getDataDomain() != null) {
@@ -216,13 +228,20 @@ final class RuleScriptExecutor {
                 dataDomainBindings.put("tenantId", pcontext.getDataDomain().getTenantId());
                 dataDomainBindings.put("dataSegment", pcontext.getDataDomain().getDataSegment());
                 dataDomainBindings.put("ownerId", pcontext.getDataDomain().getOwnerId());
+                dataDomainBindings.put("getOrgRefName", (ProxyExecutable) args -> pcontext.getDataDomain().getOrgRefName());
+                dataDomainBindings.put("getAccountNum", (ProxyExecutable) args -> pcontext.getDataDomain().getAccountNum());
+                dataDomainBindings.put("getTenantId", (ProxyExecutable) args -> pcontext.getDataDomain().getTenantId());
+                dataDomainBindings.put("getDataSegment", (ProxyExecutable) args -> pcontext.getDataDomain().getDataSegment());
+                dataDomainBindings.put("getOwnerId", (ProxyExecutable) args -> pcontext.getDataDomain().getOwnerId());
             }
         } catch (Throwable ignored) {
         }
         principalBindings.put("dataDomain", dataDomainBindings);
+        principalBindings.put("getDataDomain", (ProxyExecutable) args -> ProxyObject.fromMap(dataDomainBindings));
         try {
             Set<String> principalLabels = labelService != null ? labelService.labelsFor(pcontext) : Set.of();
             principalBindings.put("labels", new ArrayList<>(principalLabels));
+            principalBindings.put("getLabels", (ProxyExecutable) args -> new ArrayList<>(principalLabels));
         } catch (Throwable ignored) {
         }
         return principalBindings;

@@ -140,11 +140,95 @@ public class RuleContext {
         return RuleContextRequestCache.shouldSkip();
     }
 
-    private static String buildPermissionCacheKey(
+    private String buildPermissionCacheKey(
             com.e2eq.framework.model.securityrules.PrincipalContext pctx,
             com.e2eq.framework.model.securityrules.ResourceContext rctx,
             com.e2eq.framework.model.securityrules.RuleEffect defaultEffect) {
-        return RuleContextRequestCache.buildPermissionCacheKey(pctx, rctx, defaultEffect);
+        return RuleContextRequestCache.buildPermissionCacheKey(pctx, rctx, defaultEffect)
+                + "|" + policyVersion
+                + "|" + getEvalModeForThread().name();
+    }
+
+    private List<SecurityCheckResponse.RuleFilterInfo> collectMatchedAllowFilterRules(SecurityCheckResponse response) {
+        LinkedHashMap<String, SecurityCheckResponse.RuleFilterInfo> infos = new LinkedHashMap<>();
+        if (response == null || response.getMatchedRuleResults() == null) {
+            return new ArrayList<>();
+        }
+        for (RuleResult result : response.getMatchedRuleResults()) {
+            if (result == null || result.getRule() == null) {
+                continue;
+            }
+            if (result.getDeterminedEffect() == RuleDeterminedEffect.NOT_APPLICABLE) {
+                continue;
+            }
+            Rule rule = result.getRule();
+            if (rule.getEffect() != RuleEffect.ALLOW) {
+                continue;
+            }
+            if (StringUtils.isBlank(rule.getAndFilterString()) && StringUtils.isBlank(rule.getOrFilterString())) {
+                continue;
+            }
+            String key = (rule.getName() != null && !rule.getName().isBlank())
+                    ? rule.getName()
+                    : rule.getSecurityURI().uriString();
+            infos.putIfAbsent(key, new SecurityCheckResponse.RuleFilterInfo(
+                    rule.getName(),
+                    rule.getAndFilterString(),
+                    rule.getOrFilterString(),
+                    rule.getJoinOp() != null ? rule.getJoinOp().name() : "AND"
+            ));
+        }
+        return new ArrayList<>(infos.values());
+    }
+
+    private void surfaceScopedFilterConstraints(SecurityCheckResponse response) {
+        if (response == null) {
+            return;
+        }
+        List<SecurityCheckResponse.RuleFilterInfo> matchedFilters = collectMatchedAllowFilterRules(response);
+        if (matchedFilters.isEmpty()) {
+            return;
+        }
+
+        LinkedHashMap<String, SecurityCheckResponse.RuleFilterInfo> merged = new LinkedHashMap<>();
+        if (response.getFinalEffect() == RuleEffect.ALLOW && response.getFilterConstraints() != null) {
+            for (SecurityCheckResponse.RuleFilterInfo info : response.getFilterConstraints()) {
+                if (info == null) {
+                    continue;
+                }
+                String key = (info.getRuleName() != null && !info.getRuleName().isBlank())
+                        ? info.getRuleName()
+                        : String.valueOf(info.getAndFilterString()) + "|" + String.valueOf(info.getOrFilterString());
+                merged.putIfAbsent(key, info);
+            }
+        }
+        for (SecurityCheckResponse.RuleFilterInfo info : matchedFilters) {
+            String key = (info.getRuleName() != null && !info.getRuleName().isBlank())
+                    ? info.getRuleName()
+                    : String.valueOf(info.getAndFilterString()) + "|" + String.valueOf(info.getOrFilterString());
+            merged.putIfAbsent(key, info);
+        }
+
+        response.setFilterConstraintsPresent(true);
+        response.getFilterConstraints().clear();
+        response.getFilterConstraints().addAll(merged.values());
+        response.setDecisionScope("SCOPED");
+        response.setScopedConstraintsPresent(true);
+        response.getScopedConstraints().clear();
+        for (SecurityCheckResponse.RuleFilterInfo info : response.getFilterConstraints()) {
+            String joinOp = info.getJoinOp();
+            if (StringUtils.isNotBlank(info.getAndFilterString())) {
+                response.getScopedConstraints().add(new SecurityCheckResponse.ScopedConstraint(
+                        "FILTER", info.getAndFilterString(), joinOp));
+            }
+            if (StringUtils.isNotBlank(info.getOrFilterString())) {
+                response.getScopedConstraints().add(new SecurityCheckResponse.ScopedConstraint(
+                        "FILTER", info.getOrFilterString(), joinOp));
+            }
+        }
+        if ((response.getDecision() == null || response.getDecision().isBlank()) && response.getFinalEffect() != null) {
+            response.setDecision(response.getFinalEffect().name());
+        }
     }
 
     public RuleContext(SecurityUtils securityUtils, EnvConfigUtils envConfigUtils) {
@@ -548,22 +632,6 @@ public class RuleContext {
        Rule r = tenantAdminbuilder.build();
        this.addRule(header, r);
 
-        // **** User role (standard authenticated user: list/get/create/update within their realm) ****
-        header = new SecurityURIHeader.Builder()
-                .withIdentity("user")
-                .withArea("*")
-                .withFunctionalDomain("*")
-                .withAction("*")
-                .build();
-        uri = new SecurityURI(header, body);
-        Rule userRule = new Rule.Builder()
-                .withName("user role can access tenant data in their realm")
-                .withSecurityURI(uri)
-                .withEffect(RuleEffect.ALLOW)
-                .withPriority(0)
-                .withFinalRule(true)
-                .build();
-        this.addRule(header, userRule);
     }
 
     /**
@@ -582,6 +650,7 @@ public class RuleContext {
         // Legacy fields
         compiledIndex = null;
         compiledIndexRealm = null;
+        clearRequestCache();
     }
 
     /**
@@ -602,6 +671,7 @@ public class RuleContext {
                 compiledIndexRealm = null;
             }
         }
+        clearRequestCache();
     }
 
     /**
@@ -656,6 +726,7 @@ public class RuleContext {
         compiledIndex = null;
         compiledIndexRealm = null;
         policyVersion = System.nanoTime();
+        clearRequestCache();
         Log.info("RuleContext: invalidated all caches");
     }
 
@@ -1610,6 +1681,10 @@ public class RuleContext {
                 resp.setDecision(resp.getFinalEffect().name());
             }
 
+            if (resourceInstance == null && resp.getFinalEffect() == RuleEffect.ALLOW) {
+                surfaceScopedFilterConstraints(resp);
+            }
+
             // Ensure NA label for DEFAULT
             if ("DEFAULT".equals(resp.getDecisionScope()) && resp.getNaLabel() == null && resp.getFinalEffect() != null) {
                 String label = (resp.getFinalEffect() == RuleEffect.ALLOW) ? "NA-ALLOW" : "NA-DENY";
@@ -1752,18 +1827,33 @@ public class RuleContext {
 
         SecurityCheckResponse response = this.checkRules(pcontext, rcontext);
 
+        if (response.getFinalEffect() != RuleEffect.ALLOW) {
+            return filters;
+        }
+
         List<Filter> andFilters = new ArrayList<>();
         List<Filter> orFilters = new ArrayList<>();
 
         MorphiaUtils.VariableBundle vars = resolveVariableBundle(pcontext, rcontext, modelClass);
 
-        for (RuleResult result : response.getMatchedRuleResults()) {
-            // ignore Not Applicable rules
-            if (result.getDeterminedEffect() == RuleDeterminedEffect.NOT_APPLICABLE) {
-                continue;
+        List<SecurityCheckResponse.RuleFilterInfo> filterInfos = collectMatchedAllowFilterRules(response);
+        if (response.getFilterConstraints() != null) {
+            for (SecurityCheckResponse.RuleFilterInfo info : response.getFilterConstraints()) {
+                if (info == null) {
+                    continue;
+                }
+                boolean alreadyPresent = filterInfos.stream().anyMatch(existing ->
+                        Objects.equals(existing.getRuleName(), info.getRuleName())
+                                && Objects.equals(existing.getAndFilterString(), info.getAndFilterString())
+                                && Objects.equals(existing.getOrFilterString(), info.getOrFilterString())
+                                && Objects.equals(existing.getJoinOp(), info.getJoinOp()));
+                if (!alreadyPresent) {
+                    filterInfos.add(info);
+                }
             }
+        }
 
-            Rule rule = result.getRule();
+        for (SecurityCheckResponse.RuleFilterInfo info : filterInfos) {
 
             // Try to convert filter strings, but skip this rule if variables can't be resolved
             // This handles the case where a rule matches by area/domain/action but its filter
@@ -1772,15 +1862,15 @@ public class RuleContext {
             // to UserProfile queries even if they share the same area/domain/action.
             boolean ruleFilterSkipped = false;
 
-            if (rule.getAndFilterString() != null && !rule.getAndFilterString().isEmpty()) {
+            if (info.getAndFilterString() != null && !info.getAndFilterString().isEmpty()) {
                 try {
-                    andFilters.add(MorphiaUtils.convertToFilter(rule.getAndFilterString(), vars, modelClass));
+                    andFilters.add(MorphiaUtils.convertToFilter(info.getAndFilterString(), vars, modelClass));
                 } catch (IllegalStateException e) {
                     // Filter string contains unresolved variables - this rule doesn't apply to this model class
                     if (e.getMessage() != null && e.getMessage().contains("Unresolved resolver variable")) {
                         if (Log.isDebugEnabled()) {
                             Log.debugf("Skipping rule '%s' filter for model class %s: %s",
-                                    rule.getName(), modelClass != null ? modelClass.getName() : "null", e.getMessage());
+                                    info.getRuleName(), modelClass != null ? modelClass.getName() : "null", e.getMessage());
                         }
                         ruleFilterSkipped = true;
                     } else {
@@ -1790,15 +1880,15 @@ public class RuleContext {
                 }
             }
 
-            if (!ruleFilterSkipped && rule.getOrFilterString() != null && !rule.getOrFilterString().isEmpty()) {
+            if (!ruleFilterSkipped && info.getOrFilterString() != null && !info.getOrFilterString().isEmpty()) {
                 try {
-                    orFilters.add(MorphiaUtils.convertToFilter(rule.getOrFilterString(), vars, modelClass));
+                    orFilters.add(MorphiaUtils.convertToFilter(info.getOrFilterString(), vars, modelClass));
                 } catch (IllegalStateException e) {
                     // Filter string contains unresolved variables - this rule doesn't apply to this model class
                     if (e.getMessage() != null && e.getMessage().contains("Unresolved resolver variable")) {
                         if (Log.isDebugEnabled()) {
                             Log.debugf("Skipping rule '%s' filter for model class %s: %s",
-                                    rule.getName(), modelClass != null ? modelClass.getName() : "null", e.getMessage());
+                                    info.getRuleName(), modelClass != null ? modelClass.getName() : "null", e.getMessage());
                         }
                         ruleFilterSkipped = true;
                     } else {
@@ -1818,8 +1908,8 @@ public class RuleContext {
 
             if (!andFilters.isEmpty() && !orFilters.isEmpty()) {
                 FilterJoinOp joinOp;
-                if (rule.getJoinOp() != null) {
-                    joinOp = rule.getJoinOp();
+                if (info.getJoinOp() != null && !info.getJoinOp().isBlank()) {
+                    joinOp = FilterJoinOp.valueOf(info.getJoinOp());
                 } else {
                     joinOp = FilterJoinOp.AND;
                 }
@@ -1841,9 +1931,6 @@ public class RuleContext {
                         orFilters.clear();
                     }
                 }
-            }
-            if (rule.isFinalRule()) {
-                break;
             }
         }
 
