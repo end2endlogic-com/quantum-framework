@@ -1,4 +1,4 @@
-package com.e2eq.framework.securityrules;
+package com.e2eq.framework.security.runtime;
 
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
@@ -548,6 +548,22 @@ public class RuleContext {
        Rule r = tenantAdminbuilder.build();
        this.addRule(header, r);
 
+        // **** User role (standard authenticated user: list/get/create/update within their realm) ****
+        header = new SecurityURIHeader.Builder()
+                .withIdentity("user")
+                .withArea("*")
+                .withFunctionalDomain("*")
+                .withAction("*")
+                .build();
+        uri = new SecurityURI(header, body);
+        Rule userRule = new Rule.Builder()
+                .withName("user role can access tenant data in their realm")
+                .withSecurityURI(uri)
+                .withEffect(RuleEffect.ALLOW)
+                .withPriority(0)
+                .withFinalRule(true)
+                .build();
+        this.addRule(header, userRule);
     }
 
     /**

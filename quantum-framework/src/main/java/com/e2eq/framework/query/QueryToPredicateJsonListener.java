@@ -1,4 +1,4 @@
-package com.e2eq.framework.query;
+package com.e2eq.framework.query.runtime;
 
 import com.e2eq.framework.grammar.BIAPIQueryBaseListener;
 import com.e2eq.framework.grammar.BIAPIQueryParser;

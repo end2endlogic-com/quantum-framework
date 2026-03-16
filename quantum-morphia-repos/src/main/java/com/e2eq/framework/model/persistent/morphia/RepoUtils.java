@@ -2,7 +2,7 @@ package com.e2eq.framework.model.persistent.morphia;
 
 import com.e2eq.framework.model.persistent.base.BaseModel;
 import com.e2eq.framework.model.persistent.base.ReferenceEntry;
-import com.e2eq.framework.securityrules.RuleContext;
+import com.e2eq.framework.security.runtime.RuleContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;

@@ -5,7 +5,7 @@ package com.e2eq.framework.api.security;
 
 import com.e2eq.framework.model.securityrules.*;
 import com.e2eq.framework.model.security.Rule;
-import com.e2eq.framework.securityrules.RuleContext;
+import com.e2eq.framework.security.runtime.RuleContext;
 import com.e2eq.framework.util.*;
 import io.quarkus.logging.Log;
 import io.quarkus.test.junit.QuarkusTest;

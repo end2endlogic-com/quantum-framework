@@ -3,6 +3,7 @@ package com.e2eq.framework.model.auth.provider.jwtToken;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
@@ -185,12 +186,17 @@ public class TokenUtils {
         }
 
         private static byte[] readAllBytes(InputStream is, String location) throws IOException {
-                byte[] tmp = new byte[4096];
-                int length = is.read(tmp);
-                if (length <= 0) {
+                ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                byte[] chunk = new byte[4096];
+                int length;
+                while ((length = is.read(chunk)) != -1) {
+                        buffer.write(chunk, 0, length);
+                }
+                byte[] allBytes = buffer.toByteArray();
+                if (allBytes.length == 0) {
                         throw new IOException("Key file is empty: " + location);
                 }
-                return java.util.Arrays.copyOf(tmp, length);
+                return allBytes;
         }
 
 	public static PublicKey decodePublicKey(String pemEncoded) throws Exception {
