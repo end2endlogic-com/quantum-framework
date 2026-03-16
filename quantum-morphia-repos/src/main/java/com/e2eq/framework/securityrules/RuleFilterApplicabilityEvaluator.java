@@ -108,6 +108,14 @@ final class RuleFilterApplicabilityEvaluator {
             }
             return Optional.empty();
         }
+        if ((hasAnd && andPredicate == null) || (hasOr && orPredicate == null)) {
+            if (matchEvent != null) {
+                matchEvent.setFilterEvaluated(false);
+                matchEvent.setFilterResult(null);
+                matchEvent.setFilterReason("Predicate compilation unavailable");
+            }
+            return Optional.empty();
+        }
 
         boolean andOk = true;
         boolean orOk = true;

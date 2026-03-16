@@ -1646,8 +1646,11 @@ public class RuleContext {
 
     /**
      * Attempt to evaluate rule filter strings as applicability constraints against a concrete resource.
-     * This initial implementation is a safe stub that records trace fields and returns Optional.empty()
-     * to preserve current behavior. A future iteration will compile predicates using QueryPredicates.
+     * Returns {@link Optional#of(Boolean)} when the filter predicates were successfully compiled and
+     * evaluated against the provided resource facts. Returns {@link Optional#empty()} when evaluation
+     * cannot be completed because required context is missing, predicate compilation is unavailable,
+     * or evaluation fails. The supplied {@code matchEvent}, when present, is populated with the
+     * evaluation outcome or the reason the evaluation was deferred.
      *
      * Note: We intentionally keep this non-throwing. Any failure or missing context results in Optional.empty().
      */
