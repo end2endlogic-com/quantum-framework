@@ -250,7 +250,7 @@ e2eq.ontology.enabled=true
 - Use OntologyMaterializer when sources or intermediates change (e.g., Order/Customer/Org/Address/Shipment in the e‑commerce example).
 
 6) Use edges in queries/policies
-- Wrap BSON via ListQueryRewriter or constrain by _id sets. See xref:ontology.adoc#ontology-integration-morphia-permissions[Integrating Ontology].
+- Wrap BSON via ListQueryRewriter or constrain by _id sets. See xref:ontology.adoc#ontology-integration-morphia-permissions-section[Integrating Ontology].
 
 Notes
 

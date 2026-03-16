@@ -173,7 +173,7 @@ Canonical SecurityIdentity with userId as principal
 
 Each provider's `getIssuer()` method returns its expected issuer string.
 For the custom JWT provider, this is the value of `mp.jwt.verify.issuer`.
-For an OIDC provider, it is typically the `auth-server-url` (e.g., `https://cognito-idp.us-east-1.amazonaws.com/<pool-id>`).
+For an OIDC provider, it is typically the `auth-server-url` (for example, `https://cognito-idp.us-east-1.amazonaws.com/{pool-id}`).
 
 === Role Provenance Tracking
 

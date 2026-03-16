@@ -49,7 +49,7 @@ The MCP server and the agent REST API require an authorized user. All endpoints 
 * **REST API (`/api/agent/*`):** Requires a valid Bearer JWT token in the `Authorization` header.
 * **MCP Endpoint (`/mcp`):** The MCP protocol transport (Streamable HTTP or SSE) must include the same authentication mechanism (typically a `Authorization: Bearer <token>` header) as other REST APIs.
 
-You can generate a long-lived service token for use with the MCP server using the <<Using the Quantum CLI, Quantum CLI>>.
+You can generate a long-lived service token for use with the MCP server using the xref:auth.adoc#using-the-quantum-cli[Quantum CLI].
 
 ==== Tools
 

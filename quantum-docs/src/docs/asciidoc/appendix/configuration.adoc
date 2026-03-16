@@ -212,4 +212,4 @@ Materialization hooks
 See also
 
 - xref:../user-guide/ontology.adoc[Ontologies in Quantum]
-- xref:../user-guide/ontology.adoc#ontology-integration-morphia-permissions[Integrating Ontology]
+- xref:../user-guide/ontology.adoc#ontology-integration-morphia-permissions-section[Integrating Ontology]
