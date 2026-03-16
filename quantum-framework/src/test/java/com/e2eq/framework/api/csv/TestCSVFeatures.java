@@ -4,14 +4,14 @@ package com.e2eq.framework.api.csv;
 import com.e2eq.framework.model.persistent.base.DynamicAttribute;
 import com.e2eq.framework.model.persistent.base.DynamicAttributeSet;
 import com.e2eq.framework.model.persistent.imports.ImportProfile;
-import com.e2eq.framework.securityrules.SecuritySession;
+import com.e2eq.framework.security.runtime.SecuritySession;
 import com.e2eq.framework.persistent.BaseRepoTest;
 import com.e2eq.framework.persistent.TestCSVModelRepo;
 import com.e2eq.framework.persistent.TestParentRepo;
 import com.e2eq.framework.test.CSVModel;
 import com.e2eq.framework.test.ParentModel;
-import com.e2eq.framework.util.CSVExportHelper;
-import com.e2eq.framework.util.CSVImportHelper;
+import com.e2eq.framework.csv.CSVExportHelper;
+import com.e2eq.framework.csv.CSVImportHelper;
 
 import io.quarkus.logging.Log;
 import io.quarkus.test.junit.QuarkusTest;

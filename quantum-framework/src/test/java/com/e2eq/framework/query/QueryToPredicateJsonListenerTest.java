@@ -1,5 +1,6 @@
-package com.e2eq.framework.query;
+package com.e2eq.framework.tests.query;
 
+import com.e2eq.framework.query.runtime.QueryPredicates;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
 

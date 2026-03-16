@@ -1,4 +1,4 @@
-package com.e2eq.framework.model.persistent.morphia.changesets;
+package com.e2eq.framework.tests.migration.changesets;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;

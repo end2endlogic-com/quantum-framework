@@ -6,7 +6,7 @@ import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.security.Realm;
 
-import com.e2eq.framework.securityrules.RuleContext;
+import com.e2eq.framework.security.runtime.RuleContext;
 import com.e2eq.framework.util.SecurityUtils;
 import com.mongodb.client.MongoClient;
 import dev.morphia.transactions.MorphiaSession;

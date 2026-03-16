@@ -4,7 +4,7 @@ import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.base.EntityReference;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
-import com.e2eq.framework.securityrules.SecuritySession;
+import com.e2eq.framework.security.runtime.SecuritySession;
 import com.e2eq.framework.util.EnvConfigUtils;
 import com.e2eq.framework.util.SecurityUtils;
 import com.mongodb.client.MongoCursor;

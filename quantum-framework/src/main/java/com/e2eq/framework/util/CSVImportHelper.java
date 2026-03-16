@@ -1,4 +1,4 @@
-package com.e2eq.framework.util;
+package com.e2eq.framework.csv;
 
 
 import com.e2eq.framework.imports.dynamic.DynamicAttributeImportService;

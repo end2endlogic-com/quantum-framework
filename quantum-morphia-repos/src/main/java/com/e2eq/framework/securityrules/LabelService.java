@@ -1,5 +1,8 @@
-package com.e2eq.framework.securityrules;
+package com.e2eq.framework.security.runtime;
 
+import com.e2eq.framework.securityrules.LabelField;
+import com.e2eq.framework.securityrules.LabelResolver;
+import com.e2eq.framework.securityrules.LabelSource;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.enterprise.inject.Instance;

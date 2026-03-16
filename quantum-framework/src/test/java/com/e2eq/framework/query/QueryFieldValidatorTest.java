@@ -1,9 +1,10 @@
-package com.e2eq.framework.query;
+package com.e2eq.framework.tests.query;
 
 import com.e2eq.framework.annotations.QueryFieldValidator;
 import com.e2eq.framework.grammar.BIAPIQueryLexer;
 import com.e2eq.framework.grammar.BIAPIQueryParser;
 import com.e2eq.framework.model.persistent.base.BaseModel;
+import com.e2eq.framework.query.runtime.ValidatingQueryToPredicateJsonListener;
 import org.antlr.v4.runtime.CharStreams;
 import org.antlr.v4.runtime.CommonTokenStream;
 import org.antlr.v4.runtime.tree.ParseTreeWalker;

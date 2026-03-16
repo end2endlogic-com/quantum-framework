@@ -1,6 +1,7 @@
-package com.e2eq.framework.securityrules;
+package com.e2eq.framework.security.runtime;
 
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
+import com.e2eq.framework.securityrules.LabelResolver;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.lang.reflect.Field;

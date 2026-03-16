@@ -100,7 +100,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     boolean enforcePreAuth;
 
     @Inject
-    com.e2eq.framework.securityrules.RuleContext ruleContext;
+    com.e2eq.framework.security.runtime.RuleContext ruleContext;
 
     @Inject
     jakarta.enterprise.inject.Instance<com.e2eq.framework.model.securityrules.PrincipalContextPropertiesResolver> propertyResolvers;
@@ -122,7 +122,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         // Initialize per-request permission cache (if enabled)
         try {
             if (ruleContext != null) {
-                com.e2eq.framework.securityrules.RuleContext.initRequestCacheIfAbsent();
+                com.e2eq.framework.security.runtime.RuleContext.initRequestCacheIfAbsent();
             }
         } catch (Throwable ignored) {}
 
@@ -192,7 +192,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             SecurityContext.clear();
             // Clear per-request permission cache
             try {
-                com.e2eq.framework.securityrules.RuleContext.clearRequestCache();
+                com.e2eq.framework.security.runtime.RuleContext.clearRequestCache();
             } catch (Throwable ignored) {}
         }
 

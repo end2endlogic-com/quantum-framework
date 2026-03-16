@@ -6,7 +6,7 @@ import com.e2eq.framework.model.security.Rule;
 import com.e2eq.framework.model.securityrules.*;
 import com.e2eq.framework.model.persistent.morphia.PolicyRepo;
 import com.e2eq.framework.persistent.BaseRepoTest;
-import com.e2eq.framework.securityrules.RuleContext;
+import com.e2eq.framework.security.runtime.RuleContext;
 import com.e2eq.framework.util.SecurityUtils;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
