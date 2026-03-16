@@ -1,7 +1,6 @@
 package com.e2eq.framework.service.seed;
 
 import io.quarkus.logging.Log;
-import io.quarkus.runtime.Startup;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
@@ -13,7 +12,6 @@ import com.e2eq.framework.util.EnvConfigUtils;
 /**
  * Logs a summary of pending seed packs at application startup for key realms.
  */
-@Startup
 @ApplicationScoped
 public class PendingSeedsStartupLogger {
 
@@ -26,9 +24,7 @@ public class PendingSeedsStartupLogger {
     @Inject
     EnvConfigUtils envConfigUtils;
 
-
-    @jakarta.annotation.PostConstruct
-    void onStart() {
+    public void onStart() {
         List<String> realms = new ArrayList<>();
         // Log for system, default, and test realms if they differ
         realms.add(envConfigUtils.getSystemRealm());

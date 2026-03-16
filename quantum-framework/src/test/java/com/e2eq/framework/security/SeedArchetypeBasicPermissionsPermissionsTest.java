@@ -4,7 +4,7 @@ import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.securityrules.*;
 import com.e2eq.framework.persistent.BaseRepoTest;
 import com.e2eq.framework.seeds.ArchetypeSeeder;
-import com.e2eq.framework.securityrules.RuleContext;
+import com.e2eq.framework.security.runtime.RuleContext;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
 import jakarta.enterprise.context.control.ActivateRequestContext;

@@ -1,8 +1,9 @@
-package com.e2eq.framework.securityrules;
+package com.e2eq.framework.tests.securityrules;
 
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
+import com.e2eq.framework.security.runtime.AccessListResolver;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.bson.types.ObjectId;
 

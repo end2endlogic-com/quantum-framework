@@ -3,7 +3,7 @@ package com.e2eq.framework.rest.resources;
 import com.e2eq.framework.model.persistent.morphia.PolicyRepo;
 import com.e2eq.framework.model.security.Policy;
 import com.e2eq.framework.model.security.Rule;
-import com.e2eq.framework.securityrules.RuleContext;
+import com.e2eq.framework.security.runtime.RuleContext;
 import com.e2eq.framework.securityrules.io.YamlPolicyItem;
 import com.e2eq.framework.securityrules.io.YamlPolicyLoader;
 import com.e2eq.framework.securityrules.io.YamlRuleMapper;
@@ -147,7 +147,7 @@ public class PolicyResource extends BaseResource<Policy, PolicyRepo>{
       List<Policy> filtered = new ArrayList<>();
       try {
          // Use QueryPredicates to compile filter
-         Class<?> qp = Class.forName("com.e2eq.framework.query.QueryPredicates");
+         Class<?> qp = Class.forName("com.e2eq.framework.query.runtime.QueryPredicates");
          java.lang.reflect.Method m = qp.getMethod("compilePredicate", String.class, Map.class, Map.class);
 
          @SuppressWarnings("unchecked")

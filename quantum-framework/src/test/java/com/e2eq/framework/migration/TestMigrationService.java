@@ -5,10 +5,12 @@ import com.e2eq.framework.model.persistent.migration.base.DatabaseVersion;
 import com.e2eq.framework.model.persistent.migration.base.MigrationService;
 import com.e2eq.framework.model.persistent.morphia.DatabaseVersionRepo;
 
-import com.e2eq.framework.securityrules.SecuritySession;
+import com.e2eq.framework.security.runtime.SecuritySession;
 import com.e2eq.framework.persistent.BaseRepoTest;
 import com.e2eq.framework.exceptions.DatabaseMigrationException;
 import com.e2eq.framework.util.TestUtils;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.model.IndexOptions;
 
 import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.logging.Log;
@@ -29,6 +31,9 @@ public class TestMigrationService extends BaseRepoTest {
 
     @Inject
     TestUtils testUtils;
+
+    @Inject
+    MongoClient mongoClient;
 
     @Test
     public void testBasicSaveAndLoad() throws ReferentialIntegrityViolationException {
@@ -139,5 +144,27 @@ public class TestMigrationService extends BaseRepoTest {
             });
 
         }
+    }
+
+    @Test
+    public void testStartupInitializationDoesNotDropCustomIndexes() {
+        String realm = testUtils.getSystemRealm();
+        String collectionName = "startupIndexGuard";
+        String indexName = "custom_marker_idx";
+
+        var collection = mongoClient.getDatabase(realm).getCollection(collectionName);
+        collection.drop();
+        collection.insertOne(new org.bson.Document("marker", "keep"));
+        collection.createIndex(new org.bson.Document("marker", 1), new IndexOptions().name(indexName));
+
+        migrationService.initializeStartupRealms();
+
+        boolean indexStillPresent = collection.listIndexes()
+                .into(new java.util.ArrayList<>())
+                .stream()
+                .anyMatch(idx -> indexName.equals(idx.getString("name")));
+        Assertions.assertTrue(indexStillPresent, "Custom startup index should not be dropped during migration initialization");
+
+        collection.drop();
     }
 }

@@ -6,15 +6,17 @@ import com.e2eq.framework.model.persistent.morphia.interceptors.*;
 import com.e2eq.framework.util.EnvConfigUtils;
 import com.mongodb.client.MongoClient;
 import dev.morphia.Datastore;
-
 import dev.morphia.MorphiaDatastore;
 import dev.morphia.config.MorphiaConfig;
+import dev.morphia.mapping.codec.pojo.EntityModel;
 import io.quarkus.logging.Log;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.validation.constraints.NotNull;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -48,6 +50,8 @@ public class MorphiaDataStoreWrapper {
 
    protected Map<String, MorphiaDatastore> datastoreMap = new ConcurrentHashMap<>();
 
+   /** Cached entity types from the base datastore mapper; used to map by class (no package scanning) when creating realm datastores. */
+   private volatile List<Class<?>> cachedMappedEntityTypes;
 
    protected static final boolean ENABLE_ONE_DB_PER_TENANT = false;
 
@@ -83,10 +87,9 @@ public class MorphiaDataStoreWrapper {
       mdatastore.getMapper().addInterceptor(referenceInterceptor);
       mdatastore.getMapper().addInterceptor(persistenceAuditEventInterceptor);
 
-      // Optionally map the same packages as the base dataStore
-      for (String pkg : baseConfig.packages()) {
-         Log.debugf("!!! Costly Call --- Scanning class path and Mapping package: %s", pkg);
-         mdatastore.getMapper().map(pkg);
+      // Reuse already-mapped entity types from the base datastore (no classpath scanning per realm)
+      for (Class<?> entityType : getMappedEntityTypesFromBase()) {
+         mdatastore.getMapper().map(entityType);
       }
 
       // Apply indexes and document validations
@@ -101,6 +104,25 @@ public class MorphiaDataStoreWrapper {
       return mdatastore;
    }
 
+   /**
+    * Returns the entity types already mapped on the base datastore, so realm datastores can register
+    * the same types by class without repeating package scanning.
+    */
+   private List<Class<?>> getMappedEntityTypesFromBase() {
+      if (cachedMappedEntityTypes == null) {
+         synchronized (this) {
+            if (cachedMappedEntityTypes == null) {
+               List<Class<?>> types = new ArrayList<>();
+               for (EntityModel em : dataStore.getMapper().getMappedEntities()) {
+                  types.add(em.getType());
+               }
+               cachedMappedEntityTypes = types;
+               Log.debugf("MorphiaDataStoreWrapper: cached %d entity types from base mapper (used for all realm datastores)", cachedMappedEntityTypes.size());
+            }
+         }
+      }
+      return cachedMappedEntityTypes;
+   }
 
     /* Original as of March 26th 2025
     if (mdatastore == null) {

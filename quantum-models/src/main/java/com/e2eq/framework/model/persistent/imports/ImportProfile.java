@@ -53,8 +53,7 @@ public class ImportProfile extends BaseModel {
      * Column mappings for transformations.
      * Each mapping defines how a CSV column is transformed before validation.
      */
-    @Valid
-    private List<ColumnMapping> columnMappings;
+    private List<@Valid ColumnMapping> columnMappings;
 
     /**
      * Global transformations applied to all string fields.
@@ -86,8 +85,7 @@ public class ImportProfile extends BaseModel {
      * Inline field calculators for computed fields.
      * These generate values for fields not in the CSV.
      */
-    @Valid
-    private List<InlineFieldCalculator> inlineCalculators;
+    private List<@Valid InlineFieldCalculator> inlineCalculators;
 
     /**
      * Names of FieldCalculator CDI beans to invoke.
@@ -184,8 +182,7 @@ public class ImportProfile extends BaseModel {
      * Explicit mappings for dynamic attribute columns.
      * Used when auto-discovery is disabled or to override inferred settings.
      */
-    @Valid
-    private List<DynamicAttributeMapping> dynamicAttributeMappings;
+    private List<@Valid DynamicAttributeMapping> dynamicAttributeMappings;
 
     /**
      * Reference to a DynamicAttributeSetDefinition for validation.

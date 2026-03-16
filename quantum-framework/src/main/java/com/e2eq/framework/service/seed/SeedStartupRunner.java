@@ -9,12 +9,11 @@ import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.model.securityrules.SecurityCallScope;
+import com.e2eq.framework.model.persistent.migration.base.MigrationService;
 import com.e2eq.framework.util.SecurityUtils;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import io.quarkus.logging.Log;
-import io.quarkus.runtime.Startup;
-import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.bson.Document;
@@ -30,7 +29,6 @@ import com.e2eq.framework.util.EnvConfigUtils;
  * independent of schema migrations. Idempotency and repeatable behavior are
  * guaranteed by MongoSeedRegistry per dataset checksum.
  */
-@Startup
 @ApplicationScoped
 public class SeedStartupRunner {
 
@@ -54,6 +52,9 @@ public class SeedStartupRunner {
 
     @Inject
     SecurityUtils securityUtils;
+
+    @Inject
+    MigrationService migrationService;
 
     @ConfigProperty(name = "quantum.seed-pack.enabled", defaultValue = "true")
     boolean enabled;
@@ -79,7 +80,6 @@ public class SeedStartupRunner {
     @ConfigProperty(name = "quantum.seed-pack.apply.realms")
     Optional<String> startupRealmsCsv;
 
-    @PostConstruct
     public void onStart() {
         if (!enabled || !applyOnStartup) {
             Log.info("SeedStartupRunner disabled by configuration (quantum.seed-pack.enabled / quantum.seed-pack.apply.on-startup)");
@@ -95,8 +95,11 @@ public class SeedStartupRunner {
         Log.infof("SeedStartupRunner: will apply seeds to realms: %s", realms);
         for (String realm : realms) {
             try {
-                // Wait for database to be ready before applying seeds
-                waitForDatabase(realm);
+                // Wait for migration and datastore initialization before applying seeds.
+                if (!waitForDatabase(realm)) {
+                    Log.warnf("SeedStartupRunner: skipping startup seeding for realm %s because the database never became ready", realm);
+                    continue;
+                }
                 applySeedsIfNeeded(realm);
             } catch (Exception e) {
                 Log.warnf("SeedStartupRunner: failed applying seeds for realm %s: %s", realm, e.getMessage());
@@ -108,26 +111,34 @@ public class SeedStartupRunner {
      * Wait for the database to be created and ready.
      * This ensures migrations have had a chance to create the database before seeds run.
      */
-    private void waitForDatabase(String realm) {
+    boolean waitForDatabase(String realm) {
         int maxRetries = 10;
         int retryDelayMs = 500;
         for (int i = 0; i < maxRetries; i++) {
             try {
                 List<String> databaseNames = mongoClient.listDatabaseNames().into(new ArrayList<>());
                 if (databaseNames.contains(realm)) {
-                    // Database exists, check if it has any collections (indicating it's been initialized)
                     var db = mongoClient.getDatabase(realm);
                     var collections = db.listCollectionNames().into(new ArrayList<>());
-                    if (!collections.isEmpty() || i >= maxRetries - 1) {
-                        // Database exists and has collections, or we've exhausted retries
+                    if (!collections.isEmpty()) {
+                        migrationService.checkInitialized(realm);
                         Log.debugf("SeedStartupRunner: database %s is ready", realm);
-                        return;
+                        return true;
                     }
                 }
-                // Database doesn't exist yet, wait and retry
                 if (i < maxRetries - 1) {
                     Log.debugf("SeedStartupRunner: waiting for database %s to be created (attempt %d/%d)", realm, i + 1, maxRetries);
                     Thread.sleep(retryDelayMs);
+                }
+            } catch (com.e2eq.framework.exceptions.DatabaseMigrationException e) {
+                Log.debugf("SeedStartupRunner: database %s is not yet migrated (attempt %d/%d): %s", realm, i + 1, maxRetries, e.getMessage());
+                if (i < maxRetries - 1) {
+                    try {
+                        Thread.sleep(retryDelayMs);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        return false;
+                    }
                 }
             } catch (Exception e) {
                 Log.debugf("SeedStartupRunner: error checking database %s: %s (attempt %d/%d)", realm, e.getMessage(), i + 1, maxRetries);
@@ -136,12 +147,13 @@ public class SeedStartupRunner {
                         Thread.sleep(retryDelayMs);
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
-                        return;
+                        return false;
                     }
                 }
             }
         }
-        Log.warnf("SeedStartupRunner: database %s may not be ready, proceeding anyway", realm);
+        Log.warnf("SeedStartupRunner: database %s did not become ready after %d attempts", realm, maxRetries);
+        return false;
     }
 
     private void applySeedsIfNeeded(String realm) throws Exception {
@@ -177,23 +189,12 @@ public class SeedStartupRunner {
                 Log.warnf("SeedStartupRunner: admin user %s not found in realm %s. Seeding will proceed with realm-only context; tenant substitutions may be blank.", adminUserId, realm);
             }
 
-            // Build SeedContext with values from admin's dataDomain when available
-            SeedContext.Builder ctxBuilder = SeedContext.builder(realm);
             DataDomain adminDD = (adminCred != null) ? adminCred.getDataDomain() : null;
-
             String resolvedOwnerId = null;
-             if (adminCred != null ) {
-                    resolvedOwnerId = adminCred.getUserId();
-             }
-
-            if (adminDD != null) {
-                ctxBuilder
-                        .tenantId(adminDD.getTenantId())
-                        .orgRefName(adminDD.getOrgRefName())
-                        .accountId(adminDD.getAccountNum())
-                        .ownerId(adminDD.getOwnerId());
+            if (adminCred != null ) {
+                resolvedOwnerId = adminCred.getUserId();
             }
-            SeedContext context = ctxBuilder.build();
+            SeedContext context = buildSeedContext(realm, adminCred);
 
             // Establish a temporary SecurityContext based on the admin user so repo-layer substitutions resolve correctly
             com.e2eq.framework.model.securityrules.PrincipalContext principalContext = null;
@@ -217,12 +218,6 @@ public class SeedStartupRunner {
                 Log.warnf("SeedStartupRunner: failed to establish SecurityContext for admin user %s in realm %s attempting to use system@system.com", adminUserId, realm);
                 principalContext = securityUtils.getSystemPrincipalContext();
                 resourceContext = securityUtils.getSystemSecurityResourceContext();
-               ctxBuilder
-                  .tenantId(envConfigUtils.getSystemTenantId())
-                  .orgRefName(envConfigUtils.getSystemOrgRefName())
-                  .accountId(envConfigUtils.getSystemAccountNumber())
-                  .ownerId(envConfigUtils.getSystemUserId())
-                  .build();
             }
 
             // Use SeedDiscoveryService to discover, filter, and resolve latest versions
@@ -261,6 +256,25 @@ public class SeedStartupRunner {
         int idx = realm.lastIndexOf('-');
         if (idx < 0) return realm; // fallback
         return realm.substring(0, idx) + "." + realm.substring(idx + 1);
+    }
+
+    SeedContext buildSeedContext(String realm, CredentialUserIdPassword adminCred) {
+        SeedContext.Builder ctxBuilder = SeedContext.builder(realm);
+        DataDomain adminDD = (adminCred != null) ? adminCred.getDataDomain() : null;
+        if (adminDD != null) {
+            ctxBuilder
+                    .tenantId(adminDD.getTenantId())
+                    .orgRefName(adminDD.getOrgRefName())
+                    .accountId(adminDD.getAccountNum())
+                    .ownerId(adminDD.getOwnerId());
+        } else {
+            ctxBuilder
+                    .tenantId(envConfigUtils.getSystemTenantId())
+                    .orgRefName(envConfigUtils.getSystemOrgRefName())
+                    .accountId(envConfigUtils.getSystemAccountNumber())
+                    .ownerId(envConfigUtils.getSystemUserId());
+        }
+        return ctxBuilder.build();
     }
 
     /**

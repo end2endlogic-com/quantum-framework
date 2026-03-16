@@ -1,6 +1,6 @@
 package com.e2eq.framework.security;
 
-import com.e2eq.framework.securityrules.RuleContext;
+import com.e2eq.framework.security.runtime.RuleContext;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.inject.Instance;
 import jakarta.enterprise.inject.spi.CDI;

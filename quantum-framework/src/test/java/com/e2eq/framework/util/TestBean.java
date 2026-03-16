@@ -1,4 +1,4 @@
-package com.e2eq.framework.util;
+package com.e2eq.framework.tests.util;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 

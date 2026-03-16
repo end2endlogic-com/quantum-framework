@@ -7,7 +7,7 @@ import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.securityrules.SecurityCheckException;
 import com.e2eq.framework.model.securityrules.SecurityContext;
-import com.e2eq.framework.securityrules.SecuritySession;
+import com.e2eq.framework.security.runtime.SecuritySession;
 import com.e2eq.framework.model.security.ApplicationRegistration;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.UserProfile;
