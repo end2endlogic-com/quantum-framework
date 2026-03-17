@@ -529,12 +529,12 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Ontology Modeling</h1>
 <div class="details">
 <span id="revnumber">version 1.3.0-SNAPSHOT,</span>
-<span id="revdate">2026-03-12T02:56:41Z</span>
+<span id="revdate">2026-03-17T21:45:24Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
 <ul class="sectlevel1">
-<li><a href="#ontologies-in-quantum">1. Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</a>
+<li><a href="#_ontologies_in_quantum_modeling_relationships_that_are_resilient_and_fast">1. Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</a>
 <ul class="sectlevel2">
 <li><a href="#_what_is_an_ontology">1.1. What is an Ontology?</a></li>
 <li><a href="#_ontology_vs_object_model">1.2. Ontology vs. Object Model</a></li>
@@ -548,7 +548,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_summary">1.10. Summary</a></li>
 </ul>
 </li>
-<li><a href="#ontology-ecommerce-example">2. Concrete example: Sales Orders, Shipments, and evolving to Fulfillment/Returns</a></li>
+<li><a href="#_concrete_example_sales_orders_shipments_and_evolving_to_fulfillmentreturns">2. Concrete example: Sales Orders, Shipments, and evolving to Fulfillment/Returns</a></li>
 <li><a href="#ontology-visualizing-edges-and-provenance">3. Visualizing ontology edges and provenance</a>
 <ul class="sectlevel2">
 <li><a href="#_example_graph_orders_customers_organizations">3.1. Example graph: Orders, Customers, Organizations</a></li>
@@ -562,7 +562,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </li>
 </ul>
 </li>
-<li><a href="#ontology-integration-morphia-permissions">4. Integrating Ontology with Morphia, Permissions, and Multi-tenancy</a>
+<li><a href="#ontology-integration-morphia-permissions-section">4. Integrating Ontology with Morphia, Permissions, and Multi-tenancy</a>
 <ul class="sectlevel2">
 <li><a href="#_big_picture_where_ontology_fits">4.1. Big picture: where ontology fits</a></li>
 <li><a href="#_rule_language_add_hasedge">4.2. Rule language: add hasEdge()</a></li>
@@ -646,7 +646,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 <div id="content">
 <div class="sect1">
-<h2 id="ontologies-in-quantum">1. Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</h2>
+<h2 id="_ontologies_in_quantum_modeling_relationships_that_are_resilient_and_fast">1. Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</h2>
 <div class="sectionbody">
 <div class="admonitionblock note">
 <table>
@@ -1013,7 +1013,7 @@ In Quarkus, all ontology components are CDI-managed. Inject EdgeDao and services
 </div>
 </div>
 <div class="sect1">
-<h2 id="ontology-ecommerce-example">2. Concrete example: Sales Orders, Shipments, and evolving to Fulfillment/Returns</h2>
+<h2 id="_concrete_example_sales_orders_shipments_and_evolving_to_fulfillmentreturns">2. Concrete example: Sales Orders, Shipments, and evolving to Fulfillment/Returns</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This example shows how to use an ontology to model relationships around Orders, Customers, and Shipments, and how the model can evolve to include Fulfillment and Returns without breaking existing queries. We will:</p>
@@ -1555,7 +1555,7 @@ EdgeDao edgeDao;
 </div>
 </div>
 <div class="sect1">
-<h2 id="ontology-integration-morphia-permissions">4. Integrating Ontology with Morphia, Permissions, and Multi-tenancy</h2>
+<h2 id="ontology-integration-morphia-permissions-section">4. Integrating Ontology with Morphia, Permissions, and Multi-tenancy</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This section focuses on integration and developer experience: how ontology edges flow into Morphia-based repositories and the permission rule language, while remaining fully multi-tenant and secure.</p>
@@ -3789,7 +3789,7 @@ JointJS will honor the attrs/labels we return. You can add a legend in your UI t
 <p>During development: inspect whether your ontology registry is loaded as expected and whether property chains/inverses are effective.</p>
 </li>
 <li>
-<p>During troubleshooting: confirm that edges exist for the predicates your queries or policies reference (see also <a href="#ontology-integration-morphia-permissions">Integrating Ontology</a>).</p>
+<p>During troubleshooting: confirm that edges exist for the predicates your queries or policies reference (see also <a href="#ontology-integration-morphia-permissions-section">Integrating Ontology</a>).</p>
 </li>
 <li>
 <p>For lightweight admin tools: the JointJS payload can be embedded in a simple HTML page to visualize current relationships.</p>
@@ -4099,7 +4099,7 @@ curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=defau
 <div id="footer">
 <div id="footer-text">
 Version 1.3.0-SNAPSHOT<br>
-Last updated 2026-02-17 20:19:15 -0500
+Last updated 2026-03-16 19:51:21 -0400
 </div>
 </div>
 </body>

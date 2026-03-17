@@ -671,7 +671,10 @@ quarkus.oidc.roles.role-claim-path=groups</code></pre>
 quantum.database.version=1.0.0
 quantum.database.scope=DEV
 quantum.database.migration.enabled=true
-quantum.database.migration.changeset.package=com.example.migrations</code></pre>
+quantum.database.migration.changeset.package=com.example.migrations
+
+# Optional CSV list of additional realms to initialize on startup before seed packs run
+quantum.migration.apply.realms=system-com,mycompany-com,test-com</code></pre>
 </div>
 </div>
 </div>
@@ -853,7 +856,7 @@ quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pr
 <p><a href="../user-guide/ontology.html">Ontologies in Quantum</a></p>
 </li>
 <li>
-<p><a href="../user-guide/ontology.html#ontology-integration-morphia-permissions">Integrating Ontology</a></p>
+<p><a href="../user-guide/ontology.html#ontology-integration-morphia-permissions-section">Integrating Ontology</a></p>
 </li>
 </ul>
 </div>
@@ -863,7 +866,7 @@ quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pr
 <div id="footer">
 <div id="footer-text">
 Version 1.3.0-SNAPSHOT<br>
-Last updated 2026-02-06 20:26:34 -0500
+Last updated 2026-03-16 20:08:13 -0400
 </div>
 </div>
 </body>

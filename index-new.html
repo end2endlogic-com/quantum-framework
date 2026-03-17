@@ -529,7 +529,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Framework Documentation</h1>
 <div class="details">
 <span id="revnumber">version 1.3.0-SNAPSHOT,</span>
-<span id="revdate">2026-03-12T02:56:41Z</span>
+<span id="revdate">2026-03-17T21:45:24Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -581,17 +581,14 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_other_types_supported">11.5.3. Other types supported</a></li>
 </ul>
 </li>
-<li><a href="#ontology-domain-rule-context">11.6. Using AccessListResolver with Ontology (optional)</a>
-<ul class="sectlevel3">
-<li><a href="#_prefer_annotations_for_functional_mapping_recommended">11.6.1. Prefer Annotations for Functional Mapping (recommended)</a></li>
-<li><a href="#_datadomain_on_models">11.6.2. DataDomain on Models</a></li>
-<li><a href="#_persistence_repositories">11.6.3. Persistence Repositories</a></li>
-<li><a href="#_exposing_rest_resources">11.6.4. Exposing REST Resources</a></li>
-<li><a href="#_lombok_in_models">11.6.5. Lombok in Models</a></li>
-<li><a href="#_validation_with_jakarta_bean_validation">11.6.6. Validation with Jakarta Bean Validation</a></li>
-<li><a href="#_jackson_vs_jakarta_validation_annotations">11.6.7. Jackson vs Jakarta Validation Annotations</a></li>
-</ul>
-</li>
+<li><a href="#ontology-domain-rule-context">11.6. Using AccessListResolver with Ontology (optional)</a></li>
+<li><a href="#_prefer_annotations_for_functional_mapping_recommended">11.7. Prefer Annotations for Functional Mapping (recommended)</a></li>
+<li><a href="#_datadomain_on_models">11.8. DataDomain on Models</a></li>
+<li><a href="#_persistence_repositories">11.9. Persistence Repositories</a></li>
+<li><a href="#_exposing_rest_resources">11.10. Exposing REST Resources</a></li>
+<li><a href="#_lombok_in_models">11.11. Lombok in Models</a></li>
+<li><a href="#_validation_with_jakarta_bean_validation">11.12. Validation with Jakarta Bean Validation</a></li>
+<li><a href="#_jackson_vs_jakarta_validation_annotations">11.13. Jackson vs Jakarta Validation Annotations</a></li>
 </ul>
 </li>
 <li><a href="#_jackson_objectmapper_in_quarkus_and_in_quantum">12. Jackson ObjectMapper in Quarkus and in Quantum</a></li>
@@ -1444,7 +1441,7 @@ quarkus.http.cors.origins=http://localhost:3000</code></pre>
 </div>
 <div class="paragraph">
 <p>6) Use edges in queries/policies
-- Wrap BSON via ListQueryRewriter or constrain by _id sets. See <a href="ontology.html#ontology-integration-morphia-permissions">Integrating Ontology</a>.</p>
+- Wrap BSON via ListQueryRewriter or constrain by _id sets. See <a href="ontology.html#ontology-integration-morphia-permissions-section">Integrating Ontology</a>.</p>
 </div>
 <div class="paragraph">
 <p>Notes</p>
@@ -2051,8 +2048,9 @@ customerId:^[${accessibleCustomerIds}]</code></pre>
 </li>
 </ul>
 </div>
-<div class="sect3">
-<h4 id="_prefer_annotations_for_functional_mapping_recommended">11.6.1. Prefer Annotations for Functional Mapping (recommended)</h4>
+</div>
+<div class="sect2">
+<h3 id="_prefer_annotations_for_functional_mapping_recommended">11.7. Prefer Annotations for Functional Mapping (recommended)</h3>
 <div class="paragraph">
 <p>Starting with this version, you should use annotations to declare a model or resource&#8217;s Functional Area/Domain and the Action being performed. The legacy bmFunctionalArea() and bmFunctionalDomain() methods are still supported for backward compatibility in this release, but they will be phased out soon.</p>
 </div>
@@ -2152,8 +2150,8 @@ customerId:^[${accessibleCustomerIds}]</code></pre>
 <p>See also: <a href="security-annotations.html#security-annotations">Security Annotations: FunctionalMapping and FunctionalAction</a></p>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_datadomain_on_models">11.6.2. DataDomain on Models</h4>
+<div class="sect2">
+<h3 id="_datadomain_on_models">11.8. DataDomain on Models</h3>
 <div class="paragraph">
 <p>All persisted models carry DataDomain (tenantId, orgRefName, ownerId, etc.) for rule-based filtering and cross-tenant sharing.</p>
 </div>
@@ -2187,8 +2185,8 @@ customerId:^[${accessibleCustomerIds}]</code></pre>
 </div>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_persistence_repositories">11.6.3. Persistence Repositories</h4>
+<div class="sect2">
+<h3 id="_persistence_repositories">11.9. Persistence Repositories</h3>
 <div class="paragraph">
 <p>Define a repository to persist and query your model. With Morphia:</p>
 </div>
@@ -2202,8 +2200,8 @@ customerId:^[${accessibleCustomerIds}]</code></pre>
 </div>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_exposing_rest_resources">11.6.4. Exposing REST Resources</h4>
+<div class="sect2">
+<h3 id="_exposing_rest_resources">11.10. Exposing REST Resources</h3>
 <div class="paragraph">
 <p>Expose consistent CRUD endpoints by extending BaseResource.</p>
 </div>
@@ -2222,8 +2220,8 @@ customerId:^[${accessibleCustomerIds}]</code></pre>
 <p>With this minimal setup, you get standard REST APIs guarded by RuleContext/DataDomain and enriched with UIAction metadata.</p>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_lombok_in_models">11.6.5. Lombok in Models</h4>
+<div class="sect2">
+<h3 id="_lombok_in_models">11.11. Lombok in Models</h3>
 <div class="paragraph">
 <p>Lombok reduces boilerplate in Quantum models and supports inheritance-friendly builders.</p>
 </div>
@@ -2267,8 +2265,8 @@ customerId:^[${accessibleCustomerIds}]</code></pre>
 - Keep equals/hashCode stable for collections and caches; include callSuper when needed.</p>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_validation_with_jakarta_bean_validation">11.6.6. Validation with Jakarta Bean Validation</h4>
+<div class="sect2">
+<h3 id="_validation_with_jakarta_bean_validation">11.12. Validation with Jakarta Bean Validation</h3>
 <div class="paragraph">
 <p>Quantum uses Jakarta Bean Validation to enforce invariants on models at persist time (and optionally at REST boundaries).</p>
 </div>
@@ -2311,8 +2309,8 @@ customerId:^[${accessibleCustomerIds}]</code></pre>
 </ul>
 </div>
 </div>
-<div class="sect3">
-<h4 id="_jackson_vs_jakarta_validation_annotations">11.6.7. Jackson vs Jakarta Validation Annotations</h4>
+<div class="sect2">
+<h3 id="_jackson_vs_jakarta_validation_annotations">11.13. Jackson vs Jakarta Validation Annotations</h3>
 <div class="paragraph">
 <p>These two families of annotations serve different purposes and complement each other:</p>
 </div>
@@ -2350,7 +2348,6 @@ customerId:^[${accessibleCustomerIds}]</code></pre>
 <p>It’s common to annotate the same field with both families when you both constrain values and want specific JSON behavior.</p>
 </li>
 </ul>
-</div>
 </div>
 </div>
 </div>
@@ -5853,7 +5850,7 @@ collection.find(rewritten).iterator();</code></pre>
 <p>Index edges on (tenantId, p, dst) and (tenantId, src, p) to keep queries fast.</p>
 </li>
 <li>
-<p>See <a href="ontology.html#ontology-integration-morphia-permissions">Integrating Ontology</a> for more integration options.</p>
+<p>See <a href="ontology.html#ontology-integration-morphia-permissions-section">Integrating Ontology</a> for more integration options.</p>
 </li>
 </ul>
 </div>
@@ -8767,7 +8764,7 @@ Use the refresh token to obtain a new access token without re-authenticating:</p
 <p>Alternatively, you can use the <strong>Quantum CLI</strong> tool to generate service tokens interactively or via command-line arguments.</p>
 </div>
 <div class="sect4">
-<h5 id="_using_the_quantum_cli">Using the Quantum CLI</h5>
+<h5 id="using-the-quantum-cli">Using the Quantum CLI</h5>
 <div class="paragraph">
 <p>The Quantum CLI (<code>quantum-cli</code> module) provides a <code>generate-token</code> command that handles authentication and token generation in a single step.</p>
 </div>
@@ -9559,7 +9556,7 @@ Ontology- and label-aware policy helpers are available to postconditionScript wh
 <div class="sectionbody">
 <div class="imageblock">
 <div class="content">
-<img src="diag-plantuml-md5-e925a0338de57566633f769f931bc137.svg" alt="Diagram" width="812" height="688">
+<img src="diag-plantuml-md5-17cca99f4277c5031b2a8958a72fd5ad.svg" alt="Diagram" width="812" height="688">
 </div>
 </div>
 <div class="paragraph">
@@ -10100,7 +10097,7 @@ Ontology- and label-aware policy helpers are available to postconditionScript wh
 <div class="ulist">
 <ul>
 <li>
-<p>Effective roles = JWT roles ∪ <code>CredentialUserIdPassword.roles</code>.</p>
+<p>Effective roles = JWT roles union <code>CredentialUserIdPassword.roles</code>.</p>
 </li>
 <li>
 <p>Use JWT for enterprise groups (for example, <code>DEPT_SALES</code>, <code>ORG_ADMIN</code>) and Quantum roles for app-specific grants (for example, <code>REPORT_EXPORTER</code>, <code>BETA</code>).</p>
@@ -12312,7 +12309,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 <p>Ontology overview and examples: <a href="ontology.html">Ontologies in Quantum</a></p>
 </li>
 <li>
-<p>Integration with Morphia and multi-tenancy: <a href="ontology.html#ontology-integration-morphia-permissions">Integrating Ontology</a></p>
+<p>Integration with Morphia and multi-tenancy: <a href="ontology.html#ontology-integration-morphia-permissions-section">Integrating Ontology</a></p>
 </li>
 </ul>
 </div>
@@ -13379,7 +13376,7 @@ Only use <code>bypassDataScoping = true</code> for endpoints that genuinely do n
 </ul>
 </div>
 <div class="paragraph">
-<p>You can generate a long-lived service token for use with the MCP server using the <a href="#_using_the_quantum_cli">Quantum CLI</a>.</p>
+<p>You can generate a long-lived service token for use with the MCP server using the <a href="auth.html#using-the-quantum-cli">Quantum CLI</a>.</p>
 </div>
 </div>
 <div class="sect3">
@@ -14895,6 +14892,9 @@ The <code>/mcp</code> endpoint is automatically registered by the Quarkus MCP Se
 <p>quantum.database.migration.changeset.package: package containing change sets (CDI still discovers beans via type, but this property documents the intended package).</p>
 </li>
 <li>
+<p>quantum.migration.apply.realms: optional comma-separated list of additional realms to initialize during application startup. These startup migrations are evaluated before <code>SeedStartupRunner</code> runs, so realms listed here can be safely included in <code>quantum.seed-pack.apply.realms</code>.</p>
+</li>
+<li>
 <p>quantum.realmConfig.systemRealm, quantum.realmConfig.defaultRealm, quantum.realmConfig.testRealm: well‑known realms used by MigrationResource when running migrations across environments. On startup, MigrationService checks whether the <em>system realm</em> database exists and is initialized; if missing or uninitialized, it runs all pending change sets and applies indexes (creating all entity collections, including credentials). Set <code>quantum.realmConfig.systemRealm</code> to your application&#8217;s system database name (e.g. <code>system-psa-com</code>) in <code>application.properties</code> so the correct database is created and initialized when dropped or empty.</p>
 </li>
 <li>
@@ -16189,7 +16189,10 @@ quarkus.oidc.roles.role-claim-path=groups</code></pre>
 quantum.database.version=1.0.0
 quantum.database.scope=DEV
 quantum.database.migration.enabled=true
-quantum.database.migration.changeset.package=com.example.migrations</code></pre>
+quantum.database.migration.changeset.package=com.example.migrations
+
+# Optional CSV list of additional realms to initialize on startup before seed packs run
+quantum.migration.apply.realms=system-com,mycompany-com,test-com</code></pre>
 </div>
 </div>
 </div>
@@ -16371,7 +16374,7 @@ quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pr
 <p><a href="../user-guide/ontology.html">Ontologies in Quantum</a></p>
 </li>
 <li>
-<p><a href="../user-guide/ontology.html#ontology-integration-morphia-permissions">Integrating Ontology</a>
+<p><a href="../user-guide/ontology.html#ontology-integration-morphia-permissions-section">Integrating Ontology</a>
 === Quarkus Foundation</p>
 </li>
 </ul>

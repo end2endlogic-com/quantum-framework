@@ -440,7 +440,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <h1>Database Migrations and Index Management</h1>
 <div class="details">
 <span id="revnumber">version 1.3.0-SNAPSHOT,</span>
-<span id="revdate">2026-03-12T02:56:41Z</span>
+<span id="revdate">2026-03-17T21:45:24Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -555,6 +555,9 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </li>
 <li>
 <p>quantum.database.migration.changeset.package: package containing change sets (CDI still discovers beans via type, but this property documents the intended package).</p>
+</li>
+<li>
+<p>quantum.migration.apply.realms: optional comma-separated list of additional realms to initialize during application startup. These startup migrations are evaluated before <code>SeedStartupRunner</code> runs, so realms listed here can be safely included in <code>quantum.seed-pack.apply.realms</code>.</p>
 </li>
 <li>
 <p>quantum.realmConfig.systemRealm, quantum.realmConfig.defaultRealm, quantum.realmConfig.testRealm: well‑known realms used by MigrationResource when running migrations across environments. On startup, MigrationService checks whether the <em>system realm</em> database exists and is initialized; if missing or uninitialized, it runs all pending change sets and applies indexes (creating all entity collections, including credentials). Set <code>quantum.realmConfig.systemRealm</code> to your application&#8217;s system database name (e.g. <code>system-psa-com</code>) in <code>application.properties</code> so the correct database is created and initialized when dropped or empty.</p>
@@ -952,7 +955,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 <div id="footer">
 <div id="footer-text">
 Version 1.3.0-SNAPSHOT<br>
-Last updated 2026-02-17 20:19:15 -0500
+Last updated 2026-03-16 20:08:10 -0400
 </div>
 </div>
 </body>
