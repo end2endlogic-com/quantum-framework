@@ -54,6 +54,16 @@ public class MigrationService {
    @ConfigProperty(name = "quantum.database.migration.enabled")
    protected boolean enabled;
 
+   /**
+    * Optional comma-separated list of additional realms to initialize on startup before seed packs run.
+    * When unset, startup migration falls back to the historical behavior:
+    * always evaluate the system realm and evaluate the default realm when it exists.
+    *
+    * Example: "system-com,mycompany-com,test-com"
+    */
+   @ConfigProperty(name = "quantum.migration.apply.realms")
+   Optional<String> startupRealmsCsv;
+
    @Inject
    DatabaseVersionRepo databaseVersionRepo;
 
@@ -80,14 +90,35 @@ public class MigrationService {
          Log.info(">> Migration Service enabled");
       }
 
-      Log.infof(">> ### Checking if system realm %s is initialized ###", systemRealm);
       List<String> databaseNames = mongoClient.listDatabaseNames().into(new ArrayList<>());
-      ensureRealmInitializedOnStartup(systemRealm, databaseNames.contains(systemRealm));
-
-      // Ensure default realm is migrated when it exists and is behind (e.g. after app version bump).
-      if (databaseNames.contains(defaultRealm)) {
-         ensureRealmInitializedOnStartup(defaultRealm, true);
+      List<String> startupRealms = resolveStartupRealms(databaseNames);
+      Log.infof(">> Migration startup realms: %s", startupRealms);
+      for (String realm : startupRealms) {
+         ensureRealmInitializedOnStartup(realm, databaseNames.contains(realm));
       }
+   }
+
+   List<String> resolveStartupRealms(List<String> existingDatabaseNames) {
+      LinkedHashSet<String> realms = new LinkedHashSet<>();
+
+      realms.add(systemRealm);
+      if (existingDatabaseNames.contains(defaultRealm)) {
+         realms.add(defaultRealm);
+      }
+
+      if (startupRealmsCsv.isPresent()) {
+         String csv = startupRealmsCsv.get().trim();
+         if (!csv.isEmpty() && !csv.equalsIgnoreCase("none")) {
+            for (String part : csv.split(",")) {
+               String realm = part.trim();
+               if (!realm.isEmpty()) {
+                  realms.add(realm);
+               }
+            }
+         }
+      }
+
+      return new ArrayList<>(realms);
    }
 
    private void ensureRealmInitializedOnStartup(String realm, boolean realmExists) {
