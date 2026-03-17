@@ -99,6 +99,9 @@ quantum.database.version=1.0.0
 quantum.database.scope=DEV
 quantum.database.migration.enabled=true
 quantum.database.migration.changeset.package=com.example.migrations
+
+# Optional CSV list of additional realms to initialize on startup before seed packs run
+quantum.migration.apply.realms=system-com,mycompany-com,test-com
 ----
 
 ===== Seed packs (filesystem + classpath)
