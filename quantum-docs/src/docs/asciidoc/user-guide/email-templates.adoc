@@ -1,0 +1,231 @@
+[[email-templates]]
+=== Email Templates
+
+Quantum provides a built-in email templating system that supports classpath-based default templates with per-realm database overrides. Templates use the Qute templating engine and can be delivered via Postmark or a custom delivery service.
+
+==== Architecture
+
+The email system has three layers:
+
+1. **Template Resolution** -- locates the correct template for a realm and template key
+2. **Rendering** -- applies context data to templates using the Qute engine
+3. **Delivery** -- sends the rendered email via an `EmailDeliveryService` implementation
+
+[source,text]
+----
+Application Code
+       |
+       v
+EmailTemplateRenderService.render(realm, templateKey, context)
+       |
+       v
+EmailTemplateResolver.resolve(realm, templateKey)
+       |
+       +---> Check DB for realm-specific override (active=true)
+       |         |
+       |         v (not found)
+       +---> Load from classpath: templates/email/{templateKey}/
+       |
+       v
+EmailTemplateDefinition (unrendered Qute templates)
+       |
+       v
+Qute Engine renders subject, HTML body, text body
+       |
+       v
+RenderedTemplate --> build RenderedEmail --> EmailDeliveryService.deliver()
+----
+
+==== Defining Templates
+
+===== Classpath Templates (Defaults)
+
+Place template files on the classpath under `templates/email/{templateKey}/`:
+
+[source,text]
+----
+src/main/resources/
+  templates/
+    email/
+      welcome/
+        subject.txt      <-- Subject line template
+        body.html        <-- HTML body template
+        body.txt         <-- Plain text body template
+      password-reset/
+        subject.txt
+        body.html
+        body.txt
+----
+
+Each template uses Qute syntax with `{variableName}` placeholders:
+
+.subject.txt
+[source,text]
+----
+Welcome {name}
+----
+
+.body.html
+[source,html]
+----
+<p>Hello {name}, welcome to realm <strong>{realm}</strong>.</p>
+----
+
+.body.txt
+[source,text]
+----
+Hello {name}, welcome to realm {realm}.
+----
+
+===== Realm-Specific Overrides (Database)
+
+Tenants can override any classpath template by storing an `EmailTemplate` document in the `email_templates` MongoDB collection. The override is scoped to the tenant's realm.
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `templateKey`
+| Unique identifier matching the classpath template key (e.g., `welcome`)
+
+| `subjectTemplate`
+| Qute-formatted subject line
+
+| `htmlTemplate`
+| Qute-formatted HTML body
+
+| `textTemplate`
+| Qute-formatted plain text body
+
+| `active`
+| Boolean flag (default `true`). Set to `false` to disable the override without deleting it.
+
+| `sourceType`
+| `REALM_OVERRIDE` (default) or `CLASSPATH_DEFAULT`
+
+| `sampleContextJson`
+| Optional JSON example of the expected context object for documentation purposes
+
+| `schemaVersion`
+| Version tracking for template schema changes
+|===
+
+==== Resolution Order
+
+The `DefaultEmailTemplateResolver` follows this priority:
+
+1. **Realm database override** -- if the realm is non-null and an active `EmailTemplate` document exists for the template key, it is used.
+2. **Classpath default** -- if no realm override is found (or realm is null), the resolver loads from `templates/email/{templateKey}/` on the classpath.
+3. **Empty** -- if neither source has the template, resolution returns empty and rendering throws `IllegalArgumentException`.
+
+==== Rendering Templates
+
+Inject `EmailTemplateRenderService` and call `render()`:
+
+[source,java]
+----
+@Inject
+EmailTemplateRenderService renderService;
+
+// Render with a Map context
+Map<String, Object> context = Map.of(
+    "name", user.getDisplayName(),
+    "realm", realmId,
+    "resetLink", resetUrl
+);
+RenderedTemplate rendered = renderService.render(realmId, "password-reset", context);
+
+// Render with a Java bean or record -- properties are extracted automatically
+RenderedTemplate rendered = renderService.render(realmId, "welcome", userProfile);
+----
+
+The render service accepts any of:
+
+* `Map<String, Object>` -- entries used directly as template variables
+* Java beans -- properties extracted via introspection
+* Java records -- components extracted via reflection
+* Any Jackson-serializable object -- converted to a `Map` via `ObjectMapper`
+
+The original context object is also available in templates as `{context}`.
+
+===== Validation
+
+After rendering, the service validates:
+
+* Subject must be non-blank
+* At least one of HTML body or text body must be non-blank
+
+If validation fails, an `IllegalStateException` is thrown.
+
+==== Delivering Email
+
+Build a `RenderedEmail` from the rendered template and deliver it:
+
+[source,java]
+----
+@Inject
+EmailDeliveryService deliveryService;
+
+RenderedEmail email = RenderedEmail.builder()
+    .from("noreply@example.com")
+    .to(List.of(user.getEmail()))
+    .subject(rendered.subject())
+    .htmlBody(rendered.htmlBody())
+    .textBody(rendered.textBody())
+    .messageStream("outbound")
+    .build();
+
+deliveryService.deliver(email);
+----
+
+===== Postmark Integration
+
+The framework ships with `PostmarkEmailSender`, an `EmailDeliveryService` implementation that sends via the Postmark HTTP API.
+
+[source,properties]
+----
+# Postmark configuration
+postmark.api-key=${POSTMARK_API_KEY}
+postmark.default-from-email-address=noreply@yourdomain.com
+----
+
+If either property is missing, the sender logs an info message and returns without sending. This allows development environments to run without Postmark credentials.
+
+===== Custom Delivery Service
+
+Implement `EmailDeliveryService` to integrate with a different provider (SendGrid, AWS SES, etc.):
+
+[source,java]
+----
+@ApplicationScoped
+@Alternative
+@Priority(1)
+public class SesEmailSender implements EmailDeliveryService {
+    @Override
+    public void deliver(RenderedEmail email) {
+        // Send via AWS SES
+    }
+}
+----
+
+==== Custom Template Resolver
+
+Override the default resolution strategy by implementing `EmailTemplateResolver`:
+
+[source,java]
+----
+@ApplicationScoped
+@Alternative
+@Priority(1)
+public class MyTemplateResolver implements EmailTemplateResolver {
+    @Override
+    public Optional<EmailTemplateDefinition> resolve(String realm, String templateKey) {
+        // Custom resolution logic (e.g., S3, external CMS)
+    }
+}
+----
+
+==== See Also
+
+* xref:auth.adoc[Authentication and Authorization]
+* xref:../appendix/configuration.adoc[Configuration Reference]

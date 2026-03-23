@@ -11,7 +11,6 @@ import com.e2eq.framework.model.securityrules.*;
 import com.e2eq.framework.rest.models.UIAction;
 import com.e2eq.framework.rest.models.UIActionList;
 import com.e2eq.framework.rest.models.Collection;
-import com.e2eq.framework.model.security.FunctionalDomain;
 import com.e2eq.framework.security.runtime.RuleContext;
 import com.fasterxml.jackson.module.jsonSchema.jakarta.JsonSchema;
 import com.google.common.reflect.TypeToken;
@@ -198,28 +197,6 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
    }
 
 
-      protected List<String> getDefaultUIActionsFromFD(@NotNull String fdRefName) {
-        return getDefaultUIActionsFromFD(morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()), fdRefName);
-    }
-
-    protected List<String> getDefaultUIActionsFromFD(Datastore datastore, @NotNull String fdRefName) {
-        Filter f = MorphiaUtils.convertToFilter("refName:" + fdRefName, getPersistentClass());
-        Query<FunctionalDomain> q = datastore.find(FunctionalDomain.class).filter(f);
-        FunctionalDomain fd = q.first();
-        List<String> actions;
-
-        if (fd != null) {
-            actions = new ArrayList<>(fd.getFunctionalActions().size());
-            fd.getFunctionalActions().forEach(fa -> {
-                actions.add(fa.getRefName());
-            });
-        } else {
-            actions = Collections.emptyList();
-        }
-
-        return actions;
-    }
-
 
 
 
@@ -278,10 +255,8 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         T obj = query.first();
 
         if (obj != null) {
-            List<String> actions = this.getDefaultUIActionsFromFD(obj.bmFunctionalDomain());
-            if (!actions.isEmpty()) {
-                obj.setDefaultUIActions(actions);
-            }
+            UIActionList uiActions = obj.calculateStateBasedUIActions();
+            obj.setActionList(uiActions);
             obj.setModelSourceRealm(datastore.getDatabase().getName());
         }
         return Optional.ofNullable(obj);
@@ -322,10 +297,8 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         T obj = query.first();
 
         if (obj != null) {
-            List<String> actions = this.getDefaultUIActionsFromFD(obj.bmFunctionalDomain());
-            if (!actions.isEmpty()) {
-                obj.setDefaultUIActions(actions);
-            }
+            UIActionList uiActions = obj.calculateStateBasedUIActions();
+            obj.setActionList(uiActions);
             obj.setModelSourceRealm(datastore.getDatabase().getName());
         }
 
@@ -405,22 +378,10 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         }
 
         List<EntityReference> list = new ArrayList<>();
-        List<String> actions = null;
-        boolean gotActions = false;
         String realmId = datastore.getDatabase().getName();
         try (cursor) {
             EntityReference entityReference;
             for (T model : cursor.toList()) {
-
-                if (!gotActions) {
-                    actions = this.getDefaultUIActionsFromFD(model.bmFunctionalDomain());
-                    gotActions = true;
-                }
-
-                if (!actions.isEmpty()) {
-                    model.setDefaultUIActions(actions);
-                }
-
                 UIActionList uiActions = model.calculateStateBasedUIActions();
                 model.setActionList(uiActions);
                 model.setModelSourceRealm(realmId);
@@ -529,9 +490,8 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                 .filter(filters.toArray(filterArray))
                 .iterator(findOptions);
 
-        return new CloseableIterator<T>() {
+        return new CloseableIterator<>() {
             private static final int BATCH_SIZE = 1000; // Adjust this value as needed
-            private List<String> actions = null;
             private final List<T> batch = new ArrayList<>(BATCH_SIZE);
             private int currentIndex = 0;
 
@@ -569,13 +529,6 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
             private void processModel(T model) {
                 if (model != null) {
-                    if (actions == null) {
-                        actions = getDefaultUIActionsFromFD(model.bmFunctionalDomain());
-                    }
-                    if (!actions.isEmpty()) {
-                        model.setDefaultUIActions(actions);
-                    }
-
                     UIActionList uiActions = model.calculateStateBasedUIActions();
                     model.setActionList(uiActions);
                 }
@@ -618,21 +571,9 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         }
 
         List<T> list = new ArrayList<>();
-        List<String> actions = null;
-        boolean gotActions = false;
-       String realm = datastore.getDatabase().getName();
+        String realm = datastore.getDatabase().getName();
         try (cursor) {
             for (T model : cursor.toList()) {
-
-                if (!gotActions) {
-                    actions = this.getDefaultUIActionsFromFD(model.bmFunctionalDomain());
-                    gotActions = true;
-                }
-
-                if (!actions.isEmpty()) {
-                    model.setDefaultUIActions(actions);
-                }
-
                 UIActionList uiActions = model.calculateStateBasedUIActions();
                 model.setActionList(uiActions);
                 model.setModelSourceRealm(realm);
@@ -692,21 +633,9 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                 .iterator(findOptions);
 
         List<T> list = new ArrayList<>();
-        List<String> actions = null;
-        boolean gotActions = false;
-       String realm = datastore.getDatabase().getName();
+        String realm = datastore.getDatabase().getName();
         try (cursor) {
             for (T model : cursor.toList()) {
-
-                if (!gotActions) {
-                    actions = this.getDefaultUIActionsFromFD(model.bmFunctionalDomain());
-                    gotActions = true;
-                }
-
-                if (!actions.isEmpty()) {
-                    model.setDefaultUIActions(actions);
-                }
-
                 UIActionList uiActions = model.calculateStateBasedUIActions();
                 model.setActionList(uiActions);
 
@@ -746,19 +675,8 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
         List<T> list = query.iterator(findOptions).toList();
 
-        List<String> actions = null;
-        boolean gotActions = false;
-       String realm = datastore.getDatabase().getName();
+        String realm = datastore.getDatabase().getName();
         for (T model : list) {
-            if (!gotActions) {
-                actions = this.getDefaultUIActionsFromFD(model.bmFunctionalDomain());
-                gotActions = true;
-            }
-
-            if (!actions.isEmpty()) {
-                model.setDefaultUIActions(actions);
-            }
-
             UIActionList uiActions = model.calculateStateBasedUIActions();
             model.setActionList(uiActions);
             model.setModelSourceRealm(realm);
@@ -794,19 +712,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
         List<T> list = query.iterator(findOptions).toList();
 
-        List<String> actions = null;
-        boolean gotActions = false;
-
         for (T model : list) {
-            if (!gotActions) {
-                actions = this.getDefaultUIActionsFromFD(model.bmFunctionalDomain());
-                gotActions = true;
-            }
-
-            if (!actions.isEmpty()) {
-                model.setDefaultUIActions(actions);
-            }
-
             UIActionList uiActions = model.calculateStateBasedUIActions();
             model.setActionList(uiActions);
             model.setModelSourceRealm(realm);

@@ -1,0 +1,218 @@
+[[shared-links]]
+=== Shared Links
+
+Quantum provides a secure link-sharing mechanism for granting time-bound, usage-limited access to resources (typically cloud-stored files). Share links are tracked with full audit logging and can be revoked at any time.
+
+==== Concepts
+
+[cols="1,3", options="header"]
+|===
+| Concept | Description
+
+| ShareLink
+| A persistent entity representing a shareable link to cloud storage. Contains the S3 coordinates (bucket, region, object key), expiration rules, and usage tracking.
+
+| SharedLink
+| A lightweight DTO returned to callers after link creation. Contains the shareable URL, token, expiration metadata, and audience information.
+
+| ShareAccessLog
+| An audit trail entry recording each access attempt against a share link, including requester identity, IP, user agent, and outcome.
+
+| LinkSigner
+| A cryptographic utility that signs and verifies link tokens using HMAC-SHA256 to prevent tampering and enforce time-bound validity.
+|===
+
+==== ShareLink Model
+
+The `ShareLink` entity is stored in MongoDB and tracks the full lifecycle of a shared link.
+
+[cols="1,1,3", options="header"]
+|===
+| Field | Type | Description
+
+| `publicId`
+| String
+| External-facing identifier used in URLs. Not the MongoDB `_id`.
+
+| `bucket`
+| String
+| S3 bucket name
+
+| `region`
+| String
+| AWS region of the bucket
+
+| `objectKey`
+| String
+| S3 object key (path within the bucket)
+
+| `status`
+| Enum
+| `ACTIVE` or `REVOKED`
+
+| `expiresAt`
+| Date
+| Optional expiration timestamp. Null means no expiration.
+
+| `maxUses`
+| Integer
+| Optional maximum number of accesses. Null or 0 means unlimited.
+
+| `usedCount`
+| int
+| Number of times the link has been consumed (starts at 0)
+
+| `allowAnonymous`
+| boolean
+| Whether unauthenticated users can access the link
+
+| `contentDisposition`
+| String
+| Optional content disposition header (e.g., `attachment; filename="report.pdf"`)
+
+| `createdBy`
+| String
+| User ID of the link creator
+
+| `lastAccessedAt`
+| Date
+| Timestamp of most recent access
+
+| `createdAt` / `lastUpdatedAt`
+| Date
+| Audit timestamps
+|===
+
+==== Link Lifecycle
+
+[source,text]
+----
+Create ShareLink (status=ACTIVE)
+       |
+       v
+Generate signed URL with LinkSigner
+       |
+       v
+Return SharedLink DTO to caller
+       |
+       v
+Access: ShareLinkRepo.tryConsumeOneUse()
+       +---> Verify ACTIVE status
+       +---> Check expiresAt not passed
+       +---> Check usedCount < maxUses
+       +---> Atomic increment usedCount
+       +---> Log ShareAccessLog entry
+       |
+       v
+Revoke: ShareLinkRepo.revokeByPublicId()
+       +---> Set status=REVOKED
+       +---> Further access attempts are rejected
+----
+
+==== Repository Operations
+
+The `ShareLinkRepo` provides three key operations beyond standard CRUD:
+
+* **`findByPublicId(String publicId)`** -- Look up a link by its public identifier
+* **`revokeByPublicId(String publicId)`** -- Mark a link as `REVOKED` and update the timestamp
+* **`tryConsumeOneUse(ShareLink link)`** -- Atomically consume one use of the link. Returns `true` only if the link is active, not expired, and within its usage limit. Uses a Morphia session to prevent race conditions.
+
+==== Access Logging
+
+Every access attempt (successful or not) should be recorded in `ShareAccessLog`:
+
+[cols="1,1,3", options="header"]
+|===
+| Field | Type | Description
+
+| `linkId`
+| ObjectId
+| Reference to the ShareLink document
+
+| `publicId`
+| String
+| The public identifier of the link
+
+| `ts`
+| Date
+| Access timestamp
+
+| `requesterIdentity`
+| String
+| Subject or user ID of the requester (or "anonymous")
+
+| `ip`
+| String
+| Source IP address
+
+| `userAgent`
+| String
+| Request user agent string
+
+| `outcome`
+| String
+| Result of the access attempt (e.g., "OK", "EXPIRED", "REVOKED", "MAX_USES_EXCEEDED")
+
+| `message`
+| String
+| Optional detail message
+|===
+
+==== Link Signing with HMAC
+
+The `LinkSigner` utility provides cryptographic signing and verification of share link tokens using HMAC-SHA256.
+
+===== Configuration
+
+[source,properties]
+----
+# Secret key for HMAC signing (required for link signing to be active)
+share.link.signing.secret=${SHARE_LINK_SECRET}
+----
+
+If the secret is not configured, `LinkSigner.isEnabled()` returns `false` and signing/verification is skipped.
+
+===== Signing
+
+[source,java]
+----
+@Inject
+LinkSigner linkSigner;
+
+if (linkSigner.isEnabled()) {
+    long now = Instant.now().getEpochSecond();
+    String signature = linkSigner.sign(shareLink.getPublicId(), now);
+    // Include signature and timestamp in the shareable URL
+}
+----
+
+===== Verification
+
+[source,java]
+----
+// Verify with default 24-hour clock skew tolerance
+boolean valid = linkSigner.verify(publicId, timestamp, signature);
+
+// Verify with custom skew tolerance (e.g., 1 hour)
+boolean valid = linkSigner.verify(publicId, timestamp, signature, 3600);
+----
+
+The verifier checks:
+
+1. The HMAC signature matches for the given `publicId + timestamp`
+2. The timestamp is within the allowed clock skew window (default: 24 hours)
+3. Comparison uses constant-time equality to prevent timing attacks
+
+==== Security Considerations
+
+* Always configure `share.link.signing.secret` in production with a strong random value
+* Use `expiresAt` and `maxUses` to limit link exposure
+* Set `allowAnonymous=false` unless guest access is explicitly required
+* Monitor `ShareAccessLog` for anomalous access patterns
+* Revoke links immediately when they are no longer needed
+
+==== See Also
+
+* xref:permissions.adoc[Permissions and Authorization]
+* xref:auth.adoc[Authentication and Authorization]
+* xref:../appendix/configuration.adoc[Configuration Reference]

@@ -1,6 +1,7 @@
 package com.e2eq.framework.model.persistent.base;
 
 
+import com.e2eq.framework.annotations.FunctionalMapping;
 import com.e2eq.framework.annotations.ImportRequiredField;
 import com.e2eq.framework.rest.models.UIAction;
 import com.e2eq.framework.rest.models.UIActionList;
@@ -18,8 +19,11 @@ import org.bson.codecs.pojo.annotations.BsonExtraElements;
 import org.bson.types.ObjectId;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
+import java.util.concurrent.ConcurrentHashMap;
+
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 import static dev.morphia.mapping.IndexType.DESC;
@@ -35,7 +39,7 @@ import static dev.morphia.mapping.IndexType.DESC;
                   )
 })
 @RegisterForReflection
-@EqualsAndHashCode(exclude={"modelSourceRealm"})
+@EqualsAndHashCode(exclude={"modelSourceRealm", "actionList", "skipValidation", "defaultUIActions"})
 @SuperBuilder
 @Data
 @NoArgsConstructor
@@ -143,24 +147,43 @@ public abstract  class UnversionedBaseModel {
   // }
 
     /**
+     * Per-class cache for @FunctionalMapping lookups. Avoids repeated reflection;
+     * populated once per concrete class, thread-safe. Uses Optional to cache
+     * both present and absent annotations.
+     */
+    private static final ConcurrentHashMap<Class<?>, Optional<FunctionalMapping>> FUNCTIONAL_MAPPING_CACHE = new ConcurrentHashMap<>();
+
+    private FunctionalMapping cachedFunctionalMapping() {
+        return FUNCTIONAL_MAPPING_CACHE.computeIfAbsent(this.getClass(),
+            clazz -> Optional.ofNullable(clazz.getAnnotation(FunctionalMapping.class))
+        ).orElse(null);
+    }
+
+    /**
      * Maps this class to a functional area for UI action grouping.
      *
-     * @return the functional area identifier
+     * @return the functional area identifier, or null if @FunctionalMapping is not present
      */
     @Transient
     @JsonIgnore
-    abstract public String bmFunctionalArea();
+    public String bmFunctionalArea() {
+        FunctionalMapping mapping = cachedFunctionalMapping();
+        return mapping != null ? mapping.area() : null;
+    }
 
     /**
      Maps this class to a functional domain that will determine the set of
      uiactions based upon the current data model that can be applied to this
      object, and what of those actions the current user acting on this object
      can actually execute
-     * @return either the classname by default or the overridden string to map to
+     * @return the functional domain identifier, or null if @FunctionalMapping is not present
      */
     @Transient
     @JsonIgnore
-    abstract public String bmFunctionalDomain();
+    public String bmFunctionalDomain() {
+        FunctionalMapping mapping = cachedFunctionalMapping();
+        return mapping != null ? mapping.domain() : null;
+    }
 
     public void validate() {
     }

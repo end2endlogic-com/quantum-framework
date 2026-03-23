@@ -93,6 +93,11 @@ public final class SeedPackManifest {
             throw new IllegalStateException(sb.toString());
         }
 
+        // Validate scope constraints
+        if (scope != null) {
+            scope.validate(getSourceDescription());
+        }
+
         // Additional programmatic validation
         if (datasets != null) {
             datasets.forEach(dataset -> dataset.validate(getSourceDescription()));

@@ -64,6 +64,9 @@ final class RepoSecurityContextResolver {
         }
 
         if (!needRebuild) {
+            if (SecurityContext.getResourceContext().isEmpty()) {
+                SecurityContext.setResourceContext(ResourceContext.DEFAULT_ANONYMOUS_CONTEXT);
+            }
             return;
         }
 
@@ -84,17 +87,21 @@ final class RepoSecurityContextResolver {
         String userId;
         String contextRealm;
         Map<String, String> area2RealmOverrides = null;
+        com.e2eq.framework.model.security.DomainContext domainContext = null;
+        com.e2eq.framework.model.security.DataDomainPolicy dataDomainPolicy = null;
         if (credentials.isPresent()) {
             CredentialUserIdPassword creds = credentials.get();
             dataDomain = creds.getDomainContext().toDataDomain(creds.getUserId());
             userId = creds.getUserId();
             contextRealm = creds.getDomainContext().getDefaultRealm();
+            domainContext = creds.getDomainContext();
+            dataDomainPolicy = creds.getDataDomainPolicy();
             String[] credRoles = creds.getRoles();
+            area2RealmOverrides = creds.getArea2RealmOverrides();
             if (credRoles != null && credRoles.length > 0) {
                 Set<String> combined = new HashSet<>(rolesSet);
                 combined.addAll(Arrays.asList(credRoles));
                 roles = combined.toArray(new String[0]);
-                area2RealmOverrides = creds.getArea2RealmOverrides();
             }
         } else {
             Log.warnf("Unable to locate credentials for userId:%s in realm:%s. Falling back to identity defaults.", principalName, envConfigUtils.getSystemRealm());
@@ -115,6 +122,8 @@ final class RepoSecurityContextResolver {
                 .withUserId(userId)
                 .withRoles(roles)
                 .withArea2RealmOverrides(area2RealmOverrides)
+                .withDomainContext(domainContext)
+                .withDataDomainPolicy(dataDomainPolicy)
                 .withScope("AUTHENTICATED")
                 .build();
         SecurityContext.setPrincipalContext(rebuiltContext);
@@ -134,8 +143,10 @@ final class RepoSecurityContextResolver {
         }
 
         String realmId = defaultRealm;
-        if (SecurityContext.getPrincipalContext().isPresent() && SecurityContext.getResourceContext().isPresent()) {
-            realmId = ruleContext.getRealmId(SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get());
+        if (SecurityContext.getPrincipalContext().isPresent()) {
+            ResourceContext resourceContext = SecurityContext.getResourceContext()
+                    .orElse(ResourceContext.DEFAULT_ANONYMOUS_CONTEXT);
+            realmId = ruleContext.getRealmId(SecurityContext.getPrincipalContext().get(), resourceContext);
         }
 
         if (realmId == null) {

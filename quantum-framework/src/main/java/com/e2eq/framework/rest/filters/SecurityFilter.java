@@ -1,6 +1,8 @@
 package com.e2eq.framework.rest.filters;
 
 
+import com.e2eq.framework.model.auth.AuthProvider;
+import com.e2eq.framework.model.auth.AuthProviderFactory;
 import com.e2eq.framework.model.persistent.morphia.IdentityRoleResolver;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.morphia.UserGroupRepo;
@@ -52,6 +54,9 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
     @ConfigProperty(name = "auth.provider")
     String authProvider;
+
+    @Inject
+    AuthProviderFactory authProviderFactory;
 
     @Inject
     JsonWebToken jwt;
@@ -591,25 +596,26 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         if (ocreds.isPresent()) {
             CredentialUserIdPassword creds = ocreds.get();
 
-            // Start with credential's default realm, then optionally override with X-Realm if authorized
-            String effectiveRealm = creds.getDomainContext().getDefaultRealm();
+            // Keep the base context on the credential's home realm. X-Realm is applied later by
+            // applyRealmOverride(), but we still need the target realm here for role resolution.
+            String credentialRealm = creds.getDomainContext().getDefaultRealm();
+            String roleLookupRealm = credentialRealm;
             Log.debugf("buildIdentityContextWithCredentials: credential found for userId=%s, domainContext.defaultRealm=%s",
-                creds.getUserId(), effectiveRealm);
+                creds.getUserId(), credentialRealm);
 
             if (realmOverride != null) {
                 validateRealmAccess(creds, realmOverride);
-                effectiveRealm = realmOverride;
-                Log.debugf("buildIdentityContextWithCredentials: X-Realm override applied, effectiveRealm=%s", effectiveRealm);
+                roleLookupRealm = realmOverride;
+                Log.debugf("buildIdentityContextWithCredentials: X-Realm accepted for role lookup, targetRealm=%s", roleLookupRealm);
             }
 
             DataDomain dataDomain = creds.getDomainContext().toDataDomain(creds.getUserId());
-            // Pass the effective realm for UserProfile/UserGroup lookups
-            Log.debugf("buildIdentityContextWithCredentials: resolving roles with effectiveRealm=%s, subject=%s",
-                effectiveRealm, creds.getSubject());
-            String[] roles = resolveEffectiveRoles(securityIdentity, creds, effectiveRealm);
+            Log.debugf("buildIdentityContextWithCredentials: resolving roles with roleLookupRealm=%s, subject=%s",
+                roleLookupRealm, creds.getSubject());
+            String[] roles = resolveEffectiveRoles(securityIdentity, creds, roleLookupRealm);
 
             PrincipalContext context = new PrincipalContext.Builder()
-                    .withDefaultRealm(effectiveRealm)
+                    .withDefaultRealm(credentialRealm)
                     .withDomainContext(creds.getDomainContext())
                     .withDataDomain(dataDomain)
                     .withUserId(creds.getUserId())
@@ -648,7 +654,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         // Credentials are looked up from the configured system realm (global credential store)
         Optional<CredentialUserIdPassword> ocreds = credentialRepo.findBySubject(sub, envConfigUtils.getSystemRealm(), true);
         if (!ocreds.isPresent()) {
-            ocreds = findCredentialByUsername(sub, realmOverride);
+            ocreds = findCredentialByPrincipalClaims(sub);
         }
 
         if (!ocreds.isPresent()) {
@@ -659,24 +665,25 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
         CredentialUserIdPassword creds = ocreds.get();
 
-        // Start with credential's default realm, then optionally override with X-Realm if authorized
-        String effectiveRealm = creds.getDomainContext().getDefaultRealm();
+        // Keep the base context on the credential's home realm. X-Realm is applied later by
+        // applyRealmOverride(), but we still need the target realm here for role resolution.
+        String credentialRealm = creds.getDomainContext().getDefaultRealm();
+        String roleLookupRealm = credentialRealm;
         Log.debugf("buildJwtContextWithCredentials: credential found for userId=%s, domainContext.defaultRealm=%s",
-            creds.getUserId(), effectiveRealm);
+            creds.getUserId(), credentialRealm);
 
         if (realmOverride != null) {
             validateRealmAccess(creds, realmOverride);
-            effectiveRealm = realmOverride;
-            Log.debugf("buildJwtContextWithCredentials: X-Realm override applied, effectiveRealm=%s", effectiveRealm);
+            roleLookupRealm = realmOverride;
+            Log.debugf("buildJwtContextWithCredentials: X-Realm accepted for role lookup, targetRealm=%s", roleLookupRealm);
         }
 
-        // Pass the effective realm for UserProfile/UserGroup lookups
-        Log.debugf("buildJwtContextWithCredentials: resolving roles with effectiveRealm=%s, subject=%s",
-            effectiveRealm, creds.getSubject());
-        String[] roles = resolveEffectiveRoles(securityIdentity, creds, effectiveRealm);
+        Log.debugf("buildJwtContextWithCredentials: resolving roles with roleLookupRealm=%s, subject=%s",
+            roleLookupRealm, creds.getSubject());
+        String[] roles = resolveEffectiveRoles(securityIdentity, creds, roleLookupRealm);
         DataDomain dataDomain = creds.getDomainContext().toDataDomain(creds.getUserId());
         PrincipalContext context = new PrincipalContext.Builder()
-                .withDefaultRealm(effectiveRealm)
+                .withDefaultRealm(credentialRealm)
                 .withDomainContext(creds.getDomainContext())
                 .withDataDomain(dataDomain)
                 .withUserId(creds.getUserId())
@@ -773,19 +780,71 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         }
     }
 
-    private Optional<CredentialUserIdPassword> findCredentialByUsername(String sub, String realm) {
-        String username = jwt.getClaim("username");
-        if (username != null) {
-            Optional<CredentialUserIdPassword> ocreds = credentialRepo.findByUserId(username, envConfigUtils.getSystemRealm(), true);
-            if (ocreds.isPresent()) {
-                String text = String.format(
-                    "Found user with userId %s but subject is:%s but token has subject:%s in the database, roles in credential is %s",
-                    username, ocreds.get().getSubject(), sub, Arrays.toString(ocreds.get().getRoles()));
-                Log.warn(text);
-                throw new IllegalStateException(text);
+    private Optional<CredentialUserIdPassword> findCredentialByPrincipalClaims(String sub) {
+        List<String> candidates = new ArrayList<>();
+        addClaimCandidate(candidates, jwt.getClaim("username"));
+        addClaimCandidate(candidates, jwt.getClaim("preferred_username"));
+        addClaimCandidate(candidates, jwt.getClaim("email"));
+
+        for (String candidate : candidates) {
+            Optional<CredentialUserIdPassword> ocreds =
+                credentialRepo.findByUserId(candidate, envConfigUtils.getSystemRealm(), true);
+            if (ocreds.isEmpty()) {
+                continue;
             }
+            CredentialUserIdPassword creds = ocreds.get();
+            if (Objects.equals(creds.getSubject(), sub)) {
+                return ocreds;
+            }
+            if (!isKnownIssuer(jwt.getIssuer())) {
+                Log.warnf(
+                    "Resolved external token subject %s to local userId %s using claim alias lookup; stored subject=%s",
+                    sub,
+                    candidate,
+                    creds.getSubject());
+                return ocreds;
+            }
+
+            String text = String.format(
+                "Found user with userId %s but subject is:%s but token has subject:%s in the database, roles in credential is %s",
+                candidate, creds.getSubject(), sub, Arrays.toString(creds.getRoles()));
+            Log.warn(text);
+            throw new IllegalStateException(text);
         }
         return Optional.empty();
+    }
+
+    /**
+     * Check whether the given issuer matches any configured auth provider.
+     * Used to distinguish tokens issued by a known provider (where subject
+     * mismatches are errors) from external/unknown tokens (where claim-based
+     * lookup with a different subject is expected).
+     */
+    private boolean isKnownIssuer(String issuer) {
+        if (issuer == null) {
+            return false;
+        }
+        for (String providerName : authProvider.split(",")) {
+            try {
+                AuthProvider provider = authProviderFactory.getProviderByName(providerName.trim());
+                if (issuer.equals(provider.getIssuer())) {
+                    return true;
+                }
+            } catch (IllegalArgumentException e) {
+                Log.debugf("Auth provider '%s' not found during issuer check", providerName.trim());
+            }
+        }
+        return false;
+    }
+
+    private void addClaimCandidate(List<String> candidates, Object rawValue) {
+        if (rawValue == null) {
+            return;
+        }
+        String value = String.valueOf(rawValue).trim();
+        if (!value.isEmpty() && !candidates.contains(value)) {
+            candidates.add(value);
+        }
     }
 
     @jakarta.inject.Inject
@@ -874,12 +933,15 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         if (impersonateSubject == null && impersonateUserId == null) {
             return new PrincipalContext.Builder()
                     .withDefaultRealm(baseContext.getDefaultRealm())
+                    .withDomainContext(baseContext.getDomainContext())
                     .withDataDomain(baseContext.getDataDomain())
                     .withUserId(baseContext.getUserId())
                     .withRoles(baseContext.getRoles())
                     .withScope(baseContext.getScope())
                     .withArea2RealmOverrides(baseContext.getArea2RealmOverrides())
                     .withDataDomainPolicy(baseContext.getDataDomainPolicy())
+                    .withRealmOverrideActive(baseContext.isRealmOverrideActive())
+                    .withOriginalDataDomain(baseContext.getOriginalDataDomain())
                     .withActingOnBehalfOfSubject(actingOnBehalfOfSubject)
                     .withActingOnBehalfOfUserId(actingOnBehalfOfUserId)
                     .build();

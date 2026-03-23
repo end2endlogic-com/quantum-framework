@@ -1,0 +1,5 @@
+[shell_environment_policy]
+inherit = "core"
+
+[shell_environment_policy.set]
+JAVA_HOME = "/Library/Java/JavaVirtualMachines/graalvm-jdk-21.0.4+8.1/Contents/Home"

@@ -674,7 +674,7 @@ See xref:multiple-auth-providers.adoc#per-tenant-key-pairs[Key Pair Management] 
 
 | `auth.provider`
 | (required)
-| Comma-separated list of provider names (e.g., `custom`, `custom,cognito`). See xref:multiple-auth-providers.adoc[Multiple Auth Providers].
+| Comma-separated list of provider names (e.g., `custom`, `custom,oidc`). See xref:multiple-auth-providers.adoc[Multiple Auth Providers].
 
 | `mp.jwt.verify.publickey.location`
 | (required)

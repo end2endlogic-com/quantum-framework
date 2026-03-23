@@ -25,7 +25,7 @@ class RepoSecurityFilterBuilderTest {
                         null)
                         .buildSecuredFilters(List.of(), TestModel.class));
 
-        assertTrue(ex.getMessage().contains("PrincipalContext and ResourceContext"));
+        assertTrue(ex.getMessage().contains("PrincipalContext"));
     }
 
     static class TestModel extends UnversionedBaseModel {

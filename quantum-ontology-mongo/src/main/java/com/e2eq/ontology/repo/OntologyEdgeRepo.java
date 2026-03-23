@@ -6,6 +6,7 @@ import com.e2eq.ontology.core.EdgeRecord;
 import com.e2eq.ontology.core.OntologyRegistry;
 import com.e2eq.ontology.exceptions.CardinalityViolationException;
 import com.e2eq.ontology.model.OntologyEdge;
+import com.e2eq.framework.model.securityrules.SecurityContext;
 import dev.morphia.Datastore;
 import dev.morphia.query.Query;
 import dev.morphia.query.filters.Filter;
@@ -73,6 +74,28 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
     private String tenantIdToRealmId(String tenantId) {
         if (tenantId == null || tenantId.isBlank()) return tenantId;
         return tenantId.replace('.', '-');
+    }
+
+    /**
+     * Resolves the datastore realm for DataDomain-scoped edge operations.
+     *
+     * During authenticated requests the active security-context realm is authoritative and may not
+     * be derivable from {@code dataDomain.tenantId}. Outside a request context (or when no principal
+     * has been explicitly established), fall back to the historical tenantId-to-realm conversion so
+     * existing standalone tests and utilities continue to work.
+     *
+     * Note: only checks whether a PrincipalContext has already been set — does NOT trigger
+     * ensureSecurityContextFromIdentity() to avoid bootstrapping a context from the injected
+     * SecurityIdentity when running outside an authenticated request.
+     */
+    private String resolveRealmId(DataDomain dataDomain) {
+        if (SecurityContext.getPrincipalContext().isPresent()) {
+            String realm = SecurityContext.getPrincipalContext().get().getDefaultRealm();
+            if (realm != null && !realm.isBlank()) {
+                return realm;
+            }
+        }
+        return tenantIdToRealmId(dataDomain != null ? dataDomain.getTenantId() : null);
     }
 
     /**
@@ -147,7 +170,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
      * @throws CardinalityViolationException if the edge would violate a functional constraint
      */
     public void validateFunctionalConstraint(DataDomain dataDomain, String srcType, String src, String p, String dst) {
-        validateFunctionalConstraint(tenantIdToRealmId(dataDomain.getTenantId()), dataDomain, srcType, src, p, dst);
+        validateFunctionalConstraint(resolveRealmId(dataDomain), dataDomain, srcType, src, p, dst);
     }
 
     public void validateFunctionalConstraint(String realmId, DataDomain dataDomain, String srcType, String src, String p, String dst) {
@@ -277,7 +300,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
                        String dst,
                        boolean inferred,
                        Map<String, Object> prov) {
-        upsert(tenantIdToRealmId(dataDomain.getTenantId()), dataDomain, srcType, src, p, dstType, dst, inferred, prov);
+        upsert(resolveRealmId(dataDomain), dataDomain, srcType, src, p, dstType, dst, inferred, prov);
     }
 
     public void upsert(String realmId,
@@ -482,7 +505,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
      * Delete edges by source within the given DataDomain.
      */
     public void deleteBySrc(DataDomain dataDomain, String src, boolean inferredOnly) {
-        deleteBySrc(tenantIdToRealmId(dataDomain.getTenantId()), dataDomain, src, inferredOnly);
+        deleteBySrc(resolveRealmId(dataDomain), dataDomain, src, inferredOnly);
     }
 
     public void deleteBySrc(String realmId, DataDomain dataDomain, String src, boolean inferredOnly) {
@@ -500,7 +523,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
      * Delete edges by source and predicate within the given DataDomain.
      */
     public void deleteBySrcAndPredicate(DataDomain dataDomain, String src, String p) {
-        deleteBySrcAndPredicate(tenantIdToRealmId(dataDomain.getTenantId()), dataDomain, src, p);
+        deleteBySrcAndPredicate(resolveRealmId(dataDomain), dataDomain, src, p);
     }
 
     public void deleteBySrcAndPredicate(String realmId, DataDomain dataDomain, String src, String p) {
@@ -518,7 +541,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
      * Delete inferred edges from source with predicate where destination is not in keep set.
      */
     public void deleteInferredBySrcNotIn(DataDomain dataDomain, String src, String p, Collection<String> dstKeep) {
-        deleteInferredBySrcNotIn(tenantIdToRealmId(dataDomain.getTenantId()), dataDomain, src, p, dstKeep);
+        deleteInferredBySrcNotIn(resolveRealmId(dataDomain), dataDomain, src, p, dstKeep);
     }
 
     public void deleteInferredBySrcNotIn(String realmId, DataDomain dataDomain, String src, String p, Collection<String> dstKeep) {
@@ -540,7 +563,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
      * This excludes inferred edges (from reasoner) and derived/computed edges (from ComputedEdgeProvider).
      */
     public void deleteExplicitBySrcNotIn(DataDomain dataDomain, String src, String p, Collection<String> dstKeep) {
-        deleteExplicitBySrcNotIn(tenantIdToRealmId(dataDomain.getTenantId()), dataDomain, src, p, dstKeep);
+        deleteExplicitBySrcNotIn(resolveRealmId(dataDomain), dataDomain, src, p, dstKeep);
     }
 
     public void deleteExplicitBySrcNotIn(String realmId, DataDomain dataDomain, String src, String p, Collection<String> dstKeep) {
@@ -563,7 +586,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
      * Derived edges are those where derived=true (from ComputedEdgeProvider).
      */
     public void deleteDerivedBySrcNotIn(DataDomain dataDomain, String src, String p, Collection<String> dstKeep) {
-        deleteDerivedBySrcNotIn(tenantIdToRealmId(dataDomain.getTenantId()), dataDomain, src, p, dstKeep);
+        deleteDerivedBySrcNotIn(resolveRealmId(dataDomain), dataDomain, src, p, dstKeep);
     }
 
     public void deleteDerivedBySrcNotIn(String realmId, DataDomain dataDomain, String src, String p, Collection<String> dstKeep) {
@@ -586,7 +609,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
     public Set<String> srcIdsByDst(DataDomain dataDomain, String p, String dst) {
         validateDataDomain(dataDomain);
         Set<String> ids = new HashSet<>();
-        Query<OntologyEdge> q = ds(tenantIdToRealmId(dataDomain.getTenantId())).find(OntologyEdge.class);
+        Query<OntologyEdge> q = ds(resolveRealmId(dataDomain)).find(OntologyEdge.class);
         for (Filter f : dataDomainFilters(dataDomain)) {
             q.filter(f);
         }
@@ -605,7 +628,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
     public Set<String> dstIdsBySrc(DataDomain dataDomain, String p, String src) {
         validateDataDomain(dataDomain);
         Set<String> ids = new HashSet<>();
-        Query<OntologyEdge> q = ds(tenantIdToRealmId(dataDomain.getTenantId())).find(OntologyEdge.class);
+        Query<OntologyEdge> q = ds(resolveRealmId(dataDomain)).find(OntologyEdge.class);
         for (Filter f : dataDomainFilters(dataDomain)) {
             q.filter(f);
         }
@@ -622,7 +645,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
         if (srcIds == null || srcIds.isEmpty()) return Set.of();
         validateDataDomain(dataDomain);
         Set<String> ids = new HashSet<>();
-        Query<OntologyEdge> q = ds(tenantIdToRealmId(dataDomain.getTenantId())).find(OntologyEdge.class);
+        Query<OntologyEdge> q = ds(resolveRealmId(dataDomain)).find(OntologyEdge.class);
         for (Filter f : dataDomainFilters(dataDomain)) {
             q.filter(f);
         }
@@ -639,7 +662,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
         if (dstIds == null || dstIds.isEmpty()) return Set.of();
         validateDataDomain(dataDomain);
         Set<String> ids = new HashSet<>();
-        Query<OntologyEdge> q = ds(tenantIdToRealmId(dataDomain.getTenantId())).find(OntologyEdge.class);
+        Query<OntologyEdge> q = ds(resolveRealmId(dataDomain)).find(OntologyEdge.class);
         for (Filter f : dataDomainFilters(dataDomain)) {
             q.filter(f);
         }
@@ -656,7 +679,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
         Map<String, Set<String>> map = new HashMap<>();
         if (dstIds == null || dstIds.isEmpty()) return map;
         validateDataDomain(dataDomain);
-        Query<OntologyEdge> q = ds(tenantIdToRealmId(dataDomain.getTenantId())).find(OntologyEdge.class);
+        Query<OntologyEdge> q = ds(resolveRealmId(dataDomain)).find(OntologyEdge.class);
         for (Filter f : dataDomainFilters(dataDomain)) {
             q.filter(f);
         }
@@ -670,7 +693,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
      * Find all edges from the given source within the DataDomain.
      */
     public List<OntologyEdge> findBySrc(DataDomain dataDomain, String src) {
-        return findBySrc(tenantIdToRealmId(dataDomain.getTenantId()), dataDomain, src);
+        return findBySrc(resolveRealmId(dataDomain), dataDomain, src);
     }
 
     public List<OntologyEdge> findBySrc(String realmId, DataDomain dataDomain, String src) {
@@ -686,7 +709,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
      * Find all edges pointing to the given destination within the DataDomain.
      */
     public List<OntologyEdge> findByDst(DataDomain dataDomain, String dst) {
-        return findByDst(tenantIdToRealmId(dataDomain.getTenantId()), dataDomain, dst);
+        return findByDst(resolveRealmId(dataDomain), dataDomain, dst);
     }
 
     public List<OntologyEdge> findByDst(String realmId, DataDomain dataDomain, String dst) {
@@ -702,7 +725,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
      * Find edges with given predicate pointing to destination, within the DataDomain.
      */
     public List<OntologyEdge> findByDstAndP(DataDomain dataDomain, String dst, String p) {
-        return findByDstAndP(tenantIdToRealmId(dataDomain.getTenantId()), dataDomain, dst, p);
+        return findByDstAndP(resolveRealmId(dataDomain), dataDomain, dst, p);
     }
 
     public List<OntologyEdge> findByDstAndP(String realmId, DataDomain dataDomain, String dst, String p) {
@@ -718,7 +741,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
      * Find edges from source with given predicate, within the DataDomain.
      */
     public List<OntologyEdge> findBySrcAndP(DataDomain dataDomain, String src, String p) {
-        return findBySrcAndP(tenantIdToRealmId(dataDomain.getTenantId()), dataDomain, src, p);
+        return findBySrcAndP(resolveRealmId(dataDomain), dataDomain, src, p);
     }
 
     public List<OntologyEdge> findBySrcAndP(String realmId, DataDomain dataDomain, String src, String p) {
@@ -734,7 +757,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
      * Find all edges with the given property/predicate, within the DataDomain.
      */
     public List<OntologyEdge> findByProperty(DataDomain dataDomain, String p) {
-        return findByProperty(tenantIdToRealmId(dataDomain.getTenantId()), dataDomain, p);
+        return findByProperty(resolveRealmId(dataDomain), dataDomain, p);
     }
 
     public List<OntologyEdge> findByProperty(String realmId, DataDomain dataDomain, String p) {
@@ -757,7 +780,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
                               String dst,
                               List<EdgeRecord.Support> support,
                               Map<String, Object> prov) {
-        upsertDerived(tenantIdToRealmId(dataDomain.getTenantId()), dataDomain, srcType, src, p, dstType, dst, support, prov);
+        upsertDerived(resolveRealmId(dataDomain), dataDomain, srcType, src, p, dstType, dst, support, prov);
     }
 
     public void upsertDerived(String realmId,
@@ -841,7 +864,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
      * Remove derived edges whose support is empty or missing, within the DataDomain.
      */
     public void pruneDerivedWithoutSupport(DataDomain dataDomain) {
-        pruneDerivedWithoutSupport(tenantIdToRealmId(dataDomain.getTenantId()), dataDomain);
+        pruneDerivedWithoutSupport(resolveRealmId(dataDomain), dataDomain);
     }
 
     public void pruneDerivedWithoutSupport(String realmId, DataDomain dataDomain) {
@@ -860,7 +883,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
      * Delete all derived edges within the DataDomain. Used by force reindex.
      */
     public void deleteDerivedByDataDomain(DataDomain dataDomain) {
-        deleteDerivedByDataDomain(tenantIdToRealmId(dataDomain.getTenantId()), dataDomain);
+        deleteDerivedByDataDomain(resolveRealmId(dataDomain), dataDomain);
     }
 
     public void deleteDerivedByDataDomain(String realmId, DataDomain dataDomain) {

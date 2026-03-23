@@ -1,11 +1,16 @@
 package com.e2eq.ontology.mongo;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.security.DomainContext;
+import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.ResourceContext;
+import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.ontology.exceptions.CardinalityViolationException;
 import com.e2eq.ontology.repo.OntologyEdgeRepo;
 import dev.morphia.MorphiaDatastore;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -26,6 +31,11 @@ public class OntologyEdgeRepoTest {
     
     private DataDomain testDataDomain;
     private DataDomain testDataDomainOrgB;
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContext.clear();
+    }
 
     @BeforeEach
     void clean() {
@@ -184,5 +194,42 @@ public class OntologyEdgeRepoTest {
             CardinalityViolationException.class,
             () -> edgeRepo.singleSrcIdByDst(testDataDomain, "memberOf", "ORG-1")
         );
+    }
+
+    @Test
+    void findBySrc_prefersActiveSecurityRealmOverTenantIdHeuristic() {
+        DataDomain mismatchedDomain = new DataDomain();
+        mismatchedDomain.setOrgRefName("mrisys");
+        mismatchedDomain.setAccountNum("0000000000");
+        mismatchedDomain.setTenantId("system.com");
+        mismatchedDomain.setOwnerId("system@system.com");
+        mismatchedDomain.setDataSegment(0);
+
+        edgeRepo.deleteAll("realm-mismatch-test");
+        edgeRepo.upsert("realm-mismatch-test", mismatchedDomain, "Obligation", "OBL-1", "obligationFor", "LegalEntity", "LE-1", false, Map.of());
+
+        DomainContext domainContext = DomainContext.builder()
+            .tenantId("system.com")
+            .defaultRealm("realm-mismatch-test")
+            .orgRefName("mrisys")
+            .accountId("0000000000")
+            .dataSegment(0)
+            .build();
+
+        PrincipalContext principal = new PrincipalContext.Builder()
+            .withUserId("system@system.com")
+            .withDefaultRealm("realm-mismatch-test")
+            .withDomainContext(domainContext)
+            .withDataDomain(mismatchedDomain)
+            .withRoles(new String[] { "admin" })
+            .withScope("AUTHENTICATED")
+            .build();
+
+        SecurityContext.setPrincipalContext(principal);
+        SecurityContext.setResourceContext(ResourceContext.DEFAULT_ANONYMOUS_CONTEXT);
+
+        List<com.e2eq.ontology.model.OntologyEdge> edges = edgeRepo.findBySrc(mismatchedDomain, "OBL-1");
+        assertEquals(1, edges.size(), "Edge lookup should use the active security-context realm when tenantId does not match realm naming");
+        assertEquals("obligationFor", edges.get(0).getP());
     }
 }

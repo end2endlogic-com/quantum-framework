@@ -78,16 +78,67 @@ auth.jwt.refresh-expiration=1440
 ===== OIDC Provider
 [source,properties]
 ----
-# Enable OIDC
+# Enable OIDC (alongside or instead of built-in JWT)
 quarkus.oidc.enabled=true
-auth.provider=oidc
+auth.provider=custom,oidc          # or just: auth.provider=oidc
 
 # OIDC configuration
 quarkus.oidc.auth-server-url=https://your-provider.com/auth/realms/your-realm
 quarkus.oidc.client-id=your-client-id
 quarkus.oidc.credentials.secret=your-client-secret
-quarkus.oidc.roles.role-claim-path=groups
+quarkus.oidc.token.issuer=https://your-provider.com/auth/realms/your-realm
+
+# Quantum OIDC provider settings
+auth.oidc.provider-name=oidc                    # Provider name (default: oidc)
+auth.oidc.role-claim-path=groups                 # Claim path for roles (default: groups)
+auth.oidc.username-claim=preferred_username      # Claim for username (default: preferred_username)
 ----
+
+===== Dedicated Cognito Provider
+[source,properties]
+----
+# Enable Cognito provider (full AWS SDK integration)
+auth.provider=cognito
+
+# AWS Cognito settings
+aws.cognito.user-pool-id=${USER_POOL_ID}
+aws.cognito.client-id=${APPLICATION_CLIENT_ID}
+aws.cognito.region=us-east-1
+aws.cognito.jwks.url=https://cognito-idp.${aws.cognito.region}.amazonaws.com/${aws.cognito.user-pool-id}/.well-known/jwks.json
+----
+
+See xref:../user-guide/multiple-auth-providers.adoc[Multiple Authentication Providers] for details on configuring external identity providers.
+
+===== OAuth Server (optional module)
+
+The `quantum-oauth-server` module uses the same JWT configuration properties listed above (`mp.jwt.verify.issuer`, `mp.jwt.verify.publickey.location`, `com.b2bi.jwt.duration`). No additional properties are required. The OAuth endpoints (`/oauth/authorize`, `/oauth/token`, `/oauth/jwks`, `/.well-known/openid-configuration`, `/oauth/userinfo`) activate automatically when the module is on the classpath.
+
+OAuth clients are registered in the `oauth_clients` MongoDB collection. Authorization codes are stored in `oauth_authorization_codes` with a 5-minute TTL index for automatic cleanup.
+
+See xref:../user-guide/oauth-server.adoc[OAuth Server Module] for client registration and integration examples.
+
+===== Email Templates (Postmark)
+[source,properties]
+----
+# Postmark API key (required for email delivery)
+postmark.api-key=${POSTMARK_API_KEY}
+
+# Default sender address (required for email delivery)
+postmark.default-from-email-address=noreply@yourdomain.com
+----
+
+If either property is missing, the `PostmarkEmailSender` logs an info message and skips delivery, allowing development environments to run without Postmark credentials.
+
+Classpath templates are loaded from `templates/email/{templateKey}/` with files `subject.txt`, `body.html`, and `body.txt`. See xref:../user-guide/email-templates.adoc[Email Templates] for details.
+
+===== Shared Link Signing
+[source,properties]
+----
+# HMAC-SHA256 secret for signing share link tokens (required for link signing)
+share.link.signing.secret=${SHARE_LINK_SECRET}
+----
+
+If the secret is not configured, `LinkSigner.isEnabled()` returns `false` and link signing/verification is disabled. See xref:../user-guide/shared-links.adoc[Shared Links] for details.
 
 ==== Quantum Framework Configuration
 

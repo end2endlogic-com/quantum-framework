@@ -1,11 +1,12 @@
 package com.e2eq.framework.model.persistent.morphia.interceptors.ddpolicy;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.security.DataDomainPolicy;
 import com.e2eq.framework.model.security.DataDomainPolicyEntry;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
-import io.quarkus.logging.Log;
+import io.quarkus.arc.DefaultBean;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
@@ -15,6 +16,7 @@ import java.util.Map;
 import java.util.Optional;
 
 @ApplicationScoped
+@DefaultBean
 public class DefaultDataDomainResolver implements DataDomainResolver {
 
     @Inject
@@ -51,6 +53,17 @@ public class DefaultDataDomainResolver implements DataDomainResolver {
 
         // 3) Default behavior
         return principalDD;
+    }
+
+    @Override
+    public DataDomain resolveForCreate(String functionalArea, String functionalDomain, Object entity) {
+        if (entity instanceof UnversionedBaseModel baseModel && baseModel.getId() != null && baseModel.getDataDomain() != null) {
+            return baseModel.getDataDomain();
+        }
+        if (entity instanceof UnversionedBaseModel baseModel && baseModel.getDataDomain() != null) {
+            return baseModel.getDataDomain();
+        }
+        return resolveForCreate(functionalArea, functionalDomain);
     }
 
     private String safe(String v) { return v == null ? "*" : v; }
