@@ -32,16 +32,18 @@ public class CredentialUserIdPassword extends BaseModel {
 
    @Data
    @EqualsAndHashCode
+   @NoArgsConstructor
    @ToString
-   public class RealmEntry {
+   static public class RealmEntry {
       String realmRefName;
       String realmDisplayName;
    }
 
    @Data
    @EqualsAndHashCode
+   @NoArgsConstructor
    @ToString
-   public class ImpersonateEntry {
+   static public class ImpersonateEntry {
       String userId;
       String subject;
       String userDisplayName;

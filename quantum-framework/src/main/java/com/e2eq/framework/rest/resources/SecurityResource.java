@@ -201,13 +201,31 @@ public class SecurityResource {
             Log.info("me: - UserId:" + securityContext.getUserPrincipal().getName());
 
         try {
-            Optional<UserProfile> userProfileOp = userProfileRepo.getBySubject(envConfigUtils.getSystemRealm(), securityIdentity.getPrincipal().getName());
+            String principalName = securityIdentity.getPrincipal().getName();
+            String systemRealm = envConfigUtils.getSystemRealm();
+            Optional<UserProfile> userProfileOp = userProfileRepo.getBySubject(systemRealm, principalName);
+            if (userProfileOp.isEmpty()) {
+                userProfileOp = userProfileRepo.getByUserIdWithIgnoreRules(systemRealm, principalName);
+            }
             if (userProfileOp.isPresent()) {
                 userProfileRepo.fillUIActions(userProfileOp.get());
             }
             else {
-                Optional<CredentialUserIdPassword> cred = credentialRepo.findBySubject(securityContext.getUserPrincipal().getName());
+                Optional<CredentialUserIdPassword> cred = credentialRepo.findBySubject(principalName, systemRealm, true);
+                if (cred.isEmpty()) {
+                    cred = credentialRepo.findByUserId(principalName, systemRealm, true);
+                }
                 if (cred.isPresent()) {
+                    String defaultRealm = cred.get().getDomainContext() != null
+                        ? cred.get().getDomainContext().getDefaultRealm()
+                        : null;
+                    if (defaultRealm != null && !defaultRealm.isBlank() && !systemRealm.equals(defaultRealm)) {
+                        Optional<UserProfile> tenantProfile = userProfileRepo.getByUserIdWithIgnoreRules(defaultRealm, cred.get().getUserId());
+                        if (tenantProfile.isPresent()) {
+                            userProfileRepo.fillUIActions(tenantProfile.get());
+                            return Response.ok(tenantProfile.get()).build();
+                        }
+                    }
                     return Response.ok(cred.get()).build();
                 }
             }

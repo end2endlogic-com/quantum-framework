@@ -28,24 +28,40 @@ public final class ScopeMatcher {
         String tenantId = context.getTenantId().orElse(null);
         String archetype = null; // SeedContext currently does not expose archetype; extend later as needed
 
-        switch (scope.getType()) {
-            case GLOBAL:
-                // Always applicable; idempotency remains per-realm via registry keys
-                return true;
-            case PER_TENANT:
-                // Applicable when we have a tenantId present in context
-                return tenantId != null && !tenantId.isBlank();
-            case TENANT_LIST:
-                return tenantId != null && contains(scope.getTenants(), tenantId);
-            case ARCHETYPE:
-                // Until SeedContext carries archetype, default to not applicable when enabled and archetype missing
-                return archetype != null && contains(scope.getArchetypes(), archetype);
-            case CUSTOM:
-                // Reserved for future hook; for safety, do not apply by default
-                return false;
-            default:
-                return true;
+        // First: check scope type applicability
+        boolean typeApplicable = switch (scope.getType()) {
+            case GLOBAL -> true;
+            case PER_TENANT -> tenantId != null && !tenantId.isBlank();
+            case TENANT_LIST -> tenantId != null && contains(scope.getTenants(), tenantId);
+            case ARCHETYPE -> archetype != null && contains(scope.getArchetypes(), archetype);
+            case CUSTOM -> false;
+        };
+
+        if (!typeApplicable) {
+            return false;
         }
+
+        // Second: apply realm include/exclude filter (independent of scope type)
+        return isRealmAllowed(scope, realm);
+    }
+
+    /**
+     * Checks whether the given realm is allowed by the seed scope's realm filters.
+     * If includeRealms is set, the realm must be in the list.
+     * If excludeRealms is set, the realm must NOT be in the list.
+     * If neither is set, all realms are allowed.
+     */
+    static boolean isRealmAllowed(SeedScope scope, String realm) {
+        List<String> includeRealms = scope.getIncludeRealms();
+        List<String> excludeRealms = scope.getExcludeRealms();
+
+        if (includeRealms != null && !includeRealms.isEmpty()) {
+            return contains(includeRealms, realm);
+        }
+        if (excludeRealms != null && !excludeRealms.isEmpty()) {
+            return !contains(excludeRealms, realm);
+        }
+        return true;
     }
 
     private static boolean contains(List<String> list, String value) {

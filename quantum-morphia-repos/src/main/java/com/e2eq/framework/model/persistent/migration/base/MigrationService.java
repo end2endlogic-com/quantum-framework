@@ -47,7 +47,7 @@ public class MigrationService {
    protected String defaultRealm;
    @ConfigProperty(name = "quantum.realmConfig.testRealm", defaultValue = "test-system-com")
    protected String testRealm;
-   /** System realm database name; must match quantum.realmConfig.systemRealm in application.properties (e.g. system-psa-com). */
+   /** System realm database name; must match quantum.realmConfig.systemRealm in application.properties (e.g. system-com). */
    @ConfigProperty(name = "quantum.realmConfig.systemRealm", defaultValue = "system-com")
    protected String systemRealm;
 

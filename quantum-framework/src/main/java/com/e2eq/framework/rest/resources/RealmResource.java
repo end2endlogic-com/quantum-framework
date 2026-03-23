@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import com.e2eq.framework.util.EnvConfigUtils;
 import com.e2eq.framework.util.SecurityUtils;
 
 
@@ -34,6 +35,9 @@ public class RealmResource extends BaseResource<Realm, BaseMorphiaRepo<Realm>> {
 
    @Inject
    SecurityUtils securityUtils;
+
+   @Inject
+   EnvConfigUtils envConfigUtils;
 
    protected RealmResource (RealmRepo repo) {
       super(repo);
@@ -80,42 +84,18 @@ public class RealmResource extends BaseResource<Realm, BaseMorphiaRepo<Realm>> {
          pContext = SecurityContext.getPrincipalContext().get();
       }
 
-      Optional<CredentialUserIdPassword> ocredential =credentialRepo.findByUserId(pContext.getUserId());
-      List<Realm> realms;
-      if (ocredential.isPresent()) {
-         CredentialUserIdPassword credential = ocredential.get();
-         String realmFilter = credential.getRealmRegEx();
-
-         if (credential.getImpersonateFilterScript() != null && realmFilter != null) {
-            realms = repo.getListByQuery(0,-1, realmFilter);
-
-         } else if (credential.getImpersonateFilterScript() != null && realmFilter == null) {
-             realms = repo.getAllList();
-         } else if (credential.getImpersonateFilterScript() == null && realmFilter!= null) {
-            RestError error = RestError.builder()
-                    .status(Response.Status.PRECONDITION_FAILED .getStatusCode())
-                    .statusMessage(String.format("For userId:%s impersonateFilter is null but realmFilter has been provided, invalid configuration, must specify a imPersonateFilter ", credential.getUserId())).build();
-            return Response.status(Response.Status.PRECONDITION_FAILED).entity(error).build();
-         } else {
-            Optional<Realm> or = repo.findByRefName(credential.getDomainContext().getDefaultRealm());
-            if (or.isPresent())
-               realms = List.of(or.get());
-            else
-            {
-               RestError error = RestError.builder()
-                       .status(Response.Status.PRECONDITION_FAILED .getStatusCode())
-                       .statusMessage(String.format("For userId:%s could not find default realm:%s in realms collection in realm:%s", credential.getUserId(), credential.getDomainContext().getDefaultRealm(), repo.getDatabaseName())).build();
-               return Response.status(Response.Status.PRECONDITION_FAILED).entity(error).build();
-            }
-         }
-
-      } else {
+      Optional<CredentialUserIdPassword> ocredential = credentialRepo.findByUserId(
+              pContext.getUserId(),
+              envConfigUtils.getSystemRealm(),
+              true);
+      if (ocredential.isEmpty()) {
          RestError error = RestError.builder()
                 .status(Response.Status.PRECONDITION_FAILED .getStatusCode())
                 .statusMessage("possibleImpersonations/realms requires an authenticated user, get the SecurityContext PrincipalContext is not present, this indicates a logic error in the server.").build();
          return Response.status(Response.Status.UNAUTHORIZED).entity(error).build();
       }
 
+      List<Realm> realms = computeAllowedRealms(ocredential.get());
       return Response.ok(realms).build();
    }
 
@@ -138,11 +118,12 @@ public class RealmResource extends BaseResource<Realm, BaseMorphiaRepo<Realm>> {
          return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
       }
 
+      String systemRealm = envConfigUtils.getSystemRealm();
       Optional<CredentialUserIdPassword> ocred;
       if (subjectId != null && !subjectId.isBlank()) {
-         ocred = credentialRepo.findBySubject(subjectId, credentialRepo.getDatabaseName(), true);
+         ocred = credentialRepo.findBySubject(subjectId, systemRealm, true);
       } else {
-         ocred = credentialRepo.findByUserId(userId, credentialRepo.getDatabaseName(), true);
+         ocred = credentialRepo.findByUserId(userId, systemRealm, true);
       }
 
       if (ocred.isEmpty()) {
@@ -152,19 +133,19 @@ public class RealmResource extends BaseResource<Realm, BaseMorphiaRepo<Realm>> {
          return Response.status(Response.Status.NOT_FOUND).entity(error).build();
       }
 
-      CredentialUserIdPassword cred = ocred.get();
-      // Load all realms and compute allowed set
-      List<Realm> all = repo.getAllList();
+      return Response.ok(computeAllowedRealms(ocred.get())).build();
+   }
+
+   private List<Realm> computeAllowedRealms(CredentialUserIdPassword credential) {
+      List<Realm> all = ((RealmRepo) repo).getAllListWithIgnoreRules(envConfigUtils.getSystemRealm());
       List<String> candidateRefNames = all.stream().map(Realm::getRefName).collect(Collectors.toList());
-      List<String> allowedRefNames = securityUtils.computeAllowedRealmRefNames(cred, candidateRefNames);
-      if (!allowedRefNames.isEmpty()) {
-         List<Realm> allowedRealms = all.stream()
-                                        .filter(r -> allowedRefNames.stream().anyMatch(a -> a.equalsIgnoreCase(r.getRefName())))
-                                        .collect(Collectors.toList());
-         return Response.ok(allowedRealms).build();
-      } else {
-         return Response.ok(Collections.emptyList()).build();
+      List<String> allowedRefNames = securityUtils.computeAllowedRealmRefNames(credential, candidateRefNames);
+      if (allowedRefNames.isEmpty()) {
+         return Collections.emptyList();
       }
+      return all.stream()
+              .filter(r -> allowedRefNames.stream().anyMatch(a -> a.equalsIgnoreCase(r.getRefName())))
+              .collect(Collectors.toList());
    }
 
 }

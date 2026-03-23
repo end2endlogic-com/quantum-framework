@@ -71,10 +71,12 @@
         <module>quantum-morphia-repos</module>
         <module>quantum-default-keys</module>
         <module>quantum-jwt-provider</module>
+        <module>quantum-oauth-server</module>
         <module>quantum-framework</module>
         <module>quantum-seed-s3</module>
         <module>quantum-mcp-server</module>
         <module>quantum-cli</module>
+
     </modules>
 
 
@@ -253,6 +255,7 @@
                 <module>quantum-morphia-repos</module>
                 <module>quantum-default-keys</module>
                 <module>quantum-jwt-provider</module>
+                <module>quantum-oauth-server</module>
                 <module>quantum-framework</module>
                 <module>quantum-seed-s3</module>
                 <module>quantum-mcp-server</module>

@@ -1,7 +1,6 @@
 package com.e2eq.framework.model.persistent.morphia.interceptors;
 
 import com.e2eq.framework.exceptions.E2eqValidationException;
-import com.e2eq.framework.model.persistent.base.BaseModel;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.general.interfaces.InvalidSavable;
@@ -93,13 +92,18 @@ public class ValidationInterceptor implements EntityListener<Object> {
          }
          if (!bm.isSkipValidation()) {
             if (SecurityContext.getPrincipalContext().isPresent()) {
-               if (bm.getDataDomain() == null) {
-                  DataDomain dd = dataDomainResolver.resolveForCreate(bm.bmFunctionalArea(), bm.bmFunctionalDomain());
-                  if (dd == null) {
-                     throw new IllegalStateException("Resolved data domain is null, this should not happen");
-                  }
-                  bm.setDataDomain(dd);
+               String area = bm.bmFunctionalArea();
+               String domain = bm.bmFunctionalDomain();
+
+               if (area == null && domain == null) {
+                   throw new IllegalStateException("Both functional area and domain are null for " + bm.getClass().getName() + ". One or both must be provided via @FunctionalMapping or method overrides.");
                }
+
+               DataDomain dd = dataDomainResolver.resolveForCreate(area, domain, ent);
+               if (dd == null) {
+                  throw new IllegalStateException("Resolved data domain is null, this should not happen");
+               }
+               bm.setDataDomain(dd);
             }
          } else {
             skipValidation = true;

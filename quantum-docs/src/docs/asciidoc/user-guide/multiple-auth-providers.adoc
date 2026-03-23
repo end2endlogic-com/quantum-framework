@@ -1,7 +1,7 @@
 [[multiple-auth-providers]]
 = Multiple Authentication Providers
 
-Quantum supports running multiple authentication providers simultaneously, enabling scenarios such as an internal JWT provider alongside an external OIDC provider (e.g., Cognito, Keycloak, Auth0).
+Quantum supports running multiple authentication providers simultaneously, enabling scenarios such as an internal JWT provider alongside an external OIDC provider (for example Cognito, Keycloak, or Auth0).
 Providers are registered via a single configuration property, and the framework automatically routes token validation to the correct provider based on the JWT `iss` (issuer) claim.
 
 == How It Works
@@ -15,7 +15,7 @@ At startup it reads the `auth.provider` property, which accepts a comma-separate
 auth.provider=custom
 
 # Multiple providers
-auth.provider=custom,cognito
+auth.provider=custom,oidc
 ----
 
 === Provider Resolution
@@ -24,7 +24,7 @@ When a request arrives with a JWT, the framework resolves which provider should 
 
 1. **By issuer** -- `AuthProviderFactory.getProviderForIssuer(String issuer)` iterates through all configured providers and calls `getIssuer()` on each.
 The first provider whose issuer matches the JWT `iss` claim wins.
-2. **By name** -- `AuthProviderFactory.getProviderByName(String name)` performs a case-insensitive lookup (e.g., `"custom"`, `"cognito"`).
+2. **By name** -- `AuthProviderFactory.getProviderByName(String name)` performs a case-insensitive lookup (for example `"custom"` or `"oidc"`).
 3. **Default** -- `AuthProviderFactory.getAuthProvider()` returns the first configured provider.
 If issuer-based lookup finds no match, the default provider is used as a fallback.
 
@@ -81,12 +81,12 @@ auth.jwt.refresh-expiration=30
 
 === Adding an OIDC Provider (e.g., AWS Cognito)
 
-To add Cognito alongside the custom provider:
+To add an external OIDC provider alongside the custom provider:
 
 [source,properties]
 ----
 # Enable both providers
-auth.provider=custom,cognito
+auth.provider=custom,oidc
 
 # --- Custom JWT provider (unchanged) ---
 quarkus.smallrye-jwt.enabled=true
@@ -97,12 +97,15 @@ auth.jwt.secret=${JWT_SECRET}
 auth.jwt.expiration=15
 auth.jwt.refresh-expiration=30
 
-# --- OIDC / Cognito provider ---
+# --- OIDC provider ---
 quarkus.oidc.enabled=true
 quarkus.oidc.auth-server-url=https://cognito-idp.${aws.cognito.region}.amazonaws.com/${aws.cognito.user-pool-id}
 quarkus.oidc.client-id=${aws.cognito.clientId}
 quarkus.oidc.token.issuer=https://cognito-idp.${aws.cognito.region}.amazonaws.com/${aws.cognito.user-pool-id}
 quarkus.oidc.roles.role-claim-path=cognito:groups
+auth.oidc.provider-name=oidc
+auth.oidc.role-claim-path=cognito:groups
+auth.oidc.username-claim=preferred_username
 
 # Cognito environment variables
 aws.cognito.user-pool-id=${USER_POOL_ID}
@@ -200,7 +203,7 @@ Login and token-refresh responses include a `List<RoleAssignment>` so clients an
 
 To add a new authentication provider:
 
-1. Create an `@ApplicationScoped` CDI bean that extends `BaseAuthProvider` and implements `AuthProvider` and `UserManagement`.
+1. Create an `@ApplicationScoped` CDI bean that extends `BaseAuthProvider` and implements `AuthProvider` and optionally `ClaimsAuthProvider` or `UserManagement` as needed.
 2. Return a stable name from `getName()` (e.g., `"saml"`, `"apikey"`, `"azure-ad"`).
 3. Implement `getIssuer()` to return the issuer string that your tokens will carry.
 4. Implement `validateAccessToken(token)` to parse, verify, and build a `SecurityIdentity`.
