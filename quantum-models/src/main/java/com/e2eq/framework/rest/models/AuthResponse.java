@@ -20,6 +20,7 @@ public class AuthResponse {
     protected String realm;
     protected List<String> roles;
     protected String authProvider;
+    protected List<AccessibleRealmInfo> accessibleRealms;
 
     // Backward-compatible constructor
     public AuthResponse(String access_token, String refresh_token, long expires_at) {
