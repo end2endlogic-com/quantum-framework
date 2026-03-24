@@ -529,7 +529,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Framework Documentation</h1>
 <div class="details">
 <span id="revnumber">version 1.3.0-SNAPSHOT,</span>
-<span id="revdate">2026-03-17T21:45:24Z</span>
+<span id="revdate">2026-03-24T00:36:07Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -810,52 +810,59 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_why_seed_packs">24.2. Why seed packs?</a></li>
 <li><a href="#_high_level_flow">24.3. High-level flow</a></li>
 <li><a href="#_manifest_quick_reference">24.4. Manifest quick reference</a></li>
-<li><a href="#_programmatic_usage">24.5. Programmatic usage</a></li>
-<li><a href="#_extensibility_hooks">24.6. Extensibility hooks</a></li>
-<li><a href="#_operational_tips_2">24.7. Operational tips</a></li>
-<li><a href="#_primary_scenarios">24.8. Primary scenarios</a></li>
-<li><a href="#_explicit_examples">24.9. Explicit examples</a>
+<li><a href="#_realm_filtering">24.5. Realm filtering</a>
 <ul class="sectlevel3">
-<li><a href="#_example_1_minimal_manifest_and_ndjson">24.9.1. Example 1: Minimal manifest and NDJSON</a></li>
-<li><a href="#_example_2_applying_packs_in_code">24.9.2. Example 2: Applying packs in code</a></li>
-<li><a href="#_example_3_using_an_archetype">24.9.3. Example 3: Using an archetype</a></li>
-<li><a href="#_example_4_exact_version_and_includes_in_a_manifest">24.9.4. Example 4: Exact version and includes in a manifest</a></li>
+<li><a href="#_include_realms_explicit_list">24.5.1. Include realms (explicit list)</a></li>
+<li><a href="#_exclude_realms">24.5.2. Exclude realms</a></li>
+<li><a href="#_backward_compatibility">24.5.3. Backward compatibility</a></li>
 </ul>
 </li>
-<li><a href="#_troubleshooting">24.10. Troubleshooting</a></li>
-<li><a href="#_how_seeds_are_applied_automatically_at_startup">24.11. How seeds are applied automatically at startup</a>
+<li><a href="#_programmatic_usage">24.6. Programmatic usage</a></li>
+<li><a href="#_extensibility_hooks">24.7. Extensibility hooks</a></li>
+<li><a href="#_operational_tips_2">24.8. Operational tips</a></li>
+<li><a href="#_primary_scenarios">24.9. Primary scenarios</a></li>
+<li><a href="#_explicit_examples">24.10. Explicit examples</a>
 <ul class="sectlevel3">
-<li><a href="#_configuring_which_realms_receive_seeds_on_startup">24.11.1. Configuring which realms receive seeds on startup</a></li>
+<li><a href="#_example_1_minimal_manifest_and_ndjson">24.10.1. Example 1: Minimal manifest and NDJSON</a></li>
+<li><a href="#_example_2_applying_packs_in_code">24.10.2. Example 2: Applying packs in code</a></li>
+<li><a href="#_example_3_using_an_archetype">24.10.3. Example 3: Using an archetype</a></li>
+<li><a href="#_example_4_exact_version_and_includes_in_a_manifest">24.10.4. Example 4: Exact version and includes in a manifest</a></li>
 </ul>
 </li>
-<li><a href="#_transforms_in_depth">24.12. Transforms in depth</a>
+<li><a href="#_troubleshooting">24.11. Troubleshooting</a></li>
+<li><a href="#_how_seeds_are_applied_automatically_at_startup">24.12. How seeds are applied automatically at startup</a>
 <ul class="sectlevel3">
-<li><a href="#_creating_your_own_transforms_example_dropiftransform">24.12.1. Creating your own transforms (example: DropIfTransform)</a></li>
-<li><a href="#_custom_variable_resolvers_for_stringinterpolation">24.12.2. Custom variable resolvers for stringInterpolation</a></li>
-<li><a href="#_seed_record_listeners_reacting_to_seed_data">24.12.3. Seed record listeners (reacting to seed data)</a></li>
+<li><a href="#_configuring_which_realms_receive_seeds_on_startup">24.12.1. Configuring which realms receive seeds on startup</a></li>
 </ul>
 </li>
-<li><a href="#_test_walkthrough_seedloaderintegrationtest">24.13. Test walkthrough: SeedLoaderIntegrationTest</a></li>
-<li><a href="#_archetypes_explained">24.14. Archetypes explained</a>
+<li><a href="#_transforms_in_depth">24.13. Transforms in depth</a>
 <ul class="sectlevel3">
-<li><a href="#_example_a_define_and_apply_an_archetype_in_the_same_pack">24.14.1. Example A: Define and apply an archetype in the same pack</a></li>
-<li><a href="#_example_b_cross_pack_archetype_in_a_dedicated_editions_pack">24.14.2. Example B: Cross-pack archetype in a dedicated "editions" pack</a></li>
-<li><a href="#_resolution_and_ordering_details">24.14.3. Resolution and ordering details</a></li>
-<li><a href="#_interaction_with_applyseedpackschangeset">24.14.4. Interaction with ApplySeedPacksChangeSet</a></li>
-<li><a href="#_tenant_provisioning_with_archetypes">24.14.5. Tenant provisioning with archetypes</a></li>
+<li><a href="#_creating_your_own_transforms_example_dropiftransform">24.13.1. Creating your own transforms (example: DropIfTransform)</a></li>
+<li><a href="#_custom_variable_resolvers_for_stringinterpolation">24.13.2. Custom variable resolvers for stringInterpolation</a></li>
+<li><a href="#_seed_record_listeners_reacting_to_seed_data">24.13.3. Seed record listeners (reacting to seed data)</a></li>
 </ul>
 </li>
-<li><a href="#_rest_api_for_seed_packs">24.15. REST API for seed packs</a></li>
-<li><a href="#_using_morphiaseedrepository_morphia_backed_seeding">24.16. Using MorphiaSeedRepository (Morphia-backed seeding)</a></li>
-<li><a href="#_dataset_urls_and_routing_file_and_s3">24.17. Dataset URLs and routing (file:// and s3://)</a></li>
-<li><a href="#_s3_seed_source_optional_module">24.18. S3 Seed Source (optional module)</a>
+<li><a href="#_test_walkthrough_seedloaderintegrationtest">24.14. Test walkthrough: SeedLoaderIntegrationTest</a></li>
+<li><a href="#_archetypes_explained">24.15. Archetypes explained</a>
 <ul class="sectlevel3">
-<li><a href="#_when_to_use_s3_vs_filesystem">24.18.1. When to use S3 vs. filesystem</a></li>
-<li><a href="#_s3_layout_conventions">24.18.2. S3 layout conventions</a></li>
-<li><a href="#_configuration_and_credentials">24.18.3. Configuration and credentials</a></li>
-<li><a href="#_usage_examples">24.18.4. Usage examples</a></li>
-<li><a href="#_defining_datasets_in_the_manifest_s3">24.18.5. Defining datasets in the manifest (S3)</a></li>
-<li><a href="#_troubleshooting_2">24.18.6. Troubleshooting</a></li>
+<li><a href="#_example_a_define_and_apply_an_archetype_in_the_same_pack">24.15.1. Example A: Define and apply an archetype in the same pack</a></li>
+<li><a href="#_example_b_cross_pack_archetype_in_a_dedicated_editions_pack">24.15.2. Example B: Cross-pack archetype in a dedicated "editions" pack</a></li>
+<li><a href="#_resolution_and_ordering_details">24.15.3. Resolution and ordering details</a></li>
+<li><a href="#_interaction_with_applyseedpackschangeset">24.15.4. Interaction with ApplySeedPacksChangeSet</a></li>
+<li><a href="#_tenant_provisioning_with_archetypes">24.15.5. Tenant provisioning with archetypes</a></li>
+</ul>
+</li>
+<li><a href="#_rest_api_for_seed_packs">24.16. REST API for seed packs</a></li>
+<li><a href="#_using_morphiaseedrepository_morphia_backed_seeding">24.17. Using MorphiaSeedRepository (Morphia-backed seeding)</a></li>
+<li><a href="#_dataset_urls_and_routing_file_and_s3">24.18. Dataset URLs and routing (file:// and s3://)</a></li>
+<li><a href="#_s3_seed_source_optional_module">24.19. S3 Seed Source (optional module)</a>
+<ul class="sectlevel3">
+<li><a href="#_when_to_use_s3_vs_filesystem">24.19.1. When to use S3 vs. filesystem</a></li>
+<li><a href="#_s3_layout_conventions">24.19.2. S3 layout conventions</a></li>
+<li><a href="#_configuration_and_credentials">24.19.3. Configuration and credentials</a></li>
+<li><a href="#_usage_examples">24.19.4. Usage examples</a></li>
+<li><a href="#_defining_datasets_in_the_manifest_s3">24.19.5. Defining datasets in the manifest (S3)</a></li>
+<li><a href="#_troubleshooting_2">24.19.6. Troubleshooting</a></li>
 </ul>
 </li>
 </ul>
@@ -909,169 +916,170 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_apis_and_queries">32. APIs and Queries</a></li>
 <li><a href="#_security">33. Security</a></li>
 <li><a href="#_data_seeding">34. Data Seeding</a></li>
-<li><a href="#_operations">35. Operations</a></li>
-<li><a href="#_samples">36. Samples</a></li>
-<li><a href="#_appendix">37. Appendix</a></li>
-<li><a href="#ontology-chapter">38. Ontology Modeling</a></li>
+<li><a href="#_email_and_notifications">35. Email and Notifications</a></li>
+<li><a href="#_operations">36. Operations</a></li>
+<li><a href="#_samples">37. Samples</a></li>
+<li><a href="#_appendix">38. Appendix</a></li>
+<li><a href="#ontology-chapter">39. Ontology Modeling</a></li>
 </ul>
 </li>
 <li><a href="#_ontology_modeling">Ontology Modeling</a>
 <ul class="sectlevel1">
-<li><a href="#_ontologies_in_quantum_modeling_relationships_that_are_resilient_and_fast">39. Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</a>
+<li><a href="#_ontologies_in_quantum_modeling_relationships_that_are_resilient_and_fast">40. Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</a>
 <ul class="sectlevel2">
-<li><a href="#_what_is_an_ontology_2">39.1. What is an Ontology?</a></li>
-<li><a href="#_ontology_vs_object_model_2">39.2. Ontology vs. Object Model</a></li>
-<li><a href="#_why_prefer_ontology_driven_relationships_over_referenceentityreference_2">39.3. Why prefer Ontology-driven relationships over @Reference/EntityReference</a></li>
-<li><a href="#_how_quantum_supports_ontologies_2">39.4. How Quantum supports Ontologies</a></li>
-<li><a href="#_modeling_guidance_from_object_fields_to_predicates_2">39.5. Modeling guidance: from object fields to predicates</a></li>
-<li><a href="#_querying_with_ontology_edges_vs_direct_references_2">39.6. Querying with ontology edges vs direct references</a></li>
-<li><a href="#_migration_from_reference_to_ontology_edges_2">39.7. Migration: from @Reference to ontology edges</a></li>
-<li><a href="#_performance_and_operational_notes_2">39.8. Performance and operational notes</a></li>
-<li><a href="#_how_this_integrates_with_functional_areasdomains_2">39.9. How this integrates with Functional Areas/Domains</a></li>
-<li><a href="#_summary_3">39.10. Summary</a></li>
+<li><a href="#_what_is_an_ontology_2">40.1. What is an Ontology?</a></li>
+<li><a href="#_ontology_vs_object_model_2">40.2. Ontology vs. Object Model</a></li>
+<li><a href="#_why_prefer_ontology_driven_relationships_over_referenceentityreference_2">40.3. Why prefer Ontology-driven relationships over @Reference/EntityReference</a></li>
+<li><a href="#_how_quantum_supports_ontologies_2">40.4. How Quantum supports Ontologies</a></li>
+<li><a href="#_modeling_guidance_from_object_fields_to_predicates_2">40.5. Modeling guidance: from object fields to predicates</a></li>
+<li><a href="#_querying_with_ontology_edges_vs_direct_references_2">40.6. Querying with ontology edges vs direct references</a></li>
+<li><a href="#_migration_from_reference_to_ontology_edges_2">40.7. Migration: from @Reference to ontology edges</a></li>
+<li><a href="#_performance_and_operational_notes_2">40.8. Performance and operational notes</a></li>
+<li><a href="#_how_this_integrates_with_functional_areasdomains_2">40.9. How this integrates with Functional Areas/Domains</a></li>
+<li><a href="#_summary_3">40.10. Summary</a></li>
 </ul>
 </li>
-<li><a href="#_concrete_example_sales_orders_shipments_and_evolving_to_fulfillmentreturns">40. Concrete example: Sales Orders, Shipments, and evolving to Fulfillment/Returns</a></li>
-<li><a href="#ontology-visualizing-edges-and-provenance">41. Visualizing ontology edges and provenance</a>
+<li><a href="#_concrete_example_sales_orders_shipments_and_evolving_to_fulfillmentreturns">41. Concrete example: Sales Orders, Shipments, and evolving to Fulfillment/Returns</a></li>
+<li><a href="#ontology-visualizing-edges-and-provenance">42. Visualizing ontology edges and provenance</a>
 <ul class="sectlevel2">
-<li><a href="#_example_graph_orders_customers_organizations">41.1. Example graph: Orders, Customers, Organizations</a></li>
-<li><a href="#_example_graph_shipments_and_regions">41.2. Example graph: Shipments and Regions</a></li>
-<li><a href="#_what_is_provenance_and_how_to_read_it">41.3. What is provenance and how to read it</a></li>
-<li><a href="#_querying_ontologies">41.4. Querying Ontologies</a>
+<li><a href="#_example_graph_orders_customers_organizations">42.1. Example graph: Orders, Customers, Organizations</a></li>
+<li><a href="#_example_graph_shipments_and_regions">42.2. Example graph: Shipments and Regions</a></li>
+<li><a href="#_what_is_provenance_and_how_to_read_it">42.3. What is provenance and how to read it</a></li>
+<li><a href="#_querying_ontologies">42.4. Querying Ontologies</a>
 <ul class="sectlevel3">
-<li><a href="#_biapi_query_language_functions_hasedge_and_hasincomingedge">41.4.1. BIAPI Query Language Functions: hasEdge and hasIncomingEdge</a></li>
-<li><a href="#_programmatic_querying_with_edgedao">41.4.2. Programmatic Querying with EdgeDao</a></li>
+<li><a href="#_biapi_query_language_functions_hasedge_and_hasincomingedge">42.4.1. BIAPI Query Language Functions: hasEdge and hasIncomingEdge</a></li>
+<li><a href="#_programmatic_querying_with_edgedao">42.4.2. Programmatic Querying with EdgeDao</a></li>
 </ul>
 </li>
 </ul>
 </li>
-<li><a href="#ontology-integration-morphia-permissions-section">42. Integrating Ontology with Morphia, Permissions, and Multi-tenancy</a>
+<li><a href="#ontology-integration-morphia-permissions-section">43. Integrating Ontology with Morphia, Permissions, and Multi-tenancy</a>
 <ul class="sectlevel2">
-<li><a href="#_big_picture_where_ontology_fits_2">42.1. Big picture: where ontology fits</a></li>
-<li><a href="#_rule_language_add_hasedge_2">42.2. Rule language: add hasEdge()</a></li>
-<li><a href="#_passing_tenantid_correctly_2">42.3. Passing tenantId correctly</a></li>
-<li><a href="#_morphia_repository_integration_patterns_2">42.4. Morphia repository integration patterns</a></li>
-<li><a href="#_where_ontology_materialization_happens">42.5. Where ontology materialization happens</a></li>
-<li><a href="#custom-edge-providers">42.6. Custom Edge Providers: OntologyEdgeProvider and HierarchyListEdgeProvider</a>
+<li><a href="#_big_picture_where_ontology_fits_2">43.1. Big picture: where ontology fits</a></li>
+<li><a href="#_rule_language_add_hasedge_2">43.2. Rule language: add hasEdge()</a></li>
+<li><a href="#_passing_tenantid_correctly_2">43.3. Passing tenantId correctly</a></li>
+<li><a href="#_morphia_repository_integration_patterns_2">43.4. Morphia repository integration patterns</a></li>
+<li><a href="#_where_ontology_materialization_happens">43.5. Where ontology materialization happens</a></li>
+<li><a href="#custom-edge-providers">43.6. Custom Edge Providers: OntologyEdgeProvider and HierarchyListEdgeProvider</a>
 <ul class="sectlevel3">
-<li><a href="#_ontologyedgeprovider_the_core_spi">42.6.1. OntologyEdgeProvider: The Core SPI</a></li>
-<li><a href="#_hierarchylistedgeprovider_handling_complex_hierarchies">42.6.2. HierarchyListEdgeProvider: Handling Complex Hierarchies</a></li>
-<li><a href="#property-chains-vs-computed-providers">42.6.3. When to use Property Chains vs ComputedEdgeProvider</a></li>
-<li><a href="#_extending_materialization_with_computededgeprovider_advanced">42.6.4. Extending materialization with ComputedEdgeProvider (Advanced)</a></li>
-<li><a href="#_extending_materialization_with_ontologyedgeprovider_spi">42.6.5. Extending materialization with OntologyEdgeProvider (SPI)</a></li>
-<li><a href="#_configuration_4">42.6.6. Configuration</a></li>
-<li><a href="#_example_annotate_and_save_edges_are_materialized_automatically">42.6.7. Example: annotate and save — edges are materialized automatically</a></li>
+<li><a href="#_ontologyedgeprovider_the_core_spi">43.6.1. OntologyEdgeProvider: The Core SPI</a></li>
+<li><a href="#_hierarchylistedgeprovider_handling_complex_hierarchies">43.6.2. HierarchyListEdgeProvider: Handling Complex Hierarchies</a></li>
+<li><a href="#property-chains-vs-computed-providers">43.6.3. When to use Property Chains vs ComputedEdgeProvider</a></li>
+<li><a href="#_extending_materialization_with_computededgeprovider_advanced">43.6.4. Extending materialization with ComputedEdgeProvider (Advanced)</a></li>
+<li><a href="#_extending_materialization_with_ontologyedgeprovider_spi">43.6.5. Extending materialization with OntologyEdgeProvider (SPI)</a></li>
+<li><a href="#_configuration_4">43.6.6. Configuration</a></li>
+<li><a href="#_example_annotate_and_save_edges_are_materialized_automatically">43.6.7. Example: annotate and save — edges are materialized automatically</a></li>
 </ul>
 </li>
-<li><a href="#_security_and_multi_tenant_considerations_2">42.7. Security and multi-tenant considerations</a></li>
-<li><a href="#_developer_workflow_and_dx_checklist_2">42.8. Developer workflow and DX checklist</a></li>
-<li><a href="#_cookbook_end_to_end_example_with_orders_org_2">42.9. Cookbook: end-to-end example with Orders + Org</a></li>
-<li><a href="#_migration_notes_for_teams_using_reference_2">42.10. Migration notes for teams using @Reference</a></li>
+<li><a href="#_security_and_multi_tenant_considerations_2">43.7. Security and multi-tenant considerations</a></li>
+<li><a href="#_developer_workflow_and_dx_checklist_2">43.8. Developer workflow and DX checklist</a></li>
+<li><a href="#_cookbook_end_to_end_example_with_orders_org_2">43.9. Cookbook: end-to-end example with Orders + Org</a></li>
+<li><a href="#_migration_notes_for_teams_using_reference_2">43.10. Migration notes for teams using @Reference</a></li>
 </ul>
 </li>
-<li><a href="#_primer_first_time_guide_to_core_relationship_semantics">43. Primer: First-time guide to core relationship semantics</a></li>
-<li><a href="#_new_ontology_features_in_this_release">44. New ontology features in this release</a>
+<li><a href="#_primer_first_time_guide_to_core_relationship_semantics">44. Primer: First-time guide to core relationship semantics</a></li>
+<li><a href="#_new_ontology_features_in_this_release">45. New ontology features in this release</a>
 <ul class="sectlevel2">
-<li><a href="#_feature_overview">44.1. Feature overview</a></li>
-<li><a href="#_business_problems_solved">44.2. Business problems solved</a></li>
-<li><a href="#_how_to_code_it_with_current_apis">44.3. How to code it with current APIs</a>
+<li><a href="#_feature_overview">45.1. Feature overview</a></li>
+<li><a href="#_business_problems_solved">45.2. Business problems solved</a></li>
+<li><a href="#_how_to_code_it_with_current_apis">45.3. How to code it with current APIs</a>
 <ul class="sectlevel3">
-<li><a href="#_1_define_ontology_programmatic_tbox">44.3.1. 1) Define ontology (programmatic TBox)</a></li>
-<li><a href="#_2_materialize_inferences_when_data_changes">44.3.2. 2) Materialize inferences when data changes</a></li>
-<li><a href="#_3_query_with_listqueryrewriter_quarkusmorphia">44.3.3. 3) Query with ListQueryRewriter (Quarkus/Morphia)</a></li>
-<li><a href="#_functional_properties_at_write_time">44.3.4. Functional properties at write time</a></li>
+<li><a href="#_1_define_ontology_programmatic_tbox">45.3.1. 1) Define ontology (programmatic TBox)</a></li>
+<li><a href="#_2_materialize_inferences_when_data_changes">45.3.2. 2) Materialize inferences when data changes</a></li>
+<li><a href="#_3_query_with_listqueryrewriter_quarkusmorphia">45.3.3. 3) Query with ListQueryRewriter (Quarkus/Morphia)</a></li>
+<li><a href="#_functional_properties_at_write_time">45.3.4. Functional properties at write time</a></li>
 </ul>
 </li>
-<li><a href="#_backward_compatibility_and_migration">44.4. Backward compatibility and migration</a></li>
-<li><a href="#_troubleshooting_and_tips">44.5. Troubleshooting and tips</a></li>
+<li><a href="#_backward_compatibility_and_migration">45.4. Backward compatibility and migration</a></li>
+<li><a href="#_troubleshooting_and_tips">45.5. Troubleshooting and tips</a></li>
 </ul>
 </li>
-<li><a href="#_model_first_ontology_with_annotations_and_morphiaontologyloader">45. Model-first ontology with annotations and MorphiaOntologyLoader</a>
+<li><a href="#_model_first_ontology_with_annotations_and_morphiaontologyloader">46. Model-first ontology with annotations and MorphiaOntologyLoader</a>
 <ul class="sectlevel2">
-<li><a href="#_why_model_first">45.1. Why model-first?</a></li>
-<li><a href="#_annotations_overview">45.2. Annotations overview</a>
+<li><a href="#_why_model_first">46.1. Why model-first?</a></li>
+<li><a href="#_annotations_overview">46.2. Annotations overview</a>
 <ul class="sectlevel3">
-<li><a href="#ontology-relationships">45.2.1. Relationship semantics on @OntologyProperty</a></li>
-<li><a href="#ontology-cascading">45.2.2. Cascading policies for relationships</a></li>
-<li><a href="#ontology-benefits-relationships">45.2.3. Business benefits of ontology relationships and cascade</a></li>
+<li><a href="#ontology-relationships">46.2.1. Relationship semantics on @OntologyProperty</a></li>
+<li><a href="#ontology-cascading">46.2.2. Cascading policies for relationships</a></li>
+<li><a href="#ontology-benefits-relationships">46.2.3. Business benefits of ontology relationships and cascade</a></li>
 </ul>
 </li>
-<li><a href="#_example_orders_placed_in_an_organization_e_commerce">45.3. Example: Orders placed in an Organization (e-commerce)</a></li>
-<li><a href="#_how_the_registry_is_produced_quarkus_cdi">45.4. How the registry is produced (Quarkus CDI)</a></li>
-<li><a href="#_defining_an_ontology_with_yaml_yamlontologyloader">45.5. Defining an ontology with YAML (YamlOntologyLoader)</a></li>
-<li><a href="#_materializing_inferences_from_annotated_models">45.6. Materializing inferences from annotated models</a></li>
-<li><a href="#_querying_using_listqueryrewriter_unchanged">45.7. Querying using ListQueryRewriter (unchanged)</a></li>
-<li><a href="#_business_case_recipes_with_annotations">45.8. Business case recipes with annotations</a></li>
-<li><a href="#_troubleshooting_3">45.9. Troubleshooting</a></li>
-<li><a href="#_migration_strategy">45.10. Migration strategy</a></li>
-<li><a href="#_modeling_guidance_annotate_existing_idreference_getters_keep_api_and_db_clean">45.11. Modeling guidance: annotate existing id/reference getters (keep API and DB clean)</a></li>
+<li><a href="#_example_orders_placed_in_an_organization_e_commerce">46.3. Example: Orders placed in an Organization (e-commerce)</a></li>
+<li><a href="#_how_the_registry_is_produced_quarkus_cdi">46.4. How the registry is produced (Quarkus CDI)</a></li>
+<li><a href="#_defining_an_ontology_with_yaml_yamlontologyloader">46.5. Defining an ontology with YAML (YamlOntologyLoader)</a></li>
+<li><a href="#_materializing_inferences_from_annotated_models">46.6. Materializing inferences from annotated models</a></li>
+<li><a href="#_querying_using_listqueryrewriter_unchanged">46.7. Querying using ListQueryRewriter (unchanged)</a></li>
+<li><a href="#_business_case_recipes_with_annotations">46.8. Business case recipes with annotations</a></li>
+<li><a href="#_troubleshooting_3">46.9. Troubleshooting</a></li>
+<li><a href="#_migration_strategy">46.10. Migration strategy</a></li>
+<li><a href="#_modeling_guidance_annotate_existing_idreference_getters_keep_api_and_db_clean">46.11. Modeling guidance: annotate existing id/reference getters (keep API and DB clean)</a></li>
 </ul>
 </li>
-<li><a href="#ontology-rest-api">46. Exploring the ontology via REST and JointJS</a>
+<li><a href="#ontology-rest-api">47. Exploring the ontology via REST and JointJS</a>
 <ul class="sectlevel2">
-<li><a href="#_base_info">46.1. Base info</a></li>
-<li><a href="#_tbox_schema_endpoints">46.2. TBox (schema) endpoints</a></li>
-<li><a href="#_abox_instances_graph_endpoint">46.3. ABox (instances) graph endpoint</a></li>
-<li><a href="#_rendering_with_jointjs_quick_snippet">46.4. Rendering with JointJS (quick snippet)</a></li>
-<li><a href="#_when_to_use_these_endpoints">46.5. When to use these endpoints</a></li>
+<li><a href="#_base_info">47.1. Base info</a></li>
+<li><a href="#_tbox_schema_endpoints">47.2. TBox (schema) endpoints</a></li>
+<li><a href="#_abox_instances_graph_endpoint">47.3. ABox (instances) graph endpoint</a></li>
+<li><a href="#_rendering_with_jointjs_quick_snippet">47.4. Rendering with JointJS (quick snippet)</a></li>
+<li><a href="#_when_to_use_these_endpoints">47.5. When to use these endpoints</a></li>
 </ul>
 </li>
-<li><a href="#dev-howto-ontology-yaml-materialization-reindex-provenance">47. Developer how-to: YAML properties, chains, write-time materialization, reindex, and provenance</a>
+<li><a href="#dev-howto-ontology-yaml-materialization-reindex-provenance">48. Developer how-to: YAML properties, chains, write-time materialization, reindex, and provenance</a>
 <ul class="sectlevel2">
-<li><a href="#_declare_properties_and_chains_in_yaml">47.1. Declare properties and chains in YAML</a></li>
-<li><a href="#_write_time_materialization_what_runs_and_how_to_toggle">47.2. Write-time materialization: what runs and how to toggle</a></li>
-<li><a href="#_reindex_after_yaml_changes">47.3. Reindex after YAML changes</a></li>
-<li><a href="#_edge_provenance_format_and_deletions">47.4. Edge provenance format and deletions</a></li>
+<li><a href="#_declare_properties_and_chains_in_yaml">48.1. Declare properties and chains in YAML</a></li>
+<li><a href="#_write_time_materialization_what_runs_and_how_to_toggle">48.2. Write-time materialization: what runs and how to toggle</a></li>
+<li><a href="#_reindex_after_yaml_changes">48.3. Reindex after YAML changes</a></li>
+<li><a href="#_edge_provenance_format_and_deletions">48.4. Edge provenance format and deletions</a></li>
 </ul>
 </li>
-<li><a href="#_samples_2">48. Samples</a></li>
+<li><a href="#_samples_2">49. Samples</a></li>
 </ul>
 </li>
 <li><a href="#tutorial-supply-chain">Supply Chain Collaboration SaaS: A Business‑First Guide</a>
 <ul class="sectlevel1">
-<li><a href="#_what_a_supplychain_saas_needs_and_how_quantum_helps">49. What a supply‑chain SaaS needs (and how Quantum helps)</a></li>
-<li><a href="#_why_multitenancy_is_a_natural_fit_for_supply_chains">50. Why multi‑tenancy is a natural fit for supply chains</a></li>
-<li><a href="#_who_uses_the_system_organizations_and_roles">51. Who uses the system (organizations and roles)</a></li>
-<li><a href="#_identity_and_access_meet_partners_where_they_are">52. Identity and access: meet partners where they are</a></li>
-<li><a href="#_modeling_without_jargon_areas_domains_and_actions">53. Modeling without jargon: Areas, Domains, and Actions</a></li>
-<li><a href="#_policies_that_say_who_can_do_what_rule_language">54. Policies that say “who can do what” (Rule Language)</a></li>
-<li><a href="#_domain_contexts_and_domain_policies_placing_and_sharing_data">55. Domain contexts and domain policies (placing and sharing data)</a></li>
-<li><a href="#_bootstrap_tenants_with_seed_packs_zerotouch_baseline_data">56. Bootstrap tenants with Seed Packs (zero‑touch baseline data)</a></li>
-<li><a href="#_security_policies_practical_protections_and_proofs">57. Security policies: practical protections and proofs</a></li>
-<li><a href="#_a_small_powerful_api_surface_list_query">58. A small, powerful API surface: List + Query</a></li>
-<li><a href="#_delegated_administration_tenantlevel_user_management">59. Delegated Administration (tenant‑level user management)</a></li>
-<li><a href="#_integrations_and_data_management">60. Integrations and data management</a></li>
-<li><a href="#_endtoend_examples_2">61. End‑to‑end examples</a></li>
-<li><a href="#_what_you_dont_have_to_build_from_scratch">62. What you don’t have to build from scratch</a></li>
-<li><a href="#_other_helpful_capabilities_you_get_out_of_the_box">63. Other helpful capabilities you get out of the box</a></li>
-<li><a href="#_next_steps_2">64. Next steps</a></li>
-<li><a href="#_a_day_in_the_life_from_purchase_order_to_delivery">65. A day in the life: From Purchase Order to Delivery</a></li>
-<li><a href="#_appendix_2">66. Appendix</a>
+<li><a href="#_what_a_supplychain_saas_needs_and_how_quantum_helps">50. What a supply‑chain SaaS needs (and how Quantum helps)</a></li>
+<li><a href="#_why_multitenancy_is_a_natural_fit_for_supply_chains">51. Why multi‑tenancy is a natural fit for supply chains</a></li>
+<li><a href="#_who_uses_the_system_organizations_and_roles">52. Who uses the system (organizations and roles)</a></li>
+<li><a href="#_identity_and_access_meet_partners_where_they_are">53. Identity and access: meet partners where they are</a></li>
+<li><a href="#_modeling_without_jargon_areas_domains_and_actions">54. Modeling without jargon: Areas, Domains, and Actions</a></li>
+<li><a href="#_policies_that_say_who_can_do_what_rule_language">55. Policies that say “who can do what” (Rule Language)</a></li>
+<li><a href="#_domain_contexts_and_domain_policies_placing_and_sharing_data">56. Domain contexts and domain policies (placing and sharing data)</a></li>
+<li><a href="#_bootstrap_tenants_with_seed_packs_zerotouch_baseline_data">57. Bootstrap tenants with Seed Packs (zero‑touch baseline data)</a></li>
+<li><a href="#_security_policies_practical_protections_and_proofs">58. Security policies: practical protections and proofs</a></li>
+<li><a href="#_a_small_powerful_api_surface_list_query">59. A small, powerful API surface: List + Query</a></li>
+<li><a href="#_delegated_administration_tenantlevel_user_management">60. Delegated Administration (tenant‑level user management)</a></li>
+<li><a href="#_integrations_and_data_management">61. Integrations and data management</a></li>
+<li><a href="#_endtoend_examples_2">62. End‑to‑end examples</a></li>
+<li><a href="#_what_you_dont_have_to_build_from_scratch">63. What you don’t have to build from scratch</a></li>
+<li><a href="#_other_helpful_capabilities_you_get_out_of_the_box">64. Other helpful capabilities you get out of the box</a></li>
+<li><a href="#_next_steps_2">65. Next steps</a></li>
+<li><a href="#_a_day_in_the_life_from_purchase_order_to_delivery">66. A day in the life: From Purchase Order to Delivery</a></li>
+<li><a href="#_appendix_2">67. Appendix</a>
 <ul class="sectlevel2">
-<li><a href="#configuration">66.1. Configuration Reference</a>
+<li><a href="#configuration">67.1. Configuration Reference</a>
 <ul class="sectlevel3">
-<li><a href="#_configuration_basics">66.1.1. Configuration Basics</a></li>
-<li><a href="#_database_configuration">66.1.2. Database Configuration</a></li>
-<li><a href="#_authentication_configuration">66.1.3. Authentication Configuration</a></li>
-<li><a href="#_quantum_framework_configuration">66.1.4. Quantum Framework Configuration</a></li>
-<li><a href="#_see_also_3">66.1.5. See Also</a></li>
-<li><a href="#_ontology_configuration_optional">66.1.6. Ontology Configuration (optional)</a></li>
-<li><a href="#_key_quarkus_capabilities">66.1.7. Key Quarkus Capabilities</a></li>
-<li><a href="#_arc_quarkus_cdi">66.1.8. Arc (Quarkus CDI)</a></li>
-<li><a href="#_native_compilation_with_graalvm">66.1.9. Native Compilation with GraalVM</a></li>
-<li><a href="#_extension_ecosystem">66.1.10. Extension Ecosystem</a></li>
-<li><a href="#_quantums_quarkus_integration">66.1.11. Quantum&#8217;s Quarkus Integration</a></li>
-<li><a href="#_getting_started_with_quarkus">66.1.12. Getting Started with Quarkus</a></li>
-<li><a href="#_see_also_4">66.1.13. See Also</a></li>
-<li><a href="#_core_concepts">66.1.14. Core Concepts</a></li>
-<li><a href="#_multi_tenancy">66.1.15. Multi-Tenancy</a></li>
-<li><a href="#_security_2">66.1.16. Security</a></li>
-<li><a href="#_data_and_persistence">66.1.17. Data and Persistence</a></li>
-<li><a href="#_rest_and_apis">66.1.18. REST and APIs</a></li>
-<li><a href="#_framework_components">66.1.19. Framework Components</a></li>
-<li><a href="#_annotations">66.1.20. Annotations</a></li>
-<li><a href="#_external_integrations">66.1.21. External Integrations</a></li>
-<li><a href="#_ontology_optional_feature">66.1.22. Ontology (optional feature)</a></li>
+<li><a href="#_configuration_basics">67.1.1. Configuration Basics</a></li>
+<li><a href="#_database_configuration">67.1.2. Database Configuration</a></li>
+<li><a href="#_authentication_configuration">67.1.3. Authentication Configuration</a></li>
+<li><a href="#_quantum_framework_configuration">67.1.4. Quantum Framework Configuration</a></li>
+<li><a href="#_see_also_3">67.1.5. See Also</a></li>
+<li><a href="#_ontology_configuration_optional">67.1.6. Ontology Configuration (optional)</a></li>
+<li><a href="#_key_quarkus_capabilities">67.1.7. Key Quarkus Capabilities</a></li>
+<li><a href="#_arc_quarkus_cdi">67.1.8. Arc (Quarkus CDI)</a></li>
+<li><a href="#_native_compilation_with_graalvm">67.1.9. Native Compilation with GraalVM</a></li>
+<li><a href="#_extension_ecosystem">67.1.10. Extension Ecosystem</a></li>
+<li><a href="#_quantums_quarkus_integration">67.1.11. Quantum&#8217;s Quarkus Integration</a></li>
+<li><a href="#_getting_started_with_quarkus">67.1.12. Getting Started with Quarkus</a></li>
+<li><a href="#_see_also_4">67.1.13. See Also</a></li>
+<li><a href="#_core_concepts">67.1.14. Core Concepts</a></li>
+<li><a href="#_multi_tenancy">67.1.15. Multi-Tenancy</a></li>
+<li><a href="#_security_2">67.1.16. Security</a></li>
+<li><a href="#_data_and_persistence">67.1.17. Data and Persistence</a></li>
+<li><a href="#_rest_and_apis">67.1.18. REST and APIs</a></li>
+<li><a href="#_framework_components">67.1.19. Framework Components</a></li>
+<li><a href="#_annotations">67.1.20. Annotations</a></li>
+<li><a href="#_external_integrations">67.1.21. External Integrations</a></li>
+<li><a href="#_ontology_optional_feature">67.1.22. Ontology (optional feature)</a></li>
 </ul>
 </li>
 </ul>
@@ -9157,7 +9165,7 @@ See <a href="multiple-auth-providers.html#per-tenant-key-pairs">Key Pair Managem
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>auth.provider</code></p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">(required)</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Comma-separated list of provider names (e.g., <code>custom</code>, <code>custom,cognito</code>). See <a href="multiple-auth-providers.html">Multiple Auth Providers</a>.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Comma-separated list of provider names (e.g., <code>custom</code>, <code>custom,oidc</code>). See <a href="multiple-auth-providers.html">Multiple Auth Providers</a>.</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>mp.jwt.verify.publickey.location</code></p></td>
@@ -13338,7 +13346,110 @@ unchanged datasets are skipped on later runs.</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_programmatic_usage">24.5. Programmatic usage</h3>
+<h3 id="_realm_filtering">24.5. Realm filtering</h3>
+<div class="paragraph">
+<p>Seed packs can be restricted to specific realms using <code>includeRealms</code> or <code>excludeRealms</code> in the <code>scope</code> block of the manifest. This controls which realms a seed pack applies to during provisioning.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><strong><code>includeRealms</code></strong> — the seed pack applies ONLY to the listed realms</p>
+</li>
+<li>
+<p><strong><code>excludeRealms</code></strong> — the seed pack applies to ALL realms EXCEPT those listed</p>
+</li>
+<li>
+<p>If neither is set, the seed pack applies to all realms (default behavior)</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>These two fields are mutually exclusive — setting both causes a validation error at manifest load time.</p>
+</div>
+<div class="paragraph">
+<p>Realm filtering composes with the scope <code>type</code>. The type-based check (<code>GLOBAL</code>, <code>PER_TENANT</code>, <code>TENANT_LIST</code>, etc.) runs first; if it passes, the realm filter is applied as an additional constraint.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<div class="paragraph">
+<p>Realm filtering requires <code>quantum.seed-pack.scopes.enabled=true</code> in your application properties. When scopes are disabled (the default), all seed packs apply to all realms regardless of scope configuration.</p>
+</div>
+</td>
+</tr>
+</table>
+</div>
+<div class="sect3">
+<h4 id="_include_realms_explicit_list">24.5.1. Include realms (explicit list)</h4>
+<div class="paragraph">
+<p>Use <code>includeRealms</code> when a seed pack should only be applied to specific realms — for example, customer-specific configuration or region-specific reference data:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml"><span class="key">seedPack</span>: <span class="string"><span class="content">acme-custom-config</span></span>
+<span class="key">version</span>: <span class="string"><span class="content">1.0.0</span></span>
+<span class="key">scope</span>:
+  <span class="key">type</span>: <span class="string"><span class="content">GLOBAL</span></span>
+  <span class="key">includeRealms</span>:
+    - <span class="string"><span class="content">acme-com</span></span>
+    - <span class="string"><span class="content">acme-staging-com</span></span>
+
+<span class="key">datasets</span>:
+  - <span class="string"><span class="content">collection: codeLists</span></span>
+    <span class="key">file</span>: <span class="string"><span class="content">datasets/acme-codes.ndjson</span></span>
+    <span class="key">naturalKey</span>: <span class="string"><span class="content">[code]</span></span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This seed pack will only be applied when the target realm is <code>acme-com</code> or <code>acme-staging-com</code>. All other realms skip it.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_exclude_realms">24.5.2. Exclude realms</h4>
+<div class="paragraph">
+<p>Use <code>excludeRealms</code> when a seed pack should apply everywhere except certain realms — for example, excluding test or system realms from production seed data:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml"><span class="key">seedPack</span>: <span class="string"><span class="content">standard-permissions</span></span>
+<span class="key">version</span>: <span class="string"><span class="content">2.1.0</span></span>
+<span class="key">scope</span>:
+  <span class="key">type</span>: <span class="string"><span class="content">GLOBAL</span></span>
+  <span class="key">excludeRealms</span>:
+    - <span class="string"><span class="content">test-system-com</span></span>
+    - <span class="string"><span class="content">dev-local-com</span></span>
+
+<span class="key">datasets</span>:
+  - <span class="string"><span class="content">collection: policy</span></span>
+    <span class="key">file</span>: <span class="string"><span class="content">datasets/policies.ndjson</span></span>
+    <span class="key">naturalKey</span>: <span class="string"><span class="content">[refName]</span></span>
+    <span class="key">upsert</span>: <span class="string"><span class="content">true</span></span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This seed pack applies to every realm except <code>test-system-com</code> and <code>dev-local-com</code>.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_backward_compatibility">24.5.3. Backward compatibility</h4>
+<div class="paragraph">
+<p>The previously declared (but unused) <code>realms</code> field in the scope block is treated as an alias for <code>includeRealms</code>:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml"><span class="key">scope</span>:
+  <span class="key">type</span>: <span class="string"><span class="content">GLOBAL</span></span>
+  <span class="key">realms</span>: <span class="string"><span class="content">[acme-com]</span></span>    <span class="comment"># equivalent to includeRealms: [acme-com]</span></code></pre>
+</div>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_programmatic_usage">24.6. Programmatic usage</h3>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="java">SeedLoader loader = SeedLoader.builder()
@@ -13366,7 +13477,7 @@ in any manifest.</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_extensibility_hooks">24.6. Extensibility hooks</h3>
+<h3 id="_extensibility_hooks">24.7. Extensibility hooks</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -13384,7 +13495,7 @@ idempotency policy.</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_operational_tips_2">24.7. Operational tips</h3>
+<h3 id="_operational_tips_2">24.8. Operational tips</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -13405,7 +13516,7 @@ which archetype(s) to apply based on SKU.</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_primary_scenarios">24.8. Primary scenarios</h3>
+<h3 id="_primary_scenarios">24.9. Primary scenarios</h3>
 <div class="olist arabic">
 <ol class="arabic">
 <li>
@@ -13497,9 +13608,9 @@ which archetype(s) to apply based on SKU.</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_explicit_examples">24.9. Explicit examples</h3>
+<h3 id="_explicit_examples">24.10. Explicit examples</h3>
 <div class="sect3">
-<h4 id="_example_1_minimal_manifest_and_ndjson">24.9.1. Example 1: Minimal manifest and NDJSON</h4>
+<h4 id="_example_1_minimal_manifest_and_ndjson">24.10.1. Example 1: Minimal manifest and NDJSON</h4>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="yaml"><span class="key">seedPack</span>: <span class="string"><span class="content">demo-seed</span></span>
@@ -13536,7 +13647,7 @@ which archetype(s) to apply based on SKU.</p>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_example_2_applying_packs_in_code">24.9.2. Example 2: Applying packs in code</h4>
+<h4 id="_example_2_applying_packs_in_code">24.10.2. Example 2: Applying packs in code</h4>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="java">SeedLoader loader = SeedLoader.builder()
@@ -13560,7 +13671,7 @@ loader.apply(<span class="predefined-type">List</span>.of(
 </div>
 </div>
 <div class="sect3">
-<h4 id="_example_3_using_an_archetype">24.9.3. Example 3: Using an archetype</h4>
+<h4 id="_example_3_using_an_archetype">24.10.3. Example 3: Using an archetype</h4>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="yaml"><span class="key">archetypes</span>:
@@ -13580,7 +13691,7 @@ loader.apply(<span class="predefined-type">List</span>.of(
 </div>
 </div>
 <div class="sect3">
-<h4 id="_example_4_exact_version_and_includes_in_a_manifest">24.9.4. Example 4: Exact version and includes in a manifest</h4>
+<h4 id="_example_4_exact_version_and_includes_in_a_manifest">24.10.4. Example 4: Exact version and includes in a manifest</h4>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="yaml"><span class="key">seedPack</span>: <span class="string"><span class="content">shipping-defaults</span></span>
@@ -13598,7 +13709,7 @@ loader.apply(<span class="predefined-type">List</span>.of(
 </div>
 </div>
 <div class="sect2">
-<h3 id="_troubleshooting">24.10. Troubleshooting</h3>
+<h3 id="_troubleshooting">24.11. Troubleshooting</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -13617,7 +13728,7 @@ loader.apply(<span class="predefined-type">List</span>.of(
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_seeds_are_applied_automatically_at_startup">24.11. How seeds are applied automatically at startup</h3>
+<h3 id="_how_seeds_are_applied_automatically_at_startup">24.12. How seeds are applied automatically at startup</h3>
 <div class="paragraph">
 <p>The framework now applies seed packs via a dedicated SeedStartupRunner, independent of schema migrations. This runner discovers and applies the latest version of each seed pack for important realms (system/default/test) on application startup.</p>
 </div>
@@ -13642,7 +13753,7 @@ quantum.seeds.apply.on-startup=true</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_configuring_which_realms_receive_seeds_on_startup">24.11.1. Configuring which realms receive seeds on startup</h4>
+<h4 id="_configuring_which_realms_receive_seeds_on_startup">24.12.1. Configuring which realms receive seeds on startup</h4>
 <div class="paragraph">
 <p>By default, <code>SeedStartupRunner</code> applies seeds to the system, default, and test realms. You can customize this behavior using a combination of:</p>
 </div>
@@ -13736,7 +13847,7 @@ realmRepo.save(realm);</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_transforms_in_depth">24.12. Transforms in depth</h3>
+<h3 id="_transforms_in_depth">24.13. Transforms in depth</h3>
 <div class="paragraph">
 <p>Transforms are small, composable functions that shape each dataset record just before it is written to the database. They let you keep dataset files generic and inject environment/tenant specifics or perform repeatable rewrites at apply time.</p>
 </div>
@@ -13971,7 +14082,7 @@ Manifest snippet:</p>
 - For custom transforms, add focused unit tests for edge cases (missing fields, nulls, unexpected types)</p>
 </div>
 <div class="sect3">
-<h4 id="_creating_your_own_transforms_example_dropiftransform">24.12.1. Creating your own transforms (example: DropIfTransform)</h4>
+<h4 id="_creating_your_own_transforms_example_dropiftransform">24.13.1. Creating your own transforms (example: DropIfTransform)</h4>
 <div class="paragraph">
 <p>Custom transforms let you implement project-specific shaping logic. You implement two small interfaces and register the type on the SeedLoader builder. Below we walk through a simple "drop the record if a field equals a value" transform used in tests, called DropIfTransform.</p>
 </div>
@@ -14078,7 +14189,7 @@ Manifest snippet:</p>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_custom_variable_resolvers_for_stringinterpolation">24.12.2. Custom variable resolvers for stringInterpolation</h4>
+<h4 id="_custom_variable_resolvers_for_stringinterpolation">24.13.2. Custom variable resolvers for stringInterpolation</h4>
 <div class="paragraph">
 <p>The <code>stringInterpolation</code> transform supports custom variable resolution via the <code>SeedVariableResolver</code> SPI. This allows you to define application-specific variables that can be used in seed data alongside the built-in context variables.</p>
 </div>
@@ -14190,7 +14301,7 @@ Manifest snippet:</p>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_seed_record_listeners_reacting_to_seed_data">24.12.3. Seed record listeners (reacting to seed data)</h4>
+<h4 id="_seed_record_listeners_reacting_to_seed_data">24.13.3. Seed record listeners (reacting to seed data)</h4>
 <div class="paragraph">
 <p>The <code>SeedRecordListener</code> SPI allows application components to react when seed records are applied to the database. This is useful for synchronizing application state with seeded data, such as registering scheduled jobs, updating caches, or triggering other side effects.</p>
 </div>
@@ -14395,7 +14506,7 @@ The framework provides only the SPI interface. Applications must implement their
 </div>
 </div>
 <div class="sect2">
-<h3 id="_test_walkthrough_seedloaderintegrationtest">24.13. Test walkthrough: SeedLoaderIntegrationTest</h3>
+<h3 id="_test_walkthrough_seedloaderintegrationtest">24.14. Test walkthrough: SeedLoaderIntegrationTest</h3>
 <div class="paragraph">
 <p>The <code>SeedLoaderIntegrationTest</code> demonstrates end-to-end seeding using the demo seed pack at <code>src/main/resources/seed-packs/demo-seed</code>.</p>
 </div>
@@ -14424,7 +14535,7 @@ The framework provides only the SPI interface. Applications must implement their
 </div>
 </div>
 <div class="sect2">
-<h3 id="_archetypes_explained">24.14. Archetypes explained</h3>
+<h3 id="_archetypes_explained">24.15. Archetypes explained</h3>
 <div class="paragraph">
 <p>Archetypes are named compositions of seed packs that model a product edition, SKU, or vertical stack. Instead of listing several packs every time you provision a tenant, you define an archetype once in a manifest and then apply it by name.</p>
 </div>
@@ -14441,7 +14552,7 @@ The framework provides only the SPI interface. Applications must implement their
 - To group verticalized defaults (e.g., Logistics-Fulfillment, Healthcare-Core) without forcing consumers to know every underlying pack.</p>
 </div>
 <div class="sect3">
-<h4 id="_example_a_define_and_apply_an_archetype_in_the_same_pack">24.14.1. Example A: Define and apply an archetype in the same pack</h4>
+<h4 id="_example_a_define_and_apply_an_archetype_in_the_same_pack">24.15.1. Example A: Define and apply an archetype in the same pack</h4>
 <div class="paragraph">
 <p>Manifest (logistics-core/manifest.yaml):</p>
 </div>
@@ -14488,7 +14599,7 @@ loader.applyArchetype(<span class="string"><span class="delimiter">&quot;</span>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_example_b_cross_pack_archetype_in_a_dedicated_editions_pack">24.14.2. Example B: Cross-pack archetype in a dedicated "editions" pack</h4>
+<h4 id="_example_b_cross_pack_archetype_in_a_dedicated_editions_pack">24.15.2. Example B: Cross-pack archetype in a dedicated "editions" pack</h4>
 <div class="paragraph">
 <p>You can centralize product definitions into a thin pack that only defines archetypes and forward-references other packs:</p>
 </div>
@@ -14521,7 +14632,7 @@ loader.applyArchetype(<span class="string"><span class="delimiter">&quot;</span>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_resolution_and_ordering_details">24.14.3. Resolution and ordering details</h4>
+<h4 id="_resolution_and_ordering_details">24.15.3. Resolution and ordering details</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -14537,7 +14648,7 @@ loader.applyArchetype(<span class="string"><span class="delimiter">&quot;</span>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_interaction_with_applyseedpackschangeset">24.14.4. Interaction with ApplySeedPacksChangeSet</h4>
+<h4 id="_interaction_with_applyseedpackschangeset">24.15.4. Interaction with ApplySeedPacksChangeSet</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -14553,7 +14664,7 @@ loader.applyArchetype(<span class="string"><span class="delimiter">&quot;</span>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_tenant_provisioning_with_archetypes">24.14.5. Tenant provisioning with archetypes</h4>
+<h4 id="_tenant_provisioning_with_archetypes">24.15.5. Tenant provisioning with archetypes</h4>
 <div class="paragraph">
 <p>The tenant provisioning API accepts an optional list of archetype names and will apply the corresponding seed packs during onboarding.</p>
 </div>
@@ -14604,7 +14715,7 @@ loader.applyArchetype(<span class="string"><span class="delimiter">&quot;</span>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_rest_api_for_seed_packs">24.15. REST API for seed packs</h3>
+<h3 id="_rest_api_for_seed_packs">24.16. REST API for seed packs</h3>
 <div class="paragraph">
 <p>The framework exposes admin-only endpoints to inspect and apply seed packs per realm (tenant DB). These are disabled to non-admin users via role checks.</p>
 </div>
@@ -14687,7 +14798,7 @@ loader.applyArchetype(<span class="string"><span class="delimiter">&quot;</span>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_using_morphiaseedrepository_morphia_backed_seeding">24.16. Using MorphiaSeedRepository (Morphia-backed seeding)</h3>
+<h3 id="_using_morphiaseedrepository_morphia_backed_seeding">24.17. Using MorphiaSeedRepository (Morphia-backed seeding)</h3>
 <div class="paragraph">
 <p>Note about collection vs modelClass:
 - You can now omit collection in a dataset when you specify modelClass. The framework will derive the collection name from the Morphia mapping of the model class.
@@ -14755,7 +14866,7 @@ a dataset via a Morphia repository mapped to a concrete UnversionedBaseModel. Th
 </div>
 </div>
 <div class="sect2">
-<h3 id="_dataset_urls_and_routing_file_and_s3">24.17. Dataset URLs and routing (file:// and s3://)</h3>
+<h3 id="_dataset_urls_and_routing_file_and_s3">24.18. Dataset URLs and routing (file:// and s3://)</h3>
 <div class="paragraph">
 <p>Starting with Quantum 1.2.2, dataset files in a manifest can be specified either as:</p>
 </div>
@@ -14811,7 +14922,7 @@ a dataset via a Morphia repository mapped to a concrete UnversionedBaseModel. Th
 </div>
 </div>
 <div class="sect2">
-<h3 id="_s3_seed_source_optional_module">24.18. S3 Seed Source (optional module)</h3>
+<h3 id="_s3_seed_source_optional_module">24.19. S3 Seed Source (optional module)</h3>
 <div class="paragraph">
 <p>The framework provides an optional SeedSource backed by Amazon S3, packaged in a separate module so you can include it only when needed:</p>
 </div>
@@ -14829,7 +14940,7 @@ a dataset via a Morphia repository mapped to a concrete UnversionedBaseModel. Th
 </ul>
 </div>
 <div class="sect3">
-<h4 id="_when_to_use_s3_vs_filesystem">24.18.1. When to use S3 vs. filesystem</h4>
+<h4 id="_when_to_use_s3_vs_filesystem">24.19.1. When to use S3 vs. filesystem</h4>
 <div class="paragraph">
 <p>Use S3 when any of the following apply:
 - You want a single canonical location for seed content shared across services and environments.
@@ -14851,7 +14962,7 @@ a dataset via a Morphia repository mapped to a concrete UnversionedBaseModel. Th
 </div>
 </div>
 <div class="sect3">
-<h4 id="_s3_layout_conventions">24.18.2. S3 layout conventions</h4>
+<h4 id="_s3_layout_conventions">24.19.2. S3 layout conventions</h4>
 <div class="paragraph">
 <p>S3SeedSource expects the same on-disk structure as FileSeedSource, just hosted under a bucket + optional prefix. Each seed pack version is a folder containing a manifest file and any referenced datasets. For example:</p>
 </div>
@@ -14875,7 +14986,7 @@ a dataset via a Morphia repository mapped to a concrete UnversionedBaseModel. Th
 </div>
 </div>
 <div class="sect3">
-<h4 id="_configuration_and_credentials">24.18.3. Configuration and credentials</h4>
+<h4 id="_configuration_and_credentials">24.19.3. Configuration and credentials</h4>
 <div class="paragraph">
 <p>Constructor parameters for S3SeedSource:
 - id: Human-friendly source id (e.g., "s3-main").
@@ -14923,7 +15034,7 @@ a dataset via a Morphia repository mapped to a concrete UnversionedBaseModel. Th
 </div>
 </div>
 <div class="sect3">
-<h4 id="_usage_examples">24.18.4. Usage examples</h4>
+<h4 id="_usage_examples">24.19.4. Usage examples</h4>
 <div class="paragraph">
 <p>Create a loader that discovers packs from S3 with the runtime IAM role or local credentials:</p>
 </div>
@@ -14987,7 +15098,7 @@ S3SeedSource s3 = <span class="keyword">new</span> S3SeedSourceBuilder()
 </div>
 </div>
 <div class="sect3">
-<h4 id="_defining_datasets_in_the_manifest_s3">24.18.5. Defining datasets in the manifest (S3)</h4>
+<h4 id="_defining_datasets_in_the_manifest_s3">24.19.5. Defining datasets in the manifest (S3)</h4>
 <div class="paragraph">
 <p>Manifests can reference S3 in two ways:</p>
 </div>
@@ -15041,7 +15152,7 @@ s3://my-seeds/seed-packs/customer/1.0.0/roles.json</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_troubleshooting_2">24.18.6. Troubleshooting</h4>
+<h4 id="_troubleshooting_2">24.19.6. Troubleshooting</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -15169,7 +15280,7 @@ s3://my-seeds/seed-packs/customer/1.0.0/roles.json</code></pre>
 <p>quantum.migration.apply.realms: optional comma-separated list of additional realms to initialize during application startup. These startup migrations are evaluated before <code>SeedStartupRunner</code> runs, so realms listed here can be safely included in <code>quantum.seed-pack.apply.realms</code>.</p>
 </li>
 <li>
-<p>quantum.realmConfig.systemRealm, quantum.realmConfig.defaultRealm, quantum.realmConfig.testRealm: well‑known realms used by MigrationResource when running migrations across environments. On startup, MigrationService checks whether the <em>system realm</em> database exists and is initialized; if missing or uninitialized, it runs all pending change sets and applies indexes (creating all entity collections, including credentials). Set <code>quantum.realmConfig.systemRealm</code> to your application&#8217;s system database name (e.g. <code>system-psa-com</code>) in <code>application.properties</code> so the correct database is created and initialized when dropped or empty.</p>
+<p>quantum.realmConfig.systemRealm, quantum.realmConfig.defaultRealm, quantum.realmConfig.testRealm: well‑known realms used by MigrationResource when running migrations across environments. On startup, MigrationService checks whether the <em>system realm</em> database exists and is initialized; if missing or uninitialized, it runs all pending change sets and applies indexes (creating all entity collections, including credentials). Set <code>quantum.realmConfig.systemRealm</code> to your application&#8217;s system database name (e.g. <code>system-com</code>) in <code>application.properties</code> so the correct database is created and initialized when dropped or empty.</p>
 </li>
 <li>
 <p>quantum.defaultSystemPassword: initial password for the system user credential when created by the AddSystemUserCredential change set (default: <code>test123456</code>). Set in <code>application.properties</code>; the system user (quantum.realmConfig.systemUserId) is created in the credentials collection so login with that user works.</p>
@@ -15994,10 +16105,16 @@ Use it to jump directly to a subject and then explore details in context.</p>
 <p>Service tokens for integrations: <a href="./auth.html#service-tokens">Service Tokens</a> (MCP servers, cron jobs, CI/CD, partner APIs)</p>
 </li>
 <li>
-<p>Multiple auth providers and OIDC: <a href="./multiple-auth-providers.html">Multiple Authentication Providers</a> (issuer resolution, per-tenant key pairs)</p>
+<p>Multiple auth providers: <a href="./multiple-auth-providers.html">Multiple Authentication Providers</a> (issuer resolution, per-tenant key pairs, external identity providers)</p>
 </li>
 <li>
 <p>Key pair management: <a href="./multiple-auth-providers.html#per-tenant-key-pairs">Key Pair Management</a> (default keys module, configurable paths, production setup)</p>
+</li>
+<li>
+<p>Shared links: <a href="./shared-links.html">Shared Links</a> (time-bound link sharing, HMAC signing, access logging, revocation)</p>
+</li>
+<li>
+<p>OAuth server: <a href="./oauth-server.html">OAuth Server Module</a> (built-in OAuth 2.0/OIDC authorization server, ChatGPT/Gemini/Grok integration, no external IdP needed)</p>
 </li>
 <li>
 <p>Permissions: <a href="../tutorials/quantum-tutorial.html#sec-security">Permissions</a></p>
@@ -16034,7 +16151,19 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_operations">35. Operations</h2>
+<h2 id="_email_and_notifications">35. Email and Notifications</h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Email templates: <a href="./email-templates.html">Email Templates</a> (Qute rendering, classpath defaults, realm overrides, Postmark delivery)</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_operations">36. Operations</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -16052,7 +16181,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_samples">36. Samples</h2>
+<h2 id="_samples">37. Samples</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -16064,7 +16193,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_appendix">37. Appendix</h2>
+<h2 id="_appendix">38. Appendix</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>For configuration, Quarkus integration details, and glossary, see the Appendix in the main index.</p>
@@ -16072,14 +16201,14 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="ontology-chapter">38. Ontology Modeling</h2>
+<h2 id="ontology-chapter">39. Ontology Modeling</h2>
 <div class="sectionbody">
 
 </div>
 </div>
 <h1 id="_ontology_modeling" class="sect0">Ontology Modeling</h1>
 <div class="sect1">
-<h2 id="_ontologies_in_quantum_modeling_relationships_that_are_resilient_and_fast">39. Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</h2>
+<h2 id="_ontologies_in_quantum_modeling_relationships_that_are_resilient_and_fast">40. Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast</h2>
 <div class="sectionbody">
 <div class="admonitionblock note">
 <table>
@@ -16097,7 +16226,7 @@ Looking for the short implementation plan? See PROPOSAL.md at the repository roo
 <p>This section explains what an ontology is, how it differs from a traditional object model, and how the Quantum Ontology modules make it practical to apply ontology ideas to your domain models and queries. It also contrasts ontology-driven relationships with direct object references (for example, using @Reference or EntityReference).</p>
 </div>
 <div class="sect2">
-<h3 id="_what_is_an_ontology_2">39.1. What is an Ontology?</h3>
+<h3 id="_what_is_an_ontology_2">40.1. What is an Ontology?</h3>
 <div class="paragraph">
 <p>In software terms, an ontology is a formal, explicit specification of concepts and their relationships.</p>
 </div>
@@ -16122,7 +16251,7 @@ Looking for the short implementation plan? See PROPOSAL.md at the repository roo
 </div>
 </div>
 <div class="sect2">
-<h3 id="_ontology_vs_object_model_2">39.2. Ontology vs. Object Model</h3>
+<h3 id="_ontology_vs_object_model_2">40.2. Ontology vs. Object Model</h3>
 <div class="paragraph">
 <p>A conventional object model focuses on concrete classes, fields, and direct references between objects at implementation time. An ontology focuses on semantic types and relationships, with explicit rules that can derive new knowledge independent of how objects are instantiated.</p>
 </div>
@@ -16183,7 +16312,7 @@ Looking for the short implementation plan? See PROPOSAL.md at the repository roo
 </div>
 </div>
 <div class="sect2">
-<h3 id="_why_prefer_ontology_driven_relationships_over_referenceentityreference_2">39.3. Why prefer Ontology-driven relationships over @Reference/EntityReference</h3>
+<h3 id="_why_prefer_ontology_driven_relationships_over_referenceentityreference_2">40.3. Why prefer Ontology-driven relationships over @Reference/EntityReference</h3>
 <div class="paragraph">
 <p>Direct references (@Reference or custom EntityReference) are simple to start but become restrictive as domains grow:</p>
 </div>
@@ -16227,7 +16356,7 @@ Looking for the short implementation plan? See PROPOSAL.md at the repository roo
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_quantum_supports_ontologies_2">39.4. How Quantum supports Ontologies</h3>
+<h3 id="_how_quantum_supports_ontologies_2">40.4. How Quantum supports Ontologies</h3>
 <div class="paragraph">
 <p>Quantum provides three cooperating modules that make ontology modeling practical and fast:</p>
 </div>
@@ -16303,7 +16432,7 @@ In Quarkus, all ontology components are CDI-managed. Inject EdgeDao and services
 </div>
 </div>
 <div class="sect2">
-<h3 id="_modeling_guidance_from_object_fields_to_predicates_2">39.5. Modeling guidance: from object fields to predicates</h3>
+<h3 id="_modeling_guidance_from_object_fields_to_predicates_2">40.5. Modeling guidance: from object fields to predicates</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -16346,7 +16475,7 @@ In Quarkus, all ontology components are CDI-managed. Inject EdgeDao and services
 </div>
 </div>
 <div class="sect2">
-<h3 id="_querying_with_ontology_edges_vs_direct_references_2">39.6. Querying with ontology edges vs direct references</h3>
+<h3 id="_querying_with_ontology_edges_vs_direct_references_2">40.6. Querying with ontology edges vs direct references</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -16377,7 +16506,7 @@ In Quarkus, all ontology components are CDI-managed. Inject EdgeDao and services
 </div>
 </div>
 <div class="sect2">
-<h3 id="_migration_from_reference_to_ontology_edges_2">39.7. Migration: from @Reference to ontology edges</h3>
+<h3 id="_migration_from_reference_to_ontology_edges_2">40.7. Migration: from @Reference to ontology edges</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -16396,7 +16525,7 @@ In Quarkus, all ontology components are CDI-managed. Inject EdgeDao and services
 </div>
 </div>
 <div class="sect2">
-<h3 id="_performance_and_operational_notes_2">39.8. Performance and operational notes</h3>
+<h3 id="_performance_and_operational_notes_2">40.8. Performance and operational notes</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -16415,7 +16544,7 @@ In Quarkus, all ontology components are CDI-managed. Inject EdgeDao and services
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_this_integrates_with_functional_areasdomains_2">39.9. How this integrates with Functional Areas/Domains</h3>
+<h3 id="_how_this_integrates_with_functional_areasdomains_2">40.9. How this integrates with Functional Areas/Domains</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -16428,7 +16557,7 @@ In Quarkus, all ontology components are CDI-managed. Inject EdgeDao and services
 </div>
 </div>
 <div class="sect2">
-<h3 id="_summary_3">39.10. Summary</h3>
+<h3 id="_summary_3">40.10. Summary</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -16446,7 +16575,7 @@ In Quarkus, all ontology components are CDI-managed. Inject EdgeDao and services
 </div>
 </div>
 <div class="sect1">
-<h2 id="_concrete_example_sales_orders_shipments_and_evolving_to_fulfillmentreturns">40. Concrete example: Sales Orders, Shipments, and evolving to Fulfillment/Returns</h2>
+<h2 id="_concrete_example_sales_orders_shipments_and_evolving_to_fulfillmentreturns">41. Concrete example: Sales Orders, Shipments, and evolving to Fulfillment/Returns</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This example shows how to use an ontology to model relationships around Orders, Customers, and Shipments, and how the model can evolve to include Fulfillment and Returns without breaking existing queries. We will:</p>
@@ -16836,13 +16965,13 @@ Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, <span class="string"
 </div>
 </div>
 <div class="sect1">
-<h2 id="ontology-visualizing-edges-and-provenance">41. Visualizing ontology edges and provenance</h2>
+<h2 id="ontology-visualizing-edges-and-provenance">42. Visualizing ontology edges and provenance</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This section uses simple diagrams to illustrate how explicit facts (edges) combine with ontology rules (property chains, inverses, transitivity) to produce inferred edges, and how provenance explains each inference.</p>
 </div>
 <div class="sect2">
-<h3 id="_example_graph_orders_customers_organizations">41.1. Example graph: Orders, Customers, Organizations</h3>
+<h3 id="_example_graph_orders_customers_organizations">42.1. Example graph: Orders, Customers, Organizations</h3>
 <div class="paragraph">
 <p>We start from the running example introduced above. The following diagram shows explicit edges in solid lines and inferred edges as dotted lines.</p>
 </div>
@@ -16856,7 +16985,7 @@ Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, <span class="string"
 </div>
 </div>
 <div class="sect2">
-<h3 id="_example_graph_shipments_and_regions">41.2. Example graph: Shipments and Regions</h3>
+<h3 id="_example_graph_shipments_and_regions">42.2. Example graph: Shipments and Regions</h3>
 <div class="imageblock">
 <div class="content">
 <img src="diag-graphviz-md5-d9ee623c7b9a9e666c8e0738da5e4364.svg" alt="Diagram" width="937" height="168">
@@ -16864,7 +16993,7 @@ Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, <span class="string"
 </div>
 </div>
 <div class="sect2">
-<h3 id="_what_is_provenance_and_how_to_read_it">41.3. What is provenance and how to read it</h3>
+<h3 id="_what_is_provenance_and_how_to_read_it">42.3. What is provenance and how to read it</h3>
 <div class="paragraph">
 <p>Every inferred edge includes a provenance payload prov that answers “why does this edge exist?”. It captures the rule used and the contributing input edges. With recent enrichments, inputs also include type information when available.</p>
 </div>
@@ -16931,12 +17060,12 @@ Provenance is for explanation and maintenance. The runtime edges you query on re
 </div>
 </div>
 <div class="sect2">
-<h3 id="_querying_ontologies">41.4. Querying Ontologies</h3>
+<h3 id="_querying_ontologies">42.4. Querying Ontologies</h3>
 <div class="paragraph">
 <p>Quantum provides several ways to leverage ontology relationships in your queries and business logic.</p>
 </div>
 <div class="sect3">
-<h4 id="_biapi_query_language_functions_hasedge_and_hasincomingedge">41.4.1. BIAPI Query Language Functions: hasEdge and hasIncomingEdge</h4>
+<h4 id="_biapi_query_language_functions_hasedge_and_hasincomingedge">42.4.1. BIAPI Query Language Functions: hasEdge and hasIncomingEdge</h4>
 <div class="paragraph">
 <p>The query language (BIAPIQuery) includes built-in functions to filter entities based on their ontology edges. These are the preferred way to perform ontology-aware queries from REST APIs or permission rules.</p>
 </div>
@@ -16967,7 +17096,7 @@ hasEdge(placedInOrg, &quot;OrgA&quot;) &amp;&amp; status:PENDING</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_programmatic_querying_with_edgedao">41.4.2. Programmatic Querying with EdgeDao</h4>
+<h4 id="_programmatic_querying_with_edgedao">42.4.2. Programmatic Querying with EdgeDao</h4>
 <div class="paragraph">
 <p>For more complex scenarios in Java code, you can use the <code>EdgeDao</code> directly:</p>
 </div>
@@ -16988,13 +17117,13 @@ EdgeDao edgeDao;
 </div>
 </div>
 <div class="sect1">
-<h2 id="ontology-integration-morphia-permissions-section">42. Integrating Ontology with Morphia, Permissions, and Multi-tenancy</h2>
+<h2 id="ontology-integration-morphia-permissions-section">43. Integrating Ontology with Morphia, Permissions, and Multi-tenancy</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This section focuses on integration and developer experience: how ontology edges flow into Morphia-based repositories and the permission rule language, while remaining fully multi-tenant and secure.</p>
 </div>
 <div class="sect2">
-<h3 id="_big_picture_where_ontology_fits_2">42.1. Big picture: where ontology fits</h3>
+<h3 id="_big_picture_where_ontology_fits_2">43.1. Big picture: where ontology fits</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -17025,7 +17154,7 @@ EdgeDao edgeDao;
 </div>
 </div>
 <div class="sect2">
-<h3 id="_rule_language_add_hasedge_2">42.2. Rule language: add hasEdge()</h3>
+<h3 id="_rule_language_add_hasedge_2">43.2. Rule language: add hasEdge()</h3>
 <div class="paragraph">
 <p>We introduce a policy function/operator to reference ontology edges directly from rules:</p>
 </div>
@@ -17072,7 +17201,7 @@ EdgeDao edgeDao;
 </div>
 </div>
 <div class="sect2">
-<h3 id="_passing_tenantid_correctly_2">42.3. Passing tenantId correctly</h3>
+<h3 id="_passing_tenantid_correctly_2">43.3. Passing tenantId correctly</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -17094,7 +17223,7 @@ EdgeDao edgeDao;
 </div>
 </div>
 <div class="sect2">
-<h3 id="_morphia_repository_integration_patterns_2">42.4. Morphia repository integration patterns</h3>
+<h3 id="_morphia_repository_integration_patterns_2">43.4. Morphia repository integration patterns</h3>
 <div class="paragraph">
 <p>The goal is zero-friction usage in existing repos without invasive changes.</p>
 </div>
@@ -17160,7 +17289,7 @@ query.filter(Filters.in(&quot;_id&quot;, ids));</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_where_ontology_materialization_happens">42.5. Where ontology materialization happens</h3>
+<h3 id="_where_ontology_materialization_happens">43.5. Where ontology materialization happens</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -17182,12 +17311,12 @@ query.filter(Filters.in(&quot;_id&quot;, ids));</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="custom-edge-providers">42.6. Custom Edge Providers: OntologyEdgeProvider and HierarchyListEdgeProvider</h3>
+<h3 id="custom-edge-providers">43.6. Custom Edge Providers: OntologyEdgeProvider and HierarchyListEdgeProvider</h3>
 <div class="paragraph">
 <p>While annotations (<code>@OntologyProperty</code>) and property chains cover many use cases, some relationships require custom logic to determine edges. Quantum provides an SPI for implementing custom edge providers that are automatically discovered and integrated into the materialization process.</p>
 </div>
 <div class="sect3">
-<h4 id="_ontologyedgeprovider_the_core_spi">42.6.1. OntologyEdgeProvider: The Core SPI</h4>
+<h4 id="_ontologyedgeprovider_the_core_spi">43.6.1. OntologyEdgeProvider: The Core SPI</h4>
 <div class="paragraph">
 <p>The <code>OntologyEdgeProvider</code> interface allows you to contribute explicit edges for any entity instance. These edges are merged with annotation-derived edges before being passed to the reasoner.</p>
 </div>
@@ -17207,7 +17336,7 @@ query.filter(Filters.in(&quot;_id&quot;, ids));</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_hierarchylistedgeprovider_handling_complex_hierarchies">42.6.2. HierarchyListEdgeProvider: Handling Complex Hierarchies</h4>
+<h4 id="_hierarchylistedgeprovider_handling_complex_hierarchies">43.6.2. HierarchyListEdgeProvider: Handling Complex Hierarchies</h4>
 <div class="paragraph">
 <p>A common pattern in SaaS applications is assigning users/entities to nodes in a hierarchy (e.g., Territories, Organizations) where they should also "inherit" relationships from descendant nodes. <code>HierarchyListEdgeProvider</code> is a specialized base class designed for this purpose.</p>
 </div>
@@ -17277,7 +17406,7 @@ query.filter(Filters.in(&quot;_id&quot;, ids));</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="property-chains-vs-computed-providers">42.6.3. When to use Property Chains vs ComputedEdgeProvider</h4>
+<h4 id="property-chains-vs-computed-providers">43.6.3. When to use Property Chains vs ComputedEdgeProvider</h4>
 <div class="paragraph">
 <p>Understanding when to use property chains versus <code>ComputedEdgeProvider</code> is critical for modeling your ontology effectively. This section provides clear guidance on which approach to use.</p>
 </div>
@@ -17587,7 +17716,7 @@ query.filter(Filters.in(&quot;_id&quot;, ids));</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_extending_materialization_with_computededgeprovider_advanced">42.6.4. Extending materialization with ComputedEdgeProvider (Advanced)</h4>
+<h4 id="_extending_materialization_with_computededgeprovider_advanced">43.6.4. Extending materialization with ComputedEdgeProvider (Advanced)</h4>
 <div class="paragraph">
 <p>While <code>OntologyEdgeProvider</code> is sufficient for simple, direct edges, many real-world use cases require edges computed from complex logic, such as hierarchy traversal or dynamic list resolution. <code>ComputedEdgeProvider</code> is a more robust base class that provides:</p>
 </div>
@@ -17671,7 +17800,7 @@ query.filter(Filters.in(&quot;_id&quot;, ids));</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_extending_materialization_with_ontologyedgeprovider_spi">42.6.5. Extending materialization with OntologyEdgeProvider (SPI)</h4>
+<h4 id="_extending_materialization_with_ontologyedgeprovider_spi">43.6.5. Extending materialization with OntologyEdgeProvider (SPI)</h4>
 <div class="paragraph">
 <p>The write hook is annotation-first and SPI-second:</p>
 </div>
@@ -17822,7 +17951,7 @@ query.filter(Filters.in(&quot;_id&quot;, ids));</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_configuration_4">42.6.6. Configuration</h4>
+<h4 id="_configuration_4">43.6.6. Configuration</h4>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="properties"># default is true
@@ -17831,7 +17960,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_example_annotate_and_save_edges_are_materialized_automatically">42.6.7. Example: annotate and save — edges are materialized automatically</h4>
+<h4 id="_example_annotate_and_save_edges_are_materialized_automatically">43.6.7. Example: annotate and save — edges are materialized automatically</h4>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@OntologyClass</span>(id = <span class="string"><span class="delimiter">&quot;</span><span class="content">Order</span><span class="delimiter">&quot;</span></span>)
@@ -17861,7 +17990,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_security_and_multi_tenant_considerations_2">42.7. Security and multi-tenant considerations</h3>
+<h3 id="_security_and_multi_tenant_considerations_2">43.7. Security and multi-tenant considerations</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -17877,7 +18006,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_developer_workflow_and_dx_checklist_2">42.8. Developer workflow and DX checklist</h3>
+<h3 id="_developer_workflow_and_dx_checklist_2">43.8. Developer workflow and DX checklist</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -17896,7 +18025,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_cookbook_end_to_end_example_with_orders_org_2">42.9. Cookbook: end-to-end example with Orders + Org</h3>
+<h3 id="_cookbook_end_to_end_example_with_orders_org_2">43.9. Cookbook: end-to-end example with Orders + Org</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -17914,7 +18043,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_migration_notes_for_teams_using_reference_2">42.10. Migration notes for teams using @Reference</h3>
+<h3 id="_migration_notes_for_teams_using_reference_2">43.10. Migration notes for teams using @Reference</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -17935,7 +18064,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_primer_first_time_guide_to_core_relationship_semantics">43. Primer: First-time guide to core relationship semantics</h2>
+<h2 id="_primer_first_time_guide_to_core_relationship_semantics">44. Primer: First-time guide to core relationship semantics</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>If you are new to ontology terms, the following quick explanations will help you build intuition. Each concept explains what it means, a tiny example, and how it affects queries using hasEdge.</p>
@@ -18012,13 +18141,13 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_new_ontology_features_in_this_release">44. New ontology features in this release</h2>
+<h2 id="_new_ontology_features_in_this_release">45. New ontology features in this release</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This release expands the ontology engine and query integration to support a richer, OWL‑RL–inspired subset while keeping the developer experience simple and backward compatible. The following capabilities are now available and used transparently by the materializer and query rewriter:</p>
 </div>
 <div class="sect2">
-<h3 id="_feature_overview">44.1. Feature overview</h3>
+<h3 id="_feature_overview">45.1. Feature overview</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -18064,7 +18193,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_business_problems_solved">44.2. Business problems solved</h3>
+<h3 id="_business_problems_solved">45.2. Business problems solved</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -18107,12 +18236,12 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_to_code_it_with_current_apis">44.3. How to code it with current APIs</h3>
+<h3 id="_how_to_code_it_with_current_apis">45.3. How to code it with current APIs</h3>
 <div class="paragraph">
 <p>Below are concise examples showing how to define the ontology, materialize inferences, and query with existing components. These mirror the types already present in this repository and require no grammar changes.</p>
 </div>
 <div class="sect3">
-<h4 id="_1_define_ontology_programmatic_tbox">44.3.1. 1) Define ontology (programmatic TBox)</h4>
+<h4 id="_1_define_ontology_programmatic_tbox">45.3.1. 1) Define ontology (programmatic TBox)</h4>
 <div class="paragraph">
 <p>A small TBox-level view of the classes and predicates we define:</p>
 </div>
@@ -18190,7 +18319,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_2_materialize_inferences_when_data_changes">44.3.2. 2) Materialize inferences when data changes</h4>
+<h4 id="_2_materialize_inferences_when_data_changes">45.3.2. 2) Materialize inferences when data changes</h4>
 <div class="paragraph">
 <p>Use OntologyMaterializer or call the Reasoner directly and upsert edges via OntologyEdgeRepo.</p>
 </div>
@@ -18222,7 +18351,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_3_query_with_listqueryrewriter_quarkusmorphia">44.3.3. 3) Query with ListQueryRewriter (Quarkus/Morphia)</h4>
+<h4 id="_3_query_with_listqueryrewriter_quarkusmorphia">45.3.3. 3) Query with ListQueryRewriter (Quarkus/Morphia)</h4>
 <div class="paragraph">
 <p>Use hasEdge/hasEdgeAny/notHasEdge to turn ontology constraints into Morphia filters over your entity collection. The rewriter internally fetches the set of source ids from the edge store and builds an in("refName", …) filter that composes with your attribute predicates.</p>
 </div>
@@ -18257,7 +18386,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_functional_properties_at_write_time">44.3.4. Functional properties at write time</h4>
+<h4 id="_functional_properties_at_write_time">45.3.4. Functional properties at write time</h4>
 <div class="paragraph">
 <p>For single‑valued relationships declared functional, configure a unique index over (tenantId, src, p) in your edge store (or rely on repo semantics) and treat upserts as replacements.</p>
 </div>
@@ -18269,7 +18398,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_backward_compatibility_and_migration">44.4. Backward compatibility and migration</h3>
+<h3 id="_backward_compatibility_and_migration">45.4. Backward compatibility and migration</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -18285,7 +18414,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_troubleshooting_and_tips">44.5. Troubleshooting and tips</h3>
+<h3 id="_troubleshooting_and_tips">45.5. Troubleshooting and tips</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -18306,13 +18435,13 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_model_first_ontology_with_annotations_and_morphiaontologyloader">45. Model-first ontology with annotations and MorphiaOntologyLoader</h2>
+<h2 id="_model_first_ontology_with_annotations_and_morphiaontologyloader">46. Model-first ontology with annotations and MorphiaOntologyLoader</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This section shows how to use your Morphia model classes as the source of truth for the ontology. You annotate model classes/fields to declare ontology concepts and property traits; at startup, MorphiaOntologyLoader scans MorphiaDatastore.getMapper() to build the OntologyRegistry automatically.</p>
 </div>
 <div class="sect2">
-<h3 id="_why_model_first">45.1. Why model-first?</h3>
+<h3 id="_why_model_first">46.1. Why model-first?</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -18328,7 +18457,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_annotations_overview">45.2. Annotations overview</h3>
+<h3 id="_annotations_overview">46.2. Annotations overview</h3>
 <div class="paragraph">
 <p>Two lightweight annotations are used on model classes and fields. They are provided by quantum-ontology-core and can be added to any Morphia-mapped entity (deriving from UnversionedBaseModel).</p>
 </div>
@@ -18406,7 +18535,7 @@ functional is inferred true for single-valued fields and false for collections/m
 </table>
 </div>
 <div class="sect3">
-<h4 id="ontology-relationships">45.2.1. Relationship semantics on @OntologyProperty</h4>
+<h4 id="ontology-relationships">46.2.1. Relationship semantics on @OntologyProperty</h4>
 <div class="paragraph">
 <p>When a field is annotated with @OntologyProperty and declares any of ref, relation, or edgeType, the framework treats it as a relationship and will materialize an ontology edge for it on persist/update.</p>
 </div>
@@ -18468,7 +18597,7 @@ If ref is provided but edgeType is omitted, the system uses the property id (or 
 </div>
 </div>
 <div class="sect3">
-<h4 id="ontology-cascading">45.2.2. Cascading policies for relationships</h4>
+<h4 id="ontology-cascading">46.2.2. Cascading policies for relationships</h4>
 <div class="paragraph">
 <p>Cascading is opt-in and conservative. It controls what happens to related targets and edges when a relationship is modified or a source is deleted.</p>
 </div>
@@ -18541,7 +18670,7 @@ If ref is provided but edgeType is omitted, the system uses the property id (or 
 </div>
 </div>
 <div class="sect3">
-<h4 id="ontology-benefits-relationships">45.2.3. Business benefits of ontology relationships and cascade</h4>
+<h4 id="ontology-benefits-relationships">46.2.3. Business benefits of ontology relationships and cascade</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -18564,7 +18693,7 @@ If ref is provided but edgeType is omitted, the system uses the property id (or 
 </div>
 </div>
 <div class="sect2">
-<h3 id="_example_orders_placed_in_an_organization_e_commerce">45.3. Example: Orders placed in an Organization (e-commerce)</h3>
+<h3 id="_example_orders_placed_in_an_organization_e_commerce">46.3. Example: Orders placed in an Organization (e-commerce)</h3>
 <div class="paragraph">
 <p>Below we implement the same business example covered earlier using model annotations.</p>
 </div>
@@ -18625,7 +18754,7 @@ If ref is provided but edgeType is omitted, the system uses the property id (or 
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_the_registry_is_produced_quarkus_cdi">45.4. How the registry is produced (Quarkus CDI)</h3>
+<h3 id="_how_the_registry_is_produced_quarkus_cdi">46.4. How the registry is produced (Quarkus CDI)</h3>
 <div class="paragraph">
 <p>OntologyCoreProducers wires MorphiaOntologyLoader by default. On startup it scans your models and produces a singleton OntologyRegistry.</p>
 </div>
@@ -18671,7 +18800,7 @@ Keep annotations minimal. Only add traits that aren’t obvious from the Java ty
 </div>
 </div>
 <div class="sect2">
-<h3 id="_defining_an_ontology_with_yaml_yamlontologyloader">45.5. Defining an ontology with YAML (YamlOntologyLoader)</h3>
+<h3 id="_defining_an_ontology_with_yaml_yamlontologyloader">46.5. Defining an ontology with YAML (YamlOntologyLoader)</h3>
 <div class="paragraph">
 <p>You can also author your ontology in a simple YAML file and load it at runtime using YamlOntologyLoader. This is useful when:
 - You want product or ops teams to evolve predicates and chains without changing Java models.
@@ -18807,7 +18936,7 @@ Keep overlays additive. If you need to override flags (e.g., mark an existing pr
 </div>
 </div>
 <div class="sect2">
-<h3 id="_materializing_inferences_from_annotated_models">45.6. Materializing inferences from annotated models</h3>
+<h3 id="_materializing_inferences_from_annotated_models">46.6. Materializing inferences from annotated models</h3>
 <div class="paragraph">
 <p>Materialization is automatic on save/update through the repository hook; you do not need to assemble explicit edge lists or call OntologyMaterializer manually.</p>
 </div>
@@ -18852,7 +18981,7 @@ Keep overlays additive. If you need to override flags (e.g., mark an existing pr
 </div>
 </div>
 <div class="sect2">
-<h3 id="_querying_using_listqueryrewriter_unchanged">45.7. Querying using ListQueryRewriter (unchanged)</h3>
+<h3 id="_querying_using_listqueryrewriter_unchanged">46.7. Querying using ListQueryRewriter (unchanged)</h3>
 <div class="paragraph">
 <p>Your query code does not change. It benefits from materialized edges that now carry richer semantics from annotations.</p>
 </div>
@@ -18876,7 +19005,7 @@ Keep overlays additive. If you need to override flags (e.g., mark an existing pr
 </div>
 </div>
 <div class="sect2">
-<h3 id="_business_case_recipes_with_annotations">45.8. Business case recipes with annotations</h3>
+<h3 id="_business_case_recipes_with_annotations">46.8. Business case recipes with annotations</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -18901,7 +19030,7 @@ Keep overlays additive. If you need to override flags (e.g., mark an existing pr
 </div>
 </div>
 <div class="sect2">
-<h3 id="_troubleshooting_3">45.9. Troubleshooting</h3>
+<h3 id="_troubleshooting_3">46.9. Troubleshooting</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -18926,7 +19055,7 @@ Keep overlays additive. If you need to override flags (e.g., mark an existing pr
 </div>
 </div>
 <div class="sect2">
-<h3 id="_migration_strategy">45.10. Migration strategy</h3>
+<h3 id="_migration_strategy">46.10. Migration strategy</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -18942,7 +19071,7 @@ Keep overlays additive. If you need to override flags (e.g., mark an existing pr
 </div>
 </div>
 <div class="sect2">
-<h3 id="_modeling_guidance_annotate_existing_idreference_getters_keep_api_and_db_clean">45.11. Modeling guidance: annotate existing id/reference getters (keep API and DB clean)</h3>
+<h3 id="_modeling_guidance_annotate_existing_idreference_getters_keep_api_and_db_clean">46.11. Modeling guidance: annotate existing id/reference getters (keep API and DB clean)</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -19026,7 +19155,7 @@ Keep overlays additive. If you need to override flags (e.g., mark an existing pr
 </div>
 </div>
 <div class="sect1">
-<h2 id="ontology-rest-api">46. Exploring the ontology via REST and JointJS</h2>
+<h2 id="ontology-rest-api">47. Exploring the ontology via REST and JointJS</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This section shows how to inspect your ontology (TBox) and your instance relationships (ABox) through a small, read‑only REST API and how to render the results in a browser using JointJS. These endpoints are implemented in the quantum-ontology-mongo module and are intended for diagnostics, admin tooling, and lightweight visualization.</p>
@@ -19044,7 +19173,7 @@ For a complete, copy‑paste friendly reference of every parameter and more exam
 </table>
 </div>
 <div class="sect2">
-<h3 id="_base_info">46.1. Base info</h3>
+<h3 id="_base_info">47.1. Base info</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -19073,7 +19202,7 @@ For a complete, copy‑paste friendly reference of every parameter and more exam
 </div>
 </div>
 <div class="sect2">
-<h3 id="_tbox_schema_endpoints">46.2. TBox (schema) endpoints</h3>
+<h3 id="_tbox_schema_endpoints">47.2. TBox (schema) endpoints</h3>
 <div class="paragraph">
 <p>These expose ontology registry metadata and a JointJS‑ready schema graph.</p>
 </div>
@@ -19116,7 +19245,7 @@ For a complete, copy‑paste friendly reference of every parameter and more exam
 </div>
 </div>
 <div class="sect2">
-<h3 id="_abox_instances_graph_endpoint">46.3. ABox (instances) graph endpoint</h3>
+<h3 id="_abox_instances_graph_endpoint">47.3. ABox (instances) graph endpoint</h3>
 <div class="paragraph">
 <p>Builds a neighborhood graph around a specific instance (src id + type). Useful for investigating relationships and verifying inferences.</p>
 </div>
@@ -19184,7 +19313,7 @@ For a complete, copy‑paste friendly reference of every parameter and more exam
 </div>
 </div>
 <div class="sect2">
-<h3 id="_rendering_with_jointjs_quick_snippet">46.4. Rendering with JointJS (quick snippet)</h3>
+<h3 id="_rendering_with_jointjs_quick_snippet">47.4. Rendering with JointJS (quick snippet)</h3>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="javascript">async <span class="keyword">function</span> <span class="function">renderJointJs</span>(divId, url) {
@@ -19215,7 +19344,7 @@ JointJS will honor the attrs/labels we return. You can add a legend in your UI t
 </div>
 </div>
 <div class="sect2">
-<h3 id="_when_to_use_these_endpoints">46.5. When to use these endpoints</h3>
+<h3 id="_when_to_use_these_endpoints">47.5. When to use these endpoints</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -19236,13 +19365,13 @@ JointJS will honor the attrs/labels we return. You can add a legend in your UI t
 </div>
 </div>
 <div class="sect1">
-<h2 id="dev-howto-ontology-yaml-materialization-reindex-provenance">47. Developer how-to: YAML properties, chains, write-time materialization, reindex, and provenance</h2>
+<h2 id="dev-howto-ontology-yaml-materialization-reindex-provenance">48. Developer how-to: YAML properties, chains, write-time materialization, reindex, and provenance</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This section is a concise, task-focused guide for developers. It shows how to declare properties and chains in YAML, how write-time materialization works and how to toggle it, how to reindex after YAML changes, and how edge provenance is stored and how deletions are handled. Examples use the Order/Shipment/Address/Org model.</p>
 </div>
 <div class="sect2">
-<h3 id="_declare_properties_and_chains_in_yaml">47.1. Declare properties and chains in YAML</h3>
+<h3 id="_declare_properties_and_chains_in_yaml">48.1. Declare properties and chains in YAML</h3>
 <div class="paragraph">
 <p>Place an ontology.yaml in your classpath (src/main/resources) or supply a path via environment variable ONTOLOGY_YAML or system property ontology.yaml.path. The loader supports classes, properties, and property chains.</p>
 </div>
@@ -19311,7 +19440,7 @@ JointJS will honor the attrs/labels we return. You can add a legend in your UI t
 </div>
 </div>
 <div class="sect2">
-<h3 id="_write_time_materialization_what_runs_and_how_to_toggle">47.2. Write-time materialization: what runs and how to toggle</h3>
+<h3 id="_write_time_materialization_what_runs_and_how_to_toggle">48.2. Write-time materialization: what runs and how to toggle</h3>
 <div class="paragraph">
 <p>When an entity annotated with @OntologyClass is persisted, the framework:
 - Extracts explicit edges from fields/getters annotated with @OntologyProperty on that entity.
@@ -19362,7 +19491,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_reindex_after_yaml_changes">47.3. Reindex after YAML changes</h3>
+<h3 id="_reindex_after_yaml_changes">48.3. Reindex after YAML changes</h3>
 <div class="paragraph">
 <p>If you change ontology.yaml (add properties, mark a property transitive, add chains), you should trigger a tenant-wide re-materialization so derived edges reflect the new rules.</p>
 </div>
@@ -19411,7 +19540,7 @@ curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=defau
 </div>
 </div>
 <div class="sect2">
-<h3 id="_edge_provenance_format_and_deletions">47.4. Edge provenance format and deletions</h3>
+<h3 id="_edge_provenance_format_and_deletions">48.4. Edge provenance format and deletions</h3>
 <div class="paragraph">
 <p>Storage model (Mongo edges collection):
 - Each edge document stores: tenantId, src, srcType, p (predicate), dst, dstType, inferred, derived, prov (map), support (list), ts.
@@ -19529,7 +19658,7 @@ curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=defau
 </div>
 </div>
 <div class="sect1">
-<h2 id="_samples_2">48. Samples</h2>
+<h2 id="_samples_2">49. Samples</h2>
 <div class="sectionbody">
 
 </div>
@@ -19543,7 +19672,7 @@ curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=defau
 </div>
 </div>
 <div class="sect1">
-<h2 id="_what_a_supplychain_saas_needs_and_how_quantum_helps">49. What a supply‑chain SaaS needs (and how Quantum helps)</h2>
+<h2 id="_what_a_supplychain_saas_needs_and_how_quantum_helps">50. What a supply‑chain SaaS needs (and how Quantum helps)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Common needs when launching a collaboration platform:</p>
@@ -19595,7 +19724,7 @@ curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=defau
 </div>
 </div>
 <div class="sect1">
-<h2 id="_why_multitenancy_is_a_natural_fit_for_supply_chains">50. Why multi‑tenancy is a natural fit for supply chains</h2>
+<h2 id="_why_multitenancy_is_a_natural_fit_for_supply_chains">51. Why multi‑tenancy is a natural fit for supply chains</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Supply chains are networks. Everyone shares a process, but not a database. Quantum isolates each tenant’s data by default and lets you selectively share records with partners:</p>
@@ -19619,7 +19748,7 @@ curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=defau
 </div>
 </div>
 <div class="sect1">
-<h2 id="_who_uses_the_system_organizations_and_roles">51. Who uses the system (organizations and roles)</h2>
+<h2 id="_who_uses_the_system_organizations_and_roles">52. Who uses the system (organizations and roles)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Organizations (tenants)
@@ -19642,7 +19771,7 @@ curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=defau
 </div>
 </div>
 <div class="sect1">
-<h2 id="_identity_and_access_meet_partners_where_they_are">52. Identity and access: meet partners where they are</h2>
+<h2 id="_identity_and_access_meet_partners_where_they_are">53. Identity and access: meet partners where they are</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Every organization may authenticate differently:
@@ -19656,7 +19785,7 @@ curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=defau
 </div>
 </div>
 <div class="sect1">
-<h2 id="_modeling_without_jargon_areas_domains_and_actions">53. Modeling without jargon: Areas, Domains, and Actions</h2>
+<h2 id="_modeling_without_jargon_areas_domains_and_actions">54. Modeling without jargon: Areas, Domains, and Actions</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>To keep your platform organized, Quantum groups things into:
@@ -19672,7 +19801,7 @@ curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=defau
 </div>
 </div>
 <div class="sect1">
-<h2 id="_policies_that_say_who_can_do_what_rule_language">54. Policies that say “who can do what” (Rule Language)</h2>
+<h2 id="_policies_that_say_who_can_do_what_rule_language">55. Policies that say “who can do what” (Rule Language)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Policies are simple, readable rules that match:
@@ -19691,7 +19820,7 @@ curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=defau
 </div>
 </div>
 <div class="sect1">
-<h2 id="_domain_contexts_and_domain_policies_placing_and_sharing_data">55. Domain contexts and domain policies (placing and sharing data)</h2>
+<h2 id="_domain_contexts_and_domain_policies_placing_and_sharing_data">56. Domain contexts and domain policies (placing and sharing data)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>In supply chains, the same entity often lives in different business contexts (e.g., a Shipment inside a Supplier’s operations vs. the Buyer’s view). Domain contexts let you keep data where it naturally belongs while still collaborating safely:</p>
@@ -19721,7 +19850,7 @@ curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=defau
 </div>
 </div>
 <div class="sect1">
-<h2 id="_bootstrap_tenants_with_seed_packs_zerotouch_baseline_data">56. Bootstrap tenants with Seed Packs (zero‑touch baseline data)</h2>
+<h2 id="_bootstrap_tenants_with_seed_packs_zerotouch_baseline_data">57. Bootstrap tenants with Seed Packs (zero‑touch baseline data)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Onboarding partners is a bottleneck in many SaaS rollouts. Seed packs provide a fast, repeatable way to initialize each tenant with the right starting data and settings.</p>
@@ -19745,7 +19874,7 @@ curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=defau
 </div>
 </div>
 <div class="sect1">
-<h2 id="_security_policies_practical_protections_and_proofs">57. Security policies: practical protections and proofs</h2>
+<h2 id="_security_policies_practical_protections_and_proofs">58. Security policies: practical protections and proofs</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Security isn’t just login. The framework’s policy layer turns business rules into enforceable, auditable protections across UI, APIs, and imports/exports.</p>
@@ -19766,7 +19895,7 @@ curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=defau
 </div>
 </div>
 <div class="sect1">
-<h2 id="_a_small_powerful_api_surface_list_query">58. A small, powerful API surface: List + Query</h2>
+<h2 id="_a_small_powerful_api_surface_list_query">59. A small, powerful API surface: List + Query</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Instead of building a unique search endpoint for every screen, Quantum gives you:
@@ -19783,7 +19912,7 @@ curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=defau
 </div>
 </div>
 <div class="sect1">
-<h2 id="_delegated_administration_tenantlevel_user_management">59. Delegated Administration (tenant‑level user management)</h2>
+<h2 id="_delegated_administration_tenantlevel_user_management">60. Delegated Administration (tenant‑level user management)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Empower each organization to run their own house while you keep platform‑wide safety:
@@ -19794,7 +19923,7 @@ curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=defau
 </div>
 </div>
 <div class="sect1">
-<h2 id="_integrations_and_data_management">60. Integrations and data management</h2>
+<h2 id="_integrations_and_data_management">61. Integrations and data management</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Supply chains depend on clean, timely data. Quantum provides:
@@ -19811,7 +19940,7 @@ curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=defau
 </div>
 </div>
 <div class="sect1">
-<h2 id="_endtoend_examples_2">61. End‑to‑end examples</h2>
+<h2 id="_endtoend_examples_2">62. End‑to‑end examples</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>1) Buyer–supplier collaboration on a Purchase Order
@@ -19830,7 +19959,7 @@ curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=defau
 </div>
 </div>
 <div class="sect1">
-<h2 id="_what_you_dont_have_to_build_from_scratch">62. What you don’t have to build from scratch</h2>
+<h2 id="_what_you_dont_have_to_build_from_scratch">63. What you don’t have to build from scratch</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -19857,7 +19986,7 @@ curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=defau
 </div>
 </div>
 <div class="sect1">
-<h2 id="_other_helpful_capabilities_you_get_out_of_the_box">63. Other helpful capabilities you get out of the box</h2>
+<h2 id="_other_helpful_capabilities_you_get_out_of_the_box">64. Other helpful capabilities you get out of the box</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -19884,7 +20013,7 @@ curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=defau
 </div>
 </div>
 <div class="sect1">
-<h2 id="_next_steps_2">64. Next steps</h2>
+<h2 id="_next_steps_2">65. Next steps</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -19908,7 +20037,7 @@ curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=defau
 </div>
 </div>
 <div class="sect1">
-<h2 id="_a_day_in_the_life_from_purchase_order_to_delivery">65. A day in the life: From Purchase Order to Delivery</h2>
+<h2 id="_a_day_in_the_life_from_purchase_order_to_delivery">66. A day in the life: From Purchase Order to Delivery</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This story ties the pieces together in a realistic sequence. We follow a Purchase Order (PO) from creation to delivery, with shared visibility for suppliers and carriers, a clear state graph, and checklist-like Completion Tasks guiding the work.</p>
@@ -19979,15 +20108,15 @@ curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=defau
 </div>
 </div>
 <div class="sect1">
-<h2 id="_appendix_2">66. Appendix</h2>
+<h2 id="_appendix_2">67. Appendix</h2>
 <div class="sectionbody">
 <div class="sect2">
-<h3 id="configuration">66.1. Configuration Reference</h3>
+<h3 id="configuration">67.1. Configuration Reference</h3>
 <div class="paragraph">
 <p>This appendix explains key configuration properties used in Quantum applications, organized by functional area.</p>
 </div>
 <div class="sect3">
-<h4 id="_configuration_basics">66.1.1. Configuration Basics</h4>
+<h4 id="_configuration_basics">67.1.1. Configuration Basics</h4>
 <div class="sect4">
 <h5 id="_file_locations">File Locations</h5>
 <div class="ulist">
@@ -20027,7 +20156,7 @@ auth.jwt.secret=${JWT_SECRET:change-me-in-production}</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_database_configuration">66.1.2. Database Configuration</h4>
+<h4 id="_database_configuration">67.1.2. Database Configuration</h4>
 <div class="sect4">
 <h5 id="_mongodb_connection">MongoDB Connection</h5>
 <div class="listingblock">
@@ -20061,7 +20190,7 @@ quarkus.morphia.create-validators=true</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_authentication_configuration">66.1.3. Authentication Configuration</h4>
+<h4 id="_authentication_configuration">67.1.3. Authentication Configuration</h4>
 <div class="sect4">
 <h5 id="_jwt_provider_3">JWT Provider</h5>
 <div class="listingblock">
@@ -20086,21 +20215,86 @@ auth.jwt.refresh-expiration=1440</code></pre>
 <h5 id="_oidc_provider">OIDC Provider</h5>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="properties"># Enable OIDC
+<pre class="CodeRay highlight"><code data-lang="properties"># Enable OIDC (alongside or instead of built-in JWT)
 quarkus.oidc.enabled=true
-auth.provider=oidc
+auth.provider=custom,oidc          # or just: auth.provider=oidc
 
 # OIDC configuration
 quarkus.oidc.auth-server-url=https://your-provider.com/auth/realms/your-realm
 quarkus.oidc.client-id=your-client-id
 quarkus.oidc.credentials.secret=your-client-secret
-quarkus.oidc.roles.role-claim-path=groups</code></pre>
+quarkus.oidc.token.issuer=https://your-provider.com/auth/realms/your-realm
+
+# Quantum OIDC provider settings
+auth.oidc.provider-name=oidc                    # Provider name (default: oidc)
+auth.oidc.role-claim-path=groups                 # Claim path for roles (default: groups)
+auth.oidc.username-claim=preferred_username      # Claim for username (default: preferred_username)</code></pre>
 </div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_dedicated_cognito_provider">Dedicated Cognito Provider</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="properties"># Enable Cognito provider (full AWS SDK integration)
+auth.provider=cognito
+
+# AWS Cognito settings
+aws.cognito.user-pool-id=${USER_POOL_ID}
+aws.cognito.client-id=${APPLICATION_CLIENT_ID}
+aws.cognito.region=us-east-1
+aws.cognito.jwks.url=https://cognito-idp.${aws.cognito.region}.amazonaws.com/${aws.cognito.user-pool-id}/.well-known/jwks.json</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>See <a href="../user-guide/multiple-auth-providers.html">Multiple Authentication Providers</a> for details on configuring external identity providers.</p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_oauth_server_optional_module">OAuth Server (optional module)</h5>
+<div class="paragraph">
+<p>The <code>quantum-oauth-server</code> module uses the same JWT configuration properties listed above (<code>mp.jwt.verify.issuer</code>, <code>mp.jwt.verify.publickey.location</code>, <code>com.b2bi.jwt.duration</code>). No additional properties are required. The OAuth endpoints (<code>/oauth/authorize</code>, <code>/oauth/token</code>, <code>/oauth/jwks</code>, <code>/.well-known/openid-configuration</code>, <code>/oauth/userinfo</code>) activate automatically when the module is on the classpath.</p>
+</div>
+<div class="paragraph">
+<p>OAuth clients are registered in the <code>oauth_clients</code> MongoDB collection. Authorization codes are stored in <code>oauth_authorization_codes</code> with a 5-minute TTL index for automatic cleanup.</p>
+</div>
+<div class="paragraph">
+<p>See <a href="../user-guide/oauth-server.html">OAuth Server Module</a> for client registration and integration examples.</p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_email_templates_postmark">Email Templates (Postmark)</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="properties"># Postmark API key (required for email delivery)
+postmark.api-key=${POSTMARK_API_KEY}
+
+# Default sender address (required for email delivery)
+postmark.default-from-email-address=noreply@yourdomain.com</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If either property is missing, the <code>PostmarkEmailSender</code> logs an info message and skips delivery, allowing development environments to run without Postmark credentials.</p>
+</div>
+<div class="paragraph">
+<p>Classpath templates are loaded from <code>templates/email/{templateKey}/</code> with files <code>subject.txt</code>, <code>body.html</code>, and <code>body.txt</code>. See <a href="../user-guide/email-templates.html">Email Templates</a> for details.</p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_shared_link_signing">Shared Link Signing</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="properties"># HMAC-SHA256 secret for signing share link tokens (required for link signing)
+share.link.signing.secret=${SHARE_LINK_SECRET}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If the secret is not configured, <code>LinkSigner.isEnabled()</code> returns <code>false</code> and link signing/verification is disabled. See <a href="../user-guide/shared-links.html">Shared Links</a> for details.</p>
 </div>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_quantum_framework_configuration">66.1.4. Quantum Framework Configuration</h4>
+<h4 id="_quantum_framework_configuration">67.1.4. Quantum Framework Configuration</h4>
 <div class="sect4">
 <h5 id="_database_migration">Database Migration</h5>
 <div class="listingblock">
@@ -20200,7 +20394,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_see_also_3">66.1.5. See Also</h4>
+<h4 id="_see_also_3">67.1.5. See Also</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -20213,7 +20407,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_ontology_configuration_optional">66.1.6. Ontology Configuration (optional)</h4>
+<h4 id="_ontology_configuration_optional">67.1.6. Ontology Configuration (optional)</h4>
 <div class="paragraph">
 <p>Enablement</p>
 </div>
@@ -20304,7 +20498,7 @@ quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pr
 </div>
 </div>
 <div class="sect3">
-<h4 id="_key_quarkus_capabilities">66.1.7. Key Quarkus Capabilities</h4>
+<h4 id="_key_quarkus_capabilities">67.1.7. Key Quarkus Capabilities</h4>
 <div class="sect4">
 <h5 id="_developer_experience">Developer Experience</h5>
 <div class="ulist">
@@ -20361,7 +20555,7 @@ quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pr
 </div>
 </div>
 <div class="sect3">
-<h4 id="_arc_quarkus_cdi">66.1.8. Arc (Quarkus CDI)</h4>
+<h4 id="_arc_quarkus_cdi">67.1.8. Arc (Quarkus CDI)</h4>
 <div class="paragraph">
 <p>Arc is Quarkus' CDI implementation, focused on build-time analysis and small runtime overhead.</p>
 </div>
@@ -20431,7 +20625,7 @@ quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pr
 </div>
 </div>
 <div class="sect3">
-<h4 id="_native_compilation_with_graalvm">66.1.9. Native Compilation with GraalVM</h4>
+<h4 id="_native_compilation_with_graalvm">67.1.9. Native Compilation with GraalVM</h4>
 <div class="sect4">
 <h5 id="_benefits_2">Benefits</h5>
 <div class="ulist">
@@ -20481,7 +20675,7 @@ quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pr
 </div>
 </div>
 <div class="sect3">
-<h4 id="_extension_ecosystem">66.1.10. Extension Ecosystem</h4>
+<h4 id="_extension_ecosystem">67.1.10. Extension Ecosystem</h4>
 <div class="paragraph">
 <p>Quarkus provides extensions for:
 - <strong>Data</strong>: MongoDB, PostgreSQL, Redis, Elasticsearch
@@ -20492,7 +20686,7 @@ quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pr
 </div>
 </div>
 <div class="sect3">
-<h4 id="_quantums_quarkus_integration">66.1.11. Quantum&#8217;s Quarkus Integration</h4>
+<h4 id="_quantums_quarkus_integration">67.1.11. Quantum&#8217;s Quarkus Integration</h4>
 <div class="paragraph">
 <p>Quantum leverages Quarkus for:
 - <strong>CDI</strong>: Dependency injection for repositories and services
@@ -20504,7 +20698,7 @@ quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pr
 </div>
 </div>
 <div class="sect3">
-<h4 id="_getting_started_with_quarkus">66.1.12. Getting Started with Quarkus</h4>
+<h4 id="_getting_started_with_quarkus">67.1.12. Getting Started with Quarkus</h4>
 <div class="sect4">
 <h5 id="_create_project">Create Project</h5>
 <div class="listingblock">
@@ -20535,7 +20729,7 @@ quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pr
 </div>
 </div>
 <div class="sect3">
-<h4 id="_see_also_4">66.1.13. See Also</h4>
+<h4 id="_see_also_4">67.1.13. See Also</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -20552,7 +20746,7 @@ quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pr
 </div>
 </div>
 <div class="sect3">
-<h4 id="_core_concepts">66.1.14. Core Concepts</h4>
+<h4 id="_core_concepts">67.1.14. Core Concepts</h4>
 <div class="dlist">
 <dl>
 <dt class="hdlist1"><strong>BaseModel</strong></dt>
@@ -20583,7 +20777,7 @@ quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pr
 </div>
 </div>
 <div class="sect3">
-<h4 id="_multi_tenancy">66.1.15. Multi-Tenancy</h4>
+<h4 id="_multi_tenancy">67.1.15. Multi-Tenancy</h4>
 <div class="dlist">
 <dl>
 <dt class="hdlist1"><strong>Tenant</strong></dt>
@@ -20606,7 +20800,7 @@ quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pr
 </div>
 </div>
 <div class="sect3">
-<h4 id="_security_2">66.1.16. Security</h4>
+<h4 id="_security_2">67.1.16. Security</h4>
 <div class="dlist">
 <dl>
 <dt class="hdlist1"><strong>Principal</strong></dt>
@@ -20629,7 +20823,7 @@ quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pr
 </div>
 </div>
 <div class="sect3">
-<h4 id="_data_and_persistence">66.1.17. Data and Persistence</h4>
+<h4 id="_data_and_persistence">67.1.17. Data and Persistence</h4>
 <div class="dlist">
 <dl>
 <dt class="hdlist1"><strong>MorphiaRepo</strong></dt>
@@ -20652,7 +20846,7 @@ quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pr
 </div>
 </div>
 <div class="sect3">
-<h4 id="_rest_and_apis">66.1.18. REST and APIs</h4>
+<h4 id="_rest_and_apis">67.1.18. REST and APIs</h4>
 <div class="dlist">
 <dl>
 <dt class="hdlist1"><strong>BaseResource</strong></dt>
@@ -20675,7 +20869,7 @@ quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pr
 </div>
 </div>
 <div class="sect3">
-<h4 id="_framework_components">66.1.19. Framework Components</h4>
+<h4 id="_framework_components">67.1.19. Framework Components</h4>
 <div class="dlist">
 <dl>
 <dt class="hdlist1"><strong>ValidationInterceptor</strong></dt>
@@ -20698,7 +20892,7 @@ quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pr
 </div>
 </div>
 <div class="sect3">
-<h4 id="_annotations">66.1.20. Annotations</h4>
+<h4 id="_annotations">67.1.20. Annotations</h4>
 <div class="dlist">
 <dl>
 <dt class="hdlist1"><strong>@FunctionalMapping</strong></dt>
@@ -20721,7 +20915,7 @@ quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pr
 </div>
 </div>
 <div class="sect3">
-<h4 id="_external_integrations">66.1.21. External Integrations</h4>
+<h4 id="_external_integrations">67.1.21. External Integrations</h4>
 <div class="dlist">
 <dl>
 <dt class="hdlist1"><strong>JWT Provider</strong></dt>
@@ -20744,7 +20938,7 @@ quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pr
 </div>
 </div>
 <div class="sect3">
-<h4 id="_ontology_optional_feature">66.1.22. Ontology (optional feature)</h4>
+<h4 id="_ontology_optional_feature">67.1.22. Ontology (optional feature)</h4>
 <div class="dlist">
 <dl>
 <dt class="hdlist1"><strong>Ontology</strong></dt>
@@ -20785,7 +20979,7 @@ quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pr
 <div id="footer">
 <div id="footer-text">
 Version 1.3.0-SNAPSHOT<br>
-Last updated 2026-02-20 12:19:28 -0500
+Last updated 2026-02-20 11:19:28 -0600
 </div>
 </div>
 </body>

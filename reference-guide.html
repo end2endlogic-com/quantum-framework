@@ -440,7 +440,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <h1>Quantum Reference Guide</h1>
 <div class="details">
 <span id="revnumber">version 1.3.0-SNAPSHOT,</span>
-<span id="revdate">2026-03-17T21:45:24Z</span>
+<span id="revdate">2026-03-24T00:36:07Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -450,9 +450,10 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_apis_and_queries">3. APIs and Queries</a></li>
 <li><a href="#_security">4. Security</a></li>
 <li><a href="#_data_seeding">5. Data Seeding</a></li>
-<li><a href="#_operations">6. Operations</a></li>
-<li><a href="#_samples">7. Samples</a></li>
-<li><a href="#_appendix">8. Appendix</a></li>
+<li><a href="#_email_and_notifications">6. Email and Notifications</a></li>
+<li><a href="#_operations">7. Operations</a></li>
+<li><a href="#_samples">8. Samples</a></li>
+<li><a href="#_appendix">9. Appendix</a></li>
 </ul>
 </div>
 </div>
@@ -543,10 +544,16 @@ Use it to jump directly to a subject and then explore details in context.</p>
 <p>Service tokens for integrations: <a href="./auth.html#service-tokens">Service Tokens</a> (MCP servers, cron jobs, CI/CD, partner APIs)</p>
 </li>
 <li>
-<p>Multiple auth providers and OIDC: <a href="./multiple-auth-providers.html">Multiple Authentication Providers</a> (issuer resolution, per-tenant key pairs)</p>
+<p>Multiple auth providers: <a href="./multiple-auth-providers.html">Multiple Authentication Providers</a> (issuer resolution, per-tenant key pairs, external identity providers)</p>
 </li>
 <li>
 <p>Key pair management: <a href="./multiple-auth-providers.html#per-tenant-key-pairs">Key Pair Management</a> (default keys module, configurable paths, production setup)</p>
+</li>
+<li>
+<p>Shared links: <a href="./shared-links.html">Shared Links</a> (time-bound link sharing, HMAC signing, access logging, revocation)</p>
+</li>
+<li>
+<p>OAuth server: <a href="./oauth-server.html">OAuth Server Module</a> (built-in OAuth 2.0/OIDC authorization server, ChatGPT/Gemini/Grok integration, no external IdP needed)</p>
 </li>
 <li>
 <p>Permissions: <a href="../tutorials/quantum-tutorial.html#sec-security">Permissions</a></p>
@@ -583,7 +590,19 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_operations">6. Operations</h2>
+<h2 id="_email_and_notifications">6. Email and Notifications</h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Email templates: <a href="./email-templates.html">Email Templates</a> (Qute rendering, classpath defaults, realm overrides, Postmark delivery)</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_operations">7. Operations</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -601,7 +620,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_samples">7. Samples</h2>
+<h2 id="_samples">8. Samples</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -613,7 +632,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_appendix">8. Appendix</h2>
+<h2 id="_appendix">9. Appendix</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>For configuration, Quarkus integration details, and glossary, see the Appendix in the main index.</p>
@@ -624,7 +643,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 <div id="footer">
 <div id="footer-text">
 Version 1.3.0-SNAPSHOT<br>
-Last updated 2026-03-16 19:51:21 -0400
+Last updated 2026-03-23 16:52:33 -0500
 </div>
 </div>
 </body>

@@ -648,16 +648,81 @@ auth.jwt.refresh-expiration=1440</code></pre>
 <h5 id="_oidc_provider">OIDC Provider</h5>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="properties"># Enable OIDC
+<pre class="CodeRay highlight"><code data-lang="properties"># Enable OIDC (alongside or instead of built-in JWT)
 quarkus.oidc.enabled=true
-auth.provider=oidc
+auth.provider=custom,oidc          # or just: auth.provider=oidc
 
 # OIDC configuration
 quarkus.oidc.auth-server-url=https://your-provider.com/auth/realms/your-realm
 quarkus.oidc.client-id=your-client-id
 quarkus.oidc.credentials.secret=your-client-secret
-quarkus.oidc.roles.role-claim-path=groups</code></pre>
+quarkus.oidc.token.issuer=https://your-provider.com/auth/realms/your-realm
+
+# Quantum OIDC provider settings
+auth.oidc.provider-name=oidc                    # Provider name (default: oidc)
+auth.oidc.role-claim-path=groups                 # Claim path for roles (default: groups)
+auth.oidc.username-claim=preferred_username      # Claim for username (default: preferred_username)</code></pre>
 </div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_dedicated_cognito_provider">Dedicated Cognito Provider</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="properties"># Enable Cognito provider (full AWS SDK integration)
+auth.provider=cognito
+
+# AWS Cognito settings
+aws.cognito.user-pool-id=${USER_POOL_ID}
+aws.cognito.client-id=${APPLICATION_CLIENT_ID}
+aws.cognito.region=us-east-1
+aws.cognito.jwks.url=https://cognito-idp.${aws.cognito.region}.amazonaws.com/${aws.cognito.user-pool-id}/.well-known/jwks.json</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>See <a href="../user-guide/multiple-auth-providers.html">Multiple Authentication Providers</a> for details on configuring external identity providers.</p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_oauth_server_optional_module">OAuth Server (optional module)</h5>
+<div class="paragraph">
+<p>The <code>quantum-oauth-server</code> module uses the same JWT configuration properties listed above (<code>mp.jwt.verify.issuer</code>, <code>mp.jwt.verify.publickey.location</code>, <code>com.b2bi.jwt.duration</code>). No additional properties are required. The OAuth endpoints (<code>/oauth/authorize</code>, <code>/oauth/token</code>, <code>/oauth/jwks</code>, <code>/.well-known/openid-configuration</code>, <code>/oauth/userinfo</code>) activate automatically when the module is on the classpath.</p>
+</div>
+<div class="paragraph">
+<p>OAuth clients are registered in the <code>oauth_clients</code> MongoDB collection. Authorization codes are stored in <code>oauth_authorization_codes</code> with a 5-minute TTL index for automatic cleanup.</p>
+</div>
+<div class="paragraph">
+<p>See <a href="../user-guide/oauth-server.html">OAuth Server Module</a> for client registration and integration examples.</p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_email_templates_postmark">Email Templates (Postmark)</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="properties"># Postmark API key (required for email delivery)
+postmark.api-key=${POSTMARK_API_KEY}
+
+# Default sender address (required for email delivery)
+postmark.default-from-email-address=noreply@yourdomain.com</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If either property is missing, the <code>PostmarkEmailSender</code> logs an info message and skips delivery, allowing development environments to run without Postmark credentials.</p>
+</div>
+<div class="paragraph">
+<p>Classpath templates are loaded from <code>templates/email/{templateKey}/</code> with files <code>subject.txt</code>, <code>body.html</code>, and <code>body.txt</code>. See <a href="../user-guide/email-templates.html">Email Templates</a> for details.</p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_shared_link_signing">Shared Link Signing</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="properties"># HMAC-SHA256 secret for signing share link tokens (required for link signing)
+share.link.signing.secret=${SHARE_LINK_SECRET}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If the secret is not configured, <code>LinkSigner.isEnabled()</code> returns <code>false</code> and link signing/verification is disabled. See <a href="../user-guide/shared-links.html">Shared Links</a> for details.</p>
 </div>
 </div>
 </div>
@@ -866,7 +931,7 @@ quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pr
 <div id="footer">
 <div id="footer-text">
 Version 1.3.0-SNAPSHOT<br>
-Last updated 2026-03-16 20:08:13 -0400
+Last updated 2026-03-23 16:52:33 -0500
 </div>
 </div>
 </body>
