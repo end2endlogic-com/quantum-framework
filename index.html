@@ -529,7 +529,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Quantum Framework Documentation</h1>
 <div class="details">
 <span id="revnumber">version 1.3.0-SNAPSHOT,</span>
-<span id="revdate">2026-03-24T00:36:07Z</span>
+<span id="revdate">2026-04-01T18:32:14Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -602,7 +602,19 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_functional_areadomain_in_rulecontext_permission_language">13.4. Functional Area/Domain in RuleContext Permission Language</a></li>
 <li><a href="#_stategraphs_on_models">13.5. StateGraphs on Models</a></li>
 <li><a href="#_state_graph_dot">13.6. State Graph (DOT)</a></li>
-<li><a href="#_completiontasks_and_completiontaskgroups">13.7. CompletionTasks and CompletionTaskGroups</a></li>
+<li><a href="#completion-tasks">13.7. CompletionTasks and CompletionTaskGroups</a>
+<ul class="sectlevel3">
+<li><a href="#_when_to_use_them">13.7.1. When to use them</a></li>
+<li><a href="#_core_entities">13.7.2. Core entities</a></li>
+<li><a href="#_what_the_framework_manages_vs_what_your_application_manages">13.7.3. What the framework manages vs. what your application manages</a></li>
+<li><a href="#_state_model">13.7.4. State model</a></li>
+<li><a href="#_rest_api_surface">13.7.5. REST API surface</a></li>
+<li><a href="#_request_and_response_payloads">13.7.6. Request and response payloads</a></li>
+<li><a href="#_completion_event_stream">13.7.7. Completion event stream</a></li>
+<li><a href="#_typical_orchestration_flow">13.7.8. Typical orchestration flow</a></li>
+<li><a href="#_best_practices">13.7.9. Best practices</a></li>
+</ul>
+</li>
 <li><a href="#_references_and_entityreference">13.8. References and EntityReference</a></li>
 <li><a href="#_tracking_references_with_trackreferences_and_delete_semantics">13.9. Tracking References with @TrackReferences and Delete Semantics</a>
 <ul class="sectlevel3">
@@ -619,6 +631,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_one_tenant_per_database_in_a_mongodb_cluster">14.1.1. One Tenant per Database (in a MongoDB Cluster)</a></li>
 <li><a href="#_many_tenants_in_one_database_shared_database">14.1.2. Many Tenants in One Database (Shared Database)</a></li>
 <li><a href="#_freemium_and_trial_tenants">14.1.3. Freemium and Trial Tenants</a></li>
+<li><a href="#tenant-onboarding-and-invites">14.1.4. Tenant Onboarding and Access Invites</a></li>
 </ul>
 </li>
 </ul>
@@ -743,56 +756,72 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_priorities">22.5. Priorities</a></li>
 <li><a href="#_grant_based_vs_deny_based_rule_sets">22.6. Grant-based vs Deny-based Rule Sets</a></li>
 <li><a href="#_feature_flags_variants_and_target_rules">22.7. Feature Flags, Variants, and Target Rules</a></li>
-<li><a href="#_multiple_matching_rulebases">22.8. Multiple Matching RuleBases</a></li>
-<li><a href="#_identity_and_role_matching">22.9. Identity and Role Matching</a>
+<li><a href="#scoped-action-enablement">22.8. Scoped Action Enablement and Dependency Tracking</a>
 <ul class="sectlevel3">
-<li><a href="#_how_roles_are_defined_for_an_identity_role_sources_and_resolution">22.9.1. How roles are defined for an identity (role sources and resolution)</a></li>
+<li><a href="#_core_idea_the_same_scoped_action_tuple_stays_canonical">22.8.1. Core idea: the same scoped action tuple stays canonical</a></li>
+<li><a href="#_the_three_answers_returned_by_the_framework">22.8.2. The three answers returned by the framework</a></li>
+<li><a href="#_runtime_models">22.8.3. Runtime models</a></li>
+<li><a href="#_rest_api">22.8.4. REST API</a></li>
+<li><a href="#_manifest_driven_dependency_relationships">22.8.5. Manifest-driven dependency relationships</a></li>
+<li><a href="#_resolver_spi">22.8.6. Resolver SPI</a></li>
+<li><a href="#_built_in_oss_dependency_types">22.8.7. Built-in OSS dependency types</a></li>
+<li><a href="#_missing_manifests_and_unsupported_dependency_types">22.8.8. Missing manifests and unsupported dependency types</a></li>
+<li><a href="#_example_contributor">22.8.9. Example contributor</a></li>
+<li><a href="#_relationship_to_policies_feature_flags_and_ui_actions">22.8.10. Relationship to policies, feature flags, and UI actions</a></li>
+<li><a href="#_enterprise_extensions">22.8.11. Enterprise extensions</a></li>
+<li><a href="#_guidance">22.8.12. Guidance</a></li>
 </ul>
 </li>
-<li><a href="#_example_scenarios">22.10. Example Scenarios</a></li>
-<li><a href="#_operational_tips">22.11. Operational Tips</a></li>
-<li><a href="#_how_uiactions_and_defaultuiactions_are_calculated">22.12. How UIActions and DefaultUIActions are calculated</a></li>
-<li><a href="#_how_this_integrates_end_to_end">22.13. How This Integrates End-to-End</a></li>
-<li><a href="#_administering_policies_via_rest_policyresource">22.14. Administering Policies via REST (PolicyResource)</a>
+<li><a href="#_multiple_matching_rulebases">22.9. Multiple Matching RuleBases</a></li>
+<li><a href="#_identity_and_role_matching">22.10. Identity and Role Matching</a>
 <ul class="sectlevel3">
-<li><a href="#_model_shape_policy">22.14.1. Model shape (Policy)</a></li>
-<li><a href="#_how_rule_contributed_filters_work_andfilterstring_orfilterstring_joinop">22.14.2. How rule-contributed filters work (andFilterString, orFilterString, joinOp)</a></li>
-<li><a href="#_accesslistresolvers_spi_for_list_based_access">22.14.3. AccessListResolvers (SPI) for list-based access</a></li>
-<li><a href="#_principalcontextpropertiesresolver_spi_for_custom_principal_properties">22.14.4. PrincipalContextPropertiesResolver (SPI) for custom principal properties</a></li>
-<li><a href="#_endpoints">22.14.5. Endpoints</a></li>
-<li><a href="#_examples">22.14.6. Examples</a></li>
-<li><a href="#_how_changes_affect_rule_bases_and_enforcement">22.14.7. How changes affect rule bases and enforcement</a></li>
+<li><a href="#_how_roles_are_defined_for_an_identity_role_sources_and_resolution">22.10.1. How roles are defined for an identity (role sources and resolution)</a></li>
 </ul>
 </li>
-<li><a href="#_realm_override_x_realm_and_impersonation_x_impersonate">22.15. Realm override (X-Realm) and Impersonation (X-Impersonate)</a>
+<li><a href="#_example_scenarios">22.11. Example Scenarios</a></li>
+<li><a href="#_operational_tips">22.12. Operational Tips</a></li>
+<li><a href="#_how_uiactions_and_defaultuiactions_are_calculated">22.13. How UIActions and DefaultUIActions are calculated</a></li>
+<li><a href="#_how_this_integrates_end_to_end">22.14. How This Integrates End-to-End</a></li>
+<li><a href="#_administering_policies_via_rest_policyresource">22.15. Administering Policies via REST (PolicyResource)</a>
 <ul class="sectlevel3">
-<li><a href="#_what_they_do_at_a_glance">22.15.1. What they do (at a glance)</a></li>
-<li><a href="#_how_the_headers_integrate_with_permission_evaluation">22.15.2. How the headers integrate with permission evaluation</a></li>
-<li><a href="#_required_credential_configuration_credentialuseridpassword">22.15.3. Required credential configuration (CredentialUserIdPassword)</a></li>
-<li><a href="#_end_to_end_behavior_from_securityfilter_reference">22.15.4. End-to-end behavior from SecurityFilter (reference)</a></li>
-<li><a href="#_practical_differences_and_use_cases">22.15.5. Practical differences and use cases</a></li>
-<li><a href="#_examples_2">22.15.6. Examples</a></li>
+<li><a href="#_model_shape_policy">22.15.1. Model shape (Policy)</a></li>
+<li><a href="#_how_rule_contributed_filters_work_andfilterstring_orfilterstring_joinop">22.15.2. How rule-contributed filters work (andFilterString, orFilterString, joinOp)</a></li>
+<li><a href="#_accesslistresolvers_spi_for_list_based_access">22.15.3. AccessListResolvers (SPI) for list-based access</a></li>
+<li><a href="#_principalcontextpropertiesresolver_spi_for_custom_principal_properties">22.15.4. PrincipalContextPropertiesResolver (SPI) for custom principal properties</a></li>
+<li><a href="#_endpoints">22.15.5. Endpoints</a></li>
+<li><a href="#_examples">22.15.6. Examples</a></li>
+<li><a href="#_how_changes_affect_rule_bases_and_enforcement">22.15.7. How changes affect rule bases and enforcement</a></li>
 </ul>
 </li>
-<li><a href="#_data_domain_assignment_on_create_domaincontext_and_datadomainpolicy">22.16. Data domain assignment on create: DomainContext and DataDomainPolicy</a>
+<li><a href="#_realm_override_x_realm_and_impersonation_x_impersonate">22.16. Realm override (X-Realm) and Impersonation (X-Impersonate)</a>
 <ul class="sectlevel3">
-<li><a href="#_the_problem_this_solves_and_why_it_matters">22.16.1. The problem this solves (and why it matters)</a></li>
-<li><a href="#_key_concepts_recap_domaincontext_and_datadomain">22.16.2. Key concepts recap: DomainContext and DataDomain</a></li>
-<li><a href="#_the_default_policy_do_nothing_and_it_works">22.16.3. The default policy (do nothing and it works)</a></li>
-<li><a href="#_policy_scopes_principalattached_vs_global">22.16.4. Policy scopes: principal‑attached vs. global</a></li>
-<li><a href="#_the_policy_map_and_matching">22.16.5. The policy map and matching</a></li>
-<li><a href="#_how_the_resolver_works">22.16.6. How the resolver works</a></li>
-<li><a href="#_when_would_you_want_a_nonglobal_policy">22.16.7. When would you want a non‑global policy?</a></li>
-<li><a href="#_relation_to_tenancy_models">22.16.8. Relation to tenancy models</a></li>
-<li><a href="#_authoring_tips">22.16.9. Authoring tips</a></li>
-<li><a href="#_api_pointers">22.16.10. API pointers</a></li>
-<li><a href="#ontology-permissions">22.16.11. Ontology in Permission Rules (optional)</a></li>
-<li><a href="#label-resolution-spi">22.16.12. Label resolution SPI and hasLabel() in rules</a></li>
+<li><a href="#_what_they_do_at_a_glance">22.16.1. What they do (at a glance)</a></li>
+<li><a href="#_how_the_headers_integrate_with_permission_evaluation">22.16.2. How the headers integrate with permission evaluation</a></li>
+<li><a href="#_required_credential_configuration_credentialuseridpassword">22.16.3. Required credential configuration (CredentialUserIdPassword)</a></li>
+<li><a href="#_end_to_end_behavior_from_securityfilter_reference">22.16.4. End-to-end behavior from SecurityFilter (reference)</a></li>
+<li><a href="#_practical_differences_and_use_cases">22.16.5. Practical differences and use cases</a></li>
+<li><a href="#_examples_2">22.16.6. Examples</a></li>
 </ul>
 </li>
-<li><a href="#script-helpers-reference">22.17. Script Helpers reference (when enabled)</a>
+<li><a href="#_data_domain_assignment_on_create_domaincontext_and_datadomainpolicy">22.17. Data domain assignment on create: DomainContext and DataDomainPolicy</a>
 <ul class="sectlevel3">
-<li><a href="#security-annotations">22.17.1. Security Annotations: FunctionalMapping and FunctionalAction</a></li>
+<li><a href="#_the_problem_this_solves_and_why_it_matters">22.17.1. The problem this solves (and why it matters)</a></li>
+<li><a href="#_key_concepts_recap_domaincontext_and_datadomain">22.17.2. Key concepts recap: DomainContext and DataDomain</a></li>
+<li><a href="#_the_default_policy_do_nothing_and_it_works">22.17.3. The default policy (do nothing and it works)</a></li>
+<li><a href="#_policy_scopes_principalattached_vs_global">22.17.4. Policy scopes: principal‑attached vs. global</a></li>
+<li><a href="#_the_policy_map_and_matching">22.17.5. The policy map and matching</a></li>
+<li><a href="#_how_the_resolver_works">22.17.6. How the resolver works</a></li>
+<li><a href="#_when_would_you_want_a_nonglobal_policy">22.17.7. When would you want a non‑global policy?</a></li>
+<li><a href="#_relation_to_tenancy_models">22.17.8. Relation to tenancy models</a></li>
+<li><a href="#_authoring_tips">22.17.9. Authoring tips</a></li>
+<li><a href="#_api_pointers">22.17.10. API pointers</a></li>
+<li><a href="#ontology-permissions">22.17.11. Ontology in Permission Rules (optional)</a></li>
+<li><a href="#label-resolution-spi">22.17.12. Label resolution SPI and hasLabel() in rules</a></li>
+</ul>
+</li>
+<li><a href="#script-helpers-reference">22.18. Script Helpers reference (when enabled)</a>
+<ul class="sectlevel3">
+<li><a href="#security-annotations">22.18.1. Security Annotations: FunctionalMapping and FunctionalAction</a></li>
 </ul>
 </li>
 </ul>
@@ -2603,126 +2632,508 @@ These can be used to author reusable filters or to record audit decisions by are
 </div>
 </div>
 <div class="sect2">
-<h3 id="_completiontasks_and_completiontaskgroups">13.7. CompletionTasks and CompletionTaskGroups</h3>
+<h3 id="completion-tasks">13.7. CompletionTasks and CompletionTaskGroups</h3>
 <div class="paragraph">
-<p>CompletionTasks and CompletionTaskGroups provide a simple, persistent way to track a series of work items that need to be completed, either by background processes or external systems. Use them when you need durable progress tracking across restarts and an auditable record of outcomes.</p>
+<p>CompletionTasks and CompletionTaskGroups provide a small persistence-backed contract for tracking work that finishes later. They are useful when a request starts work immediately but the actual completion happens in a worker, another service, or a human-in-the-loop integration.</p>
 </div>
 <div class="paragraph">
-<p>Key models:</p>
+<p>This section documents the concrete structures and runtime behavior, because other guides reference "completion tasks" as a pattern but do not define the payloads and lifecycle precisely.</p>
+</div>
+<div class="sect3">
+<h4 id="_when_to_use_them">13.7.1. When to use them</h4>
+<div class="paragraph">
+<p>Use CompletionTasks when you need:</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p>CompletionTask: an individual unit of work with fields like status, timestamps, and optional result/details.</p>
+<p>A durable record of work that may outlive the initiating HTTP request</p>
 </li>
 <li>
-<p>CompletionTaskGroup: a container that represents a cohort of tasks progressing toward completion.</p>
+<p>A simple per-item status model with timestamps and outcome text</p>
+</li>
+<li>
+<p>A way to group related tasks under one business operation</p>
+</li>
+<li>
+<p>A lightweight event stream so clients can react when a task completes</p>
 </li>
 </ul>
 </div>
 <div class="paragraph">
-<p>Model overview:</p>
+<p>Do not treat them as a workflow engine. The framework does not infer dependencies, retries, compensation rules, or aggregate group state transitions for you.</p>
 </div>
+</div>
+<div class="sect3">
+<h4 id="_core_entities">13.7.2. Core entities</h4>
+<div class="paragraph">
+<p>Both entities extend <code>BaseModel</code>, so they inherit the common Quantum fields such as <code>id</code>, <code>refName</code>, <code>displayName</code>, <code>dataDomain</code>, <code>activeStatus</code>, <code>auditInfo</code>, and <code>version</code>.</p>
+</div>
+<div class="paragraph">
+<p>The inherited fields matter here in two ways:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>id</code> is the record identifier used by the REST endpoints and emitted in completion events.</p>
+</li>
+<li>
+<p><code>refName</code>, <code>displayName</code>, and <code>dataDomain</code> are still available for your application-level correlation and multi-tenant scoping, even though they are not task-specific.</p>
+</li>
+</ul>
+</div>
+<div class="sect4">
+<h5 id="_completiontask">CompletionTask</h5>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="comment">// Individual task</span>
-<span class="annotation">@Entity</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">completionTask</span><span class="delimiter">&quot;</span></span>)
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@Entity</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">completionTask</span><span class="delimiter">&quot;</span></span>)
 <span class="directive">public</span> <span class="type">class</span> <span class="class">CompletionTask</span> <span class="directive">extends</span> BaseModel {
   <span class="directive">public</span> <span class="type">enum</span> Status { PENDING, RUNNING, SUCCESS, FAILED }
 
   <span class="annotation">@Reference</span>
-  CompletionTaskGroup group;   <span class="comment">// optional grouping</span>
-  <span class="predefined-type">String</span> details;              <span class="comment">// human-readable context (what/why)</span>
-  Status status;               <span class="comment">// PENDING -&gt; RUNNING -&gt; (SUCCESS|FAILED)</span>
-  <span class="predefined-type">Date</span> createdDate;            <span class="comment">// when the task was created</span>
-  <span class="predefined-type">Date</span> completedDate;          <span class="comment">// set when terminal (SUCCESS/FAILED)</span>
-  <span class="predefined-type">String</span> result;               <span class="comment">// output, message, or error summary</span>
+  CompletionTaskGroup group;
 
-  <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> bmFunctionalArea()   { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">TASK</span><span class="delimiter">&quot;</span></span>; }
-  <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> bmFunctionalDomain() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">COMPLETION_TASK</span><span class="delimiter">&quot;</span></span>; }
-}
-
-<span class="comment">// Group of tasks</span>
-<span class="annotation">@Entity</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">completionTaskGroup</span><span class="delimiter">&quot;</span></span>)
+  <span class="predefined-type">String</span> details;
+  Status status;
+  <span class="predefined-type">Date</span> createdDate;
+  <span class="predefined-type">Date</span> completedDate;
+  <span class="predefined-type">String</span> result;
+}</code></pre>
+</div>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 20%;">
+<col style="width: 60%;">
+<col style="width: 20%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Field</th>
+<th class="tableblock halign-left valign-top">Meaning</th>
+<th class="tableblock halign-left valign-top">Set by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>group</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Optional Morphia reference to the parent <code>CompletionTaskGroup</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Client on create, or the <code>create/{groupId}</code> endpoint</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>details</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Human-readable explanation of the unit of work, usually "what this task is doing"</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Client/application</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>status</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Task execution state: <code>PENDING</code>, <code>RUNNING</code>, <code>SUCCESS</code>, <code>FAILED</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Server sets <code>PENDING</code> on create; application or API updates afterward</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>createdDate</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Timestamp when the task record was created</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Server</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>completedDate</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Timestamp written when the task is completed through the completion endpoint</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Server</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>result</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Outcome text, response summary, or error message</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Application or completion endpoint caller</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect4">
+<h5 id="_completiontaskgroup">CompletionTaskGroup</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@Entity</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">completionTaskGroup</span><span class="delimiter">&quot;</span></span>)
 <span class="directive">public</span> <span class="type">class</span> <span class="class">CompletionTaskGroup</span> <span class="directive">extends</span> BaseModel {
   <span class="directive">public</span> <span class="type">enum</span> Status { NEW, RUNNING, COMPLETE }
 
-  <span class="predefined-type">String</span> description;   <span class="comment">// e.g., &quot;Onboarding: create resources&quot;</span>
-  Status status;        <span class="comment">// reflects overall progress of the group</span>
-  <span class="predefined-type">Date</span> createdDate;     <span class="comment">// when the group was created</span>
-  <span class="predefined-type">Date</span> completedDate;   <span class="comment">// when the group finished</span>
-
-  <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> bmFunctionalArea()   { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">TASK</span><span class="delimiter">&quot;</span></span>; }
-  <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> bmFunctionalDomain() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">COMPLETION_TASK_GROUP</span><span class="delimiter">&quot;</span></span>; }
+  <span class="predefined-type">String</span> description;
+  Status status;
+  <span class="predefined-type">Date</span> createdDate;
+  <span class="predefined-type">Date</span> completedDate;
+}</code></pre>
+</div>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 20%;">
+<col style="width: 60%;">
+<col style="width: 20%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Field</th>
+<th class="tableblock halign-left valign-top">Meaning</th>
+<th class="tableblock halign-left valign-top">Set by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>description</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Human-readable summary of the batch, workflow, or request that owns the tasks</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Client/application</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>status</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Coarse aggregate state: <code>NEW</code>, <code>RUNNING</code>, <code>COMPLETE</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Server sets <code>NEW</code> on create; application owns later transitions</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>createdDate</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Timestamp when the group was created</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Server</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>completedDate</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Timestamp for when your application considers the group finished</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Application</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_what_the_framework_manages_vs_what_your_application_manages">13.7.3. What the framework manages vs. what your application manages</h4>
+<div class="paragraph">
+<p>The code-level behavior is intentionally small:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>CompletionTaskGroupRepo.createGroup(&#8230;&#8203;)</code> always sets <code>status=NEW</code> and <code>createdDate=now</code>.</p>
+</li>
+<li>
+<p><code>CompletionTaskRepo.createTask(&#8230;&#8203;)</code> always sets <code>status=PENDING</code> and <code>createdDate=now</code>.</p>
+</li>
+<li>
+<p><code>CompletionTaskRepo.completeTask(&#8230;&#8203;)</code> sets <code>status</code>, <code>completedDate=now</code>, and <code>result</code>.</p>
+</li>
+<li>
+<p>If the task belongs to a group, task completion emits an SSE message for that group.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The framework does not automatically:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Change a group from <code>NEW</code> to <code>RUNNING</code></p>
+</li>
+<li>
+<p>Mark a group <code>COMPLETE</code> when all child tasks finish</p>
+</li>
+<li>
+<p>Count completed tasks or calculate percentages</p>
+</li>
+<li>
+<p>Retry failed tasks</p>
+</li>
+<li>
+<p>Validate that only terminal states are used with the completion endpoint</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>That means group rollup is application-owned. If you want <code>CompletionTaskGroup.status</code> to represent aggregate progress, update it explicitly from your worker or orchestration layer.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_state_model">13.7.4. State model</h4>
+<div class="imageblock">
+<div class="content">
+<img src="diag-plantuml-md5-30379fc09cdd4f4c644fc8bc9be541cb.svg" alt="Diagram" width="887" height="738">
+</div>
+</div>
+<div class="paragraph">
+<p>Recommended conventions:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Set a task to <code>RUNNING</code> when a worker begins processing it.</p>
+</li>
+<li>
+<p>Use <code>SUCCESS</code> and <code>FAILED</code> as the terminal task states.</p>
+</li>
+<li>
+<p>Set a group to <code>RUNNING</code> once at least one child task has begun.</p>
+</li>
+<li>
+<p>Set a group to <code>COMPLETE</code> only when your own aggregation logic decides the batch is finished.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_rest_api_surface">13.7.5. REST API surface</h4>
+<div class="paragraph">
+<p>The completion-task resources are small wrappers on top of the generic <code>BaseResource</code>, so they expose both task-specific endpoints and inherited read endpoints.</p>
+</div>
+<div class="sect4">
+<h5 id="_task_group_endpoints">Task group endpoints</h5>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 16.6666%;">
+<col style="width: 33.3333%;">
+<col style="width: 50.0001%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Method and path</th>
+<th class="tableblock halign-left valign-top">Purpose</th>
+<th class="tableblock halign-left valign-top">Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>POST /integration/completionTaskGroup/create</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Create a new task group</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Server forces <code>status=NEW</code> and <code>createdDate</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>GET /integration/completionTaskGroup/id/{id}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Fetch a group by Mongo <code>id</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Inherited from <code>BaseResource</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>GET /integration/completionTaskGroup/refName/{refName}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Fetch a group by <code>refName</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Inherited from <code>BaseResource</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>GET /integration/completionTaskGroup/subscribe/{id}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Subscribe to completion events for tasks in the group</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Returns server-sent events</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect4">
+<h5 id="_task_endpoints">Task endpoints</h5>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 16.6666%;">
+<col style="width: 33.3333%;">
+<col style="width: 50.0001%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Method and path</th>
+<th class="tableblock halign-left valign-top">Purpose</th>
+<th class="tableblock halign-left valign-top">Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>POST /integration/completionTask/create/{groupId}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Create a task and attempt to attach it to the given group</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Server forces <code>status=PENDING</code> and <code>createdDate</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>PUT /integration/completionTask/complete/{id}?status=SUCCESS&amp;result=&#8230;&#8203;</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Update a task status, set <code>completedDate</code>, and store <code>result</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Despite the method name, the code accepts any <code>CompletionTask.Status</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>GET /integration/completionTask/id/{id}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Fetch a task by Mongo <code>id</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Inherited from <code>BaseResource</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>GET /integration/completionTask/refName/{refName}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Fetch a task by <code>refName</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Inherited from <code>BaseResource</code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_request_and_response_payloads">13.7.6. Request and response payloads</h4>
+<div class="sect4">
+<h5 id="_creating_a_group">Creating a group</h5>
+<div class="paragraph">
+<p>Minimal request:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">refName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">catalog-import-20260327</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">displayName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Catalog Import 2026-03-27</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">description</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Nightly catalog import for 250 SKUs</span><span class="delimiter">&quot;</span></span>
 }</code></pre>
 </div>
 </div>
 <div class="paragraph">
-<p>Typical lifecycle:</p>
+<p>Representative response:</p>
 </div>
-<div class="imageblock">
+<div class="listingblock">
 <div class="content">
-<img src="diag-plantuml-md5-2eeb655becc44b8fa685c07e4ac12e5c.svg" alt="Diagram" width="760" height="738">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">id</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">67e51d7c9d0f1d6df2f8ab12</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">refName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">catalog-import-20260327</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">displayName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Catalog Import 2026-03-27</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">description</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Nightly catalog import for 250 SKUs</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">NEW</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">createdDate</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">2026-03-27T04:12:14.118Z</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">completedDate</span><span class="delimiter">&quot;</span></span>: <span class="value">null</span>
+}</code></pre>
 </div>
 </div>
-<div class="ulist">
-<ul>
-<li>
-<p>Create a CompletionTaskGroup in NEW status.</p>
-</li>
-<li>
-<p>Create N CompletionTasks (status=PENDING) referencing the group.</p>
-</li>
-<li>
-<p>A worker picks tasks and flips status to RUNNING, performs the work, then to SUCCESS or FAILED, setting completedDate and result.</p>
-</li>
-<li>
-<p>Periodically update the group:</p>
-</li>
-<li>
-<p>If at least one task is RUNNING (and none pending), set group status to RUNNING.</p>
-</li>
-<li>
-<p>When all tasks are terminal (SUCCESS or FAILED), set group status to COMPLETE and completedDate.</p>
-</li>
-</ul>
+</div>
+<div class="sect4">
+<h5 id="_creating_a_task_in_a_group">Creating a task in a group</h5>
+<div class="paragraph">
+<p>Minimal request:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">refName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">sku-100045</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">displayName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Import SKU 100045</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">details</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Import SKU 100045 from supplier feed</span><span class="delimiter">&quot;</span></span>
+}</code></pre>
+</div>
 </div>
 <div class="paragraph">
-<p>How to use for tracking a series of things that need to be completed:</p>
+<p>Representative response:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">id</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">67e51df49d0f1d6df2f8ab13</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">refName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">sku-100045</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">displayName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Import SKU 100045</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">details</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Import SKU 100045 from supplier feed</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">PENDING</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">createdDate</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">2026-03-27T04:14:12.091Z</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">completedDate</span><span class="delimiter">&quot;</span></span>: <span class="value">null</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">result</span><span class="delimiter">&quot;</span></span>: <span class="value">null</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">group</span><span class="delimiter">&quot;</span></span>: {
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">id</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">67e51d7c9d0f1d6df2f8ab12</span><span class="delimiter">&quot;</span></span>
+  }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Notes:</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p>Batch operations: When submitting a batch (e.g., provisioning 100 accounts), create one group and 100 tasks. The UI/API can poll the group to show overall progress and per-item results.</p>
+<p>The endpoint path requires a <code>groupId</code>.</p>
 </li>
 <li>
-<p>Multi-step workflows: Represent each step as its own task, or use one task per target resource. Groups help correlate all steps for a single business request.</p>
+<p>If the <code>groupId</code> does not resolve to an existing group, the current repository implementation still creates the task, but leaves <code>group</code> unset.</p>
 </li>
 <li>
-<p>Retry/compensation: FAILED tasks can be retried by creating new tasks or resetting status to PENDING based on your policy. Keep result populated with failure reasons.</p>
+<p>The server ignores any client-supplied <code>status</code> or <code>createdDate</code> during creation and overwrites them.</p>
 </li>
 </ul>
 </div>
+</div>
+<div class="sect4">
+<h5 id="_completing_a_task">Completing a task</h5>
+<div class="paragraph">
+<p>Example:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="bash">curl -X PUT \
+  &quot;http://localhost:8080/integration/completionTask/complete/67e51df49d0f1d6df2f8ab13?status=SUCCESS&amp;result=Imported%20successfully&quot;</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Representative response:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">id</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">67e51df49d0f1d6df2f8ab13</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">SUCCESS</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">completedDate</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">2026-03-27T04:16:08.501Z</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">result</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Imported successfully</span><span class="delimiter">&quot;</span></span>
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Important behavior:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>completedDate</code> is always set by the completion endpoint.</p>
+</li>
+<li>
+<p>The endpoint name says "complete", but the implementation accepts any value in <code>CompletionTask.Status</code>.</p>
+</li>
+<li>
+<p>Updating the task does not automatically update the parent group status.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_completion_event_stream">13.7.7. Completion event stream</h4>
+<div class="paragraph">
+<p><code>GET /integration/completionTaskGroup/subscribe/{groupId}</code> returns server-sent events. Each event is emitted when <code>CompletionTaskRepo.completeTask(&#8230;&#8203;)</code> is called for a task in that group.</p>
+</div>
+<div class="paragraph">
+<p>The event payload is plain text, not JSON. The current format is:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="text">task:{taskId}:{status}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Example event data:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="text">task:67e51df49d0f1d6df2f8ab13:SUCCESS</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If you need richer event payloads, build that in your own orchestration layer or extend the resource.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_typical_orchestration_flow">13.7.8. Typical orchestration flow</h4>
 <div class="paragraph">
 <p>Example creation flow:</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="java">CompletionTaskGroup group = CompletionTaskGroup.builder()
-  .description(<span class="string"><span class="delimiter">&quot;</span><span class="content">Catalog import: 250 SKUs</span><span class="delimiter">&quot;</span></span>)
-  .status(CompletionTaskGroup.Status.NEW)
-  .createdDate(<span class="keyword">new</span> <span class="predefined-type">Date</span>())
-  .build();
-completionTaskGroupRepo.save(group);
+<pre class="CodeRay highlight"><code data-lang="java">CompletionTaskGroup group = completionTaskGroupRepo.createGroup(
+  CompletionTaskGroup.builder()
+    .refName(<span class="string"><span class="delimiter">&quot;</span><span class="content">catalog-import-20260327</span><span class="delimiter">&quot;</span></span>)
+    .displayName(<span class="string"><span class="delimiter">&quot;</span><span class="content">Catalog Import 2026-03-27</span><span class="delimiter">&quot;</span></span>)
+    .description(<span class="string"><span class="delimiter">&quot;</span><span class="content">Nightly catalog import for 250 SKUs</span><span class="delimiter">&quot;</span></span>)
+    .build()
+);
 
 <span class="keyword">for</span> (Sku s : skus) {
-  CompletionTask t = CompletionTask.builder()
-    .group(group)
-    .details(<span class="string"><span class="delimiter">&quot;</span><span class="content">Import SKU </span><span class="delimiter">&quot;</span></span> + s.code())
-    .status(CompletionTask.Status.PENDING)
-    .createdDate(<span class="keyword">new</span> <span class="predefined-type">Date</span>())
-    .build();
-  completionTaskRepo.save(t);
+  completionTaskRepo.createTask(
+    CompletionTask.builder()
+      .refName(<span class="string"><span class="delimiter">&quot;</span><span class="content">sku-</span><span class="delimiter">&quot;</span></span> + s.code())
+      .displayName(<span class="string"><span class="delimiter">&quot;</span><span class="content">Import SKU </span><span class="delimiter">&quot;</span></span> + s.code())
+      .details(<span class="string"><span class="delimiter">&quot;</span><span class="content">Import SKU </span><span class="delimiter">&quot;</span></span> + s.code() + <span class="string"><span class="delimiter">&quot;</span><span class="content"> from supplier feed</span><span class="delimiter">&quot;</span></span>)
+      .build(),
+    group.getId().toString()
+  );
 }</code></pre>
 </div>
 </div>
@@ -2731,57 +3142,82 @@ completionTaskGroupRepo.save(group);
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="comment">// Fetch a PENDING task and execute</span>
-CompletionTask t = completionTaskRepo.findOneByStatus(CompletionTask.Status.PENDING);
-<span class="keyword">if</span> (t != <span class="predefined-constant">null</span>) {
-  completionTaskRepo.update(t.getId(), <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTask.Status.RUNNING);
+<pre class="CodeRay highlight"><code data-lang="java">CompletionTask task = completionTaskRepo.findOneByStatus(CompletionTask.Status.PENDING);
+<span class="keyword">if</span> (task != <span class="predefined-constant">null</span>) {
+  completionTaskRepo.update(task.getId(), <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTask.Status.RUNNING);
+  completionTaskGroupRepo.update(task.getGroup().getId(), <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTaskGroup.Status.RUNNING);
+
   <span class="keyword">try</span> {
     <span class="comment">// ... do work ...</span>
-    completionTaskRepo.update(t.getId(),
-      <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTask.Status.SUCCESS,
-      <span class="string"><span class="delimiter">&quot;</span><span class="content">completedDate</span><span class="delimiter">&quot;</span></span>, <span class="keyword">new</span> <span class="predefined-type">Date</span>(),
-      <span class="string"><span class="delimiter">&quot;</span><span class="content">result</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">OK</span><span class="delimiter">&quot;</span></span>);
+    completionTaskRepo.completeTask(
+      task.getId().toString(),
+      CompletionTask.Status.SUCCESS,
+      <span class="string"><span class="delimiter">&quot;</span><span class="content">Imported successfully</span><span class="delimiter">&quot;</span></span>
+    );
   } <span class="keyword">catch</span> (<span class="exception">Exception</span> e) {
-    completionTaskRepo.update(t.getId(),
-      <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTask.Status.FAILED,
-      <span class="string"><span class="delimiter">&quot;</span><span class="content">completedDate</span><span class="delimiter">&quot;</span></span>, <span class="keyword">new</span> <span class="predefined-type">Date</span>(),
-      <span class="string"><span class="delimiter">&quot;</span><span class="content">result</span><span class="delimiter">&quot;</span></span>, e.getMessage());
+    completionTaskRepo.completeTask(
+      task.getId().toString(),
+      CompletionTask.Status.FAILED,
+      e.getMessage()
+    );
   }
-}
-
-<span class="comment">// Periodically recompute group status</span>
-<span class="predefined-type">List</span>&lt;CompletionTask&gt; tasks = completionTaskRepo.findByGroup(group);
-<span class="type">boolean</span> allTerminal = tasks.stream().allMatch(x -&gt; x.getStatus()==SUCCESS || x.getStatus()==FAILED);
-<span class="type">boolean</span> anyRunning = tasks.stream().anyMatch(x -&gt; x.getStatus()==RUNNING);
-<span class="type">boolean</span> anyPending = tasks.stream().anyMatch(x -&gt; x.getStatus()==PENDING);
-
-<span class="keyword">if</span> (allTerminal) {
-  completionTaskGroupRepo.update(group.getId(),
-    <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTaskGroup.Status.COMPLETE,
-    <span class="string"><span class="delimiter">&quot;</span><span class="content">completedDate</span><span class="delimiter">&quot;</span></span>, <span class="keyword">new</span> <span class="predefined-type">Date</span>());
-} <span class="keyword">else</span> <span class="keyword">if</span> (anyRunning || (!anyPending &amp;&amp; !allTerminal)) {
-  completionTaskGroupRepo.update(group.getId(), <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTaskGroup.Status.RUNNING);
 }</code></pre>
 </div>
 </div>
 <div class="paragraph">
-<p>Notes and best practices:</p>
+<p>Example aggregate rollup owned by the application:</p>
 </div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="predefined-type">List</span>&lt;CompletionTask&gt; tasks = completionTaskRepo.findByGroup(group);
+
+<span class="type">boolean</span> allTerminal = tasks.stream().allMatch(t -&gt;
+  t.getStatus() == CompletionTask.Status.SUCCESS ||
+  t.getStatus() == CompletionTask.Status.FAILED
+);
+<span class="type">boolean</span> anyRunning = tasks.stream().anyMatch(t -&gt;
+  t.getStatus() == CompletionTask.Status.RUNNING
+);
+
+<span class="keyword">if</span> (allTerminal) {
+  completionTaskGroupRepo.update(
+    group.getId(),
+    <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTaskGroup.Status.COMPLETE,
+    <span class="string"><span class="delimiter">&quot;</span><span class="content">completedDate</span><span class="delimiter">&quot;</span></span>, <span class="keyword">new</span> <span class="predefined-type">Date</span>()
+  );
+} <span class="keyword">else</span> <span class="keyword">if</span> (anyRunning) {
+  completionTaskGroupRepo.update(
+    group.getId(),
+    <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTaskGroup.Status.RUNNING
+  );
+}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_best_practices">13.7.9. Best practices</h4>
 <div class="ulist">
 <ul>
 <li>
-<p>Keep details short but diagnostic, and store richer context in result.</p>
+<p>Keep <code>details</code> short and stable so operators can quickly scan task lists.</p>
 </li>
 <li>
-<p>Use DataDomain fields for multi-tenant scoping so groups/tasks are isolated per tenant/org as needed.</p>
+<p>Use <code>result</code> for outcome summaries, error messages, or external correlation identifiers.</p>
 </li>
 <li>
-<p>Avoid unbounded growth: archive or purge old groups once COMPLETE.</p>
+<p>Populate <code>refName</code> with a meaningful business key so tasks can be found without raw Mongo ids.</p>
 </li>
 <li>
-<p>Consider idempotency keys in details or a custom field to prevent processing the same logical work twice.</p>
+<p>Use <code>dataDomain</code> consistently so task and group records stay tenant-scoped.</p>
+</li>
+<li>
+<p>Treat group status as a denormalized summary owned by your orchestration code.</p>
+</li>
+<li>
+<p>Purge or archive old completed groups to avoid unbounded growth.</p>
 </li>
 </ul>
+</div>
 </div>
 </div>
 <div class="sect2">
@@ -3962,6 +4398,599 @@ query.filter(Filters.in(<span class="string"><span class="delimiter">&quot;</spa
 <p>Policies are encoded in RuleContext checks to allow or restrict actions based on time, plan, or feature flags.</p>
 </li>
 </ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="tenant-onboarding-and-invites">14.1.4. Tenant Onboarding and Access Invites</h4>
+<div class="paragraph">
+<p>Quantum separates tenant creation from user access and from the user-facing onboarding journey. Those are related, but they are not the same thing:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Tenant provisioning creates the tenant realm, runs migrations, and establishes the initial admin user.</p>
+</li>
+<li>
+<p>Tenant onboarding workflow defines the steps a tenant user should complete before access is considered fully activated.</p>
+</li>
+<li>
+<p>Access invites bring an individual user into an existing tenant and can attach scoped access metadata.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>This split helps teams support both admin-driven setup and self-service onboarding without forcing every tenant into a single path.</p>
+</div>
+<div class="sect4">
+<h5 id="_1_tenant_provisioning_create_the_tenant_itself">1. Tenant provisioning: create the tenant itself</h5>
+<div class="paragraph">
+<p>The admin tenant provisioning API is exposed at:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>POST /admin/tenants</code></p>
+</li>
+<li>
+<p><code>DELETE /admin/tenants/{realmId}</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Provisioning is intended for <code>admin</code> and <code>system</code> roles. The request creates the tenant catalog entry, initializes the tenant database, and ensures an initial admin credential exists.</p>
+</div>
+<div class="paragraph">
+<p>Request fields:</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Field</th>
+<th class="tableblock halign-left valign-top">Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>tenantDisplayName</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Human-readable label for the tenant</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>tenantEmailDomain</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Source for the realm id; dots are converted to dashes</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>orgRefName</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Organization reference used in the tenant <code>DomainContext</code> and <code>DataDomain</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>accountId</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Initial account number for the tenant</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>adminUserId</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">User id for the initial tenant admin</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>adminSubject</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Optional stable subject override; defaults to <code>adminUserId</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>adminPassword</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Initial password for the admin user</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>seedArchetypes</code> or <code>archetypes</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Optional list of seed archetypes to apply during tenant creation</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>Representative request:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">tenantDisplayName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Acme Logistics</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">tenantEmailDomain</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">acme.example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">orgRefName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">acme.example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">accountId</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">1000000001</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">adminUserId</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">admin@acme.example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">adminSubject</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">admin@acme.example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">adminPassword</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">change-me-now</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">seedArchetypes</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">DemoArchetype</span><span class="delimiter">&quot;</span></span>]
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Representative response:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">realmId</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">acme-example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">realmCreated</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">userCreated</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">appliedSeedArchetypes</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">DemoArchetype</span><span class="delimiter">&quot;</span></span>],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">warnings</span><span class="delimiter">&quot;</span></span>: []
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>What provisioning does:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>derives <code>realmId</code> from <code>tenantEmailDomain</code></p>
+</li>
+<li>
+<p>writes a <code>Realm</code> catalog record in the system realm</p>
+</li>
+<li>
+<p>builds tenant <code>DomainContext</code> and <code>DataDomain</code></p>
+</li>
+<li>
+<p>runs migrations in the new tenant realm</p>
+</li>
+<li>
+<p>creates or validates the initial admin user</p>
+</li>
+<li>
+<p>applies applicable base seed packs</p>
+</li>
+<li>
+<p>optionally applies requested seed archetypes</p>
+</li>
+<li>
+<p>applies indexes and verifies initialization</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Provisioning is designed to be largely idempotent. If the same tenant or admin user already exists with matching attributes, the service proceeds and returns warnings instead of blindly recreating state. If existing state conflicts with the request, the service rejects the operation.</p>
+</div>
+<div class="paragraph">
+<p>Deleting a tenant removes:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>the tenant database</p>
+</li>
+<li>
+<p>the tenant&#8217;s <code>Realm</code> catalog entry</p>
+</li>
+<li>
+<p>matching credentials associated with that tenant setup</p>
+</li>
+</ul>
+</div>
+<div class="admonitionblock caution">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-caution" title="Caution"></i>
+</td>
+<td class="content">
+<code>DELETE /admin/tenants/{realmId}</code> is destructive and is intentionally blocked for the configured system realm.
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_2_tenant_onboarding_workflow_define_the_journey_after_inviteregistration">2. Tenant onboarding workflow: define the journey after invite/registration</h5>
+<div class="paragraph">
+<p>Tenant onboarding workflow configuration is exposed at:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>GET /onboarding/workflow/current</code></p>
+</li>
+<li>
+<p><code>POST /onboarding/workflow/current</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>This is tenant-scoped configuration. The active realm is derived from the current security context, so the workflow is saved and read per tenant realm.</p>
+</div>
+<div class="paragraph">
+<p>The persisted model is <code>TenantOnboardingWorkflow</code>, which includes:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>workflowEnabled</code></p>
+</li>
+<li>
+<p><code>inviteRequired</code></p>
+</li>
+<li>
+<p><code>registrationRequired</code></p>
+</li>
+<li>
+<p><code>surveyRequired</code></p>
+</li>
+<li>
+<p><code>adminApprovalRequired</code></p>
+</li>
+<li>
+<p><code>autoAssignSurveyOnInvite</code></p>
+</li>
+<li>
+<p><code>defaultSurveyRefName</code></p>
+</li>
+<li>
+<p><code>workflowDefinitionJson</code></p>
+</li>
+<li>
+<p><code>completionMessage</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>By default, the workflow steps are generated in this order:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>invite</code></p>
+</li>
+<li>
+<p><code>registration</code></p>
+</li>
+<li>
+<p><code>survey</code></p>
+</li>
+<li>
+<p><code>approval</code></p>
+</li>
+<li>
+<p><code>activation</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Each step can be enabled or omitted by toggling the corresponding booleans. When no custom workflow JSON is supplied, the framework generates a default <code>workflowDefinitionJson</code> using those flags.</p>
+</div>
+<div class="paragraph">
+<p>Representative response:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">refName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">default-tenant-onboarding</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">displayName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Tenant User Onboarding</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">activeStatus</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">inviteRequired</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">registrationRequired</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">surveyRequired</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">adminApprovalRequired</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">autoAssignSurveyOnInvite</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">defaultSurveyRefName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">tenant-user-onboarding</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">completionMessage</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Your tenant onboarding is complete. You can now sign in and begin using the workspace.</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">steps</span><span class="delimiter">&quot;</span></span>: [
+    { <span class="key"><span class="delimiter">&quot;</span><span class="content">key</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">invite</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">type</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">access_invite</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">required</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span> },
+    { <span class="key"><span class="delimiter">&quot;</span><span class="content">key</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">registration</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">type</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">registration_request</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">required</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span> },
+    { <span class="key"><span class="delimiter">&quot;</span><span class="content">key</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">survey</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">type</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">survey</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">required</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">surveyRefName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">tenant-user-onboarding</span><span class="delimiter">&quot;</span></span> },
+    { <span class="key"><span class="delimiter">&quot;</span><span class="content">key</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">approval</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">type</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">admin_approval</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">required</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span> },
+    { <span class="key"><span class="delimiter">&quot;</span><span class="content">key</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">activation</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">type</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">account_activation</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">required</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span> }
+  ]
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This workflow config answers "what steps should happen?" It does not by itself send invites or create tenant users.</p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_3_registration_requests_capture_onboarding_data_for_approval">3. Registration requests: capture onboarding data for approval</h5>
+<div class="paragraph">
+<p>The registration-request endpoints are exposed at:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>POST /onboarding/registrationRequest/create</code></p>
+</li>
+<li>
+<p><code>POST /onboarding/registrationRequest/approve</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>This API is the registration step that the onboarding workflow can reference through the <code>registration_request</code> step type. It is useful when a tenant wants users or organizations to submit onboarding information before access is approved.</p>
+</div>
+<div class="paragraph">
+<p>At a high level:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>create</code> persists an <code>ApplicationRegistration</code></p>
+</li>
+<li>
+<p><code>approve</code> transitions an existing registration request through the repository approval logic</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>This is the structured "please review my onboarding submission" side of the journey, whereas access invites are the "you have been invited into this tenant" side.</p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_4_access_invites_grant_a_user_into_an_existing_tenant">4. Access invites: grant a user into an existing tenant</h5>
+<div class="paragraph">
+<p>Access invites are exposed at:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>GET /access/invites</code></p>
+</li>
+<li>
+<p><code>GET /access/invites/{refName}</code></p>
+</li>
+<li>
+<p><code>POST /access/invites</code></p>
+</li>
+<li>
+<p><code>POST /access/invites/{refName}/revoke</code></p>
+</li>
+<li>
+<p><code>POST /access/invites/accept</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The first four require an authenticated caller in the target tenant. Invite acceptance is <code>@PermitAll</code> because the recipient may not yet have tenant access.</p>
+</div>
+<div class="paragraph">
+<p>The persisted <code>AccessInvite</code> model includes:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>email</code> or <code>targetUserId</code></p>
+</li>
+<li>
+<p><code>invitedByUserId</code></p>
+</li>
+<li>
+<p><code>scopeRefs</code></p>
+</li>
+<li>
+<p><code>grantedRoles</code></p>
+</li>
+<li>
+<p><code>allowedFunctionalAreas</code></p>
+</li>
+<li>
+<p><code>allowedFunctionalDomains</code></p>
+</li>
+<li>
+<p><code>allowedActions</code></p>
+</li>
+<li>
+<p><code>inviteMessage</code></p>
+</li>
+<li>
+<p><code>expiresAt</code></p>
+</li>
+<li>
+<p><code>acceptedAt</code></p>
+</li>
+<li>
+<p><code>acceptedUserId</code></p>
+</li>
+<li>
+<p><code>status</code> of <code>PENDING</code>, <code>ACCEPTED</code>, <code>REVOKED</code>, or <code>EXPIRED</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Representative invite creation request:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">email</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">jane.doe@partner.example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">scopeRefNames</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">north-america</span><span class="delimiter">&quot;</span></span>],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">grantedRoles</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">user</span><span class="delimiter">&quot;</span></span>],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">allowedFunctionalAreas</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">integration</span><span class="delimiter">&quot;</span></span>],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">allowedFunctionalDomains</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">exchange</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">workflow</span><span class="delimiter">&quot;</span></span>],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">allowedActions</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">view</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">create</span><span class="delimiter">&quot;</span></span>],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">expiresInDays</span><span class="delimiter">&quot;</span></span>: <span class="integer">14</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">inviteMessage</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Join the tenant workspace for partner onboarding.</span><span class="delimiter">&quot;</span></span>
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Representative creation response:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">refName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">invite-1775100000000</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">email</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">jane.doe@partner.example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">scopeRefNames</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">north-america</span><span class="delimiter">&quot;</span></span>],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">grantedRoles</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">user</span><span class="delimiter">&quot;</span></span>],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">allowedFunctionalAreas</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">integration</span><span class="delimiter">&quot;</span></span>],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">allowedFunctionalDomains</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">exchange</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">workflow</span><span class="delimiter">&quot;</span></span>],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">allowedActions</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">view</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">create</span><span class="delimiter">&quot;</span></span>],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">PENDING</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">inviteToken</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">raw-token-returned-at-create-time-only</span><span class="delimiter">&quot;</span></span>
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Important invite behavior:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>either <code>email</code> or <code>targetUserId</code> is required</p>
+</li>
+<li>
+<p>only one active pending invite is allowed for the same email or target user</p>
+</li>
+<li>
+<p>tokens are stored as a hash; the raw token is only returned at invite creation time</p>
+</li>
+<li>
+<p>invites expire automatically based on <code>expiresAt</code></p>
+</li>
+<li>
+<p>invites can be revoked before acceptance</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Representative accept request:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">realm</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">acme-example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">token</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">raw-token-returned-at-create-time-only</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">email</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">jane.doe@partner.example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">firstName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Jane</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">lastName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Doe</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">password</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">choose-a-password</span><span class="delimiter">&quot;</span></span>
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Representative accept response:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">userId</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">jane.doe@partner.example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">email</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">jane.doe@partner.example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">defaultRealm</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">acme-example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">inviteRefName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">invite-1775100000000</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">grantedScopes</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">north-america</span><span class="delimiter">&quot;</span></span>]
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>What happens when an invite is accepted:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>the invite token is validated and checked for expiry</p>
+</li>
+<li>
+<p>the user identity is resolved from the authenticated user, request payload, invite target user, or invite email</p>
+</li>
+<li>
+<p>if the user does not already exist, a new credential is created and a password is required</p>
+</li>
+<li>
+<p>if the user already exists, the service ensures the user is authorized for the tenant realm</p>
+</li>
+<li>
+<p>a <code>UserProfile</code> is created if needed</p>
+</li>
+<li>
+<p>the invite status is changed to <code>ACCEPTED</code></p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_invite_extension_points">Invite extension points</h5>
+<div class="paragraph">
+<p>The invite flow is intentionally extensible through two SPIs:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>AccessInviteProvisioner</code></p>
+</li>
+<li>
+<p><code>AccessInviteNotificationService</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p><code>AccessInviteProvisioner</code> can:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>validate requested scopes when the invite is created</p>
+</li>
+<li>
+<p>perform application-specific provisioning when the invite is accepted</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p><code>AccessInviteNotificationService</code> can:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>deliver the invite token through email, messaging, or another notification mechanism</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The framework ships with no-op default beans for both, so applications can opt in to deeper behavior without rewriting the invite flow.</p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_how_these_pieces_fit_together">How these pieces fit together</h5>
+<div class="paragraph">
+<p>A common pattern looks like this:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>An admin provisions the tenant with <code>POST /admin/tenants</code>.</p>
+</li>
+<li>
+<p>The tenant configures or accepts the default onboarding workflow with <code>GET/POST /onboarding/workflow/current</code>.</p>
+</li>
+<li>
+<p>A tenant admin creates an access invite for a user with <code>POST /access/invites</code>.</p>
+</li>
+<li>
+<p>The invited user accepts the invite with <code>POST /access/invites/accept</code>.</p>
+</li>
+<li>
+<p>If the workflow requires registration, survey, or approval, those steps are completed before the tenant considers onboarding complete.</p>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p>This separation gives you flexibility:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>use tenant provisioning for admin-created tenants</p>
+</li>
+<li>
+<p>use registration requests for self-service intake and approval</p>
+</li>
+<li>
+<p>use access invites for controlled user admission into an existing tenant</p>
+</li>
+<li>
+<p>use workflow configuration to decide which of those steps are mandatory in each tenant</p>
+</li>
+</ul>
+</div>
 </div>
 </div>
 </div>
@@ -9873,7 +10902,683 @@ Ontology- and label-aware policy helpers are available to postconditionScript wh
 </div>
 </div>
 <div class="sect2">
-<h3 id="_multiple_matching_rulebases">22.8. Multiple Matching RuleBases</h3>
+<h3 id="scoped-action-enablement">22.8. Scoped Action Enablement and Dependency Tracking</h3>
+<div class="paragraph">
+<p>For the dedicated guide covering the runtime API, manifest model, SPI contracts, and built-in resolver types, see <a href="./action-enablement.html">Scoped Action Enablement</a>.</p>
+</div>
+<div class="paragraph">
+<p>Permission checks answer one important question: "may this identity perform <code>area / functionalDomain / action</code>?" In practice, teams also need to answer a second question: "why is this action still unavailable?"</p>
+</div>
+<div class="paragraph">
+<p>Typical reasons include:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>policy denies the action</p>
+</li>
+<li>
+<p>a feature flag exists but is disabled</p>
+</li>
+<li>
+<p>a required setting has not been configured</p>
+</li>
+<li>
+<p>a prerequisite entity or runtime dependency is missing</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Quantum now provides a framework-level dependency tracking layer for these cases. The implementation guide for this work lives in <code>docs/design/SCOPED_ACTION_ENABLEMENT_IMPLEMENTATION_GUIDE.md</code>, and the runtime contracts are implemented in the <code>quantum-action-enablement-models</code> and <code>quantum-action-enablement-quarkus</code> modules.</p>
+</div>
+<div class="sect3">
+<h4 id="_core_idea_the_same_scoped_action_tuple_stays_canonical">22.8.1. Core idea: the same scoped action tuple stays canonical</h4>
+<div class="paragraph">
+<p>The unit of evaluation is still the same tuple already used by the policy engine:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="text">area / functionalDomain / action</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Examples:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>integration / exchange / create</code></p>
+</li>
+<li>
+<p><code>integration / workflow / create</code></p>
+</li>
+<li>
+<p><code>system / action-enablement / check</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>This is intentional. The framework does not introduce a second authorization primitive just to model readiness. Instead, it composes additional dependencies around the same scoped action that policy already understands.</p>
+</div>
+<div class="paragraph">
+<p>Capabilities are still useful, but at a different level:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>A scoped action is the atomic framework-level unit.</p>
+</li>
+<li>
+<p>A capability is an application-defined composition over one or more scoped actions.</p>
+</li>
+<li>
+<p>Settings, feature flags, and runtime prerequisites are attached to the scoped action requirement manifest.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>That structure is what lets a UI or shell explain "this action is blocked because the policy denies it" versus "this action is allowed, but the required secret or filesystem is not ready yet."</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_the_three_answers_returned_by_the_framework">22.8.2. The three answers returned by the framework</h4>
+<div class="paragraph">
+<p>Scoped action enablement separates three concerns that are often blurred together:</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Field</th>
+<th class="tableblock halign-left valign-top">Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>allowed</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Whether the existing permission rule stack allows the scoped action for the evaluated identity and data domain</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>enabled</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Whether rollout and administrative toggles, especially feature flags, say the action should be exposed</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ready</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Whether operational prerequisites such as settings, entities, or runtime dependencies are satisfied</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>An action is considered usable only when all three are true:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="text">usable = allowed &amp;&amp; enabled &amp;&amp; ready</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This distinction matters because the remediation path is different:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>allowed=false</code> usually means a policy or role problem</p>
+</li>
+<li>
+<p><code>enabled=false</code> usually means a feature flag or administrative rollout problem</p>
+</li>
+<li>
+<p><code>ready=false</code> usually means setup, configuration, or runtime dependencies are incomplete</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_runtime_models">22.8.3. Runtime models</h4>
+<div class="paragraph">
+<p>The core request and response models are intentionally small:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="directive">public</span> <span class="type">class</span> <span class="class">ScopedActionRef</span> {
+    <span class="predefined-type">String</span> area;
+    <span class="predefined-type">String</span> functionalDomain;
+    <span class="predefined-type">String</span> action;
+}
+
+<span class="directive">public</span> <span class="type">class</span> <span class="class">DependencyCheckRef</span> {
+    <span class="predefined-type">String</span> type;
+    <span class="predefined-type">String</span> refName;
+    <span class="predefined-type">Map</span>&lt;<span class="predefined-type">String</span>, <span class="predefined-type">Object</span>&gt; config;
+}
+
+<span class="directive">public</span> <span class="type">class</span> <span class="class">ScopedActionRequirement</span> {
+    ScopedActionRef scopedAction;
+    <span class="predefined-type">String</span> displayName;
+    <span class="predefined-type">String</span> description;
+    <span class="predefined-type">List</span>&lt;DependencyCheckRef&gt; dependencies;
+}
+
+<span class="directive">public</span> <span class="type">class</span> <span class="class">ScopedActionEnablementStatus</span> {
+    ScopedActionRef scopedAction;
+    <span class="type">boolean</span> allowed;
+    <span class="type">boolean</span> enabled;
+    <span class="type">boolean</span> ready;
+    <span class="type">boolean</span> usable;
+    <span class="predefined-type">List</span>&lt;EnablementBlocker&gt; blockers;
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>An <code>EnablementBlocker</code> is the machine-readable explanation of why evaluation failed. Each blocker includes:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>impact</code>: one of <code>ALLOWED</code>, <code>ENABLED</code>, or <code>READY</code></p>
+</li>
+<li>
+<p><code>type</code>: the dependency type, such as <code>permission</code> or <code>feature-flag</code></p>
+</li>
+<li>
+<p><code>code</code>: a stable blocker code, such as <code>permission-denied</code></p>
+</li>
+<li>
+<p><code>message</code>: a human-readable explanation</p>
+</li>
+<li>
+<p><code>severity</code>: typically <code>warn</code> or <code>error</code></p>
+</li>
+<li>
+<p><code>metadata</code>: additional structured context</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_rest_api">22.8.4. REST API</h4>
+<div class="paragraph">
+<p>The runtime API is exposed at:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>POST /system/actions/enablement/check</code></p>
+</li>
+<li>
+<p><code>GET /system/actions/enablement/manifest</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>This resource itself is annotated as:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>area=system</code></p>
+</li>
+<li>
+<p><code>functionalDomain=action-enablement</code></p>
+</li>
+<li>
+<p><code>action=check|view</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Example request:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">identity</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">tenant-admin</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">realm</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">acme</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">orgRefName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">acme-org</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">tenantId</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">acme-tenant</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">scope</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">api</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">actions</span><span class="delimiter">&quot;</span></span>: [
+    {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">area</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">integration</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">functionalDomain</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">guided_integration</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">action</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">create</span><span class="delimiter">&quot;</span></span>
+    }
+  ]
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Representative response:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">results</span><span class="delimiter">&quot;</span></span>: [
+    {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">scopedAction</span><span class="delimiter">&quot;</span></span>: {
+        <span class="key"><span class="delimiter">&quot;</span><span class="content">area</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">integration</span><span class="delimiter">&quot;</span></span>,
+        <span class="key"><span class="delimiter">&quot;</span><span class="content">functionalDomain</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">guided_integration</span><span class="delimiter">&quot;</span></span>,
+        <span class="key"><span class="delimiter">&quot;</span><span class="content">action</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">create</span><span class="delimiter">&quot;</span></span>
+      },
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">allowed</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">enabled</span><span class="delimiter">&quot;</span></span>: <span class="value">false</span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">ready</span><span class="delimiter">&quot;</span></span>: <span class="value">false</span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">usable</span><span class="delimiter">&quot;</span></span>: <span class="value">false</span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">blockers</span><span class="delimiter">&quot;</span></span>: [
+        {
+          <span class="key"><span class="delimiter">&quot;</span><span class="content">impact</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">ENABLED</span><span class="delimiter">&quot;</span></span>,
+          <span class="key"><span class="delimiter">&quot;</span><span class="content">type</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">feature-flag</span><span class="delimiter">&quot;</span></span>,
+          <span class="key"><span class="delimiter">&quot;</span><span class="content">code</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">feature-flag-disabled</span><span class="delimiter">&quot;</span></span>,
+          <span class="key"><span class="delimiter">&quot;</span><span class="content">message</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Feature flag 'guided-integrations' is disabled.</span><span class="delimiter">&quot;</span></span>,
+          <span class="key"><span class="delimiter">&quot;</span><span class="content">severity</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">warn</span><span class="delimiter">&quot;</span></span>
+        },
+        {
+          <span class="key"><span class="delimiter">&quot;</span><span class="content">impact</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">READY</span><span class="delimiter">&quot;</span></span>,
+          <span class="key"><span class="delimiter">&quot;</span><span class="content">type</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">setting-present</span><span class="delimiter">&quot;</span></span>,
+          <span class="key"><span class="delimiter">&quot;</span><span class="content">code</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">setting-missing</span><span class="delimiter">&quot;</span></span>,
+          <span class="key"><span class="delimiter">&quot;</span><span class="content">message</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Configuration setting 'quantum.integration.shared-storage.root' is not set.</span><span class="delimiter">&quot;</span></span>,
+          <span class="key"><span class="delimiter">&quot;</span><span class="content">severity</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">error</span><span class="delimiter">&quot;</span></span>
+        }
+      ]
+    }
+  ]
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This is the key user-facing value: the response tells you whether the action is blocked by authorization, rollout state, or operational readiness, instead of forcing the UI to guess.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_manifest_driven_dependency_relationships">22.8.5. Manifest-driven dependency relationships</h4>
+<div class="paragraph">
+<p>The relationship from settings and feature flags to functional area/domain/action lives in a manifest of <code>ScopedActionRequirement</code> entries. Each manifest entry says:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>which scoped action is being described</p>
+</li>
+<li>
+<p>which dependencies must be satisfied for that action to be usable</p>
+</li>
+<li>
+<p>optional display-oriented metadata such as <code>displayName</code> and <code>description</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Applications contribute these manifests via CDI:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="directive">public</span> <span class="type">interface</span> <span class="class">ScopedActionRequirementContributor</span> {
+
+    <span class="keyword">default</span> <span class="type">int</span> priority() {
+        <span class="keyword">return</span> <span class="integer">100</span>;
+    }
+
+    <span class="predefined-type">Collection</span>&lt;ScopedActionRequirement&gt; requirements();
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The framework aggregates contributors through <code>ScopedActionRequirementRegistry</code>:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="directive">public</span> <span class="type">interface</span> <span class="class">ScopedActionRequirementRegistry</span> {
+
+    Optional&lt;ScopedActionRequirement&gt; find(ScopedActionRef ref);
+
+    <span class="predefined-type">List</span>&lt;ScopedActionRequirement&gt; list();
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This is how you express relationships such as:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>action <code>integration / guided_integration / create</code> depends on feature flag <code>guided-integrations</code></p>
+</li>
+<li>
+<p>action <code>integration / exchange / create</code> depends on a tenant filesystem being provisioned</p>
+</li>
+<li>
+<p>action <code>system / some-admin-action / save</code> depends on a specific config property being present</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_resolver_spi">22.8.6. Resolver SPI</h4>
+<div class="paragraph">
+<p>Each dependency type is implemented by an <code>ActionDependencyResolver</code>:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="directive">public</span> <span class="type">interface</span> <span class="class">ActionDependencyResolver</span> {
+
+    <span class="predefined-type">String</span> supportsType();
+
+    DependencyResolutionResult evaluate(
+        DependencyCheckRef dependency,
+        EnablementEvaluationContext context
+    );
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p><code>EnablementEvaluationContext</code> carries the evaluation inputs:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>identity</p>
+</li>
+<li>
+<p>realm</p>
+</li>
+<li>
+<p>roles</p>
+</li>
+<li>
+<p>scope</p>
+</li>
+<li>
+<p><code>DataDomain</code></p>
+</li>
+<li>
+<p>the target <code>ScopedActionRef</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>This lets each resolver examine dependencies in the correct tenant, realm, and user context.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_built_in_oss_dependency_types">22.8.7. Built-in OSS dependency types</h4>
+<div class="paragraph">
+<p>The open-source framework currently provides these dependency resolvers:</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 20%;">
+<col style="width: 60%;">
+<col style="width: 20%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Dependency type</th>
+<th class="tableblock halign-left valign-top">Purpose</th>
+<th class="tableblock halign-left valign-top">Typical impact</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>permission</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Evaluate the scoped action through the existing <code>RuleContext</code> and permission model</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ALLOWED</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>feature-flag</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Require that a <code>FeatureFlag</code> exists and is enabled in the active realm</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ENABLED</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>setting-present</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Require that a named configuration property exists and is non-blank</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>READY</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>entity-exists</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Require that a referenced entity exists in the current realm</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>READY</code></p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>Representative blocker codes include:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>permission-denied</code></p>
+</li>
+<li>
+<p><code>feature-flag-missing</code></p>
+</li>
+<li>
+<p><code>feature-flag-disabled</code></p>
+</li>
+<li>
+<p><code>setting-name-missing</code></p>
+</li>
+<li>
+<p><code>setting-missing</code></p>
+</li>
+<li>
+<p><code>entity-model-unresolved</code></p>
+</li>
+<li>
+<p><code>entity-missing</code></p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_missing_manifests_and_unsupported_dependency_types">22.8.8. Missing manifests and unsupported dependency types</h4>
+<div class="paragraph">
+<p>The framework intentionally does not fail open here.</p>
+</div>
+<div class="paragraph">
+<p>If no manifest entry is registered for a scoped action:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>evaluation falls back to a synthetic requirement that checks <code>permission</code></p>
+</li>
+<li>
+<p>the response also includes a <code>manifest-missing</code> blocker with <code>impact=READY</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>If a manifest references a dependency type for which no resolver is registered:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>the response includes <code>unsupported-dependency-type</code></p>
+</li>
+<li>
+<p>the blocker is attached with <code>impact=READY</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>This makes incomplete wiring visible instead of silently treating an action as operationally ready.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_example_contributor">22.8.9. Example contributor</h4>
+<div class="paragraph">
+<p>At the framework level, the built-in manifest contributor registers the enablement API itself with a permission dependency. Application modules then add their own manifests.</p>
+</div>
+<div class="paragraph">
+<p>A typical application contributor looks like this:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@ApplicationScoped</span>
+<span class="directive">public</span> <span class="type">class</span> <span class="class">MyActionEnablementManifestContributor</span>
+        <span class="directive">implements</span> ScopedActionRequirementContributor {
+
+    <span class="annotation">@Override</span>
+    <span class="directive">public</span> <span class="predefined-type">Collection</span>&lt;ScopedActionRequirement&gt; requirements() {
+        <span class="keyword">return</span> <span class="predefined-type">List</span>.of(
+            ScopedActionRequirement.builder()
+                .scopedAction(ScopedActionRef.builder()
+                    .area(<span class="string"><span class="delimiter">&quot;</span><span class="content">integration</span><span class="delimiter">&quot;</span></span>)
+                    .functionalDomain(<span class="string"><span class="delimiter">&quot;</span><span class="content">guided_integration</span><span class="delimiter">&quot;</span></span>)
+                    .action(<span class="string"><span class="delimiter">&quot;</span><span class="content">create</span><span class="delimiter">&quot;</span></span>)
+                    .build())
+                .displayName(<span class="string"><span class="delimiter">&quot;</span><span class="content">Generate Guided Integration</span><span class="delimiter">&quot;</span></span>)
+                .description(<span class="string"><span class="delimiter">&quot;</span><span class="content">Requires policy, feature rollout, and baseline setup.</span><span class="delimiter">&quot;</span></span>)
+                .dependencies(<span class="predefined-type">List</span>.of(
+                    DependencyCheckRef.builder().type(<span class="string"><span class="delimiter">&quot;</span><span class="content">permission</span><span class="delimiter">&quot;</span></span>).build(),
+                    DependencyCheckRef.builder()
+                        .type(<span class="string"><span class="delimiter">&quot;</span><span class="content">feature-flag</span><span class="delimiter">&quot;</span></span>)
+                        .refName(<span class="string"><span class="delimiter">&quot;</span><span class="content">guided-integrations</span><span class="delimiter">&quot;</span></span>)
+                        .build(),
+                    DependencyCheckRef.builder()
+                        .type(<span class="string"><span class="delimiter">&quot;</span><span class="content">setting-present</span><span class="delimiter">&quot;</span></span>)
+                        .refName(<span class="string"><span class="delimiter">&quot;</span><span class="content">quantum.integration.shared-storage.root</span><span class="delimiter">&quot;</span></span>)
+                        .build()
+                ))
+                .build()
+        );
+    }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This is the mechanism that turns "settings map to capabilities" into something concrete. The requirement manifest records which settings, feature flags, and prerequisites attach to which <code>area / functionalDomain / action</code> tuple.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_relationship_to_policies_feature_flags_and_ui_actions">22.8.10. Relationship to policies, feature flags, and UI actions</h4>
+<div class="paragraph">
+<p>Think of the layers this way:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p><code>@FunctionalMapping</code> and <code>@FunctionalAction</code> define the canonical scoped action tuple in code.</p>
+</li>
+<li>
+<p>Permission rules answer whether that tuple is authorized.</p>
+</li>
+<li>
+<p>Feature flags answer whether the action is turned on for the current cohort or realm.</p>
+</li>
+<li>
+<p>Scoped action requirements answer what else must be configured or provisioned before the action is actually usable.</p>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p>This complements, rather than replaces, existing UI action derivation:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>fillUIActions()</code> still answers what actions are allowed from the permission perspective</p>
+</li>
+<li>
+<p>scoped action enablement answers why an action should still be disabled or annotated in the UI</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>That makes it a better fit for:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>setup dashboards</p>
+</li>
+<li>
+<p>onboarding flows</p>
+</li>
+<li>
+<p>context-sensitive "why unavailable?" messaging</p>
+</li>
+<li>
+<p>shells or MCP clients that need structured blockers</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_enterprise_extensions">22.8.11. Enterprise extensions</h4>
+<div class="paragraph">
+<p>The framework module is intentionally generic. Enterprise modules can contribute additional dependency resolvers without changing the core contracts.</p>
+</div>
+<div class="paragraph">
+<p>The current enterprise action-enablement module extends the system with higher-level runtime checks such as:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>managed-secret-configured</code></p>
+</li>
+<li>
+<p><code>tenant-filesystem-provisioned</code></p>
+</li>
+<li>
+<p><code>standard-mounts-present</code></p>
+</li>
+<li>
+<p><code>workflow-runtime-reachable</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Those resolvers support operational questions such as:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>has the tenant filesystem been provisioned?</p>
+</li>
+<li>
+<p>do the standard mounts exist?</p>
+</li>
+<li>
+<p>is a required managed secret configured?</p>
+</li>
+<li>
+<p>is the workflow runtime reachable?</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>That deeper operational behavior belongs in the enterprise documentation. The important framework-level point is that enterprise modules plug into the same <code>ActionDependencyResolver</code> SPI and return the same <code>EnablementBlocker</code> structure.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_guidance">22.8.12. Guidance</h4>
+<div class="ulist">
+<ul>
+<li>
+<p>Keep permission checks canonical. Do not duplicate authorization logic inside custom readiness resolvers.</p>
+</li>
+<li>
+<p>Use <code>feature-flag</code> dependencies for rollout state, not for durable authorization.</p>
+</li>
+<li>
+<p>Use <code>setting-present</code> and <code>entity-exists</code> only for generic prerequisites. Domain-heavy operational checks belong in application or enterprise resolvers.</p>
+</li>
+<li>
+<p>Keep blocker codes stable because UIs and automation may key off them.</p>
+</li>
+<li>
+<p>Treat capabilities as documentation and UX groupings over scoped actions, not as a substitute for <code>area / functionalDomain / action</code>.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_multiple_matching_rulebases">22.9. Multiple Matching RuleBases</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -9892,7 +11597,7 @@ Ontology- and label-aware policy helpers are available to postconditionScript wh
 </div>
 </div>
 <div class="sect2">
-<h3 id="_identity_and_role_matching">22.9. Identity and Role Matching</h3>
+<h3 id="_identity_and_role_matching">22.10. Identity and Role Matching</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -9910,7 +11615,7 @@ Ontology- and label-aware policy helpers are available to postconditionScript wh
 </ul>
 </div>
 <div class="sect3">
-<h4 id="_how_roles_are_defined_for_an_identity_role_sources_and_resolution">22.9.1. How roles are defined for an identity (role sources and resolution)</h4>
+<h4 id="_how_roles_are_defined_for_an_identity_role_sources_and_resolution">22.10.1. How roles are defined for an identity (role sources and resolution)</h4>
 <div class="paragraph">
 <p>Quantum composes the effective roles for a request by merging:</p>
 </div>
@@ -10300,7 +12005,7 @@ resp.setRoleAssignments(roleAssignments);
 </div>
 </div>
 <div class="sect2">
-<h3 id="_example_scenarios">22.10. Example Scenarios</h3>
+<h3 id="_example_scenarios">22.11. Example Scenarios</h3>
 <div class="olist arabic">
 <ol class="arabic">
 <li>
@@ -10407,7 +12112,7 @@ resp.setRoleAssignments(roleAssignments);
 </div>
 </div>
 <div class="sect2">
-<h3 id="_operational_tips">22.11. Operational Tips</h3>
+<h3 id="_operational_tips">22.12. Operational Tips</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -10426,7 +12131,7 @@ resp.setRoleAssignments(roleAssignments);
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_uiactions_and_defaultuiactions_are_calculated">22.12. How UIActions and DefaultUIActions are calculated</h3>
+<h3 id="_how_uiactions_and_defaultuiactions_are_calculated">22.13. How UIActions and DefaultUIActions are calculated</h3>
 <div class="paragraph">
 <p>When the server returns a collection of entities (for example, userProfiles), each entity may expose two action lists:</p>
 </div>
@@ -10544,7 +12249,7 @@ resp.setRoleAssignments(roleAssignments);
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_this_integrates_end_to_end">22.13. How This Integrates End-to-End</h3>
+<h3 id="_how_this_integrates_end_to_end">22.14. How This Integrates End-to-End</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -10560,7 +12265,7 @@ resp.setRoleAssignments(roleAssignments);
 </div>
 </div>
 <div class="sect2">
-<h3 id="_administering_policies_via_rest_policyresource">22.14. Administering Policies via REST (PolicyResource)</h3>
+<h3 id="_administering_policies_via_rest_policyresource">22.15. Administering Policies via REST (PolicyResource)</h3>
 <div class="paragraph">
 <p>The PolicyResource exposes CRUD-style REST APIs for creating and managing policies (rule bases) that drive authorization decisions. Each Policy targets a principalId (either a specific userId or a role name) and contains an ordered list of Rule objects. Rules match requests using SecurityURIHeader and SecurityURIBody and then contribute an effect (ALLOW/DENY) and optional repository filters.</p>
 </div>
@@ -10578,7 +12283,7 @@ resp.setRoleAssignments(roleAssignments);
 </ul>
 </div>
 <div class="sect3">
-<h4 id="_model_shape_policy">22.14.1. Model shape (Policy)</h4>
+<h4 id="_model_shape_policy">22.15.1. Model shape (Policy)</h4>
 <div class="paragraph">
 <p>A Policy extends FullBaseModel and includes:
 - id, refName, displayName, dataDomain, archived/expired flags (inherited)
@@ -10619,7 +12324,7 @@ resp.setRoleAssignments(roleAssignments);
 </div>
 </div>
 <div class="sect3">
-<h4 id="_how_rule_contributed_filters_work_andfilterstring_orfilterstring_joinop">22.14.2. How rule-contributed filters work (andFilterString, orFilterString, joinOp)</h4>
+<h4 id="_how_rule_contributed_filters_work_andfilterstring_orfilterstring_joinop">22.15.2. How rule-contributed filters work (andFilterString, orFilterString, joinOp)</h4>
 <div class="paragraph">
 <p>When an ALLOW rule matches, it can contribute repository-level filters that restrict which documents are visible or mutable. The fields are:</p>
 </div>
@@ -10896,7 +12601,7 @@ resp.setRoleAssignments(roleAssignments);
 </div>
 </div>
 <div class="sect3">
-<h4 id="_accesslistresolvers_spi_for_list_based_access">22.14.3. AccessListResolvers (SPI) for list-based access</h4>
+<h4 id="_accesslistresolvers_spi_for_list_based_access">22.15.3. AccessListResolvers (SPI) for list-based access</h4>
 <div class="imageblock">
 <div class="content">
 <img src="diag-plantuml-md5-19678e06c83a16fe71cfaff92a476663.svg" alt="Diagram" width="629" height="385">
@@ -10993,7 +12698,7 @@ resp.setRoleAssignments(roleAssignments);
 </div>
 </div>
 <div class="sect3">
-<h4 id="_principalcontextpropertiesresolver_spi_for_custom_principal_properties">22.14.4. PrincipalContextPropertiesResolver (SPI) for custom principal properties</h4>
+<h4 id="_principalcontextpropertiesresolver_spi_for_custom_principal_properties">22.15.4. PrincipalContextPropertiesResolver (SPI) for custom principal properties</h4>
 <div class="imageblock">
 <div class="content">
 <img src="diag-plantuml-md5-3f301d1907337043041d1f30cc0a065b.svg" alt="Diagram" width="873" height="278">
@@ -11353,7 +13058,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect3">
-<h4 id="_endpoints">22.14.5. Endpoints</h4>
+<h4 id="_endpoints">22.15.5. Endpoints</h4>
 <div class="paragraph">
 <p>All endpoints are relative to /security/permission/policies. These are inherited from BaseResource and are consistent across entity resources.</p>
 </div>
@@ -11547,7 +13252,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect3">
-<h4 id="_examples">22.14.6. Examples</h4>
+<h4 id="_examples">22.15.6. Examples</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -11596,7 +13301,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect3">
-<h4 id="_how_changes_affect_rule_bases_and_enforcement">22.14.7. How changes affect rule bases and enforcement</h4>
+<h4 id="_how_changes_affect_rule_bases_and_enforcement">22.15.7. How changes affect rule bases and enforcement</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -11664,7 +13369,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_realm_override_x_realm_and_impersonation_x_impersonate">22.15. Realm override (X-Realm) and Impersonation (X-Impersonate)</h3>
+<h3 id="_realm_override_x_realm_and_impersonation_x_impersonate">22.16. Realm override (X-Realm) and Impersonation (X-Impersonate)</h3>
 <div class="imageblock">
 <div class="content">
 <img src="diag-plantuml-md5-04369f6fc7778d6745830bc098403f15.svg" alt="Diagram" width="1085" height="535">
@@ -11674,7 +13379,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 <p>This section explains how to use the request headers X-Realm, X-Impersonate-<strong>, and X-Acting-On-Behalf-Of-</strong> alongside permission rule bases. These headers influence which realm (database) a request operates against and, in the case of impersonation, which identity&#8217;s roles are evaluated by the rule engine.</p>
 </div>
 <div class="sect3">
-<h4 id="_what_they_do_at_a_glance">22.15.1. What they do (at a glance)</h4>
+<h4 id="_what_they_do_at_a_glance">22.16.1. What they do (at a glance)</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -11693,7 +13398,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect3">
-<h4 id="_how_the_headers_integrate_with_permission_evaluation">22.15.2. How the headers integrate with permission evaluation</h4>
+<h4 id="_how_the_headers_integrate_with_permission_evaluation">22.16.2. How the headers integrate with permission evaluation</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -11742,7 +13447,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect3">
-<h4 id="_required_credential_configuration_credentialuseridpassword">22.15.3. Required credential configuration (CredentialUserIdPassword)</h4>
+<h4 id="_required_credential_configuration_credentialuseridpassword">22.16.3. Required credential configuration (CredentialUserIdPassword)</h4>
 <div class="paragraph">
 <p>Two fields on CredentialUserIdPassword govern whether a user may use these headers:</p>
 </div>
@@ -11797,7 +13502,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect3">
-<h4 id="_end_to_end_behavior_from_securityfilter_reference">22.15.4. End-to-end behavior from SecurityFilter (reference)</h4>
+<h4 id="_end_to_end_behavior_from_securityfilter_reference">22.16.4. End-to-end behavior from SecurityFilter (reference)</h4>
 <div class="paragraph">
 <p>The SecurityFilter constructs the PrincipalContext/ResourceContext before rule evaluation:
 - X-Realm is read and, if present, validated against the caller’s credential.realmRegEx.
@@ -11808,7 +13513,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect3">
-<h4 id="_practical_differences_and_use_cases">22.15.5. Practical differences and use cases</h4>
+<h4 id="_practical_differences_and_use_cases">22.16.5. Practical differences and use cases</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -11885,7 +13590,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect3">
-<h4 id="_examples_2">22.15.6. Examples</h4>
+<h4 id="_examples_2">22.16.6. Examples</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -11935,12 +13640,12 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_data_domain_assignment_on_create_domaincontext_and_datadomainpolicy">22.16. Data domain assignment on create: DomainContext and DataDomainPolicy</h3>
+<h3 id="_data_domain_assignment_on_create_domaincontext_and_datadomainpolicy">22.17. Data domain assignment on create: DomainContext and DataDomainPolicy</h3>
 <div id="_data_domain_assignment" class="paragraph">
 <p>This section explains how Quantum decides which dataDomain is stamped on newly created records, why this decision is necessary in a multi‑tenant system, what the default behavior is, and how you can override it globally or per Functional Area / Functional Domain. It also describes the DataDomainResolver interface and the default implementation provided by the framework.</p>
 </div>
 <div class="sect3">
-<h4 id="_the_problem_this_solves_and_why_it_matters">22.16.1. The problem this solves (and why it matters)</h4>
+<h4 id="_the_problem_this_solves_and_why_it_matters">22.17.1. The problem this solves (and why it matters)</h4>
 <div class="paragraph">
 <p>In a multi‑tenant platform you must ensure each new record is written to the correct data partition so later reads/updates can be scoped safely. If the dataDomain is wrong or missing, you risk leaking data across tenants or making your own data inaccessible due to mis‑scoping.</p>
 </div>
@@ -11955,7 +13660,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect3">
-<h4 id="_key_concepts_recap_domaincontext_and_datadomain">22.16.2. Key concepts recap: DomainContext and DataDomain</h4>
+<h4 id="_key_concepts_recap_domaincontext_and_datadomain">22.17.2. Key concepts recap: DomainContext and DataDomain</h4>
 <div class="dlist">
 <dl>
 <dt class="hdlist1">DomainContext (on credentials/realms)</dt>
@@ -11973,7 +13678,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect3">
-<h4 id="_the_default_policy_do_nothing_and_it_works">22.16.3. The default policy (do nothing and it works)</h4>
+<h4 id="_the_default_policy_do_nothing_and_it_works">22.17.3. The default policy (do nothing and it works)</h4>
 <div class="paragraph">
 <p>Out of the box, Quantum preserves the existing behavior: if no policy is configured, the resolver falls back to the authenticated principal’s DataDomain. This guarantees compatibility with existing applications.</p>
 </div>
@@ -11985,7 +13690,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect3">
-<h4 id="_policy_scopes_principalattached_vs_global">22.16.4. Policy scopes: principal‑attached vs. global</h4>
+<h4 id="_policy_scopes_principalattached_vs_global">22.17.4. Policy scopes: principal‑attached vs. global</h4>
 <div class="paragraph">
 <p>You can define overrides at two levels:
 - Principal‑attached (per credential): attach a DataDomainPolicy to a CredentialUserIdPassword. The SecurityFilter places this policy into the PrincipalContext, so it applies only to records created by that principal. This is useful for VIP service accounts or specific partners.
@@ -11996,7 +13701,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect3">
-<h4 id="_the_policy_map_and_matching">22.16.5. The policy map and matching</h4>
+<h4 id="_the_policy_map_and_matching">22.17.5. The policy map and matching</h4>
 <div class="paragraph">
 <p>A DataDomainPolicy is a small map of rules: Map&lt;String, DataDomainPolicyEntry&gt; policyEntries, keyed by "&lt;FunctionalArea&gt;:&lt;FunctionalDomain&gt;" with support for "*" wildcards. The resolver evaluates keys in this order:</p>
 </div>
@@ -12053,7 +13758,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect3">
-<h4 id="_how_the_resolver_works">22.16.6. How the resolver works</h4>
+<h4 id="_how_the_resolver_works">22.17.6. How the resolver works</h4>
 <div class="paragraph">
 <p>Interfaces and default implementation:</p>
 </div>
@@ -12089,7 +13794,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect3">
-<h4 id="_when_would_you_want_a_nonglobal_policy">22.16.7. When would you want a non‑global policy?</h4>
+<h4 id="_when_would_you_want_a_nonglobal_policy">22.17.7. When would you want a non‑global policy?</h4>
 <div class="paragraph">
 <p>Here are a few concrete scenarios:
 - Centralized HR: All HR Employee records are written to a shared HR domain regardless of the team creating them. This supports a shared‑service HR model without duplicating HR data per tenant.
@@ -12099,7 +13804,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect3">
-<h4 id="_relation_to_tenancy_models">22.16.8. Relation to tenancy models</h4>
+<h4 id="_relation_to_tenancy_models">22.17.8. Relation to tenancy models</h4>
 <div class="paragraph">
 <p>The policy mechanism supports both siloed and pooled tenancy:
 - Siloed tenancy: Most domains default to FROM_CREDENTIAL (each tenant writes to its own partition). Only a few shared services (e.g., HR, catalog) use FIXED to centralize data.
@@ -12110,7 +13815,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect3">
-<h4 id="_authoring_tips">22.16.9. Authoring tips</h4>
+<h4 id="_authoring_tips">22.17.9. Authoring tips</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -12129,7 +13834,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect3">
-<h4 id="_api_pointers">22.16.10. API pointers</h4>
+<h4 id="_api_pointers">22.17.10. API pointers</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -12148,7 +13853,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect3">
-<h4 id="ontology-permissions">22.16.11. Ontology in Permission Rules (optional)</h4>
+<h4 id="ontology-permissions">22.17.11. Ontology in Permission Rules (optional)</h4>
 <div class="paragraph">
 <p>If you enable the ontology modules, you can author rules that constrain access by semantic relationships, not field paths. This keeps policies stable as your object model evolves.</p>
 </div>
@@ -12459,7 +14164,7 @@ query.filter(dev.morphia.query.filters.Filters.in(<span class="string"><span cla
 </div>
 </div>
 <div class="sect3">
-<h4 id="label-resolution-spi">22.16.12. Label resolution SPI and hasLabel() in rules</h4>
+<h4 id="label-resolution-spi">22.17.12. Label resolution SPI and hasLabel() in rules</h4>
 <div class="paragraph">
 <p>Labels are a lightweight way to attach semantic markers to principals and resources, and then use them in rule scripts. Quantum provides a pluggable label resolution SPI and a script helper to check labels during policy evaluation.</p>
 </div>
@@ -12577,7 +14282,7 @@ hasLabel(<span class="string"><span class="delimiter">&quot;</span><span class="
 </div>
 </div>
 <div class="sect2">
-<h3 id="script-helpers-reference">22.17. Script Helpers reference (when enabled)</h3>
+<h3 id="script-helpers-reference">22.18. Script Helpers reference (when enabled)</h3>
 <div class="imageblock">
 <div class="content">
 <img src="diag-plantuml-md5-0ada0ba001bddd7560ed850e83a62f4a.svg" alt="Diagram" width="1050" height="321">
@@ -12742,7 +14447,7 @@ noViolations() === <span class="predefined-constant">true</span></code></pre>
 - AccessListResolver for list variables in filters: see "AccessListResolvers (SPI) for list-based access" above.</p>
 </div>
 <div class="sect3">
-<h4 id="security-annotations">22.17.1. Security Annotations: FunctionalMapping and FunctionalAction</h4>
+<h4 id="security-annotations">22.18.1. Security Annotations: FunctionalMapping and FunctionalAction</h4>
 <div class="paragraph">
 <p>Quantum uses annotations to declare a model or resource&#8217;s functional area, domain, and actions for security evaluation. This replaces the legacy <code>bmFunctionalArea()</code> and <code>bmFunctionalDomain()</code> methods.</p>
 </div>
@@ -12866,6 +14571,22 @@ noViolations() === <span class="predefined-constant">true</span></code></pre>
 </div>
 </div>
 <div class="sect5">
+<h6 id="_scoped_action_enablement">Scoped Action Enablement</h6>
+<div class="ulist">
+<ul>
+<li>
+<p>Reuses the same <code>area / functionalDomain / action</code> tuple as the dependency-tracking key for runtime action enablement</p>
+</li>
+<li>
+<p>Lets the framework answer more than "is this policy allowed?" and also report whether the action is feature-enabled and operationally ready</p>
+</li>
+<li>
+<p>Treats capabilities as an application-level composition concept built on top of one or more scoped actions, not as a new core security primitive</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect5">
 <h6 id="_morphiarepo_filluiactions">MorphiaRepo.fillUIActions</h6>
 <div class="ulist">
 <ul>
@@ -12936,7 +14657,7 @@ noViolations() === <span class="predefined-constant">true</span></code></pre>
 </div>
 </div>
 <div class="sect4">
-<h5 id="_best_practices">Best Practices</h5>
+<h5 id="_best_practices_2">Best Practices</h5>
 <div class="sect5">
 <h6 id="_consistent_naming">Consistent Naming</h6>
 <div class="paragraph">
@@ -12962,6 +14683,9 @@ noViolations() === <span class="predefined-constant">true</span></code></pre>
 </li>
 <li>
 <p>Avoid duplicating annotations on both model and resource for the same entity</p>
+</li>
+<li>
+<p>Be consistent with naming because the same tuple may be used by policies, UI action derivation, and scoped action enablement manifests</p>
 </li>
 </ul>
 </div>
@@ -14479,7 +16203,7 @@ The framework provides only the SPI interface. Applications must implement their
 </div>
 </div>
 <div class="sect4">
-<h5 id="_best_practices_2">Best practices</h5>
+<h5 id="_best_practices_3">Best practices</h5>
 <div class="ulist">
 <ul>
 <li>
@@ -16060,7 +17784,13 @@ Use it to jump directly to a subject and then explore details in context.</p>
 <p>Domain modeling: <a href="../tutorials/quantum-tutorial.html#sec-modeling">Domain modeling fundamentals</a></p>
 </li>
 <li>
+<p>Completion tasks and groups: <a href="./modeling.html#completion-tasks">CompletionTasks, CompletionTaskGroups, payloads, and event stream</a></p>
+</li>
+<li>
 <p>Tenant models and realms: <a href="../tutorials/quantum-tutorial.html#sec-tenant-models">Multi-tenant model and realm separation</a></p>
+</li>
+<li>
+<p>Tenant onboarding and access invites: <a href="./tenant-models.html#tenant-onboarding-and-invites">Provision tenants, configure onboarding workflow, and invite users into a tenant</a></p>
 </li>
 <li>
 <p>Domain rule context: <a href="../tutorials/quantum-tutorial.html#sec-domain-rule-context">Domain rule context</a></p>
@@ -16079,6 +17809,9 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </li>
 <li>
 <p>Query language: <a href="../tutorials/quantum-tutorial.html#sec-query-language">Query language and filtering</a></p>
+</li>
+<li>
+<p>Scoped action enablement: <a href="./action-enablement.html#action-enablement">Why an action is unavailable: policy, feature flags, settings, and readiness blockers</a></p>
 </li>
 <li>
 <p>AI Agent integration: <a href="./ai-agent-integration.html">AI Agent Integration</a> (tools discovery, schema, execute, session/trace)</p>
@@ -20979,7 +22712,7 @@ quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pr
 <div id="footer">
 <div id="footer-text">
 Version 1.3.0-SNAPSHOT<br>
-Last updated 2026-02-20 11:19:28 -0600
+Last updated 2026-02-20 12:19:28 -0500
 </div>
 </div>
 </body>

@@ -545,7 +545,35 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_functional_areadomain_in_rulecontext_permission_language">4. Functional Area/Domain in RuleContext Permission Language</a></li>
 <li><a href="#_stategraphs_on_models">5. StateGraphs on Models</a></li>
 <li><a href="#_state_graph_dot">6. State Graph (DOT)</a></li>
-<li><a href="#_completiontasks_and_completiontaskgroups">7. CompletionTasks and CompletionTaskGroups</a></li>
+<li><a href="#completion-tasks">7. CompletionTasks and CompletionTaskGroups</a>
+<ul class="sectlevel2">
+<li><a href="#_when_to_use_them">7.1. When to use them</a></li>
+<li><a href="#_core_entities">7.2. Core entities</a>
+<ul class="sectlevel3">
+<li><a href="#_completiontask">7.2.1. CompletionTask</a></li>
+<li><a href="#_completiontaskgroup">7.2.2. CompletionTaskGroup</a></li>
+</ul>
+</li>
+<li><a href="#_what_the_framework_manages_vs_what_your_application_manages">7.3. What the framework manages vs. what your application manages</a></li>
+<li><a href="#_state_model">7.4. State model</a></li>
+<li><a href="#_rest_api_surface">7.5. REST API surface</a>
+<ul class="sectlevel3">
+<li><a href="#_task_group_endpoints">7.5.1. Task group endpoints</a></li>
+<li><a href="#_task_endpoints">7.5.2. Task endpoints</a></li>
+</ul>
+</li>
+<li><a href="#_request_and_response_payloads">7.6. Request and response payloads</a>
+<ul class="sectlevel3">
+<li><a href="#_creating_a_group">7.6.1. Creating a group</a></li>
+<li><a href="#_creating_a_task_in_a_group">7.6.2. Creating a task in a group</a></li>
+<li><a href="#_completing_a_task">7.6.3. Completing a task</a></li>
+</ul>
+</li>
+<li><a href="#_completion_event_stream">7.7. Completion event stream</a></li>
+<li><a href="#_typical_orchestration_flow">7.8. Typical orchestration flow</a></li>
+<li><a href="#_best_practices">7.9. Best practices</a></li>
+</ul>
+</li>
 <li><a href="#_references_and_entityreference">8. References and EntityReference</a></li>
 <li><a href="#_tracking_references_with_trackreferences_and_delete_semantics">9. Tracking References with @TrackReferences and Delete Semantics</a>
 <ul class="sectlevel2">
@@ -1314,127 +1342,509 @@ These can be used to author reusable filters or to record audit decisions by are
 </div>
 </div>
 <div class="sect1">
-<h2 id="_completiontasks_and_completiontaskgroups">7. CompletionTasks and CompletionTaskGroups</h2>
+<h2 id="completion-tasks">7. CompletionTasks and CompletionTaskGroups</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>CompletionTasks and CompletionTaskGroups provide a simple, persistent way to track a series of work items that need to be completed, either by background processes or external systems. Use them when you need durable progress tracking across restarts and an auditable record of outcomes.</p>
+<p>CompletionTasks and CompletionTaskGroups provide a small persistence-backed contract for tracking work that finishes later. They are useful when a request starts work immediately but the actual completion happens in a worker, another service, or a human-in-the-loop integration.</p>
 </div>
 <div class="paragraph">
-<p>Key models:</p>
+<p>This section documents the concrete structures and runtime behavior, because other guides reference "completion tasks" as a pattern but do not define the payloads and lifecycle precisely.</p>
+</div>
+<div class="sect2">
+<h3 id="_when_to_use_them">7.1. When to use them</h3>
+<div class="paragraph">
+<p>Use CompletionTasks when you need:</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p>CompletionTask: an individual unit of work with fields like status, timestamps, and optional result/details.</p>
+<p>A durable record of work that may outlive the initiating HTTP request</p>
 </li>
 <li>
-<p>CompletionTaskGroup: a container that represents a cohort of tasks progressing toward completion.</p>
+<p>A simple per-item status model with timestamps and outcome text</p>
+</li>
+<li>
+<p>A way to group related tasks under one business operation</p>
+</li>
+<li>
+<p>A lightweight event stream so clients can react when a task completes</p>
 </li>
 </ul>
 </div>
 <div class="paragraph">
-<p>Model overview:</p>
+<p>Do not treat them as a workflow engine. The framework does not infer dependencies, retries, compensation rules, or aggregate group state transitions for you.</p>
 </div>
+</div>
+<div class="sect2">
+<h3 id="_core_entities">7.2. Core entities</h3>
+<div class="paragraph">
+<p>Both entities extend <code>BaseModel</code>, so they inherit the common Quantum fields such as <code>id</code>, <code>refName</code>, <code>displayName</code>, <code>dataDomain</code>, <code>activeStatus</code>, <code>auditInfo</code>, and <code>version</code>.</p>
+</div>
+<div class="paragraph">
+<p>The inherited fields matter here in two ways:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>id</code> is the record identifier used by the REST endpoints and emitted in completion events.</p>
+</li>
+<li>
+<p><code>refName</code>, <code>displayName</code>, and <code>dataDomain</code> are still available for your application-level correlation and multi-tenant scoping, even though they are not task-specific.</p>
+</li>
+</ul>
+</div>
+<div class="sect3">
+<h4 id="_completiontask">7.2.1. CompletionTask</h4>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="comment">// Individual task</span>
-<span class="annotation">@Entity</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">completionTask</span><span class="delimiter">&quot;</span></span>)
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@Entity</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">completionTask</span><span class="delimiter">&quot;</span></span>)
 <span class="directive">public</span> <span class="type">class</span> <span class="class">CompletionTask</span> <span class="directive">extends</span> BaseModel {
   <span class="directive">public</span> <span class="type">enum</span> Status { PENDING, RUNNING, SUCCESS, FAILED }
 
   <span class="annotation">@Reference</span>
-  CompletionTaskGroup group;   <span class="comment">// optional grouping</span>
-  <span class="predefined-type">String</span> details;              <span class="comment">// human-readable context (what/why)</span>
-  Status status;               <span class="comment">// PENDING -&gt; RUNNING -&gt; (SUCCESS|FAILED)</span>
-  <span class="predefined-type">Date</span> createdDate;            <span class="comment">// when the task was created</span>
-  <span class="predefined-type">Date</span> completedDate;          <span class="comment">// set when terminal (SUCCESS/FAILED)</span>
-  <span class="predefined-type">String</span> result;               <span class="comment">// output, message, or error summary</span>
+  CompletionTaskGroup group;
 
-  <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> bmFunctionalArea()   { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">TASK</span><span class="delimiter">&quot;</span></span>; }
-  <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> bmFunctionalDomain() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">COMPLETION_TASK</span><span class="delimiter">&quot;</span></span>; }
-}
-
-<span class="comment">// Group of tasks</span>
-<span class="annotation">@Entity</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">completionTaskGroup</span><span class="delimiter">&quot;</span></span>)
+  <span class="predefined-type">String</span> details;
+  Status status;
+  <span class="predefined-type">Date</span> createdDate;
+  <span class="predefined-type">Date</span> completedDate;
+  <span class="predefined-type">String</span> result;
+}</code></pre>
+</div>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 20%;">
+<col style="width: 60%;">
+<col style="width: 20%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Field</th>
+<th class="tableblock halign-left valign-top">Meaning</th>
+<th class="tableblock halign-left valign-top">Set by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>group</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Optional Morphia reference to the parent <code>CompletionTaskGroup</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Client on create, or the <code>create/{groupId}</code> endpoint</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>details</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Human-readable explanation of the unit of work, usually "what this task is doing"</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Client/application</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>status</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Task execution state: <code>PENDING</code>, <code>RUNNING</code>, <code>SUCCESS</code>, <code>FAILED</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Server sets <code>PENDING</code> on create; application or API updates afterward</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>createdDate</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Timestamp when the task record was created</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Server</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>completedDate</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Timestamp written when the task is completed through the completion endpoint</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Server</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>result</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Outcome text, response summary, or error message</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Application or completion endpoint caller</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect3">
+<h4 id="_completiontaskgroup">7.2.2. CompletionTaskGroup</h4>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@Entity</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">completionTaskGroup</span><span class="delimiter">&quot;</span></span>)
 <span class="directive">public</span> <span class="type">class</span> <span class="class">CompletionTaskGroup</span> <span class="directive">extends</span> BaseModel {
   <span class="directive">public</span> <span class="type">enum</span> Status { NEW, RUNNING, COMPLETE }
 
-  <span class="predefined-type">String</span> description;   <span class="comment">// e.g., &quot;Onboarding: create resources&quot;</span>
-  Status status;        <span class="comment">// reflects overall progress of the group</span>
-  <span class="predefined-type">Date</span> createdDate;     <span class="comment">// when the group was created</span>
-  <span class="predefined-type">Date</span> completedDate;   <span class="comment">// when the group finished</span>
-
-  <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> bmFunctionalArea()   { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">TASK</span><span class="delimiter">&quot;</span></span>; }
-  <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> bmFunctionalDomain() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">COMPLETION_TASK_GROUP</span><span class="delimiter">&quot;</span></span>; }
+  <span class="predefined-type">String</span> description;
+  Status status;
+  <span class="predefined-type">Date</span> createdDate;
+  <span class="predefined-type">Date</span> completedDate;
+}</code></pre>
+</div>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 20%;">
+<col style="width: 60%;">
+<col style="width: 20%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Field</th>
+<th class="tableblock halign-left valign-top">Meaning</th>
+<th class="tableblock halign-left valign-top">Set by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>description</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Human-readable summary of the batch, workflow, or request that owns the tasks</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Client/application</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>status</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Coarse aggregate state: <code>NEW</code>, <code>RUNNING</code>, <code>COMPLETE</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Server sets <code>NEW</code> on create; application owns later transitions</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>createdDate</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Timestamp when the group was created</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Server</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>completedDate</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Timestamp for when your application considers the group finished</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Application</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_what_the_framework_manages_vs_what_your_application_manages">7.3. What the framework manages vs. what your application manages</h3>
+<div class="paragraph">
+<p>The code-level behavior is intentionally small:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>CompletionTaskGroupRepo.createGroup(&#8230;&#8203;)</code> always sets <code>status=NEW</code> and <code>createdDate=now</code>.</p>
+</li>
+<li>
+<p><code>CompletionTaskRepo.createTask(&#8230;&#8203;)</code> always sets <code>status=PENDING</code> and <code>createdDate=now</code>.</p>
+</li>
+<li>
+<p><code>CompletionTaskRepo.completeTask(&#8230;&#8203;)</code> sets <code>status</code>, <code>completedDate=now</code>, and <code>result</code>.</p>
+</li>
+<li>
+<p>If the task belongs to a group, task completion emits an SSE message for that group.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The framework does not automatically:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Change a group from <code>NEW</code> to <code>RUNNING</code></p>
+</li>
+<li>
+<p>Mark a group <code>COMPLETE</code> when all child tasks finish</p>
+</li>
+<li>
+<p>Count completed tasks or calculate percentages</p>
+</li>
+<li>
+<p>Retry failed tasks</p>
+</li>
+<li>
+<p>Validate that only terminal states are used with the completion endpoint</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>That means group rollup is application-owned. If you want <code>CompletionTaskGroup.status</code> to represent aggregate progress, update it explicitly from your worker or orchestration layer.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_state_model">7.4. State model</h3>
+<div class="imageblock">
+<div class="content">
+<img src="diag-plantuml-md5-30379fc09cdd4f4c644fc8bc9be541cb.svg" alt="Diagram" width="887" height="738">
+</div>
+</div>
+<div class="paragraph">
+<p>Recommended conventions:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Set a task to <code>RUNNING</code> when a worker begins processing it.</p>
+</li>
+<li>
+<p>Use <code>SUCCESS</code> and <code>FAILED</code> as the terminal task states.</p>
+</li>
+<li>
+<p>Set a group to <code>RUNNING</code> once at least one child task has begun.</p>
+</li>
+<li>
+<p>Set a group to <code>COMPLETE</code> only when your own aggregation logic decides the batch is finished.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_rest_api_surface">7.5. REST API surface</h3>
+<div class="paragraph">
+<p>The completion-task resources are small wrappers on top of the generic <code>BaseResource</code>, so they expose both task-specific endpoints and inherited read endpoints.</p>
+</div>
+<div class="sect3">
+<h4 id="_task_group_endpoints">7.5.1. Task group endpoints</h4>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 16.6666%;">
+<col style="width: 33.3333%;">
+<col style="width: 50.0001%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Method and path</th>
+<th class="tableblock halign-left valign-top">Purpose</th>
+<th class="tableblock halign-left valign-top">Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>POST /integration/completionTaskGroup/create</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Create a new task group</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Server forces <code>status=NEW</code> and <code>createdDate</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>GET /integration/completionTaskGroup/id/{id}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Fetch a group by Mongo <code>id</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Inherited from <code>BaseResource</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>GET /integration/completionTaskGroup/refName/{refName}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Fetch a group by <code>refName</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Inherited from <code>BaseResource</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>GET /integration/completionTaskGroup/subscribe/{id}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Subscribe to completion events for tasks in the group</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Returns server-sent events</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect3">
+<h4 id="_task_endpoints">7.5.2. Task endpoints</h4>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 16.6666%;">
+<col style="width: 33.3333%;">
+<col style="width: 50.0001%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Method and path</th>
+<th class="tableblock halign-left valign-top">Purpose</th>
+<th class="tableblock halign-left valign-top">Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>POST /integration/completionTask/create/{groupId}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Create a task and attempt to attach it to the given group</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Server forces <code>status=PENDING</code> and <code>createdDate</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>PUT /integration/completionTask/complete/{id}?status=SUCCESS&amp;result=&#8230;&#8203;</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Update a task status, set <code>completedDate</code>, and store <code>result</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Despite the method name, the code accepts any <code>CompletionTask.Status</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>GET /integration/completionTask/id/{id}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Fetch a task by Mongo <code>id</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Inherited from <code>BaseResource</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>GET /integration/completionTask/refName/{refName}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Fetch a task by <code>refName</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Inherited from <code>BaseResource</code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_request_and_response_payloads">7.6. Request and response payloads</h3>
+<div class="sect3">
+<h4 id="_creating_a_group">7.6.1. Creating a group</h4>
+<div class="paragraph">
+<p>Minimal request:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">refName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">catalog-import-20260327</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">displayName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Catalog Import 2026-03-27</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">description</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Nightly catalog import for 250 SKUs</span><span class="delimiter">&quot;</span></span>
 }</code></pre>
 </div>
 </div>
 <div class="paragraph">
-<p>Typical lifecycle:</p>
+<p>Representative response:</p>
 </div>
-<div class="imageblock">
+<div class="listingblock">
 <div class="content">
-<img src="diag-plantuml-md5-2eeb655becc44b8fa685c07e4ac12e5c.svg" alt="Diagram" width="760" height="738">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">id</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">67e51d7c9d0f1d6df2f8ab12</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">refName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">catalog-import-20260327</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">displayName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Catalog Import 2026-03-27</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">description</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Nightly catalog import for 250 SKUs</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">NEW</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">createdDate</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">2026-03-27T04:12:14.118Z</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">completedDate</span><span class="delimiter">&quot;</span></span>: <span class="value">null</span>
+}</code></pre>
 </div>
 </div>
-<div class="ulist">
-<ul>
-<li>
-<p>Create a CompletionTaskGroup in NEW status.</p>
-</li>
-<li>
-<p>Create N CompletionTasks (status=PENDING) referencing the group.</p>
-</li>
-<li>
-<p>A worker picks tasks and flips status to RUNNING, performs the work, then to SUCCESS or FAILED, setting completedDate and result.</p>
-</li>
-<li>
-<p>Periodically update the group:</p>
-</li>
-<li>
-<p>If at least one task is RUNNING (and none pending), set group status to RUNNING.</p>
-</li>
-<li>
-<p>When all tasks are terminal (SUCCESS or FAILED), set group status to COMPLETE and completedDate.</p>
-</li>
-</ul>
+</div>
+<div class="sect3">
+<h4 id="_creating_a_task_in_a_group">7.6.2. Creating a task in a group</h4>
+<div class="paragraph">
+<p>Minimal request:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">refName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">sku-100045</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">displayName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Import SKU 100045</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">details</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Import SKU 100045 from supplier feed</span><span class="delimiter">&quot;</span></span>
+}</code></pre>
+</div>
 </div>
 <div class="paragraph">
-<p>How to use for tracking a series of things that need to be completed:</p>
+<p>Representative response:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">id</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">67e51df49d0f1d6df2f8ab13</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">refName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">sku-100045</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">displayName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Import SKU 100045</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">details</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Import SKU 100045 from supplier feed</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">PENDING</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">createdDate</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">2026-03-27T04:14:12.091Z</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">completedDate</span><span class="delimiter">&quot;</span></span>: <span class="value">null</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">result</span><span class="delimiter">&quot;</span></span>: <span class="value">null</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">group</span><span class="delimiter">&quot;</span></span>: {
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">id</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">67e51d7c9d0f1d6df2f8ab12</span><span class="delimiter">&quot;</span></span>
+  }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Notes:</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p>Batch operations: When submitting a batch (e.g., provisioning 100 accounts), create one group and 100 tasks. The UI/API can poll the group to show overall progress and per-item results.</p>
+<p>The endpoint path requires a <code>groupId</code>.</p>
 </li>
 <li>
-<p>Multi-step workflows: Represent each step as its own task, or use one task per target resource. Groups help correlate all steps for a single business request.</p>
+<p>If the <code>groupId</code> does not resolve to an existing group, the current repository implementation still creates the task, but leaves <code>group</code> unset.</p>
 </li>
 <li>
-<p>Retry/compensation: FAILED tasks can be retried by creating new tasks or resetting status to PENDING based on your policy. Keep result populated with failure reasons.</p>
+<p>The server ignores any client-supplied <code>status</code> or <code>createdDate</code> during creation and overwrites them.</p>
 </li>
 </ul>
 </div>
+</div>
+<div class="sect3">
+<h4 id="_completing_a_task">7.6.3. Completing a task</h4>
+<div class="paragraph">
+<p>Example:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="bash">curl -X PUT \
+  &quot;http://localhost:8080/integration/completionTask/complete/67e51df49d0f1d6df2f8ab13?status=SUCCESS&amp;result=Imported%20successfully&quot;</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Representative response:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">id</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">67e51df49d0f1d6df2f8ab13</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">SUCCESS</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">completedDate</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">2026-03-27T04:16:08.501Z</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">result</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Imported successfully</span><span class="delimiter">&quot;</span></span>
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Important behavior:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>completedDate</code> is always set by the completion endpoint.</p>
+</li>
+<li>
+<p>The endpoint name says "complete", but the implementation accepts any value in <code>CompletionTask.Status</code>.</p>
+</li>
+<li>
+<p>Updating the task does not automatically update the parent group status.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_completion_event_stream">7.7. Completion event stream</h3>
+<div class="paragraph">
+<p><code>GET /integration/completionTaskGroup/subscribe/{groupId}</code> returns server-sent events. Each event is emitted when <code>CompletionTaskRepo.completeTask(&#8230;&#8203;)</code> is called for a task in that group.</p>
+</div>
+<div class="paragraph">
+<p>The event payload is plain text, not JSON. The current format is:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="text">task:{taskId}:{status}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Example event data:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="text">task:67e51df49d0f1d6df2f8ab13:SUCCESS</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If you need richer event payloads, build that in your own orchestration layer or extend the resource.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_typical_orchestration_flow">7.8. Typical orchestration flow</h3>
 <div class="paragraph">
 <p>Example creation flow:</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="java">CompletionTaskGroup group = CompletionTaskGroup.builder()
-  .description(<span class="string"><span class="delimiter">&quot;</span><span class="content">Catalog import: 250 SKUs</span><span class="delimiter">&quot;</span></span>)
-  .status(CompletionTaskGroup.Status.NEW)
-  .createdDate(<span class="keyword">new</span> <span class="predefined-type">Date</span>())
-  .build();
-completionTaskGroupRepo.save(group);
+<pre class="CodeRay highlight"><code data-lang="java">CompletionTaskGroup group = completionTaskGroupRepo.createGroup(
+  CompletionTaskGroup.builder()
+    .refName(<span class="string"><span class="delimiter">&quot;</span><span class="content">catalog-import-20260327</span><span class="delimiter">&quot;</span></span>)
+    .displayName(<span class="string"><span class="delimiter">&quot;</span><span class="content">Catalog Import 2026-03-27</span><span class="delimiter">&quot;</span></span>)
+    .description(<span class="string"><span class="delimiter">&quot;</span><span class="content">Nightly catalog import for 250 SKUs</span><span class="delimiter">&quot;</span></span>)
+    .build()
+);
 
 <span class="keyword">for</span> (Sku s : skus) {
-  CompletionTask t = CompletionTask.builder()
-    .group(group)
-    .details(<span class="string"><span class="delimiter">&quot;</span><span class="content">Import SKU </span><span class="delimiter">&quot;</span></span> + s.code())
-    .status(CompletionTask.Status.PENDING)
-    .createdDate(<span class="keyword">new</span> <span class="predefined-type">Date</span>())
-    .build();
-  completionTaskRepo.save(t);
+  completionTaskRepo.createTask(
+    CompletionTask.builder()
+      .refName(<span class="string"><span class="delimiter">&quot;</span><span class="content">sku-</span><span class="delimiter">&quot;</span></span> + s.code())
+      .displayName(<span class="string"><span class="delimiter">&quot;</span><span class="content">Import SKU </span><span class="delimiter">&quot;</span></span> + s.code())
+      .details(<span class="string"><span class="delimiter">&quot;</span><span class="content">Import SKU </span><span class="delimiter">&quot;</span></span> + s.code() + <span class="string"><span class="delimiter">&quot;</span><span class="content"> from supplier feed</span><span class="delimiter">&quot;</span></span>)
+      .build(),
+    group.getId().toString()
+  );
 }</code></pre>
 </div>
 </div>
@@ -1443,57 +1853,82 @@ completionTaskGroupRepo.save(group);
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="comment">// Fetch a PENDING task and execute</span>
-CompletionTask t = completionTaskRepo.findOneByStatus(CompletionTask.Status.PENDING);
-<span class="keyword">if</span> (t != <span class="predefined-constant">null</span>) {
-  completionTaskRepo.update(t.getId(), <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTask.Status.RUNNING);
+<pre class="CodeRay highlight"><code data-lang="java">CompletionTask task = completionTaskRepo.findOneByStatus(CompletionTask.Status.PENDING);
+<span class="keyword">if</span> (task != <span class="predefined-constant">null</span>) {
+  completionTaskRepo.update(task.getId(), <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTask.Status.RUNNING);
+  completionTaskGroupRepo.update(task.getGroup().getId(), <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTaskGroup.Status.RUNNING);
+
   <span class="keyword">try</span> {
     <span class="comment">// ... do work ...</span>
-    completionTaskRepo.update(t.getId(),
-      <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTask.Status.SUCCESS,
-      <span class="string"><span class="delimiter">&quot;</span><span class="content">completedDate</span><span class="delimiter">&quot;</span></span>, <span class="keyword">new</span> <span class="predefined-type">Date</span>(),
-      <span class="string"><span class="delimiter">&quot;</span><span class="content">result</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">OK</span><span class="delimiter">&quot;</span></span>);
+    completionTaskRepo.completeTask(
+      task.getId().toString(),
+      CompletionTask.Status.SUCCESS,
+      <span class="string"><span class="delimiter">&quot;</span><span class="content">Imported successfully</span><span class="delimiter">&quot;</span></span>
+    );
   } <span class="keyword">catch</span> (<span class="exception">Exception</span> e) {
-    completionTaskRepo.update(t.getId(),
-      <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTask.Status.FAILED,
-      <span class="string"><span class="delimiter">&quot;</span><span class="content">completedDate</span><span class="delimiter">&quot;</span></span>, <span class="keyword">new</span> <span class="predefined-type">Date</span>(),
-      <span class="string"><span class="delimiter">&quot;</span><span class="content">result</span><span class="delimiter">&quot;</span></span>, e.getMessage());
+    completionTaskRepo.completeTask(
+      task.getId().toString(),
+      CompletionTask.Status.FAILED,
+      e.getMessage()
+    );
   }
-}
-
-<span class="comment">// Periodically recompute group status</span>
-<span class="predefined-type">List</span>&lt;CompletionTask&gt; tasks = completionTaskRepo.findByGroup(group);
-<span class="type">boolean</span> allTerminal = tasks.stream().allMatch(x -&gt; x.getStatus()==SUCCESS || x.getStatus()==FAILED);
-<span class="type">boolean</span> anyRunning = tasks.stream().anyMatch(x -&gt; x.getStatus()==RUNNING);
-<span class="type">boolean</span> anyPending = tasks.stream().anyMatch(x -&gt; x.getStatus()==PENDING);
-
-<span class="keyword">if</span> (allTerminal) {
-  completionTaskGroupRepo.update(group.getId(),
-    <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTaskGroup.Status.COMPLETE,
-    <span class="string"><span class="delimiter">&quot;</span><span class="content">completedDate</span><span class="delimiter">&quot;</span></span>, <span class="keyword">new</span> <span class="predefined-type">Date</span>());
-} <span class="keyword">else</span> <span class="keyword">if</span> (anyRunning || (!anyPending &amp;&amp; !allTerminal)) {
-  completionTaskGroupRepo.update(group.getId(), <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTaskGroup.Status.RUNNING);
 }</code></pre>
 </div>
 </div>
 <div class="paragraph">
-<p>Notes and best practices:</p>
+<p>Example aggregate rollup owned by the application:</p>
 </div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="predefined-type">List</span>&lt;CompletionTask&gt; tasks = completionTaskRepo.findByGroup(group);
+
+<span class="type">boolean</span> allTerminal = tasks.stream().allMatch(t -&gt;
+  t.getStatus() == CompletionTask.Status.SUCCESS ||
+  t.getStatus() == CompletionTask.Status.FAILED
+);
+<span class="type">boolean</span> anyRunning = tasks.stream().anyMatch(t -&gt;
+  t.getStatus() == CompletionTask.Status.RUNNING
+);
+
+<span class="keyword">if</span> (allTerminal) {
+  completionTaskGroupRepo.update(
+    group.getId(),
+    <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTaskGroup.Status.COMPLETE,
+    <span class="string"><span class="delimiter">&quot;</span><span class="content">completedDate</span><span class="delimiter">&quot;</span></span>, <span class="keyword">new</span> <span class="predefined-type">Date</span>()
+  );
+} <span class="keyword">else</span> <span class="keyword">if</span> (anyRunning) {
+  completionTaskGroupRepo.update(
+    group.getId(),
+    <span class="string"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>, CompletionTaskGroup.Status.RUNNING
+  );
+}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_best_practices">7.9. Best practices</h3>
 <div class="ulist">
 <ul>
 <li>
-<p>Keep details short but diagnostic, and store richer context in result.</p>
+<p>Keep <code>details</code> short and stable so operators can quickly scan task lists.</p>
 </li>
 <li>
-<p>Use DataDomain fields for multi-tenant scoping so groups/tasks are isolated per tenant/org as needed.</p>
+<p>Use <code>result</code> for outcome summaries, error messages, or external correlation identifiers.</p>
 </li>
 <li>
-<p>Avoid unbounded growth: archive or purge old groups once COMPLETE.</p>
+<p>Populate <code>refName</code> with a meaningful business key so tasks can be found without raw Mongo ids.</p>
 </li>
 <li>
-<p>Consider idempotency keys in details or a custom field to prevent processing the same logical work twice.</p>
+<p>Use <code>dataDomain</code> consistently so task and group records stay tenant-scoped.</p>
+</li>
+<li>
+<p>Treat group status as a denormalized summary owned by your orchestration code.</p>
+</li>
+<li>
+<p>Purge or archive old completed groups to avoid unbounded growth.</p>
 </li>
 </ul>
+</div>
 </div>
 </div>
 </div>
@@ -2567,7 +3002,7 @@ query.filter(Filters.in(<span class="string"><span class="delimiter">&quot;</spa
 <div id="footer">
 <div id="footer-text">
 Version 1.3.0-SNAPSHOT<br>
-Last updated 2026-03-16 18:51:21 -0500
+Last updated 2026-03-27 23:51:18 -0400
 </div>
 </div>
 </body>

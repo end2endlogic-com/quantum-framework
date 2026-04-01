@@ -529,7 +529,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <h1>Permissions: Rule Bases, SecurityURIHeader, and SecurityURIBody</h1>
 <div class="details">
 <span id="revnumber">version 1.3.0-SNAPSHOT,</span>
-<span id="revdate">2026-03-24T00:36:07Z</span>
+<span id="revdate">2026-04-01T18:32:14Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -541,64 +541,80 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_priorities">5. Priorities</a></li>
 <li><a href="#_grant_based_vs_deny_based_rule_sets">6. Grant-based vs Deny-based Rule Sets</a></li>
 <li><a href="#_feature_flags_variants_and_target_rules">7. Feature Flags, Variants, and Target Rules</a></li>
-<li><a href="#_multiple_matching_rulebases">8. Multiple Matching RuleBases</a></li>
-<li><a href="#_identity_and_role_matching">9. Identity and Role Matching</a>
+<li><a href="#scoped-action-enablement">8. Scoped Action Enablement and Dependency Tracking</a>
 <ul class="sectlevel2">
-<li><a href="#_how_roles_are_defined_for_an_identity_role_sources_and_resolution">9.1. How roles are defined for an identity (role sources and resolution)</a>
+<li><a href="#_core_idea_the_same_scoped_action_tuple_stays_canonical">8.1. Core idea: the same scoped action tuple stays canonical</a></li>
+<li><a href="#_the_three_answers_returned_by_the_framework">8.2. The three answers returned by the framework</a></li>
+<li><a href="#_runtime_models">8.3. Runtime models</a></li>
+<li><a href="#_rest_api">8.4. REST API</a></li>
+<li><a href="#_manifest_driven_dependency_relationships">8.5. Manifest-driven dependency relationships</a></li>
+<li><a href="#_resolver_spi">8.6. Resolver SPI</a></li>
+<li><a href="#_built_in_oss_dependency_types">8.7. Built-in OSS dependency types</a></li>
+<li><a href="#_missing_manifests_and_unsupported_dependency_types">8.8. Missing manifests and unsupported dependency types</a></li>
+<li><a href="#_example_contributor">8.9. Example contributor</a></li>
+<li><a href="#_relationship_to_policies_feature_flags_and_ui_actions">8.10. Relationship to policies, feature flags, and UI actions</a></li>
+<li><a href="#_enterprise_extensions">8.11. Enterprise extensions</a></li>
+<li><a href="#_guidance">8.12. Guidance</a></li>
+</ul>
+</li>
+<li><a href="#_multiple_matching_rulebases">9. Multiple Matching RuleBases</a></li>
+<li><a href="#_identity_and_role_matching">10. Identity and Role Matching</a>
+<ul class="sectlevel2">
+<li><a href="#_how_roles_are_defined_for_an_identity_role_sources_and_resolution">10.1. How roles are defined for an identity (role sources and resolution)</a>
 <ul class="sectlevel3">
-<li><a href="#_populating_rolesource_and_roleassignments">9.1.1. Populating <code>RoleSource</code> and <code>roleAssignments</code></a></li>
-<li><a href="#_authproviders_what_you_need_to_do">9.1.2. AuthProviders: what you need to do</a></li>
-<li><a href="#_security_check_responses_enriching_roleassignments">9.1.3. Security Check responses: enriching <code>roleAssignments</code></a></li>
+<li><a href="#_populating_rolesource_and_roleassignments">10.1.1. Populating <code>RoleSource</code> and <code>roleAssignments</code></a></li>
+<li><a href="#_authproviders_what_you_need_to_do">10.1.2. AuthProviders: what you need to do</a></li>
+<li><a href="#_security_check_responses_enriching_roleassignments">10.1.3. Security Check responses: enriching <code>roleAssignments</code></a></li>
 </ul>
 </li>
 </ul>
 </li>
-<li><a href="#_example_scenarios">10. Example Scenarios</a></li>
-<li><a href="#_operational_tips">11. Operational Tips</a></li>
-<li><a href="#_how_uiactions_and_defaultuiactions_are_calculated">12. How UIActions and DefaultUIActions are calculated</a></li>
-<li><a href="#_how_this_integrates_end_to_end">13. How This Integrates End-to-End</a></li>
-<li><a href="#_administering_policies_via_rest_policyresource">14. Administering Policies via REST (PolicyResource)</a>
+<li><a href="#_example_scenarios">11. Example Scenarios</a></li>
+<li><a href="#_operational_tips">12. Operational Tips</a></li>
+<li><a href="#_how_uiactions_and_defaultuiactions_are_calculated">13. How UIActions and DefaultUIActions are calculated</a></li>
+<li><a href="#_how_this_integrates_end_to_end">14. How This Integrates End-to-End</a></li>
+<li><a href="#_administering_policies_via_rest_policyresource">15. Administering Policies via REST (PolicyResource)</a>
 <ul class="sectlevel2">
-<li><a href="#_model_shape_policy">14.1. Model shape (Policy)</a></li>
-<li><a href="#_how_rule_contributed_filters_work_andfilterstring_orfilterstring_joinop">14.2. How rule-contributed filters work (andFilterString, orFilterString, joinOp)</a></li>
-<li><a href="#_accesslistresolvers_spi_for_list_based_access">14.3. AccessListResolvers (SPI) for list-based access</a></li>
-<li><a href="#_principalcontextpropertiesresolver_spi_for_custom_principal_properties">14.4. PrincipalContextPropertiesResolver (SPI) for custom principal properties</a></li>
-<li><a href="#_endpoints">14.5. Endpoints</a></li>
-<li><a href="#_examples">14.6. Examples</a></li>
-<li><a href="#_how_changes_affect_rule_bases_and_enforcement">14.7. How changes affect rule bases and enforcement</a></li>
+<li><a href="#_model_shape_policy">15.1. Model shape (Policy)</a></li>
+<li><a href="#_how_rule_contributed_filters_work_andfilterstring_orfilterstring_joinop">15.2. How rule-contributed filters work (andFilterString, orFilterString, joinOp)</a></li>
+<li><a href="#_accesslistresolvers_spi_for_list_based_access">15.3. AccessListResolvers (SPI) for list-based access</a></li>
+<li><a href="#_principalcontextpropertiesresolver_spi_for_custom_principal_properties">15.4. PrincipalContextPropertiesResolver (SPI) for custom principal properties</a></li>
+<li><a href="#_endpoints">15.5. Endpoints</a></li>
+<li><a href="#_examples">15.6. Examples</a></li>
+<li><a href="#_how_changes_affect_rule_bases_and_enforcement">15.7. How changes affect rule bases and enforcement</a></li>
 </ul>
 </li>
-<li><a href="#_realm_override_x_realm_and_impersonation_x_impersonate">15. Realm override (X-Realm) and Impersonation (X-Impersonate)</a>
+<li><a href="#_realm_override_x_realm_and_impersonation_x_impersonate">16. Realm override (X-Realm) and Impersonation (X-Impersonate)</a>
 <ul class="sectlevel2">
-<li><a href="#_what_they_do_at_a_glance">15.1. What they do (at a glance)</a></li>
-<li><a href="#_how_the_headers_integrate_with_permission_evaluation">15.2. How the headers integrate with permission evaluation</a></li>
-<li><a href="#_required_credential_configuration_credentialuseridpassword">15.3. Required credential configuration (CredentialUserIdPassword)</a></li>
-<li><a href="#_end_to_end_behavior_from_securityfilter_reference">15.4. End-to-end behavior from SecurityFilter (reference)</a></li>
-<li><a href="#_practical_differences_and_use_cases">15.5. Practical differences and use cases</a></li>
-<li><a href="#_examples_2">15.6. Examples</a></li>
+<li><a href="#_what_they_do_at_a_glance">16.1. What they do (at a glance)</a></li>
+<li><a href="#_how_the_headers_integrate_with_permission_evaluation">16.2. How the headers integrate with permission evaluation</a></li>
+<li><a href="#_required_credential_configuration_credentialuseridpassword">16.3. Required credential configuration (CredentialUserIdPassword)</a></li>
+<li><a href="#_end_to_end_behavior_from_securityfilter_reference">16.4. End-to-end behavior from SecurityFilter (reference)</a></li>
+<li><a href="#_practical_differences_and_use_cases">16.5. Practical differences and use cases</a></li>
+<li><a href="#_examples_2">16.6. Examples</a></li>
 </ul>
 </li>
-<li><a href="#_data_domain_assignment_on_create_domaincontext_and_datadomainpolicy">16. Data domain assignment on create: DomainContext and DataDomainPolicy</a>
+<li><a href="#_data_domain_assignment_on_create_domaincontext_and_datadomainpolicy">17. Data domain assignment on create: DomainContext and DataDomainPolicy</a>
 <ul class="sectlevel2">
-<li><a href="#_the_problem_this_solves_and_why_it_matters">16.1. The problem this solves (and why it matters)</a></li>
-<li><a href="#_key_concepts_recap_domaincontext_and_datadomain">16.2. Key concepts recap: DomainContext and DataDomain</a></li>
-<li><a href="#_the_default_policy_do_nothing_and_it_works">16.3. The default policy (do nothing and it works)</a></li>
-<li><a href="#_policy_scopes_principalattached_vs_global">16.4. Policy scopes: principal‑attached vs. global</a></li>
-<li><a href="#_the_policy_map_and_matching">16.5. The policy map and matching</a></li>
-<li><a href="#_how_the_resolver_works">16.6. How the resolver works</a></li>
-<li><a href="#_when_would_you_want_a_nonglobal_policy">16.7. When would you want a non‑global policy?</a></li>
-<li><a href="#_relation_to_tenancy_models">16.8. Relation to tenancy models</a></li>
-<li><a href="#_authoring_tips">16.9. Authoring tips</a></li>
-<li><a href="#_api_pointers">16.10. API pointers</a></li>
-<li><a href="#ontology-permissions">16.11. Ontology in Permission Rules (optional)</a>
+<li><a href="#_the_problem_this_solves_and_why_it_matters">17.1. The problem this solves (and why it matters)</a></li>
+<li><a href="#_key_concepts_recap_domaincontext_and_datadomain">17.2. Key concepts recap: DomainContext and DataDomain</a></li>
+<li><a href="#_the_default_policy_do_nothing_and_it_works">17.3. The default policy (do nothing and it works)</a></li>
+<li><a href="#_policy_scopes_principalattached_vs_global">17.4. Policy scopes: principal‑attached vs. global</a></li>
+<li><a href="#_the_policy_map_and_matching">17.5. The policy map and matching</a></li>
+<li><a href="#_how_the_resolver_works">17.6. How the resolver works</a></li>
+<li><a href="#_when_would_you_want_a_nonglobal_policy">17.7. When would you want a non‑global policy?</a></li>
+<li><a href="#_relation_to_tenancy_models">17.8. Relation to tenancy models</a></li>
+<li><a href="#_authoring_tips">17.9. Authoring tips</a></li>
+<li><a href="#_api_pointers">17.10. API pointers</a></li>
+<li><a href="#ontology-permissions">17.11. Ontology in Permission Rules (optional)</a>
 <ul class="sectlevel3">
-<li><a href="#rule-hasedge">16.11.1. Rule language: add hasEdge()</a></li>
+<li><a href="#rule-hasedge">17.11.1. Rule language: add hasEdge()</a></li>
 </ul>
 </li>
-<li><a href="#label-resolution-spi">16.12. Label resolution SPI and hasLabel() in rules</a></li>
+<li><a href="#label-resolution-spi">17.12. Label resolution SPI and hasLabel() in rules</a></li>
 </ul>
 </li>
-<li><a href="#script-helpers-reference">17. Script Helpers reference (when enabled)</a></li>
+<li><a href="#script-helpers-reference">18. Script Helpers reference (when enabled)</a></li>
 </ul>
 </div>
 </div>
@@ -1273,7 +1289,685 @@ Ontology- and label-aware policy helpers are available to postconditionScript wh
 </div>
 </div>
 <div class="sect1">
-<h2 id="_multiple_matching_rulebases">8. Multiple Matching RuleBases</h2>
+<h2 id="scoped-action-enablement">8. Scoped Action Enablement and Dependency Tracking</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>For the dedicated guide covering the runtime API, manifest model, SPI contracts, and built-in resolver types, see <a href="./action-enablement.html">Scoped Action Enablement</a>.</p>
+</div>
+<div class="paragraph">
+<p>Permission checks answer one important question: "may this identity perform <code>area / functionalDomain / action</code>?" In practice, teams also need to answer a second question: "why is this action still unavailable?"</p>
+</div>
+<div class="paragraph">
+<p>Typical reasons include:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>policy denies the action</p>
+</li>
+<li>
+<p>a feature flag exists but is disabled</p>
+</li>
+<li>
+<p>a required setting has not been configured</p>
+</li>
+<li>
+<p>a prerequisite entity or runtime dependency is missing</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Quantum now provides a framework-level dependency tracking layer for these cases. The implementation guide for this work lives in <code>docs/design/SCOPED_ACTION_ENABLEMENT_IMPLEMENTATION_GUIDE.md</code>, and the runtime contracts are implemented in the <code>quantum-action-enablement-models</code> and <code>quantum-action-enablement-quarkus</code> modules.</p>
+</div>
+<div class="sect2">
+<h3 id="_core_idea_the_same_scoped_action_tuple_stays_canonical">8.1. Core idea: the same scoped action tuple stays canonical</h3>
+<div class="paragraph">
+<p>The unit of evaluation is still the same tuple already used by the policy engine:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="text">area / functionalDomain / action</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Examples:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>integration / exchange / create</code></p>
+</li>
+<li>
+<p><code>integration / workflow / create</code></p>
+</li>
+<li>
+<p><code>system / action-enablement / check</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>This is intentional. The framework does not introduce a second authorization primitive just to model readiness. Instead, it composes additional dependencies around the same scoped action that policy already understands.</p>
+</div>
+<div class="paragraph">
+<p>Capabilities are still useful, but at a different level:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>A scoped action is the atomic framework-level unit.</p>
+</li>
+<li>
+<p>A capability is an application-defined composition over one or more scoped actions.</p>
+</li>
+<li>
+<p>Settings, feature flags, and runtime prerequisites are attached to the scoped action requirement manifest.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>That structure is what lets a UI or shell explain "this action is blocked because the policy denies it" versus "this action is allowed, but the required secret or filesystem is not ready yet."</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_the_three_answers_returned_by_the_framework">8.2. The three answers returned by the framework</h3>
+<div class="paragraph">
+<p>Scoped action enablement separates three concerns that are often blurred together:</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Field</th>
+<th class="tableblock halign-left valign-top">Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>allowed</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Whether the existing permission rule stack allows the scoped action for the evaluated identity and data domain</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>enabled</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Whether rollout and administrative toggles, especially feature flags, say the action should be exposed</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ready</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Whether operational prerequisites such as settings, entities, or runtime dependencies are satisfied</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>An action is considered usable only when all three are true:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="text">usable = allowed &amp;&amp; enabled &amp;&amp; ready</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This distinction matters because the remediation path is different:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>allowed=false</code> usually means a policy or role problem</p>
+</li>
+<li>
+<p><code>enabled=false</code> usually means a feature flag or administrative rollout problem</p>
+</li>
+<li>
+<p><code>ready=false</code> usually means setup, configuration, or runtime dependencies are incomplete</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_runtime_models">8.3. Runtime models</h3>
+<div class="paragraph">
+<p>The core request and response models are intentionally small:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="directive">public</span> <span class="type">class</span> <span class="class">ScopedActionRef</span> {
+    <span class="predefined-type">String</span> area;
+    <span class="predefined-type">String</span> functionalDomain;
+    <span class="predefined-type">String</span> action;
+}
+
+<span class="directive">public</span> <span class="type">class</span> <span class="class">DependencyCheckRef</span> {
+    <span class="predefined-type">String</span> type;
+    <span class="predefined-type">String</span> refName;
+    <span class="predefined-type">Map</span>&lt;<span class="predefined-type">String</span>, <span class="predefined-type">Object</span>&gt; config;
+}
+
+<span class="directive">public</span> <span class="type">class</span> <span class="class">ScopedActionRequirement</span> {
+    ScopedActionRef scopedAction;
+    <span class="predefined-type">String</span> displayName;
+    <span class="predefined-type">String</span> description;
+    <span class="predefined-type">List</span>&lt;DependencyCheckRef&gt; dependencies;
+}
+
+<span class="directive">public</span> <span class="type">class</span> <span class="class">ScopedActionEnablementStatus</span> {
+    ScopedActionRef scopedAction;
+    <span class="type">boolean</span> allowed;
+    <span class="type">boolean</span> enabled;
+    <span class="type">boolean</span> ready;
+    <span class="type">boolean</span> usable;
+    <span class="predefined-type">List</span>&lt;EnablementBlocker&gt; blockers;
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>An <code>EnablementBlocker</code> is the machine-readable explanation of why evaluation failed. Each blocker includes:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>impact</code>: one of <code>ALLOWED</code>, <code>ENABLED</code>, or <code>READY</code></p>
+</li>
+<li>
+<p><code>type</code>: the dependency type, such as <code>permission</code> or <code>feature-flag</code></p>
+</li>
+<li>
+<p><code>code</code>: a stable blocker code, such as <code>permission-denied</code></p>
+</li>
+<li>
+<p><code>message</code>: a human-readable explanation</p>
+</li>
+<li>
+<p><code>severity</code>: typically <code>warn</code> or <code>error</code></p>
+</li>
+<li>
+<p><code>metadata</code>: additional structured context</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_rest_api">8.4. REST API</h3>
+<div class="paragraph">
+<p>The runtime API is exposed at:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>POST /system/actions/enablement/check</code></p>
+</li>
+<li>
+<p><code>GET /system/actions/enablement/manifest</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>This resource itself is annotated as:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>area=system</code></p>
+</li>
+<li>
+<p><code>functionalDomain=action-enablement</code></p>
+</li>
+<li>
+<p><code>action=check|view</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Example request:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">identity</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">tenant-admin</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">realm</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">acme</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">orgRefName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">acme-org</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">tenantId</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">acme-tenant</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">scope</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">api</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">actions</span><span class="delimiter">&quot;</span></span>: [
+    {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">area</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">integration</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">functionalDomain</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">guided_integration</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">action</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">create</span><span class="delimiter">&quot;</span></span>
+    }
+  ]
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Representative response:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">results</span><span class="delimiter">&quot;</span></span>: [
+    {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">scopedAction</span><span class="delimiter">&quot;</span></span>: {
+        <span class="key"><span class="delimiter">&quot;</span><span class="content">area</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">integration</span><span class="delimiter">&quot;</span></span>,
+        <span class="key"><span class="delimiter">&quot;</span><span class="content">functionalDomain</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">guided_integration</span><span class="delimiter">&quot;</span></span>,
+        <span class="key"><span class="delimiter">&quot;</span><span class="content">action</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">create</span><span class="delimiter">&quot;</span></span>
+      },
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">allowed</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">enabled</span><span class="delimiter">&quot;</span></span>: <span class="value">false</span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">ready</span><span class="delimiter">&quot;</span></span>: <span class="value">false</span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">usable</span><span class="delimiter">&quot;</span></span>: <span class="value">false</span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">blockers</span><span class="delimiter">&quot;</span></span>: [
+        {
+          <span class="key"><span class="delimiter">&quot;</span><span class="content">impact</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">ENABLED</span><span class="delimiter">&quot;</span></span>,
+          <span class="key"><span class="delimiter">&quot;</span><span class="content">type</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">feature-flag</span><span class="delimiter">&quot;</span></span>,
+          <span class="key"><span class="delimiter">&quot;</span><span class="content">code</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">feature-flag-disabled</span><span class="delimiter">&quot;</span></span>,
+          <span class="key"><span class="delimiter">&quot;</span><span class="content">message</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Feature flag 'guided-integrations' is disabled.</span><span class="delimiter">&quot;</span></span>,
+          <span class="key"><span class="delimiter">&quot;</span><span class="content">severity</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">warn</span><span class="delimiter">&quot;</span></span>
+        },
+        {
+          <span class="key"><span class="delimiter">&quot;</span><span class="content">impact</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">READY</span><span class="delimiter">&quot;</span></span>,
+          <span class="key"><span class="delimiter">&quot;</span><span class="content">type</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">setting-present</span><span class="delimiter">&quot;</span></span>,
+          <span class="key"><span class="delimiter">&quot;</span><span class="content">code</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">setting-missing</span><span class="delimiter">&quot;</span></span>,
+          <span class="key"><span class="delimiter">&quot;</span><span class="content">message</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Configuration setting 'quantum.integration.shared-storage.root' is not set.</span><span class="delimiter">&quot;</span></span>,
+          <span class="key"><span class="delimiter">&quot;</span><span class="content">severity</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">error</span><span class="delimiter">&quot;</span></span>
+        }
+      ]
+    }
+  ]
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This is the key user-facing value: the response tells you whether the action is blocked by authorization, rollout state, or operational readiness, instead of forcing the UI to guess.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_manifest_driven_dependency_relationships">8.5. Manifest-driven dependency relationships</h3>
+<div class="paragraph">
+<p>The relationship from settings and feature flags to functional area/domain/action lives in a manifest of <code>ScopedActionRequirement</code> entries. Each manifest entry says:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>which scoped action is being described</p>
+</li>
+<li>
+<p>which dependencies must be satisfied for that action to be usable</p>
+</li>
+<li>
+<p>optional display-oriented metadata such as <code>displayName</code> and <code>description</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Applications contribute these manifests via CDI:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="directive">public</span> <span class="type">interface</span> <span class="class">ScopedActionRequirementContributor</span> {
+
+    <span class="keyword">default</span> <span class="type">int</span> priority() {
+        <span class="keyword">return</span> <span class="integer">100</span>;
+    }
+
+    <span class="predefined-type">Collection</span>&lt;ScopedActionRequirement&gt; requirements();
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The framework aggregates contributors through <code>ScopedActionRequirementRegistry</code>:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="directive">public</span> <span class="type">interface</span> <span class="class">ScopedActionRequirementRegistry</span> {
+
+    Optional&lt;ScopedActionRequirement&gt; find(ScopedActionRef ref);
+
+    <span class="predefined-type">List</span>&lt;ScopedActionRequirement&gt; list();
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This is how you express relationships such as:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>action <code>integration / guided_integration / create</code> depends on feature flag <code>guided-integrations</code></p>
+</li>
+<li>
+<p>action <code>integration / exchange / create</code> depends on a tenant filesystem being provisioned</p>
+</li>
+<li>
+<p>action <code>system / some-admin-action / save</code> depends on a specific config property being present</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_resolver_spi">8.6. Resolver SPI</h3>
+<div class="paragraph">
+<p>Each dependency type is implemented by an <code>ActionDependencyResolver</code>:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="directive">public</span> <span class="type">interface</span> <span class="class">ActionDependencyResolver</span> {
+
+    <span class="predefined-type">String</span> supportsType();
+
+    DependencyResolutionResult evaluate(
+        DependencyCheckRef dependency,
+        EnablementEvaluationContext context
+    );
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p><code>EnablementEvaluationContext</code> carries the evaluation inputs:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>identity</p>
+</li>
+<li>
+<p>realm</p>
+</li>
+<li>
+<p>roles</p>
+</li>
+<li>
+<p>scope</p>
+</li>
+<li>
+<p><code>DataDomain</code></p>
+</li>
+<li>
+<p>the target <code>ScopedActionRef</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>This lets each resolver examine dependencies in the correct tenant, realm, and user context.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_built_in_oss_dependency_types">8.7. Built-in OSS dependency types</h3>
+<div class="paragraph">
+<p>The open-source framework currently provides these dependency resolvers:</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 20%;">
+<col style="width: 60%;">
+<col style="width: 20%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Dependency type</th>
+<th class="tableblock halign-left valign-top">Purpose</th>
+<th class="tableblock halign-left valign-top">Typical impact</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>permission</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Evaluate the scoped action through the existing <code>RuleContext</code> and permission model</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ALLOWED</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>feature-flag</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Require that a <code>FeatureFlag</code> exists and is enabled in the active realm</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ENABLED</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>setting-present</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Require that a named configuration property exists and is non-blank</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>READY</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>entity-exists</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Require that a referenced entity exists in the current realm</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>READY</code></p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>Representative blocker codes include:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>permission-denied</code></p>
+</li>
+<li>
+<p><code>feature-flag-missing</code></p>
+</li>
+<li>
+<p><code>feature-flag-disabled</code></p>
+</li>
+<li>
+<p><code>setting-name-missing</code></p>
+</li>
+<li>
+<p><code>setting-missing</code></p>
+</li>
+<li>
+<p><code>entity-model-unresolved</code></p>
+</li>
+<li>
+<p><code>entity-missing</code></p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_missing_manifests_and_unsupported_dependency_types">8.8. Missing manifests and unsupported dependency types</h3>
+<div class="paragraph">
+<p>The framework intentionally does not fail open here.</p>
+</div>
+<div class="paragraph">
+<p>If no manifest entry is registered for a scoped action:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>evaluation falls back to a synthetic requirement that checks <code>permission</code></p>
+</li>
+<li>
+<p>the response also includes a <code>manifest-missing</code> blocker with <code>impact=READY</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>If a manifest references a dependency type for which no resolver is registered:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>the response includes <code>unsupported-dependency-type</code></p>
+</li>
+<li>
+<p>the blocker is attached with <code>impact=READY</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>This makes incomplete wiring visible instead of silently treating an action as operationally ready.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_example_contributor">8.9. Example contributor</h3>
+<div class="paragraph">
+<p>At the framework level, the built-in manifest contributor registers the enablement API itself with a permission dependency. Application modules then add their own manifests.</p>
+</div>
+<div class="paragraph">
+<p>A typical application contributor looks like this:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@ApplicationScoped</span>
+<span class="directive">public</span> <span class="type">class</span> <span class="class">MyActionEnablementManifestContributor</span>
+        <span class="directive">implements</span> ScopedActionRequirementContributor {
+
+    <span class="annotation">@Override</span>
+    <span class="directive">public</span> <span class="predefined-type">Collection</span>&lt;ScopedActionRequirement&gt; requirements() {
+        <span class="keyword">return</span> <span class="predefined-type">List</span>.of(
+            ScopedActionRequirement.builder()
+                .scopedAction(ScopedActionRef.builder()
+                    .area(<span class="string"><span class="delimiter">&quot;</span><span class="content">integration</span><span class="delimiter">&quot;</span></span>)
+                    .functionalDomain(<span class="string"><span class="delimiter">&quot;</span><span class="content">guided_integration</span><span class="delimiter">&quot;</span></span>)
+                    .action(<span class="string"><span class="delimiter">&quot;</span><span class="content">create</span><span class="delimiter">&quot;</span></span>)
+                    .build())
+                .displayName(<span class="string"><span class="delimiter">&quot;</span><span class="content">Generate Guided Integration</span><span class="delimiter">&quot;</span></span>)
+                .description(<span class="string"><span class="delimiter">&quot;</span><span class="content">Requires policy, feature rollout, and baseline setup.</span><span class="delimiter">&quot;</span></span>)
+                .dependencies(<span class="predefined-type">List</span>.of(
+                    DependencyCheckRef.builder().type(<span class="string"><span class="delimiter">&quot;</span><span class="content">permission</span><span class="delimiter">&quot;</span></span>).build(),
+                    DependencyCheckRef.builder()
+                        .type(<span class="string"><span class="delimiter">&quot;</span><span class="content">feature-flag</span><span class="delimiter">&quot;</span></span>)
+                        .refName(<span class="string"><span class="delimiter">&quot;</span><span class="content">guided-integrations</span><span class="delimiter">&quot;</span></span>)
+                        .build(),
+                    DependencyCheckRef.builder()
+                        .type(<span class="string"><span class="delimiter">&quot;</span><span class="content">setting-present</span><span class="delimiter">&quot;</span></span>)
+                        .refName(<span class="string"><span class="delimiter">&quot;</span><span class="content">quantum.integration.shared-storage.root</span><span class="delimiter">&quot;</span></span>)
+                        .build()
+                ))
+                .build()
+        );
+    }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This is the mechanism that turns "settings map to capabilities" into something concrete. The requirement manifest records which settings, feature flags, and prerequisites attach to which <code>area / functionalDomain / action</code> tuple.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_relationship_to_policies_feature_flags_and_ui_actions">8.10. Relationship to policies, feature flags, and UI actions</h3>
+<div class="paragraph">
+<p>Think of the layers this way:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p><code>@FunctionalMapping</code> and <code>@FunctionalAction</code> define the canonical scoped action tuple in code.</p>
+</li>
+<li>
+<p>Permission rules answer whether that tuple is authorized.</p>
+</li>
+<li>
+<p>Feature flags answer whether the action is turned on for the current cohort or realm.</p>
+</li>
+<li>
+<p>Scoped action requirements answer what else must be configured or provisioned before the action is actually usable.</p>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p>This complements, rather than replaces, existing UI action derivation:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>fillUIActions()</code> still answers what actions are allowed from the permission perspective</p>
+</li>
+<li>
+<p>scoped action enablement answers why an action should still be disabled or annotated in the UI</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>That makes it a better fit for:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>setup dashboards</p>
+</li>
+<li>
+<p>onboarding flows</p>
+</li>
+<li>
+<p>context-sensitive "why unavailable?" messaging</p>
+</li>
+<li>
+<p>shells or MCP clients that need structured blockers</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_enterprise_extensions">8.11. Enterprise extensions</h3>
+<div class="paragraph">
+<p>The framework module is intentionally generic. Enterprise modules can contribute additional dependency resolvers without changing the core contracts.</p>
+</div>
+<div class="paragraph">
+<p>The current enterprise action-enablement module extends the system with higher-level runtime checks such as:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>managed-secret-configured</code></p>
+</li>
+<li>
+<p><code>tenant-filesystem-provisioned</code></p>
+</li>
+<li>
+<p><code>standard-mounts-present</code></p>
+</li>
+<li>
+<p><code>workflow-runtime-reachable</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Those resolvers support operational questions such as:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>has the tenant filesystem been provisioned?</p>
+</li>
+<li>
+<p>do the standard mounts exist?</p>
+</li>
+<li>
+<p>is a required managed secret configured?</p>
+</li>
+<li>
+<p>is the workflow runtime reachable?</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>That deeper operational behavior belongs in the enterprise documentation. The important framework-level point is that enterprise modules plug into the same <code>ActionDependencyResolver</code> SPI and return the same <code>EnablementBlocker</code> structure.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_guidance">8.12. Guidance</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Keep permission checks canonical. Do not duplicate authorization logic inside custom readiness resolvers.</p>
+</li>
+<li>
+<p>Use <code>feature-flag</code> dependencies for rollout state, not for durable authorization.</p>
+</li>
+<li>
+<p>Use <code>setting-present</code> and <code>entity-exists</code> only for generic prerequisites. Domain-heavy operational checks belong in application or enterprise resolvers.</p>
+</li>
+<li>
+<p>Keep blocker codes stable because UIs and automation may key off them.</p>
+</li>
+<li>
+<p>Treat capabilities as documentation and UX groupings over scoped actions, not as a substitute for <code>area / functionalDomain / action</code>.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_multiple_matching_rulebases">9. Multiple Matching RuleBases</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -1294,7 +1988,7 @@ Ontology- and label-aware policy helpers are available to postconditionScript wh
 </div>
 </div>
 <div class="sect1">
-<h2 id="_identity_and_role_matching">9. Identity and Role Matching</h2>
+<h2 id="_identity_and_role_matching">10. Identity and Role Matching</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -1313,7 +2007,7 @@ Ontology- and label-aware policy helpers are available to postconditionScript wh
 </ul>
 </div>
 <div class="sect2">
-<h3 id="_how_roles_are_defined_for_an_identity_role_sources_and_resolution">9.1. How roles are defined for an identity (role sources and resolution)</h3>
+<h3 id="_how_roles_are_defined_for_an_identity_role_sources_and_resolution">10.1. How roles are defined for an identity (role sources and resolution)</h3>
 <div class="paragraph">
 <p>Quantum composes the effective roles for a request by merging:</p>
 </div>
@@ -1500,7 +2194,7 @@ Ontology- and label-aware policy helpers are available to postconditionScript wh
 </ul>
 </div>
 <div class="sect3">
-<h4 id="_populating_rolesource_and_roleassignments">9.1.1. Populating <code>RoleSource</code> and <code>roleAssignments</code></h4>
+<h4 id="_populating_rolesource_and_roleassignments">10.1.1. Populating <code>RoleSource</code> and <code>roleAssignments</code></h4>
 <div class="paragraph">
 <p>Quantum exposes structured provenance for each role via:</p>
 </div>
@@ -1557,7 +2251,7 @@ from the flat <code>roles</code> set and mark each role with <code>CREDENTIAL</c
 </div>
 </div>
 <div class="sect3">
-<h4 id="_authproviders_what_you_need_to_do">9.1.2. AuthProviders: what you need to do</h4>
+<h4 id="_authproviders_what_you_need_to_do">10.1.2. AuthProviders: what you need to do</h4>
 <div class="paragraph">
 <p>Auth providers (for example, <code>CustomTokenAuthProvider</code>) should add provenance at two points:</p>
 </div>
@@ -1672,7 +2366,7 @@ java.util.List&lt;com.e2eq.framework.model.auth.RoleAssignment&gt; roleAssignmen
 </div>
 </div>
 <div class="sect3">
-<h4 id="_security_check_responses_enriching_roleassignments">9.1.3. Security Check responses: enriching <code>roleAssignments</code></h4>
+<h4 id="_security_check_responses_enriching_roleassignments">10.1.3. Security Check responses: enriching <code>roleAssignments</code></h4>
 <div class="paragraph">
 <p><code>SecurityCheckResponse</code> defaults to marking all roles as <code>CREDENTIAL</code>. To provide accurate provenance during permission checks:</p>
 </div>
@@ -1704,7 +2398,7 @@ resp.setRoleAssignments(roleAssignments);
 </div>
 </div>
 <div class="sect1">
-<h2 id="_example_scenarios">10. Example Scenarios</h2>
+<h2 id="_example_scenarios">11. Example Scenarios</h2>
 <div class="sectionbody">
 <div class="olist arabic">
 <ol class="arabic">
@@ -1813,7 +2507,7 @@ resp.setRoleAssignments(roleAssignments);
 </div>
 </div>
 <div class="sect1">
-<h2 id="_operational_tips">11. Operational Tips</h2>
+<h2 id="_operational_tips">12. Operational Tips</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -1834,7 +2528,7 @@ resp.setRoleAssignments(roleAssignments);
 </div>
 </div>
 <div class="sect1">
-<h2 id="_how_uiactions_and_defaultuiactions_are_calculated">12. How UIActions and DefaultUIActions are calculated</h2>
+<h2 id="_how_uiactions_and_defaultuiactions_are_calculated">13. How UIActions and DefaultUIActions are calculated</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>When the server returns a collection of entities (for example, userProfiles), each entity may expose two action lists:</p>
@@ -1954,7 +2648,7 @@ resp.setRoleAssignments(roleAssignments);
 </div>
 </div>
 <div class="sect1">
-<h2 id="_how_this_integrates_end_to_end">13. How This Integrates End-to-End</h2>
+<h2 id="_how_this_integrates_end_to_end">14. How This Integrates End-to-End</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -1972,7 +2666,7 @@ resp.setRoleAssignments(roleAssignments);
 </div>
 </div>
 <div class="sect1">
-<h2 id="_administering_policies_via_rest_policyresource">14. Administering Policies via REST (PolicyResource)</h2>
+<h2 id="_administering_policies_via_rest_policyresource">15. Administering Policies via REST (PolicyResource)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>The PolicyResource exposes CRUD-style REST APIs for creating and managing policies (rule bases) that drive authorization decisions. Each Policy targets a principalId (either a specific userId or a role name) and contains an ordered list of Rule objects. Rules match requests using SecurityURIHeader and SecurityURIBody and then contribute an effect (ALLOW/DENY) and optional repository filters.</p>
@@ -1991,7 +2685,7 @@ resp.setRoleAssignments(roleAssignments);
 </ul>
 </div>
 <div class="sect2">
-<h3 id="_model_shape_policy">14.1. Model shape (Policy)</h3>
+<h3 id="_model_shape_policy">15.1. Model shape (Policy)</h3>
 <div class="paragraph">
 <p>A Policy extends FullBaseModel and includes:
 - id, refName, displayName, dataDomain, archived/expired flags (inherited)
@@ -2032,7 +2726,7 @@ resp.setRoleAssignments(roleAssignments);
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_rule_contributed_filters_work_andfilterstring_orfilterstring_joinop">14.2. How rule-contributed filters work (andFilterString, orFilterString, joinOp)</h3>
+<h3 id="_how_rule_contributed_filters_work_andfilterstring_orfilterstring_joinop">15.2. How rule-contributed filters work (andFilterString, orFilterString, joinOp)</h3>
 <div class="paragraph">
 <p>When an ALLOW rule matches, it can contribute repository-level filters that restrict which documents are visible or mutable. The fields are:</p>
 </div>
@@ -2309,7 +3003,7 @@ resp.setRoleAssignments(roleAssignments);
 </div>
 </div>
 <div class="sect2">
-<h3 id="_accesslistresolvers_spi_for_list_based_access">14.3. AccessListResolvers (SPI) for list-based access</h3>
+<h3 id="_accesslistresolvers_spi_for_list_based_access">15.3. AccessListResolvers (SPI) for list-based access</h3>
 <div class="imageblock">
 <div class="content">
 <img src="diag-plantuml-md5-19678e06c83a16fe71cfaff92a476663.svg" alt="Diagram" width="629" height="385">
@@ -2406,7 +3100,7 @@ resp.setRoleAssignments(roleAssignments);
 </div>
 </div>
 <div class="sect2">
-<h3 id="_principalcontextpropertiesresolver_spi_for_custom_principal_properties">14.4. PrincipalContextPropertiesResolver (SPI) for custom principal properties</h3>
+<h3 id="_principalcontextpropertiesresolver_spi_for_custom_principal_properties">15.4. PrincipalContextPropertiesResolver (SPI) for custom principal properties</h3>
 <div class="imageblock">
 <div class="content">
 <img src="diag-plantuml-md5-3f301d1907337043041d1f30cc0a065b.svg" alt="Diagram" width="873" height="278">
@@ -2766,7 +3460,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_endpoints">14.5. Endpoints</h3>
+<h3 id="_endpoints">15.5. Endpoints</h3>
 <div class="paragraph">
 <p>All endpoints are relative to /security/permission/policies. These are inherited from BaseResource and are consistent across entity resources.</p>
 </div>
@@ -2960,7 +3654,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_examples">14.6. Examples</h3>
+<h3 id="_examples">15.6. Examples</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -3009,7 +3703,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_changes_affect_rule_bases_and_enforcement">14.7. How changes affect rule bases and enforcement</h3>
+<h3 id="_how_changes_affect_rule_bases_and_enforcement">15.7. How changes affect rule bases and enforcement</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -3078,7 +3772,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect1">
-<h2 id="_realm_override_x_realm_and_impersonation_x_impersonate">15. Realm override (X-Realm) and Impersonation (X-Impersonate)</h2>
+<h2 id="_realm_override_x_realm_and_impersonation_x_impersonate">16. Realm override (X-Realm) and Impersonation (X-Impersonate)</h2>
 <div class="sectionbody">
 <div class="imageblock">
 <div class="content">
@@ -3089,7 +3783,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 <p>This section explains how to use the request headers X-Realm, X-Impersonate-<strong>, and X-Acting-On-Behalf-Of-</strong> alongside permission rule bases. These headers influence which realm (database) a request operates against and, in the case of impersonation, which identity&#8217;s roles are evaluated by the rule engine.</p>
 </div>
 <div class="sect2">
-<h3 id="_what_they_do_at_a_glance">15.1. What they do (at a glance)</h3>
+<h3 id="_what_they_do_at_a_glance">16.1. What they do (at a glance)</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -3108,7 +3802,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_the_headers_integrate_with_permission_evaluation">15.2. How the headers integrate with permission evaluation</h3>
+<h3 id="_how_the_headers_integrate_with_permission_evaluation">16.2. How the headers integrate with permission evaluation</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -3157,7 +3851,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_required_credential_configuration_credentialuseridpassword">15.3. Required credential configuration (CredentialUserIdPassword)</h3>
+<h3 id="_required_credential_configuration_credentialuseridpassword">16.3. Required credential configuration (CredentialUserIdPassword)</h3>
 <div class="paragraph">
 <p>Two fields on CredentialUserIdPassword govern whether a user may use these headers:</p>
 </div>
@@ -3212,7 +3906,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_end_to_end_behavior_from_securityfilter_reference">15.4. End-to-end behavior from SecurityFilter (reference)</h3>
+<h3 id="_end_to_end_behavior_from_securityfilter_reference">16.4. End-to-end behavior from SecurityFilter (reference)</h3>
 <div class="paragraph">
 <p>The SecurityFilter constructs the PrincipalContext/ResourceContext before rule evaluation:
 - X-Realm is read and, if present, validated against the caller’s credential.realmRegEx.
@@ -3223,7 +3917,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_practical_differences_and_use_cases">15.5. Practical differences and use cases</h3>
+<h3 id="_practical_differences_and_use_cases">16.5. Practical differences and use cases</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -3300,7 +3994,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_examples_2">15.6. Examples</h3>
+<h3 id="_examples_2">16.6. Examples</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -3351,13 +4045,13 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect1">
-<h2 id="_data_domain_assignment_on_create_domaincontext_and_datadomainpolicy">16. Data domain assignment on create: DomainContext and DataDomainPolicy</h2>
+<h2 id="_data_domain_assignment_on_create_domaincontext_and_datadomainpolicy">17. Data domain assignment on create: DomainContext and DataDomainPolicy</h2>
 <div class="sectionbody">
 <div id="_data_domain_assignment" class="paragraph">
 <p>This section explains how Quantum decides which dataDomain is stamped on newly created records, why this decision is necessary in a multi‑tenant system, what the default behavior is, and how you can override it globally or per Functional Area / Functional Domain. It also describes the DataDomainResolver interface and the default implementation provided by the framework.</p>
 </div>
 <div class="sect2">
-<h3 id="_the_problem_this_solves_and_why_it_matters">16.1. The problem this solves (and why it matters)</h3>
+<h3 id="_the_problem_this_solves_and_why_it_matters">17.1. The problem this solves (and why it matters)</h3>
 <div class="paragraph">
 <p>In a multi‑tenant platform you must ensure each new record is written to the correct data partition so later reads/updates can be scoped safely. If the dataDomain is wrong or missing, you risk leaking data across tenants or making your own data inaccessible due to mis‑scoping.</p>
 </div>
@@ -3372,7 +4066,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_key_concepts_recap_domaincontext_and_datadomain">16.2. Key concepts recap: DomainContext and DataDomain</h3>
+<h3 id="_key_concepts_recap_domaincontext_and_datadomain">17.2. Key concepts recap: DomainContext and DataDomain</h3>
 <div class="dlist">
 <dl>
 <dt class="hdlist1">DomainContext (on credentials/realms)</dt>
@@ -3390,7 +4084,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_the_default_policy_do_nothing_and_it_works">16.3. The default policy (do nothing and it works)</h3>
+<h3 id="_the_default_policy_do_nothing_and_it_works">17.3. The default policy (do nothing and it works)</h3>
 <div class="paragraph">
 <p>Out of the box, Quantum preserves the existing behavior: if no policy is configured, the resolver falls back to the authenticated principal’s DataDomain. This guarantees compatibility with existing applications.</p>
 </div>
@@ -3402,7 +4096,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_policy_scopes_principalattached_vs_global">16.4. Policy scopes: principal‑attached vs. global</h3>
+<h3 id="_policy_scopes_principalattached_vs_global">17.4. Policy scopes: principal‑attached vs. global</h3>
 <div class="paragraph">
 <p>You can define overrides at two levels:
 - Principal‑attached (per credential): attach a DataDomainPolicy to a CredentialUserIdPassword. The SecurityFilter places this policy into the PrincipalContext, so it applies only to records created by that principal. This is useful for VIP service accounts or specific partners.
@@ -3413,7 +4107,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_the_policy_map_and_matching">16.5. The policy map and matching</h3>
+<h3 id="_the_policy_map_and_matching">17.5. The policy map and matching</h3>
 <div class="paragraph">
 <p>A DataDomainPolicy is a small map of rules: Map&lt;String, DataDomainPolicyEntry&gt; policyEntries, keyed by "&lt;FunctionalArea&gt;:&lt;FunctionalDomain&gt;" with support for "*" wildcards. The resolver evaluates keys in this order:</p>
 </div>
@@ -3470,7 +4164,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_the_resolver_works">16.6. How the resolver works</h3>
+<h3 id="_how_the_resolver_works">17.6. How the resolver works</h3>
 <div class="paragraph">
 <p>Interfaces and default implementation:</p>
 </div>
@@ -3506,7 +4200,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_when_would_you_want_a_nonglobal_policy">16.7. When would you want a non‑global policy?</h3>
+<h3 id="_when_would_you_want_a_nonglobal_policy">17.7. When would you want a non‑global policy?</h3>
 <div class="paragraph">
 <p>Here are a few concrete scenarios:
 - Centralized HR: All HR Employee records are written to a shared HR domain regardless of the team creating them. This supports a shared‑service HR model without duplicating HR data per tenant.
@@ -3516,7 +4210,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_relation_to_tenancy_models">16.8. Relation to tenancy models</h3>
+<h3 id="_relation_to_tenancy_models">17.8. Relation to tenancy models</h3>
 <div class="paragraph">
 <p>The policy mechanism supports both siloed and pooled tenancy:
 - Siloed tenancy: Most domains default to FROM_CREDENTIAL (each tenant writes to its own partition). Only a few shared services (e.g., HR, catalog) use FIXED to centralize data.
@@ -3527,7 +4221,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_authoring_tips">16.9. Authoring tips</h3>
+<h3 id="_authoring_tips">17.9. Authoring tips</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -3546,7 +4240,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_api_pointers">16.10. API pointers</h3>
+<h3 id="_api_pointers">17.10. API pointers</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -3565,7 +4259,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="ontology-permissions">16.11. Ontology in Permission Rules (optional)</h3>
+<h3 id="ontology-permissions">17.11. Ontology in Permission Rules (optional)</h3>
 <div class="paragraph">
 <p>If you enable the ontology modules, you can author rules that constrain access by semantic relationships, not field paths. This keeps policies stable as your object model evolves.</p>
 </div>
@@ -3638,7 +4332,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </ul>
 </div>
 <div class="sect3">
-<h4 id="rule-hasedge">16.11.1. Rule language: add hasEdge()</h4>
+<h4 id="rule-hasedge">17.11.1. Rule language: add hasEdge()</h4>
 <div class="paragraph">
 <p>We introduce a policy function/operator to reference ontology edges directly from rules. This lets policies constrain access by semantic relationships instead of field paths.</p>
 </div>
@@ -3876,7 +4570,7 @@ query.filter(dev.morphia.query.filters.Filters.in(<span class="string"><span cla
 </div>
 </div>
 <div class="sect2">
-<h3 id="label-resolution-spi">16.12. Label resolution SPI and hasLabel() in rules</h3>
+<h3 id="label-resolution-spi">17.12. Label resolution SPI and hasLabel() in rules</h3>
 <div class="paragraph">
 <p>Labels are a lightweight way to attach semantic markers to principals and resources, and then use them in rule scripts. Quantum provides a pluggable label resolution SPI and a script helper to check labels during policy evaluation.</p>
 </div>
@@ -3995,7 +4689,7 @@ hasLabel(<span class="string"><span class="delimiter">&quot;</span><span class="
 </div>
 </div>
 <div class="sect1">
-<h2 id="script-helpers-reference">17. Script Helpers reference (when enabled)</h2>
+<h2 id="script-helpers-reference">18. Script Helpers reference (when enabled)</h2>
 <div class="sectionbody">
 <div class="imageblock">
 <div class="content">
@@ -4166,7 +4860,7 @@ noViolations() === <span class="predefined-constant">true</span></code></pre>
 <div id="footer">
 <div id="footer-text">
 Version 1.3.0-SNAPSHOT<br>
-Last updated 2026-03-16 18:51:21 -0500
+Last updated 2026-04-01 14:18:49 -0400
 </div>
 </div>
 </body>

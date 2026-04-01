@@ -434,6 +434,95 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 @media amzn-kf8{#header,#content,#footnotes,#footer{padding:0}}
 </style>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+<style>
+/*! Stylesheet for CodeRay to loosely match GitHub themes | MIT License */
+pre.CodeRay{background:#f7f7f8}
+.CodeRay .line-numbers{border-right:1px solid;opacity:.35;padding:0 .5em 0 0;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none}
+.CodeRay span.line-numbers{display:inline-block;margin-right:.75em}
+.CodeRay .line-numbers strong{color:#000}
+table.CodeRay{border-collapse:separate;border:0;margin-bottom:0;background:none}
+table.CodeRay td{vertical-align:top;line-height:inherit}
+table.CodeRay td.line-numbers{text-align:right}
+table.CodeRay td.code{padding:0 0 0 .75em}
+.CodeRay .debug{color:#fff!important;background:navy!important}
+.CodeRay .annotation{color:#007}
+.CodeRay .attribute-name{color:navy}
+.CodeRay .attribute-value{color:#700}
+.CodeRay .binary{color:#509}
+.CodeRay .comment{color:#998;font-style:italic}
+.CodeRay .char{color:#04d}
+.CodeRay .char .content{color:#04d}
+.CodeRay .char .delimiter{color:#039}
+.CodeRay .class{color:#458;font-weight:bold}
+.CodeRay .complex{color:#a08}
+.CodeRay .constant,.CodeRay .predefined-constant{color:teal}
+.CodeRay .color{color:#099}
+.CodeRay .class-variable{color:#369}
+.CodeRay .decorator{color:#b0b}
+.CodeRay .definition{color:#099}
+.CodeRay .delimiter{color:#000}
+.CodeRay .doc{color:#970}
+.CodeRay .doctype{color:#34b}
+.CodeRay .doc-string{color:#d42}
+.CodeRay .escape{color:#666}
+.CodeRay .entity{color:#800}
+.CodeRay .error{color:#808}
+.CodeRay .exception{color:inherit}
+.CodeRay .filename{color:#099}
+.CodeRay .function{color:#900;font-weight:bold}
+.CodeRay .global-variable{color:teal}
+.CodeRay .hex{color:#058}
+.CodeRay .integer,.CodeRay .float{color:#099}
+.CodeRay .include{color:#555}
+.CodeRay .inline{color:#000}
+.CodeRay .inline .inline{background:#ccc}
+.CodeRay .inline .inline .inline{background:#bbb}
+.CodeRay .inline .inline-delimiter{color:#d14}
+.CodeRay .inline-delimiter{color:#d14}
+.CodeRay .important{color:#555;font-weight:bold}
+.CodeRay .interpreted{color:#b2b}
+.CodeRay .instance-variable{color:teal}
+.CodeRay .label{color:#970}
+.CodeRay .local-variable{color:#963}
+.CodeRay .octal{color:#40e}
+.CodeRay .predefined{color:#369}
+.CodeRay .preprocessor{color:#579}
+.CodeRay .pseudo-class{color:#555}
+.CodeRay .directive{font-weight:bold}
+.CodeRay .type{font-weight:bold}
+.CodeRay .predefined-type{color:inherit}
+.CodeRay .reserved,.CodeRay .keyword{color:#000;font-weight:bold}
+.CodeRay .key{color:#808}
+.CodeRay .key .delimiter{color:#606}
+.CodeRay .key .char{color:#80f}
+.CodeRay .value{color:#088}
+.CodeRay .regexp .delimiter{color:#808}
+.CodeRay .regexp .content{color:#808}
+.CodeRay .regexp .modifier{color:#808}
+.CodeRay .regexp .char{color:#d14}
+.CodeRay .regexp .function{color:#404;font-weight:bold}
+.CodeRay .string{color:#d20}
+.CodeRay .string .string .string{background:#ffd0d0}
+.CodeRay .string .content{color:#d14}
+.CodeRay .string .char{color:#d14}
+.CodeRay .string .delimiter{color:#d14}
+.CodeRay .shell{color:#d14}
+.CodeRay .shell .delimiter{color:#d14}
+.CodeRay .symbol{color:#990073}
+.CodeRay .symbol .content{color:#a60}
+.CodeRay .symbol .delimiter{color:#630}
+.CodeRay .tag{color:teal}
+.CodeRay .tag-special{color:#d70}
+.CodeRay .variable{color:#036}
+.CodeRay .insert{background:#afa}
+.CodeRay .delete{background:#faa}
+.CodeRay .change{color:#aaf;background:#007}
+.CodeRay .head{color:#f8f;background:#505}
+.CodeRay .insert .insert{color:#080}
+.CodeRay .delete .delete{color:#800}
+.CodeRay .change .change{color:#66f}
+.CodeRay .head .head{color:#f4f}
+</style>
 </head>
 <body class="book toc2 toc-left">
 <div id="header">
@@ -445,6 +534,16 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_one_tenant_per_database_in_a_mongodb_cluster">1.1. One Tenant per Database (in a MongoDB Cluster)</a></li>
 <li><a href="#_many_tenants_in_one_database_shared_database">1.2. Many Tenants in One Database (Shared Database)</a></li>
 <li><a href="#_freemium_and_trial_tenants">1.3. Freemium and Trial Tenants</a></li>
+<li><a href="#tenant-onboarding-and-invites">1.4. Tenant Onboarding and Access Invites</a>
+<ul class="sectlevel3">
+<li><a href="#_1_tenant_provisioning_create_the_tenant_itself">1.4.1. 1. Tenant provisioning: create the tenant itself</a></li>
+<li><a href="#_2_tenant_onboarding_workflow_define_the_journey_after_inviteregistration">1.4.2. 2. Tenant onboarding workflow: define the journey after invite/registration</a></li>
+<li><a href="#_3_registration_requests_capture_onboarding_data_for_approval">1.4.3. 3. Registration requests: capture onboarding data for approval</a></li>
+<li><a href="#_4_access_invites_grant_a_user_into_an_existing_tenant">1.4.4. 4. Access invites: grant a user into an existing tenant</a></li>
+<li><a href="#_invite_extension_points">1.4.5. Invite extension points</a></li>
+<li><a href="#_how_these_pieces_fit_together">1.4.6. How these pieces fit together</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
@@ -553,13 +652,606 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </ul>
 </div>
 </div>
+<div class="sect2">
+<h3 id="tenant-onboarding-and-invites">1.4. Tenant Onboarding and Access Invites</h3>
+<div class="paragraph">
+<p>Quantum separates tenant creation from user access and from the user-facing onboarding journey. Those are related, but they are not the same thing:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Tenant provisioning creates the tenant realm, runs migrations, and establishes the initial admin user.</p>
+</li>
+<li>
+<p>Tenant onboarding workflow defines the steps a tenant user should complete before access is considered fully activated.</p>
+</li>
+<li>
+<p>Access invites bring an individual user into an existing tenant and can attach scoped access metadata.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>This split helps teams support both admin-driven setup and self-service onboarding without forcing every tenant into a single path.</p>
+</div>
+<div class="sect3">
+<h4 id="_1_tenant_provisioning_create_the_tenant_itself">1.4.1. 1. Tenant provisioning: create the tenant itself</h4>
+<div class="paragraph">
+<p>The admin tenant provisioning API is exposed at:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>POST /admin/tenants</code></p>
+</li>
+<li>
+<p><code>DELETE /admin/tenants/{realmId}</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Provisioning is intended for <code>admin</code> and <code>system</code> roles. The request creates the tenant catalog entry, initializes the tenant database, and ensures an initial admin credential exists.</p>
+</div>
+<div class="paragraph">
+<p>Request fields:</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Field</th>
+<th class="tableblock halign-left valign-top">Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>tenantDisplayName</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Human-readable label for the tenant</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>tenantEmailDomain</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Source for the realm id; dots are converted to dashes</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>orgRefName</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Organization reference used in the tenant <code>DomainContext</code> and <code>DataDomain</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>accountId</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Initial account number for the tenant</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>adminUserId</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">User id for the initial tenant admin</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>adminSubject</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Optional stable subject override; defaults to <code>adminUserId</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>adminPassword</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Initial password for the admin user</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>seedArchetypes</code> or <code>archetypes</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Optional list of seed archetypes to apply during tenant creation</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>Representative request:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">tenantDisplayName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Acme Logistics</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">tenantEmailDomain</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">acme.example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">orgRefName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">acme.example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">accountId</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">1000000001</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">adminUserId</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">admin@acme.example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">adminSubject</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">admin@acme.example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">adminPassword</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">change-me-now</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">seedArchetypes</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">DemoArchetype</span><span class="delimiter">&quot;</span></span>]
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Representative response:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">realmId</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">acme-example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">realmCreated</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">userCreated</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">appliedSeedArchetypes</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">DemoArchetype</span><span class="delimiter">&quot;</span></span>],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">warnings</span><span class="delimiter">&quot;</span></span>: []
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>What provisioning does:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>derives <code>realmId</code> from <code>tenantEmailDomain</code></p>
+</li>
+<li>
+<p>writes a <code>Realm</code> catalog record in the system realm</p>
+</li>
+<li>
+<p>builds tenant <code>DomainContext</code> and <code>DataDomain</code></p>
+</li>
+<li>
+<p>runs migrations in the new tenant realm</p>
+</li>
+<li>
+<p>creates or validates the initial admin user</p>
+</li>
+<li>
+<p>applies applicable base seed packs</p>
+</li>
+<li>
+<p>optionally applies requested seed archetypes</p>
+</li>
+<li>
+<p>applies indexes and verifies initialization</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Provisioning is designed to be largely idempotent. If the same tenant or admin user already exists with matching attributes, the service proceeds and returns warnings instead of blindly recreating state. If existing state conflicts with the request, the service rejects the operation.</p>
+</div>
+<div class="paragraph">
+<p>Deleting a tenant removes:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>the tenant database</p>
+</li>
+<li>
+<p>the tenant&#8217;s <code>Realm</code> catalog entry</p>
+</li>
+<li>
+<p>matching credentials associated with that tenant setup</p>
+</li>
+</ul>
+</div>
+<div class="admonitionblock caution">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-caution" title="Caution"></i>
+</td>
+<td class="content">
+<code>DELETE /admin/tenants/{realmId}</code> is destructive and is intentionally blocked for the configured system realm.
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_2_tenant_onboarding_workflow_define_the_journey_after_inviteregistration">1.4.2. 2. Tenant onboarding workflow: define the journey after invite/registration</h4>
+<div class="paragraph">
+<p>Tenant onboarding workflow configuration is exposed at:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>GET /onboarding/workflow/current</code></p>
+</li>
+<li>
+<p><code>POST /onboarding/workflow/current</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>This is tenant-scoped configuration. The active realm is derived from the current security context, so the workflow is saved and read per tenant realm.</p>
+</div>
+<div class="paragraph">
+<p>The persisted model is <code>TenantOnboardingWorkflow</code>, which includes:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>workflowEnabled</code></p>
+</li>
+<li>
+<p><code>inviteRequired</code></p>
+</li>
+<li>
+<p><code>registrationRequired</code></p>
+</li>
+<li>
+<p><code>surveyRequired</code></p>
+</li>
+<li>
+<p><code>adminApprovalRequired</code></p>
+</li>
+<li>
+<p><code>autoAssignSurveyOnInvite</code></p>
+</li>
+<li>
+<p><code>defaultSurveyRefName</code></p>
+</li>
+<li>
+<p><code>workflowDefinitionJson</code></p>
+</li>
+<li>
+<p><code>completionMessage</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>By default, the workflow steps are generated in this order:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>invite</code></p>
+</li>
+<li>
+<p><code>registration</code></p>
+</li>
+<li>
+<p><code>survey</code></p>
+</li>
+<li>
+<p><code>approval</code></p>
+</li>
+<li>
+<p><code>activation</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Each step can be enabled or omitted by toggling the corresponding booleans. When no custom workflow JSON is supplied, the framework generates a default <code>workflowDefinitionJson</code> using those flags.</p>
+</div>
+<div class="paragraph">
+<p>Representative response:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">refName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">default-tenant-onboarding</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">displayName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Tenant User Onboarding</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">activeStatus</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">inviteRequired</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">registrationRequired</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">surveyRequired</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">adminApprovalRequired</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">autoAssignSurveyOnInvite</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">defaultSurveyRefName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">tenant-user-onboarding</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">completionMessage</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Your tenant onboarding is complete. You can now sign in and begin using the workspace.</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">steps</span><span class="delimiter">&quot;</span></span>: [
+    { <span class="key"><span class="delimiter">&quot;</span><span class="content">key</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">invite</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">type</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">access_invite</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">required</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span> },
+    { <span class="key"><span class="delimiter">&quot;</span><span class="content">key</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">registration</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">type</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">registration_request</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">required</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span> },
+    { <span class="key"><span class="delimiter">&quot;</span><span class="content">key</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">survey</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">type</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">survey</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">required</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">surveyRefName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">tenant-user-onboarding</span><span class="delimiter">&quot;</span></span> },
+    { <span class="key"><span class="delimiter">&quot;</span><span class="content">key</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">approval</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">type</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">admin_approval</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">required</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span> },
+    { <span class="key"><span class="delimiter">&quot;</span><span class="content">key</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">activation</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">type</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">account_activation</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">required</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span> }
+  ]
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This workflow config answers "what steps should happen?" It does not by itself send invites or create tenant users.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_3_registration_requests_capture_onboarding_data_for_approval">1.4.3. 3. Registration requests: capture onboarding data for approval</h4>
+<div class="paragraph">
+<p>The registration-request endpoints are exposed at:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>POST /onboarding/registrationRequest/create</code></p>
+</li>
+<li>
+<p><code>POST /onboarding/registrationRequest/approve</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>This API is the registration step that the onboarding workflow can reference through the <code>registration_request</code> step type. It is useful when a tenant wants users or organizations to submit onboarding information before access is approved.</p>
+</div>
+<div class="paragraph">
+<p>At a high level:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>create</code> persists an <code>ApplicationRegistration</code></p>
+</li>
+<li>
+<p><code>approve</code> transitions an existing registration request through the repository approval logic</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>This is the structured "please review my onboarding submission" side of the journey, whereas access invites are the "you have been invited into this tenant" side.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_4_access_invites_grant_a_user_into_an_existing_tenant">1.4.4. 4. Access invites: grant a user into an existing tenant</h4>
+<div class="paragraph">
+<p>Access invites are exposed at:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>GET /access/invites</code></p>
+</li>
+<li>
+<p><code>GET /access/invites/{refName}</code></p>
+</li>
+<li>
+<p><code>POST /access/invites</code></p>
+</li>
+<li>
+<p><code>POST /access/invites/{refName}/revoke</code></p>
+</li>
+<li>
+<p><code>POST /access/invites/accept</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The first four require an authenticated caller in the target tenant. Invite acceptance is <code>@PermitAll</code> because the recipient may not yet have tenant access.</p>
+</div>
+<div class="paragraph">
+<p>The persisted <code>AccessInvite</code> model includes:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>email</code> or <code>targetUserId</code></p>
+</li>
+<li>
+<p><code>invitedByUserId</code></p>
+</li>
+<li>
+<p><code>scopeRefs</code></p>
+</li>
+<li>
+<p><code>grantedRoles</code></p>
+</li>
+<li>
+<p><code>allowedFunctionalAreas</code></p>
+</li>
+<li>
+<p><code>allowedFunctionalDomains</code></p>
+</li>
+<li>
+<p><code>allowedActions</code></p>
+</li>
+<li>
+<p><code>inviteMessage</code></p>
+</li>
+<li>
+<p><code>expiresAt</code></p>
+</li>
+<li>
+<p><code>acceptedAt</code></p>
+</li>
+<li>
+<p><code>acceptedUserId</code></p>
+</li>
+<li>
+<p><code>status</code> of <code>PENDING</code>, <code>ACCEPTED</code>, <code>REVOKED</code>, or <code>EXPIRED</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Representative invite creation request:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">email</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">jane.doe@partner.example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">scopeRefNames</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">north-america</span><span class="delimiter">&quot;</span></span>],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">grantedRoles</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">user</span><span class="delimiter">&quot;</span></span>],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">allowedFunctionalAreas</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">integration</span><span class="delimiter">&quot;</span></span>],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">allowedFunctionalDomains</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">exchange</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">workflow</span><span class="delimiter">&quot;</span></span>],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">allowedActions</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">view</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">create</span><span class="delimiter">&quot;</span></span>],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">expiresInDays</span><span class="delimiter">&quot;</span></span>: <span class="integer">14</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">inviteMessage</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Join the tenant workspace for partner onboarding.</span><span class="delimiter">&quot;</span></span>
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Representative creation response:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">refName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">invite-1775100000000</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">email</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">jane.doe@partner.example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">scopeRefNames</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">north-america</span><span class="delimiter">&quot;</span></span>],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">grantedRoles</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">user</span><span class="delimiter">&quot;</span></span>],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">allowedFunctionalAreas</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">integration</span><span class="delimiter">&quot;</span></span>],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">allowedFunctionalDomains</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">exchange</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">workflow</span><span class="delimiter">&quot;</span></span>],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">allowedActions</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">view</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">create</span><span class="delimiter">&quot;</span></span>],
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">PENDING</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">inviteToken</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">raw-token-returned-at-create-time-only</span><span class="delimiter">&quot;</span></span>
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Important invite behavior:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>either <code>email</code> or <code>targetUserId</code> is required</p>
+</li>
+<li>
+<p>only one active pending invite is allowed for the same email or target user</p>
+</li>
+<li>
+<p>tokens are stored as a hash; the raw token is only returned at invite creation time</p>
+</li>
+<li>
+<p>invites expire automatically based on <code>expiresAt</code></p>
+</li>
+<li>
+<p>invites can be revoked before acceptance</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Representative accept request:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">realm</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">acme-example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">token</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">raw-token-returned-at-create-time-only</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">email</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">jane.doe@partner.example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">firstName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Jane</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">lastName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Doe</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">password</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">choose-a-password</span><span class="delimiter">&quot;</span></span>
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Representative accept response:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">userId</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">jane.doe@partner.example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">email</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">jane.doe@partner.example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">defaultRealm</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">acme-example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">inviteRefName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">invite-1775100000000</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">grantedScopes</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">north-america</span><span class="delimiter">&quot;</span></span>]
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>What happens when an invite is accepted:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>the invite token is validated and checked for expiry</p>
+</li>
+<li>
+<p>the user identity is resolved from the authenticated user, request payload, invite target user, or invite email</p>
+</li>
+<li>
+<p>if the user does not already exist, a new credential is created and a password is required</p>
+</li>
+<li>
+<p>if the user already exists, the service ensures the user is authorized for the tenant realm</p>
+</li>
+<li>
+<p>a <code>UserProfile</code> is created if needed</p>
+</li>
+<li>
+<p>the invite status is changed to <code>ACCEPTED</code></p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_invite_extension_points">1.4.5. Invite extension points</h4>
+<div class="paragraph">
+<p>The invite flow is intentionally extensible through two SPIs:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>AccessInviteProvisioner</code></p>
+</li>
+<li>
+<p><code>AccessInviteNotificationService</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p><code>AccessInviteProvisioner</code> can:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>validate requested scopes when the invite is created</p>
+</li>
+<li>
+<p>perform application-specific provisioning when the invite is accepted</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p><code>AccessInviteNotificationService</code> can:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>deliver the invite token through email, messaging, or another notification mechanism</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The framework ships with no-op default beans for both, so applications can opt in to deeper behavior without rewriting the invite flow.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_how_these_pieces_fit_together">1.4.6. How these pieces fit together</h4>
+<div class="paragraph">
+<p>A common pattern looks like this:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>An admin provisions the tenant with <code>POST /admin/tenants</code>.</p>
+</li>
+<li>
+<p>The tenant configures or accepts the default onboarding workflow with <code>GET/POST /onboarding/workflow/current</code>.</p>
+</li>
+<li>
+<p>A tenant admin creates an access invite for a user with <code>POST /access/invites</code>.</p>
+</li>
+<li>
+<p>The invited user accepts the invite with <code>POST /access/invites/accept</code>.</p>
+</li>
+<li>
+<p>If the workflow requires registration, survey, or approval, those steps are completed before the tenant considers onboarding complete.</p>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p>This separation gives you flexibility:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>use tenant provisioning for admin-created tenants</p>
+</li>
+<li>
+<p>use registration requests for self-service intake and approval</p>
+</li>
+<li>
+<p>use access invites for controlled user admission into an existing tenant</p>
+</li>
+<li>
+<p>use workflow configuration to decide which of those steps are mandatory in each tenant</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
 </div>
 </div>
 </div>
 <div id="footer">
 <div id="footer-text">
 Version 1.3.0-SNAPSHOT<br>
-Last updated 2025-10-18 19:45:57 -0500
+Last updated 2026-04-01 14:15:06 -0400
 </div>
 </div>
 </body>

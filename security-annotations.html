@@ -671,6 +671,22 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect4">
+<h5 id="_scoped_action_enablement">Scoped Action Enablement</h5>
+<div class="ulist">
+<ul>
+<li>
+<p>Reuses the same <code>area / functionalDomain / action</code> tuple as the dependency-tracking key for runtime action enablement</p>
+</li>
+<li>
+<p>Lets the framework answer more than "is this policy allowed?" and also report whether the action is feature-enabled and operationally ready</p>
+</li>
+<li>
+<p>Treats capabilities as an application-level composition concept built on top of one or more scoped actions, not as a new core security primitive</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect4">
 <h5 id="_morphiarepo_filluiactions">MorphiaRepo.fillUIActions</h5>
 <div class="ulist">
 <ul>
@@ -767,6 +783,9 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </li>
 <li>
 <p>Avoid duplicating annotations on both model and resource for the same entity</p>
+</li>
+<li>
+<p>Be consistent with naming because the same tuple may be used by policies, UI action derivation, and scoped action enablement manifests</p>
 </li>
 </ul>
 </div>
@@ -987,7 +1006,7 @@ Only use <code>bypassDataScoping = true</code> for endpoints that genuinely do n
 <div id="footer">
 <div id="footer-text">
 Version 1.3.0-SNAPSHOT<br>
-Last updated 2026-02-04 09:27:47 -0600
+Last updated 2026-03-31 21:56:57 -0400
 </div>
 </div>
 </body>
