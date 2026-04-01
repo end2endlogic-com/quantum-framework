@@ -255,12 +255,27 @@ a certain realm.
 
 The framework exposes endpoints to manage groups of completion tasks.
 
+The canonical documentation for the task and group data structures lives in:
+
+- `src/docs/asciidoc/user-guide/modeling.adoc` under `CompletionTasks and CompletionTaskGroups`
+
+That section defines:
+
+- which fields come from `BaseModel` vs. the task-specific fields
+- which values are server-managed on create and complete
+- the REST payload shapes
+- the SSE event message format (`task:{taskId}:{status}`)
+
 ### Creating a group
 
 ```bash
 curl -X POST http://localhost:8080/integration/completionTaskGroup/create \
      -H "Content-Type: application/json" \
-     -d '{"refName":"demo","displayName":"Demo group"}'
+     -d '{
+           "refName":"catalog-import-20260327",
+           "displayName":"Catalog Import 2026-03-27",
+           "description":"Nightly catalog import for 250 SKUs"
+         }'
 ```
 
 ### Adding a task to a group
@@ -268,7 +283,11 @@ curl -X POST http://localhost:8080/integration/completionTaskGroup/create \
 ```bash
 curl -X POST http://localhost:8080/integration/completionTask/create/{groupId} \
      -H "Content-Type: application/json" \
-     -d '{"refName":"task1","displayName":"First task"}'
+     -d '{
+           "refName":"sku-100045",
+           "displayName":"Import SKU 100045",
+           "details":"Import SKU 100045 from supplier feed"
+         }'
 ```
 
 ### Checking task status
@@ -281,4 +300,10 @@ curl http://localhost:8080/integration/completionTask/id/{taskId}
 
 ```bash
 curl http://localhost:8080/integration/completionTaskGroup/subscribe/{groupId}
+```
+
+Example event payload:
+
+```text
+task:{taskId}:SUCCESS
 ```

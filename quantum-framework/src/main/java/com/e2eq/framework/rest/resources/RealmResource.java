@@ -34,9 +34,6 @@ public class RealmResource extends BaseResource<Realm, BaseMorphiaRepo<Realm>> {
    CredentialRepo credentialRepo;
 
    @Inject
-   SecurityUtils securityUtils;
-
-   @Inject
    EnvConfigUtils envConfigUtils;
 
    protected RealmResource (RealmRepo repo) {
@@ -95,7 +92,7 @@ public class RealmResource extends BaseResource<Realm, BaseMorphiaRepo<Realm>> {
          return Response.status(Response.Status.UNAUTHORIZED).entity(error).build();
       }
 
-      List<Realm> realms = computeAllowedRealms(ocredential.get());
+      List<Realm> realms = ((RealmRepo) repo).computeAllowedRealms(ocredential.get());
       return Response.ok(realms).build();
    }
 
@@ -133,19 +130,7 @@ public class RealmResource extends BaseResource<Realm, BaseMorphiaRepo<Realm>> {
          return Response.status(Response.Status.NOT_FOUND).entity(error).build();
       }
 
-      return Response.ok(computeAllowedRealms(ocred.get())).build();
-   }
-
-   private List<Realm> computeAllowedRealms(CredentialUserIdPassword credential) {
-      List<Realm> all = ((RealmRepo) repo).getAllListWithIgnoreRules(envConfigUtils.getSystemRealm());
-      List<String> candidateRefNames = all.stream().map(Realm::getRefName).collect(Collectors.toList());
-      List<String> allowedRefNames = securityUtils.computeAllowedRealmRefNames(credential, candidateRefNames);
-      if (allowedRefNames.isEmpty()) {
-         return Collections.emptyList();
-      }
-      return all.stream()
-              .filter(r -> allowedRefNames.stream().anyMatch(a -> a.equalsIgnoreCase(r.getRefName())))
-              .collect(Collectors.toList());
+      return Response.ok(((RealmRepo) repo).computeAllowedRealms(ocred.get())).build();
    }
 
 }

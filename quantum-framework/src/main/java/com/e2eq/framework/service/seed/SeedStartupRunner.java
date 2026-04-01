@@ -48,6 +48,9 @@ public class SeedStartupRunner {
     SeedDiscoveryService seedDiscoveryService;
 
     @Inject
+    SeedRegistry seedRegistry;
+
+    @Inject
     EnvConfigUtils envConfigUtils;
 
     @Inject
@@ -236,10 +239,29 @@ public class SeedStartupRunner {
                 return;
             }
 
-            // Apply via SeedLoaderService (CDI-managed, uses MorphiaSeedRegistry for idempotency)
             List<SeedPackRef> refs = new ArrayList<>();
-            latestByName.values().forEach(d -> refs.add(SeedPackRef.exact(d.getManifest().getSeedPack(), d.getManifest().getVersion())));
-            Log.infof("SeedStartupRunner: applying %d seed pack(s) to realm %s", refs.size(), realm);
+            for (SeedPackDescriptor descriptor : latestByName.values()) {
+                boolean pending = false;
+                for (SeedPackManifest.Dataset dataset : descriptor.getManifest().getDatasets()) {
+                    String checksum = seedDiscoveryService.calculateChecksum(descriptor, dataset);
+                    if (seedRegistry.shouldApply(context, descriptor.getManifest(), dataset, checksum)) {
+                        pending = true;
+                        break;
+                    }
+                }
+                if (pending) {
+                    refs.add(SeedPackRef.exact(
+                            descriptor.getManifest().getSeedPack(),
+                            descriptor.getManifest().getVersion()));
+                }
+            }
+
+            if (refs.isEmpty()) {
+                Log.infof("SeedStartupRunner: no seed pack changes detected for realm %s", realm);
+                return;
+            }
+
+            Log.infof("SeedStartupRunner: applying %d changed seed pack(s) to realm %s", refs.size(), realm);
 
             SecurityCallScope.runWithContexts(principalContext, resourceContext, () -> {
                 seedLoaderService.applySeeds(context, refs);

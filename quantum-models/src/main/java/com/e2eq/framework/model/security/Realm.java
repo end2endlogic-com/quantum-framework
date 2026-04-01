@@ -10,6 +10,8 @@ import jakarta.validation.constraints.NotNull;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
 
+import java.util.Date;
+
 @Entity
 @RegisterForReflection
 @Data
@@ -67,6 +69,38 @@ public class Realm extends BaseModel {
     */
    @Builder.Default
    protected boolean applySeedsOnStartup = false;
+
+   /**
+    * Default UX perspective for this realm. DI Studio uses this to determine
+    * which shell/menu shape to present when a user switches into the realm.
+   */
+   protected String defaultPerspective;
+
+   /**
+    * Tenant setup projection used by system-perspective catalogs so they can show
+    * whether a tenant is ready to launch without recalculating cross-realm state.
+    */
+   @Builder.Default
+   protected RealmSetupStatus setupStatus = RealmSetupStatus.NOT_STARTED;
+
+   @Builder.Default
+   protected Integer setupCompletionPercent = 0;
+
+   @Builder.Default
+   protected Integer configuredSolutionCount = 0;
+
+   @Builder.Default
+   protected Integer readySolutionCount = 0;
+
+   @Builder.Default
+   protected Integer pendingSeedPackCount = 0;
+
+   @Builder.Default
+   protected Integer pendingMigrationCount = 0;
+
+   protected String setupSummary;
+
+   protected Date setupLastUpdated;
 
    @Override
    public String bmFunctionalArea() {

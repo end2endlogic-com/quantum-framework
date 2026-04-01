@@ -29,6 +29,8 @@ import java.util.Collections;
 @Startup
 @ApplicationScoped
 public class AddSystemUserCredential extends ChangeSetBase {
+    private static final String SYSTEM_REALM_REGEX = "*";
+
 
     @Inject
     AuthProviderFactory authProviderFactory;
@@ -107,7 +109,7 @@ public class AddSystemUserCredential extends ChangeSetBase {
 
     @Override
     public int getChangeSetVersion() {
-        return 2;
+        return 3;
     }
 
     /**
@@ -135,14 +137,26 @@ public class AddSystemUserCredential extends ChangeSetBase {
             Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(systemUserId, systemRealm, true);
             if (ocred.isPresent()) {
                 CredentialUserIdPassword cred = ocred.get();
+                boolean updated = false;
                 if (!EncryptionUtils.checkPassword(defaultSystemPassword, cred.getPasswordHash())) {
                     cred.setPasswordHash(EncryptionUtils.hashPassword(defaultSystemPassword));
-                    credentialRepo.save(systemRealm, cred);
+                    updated = true;
                     Log.infof("Password hash updated for system user %s in realm %s", systemUserId, realmName);
                     emitter.emit("Password hash updated for system user");
                 } else {
                     Log.infof("Password hash already matches for system user %s", systemUserId);
                     emitter.emit("Password hash already matches; no update needed");
+                }
+
+                if (!SYSTEM_REALM_REGEX.equals(cred.getRealmRegEx())) {
+                    cred.setRealmRegEx(SYSTEM_REALM_REGEX);
+                    updated = true;
+                    Log.infof("Realm regex updated for system user %s in realm %s", systemUserId, realmName);
+                    emitter.emit("Realm regex updated for system user");
+                }
+
+                if (updated) {
+                    credentialRepo.save(systemRealm, cred);
                 }
             }
             return;
@@ -161,6 +175,16 @@ public class AddSystemUserCredential extends ChangeSetBase {
                 false,
                 Set.of("system", "admin", "user"),
                 domainContext);
+
+        Optional<CredentialUserIdPassword> createdCredential = credentialRepo.findByUserId(systemUserId, systemRealm, true);
+        if (createdCredential.isPresent()) {
+            CredentialUserIdPassword cred = createdCredential.get();
+            cred.setRealmRegEx(SYSTEM_REALM_REGEX);
+            credentialRepo.save(systemRealm, cred);
+            Log.infof("Configured realm regex for system user %s in realm %s", systemUserId, realmName);
+            emitter.emit("Configured realm regex for system user");
+        }
+
         Log.infof("Created system user %s in realm %s via configured auth provider", systemUserId, realmName);
         emitter.emit(String.format("Created system user %s in realm %s via configured auth provider", systemUserId, realmName));
     }

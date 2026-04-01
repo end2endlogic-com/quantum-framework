@@ -120,10 +120,60 @@ public class MongoDbInitResource implements QuarkusTestResourceLifecycleManager 
             }
         }
 
+        if (!needsProvision && hasKnownUniqueIndexConflicts(realmDbName)) {
+            Log.warnf("Realm database %s contains duplicate records that would violate unique indexes; dropping and provisioning.", realmDbName);
+            dropDatabaseQuietly(realmDbName);
+            needsProvision = true;
+        }
+
         if (needsProvision) {
             Log.infof("Realm database %s will be provisioned/migrated by test setup.", realmDbName);
         } else {
             Log.infof("Realm database %s already initialized and up-to-date.", realmDbName);
+        }
+    }
+
+    private boolean hasKnownUniqueIndexConflicts(String realmDbName) {
+        MongoDatabase db = mongoClient.getDatabase(realmDbName);
+        return hasDuplicateRealmKeys(db) || hasDuplicateCredentialUserIds(db);
+    }
+
+    private boolean hasDuplicateRealmKeys(MongoDatabase db) {
+        if (!hasCollection(db, "realm")) {
+            return false;
+        }
+        Document duplicate = db.getCollection("realm").aggregate(java.util.List.of(
+                new Document("$group", new Document("_id", new Document("refName", "$refName")
+                        .append("orgRefName", "$dataDomain.orgRefName")
+                        .append("tenantId", "$dataDomain.tenantId")
+                        .append("ownerId", "$dataDomain.ownerId"))
+                        .append("count", new Document("$sum", 1))),
+                new Document("$match", new Document("count", new Document("$gt", 1))),
+                new Document("$limit", 1)
+        )).first();
+        return duplicate != null;
+    }
+
+    private boolean hasDuplicateCredentialUserIds(MongoDatabase db) {
+        if (!hasCollection(db, "credentialUserIdPassword")) {
+            return false;
+        }
+        Document duplicate = db.getCollection("credentialUserIdPassword").aggregate(java.util.List.of(
+                new Document("$match", new Document("userId", new Document("$type", "string").append("$ne", ""))),
+                new Document("$group", new Document("_id", "$userId")
+                        .append("count", new Document("$sum", 1))),
+                new Document("$match", new Document("count", new Document("$gt", 1))),
+                new Document("$limit", 1)
+        )).first();
+        return duplicate != null;
+    }
+
+    private boolean hasCollection(MongoDatabase db, String collectionName) {
+        try {
+            return db.listCollectionNames().into(new java.util.ArrayList<>()).stream()
+                    .anyMatch(n -> n.equalsIgnoreCase(collectionName));
+        } catch (Exception e) {
+            return false;
         }
     }
 

@@ -87,7 +87,7 @@ public class MorphiaSeedRepository implements SeedRepository {
             BaseMorphiaRepo<? extends UnversionedBaseModel> repo = repoOpt.get();
             Class<? extends UnversionedBaseModel> modelClass = repo.getPersistentClass();
             // Convert record map to model instance (sanitize and adapt known fields)
-            Map<String, Object> adapted = adaptForModel(record, modelClass);
+            Map<String, Object> adapted = adaptForModel(record, modelClass, context);
             @SuppressWarnings("unchecked")
             UnversionedBaseModel entity = (UnversionedBaseModel) objectMapper.convertValue(adapted, modelClass);
 
@@ -244,7 +244,9 @@ public class MorphiaSeedRepository implements SeedRepository {
     }
 
 
-    private Map<String, Object> adaptForModel(Map<String, Object> record, Class<? extends UnversionedBaseModel> modelClass) {
+    private Map<String, Object> adaptForModel(Map<String, Object> record,
+                                              Class<? extends UnversionedBaseModel> modelClass,
+                                              SeedContext context) {
         Map<String, Object> adapted = new LinkedHashMap<>(record);
         // Remove realmId which is added by tenantSubstitution transform and not part of the model
         adapted.remove("realmId");
@@ -274,7 +276,56 @@ public class MorphiaSeedRepository implements SeedRepository {
                 }
             }
         }
+
+        resolveParentReference(adapted, modelClass, context);
         return adapted;
+    }
+
+    private void resolveParentReference(Map<String, Object> adapted,
+                                        Class<? extends UnversionedBaseModel> modelClass,
+                                        SeedContext context) {
+        if (findField(modelClass, "parent") == null) {
+            return;
+        }
+
+        Object parent = adapted.get("parent");
+        if (!(parent instanceof Map<?, ?> parentMap)) {
+            return;
+        }
+
+        Map<String, Object> resolved = new LinkedHashMap<>();
+        parentMap.forEach((k, v) -> resolved.put(String.valueOf(k), v));
+
+        Object entityId = resolved.get("entityId");
+        if (entityId instanceof String s && !s.isBlank()) {
+            try {
+                resolved.put("entityId", new ObjectId(s));
+                adapted.put("parent", resolved);
+                return;
+            } catch (IllegalArgumentException ignore) {
+                resolved.remove("entityId");
+            }
+        }
+        if (entityId instanceof ObjectId) {
+            adapted.put("parent", resolved);
+            return;
+        }
+
+        Object entityRefName = resolved.get("entityRefName");
+        if (!(entityRefName instanceof String refName) || refName.isBlank()) {
+            adapted.put("parent", resolved);
+            return;
+        }
+
+        Datastore datastore = morphiaDataStoreWrapper.getDataStore(context.getRealm());
+        UnversionedBaseModel existingParent = datastore.find(modelClass)
+                .filter(Filters.eq("refName", refName))
+                .first();
+        if (existingParent != null && existingParent.getId() != null) {
+            resolved.put("entityId", existingParent.getId());
+        }
+
+        adapted.put("parent", resolved);
     }
 
     private void putIfHas(Map<String, Object> from, Map<String, Object> to, String key) {

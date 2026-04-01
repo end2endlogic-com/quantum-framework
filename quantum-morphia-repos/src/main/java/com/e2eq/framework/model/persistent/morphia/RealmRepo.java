@@ -1,7 +1,9 @@
 package com.e2eq.framework.model.persistent.morphia;
 
+import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.util.EnvConfigUtils;
+import com.e2eq.framework.util.SecurityUtils;
 import dev.morphia.MorphiaDatastore;
 import dev.morphia.query.Query;
 import dev.morphia.query.filters.Filter;
@@ -10,14 +12,19 @@ import dev.morphia.query.filters.Filters;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @ApplicationScoped
 public class RealmRepo extends MorphiaRepo<Realm> {
 
    @Inject
    EnvConfigUtils envConfigUtils;
+
+   @Inject
+   SecurityUtils securityUtils;
 
    @Override
    public String getSecurityContextRealmId() {
@@ -147,6 +154,24 @@ public class RealmRepo extends MorphiaRepo<Realm> {
       try (dev.morphia.query.MorphiaCursor<Realm> cursor = query.iterator()) {
          return cursor.toList();
       }
+   }
+
+   /**
+    * Compute the list of realms that a credential has access to based on security rules.
+    *
+    * @param credential the credential to check access for
+    * @return List of realms the credential can access
+    */
+   public List<Realm> computeAllowedRealms(CredentialUserIdPassword credential) {
+      List<Realm> all = getAllListWithIgnoreRules(envConfigUtils.getSystemRealm());
+      List<String> candidateRefNames = all.stream().map(Realm::getRefName).collect(Collectors.toList());
+      List<String> allowedRefNames = securityUtils.computeAllowedRealmRefNames(credential, candidateRefNames);
+      if (allowedRefNames.isEmpty()) {
+         return Collections.emptyList();
+      }
+      return all.stream()
+              .filter(r -> allowedRefNames.stream().anyMatch(a -> a.equalsIgnoreCase(r.getRefName())))
+              .collect(Collectors.toList());
    }
 
 }
