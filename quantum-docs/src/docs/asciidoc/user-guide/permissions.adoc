@@ -387,6 +387,8 @@ Recommendation:: Use a grant‑based permission posture (default DENY) and let f
 [[scoped-action-enablement]]
 == Scoped Action Enablement and Dependency Tracking
 
+For the dedicated guide covering the runtime API, manifest model, SPI contracts, and built-in resolver types, see xref:./action-enablement.adoc[Scoped Action Enablement].
+
 Permission checks answer one important question: "may this identity perform `area / functionalDomain / action`?" In practice, teams also need to answer a second question: "why is this action still unavailable?"
 
 Typical reasons include:
