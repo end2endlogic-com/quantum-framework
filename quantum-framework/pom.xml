@@ -151,6 +151,11 @@
     </dependency>
     <dependency>
       <groupId>com.end2endlogic</groupId>
+      <artifactId>quantum-action-enablement-quarkus</artifactId>
+      <version>${quantum.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.end2endlogic</groupId>
       <artifactId>quantum-jwt-provider</artifactId>
       <version>${quantum.version}</version>
     </dependency>

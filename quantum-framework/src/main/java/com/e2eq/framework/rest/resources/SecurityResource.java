@@ -437,14 +437,21 @@ public class SecurityResource {
         String[] roles = new String[jwt.getGroups().size()];
         roles = jwt.getGroups().toArray(roles);
 
-        /** Something strange here **/
-        Optional<CredentialUserIdPassword> credentialOp = findCredential(jwt.getSubject(), null);
-        AuthResponse response = generateAuthResponse(jwt.getSubject(),
+        Optional<CredentialUserIdPassword> credentialOp = findCredential(jwt.getSubject(), jwt.getSubject());
+        if (credentialOp.isEmpty()) {
+            RestError error = RestError.builder().build();
+            error.setStatusMessage("Refresh token subject could not be resolved to a credential");
+            error.setStatus(Response.Status.UNAUTHORIZED.getStatusCode());
+            return Response.status(Response.Status.UNAUTHORIZED).entity(error).build();
+        }
+
+        CredentialUserIdPassword credential = credentialOp.get();
+        AuthResponse response = generateAuthResponse(credential.getSubject(),
                 roles,
                 tokenDuration,
                 tokenDuration + 3200l,
                 issuer,
-                credentialOp.orElse(null));
+                credential);
 
         return Response.ok(response).build();
     }
@@ -470,17 +477,7 @@ public class SecurityResource {
         if (credential == null) {
             return List.of();
         }
-
-        List<Realm> allRealms = realmRepo.getAllListWithIgnoreRules(envConfigUtils.getSystemRealm());
-        List<String> candidateRefNames = allRealms.stream().map(Realm::getRefName).collect(Collectors.toList());
-        List<String> allowedRefNames = securityUtils.computeAllowedRealmRefNames(credential, candidateRefNames);
-
-        if (allowedRefNames == null || allowedRefNames.isEmpty()) {
-            return List.of();
-        }
-
-        return allRealms.stream()
-                .filter(realm -> allowedRefNames.stream().anyMatch(allowed -> allowed.equalsIgnoreCase(realm.getRefName())))
+        return realmRepo.computeAllowedRealms(credential).stream()
                 .map(AccessibleRealmInfo::fromRealm)
                 .toList();
     }

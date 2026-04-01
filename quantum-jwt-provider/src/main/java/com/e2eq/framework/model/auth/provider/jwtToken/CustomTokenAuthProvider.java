@@ -595,46 +595,61 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
    @Override
    public LoginResponse refreshTokens (String refreshToken) {
       SecurityIdentity identity = validateAccessToken(refreshToken);
-      String userId = identity.getPrincipal().getName();
-      String newAuthToken = generateAuthToken(userId);
+      String refreshSubject = identity.getPrincipal().getName();
       String newRefreshToken = null;
       try {
-         newRefreshToken = generateRefreshToken(userId, newAuthToken, durationInSeconds);
          // Recompute provenance for refresh; optional for plugins, framework handles groups for checks
          java.util.Set<String> idpRoles = (identity != null) ? new java.util.LinkedHashSet<>(identity.getRoles()) : java.util.Set.of();
          java.util.Set<String> credentialRoles = new java.util.LinkedHashSet<>();
          java.util.Set<String> userGroupRoles = new java.util.LinkedHashSet<>();
          String configuredRealm = envConfigUtils.getSystemRealm();
-         Optional<CredentialUserIdPassword> ocred = getCredentials(configuredRealm, userId);
+         Optional<CredentialUserIdPassword> ocred = getCredentials(configuredRealm, refreshSubject);
+         if (ocred.isEmpty()) {
+            Optional<CredentialUserIdPassword> bySubject = credentialRepo.findBySubject(refreshSubject, configuredRealm, true);
+            if (bySubject.isPresent()) {
+               ocred = bySubject;
+            }
+         }
+         if (ocred.isEmpty()) {
+            throw new SecurityException(String.format("No credential found for refresh subject: %s", refreshSubject));
+         }
+
+         CredentialUserIdPassword credential = ocred.get();
+         String userId = credential.getUserId();
+         String tokenSubject = credential.getSubject();
+         if (tokenSubject == null || tokenSubject.isBlank()) {
+            throw new SecurityException(String.format("Credential subject missing for userId: %s", userId));
+         }
+
+         String newAuthToken = generateAuthToken(tokenSubject);
+         newRefreshToken = generateRefreshToken(userId, newAuthToken, durationInSeconds);
          final String[] responseRealm = new String[] { envConfigUtils.getSystemRealm() };
          try {
-            ocred.ifPresent(cred -> {
-               if (cred.getRoles() != null) {
-                   for (String r : cred.getRoles()) {
+            if (credential.getRoles() != null) {
+               for (String r : credential.getRoles()) {
                        if (r != null) credentialRoles.add(r);
-                   }
                }
-               String credRealm = (cred.getDomainContext() != null)
-                  ? cred.getDomainContext().getDefaultRealm()
+            }
+            String credRealm = (credential.getDomainContext() != null)
+                  ? credential.getDomainContext().getDefaultRealm()
                   : envConfigUtils.getSystemRealm();
-               responseRealm[0] = credRealm;
-               try {
-                  userProfileRepo.getBySubject(credRealm, cred.getSubject()).ifPresent(profile -> {
-                     var userGroups = userGroupRepo.findByUserProfileRef(profile.createEntityReference());
-                     if (userGroups != null) {
-                        for (UserGroup g : userGroups) {
-                           if (g != null && g.getRoles() != null) {
-                               for (String r : g.getRoles()) {
-                                   if (r != null) userGroupRoles.add(r);
-                               }
+            responseRealm[0] = credRealm;
+            try {
+               userProfileRepo.getBySubject(credRealm, credential.getSubject()).ifPresent(profile -> {
+                  var userGroups = userGroupRepo.findByUserProfileRef(profile.createEntityReference());
+                  if (userGroups != null) {
+                     for (UserGroup g : userGroups) {
+                        if (g != null && g.getRoles() != null) {
+                           for (String r : g.getRoles()) {
+                              if (r != null) userGroupRoles.add(r);
                            }
                         }
                      }
-                  });
-               } catch (Exception e) {
-                  Log.warn("Failed to expand user-group roles during refresh; continuing", e);
-               }
-            });
+                  }
+               });
+            } catch (Exception e) {
+               Log.warn("Failed to expand user-group roles during refresh; continuing", e);
+            }
          } catch (Exception e) {
             Log.warn("Credential lookup failed during refresh; proceeding with IDP roles only", e);
          }
@@ -668,7 +683,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
               responseRealm[0]));
       } catch (IOException | NoSuchAlgorithmException | InvalidKeySpecException e) {
          return new LoginResponse(false,
-            new LoginNegativeResponse(userId,
+            new LoginNegativeResponse(refreshSubject,
                400,
                500,
                e.getMessage(),

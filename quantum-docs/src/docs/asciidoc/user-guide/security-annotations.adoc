@@ -82,6 +82,11 @@ When `@FunctionalAction` is not present, actions are inferred from HTTP methods:
 - Reads `@FunctionalAction` from the method, or infers from HTTP method
 - Falls back to path-based parsing if annotations are missing
 
+===== Scoped Action Enablement
+- Reuses the same `area / functionalDomain / action` tuple as the dependency-tracking key for runtime action enablement
+- Lets the framework answer more than "is this policy allowed?" and also report whether the action is feature-enabled and operationally ready
+- Treats capabilities as an application-level composition concept built on top of one or more scoped actions, not as a new core security primitive
+
 ===== MorphiaRepo.fillUIActions
 - Uses `@FunctionalMapping` on model classes to resolve allowed UI actions
 - Falls back to legacy `bmFunctionalArea()/bmFunctionalDomain()` methods
@@ -140,6 +145,7 @@ Use lowercase, kebab-case for areas and domains:
 - **Prefer model annotations** for consistency across all usage
 - Use resource annotations only when the resource handles multiple model types
 - Avoid duplicating annotations on both model and resource for the same entity
+- Be consistent with naming because the same tuple may be used by policies, UI action derivation, and scoped action enablement manifests
 
 ===== Custom Actions
 Define custom actions for business operations beyond CRUD:
