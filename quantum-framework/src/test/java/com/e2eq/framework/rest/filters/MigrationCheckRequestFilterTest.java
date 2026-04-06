@@ -6,7 +6,6 @@ import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.util.EnvConfigUtils;
 import io.quarkus.security.identity.SecurityIdentity;
-import io.smallrye.mutiny.Uni;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.core.Cookie;
 import jakarta.ws.rs.core.MediaType;
@@ -19,6 +18,7 @@ import jakarta.ws.rs.core.UriBuilder;
 import jakarta.ws.rs.core.UriInfo;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.junit.jupiter.api.Test;
+import io.smallrye.mutiny.Uni;
 
 import java.io.InputStream;
 import java.net.URI;
