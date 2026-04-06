@@ -93,6 +93,14 @@ public class ResourceContext {
    };
 
    @HostAccess.Export
+   public String getRealm () {
+      return realm;
+   }
+   public void setRealm (String realm) {
+      this.realm = realm.toLowerCase();
+   }
+
+   @HostAccess.Export
    public String getArea () {
       return area;
    }

@@ -7,7 +7,7 @@ import com.e2eq.framework.model.persistent.morphia.PolicyRepo;
 import io.quarkus.test.security.TestSecurity;
 import com.e2eq.framework.model.securityrules.*;
 import com.e2eq.framework.persistent.BaseRepoTest;
-import com.e2eq.framework.securityrules.RuleContext;
+import com.e2eq.framework.security.runtime.RuleContext;
 import com.e2eq.framework.util.EnvConfigUtils;
 import com.e2eq.framework.util.IOCase;
 import com.e2eq.framework.util.SecurityUtils;
@@ -279,7 +279,7 @@ public class TestRuleContext extends BaseRepoTest {
 
     /**
      * Tests that the RuleContext works correctly with seed-based system rules.
-     * 
+     *
      * Note: This test verifies that system rules loaded from seed data (policies-system-rules.jsonl)
      * are properly applied. The seed data includes:
      * - System user policy (system@system.com can take any action in security)
@@ -287,7 +287,7 @@ public class TestRuleContext extends BaseRepoTest {
      * - User own resources policy (users can view their own resources)
      * - Admin tenant policy (admins can administer tenant records)
      * - Anonymous registration and contact us policies
-     * 
+     *
      * IMPORTANT: Endpoints annotated with @PermitAll are handled by Jakarta Security/Quarkus Security,
      * NOT by RuleContext. Anonymous users can access @PermitAll endpoints without any rules being needed.
      * This is by design - @PermitAll bypasses the rule evaluation system entirely.
@@ -342,7 +342,7 @@ public class TestRuleContext extends BaseRepoTest {
         // test that an admin can view system admins profile.
         // Admin should have access via the adminTenantPolicy from seed data
         SecurityCheckResponse checkRulesResponse = injectedRuleContext.checkRules(systemUserIdPC, sysAdminUserProfileRC);
-        assertTrue(checkRulesResponse.getFinalEffect().equals(RuleEffect.ALLOW), 
+        assertTrue(checkRulesResponse.getFinalEffect().equals(RuleEffect.ALLOW),
                 "Admin should be able to view system admin profile via seed-based admin policy");
         filters = injectedRuleContext.getFilters(filters, systemUserIdPC, sysAdminUserProfileRC, UserProfile.class);
         logRuleResults("Testing system admin can view the system admin user profile with seed-based rules",
@@ -391,8 +391,10 @@ public class TestRuleContext extends BaseRepoTest {
         securityCheckResponse.getMatchEvents().forEach(m -> Log.info(m.toString()));
         if (filters.isEmpty()) Log.info("NoFilters");
         else {
-            Log.info("**** Filters:");
-            filters.forEach(f -> Log.info(f.toString()));
+            if (Log.isDebugEnabled()) {
+                Log.debug("**** Filters:");
+                filters.forEach(f -> Log.debug(f.toString()));
+            }
         }
     }
 

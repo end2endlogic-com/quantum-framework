@@ -8,7 +8,7 @@ import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.security.UserProfile;
 import com.e2eq.framework.model.auth.AuthProviderFactory;
-import com.e2eq.framework.securityrules.SecuritySession;
+import com.e2eq.framework.security.runtime.SecuritySession;
 import com.e2eq.framework.persistent.BaseRepoTest;
 import com.e2eq.framework.rest.models.AuthRequest;
 import com.e2eq.framework.util.EncryptionUtils;

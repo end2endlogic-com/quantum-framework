@@ -1,7 +1,6 @@
 package com.e2eq.framework.model.persistent.morphia.interceptors;
 
 import com.e2eq.framework.exceptions.E2eqValidationException;
-import com.e2eq.framework.model.persistent.base.BaseModel;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.general.interfaces.InvalidSavable;
@@ -20,8 +19,10 @@ import jakarta.inject.Inject;
 import jakarta.validation.*;
 
 import java.lang.annotation.Annotation;
-import java.lang.reflect.Field;
+   import java.lang.reflect.Field;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import org.apache.commons.lang3.reflect.FieldUtils;
 
@@ -59,6 +60,8 @@ public class ValidationInterceptor implements EntityListener<Object> {
    @Override
    public void postLoad (Object ent, Document document, Datastore datastore) {
       if (ent instanceof UnversionedBaseModel) {
+         UnversionedBaseModel bm = (UnversionedBaseModel) ent;
+         List<String> unmappedFieldNames = new ArrayList<>();
          // iterate through the document and validate find fields that are in the document but not in the entity as a property
          for (String fieldName : document.keySet()) {
                if (fieldName.equals("_id")) continue;
@@ -69,14 +72,20 @@ public class ValidationInterceptor implements EntityListener<Object> {
                   try {
                      getFieldFromHierarchy(ent.getClass(), fieldName).getType();
                   } catch (NoSuchFieldException e) {
-                     UnversionedBaseModel bm = (UnversionedBaseModel) ent;
-                    Log.warnf("Field %s not found in entity %s with id:%s but found in monggodb datastore:%s", fieldName, ent.getClass().getName(), ((UnversionedBaseModel) ent).getId(), datastore.getDatabase().getName());
                     if (bm.getUnmappedProperties() == null ) {
                        bm.setUnmappedProperties(new java.util.HashMap<>());
                     }
                     bm.getUnmappedProperties().put(fieldName, fieldValue);
+                    unmappedFieldNames.add(fieldName);
                   }
                }
+         }
+         if (!unmappedFieldNames.isEmpty()) {
+            Log.debugf("Loaded entity %s with id:%s and preserved unmapped datastore fields %s from mongodb datastore:%s",
+                    ent.getClass().getName(),
+                    bm.getId(),
+                    unmappedFieldNames,
+                    datastore.getDatabase().getName());
          }
       }
    }
@@ -93,13 +102,18 @@ public class ValidationInterceptor implements EntityListener<Object> {
          }
          if (!bm.isSkipValidation()) {
             if (SecurityContext.getPrincipalContext().isPresent()) {
-               if (bm.getDataDomain() == null) {
-                  DataDomain dd = dataDomainResolver.resolveForCreate(bm.bmFunctionalArea(), bm.bmFunctionalDomain());
-                  if (dd == null) {
-                     throw new IllegalStateException("Resolved data domain is null, this should not happen");
-                  }
-                  bm.setDataDomain(dd);
+               String area = bm.bmFunctionalArea();
+               String domain = bm.bmFunctionalDomain();
+
+               if (area == null && domain == null) {
+                   throw new IllegalStateException("Both functional area and domain are null for " + bm.getClass().getName() + ". One or both must be provided via @FunctionalMapping or method overrides.");
                }
+
+               DataDomain dd = dataDomainResolver.resolveForCreate(area, domain, ent);
+               if (dd == null) {
+                  throw new IllegalStateException("Resolved data domain is null, this should not happen");
+               }
+               bm.setDataDomain(dd);
             }
          } else {
             skipValidation = true;

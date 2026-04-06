@@ -10,14 +10,17 @@
     <parent>
         <groupId>com.movista</groupId>
         <artifactId>quantum-parent</artifactId>
-        <version>1.3.0-SNAPSHOT</version>
+        <version>1.3.0</version>
     </parent>
 
     <artifactId>quantum-models</artifactId>
     <groupId>com.movista</groupId>
     <packaging>jar</packaging>
-    <version>1.3.0-SNAPSHOT</version>
+    <version>1.3.0</version>
     <name>com.movista:quantum-models</name>
+
+
+    <name>com.end2endlogic:quantum-models</name>
 
     <dependencies>
         <dependency>

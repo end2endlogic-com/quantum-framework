@@ -1,10 +1,12 @@
 package com.e2eq.framework.rest.resources;
 
 
+import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import com.e2eq.framework.model.auth.AuthProvider;
 import com.e2eq.framework.model.auth.AuthProviderFactory;
 import com.e2eq.framework.model.auth.RoleAssignment;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
+import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.rest.models.*;
 import com.e2eq.framework.model.securityrules.SecurityCheckException;
 import com.e2eq.framework.model.security.ApplicationRegistration;
@@ -13,11 +15,14 @@ import com.e2eq.framework.model.security.UserProfile;
 import com.e2eq.framework.model.persistent.morphia.ApplicationRegistrationRequestRepo;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
+import com.e2eq.framework.util.SecurityUtils;
 import com.e2eq.framework.rest.responses.RestSecurityError;
 
 import com.e2eq.framework.util.EnvConfigUtils;
 import com.e2eq.framework.model.auth.provider.jwtToken.TokenUtils;
 import com.e2eq.framework.util.ValidateUtils;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.logging.Log;
 import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -78,6 +83,15 @@ public class SecurityResource {
 
     @Inject
     UserProfileRepo userProfileRepo;
+
+    @Inject
+    RealmRepo realmRepo;
+
+    @Inject
+    SecurityUtils securityUtils;
+
+    @Inject
+    ObjectMapper objectMapper;
 
 
     @Inject
@@ -201,20 +215,36 @@ public class SecurityResource {
             Log.info("me: - UserId:" + securityContext.getUserPrincipal().getName());
 
         try {
-            Optional<UserProfile> userProfileOp = userProfileRepo.getBySubject(envConfigUtils.getSystemRealm(), securityIdentity.getPrincipal().getName());
+            String principalName = securityIdentity.getPrincipal().getName();
+            String systemRealm = envConfigUtils.getSystemRealm();
+            Optional<CredentialUserIdPassword> credentialOp = findCredential(principalName, null);
+            Optional<UserProfile> userProfileOp = userProfileRepo.getBySubject(systemRealm, principalName);
+            if (userProfileOp.isEmpty()) {
+                userProfileOp = userProfileRepo.getByUserIdWithIgnoreRules(systemRealm, principalName);
+            }
             if (userProfileOp.isPresent()) {
                 userProfileRepo.fillUIActions(userProfileOp.get());
             }
             else {
-                Optional<CredentialUserIdPassword> cred = credentialRepo.findBySubject(securityContext.getUserPrincipal().getName());
+                Optional<CredentialUserIdPassword> cred = credentialOp;
                 if (cred.isPresent()) {
-                    return Response.ok(cred.get()).build();
+                    String defaultRealm = cred.get().getDomainContext() != null
+                        ? cred.get().getDomainContext().getDefaultRealm()
+                        : null;
+                    if (defaultRealm != null && !defaultRealm.isBlank() && !systemRealm.equals(defaultRealm)) {
+                        Optional<UserProfile> tenantProfile = userProfileRepo.getByUserIdWithIgnoreRules(defaultRealm, cred.get().getUserId());
+                        if (tenantProfile.isPresent()) {
+                            userProfileRepo.fillUIActions(tenantProfile.get());
+                            return Response.ok(withAccessibleRealms(tenantProfile.get(), cred.get(), principalName)).build();
+                        }
+                    }
+                    return Response.ok(withAccessibleRealms(cred.get(), cred.get(), principalName)).build();
                 }
             }
 
             Response response;
             if (userProfileOp.isPresent()) {
-                response = Response.ok(userProfileOp.get()).build();
+                response = Response.ok(withAccessibleRealms(userProfileOp.get(), credentialOp.orElse(null), principalName)).build();
                 return response;
             } else {
                 RestError error = RestError.builder()
@@ -283,15 +313,22 @@ public class SecurityResource {
 
             if (loginResponse.authenticated()) {
                 Log.info("Login successful for userId:" + authRequest.getUserId());
-                return Response.ok(new AuthResponse(
-                                        loginResponse.positiveResponse().accessToken(),
-                                        loginResponse.positiveResponse().refreshToken(),
-                                        loginResponse.positiveResponse().expirationTime(),
-                                        loginResponse.positiveResponse().mongodbUrl(),
-                                        loginResponse.positiveResponse().realm(),
-                                        loginResponse.positiveResponse().roleAssignments().stream().map(RoleAssignment::toString).collect(Collectors.toList()),
-                                        authProvider.getName()
-                                )).build();
+                Optional<CredentialUserIdPassword> credentialOp = findCredential(
+                        loginResponse.positiveResponse().identity() != null && loginResponse.positiveResponse().identity().getPrincipal() != null
+                                ? loginResponse.positiveResponse().identity().getPrincipal().getName()
+                                : null,
+                        loginResponse.positiveResponse().userId()
+                );
+                AuthResponse response = new AuthResponse();
+                response.setAccess_token(loginResponse.positiveResponse().accessToken());
+                response.setRefresh_token(loginResponse.positiveResponse().refreshToken());
+                response.setExpires_at(loginResponse.positiveResponse().expirationTime());
+                response.setMongodburl(loginResponse.positiveResponse().mongodbUrl());
+                response.setRealm(loginResponse.positiveResponse().realm());
+                response.setRoles(loginResponse.positiveResponse().roleAssignments().stream().map(RoleAssignment::toString).collect(Collectors.toList()));
+                response.setAuthProvider(authProvider.getName());
+                response.setAccessibleRealms(resolveAccessibleRealms(credentialOp.orElse(null)));
+                return Response.ok(response).build();
             }
             else {
                 Log.warn("Login failed for userId:" + authRequest.getUserId());
@@ -353,7 +390,8 @@ public class SecurityResource {
                                              @NotNull (message = "the roles array can not be null for generating an auth response") String[] roles,
                                              long durationInSeconds,
                                              long incrementRefreshDuration,
-                                             @NotNull(message = "the issuer can not be null for for generating an auth response") String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+                                             @NotNull(message = "the issuer can not be null for for generating an auth response") String issuer,
+                                             CredentialUserIdPassword credential) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
         long expiresAt =  TokenUtils.expiresAt(durationInSeconds);
         String userToken = TokenUtils.generateUserToken(
                 subject,
@@ -366,7 +404,13 @@ public class SecurityResource {
                 durationInSeconds + incrementRefreshDuration,
                 issuer);
 
-        return new AuthResponse(userToken, refreshToken,expiresAt);
+        AuthResponse response = new AuthResponse(userToken, refreshToken,expiresAt);
+        if (credential != null) {
+            String defaultRealm = credential.getDomainContext() != null ? credential.getDomainContext().getDefaultRealm() : null;
+            response.setRealm(defaultRealm);
+            response.setAccessibleRealms(resolveAccessibleRealms(credential));
+        }
+        return response;
     }
 
     @POST
@@ -393,14 +437,70 @@ public class SecurityResource {
         String[] roles = new String[jwt.getGroups().size()];
         roles = jwt.getGroups().toArray(roles);
 
-        /** Something strange here **/
-        AuthResponse response = generateAuthResponse(jwt.getSubject(),
+        Optional<CredentialUserIdPassword> credentialOp = findCredential(jwt.getSubject(), jwt.getSubject());
+        if (credentialOp.isEmpty()) {
+            RestError error = RestError.builder().build();
+            error.setStatusMessage("Refresh token subject could not be resolved to a credential");
+            error.setStatus(Response.Status.UNAUTHORIZED.getStatusCode());
+            return Response.status(Response.Status.UNAUTHORIZED).entity(error).build();
+        }
+
+        CredentialUserIdPassword credential = credentialOp.get();
+        AuthResponse response = generateAuthResponse(credential.getSubject(),
                 roles,
                 tokenDuration,
                 tokenDuration + 3200l,
-                issuer);
+                issuer,
+                credential);
 
         return Response.ok(response).build();
+    }
+
+    private Optional<CredentialUserIdPassword> findCredential(String subject, String userId) {
+        String systemRealm = envConfigUtils.getSystemRealm();
+        if (subject != null && !subject.isBlank()) {
+            Optional<CredentialUserIdPassword> bySubject = credentialRepo.findBySubject(subject, systemRealm, true);
+            if (bySubject.isPresent()) {
+                return bySubject;
+            }
+        }
+        if (userId != null && !userId.isBlank()) {
+            Optional<CredentialUserIdPassword> byUserId = credentialRepo.findByUserId(userId, systemRealm, true);
+            if (byUserId.isPresent()) {
+                return byUserId;
+            }
+        }
+        return Optional.empty();
+    }
+
+    private List<AccessibleRealmInfo> resolveAccessibleRealms(CredentialUserIdPassword credential) {
+        if (credential == null) {
+            return List.of();
+        }
+        return realmRepo.computeAllowedRealms(credential).stream()
+                .map(AccessibleRealmInfo::fromRealm)
+                .toList();
+    }
+
+    private Map<String, Object> withAccessibleRealms(Object principal, CredentialUserIdPassword credential, String principalName) {
+        Map<String, Object> response = objectMapper.convertValue(principal, new TypeReference<Map<String, Object>>() {});
+        if (credential != null) {
+            if (credential.getUserId() != null && !credential.getUserId().isBlank()) {
+                response.putIfAbsent("userId", credential.getUserId());
+            }
+            if (credential.getSubject() != null && !credential.getSubject().isBlank()) {
+                response.putIfAbsent("subject", credential.getSubject());
+                response.putIfAbsent("sub", credential.getSubject());
+            }
+            if (credential.getDomainContext() != null && credential.getDomainContext().getDefaultRealm() != null) {
+                response.putIfAbsent("defaultRealm", credential.getDomainContext().getDefaultRealm());
+            }
+        }
+        if (!response.containsKey("sub") && principalName != null && !principalName.isBlank()) {
+            response.put("sub", principalName);
+        }
+        response.put("accessibleRealms", resolveAccessibleRealms(credential));
+        return response;
     }
 
     @POST

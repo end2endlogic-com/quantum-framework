@@ -22,6 +22,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.validation.ValidationException;
 import java.util.*;
+import java.util.stream.Stream;
 
 @ApplicationScoped
 public class ApplicationRegistrationRequestRepo extends MorphiaRepo<ApplicationRegistration> {
@@ -72,8 +73,39 @@ public class ApplicationRegistrationRequestRepo extends MorphiaRepo<ApplicationR
       return Optional.ofNullable(obj);
    }
 
+   public List<ApplicationRegistration> findByUserIdOrEmail(String realm, String userId, String email) {
+      if ((userId == null || userId.isBlank()) && (email == null || email.isBlank())) {
+         return List.of();
+      }
+
+      List<Filter> matchingFilters = Stream.of(
+              normalize(userId) != null ? Filters.eq("userId", normalize(userId)) : null,
+              normalize(email) != null ? Filters.eq("userEmail", normalize(email)) : null
+          )
+          .filter(Objects::nonNull)
+          .toList();
+
+      if (matchingFilters.isEmpty()) {
+         return List.of();
+      }
+
+      return morphiaDataStoreWrapper.getDataStore(realm)
+          .find(ApplicationRegistration.class)
+          .filter(Filters.or(matchingFilters.toArray(Filter[]::new)))
+          .iterator()
+          .toList();
+   }
+
    String createTenantId(String initialValue) {
       return initialValue.replace(".", "-");
+   }
+
+   private String normalize(String value) {
+      if (value == null) {
+         return null;
+      }
+      String trimmed = value.trim();
+      return trimmed.isEmpty() ? null : trimmed.toLowerCase(Locale.ROOT);
    }
 
    public Optional<ApplicationRegistration> approveRequest(String id) throws E2eqValidationException {

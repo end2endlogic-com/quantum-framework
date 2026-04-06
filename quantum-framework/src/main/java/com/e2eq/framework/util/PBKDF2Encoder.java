@@ -1,4 +1,4 @@
-package com.e2eq.framework.util;
+package com.e2eq.framework.security.crypto;
 
 import java.security.NoSuchAlgorithmException;
 import java.security.spec.InvalidKeySpecException;

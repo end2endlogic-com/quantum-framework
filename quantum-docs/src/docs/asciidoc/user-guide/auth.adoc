@@ -366,6 +366,7 @@ curl -sS -X POST \
 
 Alternatively, you can use the **Quantum CLI** tool to generate service tokens interactively or via command-line arguments.
 
+[[using-the-quantum-cli]]
 ===== Using the Quantum CLI
 
 The Quantum CLI (`quantum-cli` module) provides a `generate-token` command that handles authentication and token generation in a single step.
@@ -673,7 +674,7 @@ See xref:multiple-auth-providers.adoc#per-tenant-key-pairs[Key Pair Management] 
 
 | `auth.provider`
 | (required)
-| Comma-separated list of provider names (e.g., `custom`, `custom,cognito`). See xref:multiple-auth-providers.adoc[Multiple Auth Providers].
+| Comma-separated list of provider names (e.g., `custom`, `custom,oidc`). See xref:multiple-auth-providers.adoc[Multiple Auth Providers].
 
 | `mp.jwt.verify.publickey.location`
 | (required)

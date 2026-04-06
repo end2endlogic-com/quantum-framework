@@ -6,7 +6,7 @@ import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.security.Realm;
 
-import com.e2eq.framework.securityrules.RuleContext;
+import com.e2eq.framework.security.runtime.RuleContext;
 import com.e2eq.framework.util.SecurityUtils;
 import com.mongodb.client.MongoClient;
 import dev.morphia.transactions.MorphiaSession;
@@ -15,6 +15,7 @@ import io.quarkus.runtime.Startup;
 import io.smallrye.mutiny.subscription.MultiEmitter;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import org.apache.commons.lang3.tuple.Pair;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 @Startup
@@ -101,6 +102,11 @@ public class AddRealms extends ChangeSetBase {
     }
 
     @Override
+    public int getChangeSetVersion() {
+        return 2;
+    }
+
+    @Override
     public String getScope() {
         return "ALL";
     }
@@ -109,13 +115,6 @@ public class AddRealms extends ChangeSetBase {
     public void execute(MorphiaSession session, MongoClient mongoClient, MultiEmitter<? super String> emitter) throws Exception {
         Log.infof("Adding Default Realm to the database: realm passed to execution: %s", session.getDatabase().getName());
         emitter.emit(String.format("Adding Default Realm to the database: realm passed to execution: %s", session.getDatabase().getName()));
-
-        // check if realms already exist
-        if (realmRepo.findByEmailDomain(systemTenantId, true).isPresent()) {
-            Log.infof("Realm %s already exists. Skipping", systemTenantId);
-            emitter.emit("Realm " + systemTenantId + " already exists. Skipping");
-            return;
-        }
         DomainContext domainContext = DomainContext.builder()
                 .tenantId(systemTenantId)
                 .orgRefName(systemOrgRefName)
@@ -129,9 +128,10 @@ public class AddRealms extends ChangeSetBase {
                 .emailDomain(systemTenantId)
                 .databaseName(systemRealm)
                 .domainContext(domainContext)
+                .defaultPerspective("SYSTEM")
                 .build();
 
-        realmRepo.save(session, realm);
+        saveOrUpdateRealm(session, realm);
 
         Log.info(".  Added system-com realm Successfully");
         emitter.emit(".  Added system-com realm Successfully");
@@ -149,10 +149,35 @@ public class AddRealms extends ChangeSetBase {
                 .emailDomain(testTenantId)
                 .databaseName(testRealm)
                 .domainContext(domainContext)
+                .defaultPerspective("TENANT_ADMIN")
                 .build();
-        realmRepo.save(session, realm);
+        saveOrUpdateRealm(session, realm);
 
        Log.info(".  Added test-quantum-com realm Successfully");
        emitter.emit(".  Added test-quantum-com realm Successfully");
+    }
+
+    private void saveOrUpdateRealm(MorphiaSession session, Realm desiredRealm) {
+        var existingOpt = realmRepo.findByRefName(desiredRealm.getRefName(), true, systemRealm);
+        if (existingOpt.isEmpty()) {
+            realmRepo.save(session, desiredRealm);
+            return;
+        }
+
+        Realm existing = existingOpt.get();
+        existing.setDisplayName(desiredRealm.getDisplayName());
+        existing.setEmailDomain(desiredRealm.getEmailDomain());
+        existing.setDatabaseName(desiredRealm.getDatabaseName());
+        existing.setDomainContext(desiredRealm.getDomainContext());
+        existing.setDefaultPerspective(desiredRealm.getDefaultPerspective());
+        realmRepo.update(
+                session,
+                existing.getId(),
+                Pair.of("displayName", desiredRealm.getDisplayName()),
+                Pair.of("emailDomain", desiredRealm.getEmailDomain()),
+                Pair.of("databaseName", desiredRealm.getDatabaseName()),
+                Pair.of("domainContext", desiredRealm.getDomainContext()),
+                Pair.of("defaultPerspective", desiredRealm.getDefaultPerspective())
+        );
     }
 }

@@ -12,7 +12,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 public class AuthProviderFactory {
 
     @ConfigProperty(name = "auth.provider")
-    String configuredAuthProviders; // supports comma-separated list (e.g., "cognito,custom")
+    String configuredAuthProviders; // supports comma-separated list (for example "custom,oidc")
 
     @Inject
     Instance<AuthProvider> authProviders;

@@ -7,6 +7,7 @@ import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.security.Realm;
+import com.e2eq.framework.model.security.RealmSetupStatus;
 import com.e2eq.framework.model.auth.AuthProviderFactory;
 import com.e2eq.framework.model.auth.UserManagement;
 import com.e2eq.framework.service.seed.*;
@@ -14,7 +15,10 @@ import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.util.EnvConfigUtils;
+import com.mongodb.MongoCommandException;
 import com.mongodb.client.MongoClient;
+import dev.morphia.Datastore;
+import dev.morphia.query.filters.Filters;
 import io.quarkus.logging.Log;
 import io.smallrye.mutiny.subscription.MultiEmitter;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -29,12 +33,15 @@ import java.util.*;
  */
 @ApplicationScoped
 public class TenantProvisioningService {
+    private static final int DROP_PENDING_MAX_RETRIES = 12;
+    private static final int DROP_PENDING_RETRY_DELAY_MS = 500;
 
     @Inject RealmRepo realmRepo;
     @Inject MigrationService migrationService;
     @Inject AuthProviderFactory authProviderFactory;
     @Inject EnvConfigUtils envConfigUtils;
     @Inject CredentialRepo credentialRepo;
+    @Inject MongoClient mongoClient;
 
     @Inject SeedLoaderService seedLoaderService;
 
@@ -44,6 +51,15 @@ public class TenantProvisioningService {
         public String realmId;
         public boolean realmCreated;
         public boolean userCreated;
+        public List<String> warnings = new java.util.ArrayList<>();
+        public void addWarning(String w) { if (w != null && !w.isBlank()) warnings.add(w); }
+    }
+
+    public static class DeleteResult {
+        public String realmId;
+        public boolean realmCatalogDeleted;
+        public boolean databaseDropped;
+        public int deletedCredentialCount;
         public List<String> warnings = new java.util.ArrayList<>();
         public void addWarning(String w) { if (w != null && !w.isBlank()) warnings.add(w); }
     }
@@ -65,14 +81,15 @@ public class TenantProvisioningService {
                                            String adminUserId,
                                            String adminSubject,
                                            String adminPassword) {
-        return provisionTenant(tenantEmailDomain, orgRefName, accountId, adminUserId, adminSubject, adminPassword, java.util.List.of(), true);
+        return provisionTenant(null, tenantEmailDomain, orgRefName, accountId, adminUserId, adminSubject, adminPassword, java.util.List.of(), true);
     }
 
     /**
      * Provisions a new tenant and applies the specified seed archetypes.
      * @param archetypes list of archetype names to apply after migrations
      */
-    public ProvisionResult provisionTenant(String tenantEmailDomain,
+    public ProvisionResult provisionTenant(String tenantDisplayName,
+                                           String tenantEmailDomain,
                                            String orgRefName,
                                            String accountId,
                                            String adminUserId,
@@ -91,6 +108,9 @@ public class TenantProvisioningService {
 
         // 1) Compute realm id
         String realmId = tenantEmailDomain.replace('.', '-');
+        String normalizedTenantDisplayName = tenantDisplayName == null || tenantDisplayName.isBlank()
+                ? realmId
+                : tenantDisplayName.trim();
         result.realmId = realmId;
         Log.infof("  computed realmId: %s", realmId);
 
@@ -116,12 +136,21 @@ public class TenantProvisioningService {
         // Desired Realm representation
         Realm desiredRealm = Realm.builder()
                 .refName(realmId)
-                .displayName(realmId)
+                .displayName(normalizedTenantDisplayName)
                 .emailDomain(tenantEmailDomain)
                 .databaseName(realmId)
                 .domainContext(dc)
                 .dataDomain(dataDomain)
                 .defaultAdminUserId(adminUserId)
+                .defaultPerspective("TENANT_ADMIN")
+                .setupStatus(RealmSetupStatus.NOT_STARTED)
+                .setupCompletionPercent(0)
+                .configuredSolutionCount(0)
+                .readySolutionCount(0)
+                .pendingSeedPackCount(0)
+                .pendingMigrationCount(0)
+                .setupSummary("Tenant provisioned. Bootstrap a solution to finish setup.")
+                .setupLastUpdated(new Date())
                 .build();
 
         if (existingOpt.isPresent()) {
@@ -143,6 +172,10 @@ public class TenantProvisioningService {
            if (!Objects.equals(existing.getDomainContext(), desiredRealm.getDomainContext())) {
               diffs.add(String.format("domainContext: existing='%s', requested='%s'",
                  existing.getDomainContext(), desiredRealm.getDomainContext()));
+           }
+           if (!Objects.equals(existing.getDefaultPerspective(), desiredRealm.getDefaultPerspective())) {
+              diffs.add(String.format("defaultPerspective: existing='%s', requested='%s'",
+                 existing.getDefaultPerspective(), desiredRealm.getDefaultPerspective()));
            }
 
            if (!diffs.isEmpty()) {
@@ -204,9 +237,11 @@ public class TenantProvisioningService {
                 .withAction("APPLY")
                 .build();
 
-        SecurityCallScope.runWithContexts(tenantPrincipal, migrationResource, () -> {
-            migrationService.runAllUnRunMigrations(realmId, emitter);
-        });
+        withDropPendingRetry(realmId, "run migrations", () ->
+                SecurityCallScope.runWithContexts(tenantPrincipal, migrationResource, () -> {
+                    migrationService.runAllUnRunMigrations(realmId, emitter);
+                })
+        );
 
         // 4) Ensure initial tenant admin credentials inside the realm
         Set<String> desiredRoles = Set.of("admin", "user");
@@ -337,11 +372,131 @@ public class TenantProvisioningService {
         }
 
         // 6) Idempotent: Apply indexes and verify (under tenant migration context)
-        SecurityCallScope.runWithContexts(tenantPrincipal, migrationResource, () -> {
-            migrationService.applyIndexes(realmId);
-            migrationService.checkInitialized(realmId);
-        });
+        withDropPendingRetry(realmId, "apply indexes and verify initialization", () ->
+                SecurityCallScope.runWithContexts(tenantPrincipal, migrationResource, () -> {
+                    migrationService.applyIndexes(realmId);
+                    migrationService.checkInitialized(realmId);
+                })
+        );
 
         return result;
+    }
+
+    public DeleteResult deleteTenant(String realmId) {
+        Objects.requireNonNull(realmId, "realmId cannot be null");
+        String normalizedRealmId = realmId.trim();
+        if (normalizedRealmId.isBlank()) {
+            throw new IllegalArgumentException("realmId cannot be blank");
+        }
+        if (envConfigUtils.getSystemRealm().equalsIgnoreCase(normalizedRealmId)) {
+            throw new IllegalStateException("Refusing to delete the configured system realm");
+        }
+
+        String systemRealm = envConfigUtils.getSystemRealm();
+        Realm realm = realmRepo.findByRefName(normalizedRealmId, true, systemRealm)
+                .orElseThrow(() -> new IllegalStateException("Realm was not found in the system catalog: " + normalizedRealmId));
+
+        DeleteResult result = new DeleteResult();
+        result.realmId = normalizedRealmId;
+
+        Datastore systemDatastore = credentialRepo.getMorphiaDataStoreWrapper().getDataStore(systemRealm);
+        List<CredentialUserIdPassword> tenantCredentials = systemDatastore.find(CredentialUserIdPassword.class)
+                .filter(Filters.or(
+                        Filters.eq("domainContext.defaultRealm", normalizedRealmId),
+                        Filters.eq("domainContext.tenantId", realm.getEmailDomain()),
+                        Filters.eq("userId", realm.getDefaultAdminUserId())
+                ))
+                .iterator()
+                .toList();
+
+        for (CredentialUserIdPassword credential : tenantCredentials) {
+            try {
+                credentialRepo.delete(systemRealm, credential);
+                result.deletedCredentialCount++;
+            } catch (Exception e) {
+                String warning = String.format("Failed to delete credential %s: %s", credential.getUserId(), e.getMessage());
+                Log.warn(warning);
+                result.addWarning(warning);
+            }
+        }
+
+        try {
+            mongoClient.getDatabase(normalizedRealmId).drop();
+            result.databaseDropped = true;
+        } catch (Exception e) {
+            String warning = String.format("Failed to drop database %s: %s", normalizedRealmId, e.getMessage());
+            Log.warn(warning);
+            result.addWarning(warning);
+        }
+
+        try {
+            Datastore systemRealmDatastore = realmRepo.getMorphiaDataStoreWrapper().getDataStore(systemRealm);
+            long deletedCount = systemRealmDatastore.find(Realm.class)
+                    .filter(Filters.eq("_id", realm.getId()))
+                    .delete()
+                    .getDeletedCount();
+            result.realmCatalogDeleted = deletedCount > 0;
+            if (!result.realmCatalogDeleted) {
+                result.addWarning("Realm catalog entry was not deleted from the system catalog: " + normalizedRealmId);
+            }
+        } catch (Exception e) {
+            String warning = String.format("Failed to delete realm catalog entry %s: %s", normalizedRealmId, e.getMessage());
+            Log.warn(warning);
+            result.addWarning(warning);
+        }
+
+        return result;
+    }
+
+    @FunctionalInterface
+    interface ProvisioningAction {
+        void run() throws Exception;
+    }
+
+    private void withDropPendingRetry(String realmId, String operationName, ProvisioningAction action) {
+        for (int attempt = 1; attempt <= DROP_PENDING_MAX_RETRIES; attempt++) {
+            try {
+                action.run();
+                return;
+            } catch (Exception e) {
+                if (!isDatabaseDropPending(e) || attempt == DROP_PENDING_MAX_RETRIES) {
+                    throw asRuntimeException(e);
+                }
+                Log.warnf("Tenant provisioning for realm %s hit Mongo database drop pending while trying to %s (attempt %d/%d). Waiting %dms before retry.",
+                        realmId, operationName, attempt, DROP_PENDING_MAX_RETRIES, DROP_PENDING_RETRY_DELAY_MS);
+                sleepBeforeRetry();
+            }
+        }
+    }
+
+    private boolean isDatabaseDropPending(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof MongoCommandException mongoCommandException && mongoCommandException.getErrorCode() == 215) {
+                return true;
+            }
+            String message = current.getMessage();
+            if (message != null && (message.contains("DatabaseDropPending") || message.contains("in the process of being dropped"))) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private void sleepBeforeRetry() {
+        try {
+            Thread.sleep(DROP_PENDING_RETRY_DELAY_MS);
+        } catch (InterruptedException interruptedException) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting for database drop to complete", interruptedException);
+        }
+    }
+
+    private RuntimeException asRuntimeException(Exception exception) {
+        if (exception instanceof RuntimeException runtimeException) {
+            return runtimeException;
+        }
+        return new IllegalStateException(exception.getMessage(), exception);
     }
 }

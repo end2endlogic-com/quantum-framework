@@ -12,7 +12,7 @@ These constructs allow:
 - Fine-grained sharing: Point specific functional areas to shared databases while others remain strictly segmented.
 - Policy composition: Apply RuleContext decisions at the level of area/domain/action.
 
-==== Prefer Annotations for Functional Mapping (recommended)
+=== Prefer Annotations for Functional Mapping (recommended)
 
 Starting with this version, you should use annotations to declare a model or resource's Functional Area/Domain and the Action being performed. The legacy bmFunctionalArea() and bmFunctionalDomain() methods are still supported for backward compatibility in this release, but they will be phased out soon.
 
@@ -81,7 +81,7 @@ Migration notes
 
 See also: xref:security-annotations.adoc#security-annotations[Security Annotations: FunctionalMapping and FunctionalAction]
 
-==== DataDomain on Models
+=== DataDomain on Models
 
 All persisted models carry DataDomain (tenantId, orgRefName, ownerId, etc.) for rule-based filtering and cross-tenant sharing.
 
@@ -113,7 +113,7 @@ public class Product extends BaseModel {
 }
 ----
 
-==== Persistence Repositories
+=== Persistence Repositories
 
 Define a repository to persist and query your model. With Morphia:
 
@@ -126,7 +126,7 @@ public interface ProductRepo extends MorphiaRepo<Product> {
 }
 ----
 
-==== Exposing REST Resources
+=== Exposing REST Resources
 
 Expose consistent CRUD endpoints by extending BaseResource.
 
@@ -144,7 +144,7 @@ public class ProductResource extends BaseResource<Product, ProductRepo> {
 With this minimal setup, you get standard REST APIs guarded by RuleContext/DataDomain and enriched with UIAction metadata.
 
 
-==== Lombok in Models
+=== Lombok in Models
 
 Lombok reduces boilerplate in Quantum models and supports inheritance-friendly builders.
 
@@ -173,7 +173,7 @@ Notes:
 - Prefer @SuperBuilder over @Builder when extending BaseModel/UnversionedBaseModel.
 - Keep equals/hashCode stable for collections and caches; include callSuper when needed.
 
-==== Validation with Jakarta Bean Validation
+=== Validation with Jakarta Bean Validation
 
 Quantum uses Jakarta Bean Validation to enforce invariants on models at persist time (and optionally at REST boundaries).
 
@@ -191,7 +191,7 @@ Where validation runs:
   - If DataDomain is null and SecurityContext has a principal, ValidationInterceptor will default the DataDomain from the principal context.
 - Optionally at REST boundaries: You may also annotate resource DTOs/parameters with Jakarta validation; Quarkus can validate them before the method executes.
 
-==== Jackson vs Jakarta Validation Annotations
+=== Jackson vs Jakarta Validation Annotations
 
 These two families of annotations serve different purposes and complement each other:
 
@@ -546,52 +546,137 @@ How it affects save/update:
 - Utilities: StateGraphManager.getNextPossibleStates(graphName, current) and printStateGraph(...) can aid UIs.
 
 
+[[completion-tasks]]
 == CompletionTasks and CompletionTaskGroups
 
-CompletionTasks and CompletionTaskGroups provide a simple, persistent way to track a series of work items that need to be completed, either by background processes or external systems. Use them when you need durable progress tracking across restarts and an auditable record of outcomes.
+CompletionTasks and CompletionTaskGroups provide a small persistence-backed contract for tracking work that finishes later. They are useful when a request starts work immediately but the actual completion happens in a worker, another service, or a human-in-the-loop integration.
 
-Key models:
+This section documents the concrete structures and runtime behavior, because other guides reference "completion tasks" as a pattern but do not define the payloads and lifecycle precisely.
 
-- CompletionTask: an individual unit of work with fields like status, timestamps, and optional result/details.
-- CompletionTaskGroup: a container that represents a cohort of tasks progressing toward completion.
+=== When to use them
 
-Model overview:
+Use CompletionTasks when you need:
+
+- A durable record of work that may outlive the initiating HTTP request
+- A simple per-item status model with timestamps and outcome text
+- A way to group related tasks under one business operation
+- A lightweight event stream so clients can react when a task completes
+
+Do not treat them as a workflow engine. The framework does not infer dependencies, retries, compensation rules, or aggregate group state transitions for you.
+
+=== Core entities
+
+Both entities extend `BaseModel`, so they inherit the common Quantum fields such as `id`, `refName`, `displayName`, `dataDomain`, `activeStatus`, `auditInfo`, and `version`.
+
+The inherited fields matter here in two ways:
+
+- `id` is the record identifier used by the REST endpoints and emitted in completion events.
+- `refName`, `displayName`, and `dataDomain` are still available for your application-level correlation and multi-tenant scoping, even though they are not task-specific.
+
+==== CompletionTask
 
 [source,java]
 ----
-// Individual task
 @Entity("completionTask")
 public class CompletionTask extends BaseModel {
   public enum Status { PENDING, RUNNING, SUCCESS, FAILED }
 
   @Reference
-  CompletionTaskGroup group;   // optional grouping
-  String details;              // human-readable context (what/why)
-  Status status;               // PENDING -> RUNNING -> (SUCCESS|FAILED)
-  Date createdDate;            // when the task was created
-  Date completedDate;          // set when terminal (SUCCESS/FAILED)
-  String result;               // output, message, or error summary
+  CompletionTaskGroup group;
 
-  @Override public String bmFunctionalArea()   { return "TASK"; }
-  @Override public String bmFunctionalDomain() { return "COMPLETION_TASK"; }
+  String details;
+  Status status;
+  Date createdDate;
+  Date completedDate;
+  String result;
 }
+----
 
-// Group of tasks
+[cols="1,3,1"]
+|===
+| Field | Meaning | Set by
+
+| `group`
+| Optional Morphia reference to the parent `CompletionTaskGroup`
+| Client on create, or the `create/{groupId}` endpoint
+
+| `details`
+| Human-readable explanation of the unit of work, usually "what this task is doing"
+| Client/application
+
+| `status`
+| Task execution state: `PENDING`, `RUNNING`, `SUCCESS`, `FAILED`
+| Server sets `PENDING` on create; application or API updates afterward
+
+| `createdDate`
+| Timestamp when the task record was created
+| Server
+
+| `completedDate`
+| Timestamp written when the task is completed through the completion endpoint
+| Server
+
+| `result`
+| Outcome text, response summary, or error message
+| Application or completion endpoint caller
+|===
+
+==== CompletionTaskGroup
+
+[source,java]
+----
 @Entity("completionTaskGroup")
 public class CompletionTaskGroup extends BaseModel {
   public enum Status { NEW, RUNNING, COMPLETE }
 
-  String description;   // e.g., "Onboarding: create resources"
-  Status status;        // reflects overall progress of the group
-  Date createdDate;     // when the group was created
-  Date completedDate;   // when the group finished
-
-  @Override public String bmFunctionalArea()   { return "TASK"; }
-  @Override public String bmFunctionalDomain() { return "COMPLETION_TASK_GROUP"; }
+  String description;
+  Status status;
+  Date createdDate;
+  Date completedDate;
 }
 ----
 
-Typical lifecycle:
+[cols="1,3,1"]
+|===
+| Field | Meaning | Set by
+
+| `description`
+| Human-readable summary of the batch, workflow, or request that owns the tasks
+| Client/application
+
+| `status`
+| Coarse aggregate state: `NEW`, `RUNNING`, `COMPLETE`
+| Server sets `NEW` on create; application owns later transitions
+
+| `createdDate`
+| Timestamp when the group was created
+| Server
+
+| `completedDate`
+| Timestamp for when your application considers the group finished
+| Application
+|===
+
+=== What the framework manages vs. what your application manages
+
+The code-level behavior is intentionally small:
+
+- `CompletionTaskGroupRepo.createGroup(...)` always sets `status=NEW` and `createdDate=now`.
+- `CompletionTaskRepo.createTask(...)` always sets `status=PENDING` and `createdDate=now`.
+- `CompletionTaskRepo.completeTask(...)` sets `status`, `completedDate=now`, and `result`.
+- If the task belongs to a group, task completion emits an SSE message for that group.
+
+The framework does not automatically:
+
+- Change a group from `NEW` to `RUNNING`
+- Mark a group `COMPLETE` when all child tasks finish
+- Count completed tasks or calculate percentages
+- Retry failed tasks
+- Validate that only terminal states are used with the completion endpoint
+
+That means group rollup is application-owned. If you want `CompletionTaskGroup.status` to represent aggregate progress, update it explicitly from your worker or orchestration layer.
+
+=== State model
 
 [plantuml]
 ....
@@ -600,53 +685,217 @@ skinparam dpi 120
 hide empty description
 state "CompletionTaskGroup" as Group {
   [*] --> NEW
-  NEW --> RUNNING : any task RUNNING
-  RUNNING --> COMPLETE : all tasks terminal
+  NEW --> RUNNING : application updates group
+  RUNNING --> COMPLETE : application updates group
 }
 
 state "CompletionTask" as Task {
   [*] --> PENDING
   PENDING --> RUNNING : worker picks up
-  RUNNING --> SUCCESS : work done
-  RUNNING --> FAILED : error
+  RUNNING --> SUCCESS : completed successfully
+  RUNNING --> FAILED : completed with error
 }
 
-Task --> Group : updates status
+Task --> Group : optional event emission
 @enduml
 ....
 
-- Create a CompletionTaskGroup in NEW status.
-- Create N CompletionTasks (status=PENDING) referencing the group.
-- A worker picks tasks and flips status to RUNNING, performs the work, then to SUCCESS or FAILED, setting completedDate and result.
-- Periodically update the group:
-  - If at least one task is RUNNING (and none pending), set group status to RUNNING.
-  - When all tasks are terminal (SUCCESS or FAILED), set group status to COMPLETE and completedDate.
+Recommended conventions:
 
-How to use for tracking a series of things that need to be completed:
+- Set a task to `RUNNING` when a worker begins processing it.
+- Use `SUCCESS` and `FAILED` as the terminal task states.
+- Set a group to `RUNNING` once at least one child task has begun.
+- Set a group to `COMPLETE` only when your own aggregation logic decides the batch is finished.
 
-- Batch operations: When submitting a batch (e.g., provisioning 100 accounts), create one group and 100 tasks. The UI/API can poll the group to show overall progress and per-item results.
-- Multi-step workflows: Represent each step as its own task, or use one task per target resource. Groups help correlate all steps for a single business request.
-- Retry/compensation: FAILED tasks can be retried by creating new tasks or resetting status to PENDING based on your policy. Keep result populated with failure reasons.
+=== REST API surface
+
+The completion-task resources are small wrappers on top of the generic `BaseResource`, so they expose both task-specific endpoints and inherited read endpoints.
+
+==== Task group endpoints
+
+[cols="1,2,3"]
+|===
+| Method and path | Purpose | Notes
+
+| `POST /integration/completionTaskGroup/create`
+| Create a new task group
+| Server forces `status=NEW` and `createdDate`
+
+| `GET /integration/completionTaskGroup/id/{id}`
+| Fetch a group by Mongo `id`
+| Inherited from `BaseResource`
+
+| `GET /integration/completionTaskGroup/refName/{refName}`
+| Fetch a group by `refName`
+| Inherited from `BaseResource`
+
+| `GET /integration/completionTaskGroup/subscribe/{id}`
+| Subscribe to completion events for tasks in the group
+| Returns server-sent events
+|===
+
+==== Task endpoints
+
+[cols="1,2,3"]
+|===
+| Method and path | Purpose | Notes
+
+| `POST /integration/completionTask/create/{groupId}`
+| Create a task and attempt to attach it to the given group
+| Server forces `status=PENDING` and `createdDate`
+
+| `PUT /integration/completionTask/complete/{id}?status=SUCCESS&result=...`
+| Update a task status, set `completedDate`, and store `result`
+| Despite the method name, the code accepts any `CompletionTask.Status`
+
+| `GET /integration/completionTask/id/{id}`
+| Fetch a task by Mongo `id`
+| Inherited from `BaseResource`
+
+| `GET /integration/completionTask/refName/{refName}`
+| Fetch a task by `refName`
+| Inherited from `BaseResource`
+|===
+
+=== Request and response payloads
+
+==== Creating a group
+
+Minimal request:
+
+[source,json]
+----
+{
+  "refName": "catalog-import-20260327",
+  "displayName": "Catalog Import 2026-03-27",
+  "description": "Nightly catalog import for 250 SKUs"
+}
+----
+
+Representative response:
+
+[source,json]
+----
+{
+  "id": "67e51d7c9d0f1d6df2f8ab12",
+  "refName": "catalog-import-20260327",
+  "displayName": "Catalog Import 2026-03-27",
+  "description": "Nightly catalog import for 250 SKUs",
+  "status": "NEW",
+  "createdDate": "2026-03-27T04:12:14.118Z",
+  "completedDate": null
+}
+----
+
+==== Creating a task in a group
+
+Minimal request:
+
+[source,json]
+----
+{
+  "refName": "sku-100045",
+  "displayName": "Import SKU 100045",
+  "details": "Import SKU 100045 from supplier feed"
+}
+----
+
+Representative response:
+
+[source,json]
+----
+{
+  "id": "67e51df49d0f1d6df2f8ab13",
+  "refName": "sku-100045",
+  "displayName": "Import SKU 100045",
+  "details": "Import SKU 100045 from supplier feed",
+  "status": "PENDING",
+  "createdDate": "2026-03-27T04:14:12.091Z",
+  "completedDate": null,
+  "result": null,
+  "group": {
+    "id": "67e51d7c9d0f1d6df2f8ab12"
+  }
+}
+----
+
+Notes:
+
+- The endpoint path requires a `groupId`.
+- If the `groupId` does not resolve to an existing group, the current repository implementation still creates the task, but leaves `group` unset.
+- The server ignores any client-supplied `status` or `createdDate` during creation and overwrites them.
+
+==== Completing a task
+
+Example:
+
+[source,bash]
+----
+curl -X PUT \
+  "http://localhost:8080/integration/completionTask/complete/67e51df49d0f1d6df2f8ab13?status=SUCCESS&result=Imported%20successfully"
+----
+
+Representative response:
+
+[source,json]
+----
+{
+  "id": "67e51df49d0f1d6df2f8ab13",
+  "status": "SUCCESS",
+  "completedDate": "2026-03-27T04:16:08.501Z",
+  "result": "Imported successfully"
+}
+----
+
+Important behavior:
+
+- `completedDate` is always set by the completion endpoint.
+- The endpoint name says "complete", but the implementation accepts any value in `CompletionTask.Status`.
+- Updating the task does not automatically update the parent group status.
+
+=== Completion event stream
+
+`GET /integration/completionTaskGroup/subscribe/{groupId}` returns server-sent events. Each event is emitted when `CompletionTaskRepo.completeTask(...)` is called for a task in that group.
+
+The event payload is plain text, not JSON. The current format is:
+
+[source,text]
+----
+task:{taskId}:{status}
+----
+
+Example event data:
+
+[source,text]
+----
+task:67e51df49d0f1d6df2f8ab13:SUCCESS
+----
+
+If you need richer event payloads, build that in your own orchestration layer or extend the resource.
+
+=== Typical orchestration flow
 
 Example creation flow:
 
 [source,java]
 ----
-CompletionTaskGroup group = CompletionTaskGroup.builder()
-  .description("Catalog import: 250 SKUs")
-  .status(CompletionTaskGroup.Status.NEW)
-  .createdDate(new Date())
-  .build();
-completionTaskGroupRepo.save(group);
+CompletionTaskGroup group = completionTaskGroupRepo.createGroup(
+  CompletionTaskGroup.builder()
+    .refName("catalog-import-20260327")
+    .displayName("Catalog Import 2026-03-27")
+    .description("Nightly catalog import for 250 SKUs")
+    .build()
+);
 
 for (Sku s : skus) {
-  CompletionTask t = CompletionTask.builder()
-    .group(group)
-    .details("Import SKU " + s.code())
-    .status(CompletionTask.Status.PENDING)
-    .createdDate(new Date())
-    .build();
-  completionTaskRepo.save(t);
+  completionTaskRepo.createTask(
+    CompletionTask.builder()
+      .refName("sku-" + s.code())
+      .displayName("Import SKU " + s.code())
+      .details("Import SKU " + s.code() + " from supplier feed")
+      .build(),
+    group.getId().toString()
+  );
 }
 ----
 
@@ -654,45 +903,64 @@ Example worker progression:
 
 [source,java]
 ----
-// Fetch a PENDING task and execute
-CompletionTask t = completionTaskRepo.findOneByStatus(CompletionTask.Status.PENDING);
-if (t != null) {
-  completionTaskRepo.update(t.getId(), "status", CompletionTask.Status.RUNNING);
+CompletionTask task = completionTaskRepo.findOneByStatus(CompletionTask.Status.PENDING);
+if (task != null) {
+  completionTaskRepo.update(task.getId(), "status", CompletionTask.Status.RUNNING);
+  completionTaskGroupRepo.update(task.getGroup().getId(), "status", CompletionTaskGroup.Status.RUNNING);
+
   try {
     // ... do work ...
-    completionTaskRepo.update(t.getId(),
-      "status", CompletionTask.Status.SUCCESS,
-      "completedDate", new Date(),
-      "result", "OK");
+    completionTaskRepo.completeTask(
+      task.getId().toString(),
+      CompletionTask.Status.SUCCESS,
+      "Imported successfully"
+    );
   } catch (Exception e) {
-    completionTaskRepo.update(t.getId(),
-      "status", CompletionTask.Status.FAILED,
-      "completedDate", new Date(),
-      "result", e.getMessage());
+    completionTaskRepo.completeTask(
+      task.getId().toString(),
+      CompletionTask.Status.FAILED,
+      e.getMessage()
+    );
   }
-}
-
-// Periodically recompute group status
-List<CompletionTask> tasks = completionTaskRepo.findByGroup(group);
-boolean allTerminal = tasks.stream().allMatch(x -> x.getStatus()==SUCCESS || x.getStatus()==FAILED);
-boolean anyRunning = tasks.stream().anyMatch(x -> x.getStatus()==RUNNING);
-boolean anyPending = tasks.stream().anyMatch(x -> x.getStatus()==PENDING);
-
-if (allTerminal) {
-  completionTaskGroupRepo.update(group.getId(),
-    "status", CompletionTaskGroup.Status.COMPLETE,
-    "completedDate", new Date());
-} else if (anyRunning || (!anyPending && !allTerminal)) {
-  completionTaskGroupRepo.update(group.getId(), "status", CompletionTaskGroup.Status.RUNNING);
 }
 ----
 
-Notes and best practices:
+Example aggregate rollup owned by the application:
 
-- Keep details short but diagnostic, and store richer context in result.
-- Use DataDomain fields for multi-tenant scoping so groups/tasks are isolated per tenant/org as needed.
-- Avoid unbounded growth: archive or purge old groups once COMPLETE.
-- Consider idempotency keys in details or a custom field to prevent processing the same logical work twice.
+[source,java]
+----
+List<CompletionTask> tasks = completionTaskRepo.findByGroup(group);
+
+boolean allTerminal = tasks.stream().allMatch(t ->
+  t.getStatus() == CompletionTask.Status.SUCCESS ||
+  t.getStatus() == CompletionTask.Status.FAILED
+);
+boolean anyRunning = tasks.stream().anyMatch(t ->
+  t.getStatus() == CompletionTask.Status.RUNNING
+);
+
+if (allTerminal) {
+  completionTaskGroupRepo.update(
+    group.getId(),
+    "status", CompletionTaskGroup.Status.COMPLETE,
+    "completedDate", new Date()
+  );
+} else if (anyRunning) {
+  completionTaskGroupRepo.update(
+    group.getId(),
+    "status", CompletionTaskGroup.Status.RUNNING
+  );
+}
+----
+
+=== Best practices
+
+- Keep `details` short and stable so operators can quickly scan task lists.
+- Use `result` for outcome summaries, error messages, or external correlation identifiers.
+- Populate `refName` with a meaningful business key so tasks can be found without raw Mongo ids.
+- Use `dataDomain` consistently so task and group records stay tenant-scoped.
+- Treat group status as a denormalized summary owned by your orchestration code.
+- Purge or archive old completed groups to avoid unbounded growth.
 
 
 == References and EntityReference

@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.test.MongoDbInitResource;
 import com.e2eq.framework.util.EnvConfigUtils;
 import com.mongodb.client.MongoClient;
@@ -77,5 +79,35 @@ public class SeedStartupRunnerIT {
         // Re-check without applying again; startup should have run once.
         long count2 = collection.countDocuments();
         assertEquals(count, count2, "Record count should be stable without re-apply in the same test run");
+    }
+
+    @Test
+    void fallbackSeedContextUsesSystemValuesWhenAdminContextMissing() {
+        SeedContext context = seedStartupRunner.buildSeedContext(envConfigUtils.getTestRealm(), null);
+
+        assertEquals(envConfigUtils.getSystemTenantId(), context.getTenantId().orElse(null));
+        assertEquals(envConfigUtils.getSystemOrgRefName(), context.getOrgRefName().orElse(null));
+        assertEquals(envConfigUtils.getSystemAccountNumber(), context.getAccountId().orElse(null));
+        assertEquals(envConfigUtils.getSystemUserId(), context.getOwnerId().orElse(null));
+    }
+
+    @Test
+    void seedContextPrefersAdminDataDomainWhenAvailable() {
+        DataDomain adminDomain = new DataDomain();
+        adminDomain.setTenantId("tenant.example");
+        adminDomain.setOrgRefName("tenant-org");
+        adminDomain.setAccountNum("12345");
+        adminDomain.setOwnerId("owner@test");
+
+        CredentialUserIdPassword adminCred = new CredentialUserIdPassword();
+        adminCred.setUserId("admin@tenant.example");
+        adminCred.setDataDomain(adminDomain);
+
+        SeedContext context = seedStartupRunner.buildSeedContext(envConfigUtils.getTestRealm(), adminCred);
+
+        assertEquals("tenant.example", context.getTenantId().orElse(null));
+        assertEquals("tenant-org", context.getOrgRefName().orElse(null));
+        assertEquals("12345", context.getAccountId().orElse(null));
+        assertEquals("owner@test", context.getOwnerId().orElse(null));
     }
 }

@@ -1,7 +1,6 @@
 = Ontology Modeling
 :toclevels: 3
 
-[[ontologies-in-quantum]]
 == Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast
 
 NOTE: Looking for the short implementation plan? See PROPOSAL.md at the repository root for a concise module-by-module checklist.
@@ -143,7 +142,6 @@ NOTE: In Quarkus, all ontology components are CDI-managed. Inject EdgeDao and se
 - Compared with direct @Reference/EntityReference, ontology edges are more expressive, resilient to change, and typically faster for complex list/policy queries once materialized.
 
 
-[[ontology-ecommerce-example]]
 == Concrete example: Sales Orders, Shipments, and evolving to Fulfillment/Returns
 
 This example shows how to use an ontology to model relationships around Orders, Customers, and Shipments, and how the model can evolve to include Fulfillment and Returns without breaking existing queries. We will:
@@ -511,7 +509,7 @@ Set<String> targetIds = edgeDao.dstIdsBySrc(tenantId, "Associate", associateId, 
 Set<String> sourceIds = edgeDao.srcIdsByDst(tenantId, "canAccessLocation", locationId);
 ----
 
-[[ontology-integration-morphia-permissions]]
+[[ontology-integration-morphia-permissions-section]]
 == Integrating Ontology with Morphia, Permissions, and Multi-tenancy
 
 This section focuses on integration and developer experience: how ontology edges flow into Morphia-based repositories and the permission rule language, while remaining fully multi-tenant and secure.
@@ -1918,7 +1916,7 @@ NOTE: JointJS will honor the attrs/labels we return. You can add a legend in you
 === When to use these endpoints
 
 - During development: inspect whether your ontology registry is loaded as expected and whether property chains/inverses are effective.
-- During troubleshooting: confirm that edges exist for the predicates your queries or policies reference (see also xref:ontology-integration-morphia-permissions[Integrating Ontology]).
+- During troubleshooting: confirm that edges exist for the predicates your queries or policies reference (see also xref:ontology-integration-morphia-permissions-section[Integrating Ontology]).
 - For lightweight admin tools: the JointJS payload can be embedded in a simple HTML page to visualize current relationships.
 
 For deep dives, parameter matrices, and additional examples (including large graph considerations), consult quantum-ontology-mongo/README.md in this repository.

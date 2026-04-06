@@ -88,6 +88,79 @@ archetypes:
       - shipping-defaults@~2
 ----
 
+== Realm filtering
+
+Seed packs can be restricted to specific realms using `includeRealms` or `excludeRealms` in the `scope` block of the manifest. This controls which realms a seed pack applies to during provisioning.
+
+* **`includeRealms`** — the seed pack applies ONLY to the listed realms
+* **`excludeRealms`** — the seed pack applies to ALL realms EXCEPT those listed
+* If neither is set, the seed pack applies to all realms (default behavior)
+
+These two fields are mutually exclusive — setting both causes a validation error at manifest load time.
+
+Realm filtering composes with the scope `type`. The type-based check (`GLOBAL`, `PER_TENANT`, `TENANT_LIST`, etc.) runs first; if it passes, the realm filter is applied as an additional constraint.
+
+[NOTE]
+====
+Realm filtering requires `quantum.seed-pack.scopes.enabled=true` in your application properties. When scopes are disabled (the default), all seed packs apply to all realms regardless of scope configuration.
+====
+
+=== Include realms (explicit list)
+
+Use `includeRealms` when a seed pack should only be applied to specific realms — for example, customer-specific configuration or region-specific reference data:
+
+[source,yaml]
+----
+seedPack: acme-custom-config
+version: 1.0.0
+scope:
+  type: GLOBAL
+  includeRealms:
+    - acme-com
+    - acme-staging-com
+
+datasets:
+  - collection: codeLists
+    file: datasets/acme-codes.ndjson
+    naturalKey: [code]
+----
+
+This seed pack will only be applied when the target realm is `acme-com` or `acme-staging-com`. All other realms skip it.
+
+=== Exclude realms
+
+Use `excludeRealms` when a seed pack should apply everywhere except certain realms — for example, excluding test or system realms from production seed data:
+
+[source,yaml]
+----
+seedPack: standard-permissions
+version: 2.1.0
+scope:
+  type: GLOBAL
+  excludeRealms:
+    - test-system-com
+    - dev-local-com
+
+datasets:
+  - collection: policy
+    file: datasets/policies.ndjson
+    naturalKey: [refName]
+    upsert: true
+----
+
+This seed pack applies to every realm except `test-system-com` and `dev-local-com`.
+
+=== Backward compatibility
+
+The previously declared (but unused) `realms` field in the scope block is treated as an alias for `includeRealms`:
+
+[source,yaml]
+----
+scope:
+  type: GLOBAL
+  realms: [acme-com]    # equivalent to includeRealms: [acme-com]
+----
+
 == Programmatic usage
 
 [source,java]

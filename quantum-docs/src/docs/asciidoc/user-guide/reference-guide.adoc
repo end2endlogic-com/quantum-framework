@@ -15,16 +15,19 @@ Use it to jump directly to a subject and then explore details in context.
 
 - Ontologies in Quantum (deep dive): xref:./ontology.adoc[Modeling relationships with ontologies]
 - Concrete e-commerce example: xref:./ontology.adoc#ontology-ecommerce-example[Orders, Shipments, Fulfillment, Returns]
-- Integration with Morphia/permissions: xref:./ontology.adoc#ontology-integration-morphia-permissions[Integrating ontology with rules and repos]
+- Integration with Morphia/permissions: xref:./ontology.adoc#ontology-integration-morphia-permissions-section[Integrating ontology with rules and repos]
 
 - Domain modeling: xref:../tutorials/quantum-tutorial.adoc#sec-modeling[Domain modeling fundamentals]
+- Completion tasks and groups: xref:./modeling.adoc#completion-tasks[CompletionTasks, CompletionTaskGroups, payloads, and event stream]
 - Tenant models and realms: xref:../tutorials/quantum-tutorial.adoc#sec-tenant-models[Multi-tenant model and realm separation]
+- Tenant onboarding and access invites: xref:./tenant-models.adoc#tenant-onboarding-and-invites[Provision tenants, configure onboarding workflow, and invite users into a tenant]
 - Domain rule context: xref:../tutorials/quantum-tutorial.adoc#sec-domain-rule-context[Domain rule context]
 
 == APIs and Queries
 
 - REST CRUD: xref:../tutorials/quantum-tutorial.adoc#sec-rest-crud[Building RESTful CRUD APIs]
 - Query language: xref:../tutorials/quantum-tutorial.adoc#sec-query-language[Query language and filtering]
+- Scoped action enablement: xref:./action-enablement.adoc#action-enablement[Why an action is unavailable: policy, feature flags, settings, and readiness blockers]
 - AI Agent integration: xref:./ai-agent-integration.adoc[AI Agent Integration] (tools discovery, schema, execute, session/trace)
 - MCP Server and Client: xref:./mcp-server-and-client.adoc[MCP Server and Client] (Claude/Cursor integration, ontology tools, end-to-end example)
 
@@ -33,8 +36,10 @@ Use it to jump directly to a subject and then explore details in context.
 - Authentication: xref:../tutorials/quantum-tutorial.adoc#sec-security[Authentication, permissions, and annotations]
 - JWT tokens for API access: xref:./auth.adoc#jwt-tokens-for-api-access[Generating JWT Tokens] (login, service tokens, key pair generation)
 - Service tokens for integrations: xref:./auth.adoc#service-tokens[Service Tokens] (MCP servers, cron jobs, CI/CD, partner APIs)
-- Multiple auth providers and OIDC: xref:./multiple-auth-providers.adoc[Multiple Authentication Providers] (issuer resolution, per-tenant key pairs)
+- Multiple auth providers: xref:./multiple-auth-providers.adoc[Multiple Authentication Providers] (issuer resolution, per-tenant key pairs, external identity providers)
 - Key pair management: xref:./multiple-auth-providers.adoc#per-tenant-key-pairs[Key Pair Management] (default keys module, configurable paths, production setup)
+- Shared links: xref:./shared-links.adoc[Shared Links] (time-bound link sharing, HMAC signing, access logging, revocation)
+- OAuth server: xref:./oauth-server.adoc[OAuth Server Module] (built-in OAuth 2.0/OIDC authorization server, ChatGPT/Gemini/Grok integration, no external IdP needed)
 - Permissions: xref:../tutorials/quantum-tutorial.adoc#sec-security[Permissions]
 - Security annotations: xref:../tutorials/quantum-tutorial.adoc#sec-security[Security annotations]
 - Permission Resource Check APIs: xref:./permission-resource.adoc[Permission Resource: Check APIs and Client Usage]
@@ -45,6 +50,10 @@ Use it to jump directly to a subject and then explore details in context.
 
 - Seed packs (tutorial): xref:../tutorials/quantum-tutorial.adoc#sec-seed-packs[Seed packs: Declarative tenant seeding]
 - Seed packs (deep dive document): xref:./seed-packs.adoc[Seed packs and declarative tenant seeding]
+
+== Email and Notifications
+
+- Email templates: xref:./email-templates.adoc[Email Templates] (Qute rendering, classpath defaults, realm overrides, Postmark delivery)
 
 == Operations
 

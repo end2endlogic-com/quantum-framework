@@ -1,8 +1,8 @@
 package com.e2eq.framework.model.auth.provider.jwtToken;
 
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
@@ -23,7 +23,7 @@ import jakarta.validation.ValidationException;
  * Utility class for token generation and validation.
  *
  * Key locations are configurable via {@link #configure(String, String)}.
- * Supported path prefixes:
+ * Key material is loaded through a pluggable {@link JwtKeyResolver}; the default resolver supports:
  * <ul>
  *   <li>{@code classpath:} — load from the classpath (default)</li>
  *   <li>{@code file:} — load from the filesystem</li>
@@ -47,6 +47,7 @@ public class TokenUtils {
 
         private static volatile PrivateKey cachedPrivateKey;
         private static volatile PublicKey cachedPublicKey;
+        private static volatile JwtKeyResolver keyResolver = new DefaultJwtKeyResolver();
         private static final Object PRIVATE_KEY_LOCK = new Object();
         private static final Object PUBLIC_KEY_LOCK = new Object();
 
@@ -88,6 +89,23 @@ public class TokenUtils {
          */
         public static String getPublicKeyLocation() {
                 return publicKeyLocation;
+        }
+
+        /**
+         * Configures the resolver used to load JWT key material.
+         * Replacing the resolver invalidates cached keys so future calls reload from the new source.
+         */
+        public static void configureKeyResolver(JwtKeyResolver resolver) {
+                Objects.requireNonNull(resolver, "resolver cannot be null");
+                synchronized (PRIVATE_KEY_LOCK) {
+                        synchronized (PUBLIC_KEY_LOCK) {
+                                if (keyResolver != resolver) {
+                                        keyResolver = resolver;
+                                        cachedPrivateKey = null;
+                                        cachedPublicKey = null;
+                                }
+                        }
+                }
         }
 
 
@@ -159,38 +177,26 @@ public class TokenUtils {
         }
 
         /**
-         * Reads key bytes from either a filesystem path (prefixed with "file:") or a classpath resource.
-         * Paths prefixed with "classpath:" have that prefix stripped and are loaded from the classpath.
-         * Paths with no recognized prefix are loaded from the classpath (backward compatible).
+         * Reads key bytes from the currently configured {@link JwtKeyResolver}.
          */
         static byte[] readKeyBytes(String location) throws IOException {
-                if (location.startsWith("file:")) {
-                        String filePath = location.substring("file:".length());
-                        try (InputStream is = new FileInputStream(filePath)) {
-                                return readAllBytes(is, location);
-                        }
-                } else {
-                        // Strip optional "classpath:" prefix
-                        String resourceName = location.startsWith("classpath:")
-                                ? location.substring("classpath:".length())
-                                : location;
-                        ClassLoader loader = Thread.currentThread().getContextClassLoader();
-                        try (InputStream is = loader.getResourceAsStream(resourceName)) {
-                                if (is == null) {
-                                        throw new IOException("Could not find key resource: " + location);
-                                }
-                                return readAllBytes(is, location);
-                        }
+                try (InputStream is = keyResolver.openKeyStream(location)) {
+                        return readAllBytes(is, location);
                 }
         }
 
         private static byte[] readAllBytes(InputStream is, String location) throws IOException {
-                byte[] tmp = new byte[4096];
-                int length = is.read(tmp);
-                if (length <= 0) {
+                ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                byte[] chunk = new byte[4096];
+                int length;
+                while ((length = is.read(chunk)) != -1) {
+                        buffer.write(chunk, 0, length);
+                }
+                byte[] allBytes = buffer.toByteArray();
+                if (allBytes.length == 0) {
                         throw new IOException("Key file is empty: " + location);
                 }
-                return java.util.Arrays.copyOf(tmp, length);
+                return allBytes;
         }
 
 	public static PublicKey decodePublicKey(String pemEncoded) throws Exception {

@@ -55,6 +55,126 @@ public class ChangeSetRecord extends BaseModel {
    protected String errorMsg;
    protected Date lastExecutedDate;
 
+   public String getRealm() {
+      return realm;
+   }
+
+   public void setRealm(String realm) {
+      this.realm = realm;
+   }
+
+   public String getDbFromVersion() {
+      return dbFromVersion;
+   }
+
+   public void setDbFromVersion(String dbFromVersion) {
+      this.dbFromVersion = dbFromVersion;
+   }
+
+   public int getDbFromVersionInt() {
+      return dbFromVersionInt;
+   }
+
+   public void setDbFromVersionInt(int dbFromVersionInt) {
+      this.dbFromVersionInt = dbFromVersionInt;
+   }
+
+   public String getDbToVersion() {
+      return dbToVersion;
+   }
+
+   public void setDbToVersion(String dbToVersion) {
+      this.dbToVersion = dbToVersion;
+   }
+
+   public int getDbToVersionInt() {
+      return dbToVersionInt;
+   }
+
+   public void setDbToVersionInt(int dbToVersionInt) {
+      this.dbToVersionInt = dbToVersionInt;
+   }
+
+   public int getPriority() {
+      return priority;
+   }
+
+   public void setPriority(int priority) {
+      this.priority = priority;
+   }
+
+   public String getChangeSetName() {
+      return changeSetName;
+   }
+
+   public void setChangeSetName(String changeSetName) {
+      this.changeSetName = changeSetName;
+   }
+
+   public int getChangeSetVersion() {
+      return changeSetVersion;
+   }
+
+   public void setChangeSetVersion(int changeSetVersion) {
+      this.changeSetVersion = changeSetVersion;
+   }
+
+   public String getChecksum() {
+      return checksum;
+   }
+
+   public void setChecksum(String checksum) {
+      this.checksum = checksum;
+   }
+
+   public String getAuthor() {
+      return author;
+   }
+
+   public void setAuthor(String author) {
+      this.author = author;
+   }
+
+   public String getDescription() {
+      return description;
+   }
+
+   public void setDescription(String description) {
+      this.description = description;
+   }
+
+   public String getScope() {
+      return scope;
+   }
+
+   public void setScope(String scope) {
+      this.scope = scope;
+   }
+
+   public boolean isSuccessful() {
+      return successful;
+   }
+
+   public void setSuccessful(boolean successful) {
+      this.successful = successful;
+   }
+
+   public String getErrorMsg() {
+      return errorMsg;
+   }
+
+   public void setErrorMsg(String errorMsg) {
+      this.errorMsg = errorMsg;
+   }
+
+   public Date getLastExecutedDate() {
+      return lastExecutedDate;
+   }
+
+   public void setLastExecutedDate(Date lastExecutedDate) {
+      this.lastExecutedDate = lastExecutedDate;
+   }
+
 
    @Override
    public String bmFunctionalArea() {

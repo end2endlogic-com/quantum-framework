@@ -2,7 +2,6 @@ package com.e2eq.framework.model.general;
 
 import com.e2eq.framework.model.persistent.base.StaticDynamicList;
 import dev.morphia.annotations.Entity;
-import dev.morphia.annotations.Reference;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -17,7 +16,6 @@ import java.util.List;
 @ToString
 public class MenuItemStaticDynamicList extends StaticDynamicList<MenuItemModel> {
 
-    @Reference(ignoreMissing = true  )
     protected List<MenuItemModel> menuItems;
 
 

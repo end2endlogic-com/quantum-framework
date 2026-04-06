@@ -7,7 +7,7 @@ import com.e2eq.framework.model.persistent.morphia.PolicyRepo;
 import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import com.e2eq.framework.model.security.*;
 import com.e2eq.framework.model.securityrules.FilterJoinOp;
-import com.e2eq.framework.securityrules.RuleContext;
+import com.e2eq.framework.security.runtime.RuleContext;
 import com.e2eq.framework.model.securityrules.RuleEffect;
 import com.e2eq.framework.model.securityrules.SecurityURI;
 import com.e2eq.framework.model.securityrules.SecurityURIBody;
@@ -122,9 +122,8 @@ public class TestSeederService {
             writes += upsertPolicy(realm, p);
         }
 
-        // Ensure credentials exist in both the import realm and the system realm, independent of seed-provided realm
+        // Credentials are system-scoped; ensure they exist there regardless of the seed-provided default realm
         for (String uid : allUserIds) {
-            try { writes += ensureCredentialInRealm(uid, realm, defaultDomain); } catch (Throwable ignored) {}
             try { writes += ensureCredentialInRealm(uid, envConfigUtils.getSystemRealm(), defaultDomain); } catch (Throwable ignored) {}
         }
 
@@ -221,20 +220,21 @@ public class TestSeederService {
         String credRealm = safe(node.path("realm").asText());
         if (userId.isEmpty() || password.isEmpty()) return 0;
         String useRealm = !credRealm.isEmpty() ? credRealm : realm;
+        String systemRealm = envConfigUtils.getSystemRealm();
         int writes = 0;
         try {
-            Optional<CredentialUserIdPassword> existing = credentialRepo.findByUserId(userId, useRealm, true);
+            Optional<CredentialUserIdPassword> existing = credentialRepo.findByUserId(userId, systemRealm, true);
             if (existing.isPresent()) {
                 // update hash if different (best-effort), keep roles
                 CredentialUserIdPassword cred = existing.get();
                 String hash = EncryptionUtils.hashPassword(password);
                 if (!StringUtils.equals(cred.getPasswordHash(), hash)) {
                     cred.setPasswordHash(hash);
-                    credentialRepo.save(cred);
+                    credentialRepo.save(systemRealm, cred);
                     writes++;
                 }
             } else {
-                // create minimal credential directly
+                // credentials are always persisted in the system realm; defaultRealm still comes from the seed/import realm
                 CredentialUserIdPassword cred = new CredentialUserIdPassword();
                 cred.setUserId(userId);
                 cred.setSubject(UUID.randomUUID().toString());
@@ -248,28 +248,8 @@ public class TestSeederService {
                 DataDomain dd = ddForUse;
                 if (dd.getOwnerId() == null || dd.getOwnerId().isBlank()) dd.setOwnerId(userId);
                 cred.setDataDomain(dd);
-                credentialRepo.save(cred);
+                credentialRepo.save(systemRealm, cred);
                 writes++;
-            }
-            // Ensure a credential also exists in the target import realm (if different than useRealm)
-            if (!useRealm.equals(realm)) {
-                Optional<CredentialUserIdPassword> ex2 = credentialRepo.findByUserId(userId, realm, true);
-                if (ex2.isEmpty()) {
-                    CredentialUserIdPassword cred2 = new CredentialUserIdPassword();
-                    cred2.setUserId(userId);
-                    cred2.setSubject(UUID.randomUUID().toString());
-                    cred2.setPasswordHash(EncryptionUtils.hashPassword(password));
-                    cred2.setHashingAlgorithm(EncryptionUtils.hashAlgorithm());
-                    DataDomain ddForRealm = pickDataDomainForRealm(realm, fallback, userId);
-                    DomainContext dc2 = new DomainContext(ddForRealm, realm);
-                    cred2.setDomainContext(dc2);
-                    cred2.setLastUpdate(new Date());
-                    DataDomain dd2 = ddForRealm;
-                    if (dd2.getOwnerId() == null || dd2.getOwnerId().isBlank()) dd2.setOwnerId(userId);
-                    cred2.setDataDomain(dd2);
-                    credentialRepo.save(realm, cred2);
-                    writes++;
-                }
             }
         } catch (Throwable t) {
             Log.warnf(t, "[SEED] credential upsert failed for userId=%s", userId);
@@ -319,17 +299,15 @@ public class TestSeederService {
             // Use supplied dataDomain from seed for the target tenant
             DataDomain dd = readDataDomain(node.path("dataDomain"), userId);
             up.setDataDomain(dd);
-            // link credential if present (try multiple realms, create if missing)
-            Optional<CredentialUserIdPassword> oc = credentialRepo.findByUserId(userId, realm, true);
-            if (oc.isEmpty()) oc = credentialRepo.findByUserId(userId, envConfigUtils.getSystemRealm(), true);
-            if (oc.isEmpty()) oc = credentialRepo.findByUserId(userId, "b2bi", true);
+            // Credentials are stored in the system realm even if their defaultRealm points elsewhere.
+            Optional<CredentialUserIdPassword> oc = credentialRepo.findByUserId(userId, envConfigUtils.getSystemRealm(), true);
             if (oc.isPresent()) {
-                String credRealm = oc.get().getDomainContext() != null ? oc.get().getDomainContext().getDefaultRealm() : realm;
-                up.setCredentialUserIdPasswordRef(oc.get().createEntityReference(credRealm));
+                up.setCredentialUserIdPasswordRef(oc.get().createEntityReference(envConfigUtils.getSystemRealm()));
             } else {
-                // create a minimal credential in the current realm for linkage
+                // create a minimal system-scoped credential for linkage
                 upsertCredential(realm, buildCredNode(userId, "Password1!", realm), up.getDataDomain());
-                credentialRepo.findByUserId(userId, realm, true).ifPresent(cred -> up.setCredentialUserIdPasswordRef(cred.createEntityReference(realm)));
+                credentialRepo.findByUserId(userId, envConfigUtils.getSystemRealm(), true)
+                    .ifPresent(cred -> up.setCredentialUserIdPasswordRef(cred.createEntityReference(envConfigUtils.getSystemRealm())));
             }
             userProfileRepo.save(realm, up);
             return 1;
@@ -352,16 +330,14 @@ public class TestSeederService {
             // Use supplied dataDomain from seed for the target tenant
             DataDomain dd = readDataDomain(node.path("dataDomain"), userId);
             up.setDataDomain(dd);
-            // link credential (same fallback logic)
-            Optional<CredentialUserIdPassword> oc = credentialRepo.findByUserId(userId, realm, true);
-            if (oc.isEmpty()) oc = credentialRepo.findByUserId(userId, envConfigUtils.getSystemRealm(), true);
-            if (oc.isEmpty()) oc = credentialRepo.findByUserId(userId, "b2bi", true);
+            // Credentials are stored in the system realm even if their defaultRealm points elsewhere.
+            Optional<CredentialUserIdPassword> oc = credentialRepo.findByUserId(userId, envConfigUtils.getSystemRealm(), true);
             if (oc.isPresent()) {
-                String credRealm = oc.get().getDomainContext() != null ? oc.get().getDomainContext().getDefaultRealm() : realm;
-                up.setCredentialUserIdPasswordRef(oc.get().createEntityReference(credRealm));
+                up.setCredentialUserIdPasswordRef(oc.get().createEntityReference(envConfigUtils.getSystemRealm()));
             } else {
                 upsertCredential(realm, buildCredNode(userId, "Password1!", realm), up.getDataDomain());
-                credentialRepo.findByUserId(userId, realm, true).ifPresent(cred -> up.setCredentialUserIdPasswordRef(cred.createEntityReference(realm)));
+                credentialRepo.findByUserId(userId, envConfigUtils.getSystemRealm(), true)
+                    .ifPresent(cred -> up.setCredentialUserIdPasswordRef(cred.createEntityReference(envConfigUtils.getSystemRealm())));
             }
             userProfileRepo.save(realm, up);
             return 1;
@@ -376,14 +352,14 @@ public class TestSeederService {
         String role = safe(node.path("role").asText());
         if (userId.isEmpty() || role.isEmpty()) return 0;
         try {
-            Optional<CredentialUserIdPassword> existing = credentialRepo.findByUserId(userId, realm, true);
+            Optional<CredentialUserIdPassword> existing = credentialRepo.findByUserId(userId, envConfigUtils.getSystemRealm(), true);
             if (existing.isEmpty()) return 0;
             CredentialUserIdPassword cred = existing.get();
             Set<String> roles = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
             if (cred.getRoles() != null) roles.addAll(Arrays.asList(cred.getRoles()));
             if (!roles.add(role)) return 0; // already present
             cred.setRoles(roles.toArray(new String[0]));
-            credentialRepo.save(realm, cred);
+            credentialRepo.save(envConfigUtils.getSystemRealm(), cred);
             return 1;
         } catch (Throwable t) {
             Log.warnf(t, "[SEED] roleAssignment failed for %s:%s", userId, role);

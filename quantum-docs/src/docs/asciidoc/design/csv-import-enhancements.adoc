@@ -16,7 +16,7 @@ This document proposes enhancements to the Quantum framework's CSV import functi
 
 NOTE: This design intentionally **excludes** MERGE and DELETE intents for safety reasons. Only INSERT, UPDATE, UPSERT, and SKIP are supported.
 
-5. **No header-based field metadata** - Cannot specify required/optional/calculated fields via CSV header conventions
+1. **No header-based field metadata** - Cannot specify required/optional/calculated fields via CSV header conventions
 
 == Current State Analysis
 
@@ -2852,4 +2852,3 @@ RowValueResolvers are applied after field calculators but before pre-validation 
 3. **RowValueResolvers** (arbitrary code with full row access)
 4. Pre-validation transformers
 5. Bean validation
-----

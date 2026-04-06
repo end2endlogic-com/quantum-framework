@@ -166,7 +166,7 @@ participant "postconditionScript" as Script
 Client ->> SecurityFilter: HTTP request
 SecurityFilter ->> RuleContext: PrincipalContext + ResourceContext
 activate RuleContext
-note over RuleContext: Expand identities: userId ∪ roles
+note over RuleContext: Expand identities: userId union roles
 RuleContext -> RuleContext: Gather rules for each identity
 RuleContext -> RuleContext: Sort by ascending priority
 loop Each rule in order
@@ -384,6 +384,404 @@ Guidance: Feature Flags vs Permission Rules
 
 Recommendation:: Use a grant‑based permission posture (default DENY) and let feature flags decide which cohorts even see or can reach new capabilities. Then author explicit ALLOW rules for those capabilities, conditioned on both role and feature presence.
 
+[[scoped-action-enablement]]
+== Scoped Action Enablement and Dependency Tracking
+
+For the dedicated guide covering the runtime API, manifest model, SPI contracts, and built-in resolver types, see xref:./action-enablement.adoc[Scoped Action Enablement].
+
+Permission checks answer one important question: "may this identity perform `area / functionalDomain / action`?" In practice, teams also need to answer a second question: "why is this action still unavailable?"
+
+Typical reasons include:
+
+- policy denies the action
+- a feature flag exists but is disabled
+- a required setting has not been configured
+- a prerequisite entity or runtime dependency is missing
+
+Quantum now provides a framework-level dependency tracking layer for these cases. The implementation guide for this work lives in `docs/design/SCOPED_ACTION_ENABLEMENT_IMPLEMENTATION_GUIDE.md`, and the runtime contracts are implemented in the `quantum-action-enablement-models` and `quantum-action-enablement-quarkus` modules.
+
+=== Core idea: the same scoped action tuple stays canonical
+
+The unit of evaluation is still the same tuple already used by the policy engine:
+
+[source,text]
+----
+area / functionalDomain / action
+----
+
+Examples:
+
+- `integration / exchange / create`
+- `integration / workflow / create`
+- `system / action-enablement / check`
+
+This is intentional. The framework does not introduce a second authorization primitive just to model readiness. Instead, it composes additional dependencies around the same scoped action that policy already understands.
+
+Capabilities are still useful, but at a different level:
+
+- A scoped action is the atomic framework-level unit.
+- A capability is an application-defined composition over one or more scoped actions.
+- Settings, feature flags, and runtime prerequisites are attached to the scoped action requirement manifest.
+
+That structure is what lets a UI or shell explain "this action is blocked because the policy denies it" versus "this action is allowed, but the required secret or filesystem is not ready yet."
+
+=== The three answers returned by the framework
+
+Scoped action enablement separates three concerns that are often blurred together:
+
+[cols="1,3"]
+|===
+| Field | Meaning
+
+| `allowed`
+| Whether the existing permission rule stack allows the scoped action for the evaluated identity and data domain
+
+| `enabled`
+| Whether rollout and administrative toggles, especially feature flags, say the action should be exposed
+
+| `ready`
+| Whether operational prerequisites such as settings, entities, or runtime dependencies are satisfied
+|===
+
+An action is considered usable only when all three are true:
+
+[source,text]
+----
+usable = allowed && enabled && ready
+----
+
+This distinction matters because the remediation path is different:
+
+- `allowed=false` usually means a policy or role problem
+- `enabled=false` usually means a feature flag or administrative rollout problem
+- `ready=false` usually means setup, configuration, or runtime dependencies are incomplete
+
+=== Runtime models
+
+The core request and response models are intentionally small:
+
+[source,java]
+----
+public class ScopedActionRef {
+    String area;
+    String functionalDomain;
+    String action;
+}
+
+public class DependencyCheckRef {
+    String type;
+    String refName;
+    Map<String, Object> config;
+}
+
+public class ScopedActionRequirement {
+    ScopedActionRef scopedAction;
+    String displayName;
+    String description;
+    List<DependencyCheckRef> dependencies;
+}
+
+public class ScopedActionEnablementStatus {
+    ScopedActionRef scopedAction;
+    boolean allowed;
+    boolean enabled;
+    boolean ready;
+    boolean usable;
+    List<EnablementBlocker> blockers;
+}
+----
+
+An `EnablementBlocker` is the machine-readable explanation of why evaluation failed. Each blocker includes:
+
+- `impact`: one of `ALLOWED`, `ENABLED`, or `READY`
+- `type`: the dependency type, such as `permission` or `feature-flag`
+- `code`: a stable blocker code, such as `permission-denied`
+- `message`: a human-readable explanation
+- `severity`: typically `warn` or `error`
+- `metadata`: additional structured context
+
+=== REST API
+
+The runtime API is exposed at:
+
+- `POST /system/actions/enablement/check`
+- `GET /system/actions/enablement/manifest`
+
+This resource itself is annotated as:
+
+- `area=system`
+- `functionalDomain=action-enablement`
+- `action=check|view`
+
+Example request:
+
+[source,json]
+----
+{
+  "identity": "tenant-admin",
+  "realm": "acme",
+  "orgRefName": "acme-org",
+  "tenantId": "acme-tenant",
+  "scope": "api",
+  "actions": [
+    {
+      "area": "integration",
+      "functionalDomain": "guided_integration",
+      "action": "create"
+    }
+  ]
+}
+----
+
+Representative response:
+
+[source,json]
+----
+{
+  "results": [
+    {
+      "scopedAction": {
+        "area": "integration",
+        "functionalDomain": "guided_integration",
+        "action": "create"
+      },
+      "allowed": true,
+      "enabled": false,
+      "ready": false,
+      "usable": false,
+      "blockers": [
+        {
+          "impact": "ENABLED",
+          "type": "feature-flag",
+          "code": "feature-flag-disabled",
+          "message": "Feature flag 'guided-integrations' is disabled.",
+          "severity": "warn"
+        },
+        {
+          "impact": "READY",
+          "type": "setting-present",
+          "code": "setting-missing",
+          "message": "Configuration setting 'quantum.integration.shared-storage.root' is not set.",
+          "severity": "error"
+        }
+      ]
+    }
+  ]
+}
+----
+
+This is the key user-facing value: the response tells you whether the action is blocked by authorization, rollout state, or operational readiness, instead of forcing the UI to guess.
+
+=== Manifest-driven dependency relationships
+
+The relationship from settings and feature flags to functional area/domain/action lives in a manifest of `ScopedActionRequirement` entries. Each manifest entry says:
+
+- which scoped action is being described
+- which dependencies must be satisfied for that action to be usable
+- optional display-oriented metadata such as `displayName` and `description`
+
+Applications contribute these manifests via CDI:
+
+[source,java]
+----
+public interface ScopedActionRequirementContributor {
+
+    default int priority() {
+        return 100;
+    }
+
+    Collection<ScopedActionRequirement> requirements();
+}
+----
+
+The framework aggregates contributors through `ScopedActionRequirementRegistry`:
+
+[source,java]
+----
+public interface ScopedActionRequirementRegistry {
+
+    Optional<ScopedActionRequirement> find(ScopedActionRef ref);
+
+    List<ScopedActionRequirement> list();
+}
+----
+
+This is how you express relationships such as:
+
+- action `integration / guided_integration / create` depends on feature flag `guided-integrations`
+- action `integration / exchange / create` depends on a tenant filesystem being provisioned
+- action `system / some-admin-action / save` depends on a specific config property being present
+
+=== Resolver SPI
+
+Each dependency type is implemented by an `ActionDependencyResolver`:
+
+[source,java]
+----
+public interface ActionDependencyResolver {
+
+    String supportsType();
+
+    DependencyResolutionResult evaluate(
+        DependencyCheckRef dependency,
+        EnablementEvaluationContext context
+    );
+}
+----
+
+`EnablementEvaluationContext` carries the evaluation inputs:
+
+- identity
+- realm
+- roles
+- scope
+- `DataDomain`
+- the target `ScopedActionRef`
+
+This lets each resolver examine dependencies in the correct tenant, realm, and user context.
+
+=== Built-in OSS dependency types
+
+The open-source framework currently provides these dependency resolvers:
+
+[cols="1,3,1"]
+|===
+| Dependency type | Purpose | Typical impact
+
+| `permission`
+| Evaluate the scoped action through the existing `RuleContext` and permission model
+| `ALLOWED`
+
+| `feature-flag`
+| Require that a `FeatureFlag` exists and is enabled in the active realm
+| `ENABLED`
+
+| `setting-present`
+| Require that a named configuration property exists and is non-blank
+| `READY`
+
+| `entity-exists`
+| Require that a referenced entity exists in the current realm
+| `READY`
+|===
+
+Representative blocker codes include:
+
+- `permission-denied`
+- `feature-flag-missing`
+- `feature-flag-disabled`
+- `setting-name-missing`
+- `setting-missing`
+- `entity-model-unresolved`
+- `entity-missing`
+
+=== Missing manifests and unsupported dependency types
+
+The framework intentionally does not fail open here.
+
+If no manifest entry is registered for a scoped action:
+
+- evaluation falls back to a synthetic requirement that checks `permission`
+- the response also includes a `manifest-missing` blocker with `impact=READY`
+
+If a manifest references a dependency type for which no resolver is registered:
+
+- the response includes `unsupported-dependency-type`
+- the blocker is attached with `impact=READY`
+
+This makes incomplete wiring visible instead of silently treating an action as operationally ready.
+
+=== Example contributor
+
+At the framework level, the built-in manifest contributor registers the enablement API itself with a permission dependency. Application modules then add their own manifests.
+
+A typical application contributor looks like this:
+
+[source,java]
+----
+@ApplicationScoped
+public class MyActionEnablementManifestContributor
+        implements ScopedActionRequirementContributor {
+
+    @Override
+    public Collection<ScopedActionRequirement> requirements() {
+        return List.of(
+            ScopedActionRequirement.builder()
+                .scopedAction(ScopedActionRef.builder()
+                    .area("integration")
+                    .functionalDomain("guided_integration")
+                    .action("create")
+                    .build())
+                .displayName("Generate Guided Integration")
+                .description("Requires policy, feature rollout, and baseline setup.")
+                .dependencies(List.of(
+                    DependencyCheckRef.builder().type("permission").build(),
+                    DependencyCheckRef.builder()
+                        .type("feature-flag")
+                        .refName("guided-integrations")
+                        .build(),
+                    DependencyCheckRef.builder()
+                        .type("setting-present")
+                        .refName("quantum.integration.shared-storage.root")
+                        .build()
+                ))
+                .build()
+        );
+    }
+}
+----
+
+This is the mechanism that turns "settings map to capabilities" into something concrete. The requirement manifest records which settings, feature flags, and prerequisites attach to which `area / functionalDomain / action` tuple.
+
+=== Relationship to policies, feature flags, and UI actions
+
+Think of the layers this way:
+
+1. `@FunctionalMapping` and `@FunctionalAction` define the canonical scoped action tuple in code.
+2. Permission rules answer whether that tuple is authorized.
+3. Feature flags answer whether the action is turned on for the current cohort or realm.
+4. Scoped action requirements answer what else must be configured or provisioned before the action is actually usable.
+
+This complements, rather than replaces, existing UI action derivation:
+
+- `fillUIActions()` still answers what actions are allowed from the permission perspective
+- scoped action enablement answers why an action should still be disabled or annotated in the UI
+
+That makes it a better fit for:
+
+- setup dashboards
+- onboarding flows
+- context-sensitive "why unavailable?" messaging
+- shells or MCP clients that need structured blockers
+
+=== Enterprise extensions
+
+The framework module is intentionally generic. Enterprise modules can contribute additional dependency resolvers without changing the core contracts.
+
+The current enterprise action-enablement module extends the system with higher-level runtime checks such as:
+
+- `managed-secret-configured`
+- `tenant-filesystem-provisioned`
+- `standard-mounts-present`
+- `workflow-runtime-reachable`
+
+Those resolvers support operational questions such as:
+
+- has the tenant filesystem been provisioned?
+- do the standard mounts exist?
+- is a required managed secret configured?
+- is the workflow runtime reachable?
+
+That deeper operational behavior belongs in the enterprise documentation. The important framework-level point is that enterprise modules plug into the same `ActionDependencyResolver` SPI and return the same `EnablementBlocker` structure.
+
+=== Guidance
+
+- Keep permission checks canonical. Do not duplicate authorization logic inside custom readiness resolvers.
+- Use `feature-flag` dependencies for rollout state, not for durable authorization.
+- Use `setting-present` and `entity-exists` only for generic prerequisites. Domain-heavy operational checks belong in application or enterprise resolvers.
+- Keep blocker codes stable because UIs and automation may key off them.
+- Treat capabilities as documentation and UX groupings over scoped actions, not as a substitute for `area / functionalDomain / action`.
+
 == Multiple Matching RuleBases
 
 - Ordering: rules are evaluated in ascending priority (lower numbers first).
@@ -430,7 +828,7 @@ Operating models:
 ** IdP carries authoritative roles/groups in the JWT. Keep `CredentialUserIdPassword.roles` minimal or empty.
 ** Use when enterprises require IdP as the source of truth for access groups.
 * Hybrid (recommended in many deployments):
-** Effective roles = JWT roles ∪ `CredentialUserIdPassword.roles`.
+** Effective roles = JWT roles union `CredentialUserIdPassword.roles`.
 ** Use JWT for enterprise groups (for example, `DEPT_SALES`, `ORG_ADMIN`) and Quantum roles for app-specific grants (for example, `REPORT_EXPORTER`, `BETA`).
 ** This avoids IdP churn for application-local concerns while respecting org policies.
 
@@ -1694,7 +2092,7 @@ Example (resolver + IN filter)
 See also
 
 - Ontology overview and examples: xref:ontology.adoc[Ontologies in Quantum]
-- Integration with Morphia and multi-tenancy: xref:ontology.adoc#ontology-integration-morphia-permissions[Integrating Ontology]
+- Integration with Morphia and multi-tenancy: xref:ontology.adoc#ontology-integration-morphia-permissions-section[Integrating Ontology]
 
 Operational notes
 

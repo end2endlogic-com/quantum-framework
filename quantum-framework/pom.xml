@@ -7,12 +7,12 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.movista</groupId>
   <artifactId>quantum-framework</artifactId>
-  <version>1.3.0-SNAPSHOT</version>
+  <version>1.3.0</version>
 
   <parent>
     <groupId>com.movista</groupId>
     <artifactId>quantum-parent</artifactId>
-    <version>1.3.0-SNAPSHOT</version>
+    <version>1.3.0</version>
   </parent>
 
   <name>${project.groupId}:${project.artifactId}</name>
@@ -152,6 +152,11 @@
     </dependency>
     <dependency>
       <groupId>com.end2endlogic</groupId>
+      <artifactId>quantum-action-enablement-quarkus</artifactId>
+      <version>${quantum.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.end2endlogic</groupId>
       <artifactId>quantum-jwt-provider</artifactId>
       <version>${quantum.version}</version>
     </dependency>
@@ -185,7 +190,7 @@
     <dependency>
       <groupId>com.end2endlogic</groupId>
       <artifactId>quarkus-moneta</artifactId>
-      <version>2.2.0</version>
+      <version>2.1.0e</version>
     </dependency>
     <dependency>
       <groupId>com.end2endlogic</groupId>
@@ -408,7 +413,7 @@
         </executions>
         <configuration>
           <doCheck>false</doCheck>
-          <doUpdate>true</doUpdate>
+          <doUpdate>false</doUpdate>
         </configuration>
       </plugin>
       <plugin>

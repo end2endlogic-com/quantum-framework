@@ -3,7 +3,7 @@ package com.e2eq.ontology.runtime;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.framework.model.securityrules.SecurityContext;
-import com.e2eq.framework.securityrules.RuleContext;
+import com.e2eq.framework.security.runtime.RuleContext;
 import com.e2eq.ontology.core.*;
 import com.e2eq.ontology.core.OntologyRegistry.TBox;
 import com.e2eq.ontology.mongo.MorphiaOntologyLoader;

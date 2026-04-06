@@ -11,8 +11,7 @@ import com.e2eq.framework.model.securityrules.*;
 import com.e2eq.framework.rest.models.UIAction;
 import com.e2eq.framework.rest.models.UIActionList;
 import com.e2eq.framework.rest.models.Collection;
-import com.e2eq.framework.model.security.FunctionalDomain;
-import com.e2eq.framework.securityrules.RuleContext;
+import com.e2eq.framework.security.runtime.RuleContext;
 import com.fasterxml.jackson.module.jsonSchema.jakarta.JsonSchema;
 import com.google.common.reflect.TypeToken;
 import com.mongodb.client.result.DeleteResult;
@@ -74,37 +73,15 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     protected boolean autoMaterialize;
 
     private void callPostPersistHooks(String realmId, Object entity) {
-        if (!autoMaterialize || postPersistHooks == null) return;
-        for (PostPersistHook hook : postPersistHooks) {
-            try {
-                hook.afterPersist(realmId, entity);
-            } catch (Throwable t) {
-                Log.warn("PostPersistHook threw exception: " + t.getMessage());
-            }
-        }
+        lifecycleHooks().callPostPersistHooks(realmId, entity);
     }
 
     private void callPreDeleteHooks(String realmId, Object entity) {
-        if (preDeleteHooks == null) return;
-        for (PreDeleteHook hook : preDeleteHooks) {
-            try {
-                hook.beforeDelete(realmId, entity);
-            } catch (Throwable t) {
-                // if a pre-delete throws, propagate as runtime to abort deletion
-                throw t instanceof RuntimeException ? (RuntimeException) t : new RuntimeException(t);
-            }
-        }
+        lifecycleHooks().callPreDeleteHooks(realmId, entity);
     }
 
     private void callPostDeleteHooks(String realmId, Class<?> entityClass, String idAsString) {
-        if (postDeleteHooks == null) return;
-        for (PostDeleteHook hook : postDeleteHooks) {
-            try {
-                hook.afterDelete(realmId, entityClass, idAsString);
-            } catch (Throwable t) {
-                Log.warn("PostDeleteHook threw exception: " + t.getMessage());
-            }
-        }
+        lifecycleHooks().callPostDeleteHooks(realmId, entityClass, idAsString);
     }
 
     /**
@@ -142,6 +119,9 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
    protected String defaultRealm;
 
    private TypeToken<T> paramClazz = new TypeToken<>(getClass()) {};
+   private transient volatile RepoLifecycleHooks cachedLifecycleHooks;
+   private transient volatile RepoSecurityContextResolver cachedSecurityContextResolver;
+   private transient volatile RepoSecurityFilterBuilder cachedSecurityFilterBuilder;
 
     @Inject
     protected MessageTemplateLocator messageTemplateLocator;
@@ -150,118 +130,11 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     protected StateGraphManager stateGraphManager;
 
     private void ensureSecurityContextFromIdentity() {
-                String currentIdentity = null;
+        securityContextResolver().ensureSecurityContextFromIdentity();
+    }
 
-                // check to see if we have a security context principal set.
-                var tlPctxOpt = com.e2eq.framework.model.securityrules.SecurityContext.getPrincipalContext();
-                if (tlPctxOpt.isPresent()) {
-                   Log.debugf("ensureSecurityContextFromIdentity: security context present, identity:%s", tlPctxOpt.get().getUserId());
-                    currentIdentity = tlPctxOpt.get().getUserId();
-                }
-
-                // do we have an existing securityIdentity in place that is not anonymous?
-                boolean hasIdentity = (securityIdentity != null && !securityIdentity.isAnonymous());
-                if (hasIdentity) {
-                   Log.debugf("non anonymous identity:%s", securityIdentity.getPrincipal().getName());
-                }
-                String identityName = null;
-                if (hasIdentity && securityIdentity.getPrincipal() != null) {
-                    identityName = securityIdentity.getPrincipal().getName();
-                }
-
-                boolean needRebuild = false;
-                if (tlPctxOpt.isEmpty()) {
-                    needRebuild = hasIdentity; // build if we have identity and no PrincipleContext
-                } else if (hasIdentity && identityName != null && !identityName.equals(currentIdentity)) {
-                    // Mismatch between TL and current SecurityIdentity: rebuild from current identity
-                    needRebuild = true;
-                }
-
-                if (needRebuild) {
-                   Log.debug("rebuilding identity because identityName is null or does not equal current identity");
-                    String principalName = (identityName != null) ? identityName : envConfigUtils.getAnonymousUserId();
-                    java.util.Set<String> rolesSet = securityIdentity.getRoles();
-                    String[] roles = (rolesSet == null || rolesSet.isEmpty()) ? new String[0] : rolesSet.toArray(new String[rolesSet.size()]);
-
-                    // Try to enrich from credentials in system/default realm
-                   Log.debugf("Attempting to locate user using userId:%s", principalName);
-                    java.util.Optional<com.e2eq.framework.model.security.CredentialUserIdPassword> ocreds = credentialRepo.findByUserId(principalName, envConfigUtils.getSystemRealm(), true);
-                    if (ocreds.isEmpty()) {
-                       // attempt to get via subject
-                       ocreds = credentialRepo.findBySubject(principalName, envConfigUtils.getSystemRealm(), true);
-                    }
-
-                    com.e2eq.framework.model.persistent.base.DataDomain dataDomain;
-                    String userId;
-                    String contextRealm;
-                    Map<String, String> area2RealmOverrides=null;
-                    if (ocreds.isPresent()) {
-                        var creds = ocreds.get();
-                        dataDomain = creds.getDomainContext().toDataDomain(creds.getUserId());
-                        userId = creds.getUserId();
-                        contextRealm = creds.getDomainContext().getDefaultRealm();
-                        String[] credRoles = creds.getRoles();
-                        if (credRoles != null && credRoles.length > 0) {
-                            java.util.Set<String> combined = new java.util.HashSet<>(rolesSet);
-                            combined.addAll(java.util.Arrays.asList(credRoles));
-                            roles = combined.toArray(new String[0]);
-                            area2RealmOverrides = creds.getArea2RealmOverrides();
-                        }
-                    } else {
-                        Log.warnf("Unable to locate credentials for userId:%s in realm:%s. Falling back to identity defaults.", principalName, envConfigUtils.getSystemRealm());
-                        dataDomain = new com.e2eq.framework.model.persistent.base.DataDomain();
-                        dataDomain.setOwnerId(principalName);
-                        dataDomain.setTenantId(envConfigUtils.getSystemTenantId());
-                        dataDomain.setOrgRefName(envConfigUtils.getSystemOrgRefName());
-                        dataDomain.setAccountNum(envConfigUtils.getSystemAccountNumber());
-                        dataDomain.setDataSegment(0);
-
-                        userId = principalName;
-                        contextRealm = envConfigUtils.getSystemRealm();
-                    }
-
-                    var pcontext = new com.e2eq.framework.model.securityrules.PrincipalContext.Builder()
-                            .withDefaultRealm(contextRealm)
-                            .withDataDomain(dataDomain)
-                            .withUserId(userId)
-                            .withRoles(roles)
-                            .withArea2RealmOverrides(area2RealmOverrides)
-                            .withScope("AUTHENTICATED")
-                            .build();
-
-                    com.e2eq.framework.model.securityrules.SecurityContext.setPrincipalContext(pcontext);
-
-                    if (com.e2eq.framework.model.securityrules.SecurityContext.getResourceContext().isEmpty()) {
-                        // set a safe default resource context to enable rule evaluation in tests
-                        com.e2eq.framework.model.securityrules.SecurityContext.setResourceContext(
-                                com.e2eq.framework.model.securityrules.ResourceContext.DEFAULT_ANONYMOUS_CONTEXT
-                        );
-                    }
-                    if (io.quarkus.logging.Log.isDebugEnabled()) {
-                        io.quarkus.logging.Log.debugf("[MorphiaRepo] Principal Context %s from SecurityIdentity for user %s, roles=%s",
-                                (tlPctxOpt.isEmpty() ? "built" : "rebuilt"), userId, java.util.Arrays.toString(roles));
-                    }
-                }
-
-        }
-
-        public String getSecurityContextRealmId() {
-           if (!SecurityContext.getResourceContext().isPresent() || !SecurityContext.getPrincipalContext().isPresent()) {
-              // Ensure contexts can be derived from SecurityIdentity when not explicitly set
-              ensureSecurityContextFromIdentity();
-           }
-        String realmId = defaultRealm;
-
-        if (SecurityContext.getPrincipalContext().isPresent() && SecurityContext.getResourceContext().isPresent()) {
-            realmId = ruleContext.getRealmId(SecurityContext.getPrincipalContext().get(),
-                    SecurityContext.getResourceContext().get());
-        }
-
-        if (realmId == null) {
-            throw new RuntimeException("Logic error realmId should not be null");
-        }
-
-        return realmId;
+    public String getSecurityContextRealmId() {
+        return securityContextResolver().getSecurityContextRealmId();
     }
 
     @Override
@@ -280,30 +153,34 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
     public Filter[] getFilterArray(@NotNull List<Filter> filters, Class<? extends UnversionedBaseModel> modelClass) {
-       // Check if we're in ignore-rules mode (e.g., from AccessListResolver internal queries)
-       if (SecurityContext.isIgnoringRules()) {
-          if (Log.isDebugEnabled()) {
-             Log.debugf("getFilterArray: ignoring rules mode active, skipping rule evaluation for %s",
-                 modelClass != null ? modelClass.getSimpleName() : "null");
-          }
-          return filters.toArray(new Filter[filters.size()]);
-       }
+        return securityFilterBuilder().getFilterArray(filters, modelClass);
+    }
 
-       if (!SecurityContext.getResourceContext().isPresent() || !SecurityContext.getPrincipalContext().isPresent()) {
-          // Ensure context exists for repo calls executed under @TestSecurity (no SecuritySession)
-          ensureSecurityContextFromIdentity();
-       }
-       if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
-            filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get(), modelClass);
-            if (Log.isDebugEnabled()) {
-                Log.debugf("getFilterArray for %s security context: %s", SecurityContext.getPrincipalContext().get().getUserId(), filters);
-            }
-        } else {
-            throw new RuntimeException("Logic error SecurityContext should be present; this implies that an attempt to call a method was made where the user was not logged in");
+    private RepoLifecycleHooks lifecycleHooks() {
+        RepoLifecycleHooks hooks = cachedLifecycleHooks;
+        if (hooks == null) {
+            hooks = new RepoLifecycleHooks(autoMaterialize, postPersistHooks, preDeleteHooks, postDeleteHooks);
+            cachedLifecycleHooks = hooks;
         }
+        return hooks;
+    }
 
-        Filter[] qfilters = new Filter[filters.size()];
-        return filters.toArray(qfilters);
+    private RepoSecurityContextResolver securityContextResolver() {
+        RepoSecurityContextResolver resolver = cachedSecurityContextResolver;
+        if (resolver == null) {
+            resolver = new RepoSecurityContextResolver(securityIdentity, credentialRepo, envConfigUtils, ruleContext, defaultRealm);
+            cachedSecurityContextResolver = resolver;
+        }
+        return resolver;
+    }
+
+    private RepoSecurityFilterBuilder securityFilterBuilder() {
+        RepoSecurityFilterBuilder builder = cachedSecurityFilterBuilder;
+        if (builder == null) {
+            builder = new RepoSecurityFilterBuilder(securityContextResolver(), ruleContext);
+            cachedSecurityFilterBuilder = builder;
+        }
+        return builder;
     }
 
     @Override
@@ -319,28 +196,6 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
       morphiaDataStoreWrapper.getDataStore(realmId).ensureIndexes(getPersistentClass());
    }
 
-
-      protected List<String> getDefaultUIActionsFromFD(@NotNull String fdRefName) {
-        return getDefaultUIActionsFromFD(morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()), fdRefName);
-    }
-
-    protected List<String> getDefaultUIActionsFromFD(Datastore datastore, @NotNull String fdRefName) {
-        Filter f = MorphiaUtils.convertToFilter("refName:" + fdRefName, getPersistentClass());
-        Query<FunctionalDomain> q = datastore.find(FunctionalDomain.class).filter(f);
-        FunctionalDomain fd = q.first();
-        List<String> actions;
-
-        if (fd != null) {
-            actions = new ArrayList<>(fd.getFunctionalActions().size());
-            fd.getFunctionalActions().forEach(fa -> {
-                actions.add(fa.getRefName());
-            });
-        } else {
-            actions = Collections.emptyList();
-        }
-
-        return actions;
-    }
 
 
 
@@ -400,10 +255,8 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         T obj = query.first();
 
         if (obj != null) {
-            List<String> actions = this.getDefaultUIActionsFromFD(obj.bmFunctionalDomain());
-            if (!actions.isEmpty()) {
-                obj.setDefaultUIActions(actions);
-            }
+            UIActionList uiActions = obj.calculateStateBasedUIActions();
+            obj.setActionList(uiActions);
             obj.setModelSourceRealm(datastore.getDatabase().getName());
         }
         return Optional.ofNullable(obj);
@@ -444,10 +297,8 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         T obj = query.first();
 
         if (obj != null) {
-            List<String> actions = this.getDefaultUIActionsFromFD(obj.bmFunctionalDomain());
-            if (!actions.isEmpty()) {
-                obj.setDefaultUIActions(actions);
-            }
+            UIActionList uiActions = obj.calculateStateBasedUIActions();
+            obj.setActionList(uiActions);
             obj.setModelSourceRealm(datastore.getDatabase().getName());
         }
 
@@ -499,13 +350,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         }
 
         List<Filter> filters = new ArrayList<>();
-
-        if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
-            filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get(), getPersistentClass());
-        } else {
-            Log.info("Context not set?");
-            throw new RuntimeException("Resource Context is not set in thread, check security configuration");
-        }
+        filters = securityFilterBuilder().buildSecuredFilters(filters, getPersistentClass());
 
         MorphiaCursor<T> cursor;
         List<ProjectionField> projectionFields = new ArrayList<>();
@@ -533,22 +378,10 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         }
 
         List<EntityReference> list = new ArrayList<>();
-        List<String> actions = null;
-        boolean gotActions = false;
         String realmId = datastore.getDatabase().getName();
         try (cursor) {
             EntityReference entityReference;
             for (T model : cursor.toList()) {
-
-                if (!gotActions) {
-                    actions = this.getDefaultUIActionsFromFD(model.bmFunctionalDomain());
-                    gotActions = true;
-                }
-
-                if (!actions.isEmpty()) {
-                    model.setDefaultUIActions(actions);
-                }
-
                 UIActionList uiActions = model.calculateStateBasedUIActions();
                 model.setActionList(uiActions);
                 model.setModelSourceRealm(realmId);
@@ -640,13 +473,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         }
 
         List<Filter> filters = new ArrayList<>();
-
-        if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
-            filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get(), getPersistentClass());
-        } else {
-            Log.info("Context not set?");
-            throw new RuntimeException("Resource Context is not set in thread, check security configuration");
-        }
+        filters = securityFilterBuilder().buildSecuredFilters(filters, getPersistentClass());
 
         FindOptions findOptions = buildFindOptions(skip, limit, sortFields, projectionFields);
 
@@ -663,9 +490,8 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                 .filter(filters.toArray(filterArray))
                 .iterator(findOptions);
 
-        return new CloseableIterator<T>() {
+        return new CloseableIterator<>() {
             private static final int BATCH_SIZE = 1000; // Adjust this value as needed
-            private List<String> actions = null;
             private final List<T> batch = new ArrayList<>(BATCH_SIZE);
             private int currentIndex = 0;
 
@@ -703,13 +529,6 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
             private void processModel(T model) {
                 if (model != null) {
-                    if (actions == null) {
-                        actions = getDefaultUIActionsFromFD(model.bmFunctionalDomain());
-                    }
-                    if (!actions.isEmpty()) {
-                        model.setDefaultUIActions(actions);
-                    }
-
                     UIActionList uiActions = model.calculateStateBasedUIActions();
                     model.setActionList(uiActions);
                 }
@@ -725,13 +544,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         }
 
         List<Filter> filters = new ArrayList<>();
-
-        if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
-            filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get(), getPersistentClass());
-        } else {
-            Log.info("Context not set?");
-            throw new RuntimeException("Resource Context is not set in thread, check security configuration");
-        }
+        filters = securityFilterBuilder().buildSecuredFilters(filters, getPersistentClass());
 
 
         MorphiaCursor<T> cursor;
@@ -758,21 +571,9 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         }
 
         List<T> list = new ArrayList<>();
-        List<String> actions = null;
-        boolean gotActions = false;
-       String realm = datastore.getDatabase().getName();
+        String realm = datastore.getDatabase().getName();
         try (cursor) {
             for (T model : cursor.toList()) {
-
-                if (!gotActions) {
-                    actions = this.getDefaultUIActionsFromFD(model.bmFunctionalDomain());
-                    gotActions = true;
-                }
-
-                if (!actions.isEmpty()) {
-                    model.setDefaultUIActions(actions);
-                }
-
                 UIActionList uiActions = model.calculateStateBasedUIActions();
                 model.setActionList(uiActions);
                 model.setModelSourceRealm(realm);
@@ -832,21 +633,9 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                 .iterator(findOptions);
 
         List<T> list = new ArrayList<>();
-        List<String> actions = null;
-        boolean gotActions = false;
-       String realm = datastore.getDatabase().getName();
+        String realm = datastore.getDatabase().getName();
         try (cursor) {
             for (T model : cursor.toList()) {
-
-                if (!gotActions) {
-                    actions = this.getDefaultUIActionsFromFD(model.bmFunctionalDomain());
-                    gotActions = true;
-                }
-
-                if (!actions.isEmpty()) {
-                    model.setDefaultUIActions(actions);
-                }
-
                 UIActionList uiActions = model.calculateStateBasedUIActions();
                 model.setActionList(uiActions);
 
@@ -874,13 +663,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     public List<T> getListFromIds(Datastore datastore, @NotNull(value="List of objectids can not be null") @NotEmpty(message = "list of ids can not be empty") List<ObjectId> ids) {
         // get a list using an in clause based upon the ids passed in
         List<Filter> filters = new ArrayList<>();
-
-        if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
-            filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get(), getPersistentClass());
-        } else {
-            Log.info("Context not set?");
-            throw new RuntimeException("Resource Context is not set in thread, check security configuration");
-        }
+        filters = securityFilterBuilder().buildSecuredFilters(filters, getPersistentClass());
 
         filters.add(Filters.in("_id", ids));
 
@@ -892,19 +675,8 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
         List<T> list = query.iterator(findOptions).toList();
 
-        List<String> actions = null;
-        boolean gotActions = false;
-       String realm = datastore.getDatabase().getName();
+        String realm = datastore.getDatabase().getName();
         for (T model : list) {
-            if (!gotActions) {
-                actions = this.getDefaultUIActionsFromFD(model.bmFunctionalDomain());
-                gotActions = true;
-            }
-
-            if (!actions.isEmpty()) {
-                model.setDefaultUIActions(actions);
-            }
-
             UIActionList uiActions = model.calculateStateBasedUIActions();
             model.setActionList(uiActions);
             model.setModelSourceRealm(realm);
@@ -927,13 +699,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     @Override
     public List<T> getListFromRefNames(Datastore datastore, List<String> refNames) {
         List<Filter> filters = new ArrayList<>();
-
-        if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
-            filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), SecurityContext.getResourceContext().get(), getPersistentClass());
-        } else {
-            Log.info("Context not set?");
-            throw new RuntimeException("Resource Context is not set in thread, check security configuration");
-        }
+        filters = securityFilterBuilder().buildSecuredFilters(filters, getPersistentClass());
 
         filters.add(Filters.in("refName", refNames));
 
@@ -946,19 +712,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
         List<T> list = query.iterator(findOptions).toList();
 
-        List<String> actions = null;
-        boolean gotActions = false;
-
         for (T model : list) {
-            if (!gotActions) {
-                actions = this.getDefaultUIActionsFromFD(model.bmFunctionalDomain());
-                gotActions = true;
-            }
-
-            if (!actions.isEmpty()) {
-                model.setDefaultUIActions(actions);
-            }
-
             UIActionList uiActions = model.calculateStateBasedUIActions();
             model.setActionList(uiActions);
             model.setModelSourceRealm(realm);
@@ -982,15 +736,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     @Override
     public long getCount(Datastore datastore, @Nullable String query) {
         List<Filter> filters = new ArrayList<>();
-
-        if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
-            filters = ruleContext.getFilters(filters,
-                    SecurityContext.getPrincipalContext().get(),
-                    SecurityContext.getResourceContext().get(),
-                    getPersistentClass());
-        } else {
-            throw new RuntimeException("Resource Context is not set in thread, check security configuration");
-        }
+        filters = securityFilterBuilder().buildSecuredFilters(filters, getPersistentClass());
 
         if (query != null && !query.isEmpty()) {
             String cleanQuery = query.trim();

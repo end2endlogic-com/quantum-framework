@@ -1,4 +1,4 @@
-package com.e2eq.framework.securityrules;
+package com.e2eq.framework.security.runtime;
 
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
@@ -128,41 +128,107 @@ public class RuleContext {
     @ConfigProperty(name = "security.rules.noResourceFilterPolicy", defaultValue = "DEFER")
     String noResourceFilterPolicy;
 
-    private static final java.util.concurrent.atomic.AtomicBoolean WARNED_PERMISSIVE = new java.util.concurrent.atomic.AtomicBoolean(false);
-
-    // Request-scoped memoization cache for permission lookups to avoid re-evaluating rules
-    private static final ThreadLocal<java.util.Map<String, com.e2eq.framework.model.securityrules.SecurityCheckResponse>> TL_REQUEST_PERMISSION_CACHE = new ThreadLocal<>();
-    // Allow callers (e.g., resource-aware STRICT checks) to bypass request cache to prevent scope leakage
-    private static final ThreadLocal<Boolean> TL_SKIP_REQUEST_CACHE = new ThreadLocal<>();
-
     public static void initRequestCacheIfAbsent() {
-        if (TL_REQUEST_PERMISSION_CACHE.get() == null) {
-            TL_REQUEST_PERMISSION_CACHE.set(new java.util.HashMap<>());
-        }
+        RuleContextRequestCache.initIfAbsent();
     }
 
     public static void clearRequestCache() {
-        TL_REQUEST_PERMISSION_CACHE.remove();
+        RuleContextRequestCache.clear();
     }
 
     private static boolean shouldSkipRequestCache() {
-        Boolean b = TL_SKIP_REQUEST_CACHE.get();
-        return b != null && b.booleanValue();
+        return RuleContextRequestCache.shouldSkip();
     }
 
-    private static String buildPermissionCacheKey(
+    private String buildPermissionCacheKey(
             com.e2eq.framework.model.securityrules.PrincipalContext pctx,
             com.e2eq.framework.model.securityrules.ResourceContext rctx,
             com.e2eq.framework.model.securityrules.RuleEffect defaultEffect) {
-        String user = String.valueOf(pctx != null ? pctx.getUserId() : "<anon>");
-        String realm = String.valueOf(pctx != null ? pctx.getDefaultRealm() : "<realm>");
-        String scope = String.valueOf(pctx != null ? pctx.getScope() : "<scope>");
-        String roles = java.util.Arrays.toString(pctx != null ? pctx.getRoles() : new String[0]);
-        String area = String.valueOf(rctx != null ? rctx.getArea() : "<area>");
-        String domain = String.valueOf(rctx != null ? rctx.getFunctionalDomain() : "<domain>");
-        String action = String.valueOf(rctx != null ? rctx.getAction() : "<action>");
-        String dd = String.valueOf(pctx != null && pctx.getDataDomain() != null ? pctx.getDataDomain().toString() : "<dd>");
-        return String.join("|", user, realm, scope, roles, area, domain, action, dd, String.valueOf(defaultEffect));
+        return RuleContextRequestCache.buildPermissionCacheKey(pctx, rctx, defaultEffect)
+                + "|" + policyVersion
+                + "|" + getEvalModeForThread().name();
+    }
+
+    private List<SecurityCheckResponse.RuleFilterInfo> collectMatchedAllowFilterRules(SecurityCheckResponse response) {
+        LinkedHashMap<String, SecurityCheckResponse.RuleFilterInfo> infos = new LinkedHashMap<>();
+        if (response == null || response.getMatchedRuleResults() == null) {
+            return new ArrayList<>();
+        }
+        for (RuleResult result : response.getMatchedRuleResults()) {
+            if (result == null || result.getRule() == null) {
+                continue;
+            }
+            if (result.getDeterminedEffect() == RuleDeterminedEffect.NOT_APPLICABLE) {
+                continue;
+            }
+            Rule rule = result.getRule();
+            if (rule.getEffect() != RuleEffect.ALLOW) {
+                continue;
+            }
+            if (StringUtils.isBlank(rule.getAndFilterString()) && StringUtils.isBlank(rule.getOrFilterString())) {
+                continue;
+            }
+            String key = (rule.getName() != null && !rule.getName().isBlank())
+                    ? rule.getName()
+                    : rule.getSecurityURI().uriString();
+            infos.putIfAbsent(key, new SecurityCheckResponse.RuleFilterInfo(
+                    rule.getName(),
+                    rule.getAndFilterString(),
+                    rule.getOrFilterString(),
+                    rule.getJoinOp() != null ? rule.getJoinOp().name() : "AND"
+            ));
+        }
+        return new ArrayList<>(infos.values());
+    }
+
+    private void surfaceScopedFilterConstraints(SecurityCheckResponse response) {
+        if (response == null) {
+            return;
+        }
+        List<SecurityCheckResponse.RuleFilterInfo> matchedFilters = collectMatchedAllowFilterRules(response);
+        if (matchedFilters.isEmpty()) {
+            return;
+        }
+
+        LinkedHashMap<String, SecurityCheckResponse.RuleFilterInfo> merged = new LinkedHashMap<>();
+        if (response.getFinalEffect() == RuleEffect.ALLOW && response.getFilterConstraints() != null) {
+            for (SecurityCheckResponse.RuleFilterInfo info : response.getFilterConstraints()) {
+                if (info == null) {
+                    continue;
+                }
+                String key = (info.getRuleName() != null && !info.getRuleName().isBlank())
+                        ? info.getRuleName()
+                        : String.valueOf(info.getAndFilterString()) + "|" + String.valueOf(info.getOrFilterString());
+                merged.putIfAbsent(key, info);
+            }
+        }
+        for (SecurityCheckResponse.RuleFilterInfo info : matchedFilters) {
+            String key = (info.getRuleName() != null && !info.getRuleName().isBlank())
+                    ? info.getRuleName()
+                    : String.valueOf(info.getAndFilterString()) + "|" + String.valueOf(info.getOrFilterString());
+            merged.putIfAbsent(key, info);
+        }
+
+        response.setFilterConstraintsPresent(true);
+        response.getFilterConstraints().clear();
+        response.getFilterConstraints().addAll(merged.values());
+        response.setDecisionScope("SCOPED");
+        response.setScopedConstraintsPresent(true);
+        response.getScopedConstraints().clear();
+        for (SecurityCheckResponse.RuleFilterInfo info : response.getFilterConstraints()) {
+            String joinOp = info.getJoinOp();
+            if (StringUtils.isNotBlank(info.getAndFilterString())) {
+                response.getScopedConstraints().add(new SecurityCheckResponse.ScopedConstraint(
+                        "FILTER", info.getAndFilterString(), joinOp));
+            }
+            if (StringUtils.isNotBlank(info.getOrFilterString())) {
+                response.getScopedConstraints().add(new SecurityCheckResponse.ScopedConstraint(
+                        "FILTER", info.getOrFilterString(), joinOp));
+            }
+        }
+        if ((response.getDecision() == null || response.getDecision().isBlank()) && response.getFinalEffect() != null) {
+            response.setDecision(response.getFinalEffect().name());
+        }
     }
 
     public RuleContext(SecurityUtils securityUtils, EnvConfigUtils envConfigUtils) {
@@ -584,6 +650,7 @@ public class RuleContext {
         // Legacy fields
         compiledIndex = null;
         compiledIndexRealm = null;
+        clearRequestCache();
     }
 
     /**
@@ -604,6 +671,7 @@ public class RuleContext {
                 compiledIndexRealm = null;
             }
         }
+        clearRequestCache();
     }
 
     /**
@@ -658,6 +726,7 @@ public class RuleContext {
         compiledIndex = null;
         compiledIndexRealm = null;
         policyVersion = System.nanoTime();
+        clearRequestCache();
         Log.info("RuleContext: invalidated all caches");
     }
 
@@ -821,165 +890,7 @@ public class RuleContext {
     LabelService labelService;
 
     boolean runScript(PrincipalContext pcontext, ResourceContext rcontext, String script) {
-        if (script == null || script.isBlank()) return false;
-
-        // Resolve scripting config with sensible defaults for non-CDI/test contexts
-        // Default behavior: scripting enabled, hardened mode, 1500ms timeout
-        boolean enabled = true;
-        boolean allowAll = false;
-        long timeoutMs = 1500L;
-        // If an explicit timeout was set on the instance, prefer it; booleans default to false on plain construction,
-        // so don't read instance flags for enabled/allowAll here to avoid disabling scripting in tests unintentionally.
-        try {
-            if (this.scriptingTimeoutMillis > 0) timeoutMs = this.scriptingTimeoutMillis;
-        } catch (Throwable ignored) {}
-        try {
-            org.eclipse.microprofile.config.Config cfg = org.eclipse.microprofile.config.ConfigProvider.getConfig();
-            if (cfg != null) {
-                enabled = cfg.getOptionalValue("quantum.security.scripting.enabled", Boolean.class).orElse(Boolean.TRUE);
-                allowAll = cfg.getOptionalValue("quantum.security.scripting.allowAllAccess", Boolean.class).orElse(Boolean.FALSE);
-                timeoutMs = cfg.getOptionalValue("quantum.security.scripting.timeout.millis", Long.class).orElse(1500L);
-            }
-        } catch (Throwable ignored) {
-            // Keep previously resolved defaults/injected values
-            if (timeoutMs <= 0) timeoutMs = 1500L;
-        }
-        // Ensure a reasonable minimum to account for engine warm-up
-        if (timeoutMs < 500L) timeoutMs = 1500L;
-
-        if (!enabled) {
-            Log.warn("Security scripting is disabled via config; returning false");
-            return false;
-        }
-
-        // Fallback legacy mode if explicitly allowed
-        if (allowAll) {
-            if (WARNED_PERMISSIVE.compareAndSet(false, true)) {
-                Log.warn("quantum.security.scripting.allowAllAccess=true — running scripts with full host access (UNSAFE). This should only be used for compatibility.");
-            }
-            try (Context c = Context.newBuilder("js").allowAllAccess(true).build()) {
-                var jsBindings = c.getBindings("js");
-                jsBindings.putMember("pcontext", pcontext);
-                jsBindings.putMember("rcontext", rcontext);
-                installHelpersAndBindings(c, pcontext, rcontext);
-                if (Log.isDebugEnabled()) Log.debugf("Executing script (permissive): %s", script);
-                return c.eval("js", script).asBoolean();
-            } catch (Throwable t) {
-                Log.warn("Script execution failed in permissive mode; returning false", t);
-                return false;
-            }
-        }
-
-        // Hardened mode with timeout
-        java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
-            Thread th = new Thread(r, "rule-script-worker");
-            th.setDaemon(true);
-            return th;
-        });
-        try {
-            java.util.concurrent.Future<Boolean> fut = executor.submit(() -> {
-                Engine eng = Engine.newBuilder().build();
-                try (Context c = Context.newBuilder("js")
-                        .engine(eng)
-                        .allowAllAccess(false)
-                        .allowHostAccess(HostAccess.newBuilder().allowPublicAccess(true).build())
-                        .allowHostClassLookup(s -> false)
-                        .allowIO(false)
-                        .option("js.ecmascript-version", "2021")
-                        .build()) {
-                    var jsBindings = c.getBindings("js");
-                    // Only expose simple data; avoid reflective Java method access
-                    jsBindings.putMember("pcontext", pcontext);
-                    jsBindings.putMember("rcontext", rcontext);
-                    installHelpersAndBindings(c, pcontext, rcontext);
-                    if (Log.isDebugEnabled()) Log.debugf("Executing script: %s", script);
-                    Value v = c.eval("js", script);
-                    return v.isBoolean() ? v.asBoolean() : false;
-                }
-            });
-            return fut.get(Math.max(1L, timeoutMs), java.util.concurrent.TimeUnit.MILLISECONDS);
-        } catch (java.util.concurrent.TimeoutException te) {
-            Log.warnf("Script timed out after %d ms; returning false", (timeoutMs <= 0 ? 250L : timeoutMs));
-            return false;
-        } catch (Throwable t) {
-            Log.warn("Script execution failed; returning false", t);
-            return false;
-        } finally {
-            executor.shutdownNow();
-        }
-    }
-
-    /**
-     * Prepare helper bindings and safe maps for use inside scripts.
-     */
-    private void installHelpersAndBindings(Context c, PrincipalContext pcontext, ResourceContext rcontext) {
-        var jsBindings = c.getBindings("js");
-
-        // Prepare helper data structures
-        Map<String,Object> sb = new HashMap<>();
-        Map<String,Object> rctx = new HashMap<>();
-        Map<String,Object> pctx = new HashMap<>();
-        Map<String,Object> identityInfo = new HashMap<>();
-        try {
-            Set<String> labels = labelService != null ? labelService.labelsFor(rcontext) : Set.of();
-            rctx.put("labels", new ArrayList<>(labels));
-        } catch (Throwable ignored) {}
-        try {
-            Set<String> plabels = labelService != null ? labelService.labelsFor(pcontext) : Set.of();
-            pctx.put("labels", new ArrayList<>(plabels));
-        } catch (Throwable ignored) {}
-        sb.put("rcontext", rctx);
-        sb.put("pcontext", pctx);
-
-        // Build identityInfo expected by scripts
-        try {
-            if (pcontext != null) {
-                identityInfo.put("userId", pcontext.getUserId());
-                // Normalize roles to a JS-friendly array list
-                Object rolesObj = pcontext.getRoles();
-                java.util.List<String> rolesList = new java.util.ArrayList<>();
-                if (rolesObj instanceof java.util.Collection) {
-                    for (Object o : ((java.util.Collection<?>) rolesObj)) {
-                        if (o != null) rolesList.add(String.valueOf(o));
-                    }
-                } else if (rolesObj != null && rolesObj.getClass().isArray()) {
-                    int len = java.lang.reflect.Array.getLength(rolesObj);
-                    for (int i = 0; i < len; i++) {
-                        Object o = java.lang.reflect.Array.get(rolesObj, i);
-                        if (o != null) rolesList.add(String.valueOf(o));
-                    }
-                }
-                identityInfo.put("roles", rolesList);
-                identityInfo.put("currentIdentity", pcontext.getUserId());
-            }
-        } catch (Throwable ignored) {}
-
-        // Try to install helper functions (e.g., isA, hasLabel, ...)
-        try {
-            try {
-                Class<?> cls = Class.forName("com.e2eq.ontology.policy.ScriptHelpers");
-                java.lang.reflect.Method m = cls.getMethod("install", Map.class);
-                m.invoke(null, sb);
-            } catch (Throwable ignoredInner) {}
-            Object isA = sb.get("isA"); if (isA != null) jsBindings.putMember("isA", isA);
-            Object hasLabel = sb.get("hasLabel"); if (hasLabel != null) jsBindings.putMember("hasLabel", hasLabel);
-            Object hasEdge = sb.get("hasEdge"); if (hasEdge != null) jsBindings.putMember("hasEdge", hasEdge);
-            Object hasAnyEdge = sb.get("hasAnyEdge"); if (hasAnyEdge != null) jsBindings.putMember("hasAnyEdge", hasAnyEdge);
-            Object hasAllEdges = sb.get("hasAllEdges"); if (hasAllEdges != null) jsBindings.putMember("hasAllEdges", hasAllEdges);
-            Object relatedIds = sb.get("relatedIds"); if (relatedIds != null) jsBindings.putMember("relatedIds", relatedIds);
-            Object noViolations = sb.get("noViolations"); if (noViolations != null) jsBindings.putMember("noViolations", noViolations);
-        } catch (Throwable ignored) {}
-
-        // Expose safe maps to JS under distinct names so we don't shadow the Java objects
-        try {
-            // Use ProxyObject wrappers so JS dot-notation works as expected
-            jsBindings.putMember("identityInfo", org.graalvm.polyglot.proxy.ProxyObject.fromMap(identityInfo));
-            // IMPORTANT: keep original Java objects bound under "pcontext" and "rcontext" so existing
-            // scripts that use Java-style getters (e.g., pcontext.getUserId()) continue to work.
-            // Bind the safe maps under different names to provide JS-friendly property access.
-            jsBindings.putMember("rctx", org.graalvm.polyglot.proxy.ProxyObject.fromMap(rctx));
-            jsBindings.putMember("pctx", org.graalvm.polyglot.proxy.ProxyObject.fromMap(pctx));
-        } catch (Throwable ignored) {}
+        return new RuleScriptExecutor(labelService).runScript(scriptingTimeoutMillis, pcontext, rcontext, script);
     }
 
     /**
@@ -1234,8 +1145,7 @@ public class RuleContext {
             try {
                 initRequestCacheIfAbsent();
                 String key = buildPermissionCacheKey(pcontext, rcontext, defaultFinalEffect);
-                java.util.Map<String, SecurityCheckResponse> cache = TL_REQUEST_PERMISSION_CACHE.get();
-                SecurityCheckResponse cached = (cache != null) ? cache.get(key) : null;
+                SecurityCheckResponse cached = RuleContextRequestCache.get(key);
                 if (cached != null) {
                     if (Log.isDebugEnabled()) {
                         Log.debugf("RuleContext.checkRules cache hit for user=%s area=%s domain=%s action=%s",
@@ -1739,8 +1649,7 @@ public class RuleContext {
         if (requestCacheEnabled && !shouldSkipRequestCache()) {
             try {
                 String key = buildPermissionCacheKey(pcontext, rcontext, defaultFinalEffect);
-                java.util.Map<String, SecurityCheckResponse> cache = TL_REQUEST_PERMISSION_CACHE.get();
-                if (cache != null) cache.put(key, response);
+                RuleContextRequestCache.put(key, response);
             } catch (Throwable ignored) {}
         }
         return response;
@@ -1760,7 +1669,7 @@ public class RuleContext {
         // Set eval mode for this thread so core evaluation can react to it
         setEvalModeForThread(evalMode != null ? evalMode : com.e2eq.framework.model.securityrules.EvalMode.LEGACY);
         // Bypass the request cache for resource-aware checks to avoid leaking SCOPED/DEFAULT across resources
-        if (resourceInstance != null) TL_SKIP_REQUEST_CACHE.set(Boolean.TRUE);
+        if (resourceInstance != null) RuleContextRequestCache.skipForCurrentThread();
         try {
             SecurityCheckResponse resp = checkRules(pcontext, rcontext, modelClass, resourceInstance, defaultFinalEffect);
 
@@ -1770,6 +1679,10 @@ public class RuleContext {
             // Ensure decision string present
             if (resp.getFinalEffect() != null && (resp.getDecision() == null || resp.getDecision().isBlank())) {
                 resp.setDecision(resp.getFinalEffect().name());
+            }
+
+            if (resourceInstance == null && resp.getFinalEffect() == RuleEffect.ALLOW) {
+                surfaceScopedFilterConstraints(resp);
             }
 
             // Ensure NA label for DEFAULT
@@ -1801,15 +1714,18 @@ public class RuleContext {
             return resp;
         } finally {
             clearEvalModeForThread();
-            TL_SKIP_REQUEST_CACHE.remove();
+            RuleContextRequestCache.clearSkipForCurrentThread();
         }
     }
 
 
     /**
      * Attempt to evaluate rule filter strings as applicability constraints against a concrete resource.
-     * This initial implementation is a safe stub that records trace fields and returns Optional.empty()
-     * to preserve current behavior. A future iteration will compile predicates using QueryPredicates.
+     * Returns {@link Optional#of(Boolean)} when the filter predicates were successfully compiled and
+     * evaluated against the provided resource facts. Returns {@link Optional#empty()} when evaluation
+     * cannot be completed because required context is missing, predicate compilation is unavailable,
+     * or evaluation fails. The supplied {@code matchEvent}, when present, is populated with the
+     * evaluation outcome or the reason the evaluation was deferred.
      *
      * Note: We intentionally keep this non-throwing. Any failure or missing context results in Optional.empty().
      */
@@ -1820,192 +1736,8 @@ public class RuleContext {
             Class<? extends UnversionedBaseModel> modelClass,
             Object resourceInstance,
             com.e2eq.framework.model.securityrules.MatchEvent matchEvent) {
-
-        // Populate basic trace fields (additive)
-        if (matchEvent != null && rule != null) {
-            matchEvent.setFilterAndString(rule.getAndFilterString());
-            matchEvent.setFilterOrString(rule.getOrFilterString());
-            matchEvent.setFilterJoinOp(rule.getJoinOp() != null ? rule.getJoinOp().name() : "AND");
-            matchEvent.setFilterEvaluated(false);
-            matchEvent.setFilterResult(null);
-            matchEvent.setFilterReason(null);
-        }
-
-        // Evaluator only runs when a concrete resource instance is provided. In no-resource contexts,
-        // we cannot safely evaluate resource-dependent filters; defer to DB-side filtering.
-        if (resourceInstance == null) {
-            if (matchEvent != null) {
-                matchEvent.setFilterEvaluated(false);
-                matchEvent.setFilterResult(null);
-                matchEvent.setFilterReason("No resource provided; evaluator disabled");
-            }
-            return Optional.empty();
-        }
-
-        // If the rule has no filters, we treat it as not needing evaluation
-        boolean hasAnd = rule != null && org.apache.commons.lang3.StringUtils.isNotBlank(rule.getAndFilterString());
-        boolean hasOr = rule != null && org.apache.commons.lang3.StringUtils.isNotBlank(rule.getOrFilterString());
-        if (!hasAnd && !hasOr) {
-            return Optional.of(true);
-        }
-
-        // resourceInstance is non-null past this point
-
-        // Build facts JSON. We require at least ResourceContext and PrincipalContext; resourceInstance is optional.
-        Map<String, Object> facts = new HashMap<>();
-        try {
-            // rcontext section (shallow)
-            Map<String, Object> rcMap = new HashMap<>();
-            rcMap.put("area", rcontext != null ? rcontext.getArea() : null);
-            rcMap.put("functionalDomain", rcontext != null ? rcontext.getFunctionalDomain() : null);
-            rcMap.put("action", rcontext != null ? rcontext.getAction() : null);
-            rcMap.put("resourceId", rcontext != null ? rcontext.getResourceId() : null);
-            facts.put("rcontext", rcMap);
-
-            // dataDomain section (from principal)
-            Map<String, Object> ddMap = new HashMap<>();
-            if (pcontext != null && pcontext.getDataDomain() != null) {
-                ddMap.put("orgRefName", pcontext.getDataDomain().getOrgRefName());
-                ddMap.put("accountNum", pcontext.getDataDomain().getAccountNum());
-                ddMap.put("tenantId", pcontext.getDataDomain().getTenantId());
-                ddMap.put("dataSegment", pcontext.getDataDomain().getDataSegment());
-                ddMap.put("ownerId", pcontext.getDataDomain().getOwnerId());
-            }
-            facts.put("dataDomain", ddMap);
-
-            // resource section (optional, shallow)
-            if (resourceInstance != null) {
-                if (resourceInstance instanceof Map) {
-                    @SuppressWarnings("unchecked") Map<String, Object> rm = (Map<String, Object>) resourceInstance;
-                    facts.put("resource", rm);
-                } else {
-                    // Convert POJO to a map-like JSON structure using Jackson
-                    ObjectMapper mapper = new ObjectMapper();
-                    JsonNode node = mapper.valueToTree(resourceInstance);
-                    facts.put("resource", node);
-                }
-            }
-        } catch (Throwable t) {
-            if (Log.isDebugEnabled()) {
-                Log.debugf(t, "[Evaluator] Failed to build facts for rule '%s'", rule != null ? rule.getName() : "<null>");
-            }
-            if (matchEvent != null) {
-                matchEvent.setFilterEvaluated(false);
-                matchEvent.setFilterResult(null);
-                matchEvent.setFilterReason("Facts building failed");
-            }
-            return Optional.empty();
-        }
-
-        // Resolve variables used by filters (strings and objects)
-        MorphiaUtils.VariableBundle vars;
-        try {
-            vars = resolveVariableBundle(pcontext, rcontext, modelClass);
-        } catch (Throwable t) {
-            if (Log.isDebugEnabled()) {
-                Log.debugf(t, "[Evaluator] Failed to resolve variable bundle for rule '%s'", rule != null ? rule.getName() : "<null>");
-            }
-            if (matchEvent != null) {
-                matchEvent.setFilterEvaluated(false);
-                matchEvent.setFilterResult(null);
-                matchEvent.setFilterReason("Variable resolution failed");
-            }
-            return Optional.empty();
-        }
-
-        // Compile predicates using the shared BIAPI compiler via reflection to avoid hard module dependency
-        java.util.function.Predicate<com.fasterxml.jackson.databind.JsonNode> andPred = null;
-        java.util.function.Predicate<com.fasterxml.jackson.databind.JsonNode> orPred = null;
-        try {
-            if (hasAnd) {
-                andPred = tryCompilePredicate(rule.getAndFilterString(), vars.strings, vars.objects)
-                        .orElse(null);
-            }
-            if (hasOr) {
-                orPred = tryCompilePredicate(rule.getOrFilterString(), vars.strings, vars.objects)
-                        .orElse(null);
-            }
-        } catch (Throwable t) {
-            if (Log.isDebugEnabled()) {
-                Log.debugf(t, "[Evaluator] Predicate compilation failed for rule '%s'", rule != null ? rule.getName() : "<null>");
-            }
-            if (matchEvent != null) {
-                matchEvent.setFilterEvaluated(false);
-                matchEvent.setFilterResult(null);
-                matchEvent.setFilterReason("Predicate compilation failed");
-            }
-            return Optional.empty();
-        }
-
-        // Evaluate predicates against facts
-        boolean andOk = true; // identity for AND when missing
-        boolean orOk = true;  // identity when only one present and join=AND; will be overridden when used
-        ObjectMapper mapper = new ObjectMapper();
-        com.fasterxml.jackson.databind.JsonNode factsNode = mapper.valueToTree(facts);
-        try {
-            if (andPred != null) {
-                andOk = andPred.test(factsNode);
-            }
-            if (orPred != null) {
-                orOk = orPred.test(factsNode);
-            }
-        } catch (Throwable t) {
-            if (Log.isDebugEnabled()) {
-                Log.debugf(t, "[Evaluator] Predicate evaluation failed for rule '%s'", rule != null ? rule.getName() : "<null>");
-            }
-            if (matchEvent != null) {
-                matchEvent.setFilterEvaluated(false);
-                matchEvent.setFilterResult(null);
-                matchEvent.setFilterReason("Predicate evaluation failed");
-            }
-            return Optional.empty();
-        }
-
-        // Combine results according to joinOp when both present
-        boolean result;
-        if (hasAnd && hasOr) {
-            FilterJoinOp op = rule.getJoinOp() != null ? rule.getJoinOp() : FilterJoinOp.AND;
-            if (op == FilterJoinOp.OR) {
-                result = andOk || orOk;
-            } else {
-                result = andOk && orOk;
-            }
-        } else if (hasAnd) {
-            result = andOk;
-        } else { // hasOr only
-            result = orOk;
-        }
-
-        if (matchEvent != null) {
-            matchEvent.setFilterEvaluated(true);
-            matchEvent.setFilterResult(result);
-            matchEvent.setFilterReason(null);
-        }
-
-        return Optional.of(result);
-    }
-
-    /**
-     * Attempts to call QueryPredicates.compilePredicate(query, vars, objectVars) via reflection to avoid
-     * creating a direct compile-time dependency from the morphia-repos module to quantum-framework.
-     * If the class or method is unavailable, returns Optional.empty().
-     */
-    @SuppressWarnings("unchecked")
-    private Optional<java.util.function.Predicate<com.fasterxml.jackson.databind.JsonNode>> tryCompilePredicate(
-            String query,
-            Map<String, String> vars,
-            Map<String, Object> objectVars) {
-        try {
-            Class<?> qp = Class.forName("com.e2eq.framework.query.QueryPredicates");
-            java.lang.reflect.Method m = qp.getMethod("compilePredicate", String.class, Map.class, Map.class);
-            Object pred = m.invoke(null, query, vars, objectVars);
-            return Optional.of((java.util.function.Predicate<com.fasterxml.jackson.databind.JsonNode>) pred);
-        } catch (Throwable t) {
-            if (Log.isDebugEnabled()) {
-                Log.debugf(t, "[Evaluator] QueryPredicates not available or invocation failed; falling back");
-            }
-            return Optional.empty();
-        }
+        return new RuleFilterApplicabilityEvaluator(new RuleVariableBundleResolver(resolvers))
+                .evaluate(pcontext, rcontext, rule, modelClass, resourceInstance, matchEvent);
     }
 
 
@@ -2079,36 +1811,7 @@ public class RuleContext {
             @Valid @NotNull(message = "Resource Context can not be null") ResourceContext rcontext,
             Class<? extends UnversionedBaseModel> modelClass
     ) {
-        Map<String, Object> extraObjects = new HashMap<>();
-        if (resolvers != null) {
-            for (AccessListResolver r : resolvers) {
-                try {
-                    boolean supported = r.supports(pcontext, rcontext, modelClass);
-                    if (Log.isDebugEnabled()) {
-                        Log.debugf("AccessListResolver '%s' key='%s' supports(area=%s, domain=%s, action=%s, model=%s) = %s",
-                            r.getClass().getSimpleName(), r.key(),
-                            rcontext != null ? rcontext.getArea() : "null",
-                            rcontext != null ? rcontext.getFunctionalDomain() : "null",
-                            rcontext != null ? rcontext.getAction() : "null",
-                            modelClass != null ? modelClass.getSimpleName() : "null",
-                            supported);
-                    }
-                    if (supported) {
-                        extraObjects.put(r.key(), r.resolve(pcontext, rcontext, modelClass));
-                    }
-                } catch (Exception e) {
-                    Log.warnf(e, "AccessListResolver '%s' failed; continuing without it", r.getClass().getName());
-                }
-            }
-        }
-        MorphiaUtils.VariableBundle bundle = MorphiaUtils.buildVariableBundle(pcontext, rcontext, extraObjects);
-        if (Log.isDebugEnabled()) {
-            Log.debugf("resolveVariableBundle: customProperties=%s, extraObjects=%s, final objects keys=%s",
-                pcontext != null ? pcontext.getCustomProperties().keySet() : "null",
-                extraObjects.keySet(),
-                bundle.objects.keySet());
-        }
-        return bundle;
+        return new RuleVariableBundleResolver(resolvers).resolveVariableBundle(pcontext, rcontext, modelClass);
     }
 
     /**
@@ -2124,18 +1827,33 @@ public class RuleContext {
 
         SecurityCheckResponse response = this.checkRules(pcontext, rcontext);
 
+        if (response.getFinalEffect() != RuleEffect.ALLOW) {
+            return filters;
+        }
+
         List<Filter> andFilters = new ArrayList<>();
         List<Filter> orFilters = new ArrayList<>();
 
         MorphiaUtils.VariableBundle vars = resolveVariableBundle(pcontext, rcontext, modelClass);
 
-        for (RuleResult result : response.getMatchedRuleResults()) {
-            // ignore Not Applicable rules
-            if (result.getDeterminedEffect() == RuleDeterminedEffect.NOT_APPLICABLE) {
-                continue;
+        List<SecurityCheckResponse.RuleFilterInfo> filterInfos = collectMatchedAllowFilterRules(response);
+        if (response.getFilterConstraints() != null) {
+            for (SecurityCheckResponse.RuleFilterInfo info : response.getFilterConstraints()) {
+                if (info == null) {
+                    continue;
+                }
+                boolean alreadyPresent = filterInfos.stream().anyMatch(existing ->
+                        Objects.equals(existing.getRuleName(), info.getRuleName())
+                                && Objects.equals(existing.getAndFilterString(), info.getAndFilterString())
+                                && Objects.equals(existing.getOrFilterString(), info.getOrFilterString())
+                                && Objects.equals(existing.getJoinOp(), info.getJoinOp()));
+                if (!alreadyPresent) {
+                    filterInfos.add(info);
+                }
             }
+        }
 
-            Rule rule = result.getRule();
+        for (SecurityCheckResponse.RuleFilterInfo info : filterInfos) {
 
             // Try to convert filter strings, but skip this rule if variables can't be resolved
             // This handles the case where a rule matches by area/domain/action but its filter
@@ -2144,15 +1862,15 @@ public class RuleContext {
             // to UserProfile queries even if they share the same area/domain/action.
             boolean ruleFilterSkipped = false;
 
-            if (rule.getAndFilterString() != null && !rule.getAndFilterString().isEmpty()) {
+            if (info.getAndFilterString() != null && !info.getAndFilterString().isEmpty()) {
                 try {
-                    andFilters.add(MorphiaUtils.convertToFilter(rule.getAndFilterString(), vars, modelClass));
+                    andFilters.add(MorphiaUtils.convertToFilter(info.getAndFilterString(), vars, modelClass));
                 } catch (IllegalStateException e) {
                     // Filter string contains unresolved variables - this rule doesn't apply to this model class
                     if (e.getMessage() != null && e.getMessage().contains("Unresolved resolver variable")) {
                         if (Log.isDebugEnabled()) {
                             Log.debugf("Skipping rule '%s' filter for model class %s: %s",
-                                    rule.getName(), modelClass != null ? modelClass.getName() : "null", e.getMessage());
+                                    info.getRuleName(), modelClass != null ? modelClass.getName() : "null", e.getMessage());
                         }
                         ruleFilterSkipped = true;
                     } else {
@@ -2162,15 +1880,15 @@ public class RuleContext {
                 }
             }
 
-            if (!ruleFilterSkipped && rule.getOrFilterString() != null && !rule.getOrFilterString().isEmpty()) {
+            if (!ruleFilterSkipped && info.getOrFilterString() != null && !info.getOrFilterString().isEmpty()) {
                 try {
-                    orFilters.add(MorphiaUtils.convertToFilter(rule.getOrFilterString(), vars, modelClass));
+                    orFilters.add(MorphiaUtils.convertToFilter(info.getOrFilterString(), vars, modelClass));
                 } catch (IllegalStateException e) {
                     // Filter string contains unresolved variables - this rule doesn't apply to this model class
                     if (e.getMessage() != null && e.getMessage().contains("Unresolved resolver variable")) {
                         if (Log.isDebugEnabled()) {
                             Log.debugf("Skipping rule '%s' filter for model class %s: %s",
-                                    rule.getName(), modelClass != null ? modelClass.getName() : "null", e.getMessage());
+                                    info.getRuleName(), modelClass != null ? modelClass.getName() : "null", e.getMessage());
                         }
                         ruleFilterSkipped = true;
                     } else {
@@ -2190,8 +1908,8 @@ public class RuleContext {
 
             if (!andFilters.isEmpty() && !orFilters.isEmpty()) {
                 FilterJoinOp joinOp;
-                if (rule.getJoinOp() != null) {
-                    joinOp = rule.getJoinOp();
+                if (info.getJoinOp() != null && !info.getJoinOp().isBlank()) {
+                    joinOp = FilterJoinOp.valueOf(info.getJoinOp());
                 } else {
                     joinOp = FilterJoinOp.AND;
                 }
@@ -2213,9 +1931,6 @@ public class RuleContext {
                         orFilters.clear();
                     }
                 }
-            }
-            if (rule.isFinalRule()) {
-                break;
             }
         }
 

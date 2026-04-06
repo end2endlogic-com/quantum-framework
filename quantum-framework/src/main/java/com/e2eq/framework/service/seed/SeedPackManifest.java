@@ -2,6 +2,8 @@ package com.e2eq.framework.service.seed;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.Validation;
+import jakarta.validation.Validator;
 
 import java.io.InputStream;
 import java.util.Collections;
@@ -29,6 +31,7 @@ import org.yaml.snakeyaml.error.YAMLException;
 public final class SeedPackManifest {
 
     private static final String DEFAULT_MANIFEST = "manifest.yaml";
+    private static final Validator VALIDATOR = Validation.buildDefaultValidatorFactory().getValidator();
 
     @NotBlank(message = "seedPack name is required")
     private String seedPack;
@@ -36,12 +39,10 @@ public final class SeedPackManifest {
     @NotBlank(message = "version is required")
     private String version;
 
-    @Valid
-    private List<Dataset> datasets;
+    private List<@Valid Dataset> datasets;
     private List<String> includes;
 
-    @Valid
-    private List<Archetype> archetypes;
+    private List<@Valid Archetype> archetypes;
     // Optional scope block to control applicability
     private SeedScope scope;
     private transient String sourceDescription;
@@ -85,16 +86,16 @@ public final class SeedPackManifest {
      * @throws IllegalStateException if validation fails
      */
     public void validate() {
-        // Bean Validation checks (basic constraints)
-        jakarta.validation.Validator validator = jakarta.validation.Validation
-                .buildDefaultValidatorFactory()
-                .getValidator();
-
-        java.util.Set<jakarta.validation.ConstraintViolation<SeedPackManifest>> violations = validator.validate(this);
+        java.util.Set<jakarta.validation.ConstraintViolation<SeedPackManifest>> violations = VALIDATOR.validate(this);
         if (!violations.isEmpty()) {
             StringBuilder sb = new StringBuilder("Validation failed for manifest " + getSourceDescription() + ": ");
             violations.forEach(v -> sb.append(v.getPropertyPath()).append(" ").append(v.getMessage()).append("; "));
             throw new IllegalStateException(sb.toString());
+        }
+
+        // Validate scope constraints
+        if (scope != null) {
+            scope.validate(getSourceDescription());
         }
 
         // Additional programmatic validation
