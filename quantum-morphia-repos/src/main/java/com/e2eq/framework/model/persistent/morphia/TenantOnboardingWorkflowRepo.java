@@ -10,14 +10,19 @@ import java.util.Optional;
 public class TenantOnboardingWorkflowRepo extends MorphiaRepo<TenantOnboardingWorkflow> {
 
     public Optional<TenantOnboardingWorkflow> findDefault(String realm) {
-        return findByRefName(TenantOnboardingWorkflow.DEFAULT_REF_NAME, realm);
+        return Optional.ofNullable(
+            getMorphiaDataStoreWrapper().getDataStore(realm)
+                .find(TenantOnboardingWorkflow.class)
+                .filter(Filters.eq("refName", TenantOnboardingWorkflow.DEFAULT_REF_NAME))
+                .first()
+        );
     }
 
     public Optional<TenantOnboardingWorkflow> findActive(String realm) {
         return Optional.ofNullable(
             getMorphiaDataStoreWrapper().getDataStore(realm)
                 .find(TenantOnboardingWorkflow.class)
-                .filter(Filters.eq("activeStatus", true))
+                .filter(Filters.eq("workflowEnabled", true))
                 .first()
         );
     }

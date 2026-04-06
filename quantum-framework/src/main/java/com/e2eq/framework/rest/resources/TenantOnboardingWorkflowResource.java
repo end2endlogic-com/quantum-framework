@@ -5,7 +5,7 @@ import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.rest.requests.TenantOnboardingWorkflowRequest;
 import com.e2eq.framework.security.runtime.RuleContext;
-import com.e2eq.framework.service.onboarding.TenantOnboardingWorkflowService;
+import com.e2eq.framework.service.onboarding.TenantOnboardingFlowService;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
@@ -32,7 +32,7 @@ public class TenantOnboardingWorkflowResource {
     RuleContext ruleContext;
 
     @Inject
-    TenantOnboardingWorkflowService onboardingWorkflowService;
+    TenantOnboardingFlowService onboardingWorkflowService;
 
     @GET
     @Path("current")

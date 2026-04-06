@@ -302,9 +302,8 @@ public class RuleContext {
      */
     public com.e2eq.framework.model.securityrules.RuleIndexSnapshot exportScopedAccessMatrixForIdentities(java.util.Collection<String> identities, com.e2eq.framework.model.persistent.base.DataDomain requested) {
         com.e2eq.framework.model.securityrules.RuleIndexSnapshot snap = new com.e2eq.framework.model.securityrules.RuleIndexSnapshot();
-        boolean enabled = indexEnabled && compiledIndex != null;
-        snap.setEnabled(enabled);
-        snap.setVersion(enabled ? compiledIndex.getVersion() : 0L);
+        long snapshotVersion = (compiledIndex != null) ? compiledIndex.getVersion() : getPolicyVersion();
+        snap.setVersion(snapshotVersion);
         snap.setPolicyVersion(getPolicyVersion());
         if (identities != null) snap.getSources().addAll(identities);
 
@@ -364,6 +363,15 @@ public class RuleContext {
                 return an.compareToIgnoreCase(bn);
             });
         }
+
+        // The scoped matrix is materialized directly from the effective rules and does not
+        // depend on the optional compiled trie index. If we produced a scope matrix or a
+        // requested scope/fallback chain, the client can evaluate against this snapshot.
+        boolean matrixAvailable =
+                !snap.getScopes().isEmpty()
+                        || snap.getRequestedScope() != null
+                        || requested == null;
+        snap.setEnabled(matrixAvailable);
 
         return snap;
     }

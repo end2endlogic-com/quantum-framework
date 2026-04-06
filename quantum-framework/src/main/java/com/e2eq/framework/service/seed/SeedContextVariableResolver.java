@@ -30,6 +30,11 @@ public final class SeedContextVariableResolver implements SeedVariableResolver {
             return Optional.empty();
         }
 
+        Optional<String> custom = context.getVariable(variableName);
+        if (custom.isPresent()) {
+            return custom;
+        }
+
         return switch (variableName) {
             case "realm", "realmId" -> Optional.ofNullable(context.getRealm());
             case "tenantId" -> context.getTenantId();

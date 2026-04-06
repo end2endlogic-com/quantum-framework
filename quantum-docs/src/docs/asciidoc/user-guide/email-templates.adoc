@@ -1,15 +1,31 @@
 [[email-templates]]
 === Email Templates
 
-Quantum provides a built-in email templating system that supports classpath-based default templates with per-realm database overrides. Templates use the Qute templating engine and can be delivered via Postmark or a custom delivery service.
+Quantum provides a built-in email templating system with three important pieces:
+
+- classpath defaults under `templates/email/{templateKey}/`
+- realm-scoped overrides stored in MongoDB
+- Qute-based rendering plus pluggable delivery
+
+This makes email content part of the framework instead of forcing each product to hand-roll template loading, rendering, preview, and override behavior.
+
+==== What the framework supports
+
+Email templates are now first-class framework resources:
+
+- `EmailTemplate` documents are stored in the `email_templates` collection.
+- `DefaultEmailTemplateResolver` checks the current realm for an active override first, then falls back to the classpath.
+- `EmailTemplateRenderService` renders `subject.txt`, `body.html`, and `body.txt` using Qute.
+- `EmailTemplateResource` exposes tenant-scoped CRUD and preview APIs at `/settings/email-templates`.
+- `TenantOnboardingWorkflow` now carries `defaultInviteEmailTemplateKey`, so onboarding/invite flows can refer to a named template instead of hard-coded content.
 
 ==== Architecture
 
 The email system has three layers:
 
-1. **Template Resolution** -- locates the correct template for a realm and template key
-2. **Rendering** -- applies context data to templates using the Qute engine
-3. **Delivery** -- sends the rendered email via an `EmailDeliveryService` implementation
+1. Template resolution
+2. Rendering
+3. Delivery
 
 [source,text]
 ----
@@ -36,9 +52,17 @@ Qute Engine renders subject, HTML body, text body
 RenderedTemplate --> build RenderedEmail --> EmailDeliveryService.deliver()
 ----
 
-==== Defining Templates
+==== Template sources and resolution order
 
-===== Classpath Templates (Defaults)
+The `DefaultEmailTemplateResolver` follows this priority:
+
+1. Realm database override
+2. Classpath default
+3. Empty result if neither source contains the template
+
+That means products can ship sane defaults in source control, while each tenant can still customize messaging without forking code.
+
+===== Classpath templates
 
 Place template files on the classpath under `templates/email/{templateKey}/`:
 
@@ -48,16 +72,21 @@ src/main/resources/
   templates/
     email/
       welcome/
-        subject.txt      <-- Subject line template
-        body.html        <-- HTML body template
-        body.txt         <-- Plain text body template
+        subject.txt
+        body.html
+        body.txt
       password-reset/
         subject.txt
         body.html
         body.txt
 ----
 
-Each template uses Qute syntax with `{variableName}` placeholders:
+Each file is optional except that rendering must ultimately produce:
+
+- a non-blank subject
+- at least one non-blank body variant (`html` or `text`)
+
+Example:
 
 .subject.txt
 [source,text]
@@ -77,48 +106,43 @@ Welcome {name}
 Hello {name}, welcome to realm {realm}.
 ----
 
-===== Realm-Specific Overrides (Database)
+===== Realm overrides in MongoDB
 
-Tenants can override any classpath template by storing an `EmailTemplate` document in the `email_templates` MongoDB collection. The override is scoped to the tenant's realm.
+Tenants can override any classpath template by storing an `EmailTemplate` document in the `email_templates` collection for their realm.
 
 [cols="1,3", options="header"]
 |===
 | Field | Description
 
+| `refName`
+| Persistent reference for the template document. If omitted on create, the API derives it from `templateKey` by replacing `.` with `-`.
+
 | `templateKey`
-| Unique identifier matching the classpath template key (e.g., `welcome`)
+| Logical template id used by application code, such as `welcome` or `tenant-onboarding-invite`
 
 | `subjectTemplate`
-| Qute-formatted subject line
+| Qute-formatted subject template
 
 | `htmlTemplate`
 | Qute-formatted HTML body
 
 | `textTemplate`
-| Qute-formatted plain text body
+| Qute-formatted text body
 
 | `active`
-| Boolean flag (default `true`). Set to `false` to disable the override without deleting it.
+| Enables or disables the override without deleting it
 
 | `sourceType`
-| `REALM_OVERRIDE` (default) or `CLASSPATH_DEFAULT`
+| Usually `REALM_OVERRIDE`; can also be set to `CLASSPATH_DEFAULT` for metadata purposes
 
 | `sampleContextJson`
-| Optional JSON example of the expected context object for documentation purposes
+| Optional example JSON payload showing the expected render context
 
 | `schemaVersion`
-| Version tracking for template schema changes
+| Optional version marker for template lifecycle tracking
 |===
 
-==== Resolution Order
-
-The `DefaultEmailTemplateResolver` follows this priority:
-
-1. **Realm database override** -- if the realm is non-null and an active `EmailTemplate` document exists for the template key, it is used.
-2. **Classpath default** -- if no realm override is found (or realm is null), the resolver loads from `templates/email/{templateKey}/` on the classpath.
-3. **Empty** -- if neither source has the template, resolution returns empty and rendering throws `IllegalArgumentException`.
-
-==== Rendering Templates
+==== Rendering templates
 
 Inject `EmailTemplateRenderService` and call `render()`:
 
@@ -127,39 +151,140 @@ Inject `EmailTemplateRenderService` and call `render()`:
 @Inject
 EmailTemplateRenderService renderService;
 
-// Render with a Map context
-Map<String, Object> context = Map.of(
-    "name", user.getDisplayName(),
-    "realm", realmId,
-    "resetLink", resetUrl
+RenderedTemplate rendered = renderService.render(
+    realmId,
+    "password-reset",
+    Map.of(
+        "name", user.getDisplayName(),
+        "realm", realmId,
+        "resetLink", resetUrl
+    )
 );
-RenderedTemplate rendered = renderService.render(realmId, "password-reset", context);
-
-// Render with a Java bean or record -- properties are extracted automatically
-RenderedTemplate rendered = renderService.render(realmId, "welcome", userProfile);
 ----
 
-The render service accepts any of:
+The render context can be:
 
-* `Map<String, Object>` -- entries used directly as template variables
-* Java beans -- properties extracted via introspection
-* Java records -- components extracted via reflection
-* Any Jackson-serializable object -- converted to a `Map` via `ObjectMapper`
+- `Map<String, Object>`
+- a Java bean
+- a Java record
+- another Jackson-convertible object
 
-The original context object is also available in templates as `{context}`.
+The original object is also exposed to Qute as `{context}`.
 
-===== Validation
+===== Validation rules
 
-After rendering, the service validates:
+After rendering, the framework validates:
 
-* Subject must be non-blank
-* At least one of HTML body or text body must be non-blank
+- subject must be non-blank
+- at least one of HTML or text body must be non-blank
 
-If validation fails, an `IllegalStateException` is thrown.
+If either rule fails, rendering throws `IllegalStateException`.
 
-==== Delivering Email
+==== Tenant-scoped REST API
 
-Build a `RenderedEmail` from the rendered template and deliver it:
+The framework exposes authenticated tenant-scoped endpoints at `/settings/email-templates`:
+
+[cols="1,3", options="header"]
+|===
+| Endpoint | Purpose
+
+| `GET /settings/email-templates`
+| List templates stored for the current realm
+
+| `GET /settings/email-templates/{refName}`
+| Fetch one template by refName
+
+| `POST /settings/email-templates`
+| Create a new realm-scoped template
+
+| `PUT /settings/email-templates/{refName}`
+| Update an existing realm-scoped template
+
+| `DELETE /settings/email-templates/{refName}`
+| Delete a realm-scoped template
+
+| `POST /settings/email-templates/preview`
+| Render either an existing template by `templateKey` or inline template content
+|===
+
+Example create request:
+
+[source,json]
+----
+{
+  "templateKey": "tenant-onboarding-invite",
+  "displayName": "Tenant onboarding invite",
+  "description": "Invite email shown to tenant users during onboarding.",
+  "active": true,
+  "subjectTemplate": "You're invited to {tenantDisplayName}",
+  "htmlTemplate": "<p>Hello {inviteeName}, use <a href=\"{inviteLink}\">this link</a> to get started.</p>",
+  "textTemplate": "Hello {inviteeName}, use {inviteLink} to get started.",
+  "sampleContextJson": "{\"inviteeName\":\"Sam\",\"tenantDisplayName\":\"Acme\",\"inviteLink\":\"https://example.test/invite/abc\"}"
+}
+----
+
+Example preview request against a stored template:
+
+[source,json]
+----
+{
+  "templateKey": "tenant-onboarding-invite",
+  "context": {
+    "inviteeName": "Sam",
+    "tenantDisplayName": "Acme Logistics",
+    "inviteLink": "https://app.example.com/invite/abc123"
+  }
+}
+----
+
+Example preview request using inline content instead of a stored template:
+
+[source,json]
+----
+{
+  "templateKey": "preview-only",
+  "subjectTemplate": "Welcome {firstName}",
+  "textTemplate": "Hello {firstName}",
+  "context": {
+    "firstName": "Sam"
+  }
+}
+----
+
+==== Onboarding workflow integration
+
+`TenantOnboardingWorkflow` now includes `defaultInviteEmailTemplateKey`.
+
+This is the template key the tenant onboarding flow should use when it needs to render an invite email. The framework default key is:
+
+[source,text]
+----
+tenant-onboarding-invite
+----
+
+That value is configuration, not a guaranteed built-in classpath template. In practice:
+
+- your application can ship a classpath template with that key
+- a tenant can override that key in the database
+- the workflow can be updated to point at a different key per realm
+
+Representative workflow update payload:
+
+[source,json]
+----
+{
+  "displayName": "Tenant User Onboarding",
+  "inviteRequired": true,
+  "registrationRequired": true,
+  "defaultInviteEmailTemplateKey": "tenant-onboarding-invite"
+}
+----
+
+This separation is useful because the onboarding workflow owns _which template key to use_, while the email-template subsystem owns _how that template is resolved and rendered_.
+
+==== Delivering email
+
+Build a `RenderedEmail` from the rendered output and pass it to an `EmailDeliveryService`:
 
 [source,java]
 ----
@@ -178,22 +303,21 @@ RenderedEmail email = RenderedEmail.builder()
 deliveryService.deliver(email);
 ----
 
-===== Postmark Integration
+===== Postmark integration
 
-The framework ships with `PostmarkEmailSender`, an `EmailDeliveryService` implementation that sends via the Postmark HTTP API.
+The framework ships with `PostmarkEmailSender`.
 
 [source,properties]
 ----
-# Postmark configuration
 postmark.api-key=${POSTMARK_API_KEY}
 postmark.default-from-email-address=noreply@yourdomain.com
 ----
 
-If either property is missing, the sender logs an info message and returns without sending. This allows development environments to run without Postmark credentials.
+If either property is missing, the sender logs and returns without sending. That keeps local development and tests safe when no real delivery credentials are configured.
 
-===== Custom Delivery Service
+===== Custom delivery services
 
-Implement `EmailDeliveryService` to integrate with a different provider (SendGrid, AWS SES, etc.):
+You can replace delivery with your own implementation:
 
 [source,java]
 ----
@@ -203,29 +327,44 @@ Implement `EmailDeliveryService` to integrate with a different provider (SendGri
 public class SesEmailSender implements EmailDeliveryService {
     @Override
     public void deliver(RenderedEmail email) {
-        // Send via AWS SES
+        // send via AWS SES, SendGrid, etc.
     }
 }
 ----
 
-==== Custom Template Resolver
+===== Custom template resolvers
 
-Override the default resolution strategy by implementing `EmailTemplateResolver`:
+You can also replace template resolution entirely:
 
 [source,java]
 ----
 @ApplicationScoped
 @Alternative
 @Priority(1)
-public class MyTemplateResolver implements EmailTemplateResolver {
+public class CmsBackedTemplateResolver implements EmailTemplateResolver {
     @Override
     public Optional<EmailTemplateDefinition> resolve(String realm, String templateKey) {
-        // Custom resolution logic (e.g., S3, external CMS)
+        // load from S3, CMS, Git, etc.
     }
 }
 ----
 
-==== See Also
+==== When to use email templates
 
-* xref:auth.adoc[Authentication and Authorization]
-* xref:../appendix/configuration.adoc[Configuration Reference]
+Use the framework email-template subsystem when:
+
+- the output is user-facing email content
+- tenants may need per-realm content overrides
+- you want previewable Qute templates instead of hard-coded strings
+
+Do not use email templates for:
+
+- provisioning reference data, which belongs in xref:seed-packs.adoc[seed packs]
+- multi-step operational setup, which belongs in xref:bootstrap-packs.adoc[BootstrapPacks]
+
+==== See also
+
+- xref:tenant-models.adoc#tenant-onboarding-and-invites[Tenant onboarding and access invites]
+- xref:seed-packs.adoc[Seed packs and declarative tenant seeding]
+- xref:bootstrap-packs.adoc[Bootstrap Packs]
+- xref:../appendix/configuration.adoc[Configuration reference]

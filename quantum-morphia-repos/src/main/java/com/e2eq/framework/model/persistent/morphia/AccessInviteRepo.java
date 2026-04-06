@@ -10,6 +10,17 @@ import java.util.Optional;
 @ApplicationScoped
 public class AccessInviteRepo extends MorphiaRepo<AccessInvite> {
 
+    public List<AccessInvite> getAllListIgnoreRules(String realm) {
+        dev.morphia.Datastore datastore = getMorphiaDataStoreWrapper().getDataStore(realm);
+        try (dev.morphia.query.MorphiaCursor<AccessInvite> cursor = datastore.find(AccessInvite.class).iterator()) {
+            return cursor.toList();
+        }
+    }
+
+    public Optional<AccessInvite> findByRefNameIgnoreRules(String realm, String refName) {
+        return findByRefName(getMorphiaDataStoreWrapper().getDataStore(realm), refName, true);
+    }
+
     public Optional<AccessInvite> findByTokenHash(String realm, String tokenHash) {
         return Optional.ofNullable(
             getMorphiaDataStoreWrapper().getDataStore(realm)

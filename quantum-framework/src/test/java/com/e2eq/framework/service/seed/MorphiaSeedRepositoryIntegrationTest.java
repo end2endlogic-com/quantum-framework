@@ -1,6 +1,8 @@
 package com.e2eq.framework.service.seed;
 
+import com.e2eq.framework.model.general.MenuHierarchyModel;
 import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.persistent.morphia.MenuHierarchyRepo;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
@@ -13,13 +15,16 @@ import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import org.bson.Document;
+import org.bson.types.ObjectId;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -35,6 +40,9 @@ class MorphiaSeedRepositoryIntegrationTest {
 
     @Inject
     MorphiaSeedRepository morphiaSeedRepository;
+
+    @Inject
+    MenuHierarchyRepo menuHierarchyRepo;
 
     @BeforeEach
     void setup() {
@@ -66,9 +74,6 @@ class MorphiaSeedRepositoryIntegrationTest {
 
     @Test
     void appliesSeedPackViaMorphiaRepo() {
-
-
-
         SeedLoader loader = SeedLoader.builder()
                 .addSeedSource(new FileSeedSource("test", SEED_ROOT))
                 .seedRepository(morphiaSeedRepository)
@@ -113,10 +118,64 @@ class MorphiaSeedRepositoryIntegrationTest {
         assertEquals(2, registry.getInteger("records"));
     }
 
+    @Test
+    void upsertMatchesExistingSeededRecordByIdWhenNaturalKeyDrifts() {
+        SecurityContext.setResourceContext(new ResourceContext.Builder()
+                .withRealm(REALM)
+                .withArea("SYSTEM")
+                .withFunctionalDomain("MENU")
+                .withAction("SAVE")
+                .build());
+
+        ObjectId seedId = new ObjectId("100000000000000000000004");
+
+        MenuHierarchyModel existing = new MenuHierarchyModel();
+        existing.setId(seedId);
+        existing.setRefName("legacy-bootstrap-defaults-node");
+        existing.setDisplayName("Legacy Bootstrap Defaults");
+        menuHierarchyRepo.save(REALM, existing);
+
+        SeedPackManifest.Dataset dataset = new SeedPackManifest.Dataset();
+        dataset.setModelClass(MenuHierarchyModel.class.getName());
+        dataset.setRepoClass(MenuHierarchyRepo.class.getName());
+        dataset.setNaturalKey(List.of("refName"));
+        dataset.setUpsert(true);
+
+        SeedContext context = SeedContext.builder(REALM)
+                .tenantId("tenant.morphia")
+                .orgRefName("org-morphia")
+                .accountId("0000000042")
+                .ownerId("owner-xyz")
+                .build();
+
+        Map<String, Object> record = new LinkedHashMap<>();
+        record.put("id", seedId.toHexString());
+        record.put("refName", "di-system-bootstrap-defaults-node");
+        record.put("displayName", "BOOTSTRAP DEFAULTS");
+
+        assertDoesNotThrow(() -> morphiaSeedRepository.upsertRecord(context, dataset, record));
+
+        MenuHierarchyModel updated = menuHierarchyRepo.findById(seedId, REALM).orElseThrow();
+        assertEquals("di-system-bootstrap-defaults-node", updated.getRefName());
+        assertEquals("BOOTSTRAP DEFAULTS", updated.getDisplayName());
+        assertTrue(menuHierarchyRepo.findByRefName("legacy-bootstrap-defaults-node", REALM).isEmpty());
+        assertEquals(1L, countMenuHierarchyDocuments(), "Expected a single menu hierarchy record after id-based upsert");
+    }
+
     private boolean exists(String realm, String collection) {
         for (String name : mongoClient.getDatabase(realm).listCollectionNames()) {
             if (name.equals(collection)) return true;
         }
         return false;
+    }
+
+    private long countMenuHierarchyDocuments() {
+        long total = 0L;
+        for (String name : mongoClient.getDatabase(REALM).listCollectionNames()) {
+            if (name.toLowerCase().contains("menuhierarchy")) {
+                total += mongoClient.getDatabase(REALM).getCollection(name).countDocuments();
+            }
+        }
+        return total;
     }
 }

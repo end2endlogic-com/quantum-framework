@@ -159,8 +159,15 @@ The persisted model is `TenantOnboardingWorkflow`, which includes:
 - `adminApprovalRequired`
 - `autoAssignSurveyOnInvite`
 - `defaultSurveyRefName`
+- `defaultInviteEmailTemplateKey`
 - `workflowDefinitionJson`
 - `completionMessage`
+
+`defaultInviteEmailTemplateKey` is the email-template key the onboarding flow should use for invite messages. The framework default is `tenant-onboarding-invite`, which can be satisfied by:
+
+- a classpath template under `templates/email/tenant-onboarding-invite/`
+- a realm-scoped override in `email_templates`
+- a workflow update that points to a different key
 
 By default, the workflow steps are generated in this order:
 
@@ -186,6 +193,7 @@ Representative response:
   "adminApprovalRequired": true,
   "autoAssignSurveyOnInvite": true,
   "defaultSurveyRefName": "tenant-user-onboarding",
+  "defaultInviteEmailTemplateKey": "tenant-onboarding-invite",
   "completionMessage": "Your tenant onboarding is complete. You can now sign in and begin using the workspace.",
   "steps": [
     { "key": "invite", "type": "access_invite", "required": true },

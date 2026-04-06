@@ -50,10 +50,11 @@ Use it to jump directly to a subject and then explore details in context.
 
 - Seed packs (tutorial): xref:../tutorials/quantum-tutorial.adoc#sec-seed-packs[Seed packs: Declarative tenant seeding]
 - Seed packs (deep dive document): xref:./seed-packs.adoc[Seed packs and declarative tenant seeding]
+- Bootstrap packs: xref:./bootstrap-packs.adoc[Bootstrap Packs] (runtime orchestration, step handlers, startup application, admin APIs, and when to choose them over seed packs)
 
 == Email and Notifications
 
-- Email templates: xref:./email-templates.adoc[Email Templates] (Qute rendering, classpath defaults, realm overrides, Postmark delivery)
+- Email templates: xref:./email-templates.adoc[Email Templates] (Qute rendering, classpath defaults, realm overrides, preview APIs, onboarding template keys, Postmark delivery)
 
 == Operations
 

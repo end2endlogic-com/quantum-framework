@@ -230,7 +230,7 @@ public class TestSeederService {
                 String hash = EncryptionUtils.hashPassword(password);
                 if (!StringUtils.equals(cred.getPasswordHash(), hash)) {
                     cred.setPasswordHash(hash);
-                    credentialRepo.save(cred);
+                    credentialRepo.save(useRealm, cred);
                     writes++;
                 }
             } else {
@@ -248,7 +248,7 @@ public class TestSeederService {
                 DataDomain dd = ddForUse;
                 if (dd.getOwnerId() == null || dd.getOwnerId().isBlank()) dd.setOwnerId(userId);
                 cred.setDataDomain(dd);
-                credentialRepo.save(cred);
+                credentialRepo.save(useRealm, cred);
                 writes++;
             }
             // Ensure a credential also exists in the target import realm (if different than useRealm)
