@@ -299,7 +299,8 @@
         </dependency> -->
         <dependency>
             <groupId>org.zalando</groupId>
-            .3.0</version>
+            <artifactId>jackson-datatype-money</artifactId>
+            <version>1.3.0</version>
         </dependency>
 
         <dependency>
