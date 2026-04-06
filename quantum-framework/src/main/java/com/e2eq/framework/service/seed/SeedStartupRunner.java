@@ -163,9 +163,12 @@ public class SeedStartupRunner {
         DistributedLock lock = getSeedLock(realm);
         lock.acquire();
         try {
-            // Derive tenantId from realm (replace the last '-' with '.') and resolve admin userId
-            String tenantId = realmToTenantId(realm);
-            String adminUserId = String.format("admin@%s", tenantId);
+            Realm realmRecord = realmRepo.findByRefName(realm, true, envConfigUtils.getSystemRealm())
+                    .orElseGet(() -> realmRepo.findByDatabaseName(realm, true, envConfigUtils.getSystemRealm()).orElse(null));
+
+            String emailDomain = resolveEmailDomain(realm, realmRecord);
+            String baselineAdminUserId = "admin@" + emailDomain;
+            String adminUserId = resolveAdminUserId(realmRecord, baselineAdminUserId);
 
             // Lookup admin user profile in the target realm to obtain its dataDomain without requiring SecurityContext
             CredentialUserIdPassword adminCred = null;
@@ -197,7 +200,7 @@ public class SeedStartupRunner {
             if (adminCred != null ) {
                 resolvedOwnerId = adminCred.getUserId();
             }
-            SeedContext context = buildSeedContext(realm, adminCred);
+            SeedContext context = buildSeedContext(realm, realmRecord, adminCred);
 
             // Establish a temporary SecurityContext based on the admin user so repo-layer substitutions resolve correctly
             com.e2eq.framework.model.securityrules.PrincipalContext principalContext = null;
@@ -281,14 +284,23 @@ public class SeedStartupRunner {
     }
 
     SeedContext buildSeedContext(String realm, CredentialUserIdPassword adminCred) {
+        return buildSeedContext(realm, null, adminCred);
+    }
+
+    SeedContext buildSeedContext(String realm, Realm realmRecord, CredentialUserIdPassword adminCred) {
         SeedContext.Builder ctxBuilder = SeedContext.builder(realm);
-        DataDomain adminDD = (adminCred != null) ? adminCred.getDataDomain() : null;
-        if (adminDD != null) {
+        DataDomain seedDataDomain = null;
+        if (adminCred != null && adminCred.getDataDomain() != null) {
+            seedDataDomain = adminCred.getDataDomain();
+        } else if (realmRecord != null && realmRecord.getDataDomain() != null) {
+            seedDataDomain = realmRecord.getDataDomain();
+        }
+        if (seedDataDomain != null) {
             ctxBuilder
-                    .tenantId(adminDD.getTenantId())
-                    .orgRefName(adminDD.getOrgRefName())
-                    .accountId(adminDD.getAccountNum())
-                    .ownerId(adminDD.getOwnerId());
+                    .tenantId(seedDataDomain.getTenantId())
+                    .orgRefName(seedDataDomain.getOrgRefName())
+                    .accountId(seedDataDomain.getAccountNum())
+                    .ownerId(seedDataDomain.getOwnerId());
         } else {
             ctxBuilder
                     .tenantId(envConfigUtils.getSystemTenantId())
@@ -296,7 +308,29 @@ public class SeedStartupRunner {
                     .accountId(envConfigUtils.getSystemAccountNumber())
                     .ownerId(envConfigUtils.getSystemUserId());
         }
+        String emailDomain = resolveEmailDomain(realm, realmRecord);
+        String baselineAdminUserId = "admin@" + emailDomain;
+        String adminUserId = resolveAdminUserId(realmRecord, baselineAdminUserId);
+        String demoUserId = "demo@" + emailDomain;
+        ctxBuilder
+                .variable("adminUserId", adminUserId)
+                .variable("baselineAdminUserId", baselineAdminUserId)
+                .variable("demoUserId", demoUserId);
         return ctxBuilder.build();
+    }
+
+    private String resolveEmailDomain(String realm, Realm realmRecord) {
+        if (realmRecord != null && realmRecord.getEmailDomain() != null && !realmRecord.getEmailDomain().isBlank()) {
+            return realmRecord.getEmailDomain();
+        }
+        return realmToTenantId(realm);
+    }
+
+    private String resolveAdminUserId(Realm realmRecord, String baselineAdminUserId) {
+        if (realmRecord != null && realmRecord.getDefaultAdminUserId() != null && !realmRecord.getDefaultAdminUserId().isBlank()) {
+            return realmRecord.getDefaultAdminUserId();
+        }
+        return baselineAdminUserId;
     }
 
     /**

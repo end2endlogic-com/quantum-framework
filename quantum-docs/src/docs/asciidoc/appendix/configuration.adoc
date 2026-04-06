@@ -181,6 +181,33 @@ or reference absolute file paths. If both filesystem and classpath contain seed
 packs with the same name, the latest semantic version is applied.
 ====
 
+===== Bootstrap packs
+[source,properties]
+----
+# Enable BootstrapPack infrastructure
+quantum.bootstrap-pack.enabled=true
+
+# Apply discovered bootstrap packs on startup
+quantum.bootstrap-pack.apply.on-startup=false
+
+# Optional CSV list of realms to target on startup
+# If omitted, the framework uses the system/default/test realms when available
+quantum.bootstrap-pack.apply.realms=system-com,mycompany-com,test-com
+
+# Optional CSV filter to apply only selected pack refs
+quantum.bootstrap-pack.apply.filter=pack-a,pack-b
+----
+
+[NOTE]
+====
+Bootstrap packs are not the same thing as seed packs.
+
+- Use seed packs for deterministic baseline data.
+- Use bootstrap packs for idempotent operational setup steps.
+
+See xref:../user-guide/bootstrap-packs.adoc[Bootstrap Packs] for details.
+====
+
 ===== Security rules diagnostics
 [source,properties]
 ----
