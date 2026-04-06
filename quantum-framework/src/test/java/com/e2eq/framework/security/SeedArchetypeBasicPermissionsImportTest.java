@@ -75,7 +75,7 @@ public class SeedArchetypeBasicPermissionsImportTest extends BaseRepoTest {
                 .withOwnerId(pc.getUserId())
                 .build();
         com.e2eq.framework.model.securityrules.SecurityContext.setResourceContext(rc);
-        Optional<CredentialUserIdPassword> oc = credentialRepo.findByUserId(userId, realm, true);
+        Optional<CredentialUserIdPassword> oc = credentialRepo.findByUserId(userId, testUtils.getSystemRealm(), true);
         assertTrue(oc.isPresent(), () -> "Missing credential for " + userId);
         Optional<UserProfile> op = userProfileRepo.getByUserId(realm, userId);
         assertTrue(op.isPresent(), () -> "Missing user profile for " + userId);
