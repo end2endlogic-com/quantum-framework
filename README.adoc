@@ -56,23 +56,42 @@ Mongodb Version: 7.0.12+
 NOTE: Docker files are provided in the source code and utilized to build native compiled applications for various targeted Operating systems.  Current development has focused on the JVM deployment, and while native compiles will reduce startup times in lambda, and have lower memory footprints, it is an optimization that is deferred until we get further into production deployments.  There are some complications when building native executables on OSX when targeting a Linux OS for example.  The system will use docker to do the build and the resulting binary will not natively execute on OSX, but will on a linux VM.  The build system will be using github actions for building on github which at that time will be running on linux anyway so a preference to use that as the means to generate native binaries is preferable.
 
 == Setting up Code Repositories:
-Maven uses a file called settings.xml to specify what servers it utilizes for retrieving dependent libraries.  This project depends on various open source libraries.  For multi-module development there is a need for a centralized private maven /npm /docker repository to utilize for development, and other artifacts that are potentially not available to the public. AWS provides code artifact, and there several other options.  One of the down sides to code artifact is that it is cumbersome to configure, and use for developers.  One of the easiest solutions to set up and use is io.cloudrepo.  Movista will need to determine the best artifact repo to use going forward but for now the system uses io.cloudrepo for artifact dependency management.   You have to configure maven to pull the dependencies from io.cloudrepo.  To do this create a file in under the directory ~/.m2/settings.xml
+Maven uses a file called settings.xml to specify what servers it utilizes for retrieving dependent libraries. This project now publishes its internal artifacts to the GitHub Packages Maven registry for `MoVista/quantum-framework`.
+
+To consume published artifacts locally, create `~/.m2/settings.xml` with GitHub credentials that can read packages:
 
 [source,xml]
 ----
 <settings>
   <servers>
     <server>
-      <!-- id is a unique identifier for a single repository.-->
-      <id>io.cloudrepo</id>
-      <username>Your User ID</username>
-      <!-- Password of the Repository User. -->
-      <password>Your Password</password>
+      <id>github</id>
+      <username>YOUR_GITHUB_USERNAME</username>
+      <password>YOUR_GITHUB_CLASSIC_PAT</password>
     </server>
   </servers>
 </settings>
 ----
-Contact your system administrator to get a userid and password.
+
+The token used above needs package access. For local Maven usage, GitHub Packages expects a classic personal access token.
+
+To consume these artifacts from another Maven project, add the GitHub Packages repository and then use the normal `com.movista` dependencies:
+
+[source,xml]
+----
+<repositories>
+  <repository>
+    <id>github</id>
+    <url>https://maven.pkg.github.com/MoVista/quantum-framework</url>
+  </repository>
+</repositories>
+----
+
+To publish artifacts from this repository to GitHub Packages, run:
+
+`mvn -Pgithub-packages deploy`
+
+The GitHub Actions workflow in `.github/workflows/publish-maven-packages.yml` uses the repository `GITHUB_TOKEN` and publishes with the same Maven profile.
 
 ==== Building the Application:
 
@@ -143,7 +162,7 @@ The concepts are mostly self-explanatory, path provides the url that will be use
 The quantum framework builds on top of Morphia, Quarkus, and RestEasy to provide base functionality needed for a typical Software as a Service solutions.  It includes ways to rapidly build CRUDL ( create, read, update, delete, list) REST API's, provide security mechanisms for complex data segmentation, and multi-tenancy scenarios, and various design patterns such as extensible security concepts ( user defined roles, and permissions ), extensible models using dynamic atttributes,basic and advanced tagging, optimistic locking, create ts/ update ts  auditing, and static based validations, internationalization / I18N / I10N, error handling and exception management, distributed trust,  referencial integrity checking and more.
 
 Refer to the quantum site for more details:
-https://github.com/end2endlogic-com/quantum-framework
+https://github.com/MoVista/quantum-framework
 
 === Lombrok annotations
 The system uses Lombrok to generate alot of the boilerplate typically associated with Java based development:  You can get more information at:
@@ -1099,8 +1118,6 @@ quarkus build -Dquarkus.container-image.build=true -Dquarkus.native.reuse-existi
 
 === Building Native Linux from OSX
  quarkus build --native --no-tests -Dquarkus.native.remote-container-build=true -Dquarkus.native.builder-image=graalvm
-
-
 
 
 

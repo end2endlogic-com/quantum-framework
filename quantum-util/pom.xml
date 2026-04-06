@@ -17,7 +17,7 @@
     <name>${project.groupId}:${project.artifactId}</name>
     <description
     >a REST / Mongodb framework for quickly building multi-tenant SAAS platforms</description>
-    <url>https://github.com/end2endlogic-com/quantum-framework</url>
+    <url>https://github.com/MoVista/quantum-framework</url>
 
     <licenses>
         <license>
@@ -28,11 +28,11 @@
     </licenses>
 
     <scm>
-        <url>https://github.com/end2endlogic-com/quantum-framework</url>
+        <url>https://github.com/MoVista/quantum-framework</url>
         <connection
-        >scm:git:https://github.com/end2endlogic-com/quantum-framework.git</connection>
+        >scm:git:https://github.com/MoVista/quantum-framework.git</connection>
         <developerConnection
-        >scm:git:https://github.com/end2endlogic-com/quantum-framework.git</developerConnection>
+        >scm:git:https://github.com/MoVista/quantum-framework.git</developerConnection>
     </scm>
 
     <developers>

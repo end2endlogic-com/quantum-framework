@@ -13,7 +13,7 @@
     <name>${project.groupId}:${project.artifactId}</name>
     <description
     >a REST / Mongodb framework for quickly building multi-tenant SAAS platforms</description>
-    <url>https://github.com/end2endlogic-com/quantum-framework</url>
+    <url>https://github.com/MoVista/quantum-framework</url>
 
     <licenses>
         <license>
@@ -23,11 +23,11 @@
         </license>
     </licenses>
     <scm>
-        <url>https://github.com/movista-com/quantum-framework</url>
+        <url>https://github.com/MoVista/quantum-framework</url>
         <connection
-        >scm:git:https://github.com/movista-com/quantum-framework.git</connection>
+        >scm:git:https://github.com/MoVista/quantum-framework.git</connection>
         <developerConnection
-        >scm:git:https://github.com/movista-com/quantum-framework.git</developerConnection>
+        >scm:git:https://github.com/MoVista/quantum-framework.git</developerConnection>
     </scm>
 
     <developers>
@@ -60,6 +60,10 @@
         <lombrok.version>1.18.34</lombrok.version>
         <quantum.version>1.3.0-SNAPSHOT</quantum.version>
         <apachecommons.lang3.version>3.18.0</apachecommons.lang3.version>
+        <github.repo.owner>MoVista</github.repo.owner>
+        <github.repo.name>quantum-framework</github.repo.name>
+        <github.repo.url>https://github.com/${github.repo.owner}/${github.repo.name}</github.repo.url>
+        <github.packages.url>https://maven.pkg.github.com/${github.repo.owner}/${github.repo.name}</github.packages.url>
     </properties>
 
     <modules>
@@ -243,6 +247,33 @@
     </dependencies>
     <profiles>
         <profile>
+            <id>github-packages</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-deploy-plugin</artifactId>
+                        <version>3.1.2</version>
+                        <configuration>
+                            <skip>false</skip>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+            <distributionManagement>
+                <repository>
+                    <id>github</id>
+                    <name>GitHub Packages</name>
+                    <url>${github.packages.url}</url>
+                </repository>
+                <snapshotRepository>
+                    <id>github</id>
+                    <name>GitHub Packages</name>
+                    <url>${github.packages.url}</url>
+                </snapshotRepository>
+            </distributionManagement>
+        </profile>
+        <profile>
             <id>oss-release</id>
             <modules>
                 <module>quantum-util</module>
@@ -318,11 +349,4 @@
 
 
 
-   <!-- <distributionManagement>
-        <repository>
-            <id>io.cloudrepo</id>
-            <name>My First Cloud Repo Repository</name>
-            <url>https://end2endlogic.mycloudrepo.io/repositories/end2endlogic-opensource-release</url>
-        </repository>
-    </distributionManagement> -->
 </project>
