@@ -528,8 +528,8 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div id="header">
 <h1>Quantum Framework Documentation</h1>
 <div class="details">
-<span id="revnumber">version 1.3.0,</span>
-<span id="revdate">2026-04-06T18:26:33Z</span>
+<span id="revnumber">version 1.4.0-SNAPSHOT,</span>
+<span id="revdate">2026-04-07T13:18:09Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -1105,13 +1105,29 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <ul class="sectlevel2">
 <li><a href="#email-templates">73.1. Email Templates</a>
 <ul class="sectlevel3">
-<li><a href="#_architecture_2">73.1.1. Architecture</a></li>
-<li><a href="#_defining_templates">73.1.2. Defining Templates</a></li>
-<li><a href="#_resolution_order">73.1.3. Resolution Order</a></li>
-<li><a href="#_rendering_templates">73.1.4. Rendering Templates</a></li>
-<li><a href="#_delivering_email">73.1.5. Delivering Email</a></li>
-<li><a href="#_custom_template_resolver">73.1.6. Custom Template Resolver</a></li>
-<li><a href="#_see_also_5">73.1.7. See Also</a></li>
+<li><a href="#_what_the_framework_supports">73.1.1. What the framework supports</a></li>
+<li><a href="#_architecture_2">73.1.2. Architecture</a></li>
+<li><a href="#_template_sources_and_resolution_order">73.1.3. Template sources and resolution order</a></li>
+<li><a href="#_rendering_templates">73.1.4. Rendering templates</a></li>
+<li><a href="#_tenant_scoped_rest_api">73.1.5. Tenant-scoped REST API</a></li>
+<li><a href="#_onboarding_workflow_integration">73.1.6. Onboarding workflow integration</a></li>
+<li><a href="#_delivering_email">73.1.7. Delivering email</a></li>
+<li><a href="#_when_to_use_email_templates">73.1.8. When to use email templates</a></li>
+<li><a href="#_see_also_5">73.1.9. See also</a></li>
+<li><a href="#_what_a_bootstrappack_is">73.1.10. What a BootstrapPack is</a></li>
+<li><a href="#_why_bootstrappacks_exist">73.1.11. Why BootstrapPacks exist</a></li>
+<li><a href="#_bootstrappacks_vs_seed_packs">73.1.12. BootstrapPacks vs seed packs</a></li>
+<li><a href="#_when_to_use_one_vs_the_other">73.1.13. When to use one vs the other</a></li>
+<li><a href="#_rule_of_thumb">73.1.14. Rule of thumb</a></li>
+<li><a href="#_step_kinds">73.1.15. Step kinds</a></li>
+<li><a href="#_apply_modes_and_policies">73.1.16. Apply modes and policies</a></li>
+<li><a href="#_spi_model">73.1.17. SPI model</a></li>
+<li><a href="#_admin_rest_api">73.1.18. Admin REST API</a></li>
+<li><a href="#_startup_application">73.1.19. Startup application</a></li>
+<li><a href="#_run_history">73.1.20. Run history</a></li>
+<li><a href="#_examples_4">73.1.21. Examples</a></li>
+<li><a href="#_choosing_the_right_abstraction">73.1.22. Choosing the right abstraction</a></li>
+<li><a href="#_see_also_6">73.1.23. See also</a></li>
 </ul>
 </li>
 </ul>
@@ -1171,7 +1187,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_database_configuration">103.1.2. Database Configuration</a></li>
 <li><a href="#_authentication_configuration">103.1.3. Authentication Configuration</a></li>
 <li><a href="#_quantum_framework_configuration">103.1.4. Quantum Framework Configuration</a></li>
-<li><a href="#_see_also_6">103.1.5. See Also</a></li>
+<li><a href="#_see_also_7">103.1.5. See Also</a></li>
 <li><a href="#_ontology_configuration_optional">103.1.6. Ontology Configuration (optional)</a></li>
 <li><a href="#_key_quarkus_capabilities">103.1.7. Key Quarkus Capabilities</a></li>
 <li><a href="#_arc_quarkus_cdi">103.1.8. Arc (Quarkus CDI)</a></li>
@@ -1179,7 +1195,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_extension_ecosystem">103.1.10. Extension Ecosystem</a></li>
 <li><a href="#_quantums_quarkus_integration">103.1.11. Quantum&#8217;s Quarkus Integration</a></li>
 <li><a href="#_getting_started_with_quarkus">103.1.12. Getting Started with Quarkus</a></li>
-<li><a href="#_see_also_7">103.1.13. See Also</a></li>
+<li><a href="#_see_also_8">103.1.13. See Also</a></li>
 <li><a href="#_core_concepts_2">103.1.14. Core Concepts</a></li>
 <li><a href="#_multi_tenancy">103.1.15. Multi-Tenancy</a></li>
 <li><a href="#_security_3">103.1.16. Security</a></li>
@@ -1933,10 +1949,29 @@ quarkus.http.cors.origins=http://localhost:3000</code></pre>
 <p><code>defaultSurveyRefName</code></p>
 </li>
 <li>
+<p><code>defaultInviteEmailTemplateKey</code></p>
+</li>
+<li>
 <p><code>workflowDefinitionJson</code></p>
 </li>
 <li>
 <p><code>completionMessage</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p><code>defaultInviteEmailTemplateKey</code> is the email-template key the onboarding flow should use for invite messages. The framework default is <code>tenant-onboarding-invite</code>, which can be satisfied by:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>a classpath template under <code>templates/email/tenant-onboarding-invite/</code></p>
+</li>
+<li>
+<p>a realm-scoped override in <code>email_templates</code></p>
+</li>
+<li>
+<p>a workflow update that points to a different key</p>
 </li>
 </ul>
 </div>
@@ -1980,6 +2015,7 @@ quarkus.http.cors.origins=http://localhost:3000</code></pre>
   <span class="key"><span class="delimiter">&quot;</span><span class="content">adminApprovalRequired</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
   <span class="key"><span class="delimiter">&quot;</span><span class="content">autoAssignSurveyOnInvite</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
   <span class="key"><span class="delimiter">&quot;</span><span class="content">defaultSurveyRefName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">tenant-user-onboarding</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">defaultInviteEmailTemplateKey</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">tenant-onboarding-invite</span><span class="delimiter">&quot;</span></span>,
   <span class="key"><span class="delimiter">&quot;</span><span class="content">completionMessage</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Your tenant onboarding is complete. You can now sign in and begin using the workspace.</span><span class="delimiter">&quot;</span></span>,
   <span class="key"><span class="delimiter">&quot;</span><span class="content">steps</span><span class="delimiter">&quot;</span></span>: [
     { <span class="key"><span class="delimiter">&quot;</span><span class="content">key</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">invite</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">type</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">access_invite</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">required</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span> },
@@ -18689,23 +18725,64 @@ The <code>/mcp</code> endpoint is automatically registered by the Quarkus MCP Se
 <div class="sect2">
 <h3 id="email-templates">73.1. Email Templates</h3>
 <div class="paragraph">
-<p>Quantum provides a built-in email templating system that supports classpath-based default templates with per-realm database overrides. Templates use the Qute templating engine and can be delivered via Postmark or a custom delivery service.</p>
+<p>Quantum provides a built-in email templating system with three important pieces:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>classpath defaults under <code>templates/email/{templateKey}/</code></p>
+</li>
+<li>
+<p>realm-scoped overrides stored in MongoDB</p>
+</li>
+<li>
+<p>Qute-based rendering plus pluggable delivery</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>This makes email content part of the framework instead of forcing each product to hand-roll template loading, rendering, preview, and override behavior.</p>
 </div>
 <div class="sect3">
-<h4 id="_architecture_2">73.1.1. Architecture</h4>
+<h4 id="_what_the_framework_supports">73.1.1. What the framework supports</h4>
+<div class="paragraph">
+<p>Email templates are now first-class framework resources:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>EmailTemplate</code> documents are stored in the <code>email_templates</code> collection.</p>
+</li>
+<li>
+<p><code>DefaultEmailTemplateResolver</code> checks the current realm for an active override first, then falls back to the classpath.</p>
+</li>
+<li>
+<p><code>EmailTemplateRenderService</code> renders <code>subject.txt</code>, <code>body.html</code>, and <code>body.txt</code> using Qute.</p>
+</li>
+<li>
+<p><code>EmailTemplateResource</code> exposes tenant-scoped CRUD and preview APIs at <code>/settings/email-templates</code>.</p>
+</li>
+<li>
+<p><code>TenantOnboardingWorkflow</code> now carries <code>defaultInviteEmailTemplateKey</code>, so onboarding/invite flows can refer to a named template instead of hard-coded content.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_architecture_2">73.1.2. Architecture</h4>
 <div class="paragraph">
 <p>The email system has three layers:</p>
 </div>
 <div class="olist arabic">
 <ol class="arabic">
 <li>
-<p><strong>Template Resolution</strong>&#8201;&#8212;&#8201;locates the correct template for a realm and template key</p>
+<p>Template resolution</p>
 </li>
 <li>
-<p><strong>Rendering</strong>&#8201;&#8212;&#8201;applies context data to templates using the Qute engine</p>
+<p>Rendering</p>
 </li>
 <li>
-<p><strong>Delivery</strong>&#8201;&#8212;&#8201;sends the rendered email via an <code>EmailDeliveryService</code> implementation</p>
+<p>Delivery</p>
 </li>
 </ol>
 </div>
@@ -18736,9 +18813,28 @@ RenderedTemplate --&gt; build RenderedEmail --&gt; EmailDeliveryService.deliver(
 </div>
 </div>
 <div class="sect3">
-<h4 id="_defining_templates">73.1.2. Defining Templates</h4>
+<h4 id="_template_sources_and_resolution_order">73.1.3. Template sources and resolution order</h4>
+<div class="paragraph">
+<p>The <code>DefaultEmailTemplateResolver</code> follows this priority:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Realm database override</p>
+</li>
+<li>
+<p>Classpath default</p>
+</li>
+<li>
+<p>Empty result if neither source contains the template</p>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p>That means products can ship sane defaults in source control, while each tenant can still customize messaging without forking code.</p>
+</div>
 <div class="sect4">
-<h5 id="_classpath_templates_defaults">Classpath Templates (Defaults)</h5>
+<h5 id="_classpath_templates">Classpath templates</h5>
 <div class="paragraph">
 <p>Place template files on the classpath under <code>templates/email/{templateKey}/</code>:</p>
 </div>
@@ -18748,9 +18844,9 @@ RenderedTemplate --&gt; build RenderedEmail --&gt; EmailDeliveryService.deliver(
   templates/
     email/
       welcome/
-        subject.txt      &lt;-- Subject line template
-        body.html        &lt;-- HTML body template
-        body.txt         &lt;-- Plain text body template
+        subject.txt
+        body.html
+        body.txt
       password-reset/
         subject.txt
         body.html
@@ -18758,7 +18854,20 @@ RenderedTemplate --&gt; build RenderedEmail --&gt; EmailDeliveryService.deliver(
 </div>
 </div>
 <div class="paragraph">
-<p>Each template uses Qute syntax with <code>{variableName}</code> placeholders:</p>
+<p>Each file is optional except that rendering must ultimately produce:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>a non-blank subject</p>
+</li>
+<li>
+<p>at least one non-blank body variant (<code>html</code> or <code>text</code>)</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Example:</p>
 </div>
 <div class="listingblock">
 <div class="title">subject.txt</div>
@@ -18780,9 +18889,9 @@ RenderedTemplate --&gt; build RenderedEmail --&gt; EmailDeliveryService.deliver(
 </div>
 </div>
 <div class="sect4">
-<h5 id="_realm_specific_overrides_database">Realm-Specific Overrides (Database)</h5>
+<h5 id="_realm_overrides_in_mongodb">Realm overrides in MongoDB</h5>
 <div class="paragraph">
-<p>Tenants can override any classpath template by storing an <code>EmailTemplate</code> document in the <code>email_templates</code> MongoDB collection. The override is scoped to the tenant&#8217;s realm.</p>
+<p>Tenants can override any classpath template by storing an <code>EmailTemplate</code> document in the <code>email_templates</code> collection for their realm.</p>
 </div>
 <table class="tableblock frame-all grid-all stretch">
 <colgroup>
@@ -18797,12 +18906,16 @@ RenderedTemplate --&gt; build RenderedEmail --&gt; EmailDeliveryService.deliver(
 </thead>
 <tbody>
 <tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>refName</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Persistent reference for the template document. If omitted on create, the API derives it from <code>templateKey</code> by replacing <code>.</code> with <code>-</code>.</p></td>
+</tr>
+<tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>templateKey</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Unique identifier matching the classpath template key (e.g., <code>welcome</code>)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Logical template id used by application code, such as <code>welcome</code> or <code>tenant-onboarding-invite</code></p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>subjectTemplate</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Qute-formatted subject line</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Qute-formatted subject template</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>htmlTemplate</code></p></td>
@@ -18810,49 +18923,30 @@ RenderedTemplate --&gt; build RenderedEmail --&gt; EmailDeliveryService.deliver(
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>textTemplate</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Qute-formatted plain text body</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Qute-formatted text body</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>active</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Boolean flag (default <code>true</code>). Set to <code>false</code> to disable the override without deleting it.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Enables or disables the override without deleting it</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>sourceType</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>REALM_OVERRIDE</code> (default) or <code>CLASSPATH_DEFAULT</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Usually <code>REALM_OVERRIDE</code>; can also be set to <code>CLASSPATH_DEFAULT</code> for metadata purposes</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>sampleContextJson</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Optional JSON example of the expected context object for documentation purposes</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Optional example JSON payload showing the expected render context</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>schemaVersion</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Version tracking for template schema changes</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Optional version marker for template lifecycle tracking</p></td>
 </tr>
 </tbody>
 </table>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_resolution_order">73.1.3. Resolution Order</h4>
-<div class="paragraph">
-<p>The <code>DefaultEmailTemplateResolver</code> follows this priority:</p>
-</div>
-<div class="olist arabic">
-<ol class="arabic">
-<li>
-<p><strong>Realm database override</strong>&#8201;&#8212;&#8201;if the realm is non-null and an active <code>EmailTemplate</code> document exists for the template key, it is used.</p>
-</li>
-<li>
-<p><strong>Classpath default</strong>&#8201;&#8212;&#8201;if no realm override is found (or realm is null), the resolver loads from <code>templates/email/{templateKey}/</code> on the classpath.</p>
-</li>
-<li>
-<p><strong>Empty</strong>&#8201;&#8212;&#8201;if neither source has the template, resolution returns empty and rendering throws <code>IllegalArgumentException</code>.</p>
-</li>
-</ol>
-</div>
-</div>
-<div class="sect3">
-<h4 id="_rendering_templates">73.1.4. Rendering Templates</h4>
+<h4 id="_rendering_templates">73.1.4. Rendering templates</h4>
 <div class="paragraph">
 <p>Inject <code>EmailTemplateRenderService</code> and call <code>render()</code>:</p>
 </div>
@@ -18861,64 +18955,200 @@ RenderedTemplate --&gt; build RenderedEmail --&gt; EmailDeliveryService.deliver(
 <pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@Inject</span>
 EmailTemplateRenderService renderService;
 
-<span class="comment">// Render with a Map context</span>
-<span class="predefined-type">Map</span>&lt;<span class="predefined-type">String</span>, <span class="predefined-type">Object</span>&gt; context = <span class="predefined-type">Map</span>.of(
-    <span class="string"><span class="delimiter">&quot;</span><span class="content">name</span><span class="delimiter">&quot;</span></span>, user.getDisplayName(),
-    <span class="string"><span class="delimiter">&quot;</span><span class="content">realm</span><span class="delimiter">&quot;</span></span>, realmId,
-    <span class="string"><span class="delimiter">&quot;</span><span class="content">resetLink</span><span class="delimiter">&quot;</span></span>, resetUrl
-);
-RenderedTemplate rendered = renderService.render(realmId, <span class="string"><span class="delimiter">&quot;</span><span class="content">password-reset</span><span class="delimiter">&quot;</span></span>, context);
-
-<span class="comment">// Render with a Java bean or record -- properties are extracted automatically</span>
-RenderedTemplate rendered = renderService.render(realmId, <span class="string"><span class="delimiter">&quot;</span><span class="content">welcome</span><span class="delimiter">&quot;</span></span>, userProfile);</code></pre>
+RenderedTemplate rendered = renderService.render(
+    realmId,
+    <span class="string"><span class="delimiter">&quot;</span><span class="content">password-reset</span><span class="delimiter">&quot;</span></span>,
+    <span class="predefined-type">Map</span>.of(
+        <span class="string"><span class="delimiter">&quot;</span><span class="content">name</span><span class="delimiter">&quot;</span></span>, user.getDisplayName(),
+        <span class="string"><span class="delimiter">&quot;</span><span class="content">realm</span><span class="delimiter">&quot;</span></span>, realmId,
+        <span class="string"><span class="delimiter">&quot;</span><span class="content">resetLink</span><span class="delimiter">&quot;</span></span>, resetUrl
+    )
+);</code></pre>
 </div>
 </div>
 <div class="paragraph">
-<p>The render service accepts any of:</p>
+<p>The render context can be:</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p><code>Map&lt;String, Object&gt;</code>&#8201;&#8212;&#8201;entries used directly as template variables</p>
+<p><code>Map&lt;String, Object&gt;</code></p>
 </li>
 <li>
-<p>Java beans&#8201;&#8212;&#8201;properties extracted via introspection</p>
+<p>a Java bean</p>
 </li>
 <li>
-<p>Java records&#8201;&#8212;&#8201;components extracted via reflection</p>
+<p>a Java record</p>
 </li>
 <li>
-<p>Any Jackson-serializable object&#8201;&#8212;&#8201;converted to a <code>Map</code> via <code>ObjectMapper</code></p>
+<p>another Jackson-convertible object</p>
 </li>
 </ul>
 </div>
 <div class="paragraph">
-<p>The original context object is also available in templates as <code>{context}</code>.</p>
+<p>The original object is also exposed to Qute as <code>{context}</code>.</p>
 </div>
 <div class="sect4">
-<h5 id="_validation">Validation</h5>
+<h5 id="_validation_rules">Validation rules</h5>
 <div class="paragraph">
-<p>After rendering, the service validates:</p>
+<p>After rendering, the framework validates:</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p>Subject must be non-blank</p>
+<p>subject must be non-blank</p>
 </li>
 <li>
-<p>At least one of HTML body or text body must be non-blank</p>
+<p>at least one of HTML or text body must be non-blank</p>
 </li>
 </ul>
 </div>
 <div class="paragraph">
-<p>If validation fails, an <code>IllegalStateException</code> is thrown.</p>
+<p>If either rule fails, rendering throws <code>IllegalStateException</code>.</p>
 </div>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_delivering_email">73.1.5. Delivering Email</h4>
+<h4 id="_tenant_scoped_rest_api">73.1.5. Tenant-scoped REST API</h4>
 <div class="paragraph">
-<p>Build a <code>RenderedEmail</code> from the rendered template and deliver it:</p>
+<p>The framework exposes authenticated tenant-scoped endpoints at <code>/settings/email-templates</code>:</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Endpoint</th>
+<th class="tableblock halign-left valign-top">Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>GET /settings/email-templates</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">List templates stored for the current realm</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>GET /settings/email-templates/{refName}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Fetch one template by refName</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>POST /settings/email-templates</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Create a new realm-scoped template</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>PUT /settings/email-templates/{refName}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Update an existing realm-scoped template</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>DELETE /settings/email-templates/{refName}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Delete a realm-scoped template</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>POST /settings/email-templates/preview</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Render either an existing template by <code>templateKey</code> or inline template content</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>Example create request:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">templateKey</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">tenant-onboarding-invite</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">displayName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Tenant onboarding invite</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">description</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Invite email shown to tenant users during onboarding.</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">active</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">subjectTemplate</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">You're invited to {tenantDisplayName}</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">htmlTemplate</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">&lt;p&gt;Hello {inviteeName}, use &lt;a href=</span><span class="char">\&quot;</span><span class="content">{inviteLink}</span><span class="char">\&quot;</span><span class="content">&gt;this link&lt;/a&gt; to get started.&lt;/p&gt;</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">textTemplate</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Hello {inviteeName}, use {inviteLink} to get started.</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">sampleContextJson</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">{</span><span class="char">\&quot;</span><span class="content">inviteeName</span><span class="char">\&quot;</span><span class="content">:</span><span class="char">\&quot;</span><span class="content">Sam</span><span class="char">\&quot;</span><span class="content">,</span><span class="char">\&quot;</span><span class="content">tenantDisplayName</span><span class="char">\&quot;</span><span class="content">:</span><span class="char">\&quot;</span><span class="content">Acme</span><span class="char">\&quot;</span><span class="content">,</span><span class="char">\&quot;</span><span class="content">inviteLink</span><span class="char">\&quot;</span><span class="content">:</span><span class="char">\&quot;</span><span class="content">https://example.test/invite/abc</span><span class="char">\&quot;</span><span class="content">}</span><span class="delimiter">&quot;</span></span>
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Example preview request against a stored template:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">templateKey</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">tenant-onboarding-invite</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">context</span><span class="delimiter">&quot;</span></span>: {
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">inviteeName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Sam</span><span class="delimiter">&quot;</span></span>,
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">tenantDisplayName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Acme Logistics</span><span class="delimiter">&quot;</span></span>,
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">inviteLink</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">https://app.example.com/invite/abc123</span><span class="delimiter">&quot;</span></span>
+  }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Example preview request using inline content instead of a stored template:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">templateKey</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">preview-only</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">subjectTemplate</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Welcome {firstName}</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">textTemplate</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Hello {firstName}</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">context</span><span class="delimiter">&quot;</span></span>: {
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">firstName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Sam</span><span class="delimiter">&quot;</span></span>
+  }
+}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_onboarding_workflow_integration">73.1.6. Onboarding workflow integration</h4>
+<div class="paragraph">
+<p><code>TenantOnboardingWorkflow</code> now includes <code>defaultInviteEmailTemplateKey</code>.</p>
+</div>
+<div class="paragraph">
+<p>This is the template key the tenant onboarding flow should use when it needs to render an invite email. The framework default key is:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="text">tenant-onboarding-invite</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>That value is configuration, not a guaranteed built-in classpath template. In practice:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>your application can ship a classpath template with that key</p>
+</li>
+<li>
+<p>a tenant can override that key in the database</p>
+</li>
+<li>
+<p>the workflow can be updated to point at a different key per realm</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Representative workflow update payload:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">displayName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Tenant User Onboarding</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">inviteRequired</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">registrationRequired</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">defaultInviteEmailTemplateKey</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">tenant-onboarding-invite</span><span class="delimiter">&quot;</span></span>
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This separation is useful because the onboarding workflow owns <em>which template key to use</em>, while the email-template subsystem owns <em>how that template is resolved and rendered</em>.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_delivering_email">73.1.7. Delivering email</h4>
+<div class="paragraph">
+<p>Build a <code>RenderedEmail</code> from the rendered output and pass it to an <code>EmailDeliveryService</code>:</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -18938,25 +19168,24 @@ deliveryService.deliver(email);</code></pre>
 </div>
 </div>
 <div class="sect4">
-<h5 id="_postmark_integration">Postmark Integration</h5>
+<h5 id="_postmark_integration">Postmark integration</h5>
 <div class="paragraph">
-<p>The framework ships with <code>PostmarkEmailSender</code>, an <code>EmailDeliveryService</code> implementation that sends via the Postmark HTTP API.</p>
+<p>The framework ships with <code>PostmarkEmailSender</code>.</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="properties"># Postmark configuration
-postmark.api-key=${POSTMARK_API_KEY}
+<pre class="CodeRay highlight"><code data-lang="properties">postmark.api-key=${POSTMARK_API_KEY}
 postmark.default-from-email-address=noreply@yourdomain.com</code></pre>
 </div>
 </div>
 <div class="paragraph">
-<p>If either property is missing, the sender logs an info message and returns without sending. This allows development environments to run without Postmark credentials.</p>
+<p>If either property is missing, the sender logs and returns without sending. That keeps local development and tests safe when no real delivery credentials are configured.</p>
 </div>
 </div>
 <div class="sect4">
-<h5 id="_custom_delivery_service">Custom Delivery Service</h5>
+<h5 id="_custom_delivery_services">Custom delivery services</h5>
 <div class="paragraph">
-<p>Implement <code>EmailDeliveryService</code> to integrate with a different provider (SendGrid, AWS SES, etc.):</p>
+<p>You can replace delivery with your own implementation:</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -18966,41 +19195,664 @@ postmark.default-from-email-address=noreply@yourdomain.com</code></pre>
 <span class="directive">public</span> <span class="type">class</span> <span class="class">SesEmailSender</span> <span class="directive">implements</span> EmailDeliveryService {
     <span class="annotation">@Override</span>
     <span class="directive">public</span> <span class="type">void</span> deliver(RenderedEmail email) {
-        <span class="comment">// Send via AWS SES</span>
+        <span class="comment">// send via AWS SES, SendGrid, etc.</span>
     }
 }</code></pre>
 </div>
 </div>
 </div>
-</div>
-<div class="sect3">
-<h4 id="_custom_template_resolver">73.1.6. Custom Template Resolver</h4>
+<div class="sect4">
+<h5 id="_custom_template_resolvers">Custom template resolvers</h5>
 <div class="paragraph">
-<p>Override the default resolution strategy by implementing <code>EmailTemplateResolver</code>:</p>
+<p>You can also replace template resolution entirely:</p>
 </div>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@ApplicationScoped</span>
 <span class="annotation">@Alternative</span>
 <span class="annotation">@Priority</span>(<span class="integer">1</span>)
-<span class="directive">public</span> <span class="type">class</span> <span class="class">MyTemplateResolver</span> <span class="directive">implements</span> EmailTemplateResolver {
+<span class="directive">public</span> <span class="type">class</span> <span class="class">CmsBackedTemplateResolver</span> <span class="directive">implements</span> EmailTemplateResolver {
     <span class="annotation">@Override</span>
     <span class="directive">public</span> Optional&lt;EmailTemplateDefinition&gt; resolve(<span class="predefined-type">String</span> realm, <span class="predefined-type">String</span> templateKey) {
-        <span class="comment">// Custom resolution logic (e.g., S3, external CMS)</span>
+        <span class="comment">// load from S3, CMS, Git, etc.</span>
+    }
+}</code></pre>
+</div>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_when_to_use_email_templates">73.1.8. When to use email templates</h4>
+<div class="paragraph">
+<p>Use the framework email-template subsystem when:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>the output is user-facing email content</p>
+</li>
+<li>
+<p>tenants may need per-realm content overrides</p>
+</li>
+<li>
+<p>you want previewable Qute templates instead of hard-coded strings</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Do not use email templates for:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>provisioning reference data, which belongs in <a href="seed-packs.html">seed packs</a></p>
+</li>
+<li>
+<p>multi-step operational setup, which belongs in <a href="bootstrap-packs.html">BootstrapPacks</a></p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_see_also_5">73.1.9. See also</h4>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="tenant-models.html#tenant-onboarding-and-invites">Tenant onboarding and access invites</a></p>
+</li>
+<li>
+<p><a href="seed-packs.html">Seed packs and declarative tenant seeding</a></p>
+</li>
+<li>
+<p><a href="bootstrap-packs.html">Bootstrap Packs</a></p>
+</li>
+<li>
+<p><a href="../appendix/configuration.html">Configuration reference</a>
+=== Bootstrap Packs</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>BootstrapPacks are the framework mechanism for idempotent runtime setup work that is bigger than declarative seeding.</p>
+</div>
+<div class="paragraph">
+<p>They are intentionally distinct from migrations and seed packs:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>migrations change database structure and initialization state</p>
+</li>
+<li>
+<p>seed packs materialize deterministic datasets</p>
+</li>
+<li>
+<p>BootstrapPacks orchestrate operational setup steps across one or more systems</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The framework now provides the BootstrapPack runtime, admin APIs, startup runner, and SPI hooks. Product modules contribute actual packs and step handlers.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_what_a_bootstrappack_is">73.1.10. What a BootstrapPack is</h4>
+<div class="paragraph">
+<p>A BootstrapPack is a named, versioned sequence of steps:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>packRef</code></p>
+</li>
+<li>
+<p><code>packVersion</code></p>
+</li>
+<li>
+<p><code>productRef</code></p>
+</li>
+<li>
+<p><code>profileRef</code></p>
+</li>
+<li>
+<p>ordered <code>steps</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Each step has:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>stepRef</code></p>
+</li>
+<li>
+<p><code>description</code></p>
+</li>
+<li>
+<p><code>kind</code></p>
+</li>
+<li>
+<p><code>applyPolicy</code></p>
+</li>
+<li>
+<p><code>dependsOn</code></p>
+</li>
+<li>
+<p><code>config</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>At runtime, <code>BootstrapPackService</code> resolves a pack from the registry, builds a scope, executes each step through the matching <code>BootstrapPackStepHandler</code>, and records a <code>BootstrapPackRun</code>.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_why_bootstrappacks_exist">73.1.11. Why BootstrapPacks exist</h4>
+<div class="paragraph">
+<p>Seed packs are excellent for baseline data, but some startup and tenant-activation work is not just "load these JSON records":</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>calling a product service to ensure a resource exists</p>
+</li>
+<li>
+<p>triggering an HTTP integration to an external platform</p>
+</li>
+<li>
+<p>validating that a prerequisite already exists</p>
+</li>
+<li>
+<p>publishing workflow or solution metadata</p>
+</li>
+<li>
+<p>sequencing several actions with dependencies and run history</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>That is the gap BootstrapPacks fill.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_bootstrappacks_vs_seed_packs">73.1.12. BootstrapPacks vs seed packs</h4>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 20%;">
+<col style="width: 40%;">
+<col style="width: 40%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Question</th>
+<th class="tableblock halign-left valign-top">Seed packs</th>
+<th class="tableblock halign-left valign-top">BootstrapPacks</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Primary job</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Load deterministic baseline data</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Coordinate idempotent operational setup steps</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Input format</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Manifest plus JSON/NDJSON datasets</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Java <code>BootstrapPackDefinition</code> plus step configs</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Best for</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Code lists, policies, defaults, reference rows, baseline records</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Calling services, verifying prerequisites, external side effects, multi-step orchestration</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Idempotency model</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Dataset checksums plus natural keys</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Step handler logic plus apply mode and apply policy</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Cross-system work</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Poor fit</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">First-class use case</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Dependencies</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Includes/archetypes inside manifests</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>dependsOn</code> between steps inside one pack</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Typical owner</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Framework or product module shipping data</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Product/application module shipping setup logic</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect3">
+<h4 id="_when_to_use_one_vs_the_other">73.1.13. When to use one vs the other</h4>
+<div class="paragraph">
+<p>Use a seed pack when the desired result is "these records should exist in the tenant realm."</p>
+</div>
+<div class="paragraph">
+<p>Examples:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>install code lists</p>
+</li>
+<li>
+<p>create default policies</p>
+</li>
+<li>
+<p>load default feature metadata</p>
+</li>
+<li>
+<p>establish baseline survey definitions</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Use a BootstrapPack when the desired result is "run these steps to make the environment ready."</p>
+</div>
+<div class="paragraph">
+<p>Examples:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>ensure an app service has provisioned a workspace</p>
+</li>
+<li>
+<p>call an external API to register a tenant</p>
+</li>
+<li>
+<p>run assertions before enabling a solution</p>
+</li>
+<li>
+<p>publish a workflow package after required seed data exists</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Use both together when needed:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>a BootstrapPack step can depend on a <code>SEED_PACK</code> step to materialize baseline data first</p>
+</li>
+<li>
+<p>later steps can then call services or external APIs that rely on that seeded data</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_rule_of_thumb">73.1.14. Rule of thumb</h4>
+<div class="paragraph">
+<p>If you can review the change entirely as data files, prefer a seed pack.</p>
+</div>
+<div class="paragraph">
+<p>If the change needs code, orchestration, side effects, or conditional runtime checks, prefer a BootstrapPack.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_step_kinds">73.1.15. Step kinds</h4>
+<div class="paragraph">
+<p>The framework model currently defines these step kinds:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>SEED_PACK</code></p>
+</li>
+<li>
+<p><code>APP_SERVICE</code></p>
+</li>
+<li>
+<p><code>HTTP_CALL</code></p>
+</li>
+<li>
+<p><code>ASSERTION</code></p>
+</li>
+<li>
+<p><code>WORKFLOW_PLATFORM_PUBLICATION</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The enum is shared infrastructure. Actual behavior depends on the <code>BootstrapPackStepHandler</code> implementations contributed by the application or product modules on the classpath.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_apply_modes_and_policies">73.1.16. Apply modes and policies</h4>
+<div class="paragraph">
+<p>BootstrapPack apply mode controls how the pack is being run:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>APPLY_MISSING</code></p>
+</li>
+<li>
+<p><code>REAPPLY</code></p>
+</li>
+<li>
+<p><code>VALIDATE_ONLY</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Step apply policy describes the intended handler behavior:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>ONCE_PER_SCOPE</code></p>
+</li>
+<li>
+<p><code>WHEN_MISSING</code></p>
+</li>
+<li>
+<p><code>ALWAYS_IDEMPOTENT</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The framework passes both values into handlers through <code>BootstrapStepRequest</code>. Handler authors decide what those semantics mean for a specific step kind.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_spi_model">73.1.17. SPI model</h4>
+<div class="paragraph">
+<p>Applications contribute packs with <code>BootstrapPackContributor</code>:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@ApplicationScoped</span>
+<span class="directive">public</span> <span class="type">class</span> <span class="class">DemoBootstrapContributor</span> <span class="directive">implements</span> BootstrapPackContributor {
+    <span class="annotation">@Override</span>
+    <span class="directive">public</span> <span class="predefined-type">Collection</span>&lt;BootstrapPackDefinition&gt; bootstrapPacks() {
+        <span class="keyword">return</span> <span class="predefined-type">List</span>.of(<span class="keyword">new</span> BootstrapPackDefinition(
+            <span class="string"><span class="delimiter">&quot;</span><span class="content">demo-pack</span><span class="delimiter">&quot;</span></span>,
+            <span class="string"><span class="delimiter">&quot;</span><span class="content">2026.04.0</span><span class="delimiter">&quot;</span></span>,
+            <span class="string"><span class="delimiter">&quot;</span><span class="content">b2bi</span><span class="delimiter">&quot;</span></span>,
+            <span class="string"><span class="delimiter">&quot;</span><span class="content">local-demo</span><span class="delimiter">&quot;</span></span>,
+            <span class="predefined-type">List</span>.of(
+                <span class="keyword">new</span> BootstrapPackStepDefinition(
+                    <span class="string"><span class="delimiter">&quot;</span><span class="content">ensure-a</span><span class="delimiter">&quot;</span></span>,
+                    <span class="string"><span class="delimiter">&quot;</span><span class="content">Ensure resource A exists</span><span class="delimiter">&quot;</span></span>,
+                    BootstrapStepKind.APP_SERVICE,
+                    BootstrapStepApplyPolicy.WHEN_MISSING,
+                    <span class="predefined-type">List</span>.of(),
+                    <span class="predefined-type">Map</span>.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">resource</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">A</span><span class="delimiter">&quot;</span></span>)
+                ),
+                <span class="keyword">new</span> BootstrapPackStepDefinition(
+                    <span class="string"><span class="delimiter">&quot;</span><span class="content">ensure-b</span><span class="delimiter">&quot;</span></span>,
+                    <span class="string"><span class="delimiter">&quot;</span><span class="content">Ensure resource B exists</span><span class="delimiter">&quot;</span></span>,
+                    BootstrapStepKind.APP_SERVICE,
+                    BootstrapStepApplyPolicy.WHEN_MISSING,
+                    <span class="predefined-type">List</span>.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">ensure-a</span><span class="delimiter">&quot;</span></span>),
+                    <span class="predefined-type">Map</span>.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">resource</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">B</span><span class="delimiter">&quot;</span></span>)
+                )
+            )
+        ));
+    }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Handlers implement the work for one or more step kinds:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@ApplicationScoped</span>
+<span class="directive">public</span> <span class="type">class</span> <span class="class">DemoAppServiceHandler</span> <span class="directive">implements</span> BootstrapPackStepHandler {
+    <span class="annotation">@Override</span>
+    <span class="directive">public</span> <span class="type">boolean</span> supports(BootstrapStepKind kind) {
+        <span class="keyword">return</span> kind == BootstrapStepKind.APP_SERVICE;
+    }
+
+    <span class="annotation">@Override</span>
+    <span class="directive">public</span> BootstrapStepResult execute(BootstrapStepRequest request) {
+        <span class="keyword">return</span> <span class="keyword">new</span> BootstrapStepResult(
+            BootstrapStepStatus.COMPLETED,
+            BootstrapStepOutcome.CREATED,
+            <span class="predefined-type">Map</span>.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">handledStep</span><span class="delimiter">&quot;</span></span>, request.stepRef())
+        );
     }
 }</code></pre>
 </div>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_see_also_5">73.1.7. See Also</h4>
+<h4 id="_admin_rest_api">73.1.18. Admin REST API</h4>
+<div class="paragraph">
+<p>The framework exposes admin endpoints at <code>/admin/bootstrap-packs</code>:</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Endpoint</th>
+<th class="tableblock halign-left valign-top">Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>GET /admin/bootstrap-packs</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">List available pack definitions</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>GET /admin/bootstrap-packs/pending/{realm}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">List packs with no successful completed run for the realm</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>GET /admin/bootstrap-packs/history/{realm}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Show recorded runs for the realm</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>POST /admin/bootstrap-packs/validate/{realm}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Validate all selected packs without applying changes</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>POST /admin/bootstrap-packs/{realm}/{packRef}/validate</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Validate one pack</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>POST /admin/bootstrap-packs/apply/{realm}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Apply all selected packs</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>POST /admin/bootstrap-packs/{realm}/{packRef}/apply</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Apply one pack</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>Useful query parameters:</p>
+</div>
 <div class="ulist">
 <ul>
 <li>
-<p><a href="auth.html">Authentication and Authorization</a></p>
+<p><code>filter=pack-a,pack-b</code></p>
 </li>
 <li>
-<p><a href="../appendix/configuration.html">Configuration Reference</a>
+<p><code>mode=APPLY_MISSING</code></p>
+</li>
+<li>
+<p><code>mode=REAPPLY</code></p>
+</li>
+<li>
+<p><code>mode=VALIDATE_ONLY</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>These endpoints are protected for <code>admin</code> and <code>system</code> roles.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_startup_application">73.1.19. Startup application</h4>
+<div class="paragraph">
+<p>BootstrapPacks can also be auto-applied at startup by <code>BootstrapPackStartupRunner</code>.</p>
+</div>
+<div class="paragraph">
+<p>Relevant properties:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="properties">quantum.bootstrap-pack.enabled=true
+quantum.bootstrap-pack.apply.on-startup=false
+quantum.bootstrap-pack.apply.realms=system-com,mycompany-com,test-com
+quantum.bootstrap-pack.apply.filter=pack-a,pack-b</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If startup application is enabled, the runner:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>resolves the target realms</p>
+</li>
+<li>
+<p>resolves the selected packs</p>
+</li>
+<li>
+<p>runs each pack as <code>APPLY_MISSING</code></p>
+</li>
+<li>
+<p>logs failures and pending packs</p>
+</li>
+</ol>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_run_history">73.1.20. Run history</h4>
+<div class="paragraph">
+<p>The framework records <code>BootstrapPackRun</code> objects, including:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>pack ref and version</p>
+</li>
+<li>
+<p>execution scope such as realm and environment</p>
+</li>
+<li>
+<p>per-step status and outcome</p>
+</li>
+<li>
+<p>start and finish timestamps</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>By default, the framework uses an in-memory run repository. That is useful for local development and tests, but products that need durable operational history should plug in a persistent <code>BootstrapPackRunRepository</code>.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_examples_4">73.1.21. Examples</h4>
+<div class="sect4">
+<h5 id="_example_1_use_a_seed_pack_only">Example 1: Use a seed pack only</h5>
+<div class="paragraph">
+<p>Requirement:
+Add baseline code lists, policies, and default records for every new tenant.</p>
+</div>
+<div class="paragraph">
+<p>Best choice:
+Use a seed pack.</p>
+</div>
+<div class="paragraph">
+<p>Reason:
+The desired result is purely deterministic data in MongoDB.</p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_example_2_use_a_bootstrappack_only">Example 2: Use a BootstrapPack only</h5>
+<div class="paragraph">
+<p>Requirement:
+After a tenant is created, call a product service to create a workspace and then verify it exists.</p>
+</div>
+<div class="paragraph">
+<p>Best choice:
+Use a BootstrapPack with <code>APP_SERVICE</code> and <code>ASSERTION</code> steps.</p>
+</div>
+<div class="paragraph">
+<p>Reason:
+The work is procedural and depends on service logic, not just document inserts.</p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_example_3_use_both_together">Example 3: Use both together</h5>
+<div class="paragraph">
+<p>Requirement:
+Seed workflow definitions first, then publish them to an external workflow platform.</p>
+</div>
+<div class="paragraph">
+<p>Best choice:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Use a seed pack for the workflow and policy records</p>
+</li>
+<li>
+<p>Use a BootstrapPack with a <code>SEED_PACK</code> step followed by <code>WORKFLOW_PLATFORM_PUBLICATION</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Reason:
+The first half is declarative data, while the second half is an operational publication step.</p>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_choosing_the_right_abstraction">73.1.22. Choosing the right abstraction</h4>
+<div class="paragraph">
+<p>Prefer seed packs by default for tenant baseline data.</p>
+</div>
+<div class="paragraph">
+<p>Move to BootstrapPacks when:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>the setup spans more than one system</p>
+</li>
+<li>
+<p>steps must run in order with dependencies</p>
+</li>
+<li>
+<p>you need dry-run validation semantics</p>
+</li>
+<li>
+<p>the setup is product-owned logic rather than framework-owned baseline data</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_see_also_6">73.1.23. See also</h4>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="seed-packs.html">Seed packs and declarative tenant seeding</a></p>
+</li>
+<li>
+<p><a href="email-templates.html">Email Templates</a></p>
+</li>
+<li>
+<p><a href="tenant-models.html#tenant-onboarding-and-invites">Tenant onboarding and access invites</a>
 = Database Migrations and Index Management</p>
 </li>
 </ul>
@@ -20505,6 +21357,52 @@ packs with the same name, the latest semantic version is applied.</p>
 </div>
 </div>
 <div class="sect4">
+<h5 id="_bootstrap_packs">Bootstrap packs</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="properties"># Enable BootstrapPack infrastructure
+quantum.bootstrap-pack.enabled=true
+
+# Apply discovered bootstrap packs on startup
+quantum.bootstrap-pack.apply.on-startup=false
+
+# Optional CSV list of realms to target on startup
+# If omitted, the framework uses the system/default/test realms when available
+quantum.bootstrap-pack.apply.realms=system-com,mycompany-com,test-com
+
+# Optional CSV filter to apply only selected pack refs
+quantum.bootstrap-pack.apply.filter=pack-a,pack-b</code></pre>
+</div>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<div class="paragraph">
+<p>Bootstrap packs are not the same thing as seed packs.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Use seed packs for deterministic baseline data.</p>
+</li>
+<li>
+<p>Use bootstrap packs for idempotent operational setup steps.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>See <a href="../user-guide/bootstrap-packs.html">Bootstrap Packs</a> for details.</p>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect4">
 <h5 id="_security_rules_diagnostics">Security rules diagnostics</h5>
 <div class="listingblock">
 <div class="content">
@@ -20551,7 +21449,7 @@ quantum.anonymousUserId=anonymous</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_see_also_6">103.1.5. See Also</h4>
+<h4 id="_see_also_7">103.1.5. See Also</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -20886,7 +21784,7 @@ quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pr
 </div>
 </div>
 <div class="sect3">
-<h4 id="_see_also_7">103.1.13. See Also</h4>
+<h4 id="_see_also_8">103.1.13. See Also</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -21135,8 +22033,8 @@ quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pr
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 1.3.0<br>
-Last updated 2026-04-06 12:12:04 -0400
+Version 1.4.0-SNAPSHOT<br>
+Last updated 2026-04-07 09:08:25 -0400
 </div>
 </div>
 </body>
