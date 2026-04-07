@@ -1,0 +1,75 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"><svg height='182pt' preserveAspectRatio='xMidYMid meet' viewBox='0.00 0.00 401.00 182.00' width='401pt' xmlns:xlink='http://www.w3.org/1999/xlink' xmlns='http://www.w3.org/2000/svg'>
+<g class='graph' id='graph0' transform='scale(1 1) rotate(0) translate(4 178)'>
+<title>TBox</title>
+<polygon fill='white' points='-4,4 -4,-178 396.75,-178 396.75,4 -4,4' stroke='none'/>
+
+<g class='node' id='node1'>
+<title>Order</title>
+<polygon fill='none' points='54,-36 0,-36 0,0 54,0 54,-36' stroke='black'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='27' y='-12.95'>Order</text>
+</g>
+
+<g class='node' id='node2'>
+<title>Customer</title>
+<polygon fill='none' points='210.25,-73 141,-73 141,-37 210.25,-37 210.25,-73' stroke='black'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='175.62' y='-49.95'>Customer</text>
+</g>
+
+<g class='edge' id='edge1'>
+<title>Order&#45;&gt;Customer</title>
+<path d='M54.21,-24.61C75.14,-29.9 104.95,-37.42 129.68,-43.66' fill='none' stroke='black'/>
+<polygon fill='black' points='128.61,-47 139.16,-46.05 130.32,-40.21 128.61,-47' stroke='black'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='97.5' y='-44.1'>placedBy</text>
+</g>
+
+<g class='node' id='node3'>
+<title>Organization</title>
+<polygon fill='none' points='392.75,-36 306.25,-36 306.25,0 392.75,0 392.75,-36' stroke='black'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='349.5' y='-12.95'>Organization</text>
+</g>
+
+<g class='edge' id='edge4'>
+<title>Order&#45;&gt;Organization</title>
+<path d='M54.47,-16.05C77.36,-14.46 111.34,-12.35 141,-11.5 193.2,-10 252.77,-12.28 294.66,-14.54' fill='none' stroke='#666666' stroke-dasharray='5,2'/>
+<polygon fill='#666666' points='294.29,-18.03 304.47,-15.09 294.68,-11.04 294.29,-18.03' stroke='#666666'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='175.62' y='-14.7'>placedInOrg</text>
+</g>
+
+<g class='edge' id='edge2'>
+<title>Customer&#45;&gt;Organization</title>
+<path d='M210.58,-47.69C234.57,-42.53 267.22,-35.5 294.73,-29.58' fill='none' stroke='black'/>
+<polygon fill='black' points='295.25,-33.04 304.29,-27.52 293.78,-26.2 295.25,-33.04' stroke='black'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='258.25' y='-46.23'>memberOf</text>
+</g>
+
+<g class='edge' id='edge3'>
+<title>Organization&#45;&gt;Organization</title>
+<path d='M345.37,-36.15C344.74,-45.54 346.11,-54 349.5,-54 351.35,-54 352.6,-51.47 353.25,-47.64' fill='none' stroke='black'/>
+<polygon fill='black' points='356.75,-47.77 353.58,-37.67 349.75,-47.55 356.75,-47.77' stroke='black'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='349.5' y='-57.2'>ancestorOf</text>
+</g>
+
+<g class='edge' id='edge5'>
+<title>Organization&#45;&gt;Organization</title>
+<path d='M342.58,-36.26C339,-53.4 341.3,-72 349.5,-72 355.9,-72 358.71,-60.65 357.93,-47.51' fill='none' stroke='black'/>
+<polygon fill='black' points='361.42,-47.2 356.62,-37.76 354.48,-48.13 361.42,-47.2' stroke='black'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='349.5' y='-75.2'>parentOf</text>
+</g>
+
+<g class='edge' id='edge6'>
+<title>Organization&#45;&gt;Organization</title>
+<path d='M340.73,-36.44C333.21,-60.7 336.13,-90 349.5,-90 360.88,-90 364.69,-68.76 360.93,-47.47' fill='none' stroke='black'/>
+<polygon fill='black' points='364.37,-46.81 358.63,-37.91 357.57,-48.45 364.37,-46.81' stroke='black'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='349.5' y='-93.2'>childOf</text>
+</g>
+
+<g class='edge' id='edge7'>
+<title>Organization&#45;&gt;Organization</title>
+<path d='M336.04,-46.99C328.34,-75.95 332.83,-108 349.5,-108 366.17,-108 370.66,-75.95 362.96,-46.99' fill='none' stroke='#7f7f7f'/>
+<polygon fill='#7f7f7f' points='339.34,-48.14 339.12,-37.55 332.69,-45.97 339.34,-48.14' stroke='#7f7f7f'/>
+<polygon fill='#7f7f7f' points='366.31,-45.97 359.88,-37.55 359.66,-48.14 366.31,-45.97' stroke='#7f7f7f'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='349.5' y='-111.2'>peerOf</text>
+</g>
+</g>
+</svg>
