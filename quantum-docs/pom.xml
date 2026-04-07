@@ -148,6 +148,14 @@
                     </execution>
                 </executions>
             </plugin>
+            <!-- No distributionManagement: skip artifact deploy; deploy phase still runs scm-publish to gh-pages. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-deploy-plugin</artifactId>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
             <!-- Publish generated HTML to gh-pages branch during 'deploy' -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
