@@ -528,8 +528,8 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div id="header">
 <h1>Seed packs and declarative tenant seeding</h1>
 <div class="details">
-<span id="revnumber">version 1.4.0-SNAPSHOT,</span>
-<span id="revdate">2026-04-07T13:18:09Z</span>
+<span id="revnumber">version 1.3.1-SNAPSHOT,</span>
+<span id="revdate">2026-04-07T19:16:37Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -543,69 +543,68 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </li>
 <li><a href="#_why_seed_packs">2. Why seed packs?</a></li>
 <li><a href="#_high_level_flow">3. High-level flow</a></li>
-<li><a href="#_seed_packs_vs_bootstrappacks">4. Seed packs vs BootstrapPacks</a></li>
-<li><a href="#_manifest_quick_reference">5. Manifest quick reference</a></li>
-<li><a href="#_realm_filtering">6. Realm filtering</a>
+<li><a href="#_manifest_quick_reference">4. Manifest quick reference</a></li>
+<li><a href="#_realm_filtering">5. Realm filtering</a>
 <ul class="sectlevel2">
-<li><a href="#_include_realms_explicit_list">6.1. Include realms (explicit list)</a></li>
-<li><a href="#_exclude_realms">6.2. Exclude realms</a></li>
-<li><a href="#_backward_compatibility">6.3. Backward compatibility</a></li>
+<li><a href="#_include_realms_explicit_list">5.1. Include realms (explicit list)</a></li>
+<li><a href="#_exclude_realms">5.2. Exclude realms</a></li>
+<li><a href="#_backward_compatibility">5.3. Backward compatibility</a></li>
 </ul>
 </li>
-<li><a href="#_programmatic_usage">7. Programmatic usage</a></li>
-<li><a href="#_extensibility_hooks">8. Extensibility hooks</a></li>
-<li><a href="#_operational_tips">9. Operational tips</a></li>
-<li><a href="#_primary_scenarios">10. Primary scenarios</a></li>
-<li><a href="#_explicit_examples">11. Explicit examples</a>
+<li><a href="#_programmatic_usage">6. Programmatic usage</a></li>
+<li><a href="#_extensibility_hooks">7. Extensibility hooks</a></li>
+<li><a href="#_operational_tips">8. Operational tips</a></li>
+<li><a href="#_primary_scenarios">9. Primary scenarios</a></li>
+<li><a href="#_explicit_examples">10. Explicit examples</a>
 <ul class="sectlevel2">
-<li><a href="#_example_1_minimal_manifest_and_ndjson">11.1. Example 1: Minimal manifest and NDJSON</a></li>
-<li><a href="#_example_2_applying_packs_in_code">11.2. Example 2: Applying packs in code</a></li>
-<li><a href="#_example_3_using_an_archetype">11.3. Example 3: Using an archetype</a></li>
-<li><a href="#_example_4_exact_version_and_includes_in_a_manifest">11.4. Example 4: Exact version and includes in a manifest</a></li>
+<li><a href="#_example_1_minimal_manifest_and_ndjson">10.1. Example 1: Minimal manifest and NDJSON</a></li>
+<li><a href="#_example_2_applying_packs_in_code">10.2. Example 2: Applying packs in code</a></li>
+<li><a href="#_example_3_using_an_archetype">10.3. Example 3: Using an archetype</a></li>
+<li><a href="#_example_4_exact_version_and_includes_in_a_manifest">10.4. Example 4: Exact version and includes in a manifest</a></li>
 </ul>
 </li>
-<li><a href="#_troubleshooting">12. Troubleshooting</a></li>
-<li><a href="#_how_seeds_are_applied_automatically_at_startup">13. How seeds are applied automatically at startup</a>
+<li><a href="#_troubleshooting">11. Troubleshooting</a></li>
+<li><a href="#_how_seeds_are_applied_automatically_at_startup">12. How seeds are applied automatically at startup</a>
 <ul class="sectlevel2">
-<li><a href="#_configuring_which_realms_receive_seeds_on_startup">13.1. Configuring which realms receive seeds on startup</a></li>
+<li><a href="#_configuring_which_realms_receive_seeds_on_startup">12.1. Configuring which realms receive seeds on startup</a></li>
 </ul>
 </li>
-<li><a href="#_transforms_in_depth">14. Transforms in depth</a>
+<li><a href="#_transforms_in_depth">13. Transforms in depth</a>
 <ul class="sectlevel2">
-<li><a href="#_creating_your_own_transforms_example_dropiftransform">14.1. Creating your own transforms (example: DropIfTransform)</a></li>
-<li><a href="#_custom_variable_resolvers_for_stringinterpolation">14.2. Custom variable resolvers for stringInterpolation</a></li>
-<li><a href="#_seed_record_listeners_reacting_to_seed_data">14.3. Seed record listeners (reacting to seed data)</a>
+<li><a href="#_creating_your_own_transforms_example_dropiftransform">13.1. Creating your own transforms (example: DropIfTransform)</a></li>
+<li><a href="#_custom_variable_resolvers_for_stringinterpolation">13.2. Custom variable resolvers for stringInterpolation</a></li>
+<li><a href="#_seed_record_listeners_reacting_to_seed_data">13.3. Seed record listeners (reacting to seed data)</a>
 <ul class="sectlevel3">
-<li><a href="#_application_level_implementation_example">14.3.1. Application-level implementation example</a></li>
-<li><a href="#_security_context">14.3.2. Security context</a></li>
-<li><a href="#_seedrecordevent_properties">14.3.3. SeedRecordEvent properties</a></li>
-<li><a href="#_registration">14.3.4. Registration</a></li>
-<li><a href="#_best_practices">14.3.5. Best practices</a></li>
+<li><a href="#_application_level_implementation_example">13.3.1. Application-level implementation example</a></li>
+<li><a href="#_security_context">13.3.2. Security context</a></li>
+<li><a href="#_seedrecordevent_properties">13.3.3. SeedRecordEvent properties</a></li>
+<li><a href="#_registration">13.3.4. Registration</a></li>
+<li><a href="#_best_practices">13.3.5. Best practices</a></li>
 </ul>
 </li>
 </ul>
 </li>
-<li><a href="#_test_walkthrough_seedloaderintegrationtest">15. Test walkthrough: SeedLoaderIntegrationTest</a></li>
-<li><a href="#_archetypes_explained">16. Archetypes explained</a>
+<li><a href="#_test_walkthrough_seedloaderintegrationtest">14. Test walkthrough: SeedLoaderIntegrationTest</a></li>
+<li><a href="#_archetypes_explained">15. Archetypes explained</a>
 <ul class="sectlevel2">
-<li><a href="#_example_a_define_and_apply_an_archetype_in_the_same_pack">16.1. Example A: Define and apply an archetype in the same pack</a></li>
-<li><a href="#_example_b_cross_pack_archetype_in_a_dedicated_editions_pack">16.2. Example B: Cross-pack archetype in a dedicated "editions" pack</a></li>
-<li><a href="#_resolution_and_ordering_details">16.3. Resolution and ordering details</a></li>
-<li><a href="#_interaction_with_applyseedpackschangeset">16.4. Interaction with ApplySeedPacksChangeSet</a></li>
-<li><a href="#_tenant_provisioning_with_archetypes">16.5. Tenant provisioning with archetypes</a></li>
+<li><a href="#_example_a_define_and_apply_an_archetype_in_the_same_pack">15.1. Example A: Define and apply an archetype in the same pack</a></li>
+<li><a href="#_example_b_cross_pack_archetype_in_a_dedicated_editions_pack">15.2. Example B: Cross-pack archetype in a dedicated "editions" pack</a></li>
+<li><a href="#_resolution_and_ordering_details">15.3. Resolution and ordering details</a></li>
+<li><a href="#_interaction_with_applyseedpackschangeset">15.4. Interaction with ApplySeedPacksChangeSet</a></li>
+<li><a href="#_tenant_provisioning_with_archetypes">15.5. Tenant provisioning with archetypes</a></li>
 </ul>
 </li>
-<li><a href="#_rest_api_for_seed_packs">17. REST API for seed packs</a></li>
-<li><a href="#_using_morphiaseedrepository_morphia_backed_seeding">18. Using MorphiaSeedRepository (Morphia-backed seeding)</a></li>
-<li><a href="#_dataset_urls_and_routing_file_and_s3">19. Dataset URLs and routing (file:// and s3://)</a></li>
-<li><a href="#_s3_seed_source_optional_module">20. S3 Seed Source (optional module)</a>
+<li><a href="#_rest_api_for_seed_packs">16. REST API for seed packs</a></li>
+<li><a href="#_using_morphiaseedrepository_morphia_backed_seeding">17. Using MorphiaSeedRepository (Morphia-backed seeding)</a></li>
+<li><a href="#_dataset_urls_and_routing_file_and_s3">18. Dataset URLs and routing (file:// and s3://)</a></li>
+<li><a href="#_s3_seed_source_optional_module">19. S3 Seed Source (optional module)</a>
 <ul class="sectlevel2">
-<li><a href="#_when_to_use_s3_vs_filesystem">20.1. When to use S3 vs. filesystem</a></li>
-<li><a href="#_s3_layout_conventions">20.2. S3 layout conventions</a></li>
-<li><a href="#_configuration_and_credentials">20.3. Configuration and credentials</a></li>
-<li><a href="#_usage_examples">20.4. Usage examples</a></li>
-<li><a href="#_defining_datasets_in_the_manifest_s3">20.5. Defining datasets in the manifest (S3)</a></li>
-<li><a href="#_troubleshooting_2">20.6. Troubleshooting</a></li>
+<li><a href="#_when_to_use_s3_vs_filesystem">19.1. When to use S3 vs. filesystem</a></li>
+<li><a href="#_s3_layout_conventions">19.2. S3 layout conventions</a></li>
+<li><a href="#_configuration_and_credentials">19.3. Configuration and credentials</a></li>
+<li><a href="#_usage_examples">19.4. Usage examples</a></li>
+<li><a href="#_defining_datasets_in_the_manifest_s3">19.5. Defining datasets in the manifest (S3)</a></li>
+<li><a href="#_troubleshooting_2">19.6. Troubleshooting</a></li>
 </ul>
 </li>
 </ul>
@@ -728,108 +727,7 @@ unchanged datasets are skipped on later runs.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_seed_packs_vs_bootstrappacks">4. Seed packs vs BootstrapPacks</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Seed packs and BootstrapPacks solve adjacent problems, but they are not interchangeable.</p>
-</div>
-<table class="tableblock frame-all grid-all stretch">
-<colgroup>
-<col style="width: 20%;">
-<col style="width: 40%;">
-<col style="width: 40%;">
-</colgroup>
-<thead>
-<tr>
-<th class="tableblock halign-left valign-top">Question</th>
-<th class="tableblock halign-left valign-top">Seed packs</th>
-<th class="tableblock halign-left valign-top">BootstrapPacks</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">What they manage</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Deterministic tenant data</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Operational setup steps</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Main representation</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">YAML manifest plus JSON/NDJSON datasets</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Java pack definitions plus step handlers</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Best use cases</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Code lists, policies, defaults, baseline reference records</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Calling services, validating prerequisites, external side effects, multi-step orchestration</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Idempotency style</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Natural keys plus dataset checksum tracking</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Handler-driven behavior using apply modes and step policies</p></td>
-</tr>
-</tbody>
-</table>
-<div class="paragraph">
-<p>Use a seed pack when the desired end state is "these records should exist in the realm."</p>
-</div>
-<div class="paragraph">
-<p>Examples:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>install baseline code lists</p>
-</li>
-<li>
-<p>create default security policies</p>
-</li>
-<li>
-<p>ship default surveys or catalog metadata</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Use a BootstrapPack when the desired end state is "these setup actions should run in order."</p>
-</div>
-<div class="paragraph">
-<p>Examples:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>invoke an application service to create a workspace</p>
-</li>
-<li>
-<p>call an external registration endpoint</p>
-</li>
-<li>
-<p>verify that a downstream dependency has been configured</p>
-</li>
-<li>
-<p>publish already-seeded workflow metadata to another platform</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>In practice, many products use both:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>seed packs establish the durable tenant data model</p>
-</li>
-<li>
-<p>BootstrapPacks orchestrate the operational work that sits around that data</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>See <a href="bootstrap-packs.html">Bootstrap Packs</a> for the runtime, SPI, startup, and admin API details.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_manifest_quick_reference">5. Manifest quick reference</h2>
+<h2 id="_manifest_quick_reference">4. Manifest quick reference</h2>
 <div class="sectionbody">
 <div class="listingblock">
 <div class="content">
@@ -867,7 +765,7 @@ unchanged datasets are skipped on later runs.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_realm_filtering">6. Realm filtering</h2>
+<h2 id="_realm_filtering">5. Realm filtering</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Seed packs can be restricted to specific realms using <code>includeRealms</code> or <code>excludeRealms</code> in the <code>scope</code> block of the manifest. This controls which realms a seed pack applies to during provisioning.</p>
@@ -906,7 +804,7 @@ unchanged datasets are skipped on later runs.</p>
 </table>
 </div>
 <div class="sect2">
-<h3 id="_include_realms_explicit_list">6.1. Include realms (explicit list)</h3>
+<h3 id="_include_realms_explicit_list">5.1. Include realms (explicit list)</h3>
 <div class="paragraph">
 <p>Use <code>includeRealms</code> when a seed pack should only be applied to specific realms — for example, customer-specific configuration or region-specific reference data:</p>
 </div>
@@ -931,7 +829,7 @@ unchanged datasets are skipped on later runs.</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_exclude_realms">6.2. Exclude realms</h3>
+<h3 id="_exclude_realms">5.2. Exclude realms</h3>
 <div class="paragraph">
 <p>Use <code>excludeRealms</code> when a seed pack should apply everywhere except certain realms — for example, excluding test or system realms from production seed data:</p>
 </div>
@@ -957,7 +855,7 @@ unchanged datasets are skipped on later runs.</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_backward_compatibility">6.3. Backward compatibility</h3>
+<h3 id="_backward_compatibility">5.3. Backward compatibility</h3>
 <div class="paragraph">
 <p>The previously declared (but unused) <code>realms</code> field in the scope block is treated as an alias for <code>includeRealms</code>:</p>
 </div>
@@ -972,7 +870,7 @@ unchanged datasets are skipped on later runs.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_programmatic_usage">7. Programmatic usage</h2>
+<h2 id="_programmatic_usage">6. Programmatic usage</h2>
 <div class="sectionbody">
 <div class="listingblock">
 <div class="content">
@@ -1002,7 +900,7 @@ in any manifest.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_extensibility_hooks">8. Extensibility hooks</h2>
+<h2 id="_extensibility_hooks">7. Extensibility hooks</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -1022,7 +920,7 @@ idempotency policy.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_operational_tips">9. Operational tips</h2>
+<h2 id="_operational_tips">8. Operational tips</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -1045,7 +943,7 @@ which archetype(s) to apply based on SKU.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_primary_scenarios">10. Primary scenarios</h2>
+<h2 id="_primary_scenarios">9. Primary scenarios</h2>
 <div class="sectionbody">
 <div class="olist arabic">
 <ol class="arabic">
@@ -1139,10 +1037,10 @@ which archetype(s) to apply based on SKU.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_explicit_examples">11. Explicit examples</h2>
+<h2 id="_explicit_examples">10. Explicit examples</h2>
 <div class="sectionbody">
 <div class="sect2">
-<h3 id="_example_1_minimal_manifest_and_ndjson">11.1. Example 1: Minimal manifest and NDJSON</h3>
+<h3 id="_example_1_minimal_manifest_and_ndjson">10.1. Example 1: Minimal manifest and NDJSON</h3>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="yaml"><span class="key">seedPack</span>: <span class="string"><span class="content">demo-seed</span></span>
@@ -1179,7 +1077,7 @@ which archetype(s) to apply based on SKU.</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_example_2_applying_packs_in_code">11.2. Example 2: Applying packs in code</h3>
+<h3 id="_example_2_applying_packs_in_code">10.2. Example 2: Applying packs in code</h3>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="java">SeedLoader loader = SeedLoader.builder()
@@ -1203,7 +1101,7 @@ loader.apply(<span class="predefined-type">List</span>.of(
 </div>
 </div>
 <div class="sect2">
-<h3 id="_example_3_using_an_archetype">11.3. Example 3: Using an archetype</h3>
+<h3 id="_example_3_using_an_archetype">10.3. Example 3: Using an archetype</h3>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="yaml"><span class="key">archetypes</span>:
@@ -1223,7 +1121,7 @@ loader.apply(<span class="predefined-type">List</span>.of(
 </div>
 </div>
 <div class="sect2">
-<h3 id="_example_4_exact_version_and_includes_in_a_manifest">11.4. Example 4: Exact version and includes in a manifest</h3>
+<h3 id="_example_4_exact_version_and_includes_in_a_manifest">10.4. Example 4: Exact version and includes in a manifest</h3>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="yaml"><span class="key">seedPack</span>: <span class="string"><span class="content">shipping-defaults</span></span>
@@ -1242,7 +1140,7 @@ loader.apply(<span class="predefined-type">List</span>.of(
 </div>
 </div>
 <div class="sect1">
-<h2 id="_troubleshooting">12. Troubleshooting</h2>
+<h2 id="_troubleshooting">11. Troubleshooting</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -1263,7 +1161,7 @@ loader.apply(<span class="predefined-type">List</span>.of(
 </div>
 </div>
 <div class="sect1">
-<h2 id="_how_seeds_are_applied_automatically_at_startup">13. How seeds are applied automatically at startup</h2>
+<h2 id="_how_seeds_are_applied_automatically_at_startup">12. How seeds are applied automatically at startup</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>The framework now applies seed packs via a dedicated SeedStartupRunner, independent of schema migrations. This runner discovers and applies the latest version of each seed pack for important realms (system/default/test) on application startup.</p>
@@ -1289,7 +1187,7 @@ quantum.seeds.apply.on-startup=true</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_configuring_which_realms_receive_seeds_on_startup">13.1. Configuring which realms receive seeds on startup</h3>
+<h3 id="_configuring_which_realms_receive_seeds_on_startup">12.1. Configuring which realms receive seeds on startup</h3>
 <div class="paragraph">
 <p>By default, <code>SeedStartupRunner</code> applies seeds to the system, default, and test realms. You can customize this behavior using a combination of:</p>
 </div>
@@ -1384,7 +1282,7 @@ realmRepo.save(realm);</code></pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_transforms_in_depth">14. Transforms in depth</h2>
+<h2 id="_transforms_in_depth">13. Transforms in depth</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Transforms are small, composable functions that shape each dataset record just before it is written to the database. They let you keep dataset files generic and inject environment/tenant specifics or perform repeatable rewrites at apply time.</p>
@@ -1620,7 +1518,7 @@ Manifest snippet:</p>
 - For custom transforms, add focused unit tests for edge cases (missing fields, nulls, unexpected types)</p>
 </div>
 <div class="sect2">
-<h3 id="_creating_your_own_transforms_example_dropiftransform">14.1. Creating your own transforms (example: DropIfTransform)</h3>
+<h3 id="_creating_your_own_transforms_example_dropiftransform">13.1. Creating your own transforms (example: DropIfTransform)</h3>
 <div class="paragraph">
 <p>Custom transforms let you implement project-specific shaping logic. You implement two small interfaces and register the type on the SeedLoader builder. Below we walk through a simple "drop the record if a field equals a value" transform used in tests, called DropIfTransform.</p>
 </div>
@@ -1727,7 +1625,7 @@ Manifest snippet:</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_custom_variable_resolvers_for_stringinterpolation">14.2. Custom variable resolvers for stringInterpolation</h3>
+<h3 id="_custom_variable_resolvers_for_stringinterpolation">13.2. Custom variable resolvers for stringInterpolation</h3>
 <div class="paragraph">
 <p>The <code>stringInterpolation</code> transform supports custom variable resolution via the <code>SeedVariableResolver</code> SPI. This allows you to define application-specific variables that can be used in seed data alongside the built-in context variables.</p>
 </div>
@@ -1839,7 +1737,7 @@ Manifest snippet:</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_seed_record_listeners_reacting_to_seed_data">14.3. Seed record listeners (reacting to seed data)</h3>
+<h3 id="_seed_record_listeners_reacting_to_seed_data">13.3. Seed record listeners (reacting to seed data)</h3>
 <div class="paragraph">
 <p>The <code>SeedRecordListener</code> SPI allows application components to react when seed records are applied to the database. This is useful for synchronizing application state with seeded data, such as registering scheduled jobs, updating caches, or triggering other side effects.</p>
 </div>
@@ -1884,7 +1782,7 @@ The framework provides only the SPI interface. Applications must implement their
 </div>
 </div>
 <div class="sect3">
-<h4 id="_application_level_implementation_example">14.3.1. Application-level implementation example</h4>
+<h4 id="_application_level_implementation_example">13.3.1. Application-level implementation example</h4>
 <div class="paragraph">
 <p>The following example shows how an application can implement a listener to synchronize job configurations when seeds are applied. This code would live in the application, not the framework:</p>
 </div>
@@ -1923,7 +1821,7 @@ The framework provides only the SPI interface. Applications must implement their
 </div>
 </div>
 <div class="sect3">
-<h4 id="_security_context">14.3.2. Security context</h4>
+<h4 id="_security_context">13.3.2. Security context</h4>
 <div class="paragraph">
 <p>Listeners run within the security context established by the seed operation (<code>SeedStartupRunner</code> or <code>SeedLoaderService</code>). This means:</p>
 </div>
@@ -1959,7 +1857,7 @@ The framework provides only the SPI interface. Applications must implement their
 </div>
 </div>
 <div class="sect3">
-<h4 id="_seedrecordevent_properties">14.3.3. SeedRecordEvent properties</h4>
+<h4 id="_seedrecordevent_properties">13.3.3. SeedRecordEvent properties</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -1990,7 +1888,7 @@ The framework provides only the SPI interface. Applications must implement their
 </div>
 </div>
 <div class="sect3">
-<h4 id="_registration">14.3.4. Registration</h4>
+<h4 id="_registration">13.3.4. Registration</h4>
 <div class="paragraph">
 <p>CDI auto-discovery (recommended):</p>
 </div>
@@ -2017,7 +1915,7 @@ The framework provides only the SPI interface. Applications must implement their
 </div>
 </div>
 <div class="sect3">
-<h4 id="_best_practices">14.3.5. Best practices</h4>
+<h4 id="_best_practices">13.3.5. Best practices</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -2045,7 +1943,7 @@ The framework provides only the SPI interface. Applications must implement their
 </div>
 </div>
 <div class="sect1">
-<h2 id="_test_walkthrough_seedloaderintegrationtest">15. Test walkthrough: SeedLoaderIntegrationTest</h2>
+<h2 id="_test_walkthrough_seedloaderintegrationtest">14. Test walkthrough: SeedLoaderIntegrationTest</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>The <code>SeedLoaderIntegrationTest</code> demonstrates end-to-end seeding using the demo seed pack at <code>src/main/resources/seed-packs/demo-seed</code>.</p>
@@ -2076,7 +1974,7 @@ The framework provides only the SPI interface. Applications must implement their
 </div>
 </div>
 <div class="sect1">
-<h2 id="_archetypes_explained">16. Archetypes explained</h2>
+<h2 id="_archetypes_explained">15. Archetypes explained</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Archetypes are named compositions of seed packs that model a product edition, SKU, or vertical stack. Instead of listing several packs every time you provision a tenant, you define an archetype once in a manifest and then apply it by name.</p>
@@ -2094,7 +1992,7 @@ The framework provides only the SPI interface. Applications must implement their
 - To group verticalized defaults (e.g., Logistics-Fulfillment, Healthcare-Core) without forcing consumers to know every underlying pack.</p>
 </div>
 <div class="sect2">
-<h3 id="_example_a_define_and_apply_an_archetype_in_the_same_pack">16.1. Example A: Define and apply an archetype in the same pack</h3>
+<h3 id="_example_a_define_and_apply_an_archetype_in_the_same_pack">15.1. Example A: Define and apply an archetype in the same pack</h3>
 <div class="paragraph">
 <p>Manifest (logistics-core/manifest.yaml):</p>
 </div>
@@ -2141,7 +2039,7 @@ loader.applyArchetype(<span class="string"><span class="delimiter">&quot;</span>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_example_b_cross_pack_archetype_in_a_dedicated_editions_pack">16.2. Example B: Cross-pack archetype in a dedicated "editions" pack</h3>
+<h3 id="_example_b_cross_pack_archetype_in_a_dedicated_editions_pack">15.2. Example B: Cross-pack archetype in a dedicated "editions" pack</h3>
 <div class="paragraph">
 <p>You can centralize product definitions into a thin pack that only defines archetypes and forward-references other packs:</p>
 </div>
@@ -2174,7 +2072,7 @@ loader.applyArchetype(<span class="string"><span class="delimiter">&quot;</span>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_resolution_and_ordering_details">16.3. Resolution and ordering details</h3>
+<h3 id="_resolution_and_ordering_details">15.3. Resolution and ordering details</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -2190,7 +2088,7 @@ loader.applyArchetype(<span class="string"><span class="delimiter">&quot;</span>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_interaction_with_applyseedpackschangeset">16.4. Interaction with ApplySeedPacksChangeSet</h3>
+<h3 id="_interaction_with_applyseedpackschangeset">15.4. Interaction with ApplySeedPacksChangeSet</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -2206,7 +2104,7 @@ loader.applyArchetype(<span class="string"><span class="delimiter">&quot;</span>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_tenant_provisioning_with_archetypes">16.5. Tenant provisioning with archetypes</h3>
+<h3 id="_tenant_provisioning_with_archetypes">15.5. Tenant provisioning with archetypes</h3>
 <div class="paragraph">
 <p>The tenant provisioning API accepts an optional list of archetype names and will apply the corresponding seed packs during onboarding.</p>
 </div>
@@ -2258,7 +2156,7 @@ loader.applyArchetype(<span class="string"><span class="delimiter">&quot;</span>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_rest_api_for_seed_packs">17. REST API for seed packs</h2>
+<h2 id="_rest_api_for_seed_packs">16. REST API for seed packs</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>The framework exposes admin-only endpoints to inspect and apply seed packs per realm (tenant DB). These are disabled to non-admin users via role checks.</p>
@@ -2343,7 +2241,7 @@ loader.applyArchetype(<span class="string"><span class="delimiter">&quot;</span>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_using_morphiaseedrepository_morphia_backed_seeding">18. Using MorphiaSeedRepository (Morphia-backed seeding)</h2>
+<h2 id="_using_morphiaseedrepository_morphia_backed_seeding">17. Using MorphiaSeedRepository (Morphia-backed seeding)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Note about collection vs modelClass:
@@ -2413,7 +2311,7 @@ a dataset via a Morphia repository mapped to a concrete UnversionedBaseModel. Th
 </div>
 </div>
 <div class="sect1">
-<h2 id="_dataset_urls_and_routing_file_and_s3">19. Dataset URLs and routing (file:// and s3://)</h2>
+<h2 id="_dataset_urls_and_routing_file_and_s3">18. Dataset URLs and routing (file:// and s3://)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Starting with Quantum 1.2.2, dataset files in a manifest can be specified either as:</p>
@@ -2471,7 +2369,7 @@ a dataset via a Morphia repository mapped to a concrete UnversionedBaseModel. Th
 </div>
 </div>
 <div class="sect1">
-<h2 id="_s3_seed_source_optional_module">20. S3 Seed Source (optional module)</h2>
+<h2 id="_s3_seed_source_optional_module">19. S3 Seed Source (optional module)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>The framework provides an optional SeedSource backed by Amazon S3, packaged in a separate module so you can include it only when needed:</p>
@@ -2490,7 +2388,7 @@ a dataset via a Morphia repository mapped to a concrete UnversionedBaseModel. Th
 </ul>
 </div>
 <div class="sect2">
-<h3 id="_when_to_use_s3_vs_filesystem">20.1. When to use S3 vs. filesystem</h3>
+<h3 id="_when_to_use_s3_vs_filesystem">19.1. When to use S3 vs. filesystem</h3>
 <div class="paragraph">
 <p>Use S3 when any of the following apply:
 - You want a single canonical location for seed content shared across services and environments.
@@ -2512,7 +2410,7 @@ a dataset via a Morphia repository mapped to a concrete UnversionedBaseModel. Th
 </div>
 </div>
 <div class="sect2">
-<h3 id="_s3_layout_conventions">20.2. S3 layout conventions</h3>
+<h3 id="_s3_layout_conventions">19.2. S3 layout conventions</h3>
 <div class="paragraph">
 <p>S3SeedSource expects the same on-disk structure as FileSeedSource, just hosted under a bucket + optional prefix. Each seed pack version is a folder containing a manifest file and any referenced datasets. For example:</p>
 </div>
@@ -2536,7 +2434,7 @@ a dataset via a Morphia repository mapped to a concrete UnversionedBaseModel. Th
 </div>
 </div>
 <div class="sect2">
-<h3 id="_configuration_and_credentials">20.3. Configuration and credentials</h3>
+<h3 id="_configuration_and_credentials">19.3. Configuration and credentials</h3>
 <div class="paragraph">
 <p>Constructor parameters for S3SeedSource:
 - id: Human-friendly source id (e.g., "s3-main").
@@ -2584,7 +2482,7 @@ a dataset via a Morphia repository mapped to a concrete UnversionedBaseModel. Th
 </div>
 </div>
 <div class="sect2">
-<h3 id="_usage_examples">20.4. Usage examples</h3>
+<h3 id="_usage_examples">19.4. Usage examples</h3>
 <div class="paragraph">
 <p>Create a loader that discovers packs from S3 with the runtime IAM role or local credentials:</p>
 </div>
@@ -2648,7 +2546,7 @@ S3SeedSource s3 = <span class="keyword">new</span> S3SeedSourceBuilder()
 </div>
 </div>
 <div class="sect2">
-<h3 id="_defining_datasets_in_the_manifest_s3">20.5. Defining datasets in the manifest (S3)</h3>
+<h3 id="_defining_datasets_in_the_manifest_s3">19.5. Defining datasets in the manifest (S3)</h3>
 <div class="paragraph">
 <p>Manifests can reference S3 in two ways:</p>
 </div>
@@ -2702,7 +2600,7 @@ s3://my-seeds/seed-packs/customer/1.0.0/roles.json</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_troubleshooting_2">20.6. Troubleshooting</h3>
+<h3 id="_troubleshooting_2">19.6. Troubleshooting</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -2725,8 +2623,8 @@ s3://my-seeds/seed-packs/customer/1.0.0/roles.json</code></pre>
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 1.4.0-SNAPSHOT<br>
-Last updated 2026-04-07 09:08:25 -0400
+Version 1.3.1-SNAPSHOT<br>
+Last updated 2026-04-07 15:01:38 -0400
 </div>
 </div>
 </body>

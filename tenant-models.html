@@ -879,29 +879,10 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <p><code>defaultSurveyRefName</code></p>
 </li>
 <li>
-<p><code>defaultInviteEmailTemplateKey</code></p>
-</li>
-<li>
 <p><code>workflowDefinitionJson</code></p>
 </li>
 <li>
 <p><code>completionMessage</code></p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p><code>defaultInviteEmailTemplateKey</code> is the email-template key the onboarding flow should use for invite messages. The framework default is <code>tenant-onboarding-invite</code>, which can be satisfied by:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>a classpath template under <code>templates/email/tenant-onboarding-invite/</code></p>
-</li>
-<li>
-<p>a realm-scoped override in <code>email_templates</code></p>
-</li>
-<li>
-<p>a workflow update that points to a different key</p>
 </li>
 </ul>
 </div>
@@ -945,7 +926,6 @@ table.CodeRay td.code{padding:0 0 0 .75em}
   <span class="key"><span class="delimiter">&quot;</span><span class="content">adminApprovalRequired</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
   <span class="key"><span class="delimiter">&quot;</span><span class="content">autoAssignSurveyOnInvite</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
   <span class="key"><span class="delimiter">&quot;</span><span class="content">defaultSurveyRefName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">tenant-user-onboarding</span><span class="delimiter">&quot;</span></span>,
-  <span class="key"><span class="delimiter">&quot;</span><span class="content">defaultInviteEmailTemplateKey</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">tenant-onboarding-invite</span><span class="delimiter">&quot;</span></span>,
   <span class="key"><span class="delimiter">&quot;</span><span class="content">completionMessage</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Your tenant onboarding is complete. You can now sign in and begin using the workspace.</span><span class="delimiter">&quot;</span></span>,
   <span class="key"><span class="delimiter">&quot;</span><span class="content">steps</span><span class="delimiter">&quot;</span></span>: [
     { <span class="key"><span class="delimiter">&quot;</span><span class="content">key</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">invite</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">type</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">access_invite</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">required</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span> },
@@ -1270,8 +1250,8 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 1.4.0-SNAPSHOT<br>
-Last updated 2026-04-07 09:08:25 -0400
+Version 1.3.1-SNAPSHOT<br>
+Last updated 2026-04-07 15:01:38 -0400
 </div>
 </div>
 </body>

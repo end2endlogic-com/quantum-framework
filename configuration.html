@@ -781,52 +781,6 @@ packs with the same name, the latest semantic version is applied.</p>
 </div>
 </div>
 <div class="sect4">
-<h5 id="_bootstrap_packs">Bootstrap packs</h5>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code data-lang="properties"># Enable BootstrapPack infrastructure
-quantum.bootstrap-pack.enabled=true
-
-# Apply discovered bootstrap packs on startup
-quantum.bootstrap-pack.apply.on-startup=false
-
-# Optional CSV list of realms to target on startup
-# If omitted, the framework uses the system/default/test realms when available
-quantum.bootstrap-pack.apply.realms=system-com,mycompany-com,test-com
-
-# Optional CSV filter to apply only selected pack refs
-quantum.bootstrap-pack.apply.filter=pack-a,pack-b</code></pre>
-</div>
-</div>
-<div class="admonitionblock note">
-<table>
-<tr>
-<td class="icon">
-<i class="fa icon-note" title="Note"></i>
-</td>
-<td class="content">
-<div class="paragraph">
-<p>Bootstrap packs are not the same thing as seed packs.</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Use seed packs for deterministic baseline data.</p>
-</li>
-<li>
-<p>Use bootstrap packs for idempotent operational setup steps.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>See <a href="../user-guide/bootstrap-packs.html">Bootstrap Packs</a> for details.</p>
-</div>
-</td>
-</tr>
-</table>
-</div>
-</div>
-<div class="sect4">
 <h5 id="_security_rules_diagnostics">Security rules diagnostics</h5>
 <div class="listingblock">
 <div class="content">
@@ -976,8 +930,8 @@ quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pr
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 1.4.0-SNAPSHOT<br>
-Last updated 2026-04-07 09:08:25 -0400
+Version 1.3.1-SNAPSHOT<br>
+Last updated 2026-04-07 15:01:38 -0400
 </div>
 </div>
 </body>
