@@ -103,6 +103,9 @@ public class MorphiaSeedRepository implements SeedRepository {
 
             Optional<UnversionedBaseModel> existing = findExistingByNaturalKey(
                     repo, context.getRealm(), modelClass, record, naturalKey);
+            if (existing.isEmpty() && entity.getId() != null) {
+                existing = findExistingById(context.getRealm(), modelClass, entity.getId());
+            }
 
             if (existing.isPresent()) {
                 if (!dataset.isUpsert()) {
@@ -111,12 +114,14 @@ public class MorphiaSeedRepository implements SeedRepository {
                 }
                 // Merge changes INTO the existing entity and keep its id
                 UnversionedBaseModel current = existing.get();
+                ObjectId currentId = current.getId();
                 try {
                     // Apply/merge provided fields onto the current entity
                     objectMapper.updateValue(current, adapted);
+                    current.setId(currentId);
                 } catch (IllegalArgumentException | JsonMappingException e) {
                     // Fall back to id-carry-over if merge fails for any reason
-                    entity.setId(current.getId());
+                    entity.setId(currentId);
                     current = entity;
                 }
 
@@ -240,6 +245,16 @@ public class MorphiaSeedRepository implements SeedRepository {
                 .filter(filters.toArray(new Filter[0]));
 
         UnversionedBaseModel existing = query.first();
+        return Optional.ofNullable(existing);
+    }
+
+    private Optional<UnversionedBaseModel> findExistingById(String realm,
+                                                            Class<? extends UnversionedBaseModel> modelClass,
+                                                            ObjectId id) {
+        Datastore datastore = morphiaDataStoreWrapper.getDataStore(realm);
+        UnversionedBaseModel existing = datastore.find(modelClass)
+                .filter(Filters.eq("_id", id))
+                .first();
         return Optional.ofNullable(existing);
     }
 
@@ -404,7 +419,7 @@ public class MorphiaSeedRepository implements SeedRepository {
       String collection = dataset.getCollection();
       if (collection != null && !collection.isBlank()) {
          String candidate1 = collection + "Repo";
-         String candidate2 = decapitalize(candidate1);
+         String candidate2 = java.beans.Introspector.decapitalize(candidate1);
 
          // [Arc lookup code remains the same...]
 
@@ -463,46 +478,18 @@ public class MorphiaSeedRepository implements SeedRepository {
 
     private void ensureCollectionSet(SeedPackManifest.Dataset dataset,
                                      Optional<BaseMorphiaRepo<? extends UnversionedBaseModel>> repoOpt) {
-        if (dataset.getCollection() != null && !dataset.getCollection().isBlank()) {
+        if (dataset.getCollection() != null && !dataset.getCollection().isBlank() && !".".equals(dataset.getCollection())) {
             return;
         }
         try {
             if (repoOpt.isPresent()) {
                 Class<? extends UnversionedBaseModel> cls = repoOpt.get().getPersistentClass();
-                try {
-                    dev.morphia.annotations.Entity ann = cls.getAnnotation(dev.morphia.annotations.Entity.class);
-                    if (ann != null && ann.value() != null && !ann.value().isBlank()) {
-                        dataset.setCollection(ann.value());
-                        return;
-                    }
-                } catch (Throwable ignore) {
-                }
-                dataset.setCollection(cls.getSimpleName());
+                dataset.setCollection(SeedCollectionResolver.deriveCollectionName(cls.getName()));
                 return;
             }
         } catch (Exception ignore) {
         }
-        // Fallback: attempt reading modelClass string and use simple name (without loading the class)
-        try {
-            var getter = SeedPackManifest.Dataset.class.getDeclaredMethod("getModelClass");
-            Object val = getter.invoke(dataset);
-            String mc = (val instanceof String s) ? s : null;
-            if (mc != null && !mc.isBlank()) {
-                int lastDot = mc.lastIndexOf('.');
-                String simple = (lastDot >= 0) ? mc.substring(lastDot + 1) : mc;
-                dataset.setCollection(simple);
-            }
-        } catch (Exception ignored) {
-        }
-    }
-
-    private static String decapitalize(String s) {
-        if (s == null || s.isEmpty()) return s;
-        if (s.length() > 1 && Character.isUpperCase(s.charAt(0)) && Character.isUpperCase(s.charAt(1))) {
-            // keep acronyms
-            return s;
-        }
-        return Character.toLowerCase(s.charAt(0)) + s.substring(1);
+        SeedCollectionResolver.ensureCollectionSet(dataset);
     }
 
     /**

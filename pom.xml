@@ -7,7 +7,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.end2endlogic</groupId>
     <artifactId>quantum-parent</artifactId>
-    <version>1.3.0</version>
+    <version>1.4.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>${project.groupId}:${project.artifactId}</name>
@@ -57,8 +57,8 @@
         <quarkus.platform.version>3.31.2</quarkus.platform.version>
         <skipITs>true</skipITs>
         <surefire-plugin.version>3.2.5</surefire-plugin.version>
-        <lombrok.version>1.18.34</lombrok.version>
-        <quantum.version>1.3.0</quantum.version>
+        <lombrok.version>1.18.38</lombrok.version>
+        <quantum.version>1.4.0-SNAPSHOT</quantum.version>
         <apachecommons.lang3.version>3.18.0</apachecommons.lang3.version>
     </properties>
 
@@ -79,6 +79,7 @@
         <module>quantum-secrets</module>
         <module>quantum-mcp-server</module>
         <module>quantum-cli</module>
+        <module>quantum-docs</module>
 
     </modules>
 
@@ -262,7 +263,6 @@
                 <module>quantum-framework</module>
                 <module>quantum-seed-s3</module>
                 <module>quantum-mcp-server</module>
-                <module>quantum-docs</module>
             </modules>
             <build>
                 <plugins>

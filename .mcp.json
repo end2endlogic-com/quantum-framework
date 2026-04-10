@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "helixai": {
+      "type": "stdio",
+      "command": "/Users/mingardia/.pyenv/versions/3.11.4/bin/python",
+      "args": [
+        "scripts/brain_mcp_stdio.py"
+      ],
+      "cwd": "/Users/mingardia/dev/mrisys/end2endlogic/congi/congi",
+      "env": {
+        "HELIX_SUBJECT_ID": "mingardia@end2endlogic.com",
+        "HELIX_TENANT_ID": "end2endlogic"
+      }
+    }
+  }
+}

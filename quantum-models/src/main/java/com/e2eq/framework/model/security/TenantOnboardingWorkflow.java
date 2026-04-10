@@ -28,6 +28,7 @@ public class TenantOnboardingWorkflow extends BaseModel {
 
     public static final String DEFAULT_REF_NAME = "default-tenant-onboarding";
     public static final String DEFAULT_SURVEY_REF_NAME = "tenant-user-onboarding";
+    public static final String DEFAULT_INVITE_EMAIL_TEMPLATE_KEY = "tenant-onboarding-invite";
 
     @Builder.Default
     private boolean workflowEnabled = true;
@@ -51,6 +52,9 @@ public class TenantOnboardingWorkflow extends BaseModel {
 
     @Builder.Default
     private String defaultSurveyRefName = DEFAULT_SURVEY_REF_NAME;
+
+    @Builder.Default
+    private String defaultInviteEmailTemplateKey = DEFAULT_INVITE_EMAIL_TEMPLATE_KEY;
 
     private String workflowDefinitionJson;
 

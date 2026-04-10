@@ -4,11 +4,13 @@ import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.service.seed.SeedContext;
+import com.e2eq.framework.service.seed.SeedCollectionResolver;
 import com.e2eq.framework.service.seed.SeedPackDescriptor;
 import com.e2eq.framework.service.seed.SeedPackManifest;
 import com.e2eq.framework.service.seed.SeedPackRef;
 import com.e2eq.framework.service.seed.SeedLoaderService;
 import com.e2eq.framework.service.seed.SeedDiscoveryService;
+import com.e2eq.framework.service.seed.SeedVerificationService;
 import com.e2eq.framework.service.seed.SeedRegistry;
 import com.e2eq.framework.service.seed.MorphiaSeedRegistry;
 import com.e2eq.framework.service.seed.SeedRegistryEntry;
@@ -40,6 +42,9 @@ public class SeedAdminResource {
 
     @Inject
     SeedRegistry seedRegistry;
+
+    @Inject
+    SeedVerificationService seedVerificationService;
 
 
     // ----- Endpoints -----
@@ -90,6 +95,20 @@ public class SeedAdminResource {
             result.add(e);
         }
         return result;
+    }
+
+    @GET
+    @Path("/verify/{realm}")
+    public SeedVerificationService.VerifyResult verifyAll(@PathParam("realm") String realm,
+                                                          @QueryParam("filter") String filterCsv) {
+        return seedVerificationService.verifyLatestApplicable(buildSeedContext(realm), filterCsv);
+    }
+
+    @GET
+    @Path("/{realm}/{seedPack}/verify")
+    public SeedVerificationService.VerifyResult verifyOne(@PathParam("realm") String realm,
+                                                          @PathParam("seedPack") String seedPack) {
+        return seedVerificationService.verifyOne(buildSeedContext(realm), seedPack);
     }
 
     @POST
@@ -181,6 +200,7 @@ public class SeedAdminResource {
         boolean anyPending = false;
         List<PendingDataset> datasets = new ArrayList<>();
         for (SeedPackManifest.Dataset ds : m.getDatasets()) {
+            SeedCollectionResolver.ensureCollectionSet(ds);
             String checksum = seedDiscoveryService.calculateChecksum(d, ds);
             boolean should = registry.shouldApply(context, m, ds, checksum);
             if (should) {

@@ -27,11 +27,7 @@ public class MorphiaSeedRegistry implements SeedRegistry {
                                SeedPackManifest manifest,
                                SeedPackManifest.Dataset dataset,
                                String checksum) {
-        Optional<SeedRegistryEntry> existing = registryRepo.findEntry(
-                context.getRealm(),
-                manifest.getSeedPack(),
-                manifest.getVersion(),
-                dataset.getCollection());
+        Optional<SeedRegistryEntry> existing = findEntry(context, manifest, dataset);
 
         if (existing.isEmpty()) {
             Log.debugf("Seed registry: no existing record for %s %s %s %s - should apply",
@@ -52,11 +48,7 @@ public class MorphiaSeedRegistry implements SeedRegistry {
     public Optional<String> getLastAppliedChecksum(SeedContext context,
                                                    SeedPackManifest manifest,
                                                    SeedPackManifest.Dataset dataset) {
-        return registryRepo.findEntry(
-                context.getRealm(),
-                manifest.getSeedPack(),
-                manifest.getVersion(),
-                dataset.getCollection())
+        return findEntry(context, manifest, dataset)
                 .map(SeedRegistryEntry::getChecksum);
     }
 
@@ -67,11 +59,7 @@ public class MorphiaSeedRegistry implements SeedRegistry {
                              SeedPackManifest.Dataset dataset,
                              String checksum,
                              int recordsApplied) {
-        Optional<SeedRegistryEntry> existingOpt = registryRepo.findEntry(
-                context.getRealm(),
-                manifest.getSeedPack(),
-                manifest.getVersion(),
-                dataset.getCollection());
+        Optional<SeedRegistryEntry> existingOpt = findEntry(context, manifest, dataset);
 
         SeedRegistryEntry entry;
         if (existingOpt.isPresent()) {
@@ -91,6 +79,22 @@ public class MorphiaSeedRegistry implements SeedRegistry {
         entry.setAppliedToRealm(context.getRealm());
 
         registryRepo.save(context.getRealm(), entry);
+    }
+
+    private Optional<SeedRegistryEntry> findEntry(SeedContext context,
+                                                  SeedPackManifest manifest,
+                                                  SeedPackManifest.Dataset dataset) {
+        for (String collectionName : SeedCollectionResolver.lookupCollectionNames(dataset)) {
+            Optional<SeedRegistryEntry> existing = registryRepo.findEntry(
+                    context.getRealm(),
+                    manifest.getSeedPack(),
+                    manifest.getVersion(),
+                    collectionName);
+            if (existing.isPresent()) {
+                return existing;
+            }
+        }
+        return Optional.empty();
     }
 
     /**
@@ -116,4 +120,3 @@ public class MorphiaSeedRegistry implements SeedRegistry {
         return allEntries;
     }
 }
-
