@@ -133,6 +133,21 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
    }
 
    @Override
+   public void resetPassword(String userId, String newPassword, Boolean forceChangePassword) {
+      Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(userId);
+      if (!ocred.isPresent()) {
+         throw new NotFoundException(String.format("User with userId %s not found in realm %s", userId, envConfigUtils.getSystemRealm()));
+      }
+
+      CredentialUserIdPassword cred = ocred.get();
+      cred.setHashingAlgorithm(EncryptionUtils.hashAlgorithm());
+      cred.setPasswordHash(EncryptionUtils.hashPassword(newPassword));
+      cred.setForceChangePassword(forceChangePassword);
+      cred.setAuthProviderName(getName());
+      credentialRepo.save(cred);
+   }
+
+   @Override
    public String createUser (String userId, String password,  Set<String> roles,
                            DomainContext domainContext) throws SecurityException {
       return createUser( userId, password, false, roles, domainContext);
