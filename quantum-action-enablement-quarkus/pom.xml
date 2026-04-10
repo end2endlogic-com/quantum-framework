@@ -17,7 +17,7 @@
     <description>Quarkus runtime, SPI, and REST support for scoped action enablement checks.</description>
 
     <properties>
-        <lombok.version>1.18.34</lombok.version>
+        <lombok.version>1.18.38</lombok.version>
     </properties>
 
     <dependencies>

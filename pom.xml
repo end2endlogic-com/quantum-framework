@@ -57,7 +57,7 @@
         <quarkus.platform.version>3.31.2</quarkus.platform.version>
         <skipITs>true</skipITs>
         <surefire-plugin.version>3.2.5</surefire-plugin.version>
-        <lombrok.version>1.18.34</lombrok.version>
+        <lombrok.version>1.18.38</lombrok.version>
         <quantum.version>1.4.0-SNAPSHOT</quantum.version>
         <apachecommons.lang3.version>3.18.0</apachecommons.lang3.version>
     </properties>
