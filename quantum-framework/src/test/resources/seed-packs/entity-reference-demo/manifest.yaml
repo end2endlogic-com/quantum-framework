@@ -1,0 +1,13 @@
+seedPack: entity-reference-demo
+version: 1.0.0
+datasets:
+  - collection: EntityReferenceHolderModel
+    file: classpath:seed-packs/entity-reference-demo/datasets/holders.ndjson
+    naturalKey: [ refName ]
+    upsert: true
+    modelClass: com.e2eq.framework.test.EntityReferenceHolderModel
+  - collection: ParentModel
+    file: classpath:seed-packs/entity-reference-demo/datasets/parents.ndjson
+    naturalKey: [ refName ]
+    upsert: true
+    modelClass: com.e2eq.framework.test.ParentModel
