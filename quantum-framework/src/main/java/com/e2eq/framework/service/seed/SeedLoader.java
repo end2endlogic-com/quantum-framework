@@ -629,7 +629,7 @@ public final class SeedLoader {
             return;
         }
         try {
-            Class<?> cls = Class.forName(mc);
+            Class<?> cls = Class.forName(mc, true, Thread.currentThread().getContextClassLoader());
             // Try Morphia @Entity annotation
             try {
                 dev.morphia.annotations.Entity ann = cls.getAnnotation(dev.morphia.annotations.Entity.class);
