@@ -63,8 +63,9 @@ public class SmartSeedLoader {
       }
 
       // 3. Resolve Repo & Class
-      Class<?> modelClass = Class.forName(dataset.getModelClass());
-      Class<?> repoClass = Class.forName(dataset.getRepoClass());
+      ClassLoader cl = Thread.currentThread().getContextClassLoader();
+      Class<?> modelClass = Class.forName(dataset.getModelClass(), true, cl);
+      Class<?> repoClass = Class.forName(dataset.getRepoClass(), true, cl);
       // Dynamic CDI lookup - finds the bean instance
       BaseMorphiaRepo repo = (BaseMorphiaRepo) Arc.container().select(repoClass).get();
 

@@ -76,7 +76,7 @@ final class SeedReferenceBindings {
             return null;
         }
         try {
-            return Class.forName(modelClassName);
+            return Class.forName(modelClassName, true, Thread.currentThread().getContextClassLoader());
         } catch (ClassNotFoundException e) {
             throw new SeedLoadingException("Unable to load modelClass " + modelClassName + " while resolving seed reference bindings", e);
         }
