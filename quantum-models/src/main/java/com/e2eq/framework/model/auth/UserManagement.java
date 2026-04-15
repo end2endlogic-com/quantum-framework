@@ -41,6 +41,7 @@ public interface UserManagement extends UserManagementBase{
 
 
     void changePassword(String userId, String oldPassword, String newPassword, Boolean forceChangePassword);
+    void resetPassword(String userId, String newPassword, Boolean forceChangePassword);
 
 
     void removeRolesForSubject(String subject, Set<String> roles) throws SecurityException;

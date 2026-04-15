@@ -22,6 +22,7 @@ public class TenantOnboardingWorkflowRequest {
     protected Boolean adminApprovalRequired;
     protected Boolean autoAssignSurveyOnInvite;
     protected String defaultSurveyRefName;
+    protected String defaultInviteEmailTemplateKey;
     protected String completionMessage;
     protected String workflowDefinitionJson;
 }

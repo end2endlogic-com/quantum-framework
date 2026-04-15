@@ -13,6 +13,7 @@ public final class SeedContext {
     private final String orgRefName;
     private final String accountId;
     private final String ownerId;
+    private final java.util.Map<String, String> variables;
 
     private SeedContext(Builder builder) {
         this.realm = Objects.requireNonNull(builder.realm, "realmId");
@@ -20,6 +21,7 @@ public final class SeedContext {
         this.orgRefName = builder.orgRefName;
         this.accountId = builder.accountId;
         this.ownerId = builder.ownerId;
+        this.variables = java.util.Map.copyOf(builder.variables);
     }
 
     public String getRealm () {
@@ -42,6 +44,17 @@ public final class SeedContext {
         return Optional.ofNullable(ownerId);
     }
 
+    public Optional<String> getVariable(String variableName) {
+        if (variableName == null || variableName.isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(variables.get(variableName));
+    }
+
+    public java.util.Map<String, String> getVariables() {
+        return variables;
+    }
+
     public static Builder builder(String realmId) {
         return new Builder(realmId);
     }
@@ -52,6 +65,7 @@ public final class SeedContext {
         private String orgRefName;
         private String accountId;
         private String ownerId;
+        private final java.util.Map<String, String> variables = new java.util.LinkedHashMap<>();
 
         private Builder(String realm) {
             this.realm = Objects.requireNonNull(realm, "realm");
@@ -74,6 +88,13 @@ public final class SeedContext {
 
         public Builder ownerId(String ownerId) {
             this.ownerId = ownerId;
+            return this;
+        }
+
+        public Builder variable(String name, String value) {
+            if (name != null && !name.isBlank() && value != null) {
+                this.variables.put(name, value);
+            }
             return this;
         }
 

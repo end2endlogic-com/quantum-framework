@@ -171,14 +171,13 @@ public final class SeedLoader {
     }
 
     private void applyDatasets(SeedPackDescriptor descriptor, SeedContext context) {
-        List<Dataset> datasets = descriptor.getManifest().getDatasets();
+        List<Dataset> datasets = orderDatasetsByDependencies(descriptor);
         if (datasets.isEmpty()) {
             Log.debugf("Seed pack %s has no datasets", descriptor.identity());
             return;
         }
         for (Dataset dataset : datasets) {
-            // Ensure collection is set; when modelClass is provided, derive collection name from @Entity or class simple name
-            deriveCollectionIfMissing(dataset);
+            SeedCollectionResolver.ensureCollectionSet(dataset);
             if (dataset.getCollection() == null || dataset.getCollection().isBlank()) {
                 throw new SeedLoadingException("Dataset collection is not specified and could not be derived for seed pack "
                         + descriptor.identity());
@@ -367,6 +366,117 @@ public final class SeedLoader {
         }
     }
 
+    private List<Dataset> orderDatasetsByDependencies(SeedPackDescriptor descriptor) {
+        List<Dataset> datasets = new ArrayList<>(descriptor.getManifest().getDatasets());
+        if (datasets.isEmpty()) {
+            return datasets;
+        }
+
+        for (Dataset dataset : datasets) {
+            SeedCollectionResolver.ensureCollectionSet(dataset);
+        }
+
+        Map<String, Dataset> producerByKey = new LinkedHashMap<>();
+        for (Dataset dataset : datasets) {
+            registerDatasetProducerKey(producerByKey, dataset.getCollection(), dataset);
+            registerDatasetProducerKey(producerByKey, dataset.getModelClass(), dataset);
+        }
+
+        Map<Dataset, Set<Dataset>> outgoing = new LinkedHashMap<>();
+        Map<Dataset, Integer> indegree = new LinkedHashMap<>();
+        for (Dataset dataset : datasets) {
+            outgoing.put(dataset, new LinkedHashSet<>());
+            indegree.put(dataset, 0);
+        }
+
+        for (Dataset dataset : datasets) {
+            for (SeedPackManifest.ReferenceBinding reference : SeedReferenceBindings.resolveBindings(dataset)) {
+                Dataset dependency = resolveDatasetDependency(descriptor, producerByKey, dataset, reference);
+                if (dependency == null || dependency == dataset) {
+                    continue;
+                }
+                if (outgoing.get(dependency).add(dataset)) {
+                    indegree.put(dataset, indegree.get(dataset) + 1);
+                }
+            }
+        }
+
+        Deque<Dataset> ready = new ArrayDeque<>();
+        for (Dataset dataset : datasets) {
+            if (indegree.get(dataset) == 0) {
+                ready.add(dataset);
+            }
+        }
+
+        List<Dataset> ordered = new ArrayList<>(datasets.size());
+        while (!ready.isEmpty()) {
+            Dataset next = ready.removeFirst();
+            ordered.add(next);
+            for (Dataset dependent : outgoing.get(next)) {
+                int remaining = indegree.get(dependent) - 1;
+                indegree.put(dependent, remaining);
+                if (remaining == 0) {
+                    ready.addLast(dependent);
+                }
+            }
+        }
+
+        if (ordered.size() != datasets.size()) {
+            throw new SeedLoadingException("Cyclic dataset reference dependency detected in seed pack " + descriptor.identity());
+        }
+
+        return ordered;
+    }
+
+    private void registerDatasetProducerKey(Map<String, Dataset> producerByKey, String rawKey, Dataset dataset) {
+        if (rawKey == null || rawKey.isBlank()) {
+            return;
+        }
+        Dataset existing = producerByKey.putIfAbsent(rawKey, dataset);
+        if (existing != null && existing != dataset) {
+            throw new SeedLoadingException("Multiple datasets in the same seed pack publish the same reference target key '" + rawKey + "'");
+        }
+        int lastDot = rawKey.lastIndexOf('.');
+        if (lastDot >= 0 && lastDot + 1 < rawKey.length()) {
+            String simple = rawKey.substring(lastDot + 1);
+            existing = producerByKey.putIfAbsent(simple, dataset);
+            if (existing != null && existing != dataset) {
+                throw new SeedLoadingException("Multiple datasets in the same seed pack publish the same reference target key '" + simple + "'");
+            }
+        }
+    }
+
+    private Dataset resolveDatasetDependency(SeedPackDescriptor descriptor,
+                                             Map<String, Dataset> producerByKey,
+                                             Dataset dataset,
+                                             SeedPackManifest.ReferenceBinding reference) {
+        Dataset dependency = null;
+        if (reference.getTargetModelClass() != null && !reference.getTargetModelClass().isBlank()) {
+            dependency = producerByKey.get(reference.getTargetModelClass());
+            if (dependency == null) {
+                int lastDot = reference.getTargetModelClass().lastIndexOf('.');
+                if (lastDot >= 0 && lastDot + 1 < reference.getTargetModelClass().length()) {
+                    dependency = producerByKey.get(reference.getTargetModelClass().substring(lastDot + 1));
+                }
+            }
+        }
+        if (dependency == null && reference.getTargetCollection() != null && !reference.getTargetCollection().isBlank()) {
+            dependency = producerByKey.get(reference.getTargetCollection());
+        }
+
+        if (dependency == null) {
+            return null;
+        }
+
+        if (dependency == dataset && reference.isRequired()) {
+            Log.debugf("Reference binding %s on dataset %s in %s resolves to the same dataset; runtime resolution will rely on existing records or prior inserts",
+                    reference.getField(),
+                    dataset.getCollection(),
+                    descriptor.identity());
+        }
+        return dependency;
+    }
+
     private List<SeedTransform> buildTransforms(Dataset dataset) {
         if (dataset.getTransforms().isEmpty()) {
             return List.of();
@@ -501,45 +611,6 @@ public final class SeedLoader {
         }
     }
 
-    // Derive collection from modelClass annotation if missing
-    private void deriveCollectionIfMissing(SeedPackManifest.Dataset dataset) {
-        String coll = dataset.getCollection();
-        if (coll != null && !coll.isBlank()) {
-            return;
-        }
-        String mc = null;
-        try {
-            var getter = SeedPackManifest.Dataset.class.getDeclaredMethod("getModelClass");
-            Object val = getter.invoke(dataset);
-            mc = (val instanceof String s) ? s : null;
-        } catch (Exception ignore) {
-        }
-        if (mc == null || mc.isBlank()) {
-            return;
-        }
-        try {
-            Class<?> cls = Class.forName(mc);
-            // Try Morphia @Entity annotation
-            try {
-                dev.morphia.annotations.Entity ann = cls.getAnnotation(dev.morphia.annotations.Entity.class);
-                if (ann != null) {
-                    String name = ann.value();
-                    if (name != null && !name.isBlank()) {
-                        dataset.setCollection(name);
-                        return;
-                    }
-                }
-            } catch (Throwable ignored) {
-                // Morphia not on classpath or annotation not present
-            }
-            dataset.setCollection(cls.getSimpleName());
-        } catch (ClassNotFoundException e) {
-            // Fallback to last segment of FQN as a best-effort
-            String simple = mc.contains(".") ? mc.substring(mc.lastIndexOf('.') + 1) : mc;
-            dataset.setCollection(simple);
-        }
-    }
-
     private SeedResolution resolveSeedPacks(SeedContext context) {
         Map<String, List<SeedPackDescriptor>> descriptors = new HashMap<>();
         for (SeedSource source : seedSources) {
@@ -621,6 +692,7 @@ public final class SeedLoader {
         private SeedDatasetValidator seedDatasetValidator;
 
         private Builder() {
+            registerTransformFactory("dropIf", new DropIfTransform.Factory());
             registerTransformFactory("tenantSubstitution", new TenantSubstitutionTransform.Factory());
             // Secure credential upsert via UserManagement
             registerTransformFactory("credentialUpsert", new CredentialUpsertTransform.Factory());

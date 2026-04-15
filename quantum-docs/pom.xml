@@ -6,7 +6,7 @@
     <parent>
         <groupId>com.end2endlogic</groupId>
         <artifactId>quantum-parent</artifactId>
-        <version>1.3.0</version>
+        <version>1.4.0-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
@@ -51,10 +51,13 @@
 
         <docs.output.dir>${project.reporting.outputDirectory}</docs.output.dir>
         <!-- Configure GitHub Pages (Option 2: gh-pages branch) -->
-        <!-- Replace ORG/REPO with your GitHub org/user and repository name -->
         <gh.repo.scm.url>${project.parent.scm.developerConnection}</gh.repo.scm.url>
         <gh.pages.branch>gh-pages</gh.pages.branch>
         <scmpublish.checkout.dir>${project.build.directory}/scmpublish</scmpublish.checkout.dir>
+        <!-- Empty = LTS docs at gh-pages root; non-empty = preview under that subdirectory (see profiles). -->
+        <docs.ghpages.subdir/>
+        <!-- When true, the versioned publish-scm execution is skipped (default safe). Profiles docs-ghpages-lts / docs-ghpages-1.4 set false. -->
+        <docs.ghpages.skip.versioned.publish>true</docs.ghpages.skip.versioned.publish>
     </properties>
 
     <build>
@@ -148,7 +151,15 @@
                     </execution>
                 </executions>
             </plugin>
-            <!-- Publish generated HTML to gh-pages branch during 'deploy' -->
+            <!-- Skip deploying the jar to a remote repository; deploy phase still runs scm-publish. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-deploy-plugin</artifactId>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
+            <!-- Publish generated HTML to gh-pages during 'deploy' (LTS at root, 1.4 preview under subdir). -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-scm-publish-plugin</artifactId>
@@ -158,17 +169,26 @@
                     <pubScmUrl>${gh.repo.scm.url}</pubScmUrl>
                     <scmBranch>${gh.pages.branch}</scmBranch>
                     <tryUpdate>true</tryUpdate>
+                    <serverId>github</serverId>
                     <checkinComment>[docs] Publish site for ${project.artifactId} ${project.version}</checkinComment>
-                    <!-- Use the Asciidoctor output (target/site) as the content to publish -->
                     <content>${project.reporting.outputDirectory}</content>
+                    <!-- scmpublish.subDirectory: empty string uses checkout root (same as omitting). -->
+                    <subDirectory>${docs.ghpages.subdir}</subDirectory>
+                    <!-- When LTS publishes to root, do not remove the in-progress docs tree. -->
+                    <ignorePathsToDelete>
+                        <string>1.4.0-SNAPSHOT</string>
+                    </ignorePathsToDelete>
                 </configuration>
                 <executions>
                     <execution>
-                        <id>publish-gh-pages</id>
+                        <id>publish-gh-pages-versioned</id>
                         <phase>deploy</phase>
                         <goals>
                             <goal>publish-scm</goal>
                         </goals>
+                        <configuration>
+                            <skipDeployement>${docs.ghpages.skip.versioned.publish}</skipDeployement>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>
@@ -202,4 +222,30 @@
             </plugin> -->
         </plugins>
     </build>
+
+    <profiles>
+        <!-- LTS (1.3.x line): publish to gh-pages root — default URL for visitors. Build from git branch 1.3.x so ${project.version} matches. -->
+        <profile>
+            <id>docs-ghpages-1.3.x</id>
+            <properties>
+                <docs.ghpages.subdir/>
+                <docs.ghpages.skip.versioned.publish>false</docs.ghpages.skip.versioned.publish>
+            </properties>
+        </profile>
+        <profile>
+            <id>docs-ghpages-lts</id>
+            <properties>
+                <docs.ghpages.subdir/>
+                <docs.ghpages.skip.versioned.publish>false</docs.ghpages.skip.versioned.publish>
+            </properties>
+        </profile>
+        <!-- In-progress 1.4 line: non-default URL …/1.4.0-SNAPSHOT/ only. Build from git branch 1.4.0-SNAPSHOT. -->
+        <profile>
+            <id>docs-ghpages-1.4</id>
+            <properties>
+                <docs.ghpages.subdir>1.4.0-SNAPSHOT</docs.ghpages.subdir>
+                <docs.ghpages.skip.versioned.publish>false</docs.ghpages.skip.versioned.publish>
+            </properties>
+        </profile>
+    </profiles>
 </project>
