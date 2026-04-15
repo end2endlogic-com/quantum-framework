@@ -17,7 +17,7 @@ public final class SeedCollectionResolver {
             return null;
         }
         try {
-            Class<?> modelClass = Class.forName(modelClassName);
+            Class<?> modelClass = Class.forName(modelClassName, true, Thread.currentThread().getContextClassLoader());
             Entity ann = modelClass.getAnnotation(Entity.class);
             if (ann != null && ann.value() != null && !ann.value().isBlank() && !".".equals(ann.value())) {
                 return ann.value();
@@ -65,7 +65,7 @@ public final class SeedCollectionResolver {
             return null;
         }
         try {
-            Class<?> modelClass = Class.forName(modelClassName);
+            Class<?> modelClass = Class.forName(modelClassName, true, Thread.currentThread().getContextClassLoader());
             Entity ann = modelClass.getAnnotation(Entity.class);
             return ann != null ? ann.value() : null;
         } catch (ClassNotFoundException e) {
