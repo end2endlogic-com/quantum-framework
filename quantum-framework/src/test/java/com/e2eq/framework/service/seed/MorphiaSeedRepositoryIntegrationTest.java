@@ -3,9 +3,15 @@ package com.e2eq.framework.service.seed;
 import com.e2eq.framework.model.general.MenuHierarchyModel;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.morphia.MenuHierarchyRepo;
+import com.e2eq.framework.persistent.TestAuthorRepo;
+import com.e2eq.framework.persistent.TestBookRepo;
+import com.e2eq.framework.persistent.TestEntityReferenceHolderRepo;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
+import com.e2eq.framework.test.AuthorModel;
+import com.e2eq.framework.test.BookModel;
+import com.e2eq.framework.test.EntityReferenceHolderModel;
 import com.e2eq.framework.test.MongoDbInitResource;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
@@ -43,6 +49,15 @@ class MorphiaSeedRepositoryIntegrationTest {
 
     @Inject
     MenuHierarchyRepo menuHierarchyRepo;
+
+    @Inject
+    TestAuthorRepo testAuthorRepo;
+
+    @Inject
+    TestBookRepo testBookRepo;
+
+    @Inject
+    TestEntityReferenceHolderRepo testEntityReferenceHolderRepo;
 
     @BeforeEach
     void setup() {
@@ -141,12 +156,7 @@ class MorphiaSeedRepositoryIntegrationTest {
         dataset.setNaturalKey(List.of("refName"));
         dataset.setUpsert(true);
 
-        SeedContext context = SeedContext.builder(REALM)
-                .tenantId("tenant.morphia")
-                .orgRefName("org-morphia")
-                .accountId("0000000042")
-                .ownerId("owner-xyz")
-                .build();
+        SeedContext context = context();
 
         Map<String, Object> record = new LinkedHashMap<>();
         record.put("id", seedId.toHexString());
@@ -160,6 +170,76 @@ class MorphiaSeedRepositoryIntegrationTest {
         assertEquals("BOOTSTRAP DEFAULTS", updated.getDisplayName());
         assertTrue(menuHierarchyRepo.findByRefName("legacy-bootstrap-defaults-node", REALM).isEmpty());
         assertEquals(1L, countMenuHierarchyDocuments(), "Expected a single menu hierarchy record after id-based upsert");
+    }
+
+    @Test
+    void resolvesMorphiaReferencesByRefNameAfterReorderingDatasets() {
+        SeedLoader loader = loader();
+        SeedContext context = context();
+
+        loader.apply(List.of(SeedPackRef.of("reference-demo")), context);
+
+        BookModel book = testBookRepo.findByRefName("foundation").orElseThrow();
+        assertNotNull(book.getAuthor(), "Expected author reference to be materialized");
+        assertEquals("isaac-asimov", book.getAuthor().getRefName());
+        assertNotNull(book.getAuthor().getId());
+    }
+
+    @Test
+    void resolvesMorphiaReferencesAgainstExistingDatabaseRecords() {
+        AuthorModel author = new AuthorModel();
+        author.setRefName("existing-author");
+        author.setDisplayName("Existing Author");
+        author.setAuthorName("Existing Author");
+        author = testAuthorRepo.save(author);
+
+        SeedLoader loader = loader();
+        loader.apply(List.of(SeedPackRef.of("reference-existing-author")), context());
+
+        BookModel book = testBookRepo.findByRefName("robots").orElseThrow();
+        assertNotNull(book.getAuthor());
+        assertEquals(author.getId(), book.getAuthor().getId());
+        assertEquals("existing-author", book.getAuthor().getRefName());
+    }
+
+    @Test
+    void failsClosedWhenMorphiaReferenceCannotBeResolved() {
+        SeedLoader loader = loader();
+        SeedContext context = context();
+
+        SeedLoadingException exception = assertThrows(SeedLoadingException.class,
+                () -> loader.apply(List.of(SeedPackRef.of("reference-missing-author")), context));
+        assertTrue(exception.getMessage().contains("Unable to resolve reference field 'author'"));
+    }
+
+    @Test
+    void resolvesEntityReferencesByRefNameAfterReorderingDatasets() {
+        SeedLoader loader = loader();
+        SeedContext context = context();
+
+        loader.apply(List.of(SeedPackRef.of("entity-reference-demo")), context);
+
+        EntityReferenceHolderModel holder = testEntityReferenceHolderRepo.findByRefName("holder-1").orElseThrow();
+        assertNotNull(holder.getLinkedParent());
+        assertNotNull(holder.getLinkedParent().getEntityId());
+        assertEquals("parent-1", holder.getLinkedParent().getEntityRefName());
+    }
+
+    private SeedLoader loader() {
+        return SeedLoader.builder()
+                .addSeedSource(new FileSeedSource("test", SEED_ROOT))
+                .seedRepository(morphiaSeedRepository)
+                .seedRegistry(new MongoSeedRegistry(mongoClient))
+                .build();
+    }
+
+    private SeedContext context() {
+        return SeedContext.builder(REALM)
+                .tenantId("tenant.morphia")
+                .orgRefName("org-morphia")
+                .accountId("0000000042")
+                .ownerId("owner-xyz")
+                .build();
     }
 
     private boolean exists(String realm, String collection) {
