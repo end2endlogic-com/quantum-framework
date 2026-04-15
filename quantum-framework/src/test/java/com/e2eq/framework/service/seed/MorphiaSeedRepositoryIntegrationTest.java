@@ -2,17 +2,22 @@ package com.e2eq.framework.service.seed;
 
 import com.e2eq.framework.model.general.MenuHierarchyModel;
 import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.persistent.base.ReferenceEntry;
 import com.e2eq.framework.model.persistent.morphia.MenuHierarchyRepo;
 import com.e2eq.framework.persistent.TestAuthorRepo;
 import com.e2eq.framework.persistent.TestBookRepo;
+import com.e2eq.framework.persistent.TestChildRepo;
 import com.e2eq.framework.persistent.TestEntityReferenceHolderRepo;
+import com.e2eq.framework.persistent.TestParentRepo;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.test.AuthorModel;
 import com.e2eq.framework.test.BookModel;
+import com.e2eq.framework.test.ChildModel;
 import com.e2eq.framework.test.EntityReferenceHolderModel;
 import com.e2eq.framework.test.MongoDbInitResource;
+import com.e2eq.framework.test.ParentModel;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.Filters;
@@ -58,6 +63,12 @@ class MorphiaSeedRepositoryIntegrationTest {
 
     @Inject
     TestEntityReferenceHolderRepo testEntityReferenceHolderRepo;
+
+    @Inject
+    TestChildRepo testChildRepo;
+
+    @Inject
+    TestParentRepo testParentRepo;
 
     @BeforeEach
     void setup() {
@@ -223,6 +234,27 @@ class MorphiaSeedRepositoryIntegrationTest {
         assertNotNull(holder.getLinkedParent());
         assertNotNull(holder.getLinkedParent().getEntityId());
         assertEquals("parent-1", holder.getLinkedParent().getEntityRefName());
+
+        ParentModel parent = testParentRepo.findByRefName("parent-1").orElseThrow();
+        assertNotNull(parent.getReferences());
+        assertTrue(parent.getReferences().contains(new ReferenceEntry(
+                holder.getId(), EntityReferenceHolderModel.class.getTypeName(), holder.getRefName())));
+    }
+
+    @Test
+    void updatesTrackedBackReferencesForMorphiaReferences() {
+        SeedLoader loader = loader();
+        SeedContext context = context();
+
+        loader.apply(List.of(SeedPackRef.of("tracked-dbref-demo")), context);
+
+        ChildModel child = testChildRepo.findByRefName("tracked-child").orElseThrow();
+        ParentModel parent = testParentRepo.findByRefName("tracked-parent").orElseThrow();
+        assertNotNull(child.getParent());
+        assertEquals(parent.getId(), child.getParent().getId());
+        assertNotNull(parent.getReferences());
+        assertTrue(parent.getReferences().contains(new ReferenceEntry(
+                child.getId(), ChildModel.class.getTypeName(), child.getRefName())));
     }
 
     private SeedLoader loader() {
