@@ -662,7 +662,7 @@ public class MorphiaSeedRepository implements SeedRepository {
     private Class<? extends UnversionedBaseModel> resolveTargetModelClass(SeedPackManifest.ReferenceBinding binding, Field field) {
         if (binding.getTargetModelClass() != null && !binding.getTargetModelClass().isBlank()) {
             try {
-                Class<?> loaded = Class.forName(binding.getTargetModelClass());
+                Class<?> loaded = Class.forName(binding.getTargetModelClass(), true, Thread.currentThread().getContextClassLoader());
                 if (!UnversionedBaseModel.class.isAssignableFrom(loaded)) {
                     throw new SeedLoadingException("Reference target model class " + binding.getTargetModelClass() + " is not a UnversionedBaseModel");
                 }
