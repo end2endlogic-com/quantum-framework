@@ -1,6 +1,8 @@
 package com.e2eq.framework.service.seed;
 
+import com.e2eq.framework.annotations.TrackReferences;
 import com.e2eq.framework.model.persistent.base.EntityReference;
+import com.e2eq.framework.model.persistent.base.ReferenceEntry;
 import com.e2eq.framework.model.persistent.base.ReferenceTarget;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
@@ -95,6 +97,7 @@ public class MorphiaSeedRepository implements SeedRepository {
             Map<String, Object> adapted = adaptForModel(record, dataset, modelClass, context);
             @SuppressWarnings("unchecked")
             UnversionedBaseModel entity = (UnversionedBaseModel) objectMapper.convertValue(adapted, modelClass);
+            hydrateResolvedModelReferences(adapted, dataset, modelClass, entity);
 
             // Implement upsert semantics based on dataset.naturalKey
             List<String> naturalKey = effectiveNaturalKey(dataset, modelClass, record);
@@ -102,7 +105,8 @@ public class MorphiaSeedRepository implements SeedRepository {
                 @SuppressWarnings("unchecked")
                 BaseMorphiaRepo<UnversionedBaseModel> typedRepo = (BaseMorphiaRepo<UnversionedBaseModel>) repo;
                 // No natural key at all => simple save
-                typedRepo.save(context.getRealm(), entity);
+                UnversionedBaseModel saved = typedRepo.save(context.getRealm(), entity);
+                syncTrackedReferences(context, dataset, modelClass, saved);
                 return;
             }
 
@@ -123,6 +127,7 @@ public class MorphiaSeedRepository implements SeedRepository {
                 try {
                     // Apply/merge provided fields onto the current entity
                     objectMapper.updateValue(current, adapted);
+                    hydrateResolvedModelReferences(adapted, dataset, modelClass, current);
                     current.setId(currentId);
                 } catch (IllegalArgumentException | JsonMappingException e) {
                     // Fall back to id-carry-over if merge fails for any reason
@@ -132,13 +137,15 @@ public class MorphiaSeedRepository implements SeedRepository {
 
                 @SuppressWarnings("unchecked")
                 BaseMorphiaRepo<UnversionedBaseModel> typedRepo = (BaseMorphiaRepo<UnversionedBaseModel>) repo;
-                typedRepo.save(context.getRealm(), current);
+                UnversionedBaseModel saved = typedRepo.save(context.getRealm(), current);
+                syncTrackedReferences(context, dataset, modelClass, saved);
                 return;
             }
 
             @SuppressWarnings("unchecked")
             BaseMorphiaRepo<UnversionedBaseModel> typedRepo = (BaseMorphiaRepo<UnversionedBaseModel>) repo;
-            typedRepo.save(context.getRealm(), entity);
+            UnversionedBaseModel saved = typedRepo.save(context.getRealm(), entity);
+            syncTrackedReferences(context, dataset, modelClass, saved);
             return;
         } else {
            Log.warnf("!!! Could not resolve repo for dataset:%s modelClass:%s", dataset.getFile(), dataset.getModelClass());
@@ -303,6 +310,157 @@ public class MorphiaSeedRepository implements SeedRepository {
         return adapted;
     }
 
+    private void syncTrackedReferences(SeedContext context,
+                                       SeedPackManifest.Dataset dataset,
+                                       Class<? extends UnversionedBaseModel> modelClass,
+                                       UnversionedBaseModel saved) {
+        if (saved == null || saved.getId() == null) {
+            return;
+        }
+
+        Map<String, SeedPackManifest.ReferenceBinding> bindingsByField = new LinkedHashMap<>();
+        for (SeedPackManifest.ReferenceBinding binding : SeedReferenceBindings.resolveBindings(dataset)) {
+            bindingsByField.put(binding.getField(), binding);
+        }
+
+        Datastore datastore = morphiaDataStoreWrapper.getDataStore(context.getRealm());
+        ReferenceEntry entry = new ReferenceEntry(saved.getId(), saved.getClass().getTypeName(), saved.getRefName());
+        for (Field field : getAllFields(modelClass)) {
+            if (field.getAnnotation(TrackReferences.class) == null) {
+                continue;
+            }
+            SeedPackManifest.ReferenceBinding binding = bindingsByField.get(field.getName());
+            Object rawValue = readFieldValue(field, saved);
+            if (rawValue == null) {
+                continue;
+            }
+            for (UnversionedBaseModel target : trackedReferenceTargets(context, binding, field, rawValue)) {
+                if (target == null || target.getId() == null || target.getId().equals(saved.getId())) {
+                    continue;
+                }
+                Set<ReferenceEntry> references = target.getReferences();
+                if (references == null) {
+                    references = new LinkedHashSet<>();
+                    target.setReferences(references);
+                }
+                if (references.add(entry)) {
+                    datastore.save(target);
+                }
+            }
+        }
+    }
+
+    private List<UnversionedBaseModel> trackedReferenceTargets(SeedContext context,
+                                                               SeedPackManifest.ReferenceBinding binding,
+                                                               Field field,
+                                                               Object rawValue) {
+        if (rawValue instanceof Collection<?> values) {
+            List<UnversionedBaseModel> targets = new ArrayList<>(values.size());
+            for (Object value : values) {
+                UnversionedBaseModel target = trackedReferenceTarget(context, binding, field, value);
+                if (target != null) {
+                    targets.add(target);
+                }
+            }
+            return targets;
+        }
+
+        UnversionedBaseModel target = trackedReferenceTarget(context, binding, field, rawValue);
+        return target == null ? List.of() : List.of(target);
+    }
+
+    private UnversionedBaseModel trackedReferenceTarget(SeedContext context,
+                                                        SeedPackManifest.ReferenceBinding binding,
+                                                        Field field,
+                                                        Object rawValue) {
+        if (rawValue instanceof UnversionedBaseModel model) {
+            if (model.getId() == null) {
+                return null;
+            }
+            Datastore datastore = morphiaDataStoreWrapper.getDataStore(context.getRealm());
+            @SuppressWarnings("unchecked")
+            Class<? extends UnversionedBaseModel> targetClass = (Class<? extends UnversionedBaseModel>) model.getClass();
+            return datastore.find(targetClass).filter(Filters.eq("_id", model.getId())).first();
+        }
+
+        if (rawValue instanceof EntityReference entityReference) {
+            if (binding == null) {
+                binding = bindingFromReferenceTarget(field);
+            }
+            Class<? extends UnversionedBaseModel> targetClass = resolveTargetModelClass(binding, field);
+            Datastore datastore = morphiaDataStoreWrapper.getDataStore(context.getRealm());
+            if (entityReference.getEntityId() != null) {
+                return datastore.find(targetClass).filter(Filters.eq("_id", entityReference.getEntityId())).first();
+            }
+            if (entityReference.getEntityRefName() != null && !entityReference.getEntityRefName().isBlank()) {
+                return findReferencedEntity(context.getRealm(), targetClass, "refName", entityReference.getEntityRefName());
+            }
+        }
+
+        return null;
+    }
+
+    private SeedPackManifest.ReferenceBinding bindingFromReferenceTarget(Field field) {
+        ReferenceTarget referenceTarget = field.getAnnotation(ReferenceTarget.class);
+        if (referenceTarget == null) {
+            throw new SeedLoadingException("Tracked EntityReference field '" + field.getName() + "' requires targetModelClass or a @ReferenceTarget annotation");
+        }
+        SeedPackManifest.ReferenceBinding binding = new SeedPackManifest.ReferenceBinding();
+        binding.setField(field.getName());
+        binding.setTargetModelClass(referenceTarget.target().getName());
+        binding.setTargetCollection(referenceTarget.collection());
+        return binding;
+    }
+
+    private Object readFieldValue(Field field, Object target) {
+        try {
+            field.setAccessible(true);
+            return field.get(target);
+        } catch (IllegalAccessException e) {
+            throw new SeedLoadingException("Unable to read tracked reference field '" + field.getName() + "'", e);
+        }
+    }
+
+    private void hydrateResolvedModelReferences(Map<String, Object> adapted,
+                                                SeedPackManifest.Dataset dataset,
+                                                Class<? extends UnversionedBaseModel> modelClass,
+                                                UnversionedBaseModel entity) {
+        for (SeedPackManifest.ReferenceBinding binding : SeedReferenceBindings.resolveBindings(dataset)) {
+            Object resolved = adapted.get(binding.getField());
+            if (resolved == null) {
+                continue;
+            }
+            Field field = findField(modelClass, binding.getField());
+            if (field == null) {
+                continue;
+            }
+            if (resolved instanceof UnversionedBaseModel || isResolvedModelCollection(resolved)) {
+                writeFieldValue(field, entity, resolved);
+            }
+        }
+    }
+
+    private boolean isResolvedModelCollection(Object value) {
+        if (!(value instanceof Collection<?> values) || values.isEmpty()) {
+            return false;
+        }
+        for (Object element : values) {
+            if (!(element instanceof UnversionedBaseModel)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void writeFieldValue(Field field, Object target, Object value) {
+        try {
+            field.setAccessible(true);
+            field.set(target, value);
+        } catch (IllegalAccessException e) {
+            throw new SeedLoadingException("Unable to write resolved reference field '" + field.getName() + "'", e);
+        }
+    }
+
     private void resolveDeclaredReferences(Map<String, Object> adapted,
                                            SeedPackManifest.Dataset dataset,
                                            Class<? extends UnversionedBaseModel> modelClass,
@@ -409,6 +567,11 @@ public class MorphiaSeedRepository implements SeedRepository {
         Map<String, Object> resolved = mutableReferenceMap(rawValue);
         ObjectId id = extractNestedObjectId(resolved, "id", "_id", "entityId");
         if (id != null) {
+            Datastore datastore = morphiaDataStoreWrapper.getDataStore(context.getRealm());
+            UnversionedBaseModel target = datastore.find(targetType).filter(Filters.eq("_id", id)).first();
+            if (target != null) {
+                return target;
+            }
             resolved.put("id", id);
             resolved.remove("_id");
             return resolved;
@@ -428,10 +591,7 @@ public class MorphiaSeedRepository implements SeedRepository {
                     + "' to " + targetType.getName() + " using " + binding.getLookupBy() + "=" + lookupValue);
         }
 
-        resolved.put("id", target.getId());
-        resolved.putIfAbsent("refName", target.getRefName());
-        resolved.putIfAbsent("displayName", target.getDisplayName());
-        return resolved;
+        return target;
     }
 
     private Map<String, Object> mutableReferenceMap(Object rawValue) {
@@ -597,6 +757,16 @@ public class MorphiaSeedRepository implements SeedRepository {
             t = t.getSuperclass();
         }
         return null;
+    }
+
+    private List<Field> getAllFields(Class<?> type) {
+        List<Field> fields = new ArrayList<>();
+        Class<?> current = type;
+        while (current != null && current != Object.class) {
+            fields.addAll(Arrays.asList(current.getDeclaredFields()));
+            current = current.getSuperclass();
+        }
+        return fields;
     }
 
    @SuppressWarnings("unchecked")

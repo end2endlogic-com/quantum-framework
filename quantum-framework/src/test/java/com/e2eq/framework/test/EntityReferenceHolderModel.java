@@ -1,5 +1,6 @@
 package com.e2eq.framework.test;
 
+import com.e2eq.framework.annotations.TrackReferences;
 import com.e2eq.framework.model.persistent.base.BaseModel;
 import com.e2eq.framework.model.persistent.base.EntityReference;
 import com.e2eq.framework.model.persistent.base.ReferenceTarget;
@@ -17,6 +18,7 @@ import lombok.ToString;
 public class EntityReferenceHolderModel extends BaseModel {
 
     @ReferenceTarget(target = ParentModel.class)
+    @TrackReferences
     protected EntityReference linkedParent;
 
     @Override
