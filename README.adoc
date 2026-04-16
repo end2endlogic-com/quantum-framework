@@ -56,7 +56,7 @@ Mongodb Version: 7.0.12+
 NOTE: Docker files are provided in the source code and utilized to build native compiled applications for various targeted Operating systems.  Current development has focused on the JVM deployment, and while native compiles will reduce startup times in lambda, and have lower memory footprints, it is an optimization that is deferred until we get further into production deployments.  There are some complications when building native executables on OSX when targeting a Linux OS for example.  The system will use docker to do the build and the resulting binary will not natively execute on OSX, but will on a linux VM.  The build system will be using github actions for building on github which at that time will be running on linux anyway so a preference to use that as the means to generate native binaries is preferable.
 
 == Setting up Code Repositories:
-Maven uses a file called settings.xml to specify what servers it utilizes for retrieving dependent libraries. This project now publishes its internal artifacts to the GitHub Packages Maven registry for `MoVista/quantum-framework`.
+Maven uses a file called settings.xml to specify what servers it utilizes for retrieving dependent libraries. This project now publishes its internal artifacts to the GitHub Packages Maven registry for `movista/quantum-framework`.
 
 To consume published artifacts locally, create `~/.m2/settings.xml` with GitHub credentials that can read packages:
 
@@ -82,7 +82,7 @@ To consume these artifacts from another Maven project, add the GitHub Packages r
 <repositories>
   <repository>
     <id>github</id>
-    <url>https://maven.pkg.github.com/MoVista/quantum-framework</url>
+    <url>https://maven.pkg.github.com/movista/quantum-framework</url>
   </repository>
 </repositories>
 ----
@@ -1118,7 +1118,6 @@ quarkus build -Dquarkus.container-image.build=true -Dquarkus.native.reuse-existi
 
 === Building Native Linux from OSX
  quarkus build --native --no-tests -Dquarkus.native.remote-container-build=true -Dquarkus.native.builder-image=graalvm
-
 
 
 

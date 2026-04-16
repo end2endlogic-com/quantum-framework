@@ -61,9 +61,10 @@
         <quantum.version>1.3.0</quantum.version>
         <apachecommons.lang3.version>3.18.0</apachecommons.lang3.version>
         <github.repo.owner>MoVista</github.repo.owner>
+        <github.packages.owner>movista</github.packages.owner>
         <github.repo.name>quantum-framework</github.repo.name>
         <github.repo.url>https://github.com/${github.repo.owner}/${github.repo.name}</github.repo.url>
-        <github.packages.url>https://maven.pkg.github.com/${github.repo.owner}/${github.repo.name}</github.packages.url>
+        <github.packages.url>https://maven.pkg.github.com/${github.packages.owner}/${github.repo.name}</github.packages.url>
     </properties>
 
     <modules>
