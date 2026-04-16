@@ -29,21 +29,16 @@ jobs:
           server-password: GITHUB_TOKEN
 
       - name: Publish to GitHub Packages
-        # Tests are skipped in the publish workflow because quantum-framework
-        # integration tests require MongoDB (and other services) that aren't
-        # provisioned in this runner. Run tests locally or in a dedicated CI
-        # workflow with service containers configured.
-        #
-        # scmpublish.skipDeployment=true disables the maven-scm-publish-plugin
-        # in quantum-docs that would try to push rendered HTML to a gh-pages
-        # branch (which doesn't exist on the MoVista fork). Docs still build
-        # and their (empty, skip=true) jar still installs, but nothing is
-        # pushed to GitHub Pages. If you want docs published, create a gh-pages
-        # branch on the fork and remove this flag.
+        # Tests skipped: quantum-framework integration tests require MongoDB /
+        # other services that aren't provisioned in this runner.
+        # quantum-docs excluded from the reactor: it pushes rendered HTML to a
+        # gh-pages branch that doesn't exist on the MoVista fork, and it
+        # doesn't produce a JAR consumers depend on anyway. Run `mvn install`
+        # locally if you want docs rendered.
         run: >
           mvn --batch-mode -Pgithub-packages
           -DskipTests
-          -Dscmpublish.skipDeployment=true
+          -pl '!quantum-docs'
           deploy
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
