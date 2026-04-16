@@ -29,6 +29,10 @@ jobs:
           server-password: GITHUB_TOKEN
 
       - name: Publish to GitHub Packages
-        run: mvn --batch-mode -Pgithub-packages deploy
+        # Tests are skipped in the publish workflow because quantum-framework
+        # integration tests require MongoDB (and other services) that aren't
+        # provisioned in this runner. Run tests locally or in a dedicated CI
+        # workflow with service containers configured.
+        run: mvn --batch-mode -Pgithub-packages -DskipTests deploy
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
