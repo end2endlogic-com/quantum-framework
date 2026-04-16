@@ -3,7 +3,7 @@ name: Publish Maven Packages
 on:
   push:
     branches:
-      - main
+      - movista-dev
   workflow_dispatch:
 
 permissions:
