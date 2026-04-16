@@ -33,6 +33,17 @@ jobs:
         # integration tests require MongoDB (and other services) that aren't
         # provisioned in this runner. Run tests locally or in a dedicated CI
         # workflow with service containers configured.
-        run: mvn --batch-mode -Pgithub-packages -DskipTests deploy
+        #
+        # scmpublish.skipDeployment=true disables the maven-scm-publish-plugin
+        # in quantum-docs that would try to push rendered HTML to a gh-pages
+        # branch (which doesn't exist on the MoVista fork). Docs still build
+        # and their (empty, skip=true) jar still installs, but nothing is
+        # pushed to GitHub Pages. If you want docs published, create a gh-pages
+        # branch on the fork and remove this flag.
+        run: >
+          mvn --batch-mode -Pgithub-packages
+          -DskipTests
+          -Dscmpublish.skipDeployment=true
+          deploy
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
