@@ -93,6 +93,38 @@ To publish artifacts from this repository to GitHub Packages, run:
 
 The GitHub Actions workflow in `.github/workflows/publish-maven-packages.yml` uses the repository `GITHUB_TOKEN` and publishes with the same Maven profile.
 
+=== Pulling upstream changes from end2endlogic/quantum-framework
+
+This repository is a fork of `end2endlogic-com/quantum-framework`. To pull new commits from the upstream `1.3.1-SNAPSHOT` branch into `movista-dev`:
+
+[source,bash]
+----
+# One-time: register the upstream remote (already done if you cloned movista-dev)
+git remote add upstream https://github.com/end2endlogic-com/quantum-framework.git
+
+# Each time you want to pull upstream changes:
+git checkout movista-dev
+git fetch upstream
+git merge -X ours upstream/1.3.1-SNAPSHOT
+----
+
+The `-X ours` strategy keeps MoVista-specific decisions (groupId `com.movista`, version qualifier `-movista-SNAPSHOT`, `scm`/`url` overrides, the `github-packages` profile, the publish workflow) when conflicts arise in pom files. Non-pom upstream changes (Java code, resources) are taken cleanly since they don't overlap with MoVista edits.
+
+*Manual fixups you may need after the merge:*
+
+* *Upstream renames a third-party dependency* (e.g. the `quantum-extension` → `quantum-morphia-extension` rename in 1.3.1). `-X ours` will drop these. Scan the merge output for WARNING lines mentioning dropped upstream changes, or run `git diff upstream/1.3.1-SNAPSHOT -- '**/pom.xml'` and reapply any upstream-only dep renames by hand.
+* *New modules arrive from upstream*. They'll inherit the parent pom's `com.movista` groupId automatically, so no action needed for groupId. But confirm their `<version>` matches `1.3.1-movista-SNAPSHOT` (run `grep -rn '<version>1\.3\.1-SNAPSHOT' **/pom.xml` and fix hits that aren't third-party `com.end2endlogic` deps).
+* *Check stray groupId references.* After the merge, `grep -rn '<groupId>com\.end2endlogic</groupId>' --include='pom.xml'` should only return third-party libs: `morphia-core`, `quantum-morphia-extension`, `quarkus-moneta`, `jakarta-transformer-extension`. Anything else is an internal module that needs renaming to `com.movista`.
+* *Run a local build before pushing:* `mvn -Pgithub-packages -DskipTests -pl '!quantum-docs' install` should succeed (same scope as the CI publish). Push once that's green.
+
+When the upstream base version advances (e.g. 1.3.1-SNAPSHOT → 1.4.0-SNAPSHOT), bump MoVista's version to match before merging:
+
+[source,bash]
+----
+mvn versions:set -DnewVersion=1.4.0-movista-SNAPSHOT -DprocessAllModules=true -DgenerateBackupPoms=false
+# also hand-edit <quantum.version> in the root pom.xml (versions:set doesn't touch properties)
+----
+
 ==== Building the Application:
 
 You can build the application using the following command(s):
