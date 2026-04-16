@@ -85,6 +85,7 @@
         <module>quantum-mcp-server</module>
         <module>quantum-cli</module>
         <module>quantum-docs</module>
+        <module>quantum-cognito-provider</module>
 
     </modules>
 

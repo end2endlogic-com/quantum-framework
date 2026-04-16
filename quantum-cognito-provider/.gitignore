@@ -1,0 +1,8 @@
+target/**
+.idea
+.idea/*
+.class
+.git
+.quarkus
+.settings
+.env
