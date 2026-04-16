@@ -5,9 +5,9 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>com.end2endlogic</groupId>
+        <groupId>com.movista</groupId>
         <artifactId>quantum-parent</artifactId>
-        <version>1.3.0</version>
+        <version>1.3.1-movista-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
@@ -22,17 +22,17 @@
 
     <dependencies>
         <dependency>
-            <groupId>com.end2endlogic</groupId>
+            <groupId>com.movista</groupId>
             <artifactId>quantum-action-enablement-models</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
-            <groupId>com.end2endlogic</groupId>
+            <groupId>com.movista</groupId>
             <artifactId>quantum-models</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
-            <groupId>com.end2endlogic</groupId>
+            <groupId>com.movista</groupId>
             <artifactId>quantum-morphia-repos</artifactId>
             <version>${project.version}</version>
         </dependency>
