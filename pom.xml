@@ -84,6 +84,7 @@
         <module>quantum-secrets</module>
         <module>quantum-mcp-server</module>
         <module>quantum-cli</module>
+        <module>quantum-docs</module>
 
     </modules>
 
@@ -294,7 +295,6 @@
                 <module>quantum-framework</module>
                 <module>quantum-seed-s3</module>
                 <module>quantum-mcp-server</module>
-                <module>quantum-docs</module>
             </modules>
             <build>
                 <plugins>
@@ -357,20 +357,6 @@
                     </plugin>
                 </plugins>
             </build>
-            <repositories>
-                <repository>
-                    <name>Central Portal Snapshots</name>
-                    <id>central-portal-snapshots</id>
-                    <url
-                    >https://central.sonatype.com/repository/maven-snapshots/</url>
-                    <releases>
-                        <enabled>false</enabled>
-                    </releases>
-                    <snapshots>
-                        <enabled>true</enabled>
-                    </snapshots>
-                </repository>
-            </repositories>
         </profile>
     </profiles>
 

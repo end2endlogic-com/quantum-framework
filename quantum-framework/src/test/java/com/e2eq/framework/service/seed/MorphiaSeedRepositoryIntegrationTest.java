@@ -1,10 +1,21 @@
 package com.e2eq.framework.service.seed;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.persistent.base.ReferenceEntry;
+import com.e2eq.framework.persistent.TestAuthorRepo;
+import com.e2eq.framework.persistent.TestBookRepo;
+import com.e2eq.framework.persistent.TestChildRepo;
+import com.e2eq.framework.persistent.TestEntityReferenceHolderRepo;
+import com.e2eq.framework.persistent.TestParentRepo;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
+import com.e2eq.framework.test.AuthorModel;
+import com.e2eq.framework.test.BookModel;
+import com.e2eq.framework.test.ChildModel;
+import com.e2eq.framework.test.EntityReferenceHolderModel;
 import com.e2eq.framework.test.MongoDbInitResource;
+import com.e2eq.framework.test.ParentModel;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.Filters;
@@ -36,6 +47,21 @@ class MorphiaSeedRepositoryIntegrationTest {
     @Inject
     MorphiaSeedRepository morphiaSeedRepository;
 
+    @Inject
+    TestAuthorRepo testAuthorRepo;
+
+    @Inject
+    TestBookRepo testBookRepo;
+
+    @Inject
+    TestEntityReferenceHolderRepo testEntityReferenceHolderRepo;
+
+    @Inject
+    TestChildRepo testChildRepo;
+
+    @Inject
+    TestParentRepo testParentRepo;
+
     @BeforeEach
     void setup() {
         // Clean DB
@@ -66,9 +92,6 @@ class MorphiaSeedRepositoryIntegrationTest {
 
     @Test
     void appliesSeedPackViaMorphiaRepo() {
-
-
-
         SeedLoader loader = SeedLoader.builder()
                 .addSeedSource(new FileSeedSource("test", SEED_ROOT))
                 .seedRepository(morphiaSeedRepository)
@@ -111,6 +134,97 @@ class MorphiaSeedRepositoryIntegrationTest {
                 .first();
         assertNotNull(registry, "Registry entry should exist for Morphia dataset");
         assertEquals(2, registry.getInteger("records"));
+    }
+
+    @Test
+    void resolvesMorphiaReferencesByRefNameAfterReorderingDatasets() {
+        SeedLoader loader = loader();
+        SeedContext context = context();
+
+        loader.apply(List.of(SeedPackRef.of("reference-demo")), context);
+
+        BookModel book = testBookRepo.findByRefName("foundation").orElseThrow();
+        assertNotNull(book.getAuthor(), "Expected author reference to be materialized");
+        assertEquals("isaac-asimov", book.getAuthor().getRefName());
+        assertNotNull(book.getAuthor().getId());
+    }
+
+    @Test
+    void resolvesMorphiaReferencesAgainstExistingDatabaseRecords() {
+        AuthorModel author = new AuthorModel();
+        author.setRefName("existing-author");
+        author.setDisplayName("Existing Author");
+        author.setAuthorName("Existing Author");
+        author = testAuthorRepo.save(author);
+
+        SeedLoader loader = loader();
+        loader.apply(List.of(SeedPackRef.of("reference-existing-author")), context());
+
+        BookModel book = testBookRepo.findByRefName("robots").orElseThrow();
+        assertNotNull(book.getAuthor());
+        assertEquals(author.getId(), book.getAuthor().getId());
+        assertEquals("existing-author", book.getAuthor().getRefName());
+    }
+
+    @Test
+    void failsClosedWhenMorphiaReferenceCannotBeResolved() {
+        SeedLoader loader = loader();
+        SeedContext context = context();
+
+        SeedLoadingException exception = assertThrows(SeedLoadingException.class,
+                () -> loader.apply(List.of(SeedPackRef.of("reference-missing-author")), context));
+        assertTrue(exception.getMessage().contains("Unable to resolve reference field 'author'"));
+    }
+
+    @Test
+    void resolvesEntityReferencesByRefNameAfterReorderingDatasets() {
+        SeedLoader loader = loader();
+        SeedContext context = context();
+
+        loader.apply(List.of(SeedPackRef.of("entity-reference-demo")), context);
+
+        EntityReferenceHolderModel holder = testEntityReferenceHolderRepo.findByRefName("holder-1").orElseThrow();
+        assertNotNull(holder.getLinkedParent());
+        assertNotNull(holder.getLinkedParent().getEntityId());
+        assertEquals("parent-1", holder.getLinkedParent().getEntityRefName());
+
+        ParentModel parent = testParentRepo.findByRefName("parent-1").orElseThrow();
+        assertNotNull(parent.getReferences());
+        assertTrue(parent.getReferences().contains(new ReferenceEntry(
+                holder.getId(), EntityReferenceHolderModel.class.getTypeName(), holder.getRefName())));
+    }
+
+    @Test
+    void updatesTrackedBackReferencesForMorphiaReferences() {
+        SeedLoader loader = loader();
+        SeedContext context = context();
+
+        loader.apply(List.of(SeedPackRef.of("tracked-dbref-demo")), context);
+
+        ChildModel child = testChildRepo.findByRefName("tracked-child").orElseThrow();
+        ParentModel parent = testParentRepo.findByRefName("tracked-parent").orElseThrow();
+        assertNotNull(child.getParent());
+        assertEquals(parent.getId(), child.getParent().getId());
+        assertNotNull(parent.getReferences());
+        assertTrue(parent.getReferences().contains(new ReferenceEntry(
+                child.getId(), ChildModel.class.getTypeName(), child.getRefName())));
+    }
+
+    private SeedLoader loader() {
+        return SeedLoader.builder()
+                .addSeedSource(new FileSeedSource("test", SEED_ROOT))
+                .seedRepository(morphiaSeedRepository)
+                .seedRegistry(new MongoSeedRegistry(mongoClient))
+                .build();
+    }
+
+    private SeedContext context() {
+        return SeedContext.builder(REALM)
+                .tenantId("tenant.morphia")
+                .orgRefName("org-morphia")
+                .accountId("0000000042")
+                .ownerId("owner-xyz")
+                .build();
     }
 
     private boolean exists(String realm, String collection) {
