@@ -373,7 +373,7 @@ public final class SeedLoader {
         }
 
         for (Dataset dataset : datasets) {
-            SeedCollectionResolver.ensureCollectionSet(dataset);
+            deriveCollectionIfMissing(dataset);
         }
 
         Map<String, Dataset> producerByKey = new LinkedHashMap<>();
@@ -611,6 +611,45 @@ public final class SeedLoader {
         }
     }
 
+    // Derive collection from modelClass annotation if missing
+    private void deriveCollectionIfMissing(SeedPackManifest.Dataset dataset) {
+        String coll = dataset.getCollection();
+        if (coll != null && !coll.isBlank()) {
+            return;
+        }
+        String mc = null;
+        try {
+            var getter = SeedPackManifest.Dataset.class.getDeclaredMethod("getModelClass");
+            Object val = getter.invoke(dataset);
+            mc = (val instanceof String s) ? s : null;
+        } catch (Exception ignore) {
+        }
+        if (mc == null || mc.isBlank()) {
+            return;
+        }
+        try {
+            Class<?> cls = Class.forName(mc, true, Thread.currentThread().getContextClassLoader());
+            // Try Morphia @Entity annotation
+            try {
+                dev.morphia.annotations.Entity ann = cls.getAnnotation(dev.morphia.annotations.Entity.class);
+                if (ann != null) {
+                    String name = ann.value();
+                    if (name != null && !name.isBlank()) {
+                        dataset.setCollection(name);
+                        return;
+                    }
+                }
+            } catch (Throwable ignored) {
+                // Morphia not on classpath or annotation not present
+            }
+            dataset.setCollection(cls.getSimpleName());
+        } catch (ClassNotFoundException e) {
+            // Fallback to last segment of FQN as a best-effort
+            String simple = mc.contains(".") ? mc.substring(mc.lastIndexOf('.') + 1) : mc;
+            dataset.setCollection(simple);
+        }
+    }
+
     private SeedResolution resolveSeedPacks(SeedContext context) {
         Map<String, List<SeedPackDescriptor>> descriptors = new HashMap<>();
         for (SeedSource source : seedSources) {
@@ -692,7 +731,6 @@ public final class SeedLoader {
         private SeedDatasetValidator seedDatasetValidator;
 
         private Builder() {
-            registerTransformFactory("dropIf", new DropIfTransform.Factory());
             registerTransformFactory("tenantSubstitution", new TenantSubstitutionTransform.Factory());
             // Secure credential upsert via UserManagement
             registerTransformFactory("credentialUpsert", new CredentialUpsertTransform.Factory());
