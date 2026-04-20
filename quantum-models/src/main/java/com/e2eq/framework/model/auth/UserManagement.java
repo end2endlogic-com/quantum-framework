@@ -42,6 +42,16 @@ public interface UserManagement extends UserManagementBase{
 
     void changePassword(String userId, String oldPassword, String newPassword, Boolean forceChangePassword);
 
+    /**
+     * Resends the temporary password / invitation message for the user (e.g. Cognito
+     * {@code AdminCreateUser} with {@code MessageActionType.RESEND}). No-op or unsupported
+     * for providers that do not issue remote invitations.
+     *
+     * @param userId application user id used to resolve the remote identity
+     * @throws SecurityException if the operation fails or is not supported by the provider
+     */
+    void resendTemporaryPassword(String userId) throws SecurityException;
+
 
     void removeRolesForSubject(String subject, Set<String> roles) throws SecurityException;
     void removeRolesForUserId(String userId, Set<String> roles) throws SecurityException;

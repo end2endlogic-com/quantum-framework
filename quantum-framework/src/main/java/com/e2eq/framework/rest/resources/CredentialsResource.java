@@ -13,6 +13,7 @@ import jakarta.inject.Inject;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.*;
+import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
@@ -59,6 +60,7 @@ public class CredentialsResource extends BaseResource<CredentialUserIdPassword, 
     @RolesAllowed({ "user", "admin", "system" })
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
+    @Operation(summary = "Change a user's password")
     public Response changePassword(SecurityContext securityContext,
                                    ChangePasswordRequest changePasswordRequest,
                                    @QueryParam("provider") @DefaultValue("") String provider) {
@@ -102,6 +104,39 @@ public class CredentialsResource extends BaseResource<CredentialUserIdPassword, 
         return Response.status(Response.Status.OK).entity("Password changed").build();
     }
 
+    @Path("resendTemporaryPassword")
+    @POST
+    @RolesAllowed({ "admin", "system" })
+    @Produces(MediaType.APPLICATION_JSON)
+    @Operation(summary = "Resend temporary password to a user")
+    public Response resendTemporaryPassword(
+            @QueryParam("userId") String userId,
+            @QueryParam("provider") @DefaultValue("") String provider) {
+
+        if (userId == null || userId.isBlank()) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(java.util.Map.of("error", "userId is required"))
+                    .build();
+        }
+
+        try {
+            UserManagement userManager = resolveUserManager(userId, provider);
+            userManager.resendTemporaryPassword(userId);
+        } catch (UnsupportedOperationException e) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(java.util.Map.of("error", "Resending temporary password is not supported by the auth provider: " + e.getMessage()))
+                    .build();
+        } catch (Exception e) {
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(java.util.Map.of("error", "Failed to resend temporary password: " + e.getMessage()))
+                    .build();
+        }
+
+        return Response.status(Response.Status.OK)
+                .entity(java.util.Map.of("message", "Temporary password resent successfully"))
+                .build();
+    }
+
     private UserManagement resolveUserManager(String userId, String requestedProvider) {
         if (requestedProvider != null && !requestedProvider.isBlank()) {
             return authProviderFactory.getUserManager(requestedProvider);
@@ -133,6 +168,7 @@ public class CredentialsResource extends BaseResource<CredentialUserIdPassword, 
     @Path("matching-realms")
     @RolesAllowed({ "user", "admin", "system" })
     @Produces(MediaType.APPLICATION_JSON)
+    @Operation(summary = "Get matching realms for current user")
     public Response getMatchingRealms() {
         List<String> realms = repo.getMatchingRealmsForCurrentUser();
         return Response.ok(realms).build();

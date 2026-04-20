@@ -1388,4 +1388,29 @@ public class CognitoAuthProvider extends BaseAuthProvider implements AuthProvide
          throw new SecurityException("Failed to remove roles for subject: " + e.getMessage(), e);
       }
    }
+
+   @Override
+   public void resendTemporaryPassword(String userId) throws SecurityException {
+      if (isCognitoDisabled()) {
+         Log.debug("Cognito disabled: skipping resend temporary password");
+         return;
+      }
+
+      Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(userId, envConfigUtils.getSystemRealm(), true);
+      String username = ocred.isPresent() ? ocred.get().getUserId() : userId;
+
+      try {
+         AdminCreateUserRequest request = AdminCreateUserRequest.builder()
+            .userPoolId(userPoolId)
+            .username(username)
+            .messageAction(MessageActionType.RESEND)
+            .build();
+
+         cognitoClient.adminCreateUser(request);
+         Log.infof("Successfully resent temporary password for user: %s", username);
+      } catch (Exception e) {
+         Log.errorf(e, "Failed to resend temporary password for user: %s", username);
+         throw new SecurityException("Failed to resend temporary password: " + e.getMessage(), e);
+      }
+   }
 }
