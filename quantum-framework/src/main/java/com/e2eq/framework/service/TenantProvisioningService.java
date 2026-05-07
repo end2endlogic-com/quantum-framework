@@ -257,18 +257,6 @@ public class TenantProvisioningService {
                     dc
             );
             result.userCreated = true;
-
-            // Set authorizedRealms so the admin user can access the new tenant realm
-            Optional<CredentialUserIdPassword> newCredOpt = credentialRepo.findByUserId(adminUserId, systemRealm, true);
-            if (newCredOpt.isPresent()) {
-                CredentialUserIdPassword newCred = newCredOpt.get();
-                CredentialUserIdPassword.RealmEntry realmEntry = new CredentialUserIdPassword.RealmEntry();
-                realmEntry.setRealmRefName(realmId);
-                realmEntry.setRealmDisplayName(normalizedTenantDisplayName);
-                newCred.setAuthorizedRealms(List.of(realmEntry));
-                credentialRepo.save(systemRealm, newCred);
-                Log.infof("Set authorizedRealms for admin user %s to realm %s", adminUserId, realmId);
-            }
         } else {
             Optional<CredentialUserIdPassword> credOpt = credentialRepo.findByUserId(adminUserId, systemRealm, true);
             if (credOpt.isEmpty()) {
@@ -312,21 +300,6 @@ public class TenantProvisioningService {
             }
             Log.warnf("Admin user %s already exists in realm %s; proceeding idempotently.", adminUserId, realmId);
             result.addWarning("Admin user already exists; no user changes were made.");
-
-            // Ensure the realm is in authorizedRealms (idempotent)
-            boolean realmAlreadyAuthorized = cred.getAuthorizedRealms() != null &&
-                    cred.getAuthorizedRealms().stream().anyMatch(r -> realmId.equals(r.getRealmRefName()));
-            if (!realmAlreadyAuthorized) {
-                CredentialUserIdPassword.RealmEntry realmEntry = new CredentialUserIdPassword.RealmEntry();
-                realmEntry.setRealmRefName(realmId);
-                realmEntry.setRealmDisplayName(normalizedTenantDisplayName);
-                List<CredentialUserIdPassword.RealmEntry> updatedRealms = new ArrayList<>(
-                        cred.getAuthorizedRealms() != null ? cred.getAuthorizedRealms() : List.of());
-                updatedRealms.add(realmEntry);
-                cred.setAuthorizedRealms(updatedRealms);
-                credentialRepo.save(systemRealm, cred);
-                Log.infof("Added realm %s to authorizedRealms for existing admin user %s", realmId, adminUserId);
-            }
         }
 
         // first apply any seed that does not have a archetype but

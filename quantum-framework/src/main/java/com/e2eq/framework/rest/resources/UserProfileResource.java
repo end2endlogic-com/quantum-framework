@@ -2,9 +2,7 @@ package com.e2eq.framework.rest.resources;
 
 import com.e2eq.framework.model.persistent.base.ActiveStatus;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
-import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
-import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.model.auth.AuthProviderFactory;
 import com.e2eq.framework.rest.filters.PermissionCheck;
 import com.e2eq.framework.rest.models.RestError;
@@ -20,8 +18,6 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Optional;
 
 @Path("/user/userProfile")
@@ -34,9 +30,6 @@ public class UserProfileResource extends BaseResource<UserProfile, UserProfileRe
 
    @Inject
    protected CredentialRepo credentialRepo;
-
-   @Inject
-   protected RealmRepo realmRepo;
 
    protected UserProfileResource (UserProfileRepo repo ) {
       super(repo);
@@ -123,21 +116,6 @@ public class UserProfileResource extends BaseResource<UserProfile, UserProfileRe
          Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(createUserRequest.getUserId());
          if (!ocred.isPresent())
             throw new IllegalStateException(String.format("User created but credential not found for userId: %s", createUserRequest.getUserId()));
-
-         // Set authorizedRealms so the user can access the realm they were created for
-         String realmRefName = createUserRequest.getDomainContext().getDefaultRealm();
-         if (realmRefName != null && !realmRefName.isBlank()) {
-            CredentialUserIdPassword cred = ocred.get();
-            CredentialUserIdPassword.RealmEntry realmEntry = new CredentialUserIdPassword.RealmEntry();
-            realmEntry.setRealmRefName(realmRefName);
-            Optional<Realm> orealm = realmRepo.findByRefName(realmRefName, true);
-            realmEntry.setRealmDisplayName(orealm.map(Realm::getDisplayName).orElse(realmRefName));
-            List<CredentialUserIdPassword.RealmEntry> realms = new ArrayList<>();
-            realms.add(realmEntry);
-            cred.setAuthorizedRealms(realms);
-            credentialRepo.save(cred);
-            ocred = Optional.of(cred);
-         }
 
 
          up = UserProfile.builder()
