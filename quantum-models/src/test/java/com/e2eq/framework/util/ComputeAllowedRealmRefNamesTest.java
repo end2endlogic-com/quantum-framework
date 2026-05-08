@@ -127,4 +127,36 @@ class ComputeAllowedRealmRefNamesTest {
         assertThrows(NullPointerException.class,
                 () -> securityUtils.computeAllowedRealmRefNames(null, List.of("r")));
     }
+
+    @Test
+    void authorizedRealmsUnionsDefaultRealm() {
+        List<CredentialUserIdPassword.RealmEntry> entries = List.of(entry("realm-a"));
+        CredentialUserIdPassword cred = buildCredential(entries, null, "realm-c");
+        List<String> candidates = List.of("realm-a", "realm-b", "realm-c");
+
+        List<String> result = securityUtils.computeAllowedRealmRefNames(cred, candidates);
+
+        assertEquals(List.of("realm-a", "realm-c"), result);
+    }
+
+    @Test
+    void authorizedRealmsDefaultRealmNotInCatalogIsExcluded() {
+        List<CredentialUserIdPassword.RealmEntry> entries = List.of(entry("realm-a"));
+        CredentialUserIdPassword cred = buildCredential(entries, null, "realm-x");
+        List<String> candidates = List.of("realm-a", "realm-b");
+
+        List<String> result = securityUtils.computeAllowedRealmRefNames(cred, candidates);
+
+        assertEquals(List.of("realm-a"), result);
+    }
+
+    @Test
+    void regexUnionsDefaultRealm() {
+        CredentialUserIdPassword cred = buildCredential(null, "acme-.*", "other-realm");
+        List<String> candidates = List.of("acme-prod", "acme-dev", "other-realm");
+
+        List<String> result = securityUtils.computeAllowedRealmRefNames(cred, candidates);
+
+        assertEquals(List.of("acme-prod", "acme-dev", "other-realm"), result);
+    }
 }
