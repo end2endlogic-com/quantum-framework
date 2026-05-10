@@ -46,6 +46,9 @@ public class ComputedEdgeRecomputeHandler {
     @Inject
     OntologyMaterializer materializer;
 
+    @Inject
+    ComputedEdgeCache computedEdgeCache;
+
     /** Optional loader for source entities - must be provided by application */
     private SourceEntityLoader sourceEntityLoader;
 
@@ -166,6 +169,21 @@ public class ComputedEdgeRecomputeHandler {
             ComputedEdgeProvider<?> provider,
             String sourceId) {
 
+        MaterializationMode mode = provider.getMaterializationMode();
+        if (mode == MaterializationMode.ONDEMAND) {
+            // Nothing stored, nothing cached. Reads always recompute.
+            return true;
+        }
+        if (mode == MaterializationMode.LAZY) {
+            // No stored edges to refresh; just punch the cache so the next read
+            // recomputes against the new dependency state.
+            String tenant = dataDomain == null ? null : dataDomain.getTenantId();
+            computedEdgeCache.invalidate(new ComputedEdgeCache.Key(
+                    provider.getProviderId(), realmId, tenant, sourceId));
+            return true;
+        }
+
+        // EAGER (default): persist new edges, prune old ones.
         // Load source entity
         if (sourceEntityLoader == null) {
             Log.warnf("Cannot recompute edges: no SourceEntityLoader configured");

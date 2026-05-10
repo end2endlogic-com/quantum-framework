@@ -84,6 +84,25 @@ public abstract class ComputedEdgeProvider<S> implements OntologyEdgeProvider {
     }
 
     /**
+     * How the framework should handle the edges this provider produces.
+     * Default is {@link MaterializationMode#EAGER}.
+     *
+     * @see MaterializationMode
+     */
+    public MaterializationMode getMaterializationMode() {
+        return MaterializationMode.EAGER;
+    }
+
+    /**
+     * Optional TTL hint for {@link MaterializationMode#LAZY} providers.
+     * Returned in seconds. {@code 0} or negative means "no expiration"
+     * (entries live until invalidated by a dependency change).
+     */
+    public long getCacheTtlSeconds() {
+        return 0;
+    }
+
+    /**
      * The source entity type this provider handles.
      *
      * @return class of the source entity
