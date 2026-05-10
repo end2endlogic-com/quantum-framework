@@ -4,6 +4,7 @@ import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.ontology.metrics.OntologyMetrics;
 import com.e2eq.ontology.model.OntologyMeta;
 import com.e2eq.ontology.mongo.BulkRecomputeService;
+import com.e2eq.ontology.mongo.ProvenanceMigrationService;
 import com.e2eq.ontology.repo.OntologyMetaRepo;
 import com.e2eq.ontology.service.OntologyReindexer;
 import io.smallrye.mutiny.Multi;
@@ -38,6 +39,9 @@ public class OntologyAdminResource {
 
     @Inject
     OntologyMetrics ontologyMetrics;
+
+    @Inject
+    ProvenanceMigrationService provenanceMigration;
 
     @GET
     @Path("/meta")
@@ -159,5 +163,21 @@ public class OntologyAdminResource {
     @Path("/metrics")
     public Map<String, Map<String, Object>> metrics() {
         return ontologyMetrics.snapshot();
+    }
+
+    /**
+     * One-shot migration of inline provenance to the side
+     * {@code ontology_edge_provenance} collection. Idempotent.
+     *
+     * <p>Use {@code dryRun=true} to count candidates without writing.</p>
+     */
+    @POST
+    @Path("/provenance/migrate")
+    public ProvenanceMigrationService.Result migrateProvenance(
+            @QueryParam("realm") @DefaultValue("default") String realm,
+            @QueryParam("dryRun") @DefaultValue("false") boolean dryRun) {
+        ProvenanceMigrationService.Result r = provenanceMigration.migrate(realm, dryRun);
+        r.dryRun = dryRun;
+        return r;
     }
 }
