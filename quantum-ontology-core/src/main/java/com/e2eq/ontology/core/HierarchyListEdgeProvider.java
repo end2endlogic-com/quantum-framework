@@ -140,6 +140,7 @@ public abstract class HierarchyListEdgeProvider<S, H, T> extends ComputedEdgePro
     protected String extractNodeId(H node) {
         try {
             var method = node.getClass().getMethod("getId");
+            method.setAccessible(true);
             Object id = method.invoke(node);
             return id != null ? id.toString() : null;
         } catch (Exception e) {
@@ -161,6 +162,7 @@ public abstract class HierarchyListEdgeProvider<S, H, T> extends ComputedEdgePro
     protected String extractNodeRefName(H node) {
         try {
             var method = node.getClass().getMethod("getRefName");
+            method.setAccessible(true);
             Object refName = method.invoke(node);
             return refName != null ? refName.toString() : null;
         } catch (NoSuchMethodException e) {

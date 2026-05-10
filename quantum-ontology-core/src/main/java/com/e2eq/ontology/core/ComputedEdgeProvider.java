@@ -288,9 +288,10 @@ public abstract class ComputedEdgeProvider<S> implements OntologyEdgeProvider {
      * @return entity ID as string
      */
     protected String extractId(S entity) {
-        // Use reflection to find getId() method
         try {
             var method = entity.getClass().getMethod("getId");
+            // Allow invocation on package-private holders (test fixtures, inner classes).
+            method.setAccessible(true);
             Object id = method.invoke(entity);
             return id != null ? id.toString() : null;
         } catch (Exception e) {
