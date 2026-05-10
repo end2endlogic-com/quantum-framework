@@ -1,9 +1,11 @@
 package com.e2eq.ontology.core;
 
 import com.e2eq.ontology.annotations.OntologyClass;
+import com.e2eq.ontology.metrics.OntologyMetrics;
 import com.e2eq.ontology.spi.OntologyEdgeProvider;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Base class for computing ontology edges that require complex multi-step logic
@@ -52,6 +54,23 @@ import java.util.*;
  * @param <S> the source entity type
  */
 public abstract class ComputedEdgeProvider<S> implements OntologyEdgeProvider {
+
+    /**
+     * Optional process-wide metrics sink for computed edges.
+     *
+     * <p>Set during application startup (e.g. by a CDI observer) so that the
+     * base class can record guard trips without depending on CDI here. When
+     * unset (the test path), guard trips are silently ignored.</p>
+     */
+    private static final AtomicReference<OntologyMetrics> METRICS = new AtomicReference<>();
+
+    public static void setMetrics(OntologyMetrics metrics) {
+        METRICS.set(metrics);
+    }
+
+    protected static OntologyMetrics metrics() {
+        return METRICS.get();
+    }
 
     /**
      * Unique identifier for this provider, used in provenance tracking.
@@ -183,6 +202,13 @@ public abstract class ComputedEdgeProvider<S> implements OntologyEdgeProvider {
         ComputationContext context = new ComputationContext(realmId, domain, getProviderId());
         Set<ComputedTarget> targets = computeTargets(context, source);
 
+        OntologyMetrics m = metrics();
+        if (m != null) {
+            for (String trip : context.getGuardTrips()) {
+                m.recordGuardTrip(getProviderId(), trip);
+            }
+        }
+
         return targets.stream()
             .map(target -> createEdge(sourceId, sourceTypeName, target))
             .toList();
@@ -264,14 +290,26 @@ public abstract class ComputedEdgeProvider<S> implements OntologyEdgeProvider {
 
     /**
      * Context for edge computation, providing access to realm, domain,
-     * and provenance tracking.
+     * provenance tracking, and traversal guards.
+     *
+     * <p>The context tracks visited hierarchy node IDs so providers can detect
+     * cycles, and exposes configurable caps on hierarchy depth and total
+     * computed targets. When a cap is hit, the context records the trip; the
+     * caller is expected to stop expanding.</p>
      */
     public static class ComputationContext {
+        public static final int DEFAULT_MAX_HIERARCHY_DEPTH = 64;
+        public static final int DEFAULT_MAX_COMPUTED_TARGETS = 50_000;
+
         private final String realmId;
         private final DataDomainInfo dataDomainInfo;
         private final String providerId;
         private final List<ComputedEdgeProvenance.HierarchyContribution> hierarchyPath = new ArrayList<>();
         private final List<ComputedEdgeProvenance.ListContribution> resolvedLists = new ArrayList<>();
+        private final Set<String> visitedNodeIds = new LinkedHashSet<>();
+        private final List<String> guardTrips = new ArrayList<>();
+        private int maxHierarchyDepth = DEFAULT_MAX_HIERARCHY_DEPTH;
+        private int maxComputedTargets = DEFAULT_MAX_COMPUTED_TARGETS;
 
         public ComputationContext(String realmId, DataDomainInfo dataDomainInfo, String providerId) {
             this.realmId = realmId;
@@ -282,6 +320,46 @@ public abstract class ComputedEdgeProvider<S> implements OntologyEdgeProvider {
         public String getRealmId() { return realmId; }
         public DataDomainInfo getDataDomainInfo() { return dataDomainInfo; }
         public String getProviderId() { return providerId; }
+
+        public int getMaxHierarchyDepth() { return maxHierarchyDepth; }
+        public void setMaxHierarchyDepth(int v) { this.maxHierarchyDepth = Math.max(1, v); }
+
+        public int getMaxComputedTargets() { return maxComputedTargets; }
+        public void setMaxComputedTargets(int v) { this.maxComputedTargets = Math.max(1, v); }
+
+        /**
+         * Mark the given node id as visited. Returns {@code true} if this is the
+         * first visit (caller may proceed), or {@code false} if the node has
+         * already been visited (caller should short-circuit to break a cycle).
+         */
+        public boolean visit(String nodeId) {
+            if (nodeId == null) return true;
+            return visitedNodeIds.add(nodeId);
+        }
+
+        public boolean wasVisited(String nodeId) {
+            return nodeId != null && visitedNodeIds.contains(nodeId);
+        }
+
+        public Set<String> getVisitedNodeIds() {
+            return Collections.unmodifiableSet(visitedNodeIds);
+        }
+
+        /**
+         * Record that a guard tripped. Names: {@code "cycle"}, {@code "maxDepth"},
+         * {@code "maxTargets"}.
+         */
+        public void recordGuardTrip(String guard) {
+            if (guard != null) guardTrips.add(guard);
+        }
+
+        public List<String> getGuardTrips() {
+            return Collections.unmodifiableList(guardTrips);
+        }
+
+        public boolean tripped(String guard) {
+            return guardTrips.contains(guard);
+        }
 
         /**
          * Record a hierarchy node contribution to provenance.
