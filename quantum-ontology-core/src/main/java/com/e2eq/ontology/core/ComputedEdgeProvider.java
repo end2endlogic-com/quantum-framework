@@ -1,5 +1,6 @@
 package com.e2eq.ontology.core;
 
+import com.e2eq.ontology.annotations.DependsOn;
 import com.e2eq.ontology.annotations.OntologyClass;
 import com.e2eq.ontology.metrics.OntologyMetrics;
 import com.e2eq.ontology.spi.OntologyEdgeProvider;
@@ -151,15 +152,30 @@ public abstract class ComputedEdgeProvider<S> implements OntologyEdgeProvider {
      * Returns the entity types that, when modified, should trigger recomputation
      * of edges from this provider.
      *
-     * <p>For example, if Associate→canSeeLocation depends on Territory and LocationList,
-     * this method should return {@code Set.of(Territory.class, LocationList.class)}.</p>
-     *
-     * <p>Override this method to enable incremental updates when dependencies change.</p>
-     *
-     * @return set of dependency entity types (empty by default)
+     * <p>By default this is the union of {@link DependsOn#type()} values declared
+     * on the provider class (and its superclasses). Override to add types that
+     * cannot be expressed declaratively, or to suppress declared ones.</p>
      */
     public Set<Class<?>> getDependencyTypes() {
-        return Set.of();
+        return dependsOnDeclarations().stream()
+                .map(DependsOn::type)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
+    /**
+     * Resolved {@link DependsOn} declarations on this provider's class hierarchy.
+     * Used by {@code getDependencyTypes()} and by the startup validator.
+     */
+    public final List<DependsOn> dependsOnDeclarations() {
+        List<DependsOn> out = new ArrayList<>();
+        Class<?> c = getClass();
+        while (c != null && c != Object.class) {
+            // getAnnotationsByType already unwraps the @DependsOnList container.
+            DependsOn[] direct = c.getAnnotationsByType(DependsOn.class);
+            if (direct != null) Collections.addAll(out, direct);
+            c = c.getSuperclass();
+        }
+        return out;
     }
 
     /**
