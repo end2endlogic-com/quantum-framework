@@ -79,7 +79,18 @@ public class ComputedEdgeCache {
         return m;
     }
 
-    public record Key(String providerId, String realm, String tenant, String sourceId) {}
+    /**
+     * Cache key. Includes the full DataDomain scope so two requests sharing a
+     * tenant id but different orgRefName / accountNum / dataSegment do not
+     * collide (the underlying edge repo scopes by all four fields).
+     */
+    public record Key(String providerId,
+                      String realm,
+                      String orgRefName,
+                      String accountNum,
+                      String tenantId,
+                      int dataSegment,
+                      String sourceId) {}
 
     private static final class Entry {
         final List<Reasoner.Edge> edges;

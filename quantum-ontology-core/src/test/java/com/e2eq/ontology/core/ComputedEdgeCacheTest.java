@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class ComputedEdgeCacheTest {
 
     private ComputedEdgeCache.Key key(String src) {
-        return new ComputedEdgeCache.Key("P1", "realm", "tenant", src);
+        return new ComputedEdgeCache.Key("P1", "realm", "org", "acct", "tenant", 0, src);
     }
 
     private List<Reasoner.Edge> edges(String dst) {
@@ -55,11 +55,11 @@ class ComputedEdgeCacheTest {
         ComputedEdgeCache c = new ComputedEdgeCache();
         c.put(key("s1"), edges("a"), 0);
         c.put(key("s2"), edges("b"), 0);
-        c.put(new ComputedEdgeCache.Key("Other", "r", "t", "s3"), edges("c"), 0);
+        c.put(new ComputedEdgeCache.Key("Other", "r", "o", "a", "t", 0, "s3"), edges("c"), 0);
         int n = c.invalidateProvider("P1");
         assertEquals(2, n);
         assertTrue(c.get(key("s1")).isEmpty());
-        assertTrue(c.get(new ComputedEdgeCache.Key("Other", "r", "t", "s3")).isPresent());
+        assertTrue(c.get(new ComputedEdgeCache.Key("Other", "r", "o", "a", "t", 0, "s3")).isPresent());
     }
 
     @Test
@@ -70,6 +70,20 @@ class ComputedEdgeCacheTest {
         c.clear();
         assertEquals(0L, c.stats().get("size"));
         assertEquals(2L, c.stats().get("evictions"));
+    }
+
+    @Test
+    void differingDataDomainFieldsDoNotCollide() {
+        ComputedEdgeCache c = new ComputedEdgeCache();
+        // Same provider/realm/tenant/source — different org and segment.
+        ComputedEdgeCache.Key k1 = new ComputedEdgeCache.Key("P1", "r", "orgA", "1", "t", 0, "s1");
+        ComputedEdgeCache.Key k2 = new ComputedEdgeCache.Key("P1", "r", "orgB", "1", "t", 0, "s1");
+        ComputedEdgeCache.Key k3 = new ComputedEdgeCache.Key("P1", "r", "orgA", "1", "t", 1, "s1");
+
+        c.put(k1, edges("a"), 0);
+        assertTrue(c.get(k2).isEmpty(), "different orgRefName must not hit");
+        assertTrue(c.get(k3).isEmpty(), "different dataSegment must not hit");
+        assertTrue(c.get(k1).isPresent());
     }
 
     @Test
