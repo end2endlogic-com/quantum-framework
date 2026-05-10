@@ -1,8 +1,26 @@
 = Calculated Relations — Design and Roadmap
 
-*Status:* Draft, targeted at the `1.4.0-SNAPSHOT` line.
+*Status:* Implemented on `feature/ontology-enhancements` against `1.4.0-SNAPSHOT`.
 *Owners:* Ontology team.
 *Scope:* `quantum-ontology-core`, `quantum-ontology-mongo`, `quantum-ontology-policy-bridge`, `quantum-cli`, `quantum-docs`.
+
+[NOTE]
+====
+*Implementation status (initial pass):* All eight design items have landed.
+Per-item notes appear inline in the design and the roadmap table below. In
+short:
+
+* M1 (Safety Net): D7 metrics, D4 guards, D2 `@DependsOn` + validator, D8
+  test kit — all complete with unit tests in `quantum-ontology-core`.
+* M2 (Operability): D6 bulk recompute service + admin REST; D5 provenance
+  side-collection storage and migration runner. The CLI shim and the
+  upsert-path rewrite are explicitly deferred (see notes).
+* M3 (Performance / Authoring): D1 materialization modes (EAGER/LAZY/ONDEMAND)
+  with cache + read facade + write-hook honoring; D3 declarative `computed:`
+  YAML block + `DeclarativeComputedEdgeProvider`.
+
+Total new test coverage in `quantum-ontology-core`: 72 tests (was 53).
+====
 
 This document captures a forward-looking design for the *calculated relations*
 subsystem (computed/derived ontology edges). It collects the gaps observed in
@@ -92,6 +110,19 @@ edge sets grow:
 
 === D1. Materialization Modes
 
+[NOTE]
+.Status: implemented
+====
+* `MaterializationMode` enum at `quantum-ontology-core/.../core/MaterializationMode.java`.
+* `ComputedEdgeProvider#getMaterializationMode()` (default EAGER) and
+  `getCacheTtlSeconds()` hooks.
+* `ComputedEdgeCache` (per-process TTL'd map) at `quantum-ontology-core/.../core/ComputedEdgeCache.java`.
+* `OntologyWriteHook` skips non-EAGER providers at write time.
+* `ComputedEdgeReader` (in `quantum-ontology-mongo`) is the read-side
+  facade; `ComputedEdgeRecomputeHandler` punches the cache for LAZY and
+  no-ops for ONDEMAND on dependency changes.
+====
+
 Add a `MaterializationMode` enum returned by a new
 `ComputedEdgeProvider#getMaterializationMode()` (default `EAGER`):
 
@@ -115,6 +146,20 @@ method; reads return the same edges as before; writes that previously fanned
 out N edges no longer write any rows for that provider.
 
 === D2. Dependency Validation and Loud Staleness
+
+[NOTE]
+.Status: implemented
+====
+* `@DependsOn(type, via, expand)` (repeatable) at
+  `quantum-ontology-core/.../annotations/DependsOn.java`.
+* `ComputedEdgeProvider#getDependencyTypes()` derives its default from
+  `@DependsOn` declarations on the class hierarchy.
+* `ComputedEdgeStalenessValidator` is pure logic in core, unit-tested
+  without CDI.
+* `ComputedEdgeProviderAutoDiscovery` runs the validator at startup,
+  emits WARN logs, and bumps `OntologyMetrics.recordStalenessRisk` per
+  unhelped (provider, dependency-type) pair.
+====
 
 Add startup-time validation in `ComputedEdgeRegistry`:
 
@@ -142,6 +187,21 @@ has not been explicitly overridden.
 invalidation correct; removing both surfaces a warning at startup.
 
 === D3. Declarative Hierarchy/List Edges
+
+[NOTE]
+.Status: implemented
+====
+* YAML `computed:` block parsed by `YamlOntologyLoader.loadComputedSpecs()`
+  into `ComputedEdgeSpec` records.
+* `DeclarativeRuntime<S, H, T>` SPI for application-supplied entity
+  loading / hierarchy walk / list resolution.
+* `DeclarativeComputedEdgeProvider` extends `HierarchyListEdgeProvider`,
+  so the cycle/depth/target guards from D4 apply automatically.
+* End-to-end test: `DeclarativeComputedEdgeTest` loads a YAML spec and
+  produces the expected target set against in-memory fakes.
+* `dependsOn:` entries are surfaced via `declaredDependencyTypeNames()`;
+  applications resolve type strings to classes when registering a runtime.
+====
 
 Extend the YAML ontology schema to allow `computed:` definitions for the
 hierarchy+list pattern:
@@ -175,6 +235,20 @@ under the existing integration tests.
 
 === D4. Compute Guards
 
+[NOTE]
+.Status: implemented
+====
+* `ComputationContext` now tracks `visitedNodeIds`, configurable
+  `maxHierarchyDepth` (default 64) and `maxComputedTargets` (default
+  50_000), and a list of guard trips.
+* `HierarchyListEdgeProvider` short-circuits on cycle / depth / target
+  hits and records the trip. (Note: with the existing flat-descendants
+  API, `maxHierarchyDepth` is interpreted as max hierarchy nodes
+  processed, not tree depth — see HierarchyListGuardsTest.)
+* Trips flow into `OntologyMetrics.recordGuardTrip` per provider via the
+  static metrics hook on `ComputedEdgeProvider`.
+====
+
 Augment `ComputationContext` with:
 
 * `Set<String> visitedNodeIds` — automatically populated by
@@ -190,6 +264,22 @@ implementations get the same context and can opt in.
 without stack overflow and emits the expected warning counter.
 
 === D5. Provenance Off the Hot Path
+
+[NOTE]
+.Status: storage + migration implemented; upsert wiring deferred
+====
+* `OntologyEdgeProvenanceDoc` (collection `ontology_edge_provenance`),
+  `OntologyEdgeProvenanceRepo`, and `ProvenanceStore` strategy.
+* Feature flag `quantum.ontology.provenance.split` (default false). With
+  the flag off, behavior is unchanged.
+* `ProvenanceMigrationService.migrate(realm, dryRun)` is idempotent and
+  exposed at `POST /ontology/admin/provenance/migrate`.
+* *Deferred:* rewriting `OntologyMaterializer` and `OntologyEdgeRepo`
+  upsert paths to consult `ProvenanceStore` rather than setting `prov`
+  directly. Doing so without the integration-test environment risked
+  regressions; the storage and migration are the correct foundation
+  and can be wired in with full IT coverage in a follow-up.
+====
 
 Move per-edge provenance out of `EdgeRecord.prov` into a sibling collection
 `ontology_edge_provenance` keyed by edge `_id`. `EdgeRecord` retains a
@@ -208,6 +298,24 @@ Migration: a one-shot job copies existing `prov` maps to the side
 collection and clears the inline field.
 
 === D6. Bulk Recompute CLI
+
+[NOTE]
+.Status: service implemented; REST endpoint exposed; CLI shim deferred
+====
+* `BulkRecomputeService` walks all source entities for a provider via a
+  registered `SourceEntityEnumerator` SPI, recomputes target sets,
+  diffs against persisted edges, and either reports deltas (`dryRun=true`)
+  or re-applies via the existing `ComputedEdgeRecomputeHandler`.
+* Exposed at `POST /ontology/admin/recompute` with the original
+  request/response shape.
+* `GET /ontology/admin/metrics` exposes the `OntologyMetrics` snapshot.
+* *Deferred:* the picocli verb. `quantum-cli` already binds
+  `@TopCommand` to `ServiceTokenCLI`; quarkus-picocli only allows one
+  top command, so adding a sibling would either restructure the
+  existing CLI invocation or require a parallel jar. The REST endpoint
+  is the canonical entry point; a thin CLI wrapper that posts to it
+  can land separately.
+====
 
 Add a `quantum-cli` verb:
 
@@ -230,6 +338,22 @@ expected diff.
 
 === D7. Metrics
 
+[NOTE]
+.Status: implemented (in-process; Micrometer bridge follow-up)
+====
+* `OntologyMetrics` is a dependency-free `@ApplicationScoped` bean in
+  `quantum-ontology-core`. Per-provider counters: invocations, total /
+  avg / max nanos, targets produced, edges added, edges removed, errors,
+  guard trips, staleness-risk-by-dependency.
+* Wired in `OntologyWriteHook` (timing per provider invocation) and
+  `OntologyMaterializer` (added/removed deltas via `prov.providerId`
+  inspection).
+* Snapshot exposed at `GET /ontology/admin/metrics`.
+* *Follow-up:* a Micrometer bridge (subscribe to `OntologyMetrics`
+  snapshots and emit gauges/counters) is intentionally separate so
+  `quantum-ontology-core` stays free of the Micrometer dependency.
+====
+
 Wrap `ComputedEdgeProvider#edges(...)` in a Micrometer timer and counters,
 tagged by `providerId`:
 
@@ -245,6 +369,24 @@ Surfaced through the existing Quarkus Micrometer registry.
 the integration test run.
 
 === D8. Provider Test Kit
+
+[NOTE]
+.Status: implemented
+====
+* `com.e2eq.ontology.testkit.InMemoryHierarchy<H, T>` builds a fluent
+  fake hierarchy with parent/child links and per-node list items; its
+  `descendants(nodeId)` matches the `HierarchyListEdgeProvider`
+  flat-descendants contract.
+* `com.e2eq.ontology.testkit.ComputedEdgeProviderHarness` invokes any
+  `ComputedEdgeProvider` against a fake `DataDomainInfo` and returns a
+  `Result` with `targetIds()` and `providerIds()` helpers.
+* Sample test (`TestKitSampleTest`) declares a hierarchy + provider in
+  ~80 lines with no Mongo and no Quarkus boot.
+* Drive-by fix: `extractId`, `extractNodeId`, and `extractNodeRefName`
+  now `setAccessible(true)` on the reflected `getId/getRefName` methods,
+  so providers work against package-private fixtures and
+  reflection-loaded classes.
+====
 
 Add `quantum-ontology-core/src/test-fixtures` (or a `test-jar`) module with:
 
@@ -265,9 +407,9 @@ boot; they run in &lt;1s.
 The roadmap is organized into three sequential milestones inside the
 `1.4.0-SNAPSHOT` line. Each milestone is independently shippable.
 
-[cols="1,2,3,2,1", options="header"]
+[cols="1,2,3,2,1,1", options="header"]
 |===
-|Milestone |Theme |Items |Risk |Target
+|Milestone |Theme |Items |Risk |Target |Status
 
 |*M1 — Safety Net*
 |Make staleness loud, give us metrics and a test kit before we change
@@ -279,15 +421,17 @@ a|
 * D8 — Provider Test Kit
 |Low. Additive only; no on-disk format change.
 |`1.4.0-SNAPSHOT` early
+|Done
 
 |*M2 — Operability*
 |Recovery path and provenance footprint.
 a|
-* D6 — Bulk recompute CLI
-* D5 — Provenance off the hot path (with one-shot migration)
+* D6 — Bulk recompute (REST; CLI shim deferred)
+* D5 — Provenance side collection + migration (upsert wiring deferred)
 |Medium. Migration touches existing data; gated by feature flag
 `quantum.ontology.provenance.split` (default off until validated).
 |`1.4.0-SNAPSHOT` mid
+|Done (with documented deferrals)
 
 |*M3 — Performance and Authoring*
 |Reduce write amplification and lower the cost of new providers.
@@ -296,6 +440,7 @@ a|
 * D3 — Declarative computed edges in YAML
 |Medium-high. New code paths in the read layer; YAML schema additions.
 |`1.4.0-SNAPSHOT` late / branch handoff
+|Done
 |===
 
 === Sequencing Rationale
