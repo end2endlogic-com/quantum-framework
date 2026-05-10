@@ -6,6 +6,7 @@ import com.e2eq.framework.model.persistent.morphia.PostPersistHook;
 import com.e2eq.ontology.annotations.OntologyClass;
 import com.e2eq.ontology.core.ComputedEdgeProvider;
 import com.e2eq.ontology.core.DataDomainInfo;
+import com.e2eq.ontology.core.MaterializationMode;
 import com.e2eq.ontology.core.OntologyRegistry;
 import com.e2eq.ontology.core.Reasoner;
 import com.e2eq.ontology.metrics.OntologyMetrics;
@@ -61,6 +62,11 @@ public class OntologyWriteHook implements PostPersistHook {
             String providerId = (p instanceof ComputedEdgeProvider<?> cep)
                     ? cep.getProviderId()
                     : p.getClass().getSimpleName();
+            // Honor materialization mode: only EAGER providers contribute at write time.
+            if (p instanceof ComputedEdgeProvider<?> cep
+                    && cep.getMaterializationMode() != MaterializationMode.EAGER) {
+                continue;
+            }
             long start = System.nanoTime();
             int produced = 0;
             try {
