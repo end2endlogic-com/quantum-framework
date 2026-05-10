@@ -1,6 +1,7 @@
 package com.e2eq.ontology.core;
 
 import com.e2eq.ontology.annotations.OntologyClass;
+import com.e2eq.ontology.metrics.OntologyMetrics;
 import com.e2eq.ontology.spi.OntologyEdgeProvider;
 import io.quarkus.logging.Log;
 import io.quarkus.runtime.Startup;
@@ -60,8 +61,12 @@ public class ComputedEdgeProviderAutoDiscovery {
     @Inject
     ComputedEdgeRegistry registry;
 
+    @Inject
+    OntologyMetrics metrics;
+
     @PostConstruct
     void discoverAndRegister() {
+        ComputedEdgeProvider.setMetrics(metrics);
         int registered = 0;
         int total = 0;
         List<String> warnings = new ArrayList<>();

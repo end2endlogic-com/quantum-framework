@@ -248,31 +248,70 @@ public abstract class HierarchyListEdgeProvider<S, H, T> extends ComputedEdgePro
 
     @Override
     protected final Set<ComputedTarget> computeTargets(ComputationContext context, S source) {
-        // Map from targetId to accumulated provenance
         Map<String, ProvenanceAccumulator> targetProvenance = new LinkedHashMap<>();
 
         String sourceType = getSourceType().getSimpleName();
         String sourceId = extractId(source);
 
         List<String> assignedNodeIds = getAssignedNodeIds(source);
+        int hierarchyNodesProcessed = 0;
 
+        outer:
         for (String nodeId : assignedNodeIds) {
+            // Cycle guard: skip nodes we've already visited via another assignment.
+            if (!context.visit(nodeId)) {
+                context.recordGuardTrip("cycle");
+                LOG.log(Level.WARNING,
+                        "Provider {0}: cycle detected at node {1}; skipping",
+                        new Object[]{context.getProviderId(), nodeId});
+                continue;
+            }
+            if (++hierarchyNodesProcessed > context.getMaxHierarchyDepth()) {
+                context.recordGuardTrip("maxDepth");
+                LOG.log(Level.WARNING,
+                        "Provider {0}: maxHierarchyDepth ({1}) reached; truncating",
+                        new Object[]{context.getProviderId(), context.getMaxHierarchyDepth()});
+                break;
+            }
+
             Optional<H> nodeOpt = loadHierarchyNode(context, nodeId);
             if (nodeOpt.isEmpty()) continue;
 
-            H node = nodeOpt.get();
+            processNode(context, nodeOpt.get(), true, sourceType, sourceId, targetProvenance);
+            if (targetProvenance.size() >= context.getMaxComputedTargets()) {
+                context.recordGuardTrip("maxTargets");
+                LOG.log(Level.WARNING,
+                        "Provider {0}: maxTargets ({1}) reached; truncating",
+                        new Object[]{context.getProviderId(), context.getMaxComputedTargets()});
+                break outer;
+            }
 
-            // Process assigned node (direct assignment)
-            processNode(context, node, true, sourceType, sourceId, targetProvenance);
-
-            // Process child nodes (inherited)
-            List<H> children = getChildNodes(context, nodeId);
-            for (H child : children) {
+            // Inherited descendants. The flat-descendant API means depth here is
+            // really "how many hierarchy nodes have we processed in total".
+            for (H child : getChildNodes(context, nodeId)) {
+                String childId = extractNodeId(child);
+                if (!context.visit(childId)) {
+                    context.recordGuardTrip("cycle");
+                    continue;
+                }
+                if (++hierarchyNodesProcessed > context.getMaxHierarchyDepth()) {
+                    context.recordGuardTrip("maxDepth");
+                    LOG.log(Level.WARNING,
+                            "Provider {0}: maxHierarchyDepth ({1}) reached; truncating",
+                            new Object[]{context.getProviderId(), context.getMaxHierarchyDepth()});
+                    break outer;
+                }
                 processNode(context, child, false, sourceType, sourceId, targetProvenance);
+                if (targetProvenance.size() >= context.getMaxComputedTargets()) {
+                    context.recordGuardTrip("maxTargets");
+                    LOG.log(Level.WARNING,
+                            "Provider {0}: maxTargets ({1}) reached; truncating",
+                            new Object[]{context.getProviderId(), context.getMaxComputedTargets()});
+                    break outer;
+                }
             }
         }
 
-        // Convert to ComputedTarget set
         return targetProvenance.entrySet().stream()
             .map(e -> new ComputedTarget(e.getKey(), e.getValue().build(sourceType, sourceId)))
             .collect(Collectors.toSet());
