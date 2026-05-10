@@ -96,17 +96,47 @@ public class ComputedEdgeReader {
                                              ComputedEdgeProvider<?> provider, String sourceId) {
         List<OntologyEdge> stored = edgeRepo.findBySrcAndP(realmId, dataDomain, sourceId, provider.getPredicate());
         List<Reasoner.Edge> out = new ArrayList<>(stored.size());
+        String wantedId = provider.getProviderId();
         for (OntologyEdge e : stored) {
             if (!Boolean.TRUE.equals(e.isDerived())) continue;
-            // Only edges produced by THIS provider (when providerId is recorded).
-            Object pid = e.getProv() != null ? e.getProv().get("providerId") : null;
-            if (pid != null && !provider.getProviderId().equals(pid.toString())) continue;
+            String pid = extractProviderId(e.getProv());
+            // If we know which provider made this edge, filter strictly. Truly
+            // legacy edges with no recorded providerId are passed through (the
+            // alternative is dropping them silently, which is worse).
+            if (pid != null && !wantedId.equals(pid)) continue;
             out.add(new Reasoner.Edge(
                     e.getSrc(), e.getSrcType(), e.getP(),
                     e.getDst(), e.getDstType(), e.isInferred(),
                     Optional.empty()));
         }
         return out;
+    }
+
+    /**
+     * Provider id can live in two shapes depending on the write path:
+     *
+     * <ul>
+     *   <li>{@code OntologyMaterializer.upsertDerived} stores
+     *       {@code {rule:"computed", inputs:{providerId:..., ...}}}</li>
+     *   <li>{@code ComputedEdgeRecomputeHandler.insertComputedEdge} stores
+     *       {@code {rule:"computed", providerId:..., ...}} (flat)</li>
+     * </ul>
+     *
+     * Plus the M2.D5 split-provenance marker
+     * {@code {providerId:..., split:true}}. Returns {@code null} when no
+     * id can be located (truly legacy edges).
+     */
+    @SuppressWarnings("unchecked")
+    static String extractProviderId(java.util.Map<String, Object> prov) {
+        if (prov == null || prov.isEmpty()) return null;
+        Object top = prov.get("providerId");
+        if (top != null) return top.toString();
+        Object inputs = prov.get("inputs");
+        if (inputs instanceof java.util.Map<?, ?> m) {
+            Object nested = ((java.util.Map<String, Object>) m).get("providerId");
+            if (nested != null) return nested.toString();
+        }
+        return null;
     }
 
     private List<Reasoner.Edge> compute(String realmId, DataDomain dataDomain,
@@ -130,8 +160,11 @@ public class ComputedEdgeReader {
 
     private static ComputedEdgeCache.Key cacheKey(String realmId, DataDomain dataDomain,
                                                   ComputedEdgeProvider<?> provider, String sourceId) {
+        String org = dataDomain == null ? null : dataDomain.getOrgRefName();
+        String acct = dataDomain == null ? null : dataDomain.getAccountNum();
         String tenant = dataDomain == null ? null : dataDomain.getTenantId();
-        return new ComputedEdgeCache.Key(provider.getProviderId(), realmId, tenant, sourceId);
+        int seg = dataDomain == null ? 0 : dataDomain.getDataSegment();
+        return new ComputedEdgeCache.Key(provider.getProviderId(), realmId, org, acct, tenant, seg, sourceId);
     }
 
     /** Same trick as BulkRecomputeService for accessing the registered loader. */

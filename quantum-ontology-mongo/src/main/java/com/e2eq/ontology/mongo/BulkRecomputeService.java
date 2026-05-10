@@ -132,13 +132,13 @@ public class BulkRecomputeService {
 
         // Existing edges produced by this provider for this source.
         String predicate = provider.getPredicate();
+        String wantedId = provider.getProviderId();
         Set<String> existingTargets = new HashSet<>();
         for (OntologyEdge e : edgeRepo.findBySrcAndP(dataDomain, sourceId, predicate)) {
-            if (Boolean.TRUE.equals(e.isDerived())) {
-                Object pid = e.getProv() != null ? e.getProv().get("providerId") : null;
-                if (pid == null || provider.getProviderId().equals(pid.toString())) {
-                    existingTargets.add(e.getDst());
-                }
+            if (!Boolean.TRUE.equals(e.isDerived())) continue;
+            String pid = ComputedEdgeReader.extractProviderId(e.getProv());
+            if (pid == null || wantedId.equals(pid)) {
+                existingTargets.add(e.getDst());
             }
         }
 

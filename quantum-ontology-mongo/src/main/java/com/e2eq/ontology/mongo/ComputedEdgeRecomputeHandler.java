@@ -177,9 +177,12 @@ public class ComputedEdgeRecomputeHandler {
         if (mode == MaterializationMode.LAZY) {
             // No stored edges to refresh; just punch the cache so the next read
             // recomputes against the new dependency state.
+            String org = dataDomain == null ? null : dataDomain.getOrgRefName();
+            String acct = dataDomain == null ? null : dataDomain.getAccountNum();
             String tenant = dataDomain == null ? null : dataDomain.getTenantId();
+            int seg = dataDomain == null ? 0 : dataDomain.getDataSegment();
             computedEdgeCache.invalidate(new ComputedEdgeCache.Key(
-                    provider.getProviderId(), realmId, tenant, sourceId));
+                    provider.getProviderId(), realmId, org, acct, tenant, seg, sourceId));
             return true;
         }
 
