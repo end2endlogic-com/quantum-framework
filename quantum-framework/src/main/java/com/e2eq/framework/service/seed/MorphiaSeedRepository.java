@@ -18,9 +18,12 @@ import dev.morphia.Datastore;
 import dev.morphia.query.Query;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
+import io.quarkus.arc.Arc;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.enterprise.inject.Instance;
+import jakarta.enterprise.inject.Any;
+import jakarta.enterprise.inject.spi.Bean;
+import jakarta.enterprise.inject.spi.BeanManager;
 import jakarta.inject.Inject;
 import org.bson.types.ObjectId;
 
@@ -40,7 +43,7 @@ import java.util.*;
 public class MorphiaSeedRepository implements SeedRepository {
 
     @Inject
-    Instance<BaseMorphiaRepo<? extends UnversionedBaseModel>> allRepos;
+    BeanManager beanManager;
 
     @Inject
     ObjectMapper objectMapper;
@@ -784,9 +787,10 @@ public class MorphiaSeedRepository implements SeedRepository {
          }
       }
 
+      List<BaseMorphiaRepo<? extends UnversionedBaseModel>> discoveredRepos = discoverRepos();
+
       if (repoClassName != null && !repoClassName.isBlank()) {
-         for (BaseMorphiaRepo<? extends UnversionedBaseModel> repo : allRepos) {
-            // FIX: Get the real class behind the proxy
+         for (BaseMorphiaRepo<? extends UnversionedBaseModel> repo : discoveredRepos) {
             Class<?> beanClass = getRealClass(repo);
 
             String simple = beanClass.getSimpleName();
@@ -809,7 +813,7 @@ public class MorphiaSeedRepository implements SeedRepository {
       }
 
       if (modelClassName != null && !modelClassName.isBlank()) {
-         for (BaseMorphiaRepo<? extends UnversionedBaseModel> repo : allRepos) {
+         for (BaseMorphiaRepo<? extends UnversionedBaseModel> repo : discoveredRepos) {
             try {
                // This works fine on proxies because it's a method call, not a reflection check on the repo itself
                Class<? extends UnversionedBaseModel> pc = repo.getPersistentClass();
@@ -817,7 +821,9 @@ public class MorphiaSeedRepository implements SeedRepository {
                if (modelClassName.equals(pc.getName()) || modelClassName.equals(pc.getSimpleName())) {
                   return Optional.of(repo);
                }
-            } catch (Throwable ignored) {
+            } catch (Throwable e) {
+               Log.debugf(e, "Failed to inspect Morphia repository %s while resolving model class %s",
+                     getRealClass(repo).getName(), modelClassName);
             }
          }
          throw new IllegalStateException("No Morphia repository bean found for model class: " + modelClassName);
@@ -829,11 +835,8 @@ public class MorphiaSeedRepository implements SeedRepository {
          String candidate1 = collection + "Repo";
          String candidate2 = java.beans.Introspector.decapitalize(candidate1);
 
-         // [Arc lookup code remains the same...]
-
-         // 2b) Best-effort: scan injected repos by simple bean class name
-         for (BaseMorphiaRepo<? extends UnversionedBaseModel> repo : allRepos) {
-            // FIX: Get the real class here as well
+         // 2b) Best-effort: scan discovered repos by simple bean class name
+         for (BaseMorphiaRepo<? extends UnversionedBaseModel> repo : discoveredRepos) {
             Class<?> beanClass = getRealClass(repo);
             String simple = beanClass.getSimpleName();
 
@@ -845,6 +848,31 @@ public class MorphiaSeedRepository implements SeedRepository {
       }
 
       return Optional.empty();
+   }
+
+   @SuppressWarnings({"unchecked", "rawtypes"})
+   private List<BaseMorphiaRepo<? extends UnversionedBaseModel>> discoverRepos() {
+      List<BaseMorphiaRepo<? extends UnversionedBaseModel>> repos = new ArrayList<>();
+      Set<Class<?>> seenBeanClasses = new HashSet<>();
+
+      for (Bean<?> bean : beanManager.getBeans(Object.class, Any.Literal.INSTANCE)) {
+         Class<?> beanClass = effectiveBeanClass(bean.getBeanClass());
+         if (!BaseMorphiaRepo.class.isAssignableFrom(beanClass) || !seenBeanClasses.add(beanClass)) {
+            continue;
+         }
+
+         try {
+            Object instance = Arc.container().select((Class) beanClass).get();
+            if (instance instanceof BaseMorphiaRepo) {
+               repos.add((BaseMorphiaRepo<? extends UnversionedBaseModel>) instance);
+            }
+         } catch (Throwable e) {
+            Log.debugf(e, "Failed to obtain Morphia repository bean for %s", beanClass.getName());
+         }
+      }
+
+      Log.debugf("Discovered %d Morphia repository bean(s) via BeanManager", repos.size());
+      return repos;
    }
 
    /**

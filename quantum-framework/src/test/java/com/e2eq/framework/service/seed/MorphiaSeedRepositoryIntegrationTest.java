@@ -145,6 +145,35 @@ class MorphiaSeedRepositoryIntegrationTest {
     }
 
     @Test
+    void resolvesCollectionOnlyDatasetViaMorphiaRepo() {
+        SeedPackManifest.Dataset dataset = new SeedPackManifest.Dataset();
+        dataset.setCollection("CodeList");
+        dataset.setNaturalKey(List.of("category", "key"));
+        dataset.setUpsert(true);
+
+        Map<String, Object> record = new LinkedHashMap<>();
+        record.put("category", "COLLECTION_ONLY");
+        record.put("key", "MORPHIA");
+        record.put("description", "Inserted through collection-name repo discovery");
+        record.put("valueType", "STRING");
+        record.put("values", List.of("enabled"));
+
+        morphiaSeedRepository.upsertRecord(context(), dataset, record);
+
+        MongoCollection<Document> col = mongoClient.getDatabase(REALM)
+                .getCollection(exists(REALM, "CodeList") ? "CodeList" : "codeList");
+        Document saved = col.find(Filters.and(
+                Filters.eq("category", "COLLECTION_ONLY"),
+                Filters.eq("key", "MORPHIA"))).first();
+
+        assertNotNull(saved);
+        assertTrue(saved.containsKey("_t"), "Morphia discriminator should be present");
+        assertTrue(saved.containsKey("dataDomain"), "Morphia save should populate dataDomain");
+        assertTrue(saved.containsKey("auditInfo"), "Morphia save should populate auditInfo");
+        assertTrue(saved.containsKey("version"), "Morphia save should populate version");
+    }
+
+    @Test
     void upsertMatchesExistingSeededRecordByIdWhenNaturalKeyDrifts() {
         SecurityContext.setResourceContext(new ResourceContext.Builder()
                 .withRealm(REALM)
