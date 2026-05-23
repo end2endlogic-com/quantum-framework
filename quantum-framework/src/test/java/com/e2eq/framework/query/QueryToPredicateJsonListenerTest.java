@@ -47,6 +47,25 @@ public class QueryToPredicateJsonListenerTest {
     }
 
     @Test
+    void testStringFiltersAreCaseInsensitiveByDefault() {
+        JsonNode n = nodeOf(Map.of("name", "Alice"));
+
+        assertTrue(pred("name:alice").test(n));
+        assertTrue(pred("name:*lic*").test(n));
+        assertTrue(pred("name:*LIC*").test(n));
+    }
+
+    @Test
+    void testStringFiltersCanOptIntoCaseSensitiveMatching() {
+        JsonNode n = nodeOf(Map.of("name", "Alice"));
+
+        assertFalse(pred("name:alice~cs").test(n));
+        assertFalse(pred("name:*LIC*~cs").test(n));
+        assertTrue(pred("name:Alice~cs").test(n));
+        assertTrue(pred("name:*lic*~cs").test(n));
+    }
+
+    @Test
     void testRelationalComparisons() {
         Map<String, Object> m = Map.of("num", 10L, "price", 12.5);
         JsonNode n = nodeOf(m);
