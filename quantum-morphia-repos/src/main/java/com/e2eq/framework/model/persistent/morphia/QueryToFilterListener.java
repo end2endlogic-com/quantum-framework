@@ -8,6 +8,7 @@ import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import dev.morphia.annotations.Reference;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
+import dev.morphia.query.filters.RegexFilter;
 import io.quarkus.logging.Log;
 import org.antlr.v4.runtime.CommonToken;
 import org.antlr.v4.runtime.Token;
@@ -238,6 +239,18 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         }
     }
 
+    private boolean isCaseSensitive(BIAPIQueryParser.CaseModeContext ctx) {
+        return ctx != null && ctx.getStart().getType() == BIAPIQueryParser.CASE_SENSITIVE;
+    }
+
+    private RegexFilter regexFilter(String field, String regex, boolean caseSensitive) {
+        RegexFilter regexFilter = Filters.regex(field, regex);
+        if (!caseSensitive) {
+            regexFilter.caseInsensitive();
+        }
+        return regexFilter;
+    }
+
     /*@Override
     public void enterOidExpr(BIAPIQueryParser.OidExprContext ctx) {
         String field = ctx.field.getText();
@@ -320,17 +333,17 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
     @Override
     public void enterRegexExpr(BIAPIQueryParser.RegexExprContext ctx) {
         String field = ctx.field.getText();
-        String pattern = ctx.regex().value.getText();
+        boolean caseSensitive = isCaseSensitive(ctx.regex().caseMode());
 
         String escapedValue = escapeRegexChars(ctx.regex().value.getText());
         String regex = (ctx.regex().leftW == null ? "^" : ".*")
                 + escapedValue + (ctx.regex().rightW == null ? "$" : ".*");
         if (ctx.op.getType() == BIAPIQueryParser.EQ) {
-            Filter regexFilter = Filters.regex(field, regex);
+            Filter regexFilter = regexFilter(field, regex, caseSensitive);
             filterStack.push(regexFilter);
 
         } else if (ctx.op.getType() == BIAPIQueryParser.NEQ) {
-            Filter regexFilter = Filters.nor(Filters.regex(field, pattern));
+            Filter regexFilter = Filters.nor(regexFilter(field, regex, caseSensitive));
             filterStack.push(regexFilter);
         } else {
             throw new IllegalArgumentException("Operator not recognized: " + ctx.op.getText());
@@ -806,7 +819,7 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
 
     @Override
     public void enterStringExpr(BIAPIQueryParser.StringExprContext ctx) {
-        Filter f = makeBasicFilter(ctx.field, ctx.op, ctx.value);
+        Filter f = makeBasicFilter(ctx.field, ctx.op, ctx.value, isCaseSensitive(ctx.caseMode()));
         if (f != null) {
             filterStack.push(f);
         } else {
@@ -815,7 +828,13 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
     }
 
     protected Filter makeBasicFilter(Token field, Token op, Object value) {
+        return makeBasicFilter(field, op, value, false);
+    }
+
+    protected Filter makeBasicFilter(Token field, Token op, Object value, boolean caseSensitive) {
         Filter filter = null;
+        boolean caseInsensitiveStringEquality = false;
+        CommonToken originalToken = value instanceof CommonToken tok ? tok : null;
 
         if (variableMap != null && value instanceof CommonToken) {
             CommonToken ct = (CommonToken) value;
@@ -824,6 +843,11 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
                 value = sub.replace(ct.getText());
             }
         }
+
+        caseInsensitiveStringEquality = originalToken != null
+                && !caseSensitive
+                && (op.getType() == BIAPIQueryParser.EQ || op.getType() == BIAPIQueryParser.NEQ)
+                && (originalToken.getType() == BIAPIQueryParser.STRING || originalToken.getType() == BIAPIQueryParser.QUOTED_STRING);
 
         if (value instanceof CommonToken tok) {
             switch (tok.getType()) {
@@ -895,10 +919,18 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
 
         switch (op.getType()) {
             case BIAPIQueryParser.EQ:
-                filter = Filters.eq(field.getText(), value);
+                if (caseInsensitiveStringEquality) {
+                    filter = regexFilter(field.getText(), "^" + escapeRegexChars((String) value) + "$", false);
+                } else {
+                    filter = Filters.eq(field.getText(), value);
+                }
                 break;
             case BIAPIQueryParser.NEQ:
-                filter = Filters.ne(field.getText(), value);
+                if (caseInsensitiveStringEquality) {
+                    filter = Filters.nor(regexFilter(field.getText(), "^" + escapeRegexChars((String) value) + "$", false));
+                } else {
+                    filter = Filters.ne(field.getText(), value);
+                }
                 break;
             case BIAPIQueryParser.GT:
                 filter = Filters.gt(field.getText(), value);
@@ -923,7 +955,7 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
 
     @Override
     public void enterQuotedExpr(BIAPIQueryParser.QuotedExprContext ctx) {
-        Filter f = makeBasicFilter(ctx.field, ctx.op, ctx.value);
+        Filter f = makeBasicFilter(ctx.field, ctx.op, ctx.value, isCaseSensitive(ctx.caseMode()));
         filterStack.push(f);
     }
 
