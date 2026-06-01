@@ -243,12 +243,12 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         return ctx != null && ctx.getStart().getType() == BIAPIQueryParser.CASE_SENSITIVE;
     }
 
-    private RegexFilter regexFilter(String field, String regex, boolean caseSensitive) {
-        RegexFilter regexFilter = Filters.regex(field, regex);
+    private Filter regexFilter(String field, String regex, boolean caseSensitive) {
+        RegexFilter filter = Filters.regex(field, regex);
         if (!caseSensitive) {
-            regexFilter.caseInsensitive();
+            filter.caseInsensitive();
         }
-        return regexFilter;
+        return filter;
     }
 
     /*@Override
@@ -840,8 +840,20 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
             CommonToken ct = (CommonToken) value;
             // Do not pre-substitute VARIABLE here; let the VARIABLE branch handle substitution + coercion
             if (ct.getType() != BIAPIQueryParser.VARIABLE) {
-                value = sub.replace(ct.getText());
+                if (sub != null) {
+                   value = sub.replace(ct.getText());
+                } else {
+                   value = ct.getText();
+                }
             }
+        }
+
+        // Strip quotes from QUOTED_STRING
+        if (originalToken != null && originalToken.getType() == BIAPIQueryParser.QUOTED_STRING) {
+             String s = (value instanceof String) ? (String) value : originalToken.getText();
+             if (s != null && s.startsWith("\"") && s.endsWith("\"")) {
+                 value = s.substring(1, s.length() - 1);
+             }
         }
 
         caseInsensitiveStringEquality = originalToken != null
@@ -855,7 +867,13 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
                     value = tok.getText();
                     break;
                 case BIAPIQueryParser.QUOTED_STRING:
-                    value = tok.getText();
+                    // Quotes already stripped above
+                    if (!(value instanceof String)) {
+                         value = tok.getText();
+                         if (((String)value).startsWith("\"") && ((String)value).endsWith("\"")) {
+                             value = ((String)value).substring(1, ((String)value).length() - 1);
+                         }
+                    }
                     break;
                 case BIAPIQueryParser.OID:
                     value = new ObjectId(tok.getText());
@@ -913,7 +931,10 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
                 }
                 break;
                 default:
-                    throw new IllegalArgumentException("token:" + tok.getText() + " did not resolve to a known type");
+                    // If it's already a String (due to substitution or extraction), we don't throw error
+                    if (!(value instanceof String)) {
+                        throw new IllegalArgumentException("token:" + tok.getText() + " did not resolve to a known type");
+                    }
             }
         }
 
