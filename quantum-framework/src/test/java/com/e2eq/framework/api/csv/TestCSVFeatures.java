@@ -1,6 +1,7 @@
 package com.e2eq.framework.api.csv;
 
 
+import com.e2eq.framework.model.persistent.base.AuditInfo;
 import com.e2eq.framework.model.persistent.base.DynamicAttribute;
 import com.e2eq.framework.model.persistent.base.DynamicAttributeSet;
 import com.e2eq.framework.model.persistent.imports.ImportProfile;
@@ -694,5 +695,37 @@ public class TestCSVFeatures extends BaseRepoTest {
                 }
             }
         }
+    }
+
+    @Test
+    public void testStringArrayTagsAndCreatorExport() throws IOException {
+        CSVExportHelper helper = new CSVExportHelper();
+
+        ParentModel model = new ParentModel();
+        model.setRefName("project-with-tags");
+        model.setTags(new String[]{"alpha", "beta", "gamma"});
+        model.setAuditInfo(new AuditInfo(null, "creator@example.com", null, null));
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        StreamingOutput streamingOutput = helper.streamCSVOut(
+                ParentModel.class,
+                List.of(model),
+                null,
+                ',',
+                List.of("refName", "tags", "auditInfo.creationIdentity"),
+                "QUOTE_WHERE_ESSENTIAL",
+                '"',
+                Charset.forName("UTF-8"),
+                false,
+                true,
+                List.of("ID", "Tags", "Creator"),
+                null);
+
+        streamingOutput.write(output);
+        String csvOutput = output.toString(Charset.forName("UTF-8"));
+
+        assertTrue(csvOutput.contains("alpha, beta, gamma"), "Should join String[] tags for CSV export");
+        assertFalse(csvOutput.contains("[Ljava.lang.String"), "Should not export Java array toString");
+        assertTrue(csvOutput.contains("creator@example.com"), "Should export nested auditInfo.creationIdentity");
     }
 }

@@ -468,6 +468,8 @@ public class CSVExportHelper {
                 } else if (type == java.math.BigDecimal.class) {
                     // No need to parse BigDecimal, just use Optional
                     processors[i] = new org.supercsv.cellprocessor.Optional();
+                } else if (type != null && type.isArray()) {
+                    processors[i] = new org.supercsv.cellprocessor.Optional(new ArrayCellProcessor());
                 } else {
                     processors[i] = new org.supercsv.cellprocessor.Optional();
                 }
@@ -479,10 +481,23 @@ public class CSVExportHelper {
     private Class<?> getFieldType(Class<?> clazz, String name) {
         // Remove all array indices for type detection
         String clean = name.replaceAll("\\[\\d+\\]", "");
+        String[] parts = clean.split("\\.");
+        Class<?> current = clazz;
+        for (String part : parts) {
+            Class<?> fieldType = resolveDeclaredFieldType(current, part);
+            if (fieldType == null) {
+                return null;
+            }
+            current = fieldType;
+        }
+        return current;
+    }
+
+    private Class<?> resolveDeclaredFieldType(Class<?> clazz, String fieldName) {
         Class<?> current = clazz;
         while (current != null) {
             try {
-                return current.getDeclaredField(clean).getType();
+                return current.getDeclaredField(fieldName).getType();
             } catch (NoSuchFieldException ignored) {
                 current = current.getSuperclass();
             }
@@ -582,6 +597,42 @@ public class CSVExportHelper {
             // bytes as 0xFE followed by 0xFF"
             output.write(0xFE);
             output.write(0xFF);
+        }
+    }
+
+    /**
+     * Joins Java array values (e.g. {@code String[] tags}) into a single CSV cell.
+     */
+    public static class ArrayCellProcessor extends CellProcessorAdaptor {
+        private static final String JOINER = ", ";
+
+        @Override
+        public Object execute(Object value, CsvContext context) {
+            if (value == null) {
+                return next.execute("", context);
+            }
+            if (value.getClass().isArray()) {
+                return next.execute(joinArray(value), context);
+            }
+            return next.execute(value, context);
+        }
+
+        private static String joinArray(Object array) {
+            int length = java.lang.reflect.Array.getLength(array);
+            if (length == 0) {
+                return "";
+            }
+            StringBuilder joined = new StringBuilder();
+            for (int i = 0; i < length; i++) {
+                if (i > 0) {
+                    joined.append(JOINER);
+                }
+                Object element = java.lang.reflect.Array.get(array, i);
+                if (element != null) {
+                    joined.append(element);
+                }
+            }
+            return joined.toString();
         }
     }
 
