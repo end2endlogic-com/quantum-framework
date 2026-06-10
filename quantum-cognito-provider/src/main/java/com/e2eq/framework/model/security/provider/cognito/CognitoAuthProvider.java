@@ -129,6 +129,17 @@ public class CognitoAuthProvider extends BaseAuthProvider implements AuthProvide
         }
     }
 
+    private Set<String> rolesFromCredential(CredentialUserIdPassword credential) {
+        Set<String> roles = new LinkedHashSet<>();
+        if (credential == null || credential.getRoles() == null) {
+            return roles;
+        }
+        Arrays.stream(credential.getRoles())
+            .filter(role -> role != null && !role.isBlank())
+            .forEach(roles::add);
+        return roles;
+    }
+
 
     /**
      * Constructor for CognitoAuthProvider.
@@ -178,7 +189,7 @@ public class CognitoAuthProvider extends BaseAuthProvider implements AuthProvide
         try {
             // Build role sets per source for provenance
             Set<String> credentialRoles = new LinkedHashSet<>();
-            credentialRoles.addAll(Set.of(ocred.get().getRoles()));
+            credentialRoles.addAll(rolesFromCredential(ocred.get()));
             Set<String> userGroupRoles = new LinkedHashSet<>();
             Set<String> idpRoles = new LinkedHashSet<>(); // We don't have a validated IdP identity during password login yet
 
@@ -191,7 +202,7 @@ public class CognitoAuthProvider extends BaseAuthProvider implements AuthProvide
             if (isCognitoDisabled()) {
                 // Validate password locally using stored hash if available
                 String storedHash = ocred.get().getPasswordHash();
-                if (storedHash != null && password != null && !storedHash.equals(EncryptionUtils.hashPassword(password))) {
+                if (storedHash != null && password != null && !EncryptionUtils.checkPassword(password, storedHash)) {
                     throw new SecurityException("Invalid credentials");
                 }
                 // In disabled mode, skip AWS calls and fabricate opaque tokens
@@ -354,7 +365,7 @@ public class CognitoAuthProvider extends BaseAuthProvider implements AuthProvide
         try {
             Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(username, envConfigUtils.getSystemRealm(), true);
             if (ocred.isPresent()) {
-                credentialRoles.addAll(Set.of(ocred.get().getRoles()));
+                credentialRoles.addAll(rolesFromCredential(ocred.get()));
                 // Get the realm from credential's domainContext
                 if (ocred.get().getDomainContext() != null && ocred.get().getDomainContext().getDefaultRealm() != null) {
                     credentialRealm = ocred.get().getDomainContext().getDefaultRealm();
@@ -513,6 +524,14 @@ public class CognitoAuthProvider extends BaseAuthProvider implements AuthProvide
           return;
        }
 
+      if (isCognitoDisabled()) {
+         ocred.get().setPasswordHash(EncryptionUtils.hashPassword(newPassword));
+         ocred.get().setForceChangePassword(forceChangePassword);
+         ocred.get().setLastUpdate(new Date());
+         credentialRepo.save(ocred.get());
+         return;
+      }
+
       AdminSetUserPasswordRequest request = AdminSetUserPasswordRequest.builder()
                                                .userPoolId(userPoolId)     // Your user pool ID
                                                .username(userId)         // The username
@@ -605,6 +624,10 @@ public class CognitoAuthProvider extends BaseAuthProvider implements AuthProvide
      requireValidEmail(userId);
      roles = (roles != null) ? roles : Collections.emptySet();
      String subject;
+
+     if (isCognitoDisabled()) {
+        return createOrUpdateLocalUser(userId, password, forceChangePassword, roles, domainContext, dataDomain);
+     }
 
      // 1) Try to retrieve existing Cognito user by email/userid
      Optional<UserType> oByEmail = retrieveUserId(userId);
@@ -745,13 +768,51 @@ public class CognitoAuthProvider extends BaseAuthProvider implements AuthProvide
         return subject;
      }
 
+   private String createOrUpdateLocalUser(String userId, String password, Boolean forceChangePassword,
+                         Set<String> roles, DomainContext domainContext, DataDomain dataDomain) {
+      Objects.requireNonNull(domainContext, "DomainContext cannot be null");
+
+      Optional<CredentialUserIdPassword> oCred = credentialRepo.findByUserId(userId, envConfigUtils.getSystemRealm(), true);
+      CredentialUserIdPassword cred = oCred.orElseGet(CredentialUserIdPassword::new);
+      String subject = (cred.getSubject() == null || cred.getSubject().isBlank())
+         ? UUID.randomUUID().toString()
+         : cred.getSubject();
+
+      if (dataDomain == null) {
+         dataDomain = DataDomain.builder()
+            .orgRefName(domainContext.getOrgRefName())
+            .accountNum(domainContext.getAccountId())
+            .tenantId(domainContext.getTenantId())
+            .ownerId(userId)
+            .build();
+      }
+
+      cred.setRefName(subject);
+      cred.setUserId(userId);
+      cred.setSubject(subject);
+      if (password != null) {
+         cred.setPasswordHash(EncryptionUtils.hashPassword(password));
+      }
+      cred.setForceChangePassword(forceChangePassword);
+      cred.setDomainContext(domainContext);
+      cred.setRoles(roles.toArray(new String[0]));
+      cred.setLastUpdate(new Date());
+      cred.setDataDomain(dataDomain);
+      cred.setAuthProviderName(getName());
+      credentialRepo.save(cred);
+      return subject;
+   }
+
 
    @Override
    public boolean removeUserWithSubject(String subject)
       throws ReferentialIntegrityViolationException {
       if (isCognitoDisabled()) {
-         Log.debug("Cognito disabled: skipping remote user removal by username");
-         return true;
+         Optional<CredentialUserIdPassword> ocred = credentialRepo.findBySubject(subject, envConfigUtils.getSystemRealm(), true);
+         if (ocred.isPresent()) {
+            return credentialRepo.delete(envConfigUtils.getSystemRealm(), ocred.get()) != 0;
+         }
+         return false;
       }
 
       Optional<CredentialUserIdPassword> ocred = credentialRepo.findBySubject(subject, envConfigUtils.getSystemRealm(), true);
@@ -788,8 +849,11 @@ public class CognitoAuthProvider extends BaseAuthProvider implements AuthProvide
    @Override
    public boolean removeUserWithUserId ( String userId) throws ReferentialIntegrityViolationException {
          if (isCognitoDisabled()) {
-            Log.debug("Cognito disabled: skipping remote user removal by userId");
-            return true;
+            Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(userId, envConfigUtils.getSystemRealm(), true);
+            if (ocred.isPresent()) {
+               return credentialRepo.delete(envConfigUtils.getSystemRealm(), ocred.get()) != 0;
+            }
+            return false;
          }
       Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(userId, envConfigUtils.getSystemRealm(), true);
       String username;
@@ -1039,6 +1103,9 @@ public class CognitoAuthProvider extends BaseAuthProvider implements AuthProvide
 
 
     public Optional<UserType> retrieveUserId(String userId) {
+           if (isCognitoDisabled()) {
+              return Optional.empty();
+           }
 
            ListUsersRequest request = ListUsersRequest.builder()
                                          .userPoolId(userPoolId)
@@ -1126,7 +1193,7 @@ public class CognitoAuthProvider extends BaseAuthProvider implements AuthProvide
     public void assignRolesForUserId(String userId, Set<String> roles)
         throws SecurityException {
         if (isCognitoDisabled()) {
-            Log.debug("Cognito disabled: skipping remote role assignment");
+            updateLocalCredentialRoles(userId, roles, true);
             return;
         }
         try {
@@ -1211,7 +1278,7 @@ public class CognitoAuthProvider extends BaseAuthProvider implements AuthProvide
     public void removeRolesForUserId(String userId, Set<String> roles)
         throws SecurityException {
         if (isCognitoDisabled()) {
-            Log.debug("Cognito disabled: skipping remote role removal");
+            updateLocalCredentialRoles(userId, roles, false);
             return;
         }
         try {
@@ -1230,7 +1297,7 @@ public class CognitoAuthProvider extends BaseAuthProvider implements AuthProvide
            Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(userId, envConfigUtils.getSystemRealm(), true);
             if (ocred.isPresent()) {
                CredentialUserIdPassword cred = ocred.get();
-               Set<String> currentCognitoGroups = new HashSet<>(Arrays.asList(cred.getRoles()));
+               Set<String> currentCognitoGroups = rolesFromCredential(cred);
                currentCognitoGroups.removeAll(roles);
                cred.setRoles(currentCognitoGroups.toArray(new String[0]));
                credentialRepo.save( cred);
@@ -1250,10 +1317,7 @@ public class CognitoAuthProvider extends BaseAuthProvider implements AuthProvide
       if (isCognitoDisabled()) {
          try {
             Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(userId, envConfigUtils.getSystemRealm(), true);
-            if (ocred.isPresent() && ocred.get().getRoles() != null) {
-               return Arrays.stream(ocred.get().getRoles()).collect(Collectors.toSet());
-            }
-            return new HashSet<>();
+            return ocred.map(this::rolesFromCredential).orElseGet(HashSet::new);
          } catch (Exception e) {
             Log.error("Failed to get user roles from credential repo", e);
             return new HashSet<>();
@@ -1266,7 +1330,40 @@ public class CognitoAuthProvider extends BaseAuthProvider implements AuthProvide
 
    @Override
    public Set<String> getUserRolesForSubject ( String subject) throws SecurityException {
+      if (isCognitoDisabled()) {
+         try {
+            Optional<CredentialUserIdPassword> ocred = credentialRepo.findBySubject(subject, envConfigUtils.getSystemRealm(), true);
+            return ocred.map(this::rolesFromCredential).orElseGet(HashSet::new);
+         } catch (Exception e) {
+            Log.error("Failed to get subject roles from credential repo", e);
+            return new HashSet<>();
+         }
+      }
       return getUserGroupsForSubject( subject);
+   }
+
+   private void updateLocalCredentialRoles(String userId, Set<String> roles, boolean addRoles) {
+      Objects.requireNonNull(userId, "userId cannot be null");
+      if (roles == null || roles.isEmpty()) {
+         return;
+      }
+
+      Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(userId, envConfigUtils.getSystemRealm(), true);
+      if (ocred.isEmpty()) {
+         throw new SecurityException(String.format("User not found userId: %s", userId));
+      }
+
+      CredentialUserIdPassword cred = ocred.get();
+      Set<String> updatedRoles = rolesFromCredential(cred);
+      if (addRoles) {
+         updatedRoles.addAll(roles);
+      } else {
+         updatedRoles.removeAll(roles);
+      }
+
+      cred.setRoles(updatedRoles.toArray(new String[0]));
+      cred.setLastUpdate(new Date());
+      credentialRepo.save(cred);
    }
 
 
@@ -1291,7 +1388,7 @@ public class CognitoAuthProvider extends BaseAuthProvider implements AuthProvide
          // look up credential and union in roles
          Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(userId);
          if (ocred.isPresent()) {
-            roles.addAll(List.of(ocred.get().getRoles()));
+            roles.addAll(rolesFromCredential(ocred.get()));
          }
 
          return roles;
@@ -1313,7 +1410,7 @@ public class CognitoAuthProvider extends BaseAuthProvider implements AuthProvide
          // look up credential and union in roles
          Optional<CredentialUserIdPassword> ocred = credentialRepo.findBySubject(subject, envConfigUtils.getSystemRealm(), true);
          if (ocred.isPresent()) {
-            roles.addAll(List.of(ocred.get().getRoles()));
+            roles.addAll(rolesFromCredential(ocred.get()));
          } else
          {
             throw new NotFoundException("Credential not found for subject: " + subject);
