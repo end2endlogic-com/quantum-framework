@@ -15,12 +15,14 @@ import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
+import io.quarkus.arc.properties.IfBuildProperty;
 
 @Path("/admin/tenants/workflow")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 @RolesAllowed({"admin", "system"})
 @Tag(name = "security", description = "Operations related to tenant provisioning workflow configuration")
+@IfBuildProperty(name = "quantum.system-rest.enabled", stringValue = "true", enableIfMissing = true) // control-plane admin surface; one-switch opt-out (CONTROL_PLANE_SPLIT_DESIGN.md Phase B, wp3 tier 1)
 public class TenantProvisioningWorkflowResource {
 
     @Inject

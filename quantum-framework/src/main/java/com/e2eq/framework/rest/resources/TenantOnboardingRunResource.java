@@ -22,12 +22,14 @@ import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 import java.util.Optional;
+import io.quarkus.arc.properties.IfBuildProperty;
 
 @Path("/onboarding/run")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 @RolesAllowed({"user", "admin", "system"})
 @Tag(name = "onboarding", description = "Operations related to tenant onboarding execution")
+@IfBuildProperty(name = "quantum.system-rest.enabled", stringValue = "true", enableIfMissing = true) // control-plane admin surface; one-switch opt-out (CONTROL_PLANE_SPLIT_DESIGN.md Phase B, wp3 tier 1)
 public class TenantOnboardingRunResource {
 
     @Inject
