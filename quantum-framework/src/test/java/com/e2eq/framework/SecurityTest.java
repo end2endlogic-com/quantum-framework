@@ -77,14 +77,18 @@ public class SecurityTest extends BaseRepoTest {
     public UserProfile ensureTestUserExists() throws ReferentialIntegrityViolationException {
         Optional<CredentialUserIdPassword> credop = credRepo.findByUserId(testUtils.getTestUserId(), testUtils.getSystemRealm());
         CredentialUserIdPassword cred;
+        DataDomain dataDomain = new DataDomain();
+        dataDomain.setOrgRefName(testUtils.getTestOrgRefName());
+        dataDomain.setAccountNum(testUtils.getTestAccountNumber());
+        dataDomain.setTenantId(testUtils.getTestTenantId());
+        dataDomain.setOwnerId(testUtils.getTestUserId());
+
         if (credop.isPresent()) {
             Log.info("cred:" + credop.get().getUserId());
             cred = credop.get();
         } else {
             cred = new CredentialUserIdPassword();
             cred.setUserId(testUtils.getTestUserId());
-          //  cred.setPasswordHash("$2a$12$76wQJLgSAdm6ZTHFHtzksuSkWG9eW0qe5YXMXaZIBo52ncXHO0EDy"); //Test123456
-            cred.setPassword(testUtils.getDefaultTestPassword());
 
             // determine what the subjectId for the user is:
             Optional<String> osubjectId = authProviderFactory.getUserManager().getSubjectForUserId(testUtils.getTestUserId());
@@ -94,22 +98,23 @@ public class SecurityTest extends BaseRepoTest {
             } else {
                cred.setSubject(osubjectId.get());
             }
-
-            DataDomain dataDomain = new DataDomain();
-            dataDomain.setOrgRefName(testUtils.getTestOrgRefName());
-            dataDomain.setAccountNum(testUtils.getTestAccountNumber());
-            dataDomain.setTenantId(testUtils.getTestTenantId());
-            dataDomain.setOwnerId(testUtils.getTestUserId());
-
-            cred.setRoles(roles);
             cred.setRefName(cred.getUserId());
-            cred.setDomainContext(new DomainContext(dataDomain, testUtils.getTestRealm()));
-            cred.setLastUpdate(new Date());
-            cred.setDataDomain(dataDomain);
-            cred.setRealmRegEx("*");
-            cred.setImpersonateFilterScript("return true");
-            cred = credRepo.save(testUtils.getSystemRealm(),cred);
         }
+
+        // Keep this fixture deterministic even when a previous run left the
+        // credential in the local database with different roles/provider data.
+        if (cred.getSubject() == null || cred.getSubject().isBlank()) {
+            cred.setSubject(cred.getUserId());
+        }
+        cred.setPassword(testUtils.getDefaultTestPassword());
+        cred.setRoles(roles);
+        cred.setAuthProviderName(authProvider);
+        cred.setDomainContext(new DomainContext(dataDomain, testUtils.getTestRealm()));
+        cred.setLastUpdate(new Date());
+        cred.setDataDomain(dataDomain);
+        cred.setRealmRegEx("*");
+        cred.setImpersonateFilterScript("return true");
+        cred = credRepo.save(testUtils.getSystemRealm(), cred);
 
         Optional<UserProfile> userProfileOp = userProfileRepo.getByUserId(testUtils.getTestRealm(),testUtils.getTestUserId());
         UserProfile profile;
@@ -117,18 +122,18 @@ public class SecurityTest extends BaseRepoTest {
         if (userProfileOp.isPresent()) {
             Log.info("User Id:" + cred.getUserId());
             profile = userProfileOp.get();
+            profile.setCredentialUserIdPasswordRef(cred.createEntityReference());
+            profile.setUserId(testUtils.getTestUserId());
+            profile.setEmail(testUtils.getTestEmail());
+            profile.setDataDomain(dataDomain);
+            profile = userProfileRepo.save(testUtils.getTestRealm(), profile);
 
         } else {
             profile = new UserProfile();
             profile.setRefName(testUtils.getTestUserId());
             profile.setCredentialUserIdPasswordRef(cred.createEntityReference());
             profile.setEmail(testUtils.getTestEmail());
-
-            DataDomain dataDomain = new DataDomain();
-            dataDomain.setOrgRefName(testUtils.getTestOrgRefName());
-            dataDomain.setAccountNum(testUtils.getTestAccountNumber());
-            dataDomain.setTenantId(testUtils.getTestTenantId());
-            dataDomain.setOwnerId(testUtils.getTestUserId());
+            profile.setUserId(testUtils.getTestUserId());
             profile.setDataDomain(dataDomain);
 
             profile = userProfileRepo.save(testUtils.getTestRealm(),profile);

@@ -39,6 +39,15 @@
             <artifactId>quantum-jwt-provider</artifactId>
             <version>${quantum.version}</version>
         </dependency>
+        <!-- Default RSA key pair for local/test token creation.
+             Optional so production consumers do not inherit bundled keys transitively. -->
+        <dependency>
+            <groupId>com.movista</groupId>
+            <artifactId>quantum-default-keys</artifactId>
+            <version>${quantum.version}</version>
+            <scope>test</scope>
+            <optional>true</optional>
+        </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-oidc</artifactId>
