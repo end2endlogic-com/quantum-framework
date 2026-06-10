@@ -83,6 +83,18 @@ public class MigrationService {
    MorphiaDataStoreWrapper morphiaDataStoreWrapper;
 
    public void initializeStartupRealms() {
+      initializeStartupRealms(true);
+   }
+
+   /**
+    * Run startup migrations, optionally excluding the system realm. In remote
+    * mode (control-plane split, {@code quantum.mode=remote}) the control plane
+    * owns the system realm's lifecycle, so the caller (FrameworkStartupCoordinator)
+    * passes {@code includeSystemRealm=false}; app-realm migrations still run
+    * locally. This class stays mode-unaware — the deployment mode is resolved
+    * above it.
+    */
+   public void initializeStartupRealms(boolean includeSystemRealm) {
       if (!enabled) {
          Log.warn("!!!! >>>> Database migration is disabled by configuration (quantum.database.migration.enabled=false)");
          return;
@@ -91,7 +103,7 @@ public class MigrationService {
       }
 
       List<String> databaseNames = mongoClient.listDatabaseNames().into(new ArrayList<>());
-      List<String> startupRealms = resolveStartupRealms(databaseNames);
+      List<String> startupRealms = resolveStartupRealms(databaseNames, includeSystemRealm);
       Log.infof(">> Migration startup realms: %s", startupRealms);
       for (String realm : startupRealms) {
          ensureRealmInitializedOnStartup(realm, databaseNames.contains(realm));
@@ -99,9 +111,15 @@ public class MigrationService {
    }
 
    List<String> resolveStartupRealms(List<String> existingDatabaseNames) {
+      return resolveStartupRealms(existingDatabaseNames, true);
+   }
+
+   public List<String> resolveStartupRealms(List<String> existingDatabaseNames, boolean includeSystemRealm) {
       LinkedHashSet<String> realms = new LinkedHashSet<>();
 
-      realms.add(systemRealm);
+      if (includeSystemRealm) {
+         realms.add(systemRealm);
+      }
       if (existingDatabaseNames.contains(defaultRealm)) {
          realms.add(defaultRealm);
       }
@@ -116,6 +134,11 @@ public class MigrationService {
                }
             }
          }
+      }
+
+      if (!includeSystemRealm && realms.remove(systemRealm)) {
+         Log.warnf(">> Migration: system realm %s excluded from startup realms (it was listed in "
+             + "quantum.migration.apply.realms, but this deployment does not own the system realm)", systemRealm);
       }
 
       return new ArrayList<>(realms);

@@ -3,6 +3,8 @@ package com.e2eq.framework.bootstrap.runtime;
 import com.e2eq.framework.bootstrap.model.ApplyBootstrapPackRequest;
 import com.e2eq.framework.bootstrap.model.BootstrapPackDefinition;
 import com.e2eq.framework.model.securityrules.SecurityContext;
+import com.e2eq.framework.system.config.QuantumModeConfig;
+import com.e2eq.framework.system.config.SystemRealmOwnership;
 import com.e2eq.framework.util.EnvConfigUtils;
 import org.junit.jupiter.api.Test;
 
@@ -24,6 +26,9 @@ class BootstrapPackStartupRunnerTest {
         BootstrapPackStartupRunner runner = new BootstrapPackStartupRunner();
         runner.bootstrapPackService = service;
         runner.envConfigUtils = env("system-b2bi-com", "b2bi-com", "test-b2bi-com");
+        runner.systemRealmOwnership = SystemRealmOwnership.of(
+                QuantumModeConfig.of("embedded", java.util.Optional.empty()),
+                runner.envConfigUtils);
         runner.enabled = true;
         runner.applyOnStartup = true;
         runner.startupRealmsCsv = java.util.Optional.of("b2bi-com,test-b2bi-com");

@@ -10,6 +10,7 @@ import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.model.persistent.migration.base.MigrationService;
+import com.e2eq.framework.system.config.SystemRealmOwnership;
 import com.e2eq.framework.util.SecurityUtils;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
@@ -59,6 +60,9 @@ public class SeedStartupRunner {
     @Inject
     MigrationService migrationService;
 
+    @Inject
+    SystemRealmOwnership systemRealmOwnership;
+
     @ConfigProperty(name = "quantum.seed-pack.enabled", defaultValue = "true")
     boolean enabled;
 
@@ -90,6 +94,7 @@ public class SeedStartupRunner {
         }
 
         List<String> realms = resolveStartupRealms();
+        systemRealmOwnership.excludeSystemRealmIfNotOwned(realms, "SeedStartupRunner");
         if (realms.isEmpty()) {
             Log.info("SeedStartupRunner: no realms configured for startup seeding");
             return;
