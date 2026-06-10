@@ -43,6 +43,28 @@ public interface UserManagement extends UserManagementBase{
     void changePassword(String userId, String oldPassword, String newPassword, Boolean forceChangePassword);
     void resetPassword(String userId, String newPassword, Boolean forceChangePassword);
 
+    /**
+     * Updates the email attribute on the remote identity for the given user (e.g. Cognito
+     * {@code AdminUpdateUserAttributes}). Implementations may mark the new email as verified.
+     * Implementations that do not maintain a separate email attribute may throw
+     * {@link UnsupportedOperationException}.
+     *
+     * @param userId application user id used to resolve the remote identity
+     * @param newEmail the replacement email address; must be a valid email
+     * @throws SecurityException if the user cannot be resolved or the remote call fails
+     */
+    void changeEmail(String userId, String newEmail) throws SecurityException;
+
+    /**
+     * Resends the temporary password / invitation message for the user (e.g. Cognito
+     * {@code AdminCreateUser} with {@code MessageActionType.RESEND}). No-op or unsupported
+     * for providers that do not issue remote invitations.
+     *
+     * @param userId application user id used to resolve the remote identity
+     * @throws SecurityException if the operation fails or is not supported by the provider
+     */
+    void resendTemporaryPassword(String userId) throws SecurityException;
+
 
     void removeRolesForSubject(String subject, Set<String> roles) throws SecurityException;
     void removeRolesForUserId(String userId, Set<String> roles) throws SecurityException;
