@@ -16,6 +16,10 @@ import java.util.Optional;
  * lives — a local system-realm database today, a remote control-plane service
  * later — is this interface's concern alone.
  *
+ * As of Phase B this contract and its implementations live in the
+ * {@code quantum-system} control-plane module; lower modules (quantum-models,
+ * quantum-morphia-repos) no longer carry control-plane concepts.
+ *
  * Selection is config-driven:
  * <pre>
  *   quantum.system.directory.mode=local   # default — today's behavior

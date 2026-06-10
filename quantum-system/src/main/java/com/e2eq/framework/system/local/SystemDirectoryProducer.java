@@ -1,4 +1,4 @@
-package com.e2eq.framework.model.persistent.morphia.system;
+package com.e2eq.framework.system.local;
 
 import com.e2eq.framework.api.system.SystemDirectory;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
@@ -11,7 +11,9 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 /**
  * Selects the {@link SystemDirectory} implementation from configuration
- * (CONTROL_PLANE_SPLIT_DESIGN.md §4).
+ * (CONTROL_PLANE_SPLIT_DESIGN.md §4). Lives in the {@code quantum-system}
+ * control-plane module; an application/framework that depends on this jar
+ * gets the producer via Jandex bean discovery.
  *
  * <pre>
  *   quantum.system.directory.mode=local   # default; system realm DB via repos

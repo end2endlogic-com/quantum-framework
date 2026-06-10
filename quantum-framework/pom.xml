@@ -149,6 +149,14 @@
       <artifactId>quantum-morphia-repos</artifactId>
       <version>${quantum.version}</version>
     </dependency>
+    <!-- Control-plane module: SystemDirectory contract + producer (CDI-discovered
+         via its Jandex index), RealmCatalogService, metering contracts.
+         CONTROL_PLANE_SPLIT_DESIGN.md Phase B. -->
+    <dependency>
+      <groupId>com.end2endlogic</groupId>
+      <artifactId>quantum-system</artifactId>
+      <version>${quantum.version}</version>
+    </dependency>
     <dependency>
       <groupId>com.end2endlogic</groupId>
       <artifactId>quantum-action-enablement-quarkus</artifactId>

@@ -1,4 +1,4 @@
-package com.e2eq.framework.model.persistent.morphia.system;
+package com.e2eq.framework.system.local;
 
 import com.e2eq.framework.api.system.SystemDirectory;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
@@ -12,7 +12,7 @@ import java.util.Optional;
 /**
  * {@link SystemDirectory} backed by the local system-realm database via the
  * existing repositories — today's behavior, made explicit and configurable
- * (CONTROL_PLANE_SPLIT_DESIGN.md, Phase A).
+ * (CONTROL_PLANE_SPLIT_DESIGN.md, Phase A/B).
  *
  * The system realm reference comes from {@code quantum.realmConfig.systemRealm}
  * (via {@link EnvConfigUtils}); it is a configured pointer with a default, not
