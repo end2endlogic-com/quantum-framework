@@ -326,6 +326,18 @@ Phase B progress (2026-06-10, branch helixorq-readiness):
   app-realm work proceeds locally (wp3 tier-2 semantics).
   `MigrationService` gained `initializeStartupRealms(boolean includeSystemRealm)`
   (existing no-arg method unchanged) so it stays mode-unaware.
+- (4/n) Admin REST surface behind one build-time switch:
+  `quantum.system-rest.enabled` (default true via `enableIfMissing` —
+  classpaths and registration unchanged for every existing app). Setting it
+  false removes the control-plane admin resources (`/admin/tenants*`,
+  `/security/realm*`, `/security/realm-memberships`, `/admin/seeds`,
+  `/system/migration`, `/admin/bootstrap-packs`, `/onboarding/*`) via
+  `@IfBuildProperty` — superseding the per-type `quarkus.arc.exclude-types`
+  pattern for tier-1 hardening, and what a tier-2 tenant-plane app sets at
+  build time. The *physical* `quantum-system-rest` jar split stays planned but
+  is deferred: the resources' dependency closure (TenantProvisioningService →
+  seed subsystem; BaseResource REST infra) must move below the new jar first,
+  which is the Phase B entity/service relocation work.
 - Known remote-mode gap for Phase C: when seeding *app* realms,
   `SeedStartupRunner` still reads realm records and admin credentials from
   the local system-realm database. In a true split deployment those reads

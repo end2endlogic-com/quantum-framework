@@ -24,11 +24,13 @@ import java.util.stream.Collectors;
 
 import com.e2eq.framework.util.EnvConfigUtils;
 import com.e2eq.framework.util.SecurityUtils;
+import io.quarkus.arc.properties.IfBuildProperty;
 
 
 @Path("/security/realm")
 @RolesAllowed({ "admin", "system" })
 @Tag(name = "security", description = "Operations related to security")
+@IfBuildProperty(name = "quantum.system-rest.enabled", stringValue = "true", enableIfMissing = true) // control-plane admin surface; one-switch opt-out (CONTROL_PLANE_SPLIT_DESIGN.md Phase B, wp3 tier 1)
 public class RealmResource extends BaseResource<Realm, BaseMorphiaRepo<Realm>> {
    @Inject
    CredentialRepo credentialRepo;

@@ -28,12 +28,14 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
+import io.quarkus.arc.properties.IfBuildProperty;
 
 @Path("/admin/bootstrap-packs")
 @Produces(MediaType.APPLICATION_JSON)
 @RolesAllowed({"admin", "system"})
 @FunctionalMapping(area = "SYSTEM", domain = "BOOTSTRAP_PACK")
 @ApplicationScoped
+@IfBuildProperty(name = "quantum.system-rest.enabled", stringValue = "true", enableIfMissing = true) // control-plane admin surface; one-switch opt-out (CONTROL_PLANE_SPLIT_DESIGN.md Phase B, wp3 tier 1)
 public class BootstrapPackAdminResource {
 
     @Inject

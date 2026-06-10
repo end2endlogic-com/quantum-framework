@@ -28,6 +28,7 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
+import io.quarkus.arc.properties.IfBuildProperty;
 
 /**
  * Admin endpoints to inspect and apply seed packs on demand.
@@ -38,6 +39,7 @@ import java.util.stream.Collectors;
 @RolesAllowed({"admin", "system"})
 @ApplicationScoped
 @Tag(name = "seeds-admin", description = "Inspect, manage, and apply seed packs and archetypes")
+@IfBuildProperty(name = "quantum.system-rest.enabled", stringValue = "true", enableIfMissing = true) // control-plane admin surface; one-switch opt-out (CONTROL_PLANE_SPLIT_DESIGN.md Phase B, wp3 tier 1)
 public class SeedAdminResource {
 
     @Inject

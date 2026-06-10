@@ -23,12 +23,14 @@ import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 import java.util.List;
+import io.quarkus.arc.properties.IfBuildProperty;
 
 /**
  * Minimal REST endpoint to provision a new tenant. Intended for admin use.
  */
 @Path("/admin/tenants")
 @Tag(name = "security", description = "Operations related to tenant provisioning")
+@IfBuildProperty(name = "quantum.system-rest.enabled", stringValue = "true", enableIfMissing = true) // control-plane admin surface; one-switch opt-out (CONTROL_PLANE_SPLIT_DESIGN.md Phase B, wp3 tier 1)
 public class TenantProvisioningResource {
 
     @Inject TenantProvisioningService provisioningService;
