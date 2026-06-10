@@ -45,6 +45,8 @@ public class MorphiaSeedRepository implements SeedRepository {
     @Inject
     BeanManager beanManager;
 
+    private volatile List<BaseMorphiaRepo<? extends UnversionedBaseModel>> cachedRepos;
+
     @Inject
     ObjectMapper objectMapper;
 
@@ -787,12 +789,11 @@ public class MorphiaSeedRepository implements SeedRepository {
          }
       }
 
-      List<BaseMorphiaRepo<? extends UnversionedBaseModel>> discoveredRepos = discoverRepos();
+      List<BaseMorphiaRepo<? extends UnversionedBaseModel>> repos = discoverRepos();
 
       if (repoClassName != null && !repoClassName.isBlank()) {
-         for (BaseMorphiaRepo<? extends UnversionedBaseModel> repo : discoveredRepos) {
+         for (BaseMorphiaRepo<? extends UnversionedBaseModel> repo : repos) {
             Class<?> beanClass = getRealClass(repo);
-
             String simple = beanClass.getSimpleName();
             String fqn = beanClass.getName();
 
@@ -803,7 +804,7 @@ public class MorphiaSeedRepository implements SeedRepository {
          throw new IllegalStateException("No Morphia repository bean found for repo class: " + repoClassName);
       }
 
-      // 1) Try resolving by modelClass string (Method calls work fine on proxies)
+      // 1) Try resolving by modelClass string
       String modelClassName = null;
       try {
          var getter = SeedPackManifest.Dataset.class.getDeclaredMethod("getModelClass");
@@ -813,10 +814,9 @@ public class MorphiaSeedRepository implements SeedRepository {
       }
 
       if (modelClassName != null && !modelClassName.isBlank()) {
-         for (BaseMorphiaRepo<? extends UnversionedBaseModel> repo : discoveredRepos) {
+         for (BaseMorphiaRepo<? extends UnversionedBaseModel> repo : repos) {
             try {
-               // This works fine on proxies because it's a method call, not a reflection check on the repo itself
-               Class<? extends UnversionedBaseModel> pc = repo.getPersistentClass();
+               Class<?> pc = repo.getPersistentClass();
                if (pc == null) continue;
                if (modelClassName.equals(pc.getName()) || modelClassName.equals(pc.getSimpleName())) {
                   return Optional.of(repo);
@@ -836,7 +836,7 @@ public class MorphiaSeedRepository implements SeedRepository {
          String candidate2 = java.beans.Introspector.decapitalize(candidate1);
 
          // 2b) Best-effort: scan discovered repos by simple bean class name
-         for (BaseMorphiaRepo<? extends UnversionedBaseModel> repo : discoveredRepos) {
+         for (BaseMorphiaRepo<? extends UnversionedBaseModel> repo : repos) {
             Class<?> beanClass = getRealClass(repo);
             String simple = beanClass.getSimpleName();
 
@@ -852,6 +852,11 @@ public class MorphiaSeedRepository implements SeedRepository {
 
    @SuppressWarnings({"unchecked", "rawtypes"})
    private List<BaseMorphiaRepo<? extends UnversionedBaseModel>> discoverRepos() {
+      List<BaseMorphiaRepo<? extends UnversionedBaseModel>> cached = cachedRepos;
+      if (cached != null) {
+         return cached;
+      }
+
       List<BaseMorphiaRepo<? extends UnversionedBaseModel>> repos = new ArrayList<>();
       Set<Class<?>> seenBeanClasses = new HashSet<>();
 
@@ -862,7 +867,7 @@ public class MorphiaSeedRepository implements SeedRepository {
          }
 
          try {
-            Object instance = Arc.container().select((Class) beanClass).get();
+            Object instance = Arc.container().select((Class) beanClass, Any.Literal.INSTANCE).get();
             if (instance instanceof BaseMorphiaRepo) {
                repos.add((BaseMorphiaRepo<? extends UnversionedBaseModel>) instance);
             }
@@ -871,8 +876,9 @@ public class MorphiaSeedRepository implements SeedRepository {
          }
       }
 
-      Log.debugf("Discovered %d Morphia repository bean(s) via BeanManager", repos.size());
-      return repos;
+      cachedRepos = List.copyOf(repos);
+      Log.debugf("resolveRepo: discovered and cached %d BaseMorphiaRepo bean(s)", cachedRepos.size());
+      return cachedRepos;
    }
 
    /**

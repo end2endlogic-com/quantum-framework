@@ -133,6 +133,18 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
    }
 
    @Override
+   public void resendTemporaryPassword(String userId) throws SecurityException {
+      throw new UnsupportedOperationException(
+         "Resending temporary password is not supported by CustomTokenAuthProvider");
+   }
+
+   @Override
+   public void changeEmail(String userId, String newEmail) throws SecurityException {
+      throw new UnsupportedOperationException(
+         "Changing email is not supported by CustomTokenAuthProvider");
+   }
+
+   @Override
    public void resetPassword(String userId, String newPassword, Boolean forceChangePassword) {
       Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(userId);
       if (!ocred.isPresent()) {
