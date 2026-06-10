@@ -141,8 +141,20 @@ Two implementations:
 - `RemoteSystemDirectory` — calls the control-plane service over HTTP. Used when
   realm servers are deployed separately from the control plane.
 
-Selection via config, e.g. `quantum.system.directory.mode=local|remote` and
-`quantum.system.directory.url=...`.
+Selection follows the app-facing deployment mode (the property WP3 documents):
+
+```properties
+quantum.mode=embedded                    # default — today's behavior
+# quantum.mode=remote                    # split planes (tier 2)
+# quantum.system-service.base-url=...    # required in remote mode
+# quantum.system.directory.mode=local    # optional override for the directory
+#                                        # alone (migration windows: app remote,
+#                                        # directory still local)
+```
+
+`QuantumModeConfig` (quantum-system) is the single source of the mode;
+`SystemDirectoryProducer` derives the directory implementation from it
+(embedded → local, remote → control-plane client, fail-loud until Phase C).
 
 What changes at the call sites: `TenantProvisioningService`, `RealmRepo`
 look-ups for the catalog, credential reads during auth bootstrap, and
@@ -298,6 +310,27 @@ Phase B — Extract control-plane module.
   invitations; move `TenantProvisioningService` + `UserManagement` impls here.
 - Stand up `quantum-system` as a deployable using `quantum-oauth-server` /
   `quantum-jwt-provider` for token issuance.
+
+Phase B progress (2026-06-10, branch helixorq-readiness):
+- (1/n) `quantum-system` module created; `SystemDirectory` contract +
+  local impl/producer relocated into it (FQNs of the contract unchanged);
+  `RealmCatalogService` + metering contracts (`MeteringEvent`/`MeteringSink`)
+  added; quantum-framework depends on it so app classpaths are unchanged.
+- (2/n) `TenantProvisioningService` realm-catalog operations routed through
+  `RealmCatalogService`; `SystemDirectory` retained only for the credential
+  lookup (identity seam lands in Phase D).
+- (3/n) Mode seam: `quantum.mode` (embedded default) via `QuantumModeConfig` +
+  `SystemRealmOwnership`; in remote mode `FrameworkStartupCoordinator` skips
+  system-realm migrations and baseline identity, and the seed/bootstrap
+  startup runners exclude the system realm from their realm lists while
+  app-realm work proceeds locally (wp3 tier-2 semantics).
+  `MigrationService` gained `initializeStartupRealms(boolean includeSystemRealm)`
+  (existing no-arg method unchanged) so it stays mode-unaware.
+- Known remote-mode gap for Phase C: when seeding *app* realms,
+  `SeedStartupRunner` still reads realm records and admin credentials from
+  the local system-realm database. In a true split deployment those reads
+  must route through `SystemDirectory` (remote) — this is exactly the Phase C
+  client work, tracked here so it is not discovered in production.
 
 Phase C — Remote mode.
 - Add `RemoteSystemDirectory` (HTTP client to `quantum-system`).

@@ -9,6 +9,7 @@ import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityCallScope;
+import com.e2eq.framework.system.config.SystemRealmOwnership;
 import com.e2eq.framework.util.EnvConfigUtils;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -30,6 +31,9 @@ public class BootstrapPackStartupRunner {
 
     @Inject
     EnvConfigUtils envConfigUtils;
+
+    @Inject
+    SystemRealmOwnership systemRealmOwnership;
 
     @ConfigProperty(name = "quantum.bootstrap-pack.enabled", defaultValue = "true")
     boolean enabled;
@@ -105,7 +109,10 @@ public class BootstrapPackStartupRunner {
             addIfPresent(realms, envConfigUtils.getDefaultRealm());
             addIfPresent(realms, envConfigUtils.getTestRealm());
         }
-        return new ArrayList<>(realms);
+        List<String> resolved = new ArrayList<>(realms);
+        // Covers this runner and PendingBootstrapPacksStartupLogger (which reuses this method).
+        systemRealmOwnership.excludeSystemRealmIfNotOwned(resolved, "BootstrapPackStartupRunner");
+        return resolved;
     }
 
     List<BootstrapPackDefinition> resolveStartupPacks() {
