@@ -1,5 +1,6 @@
 package com.e2eq.framework.service;
 
+import com.e2eq.framework.api.system.SystemDirectory;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.base.EntityReference;
 import com.e2eq.framework.model.persistent.migration.base.MigrationService;
@@ -53,6 +54,7 @@ public class TenantProvisioningService {
     @Inject MigrationService migrationService;
     @Inject AuthProviderFactory authProviderFactory;
     @Inject EnvConfigUtils envConfigUtils;
+    @Inject SystemDirectory systemDirectory;
     @Inject CredentialRepo credentialRepo;
     @Inject RealmTenantMembershipRepo realmTenantMembershipRepo;
     @Inject UserProfileRepo userProfileRepo;
@@ -251,7 +253,7 @@ public class TenantProvisioningService {
         return ProvisioningContext.builder()
             .command(command)
             .result(result)
-            .systemRealm(envConfigUtils.getSystemRealm())
+            .systemRealm(systemDirectory.systemRealmId())
             .realmId(realmId)
             .normalizedTenantDisplayName(normalizedTenantDisplayName)
             .domainContext(dc)
@@ -274,10 +276,8 @@ public class TenantProvisioningService {
 
     public void ensureRealmCatalog(ProvisioningContext context) {
         Log.infof("  computed realmId: %s", context.getRealmId());
-        Optional<Realm> existingOpt = realmRepo.findByEmailDomain(
-            context.getCommand().getTenantEmailDomain(),
-            true,
-            context.getSystemRealm()
+        Optional<Realm> existingOpt = systemDirectory.findRealmByEmailDomain(
+            context.getCommand().getTenantEmailDomain()
         );
 
         if (existingOpt.isPresent()) {
@@ -313,7 +313,7 @@ public class TenantProvisioningService {
             return;
         }
 
-        realmRepo.save(context.getSystemRealm(), context.getDesiredRealm());
+        systemDirectory.registerRealm(context.getDesiredRealm());
         Log.infof("Created realm catalog entry for %s in system realm %s", context.getRealmId(), context.getSystemRealm());
         context.getResult().realmCreated = true;
     }
@@ -544,12 +544,12 @@ public class TenantProvisioningService {
                                           String email,
                                           Set<String> roles,
                                           DomainContext domainContext) {
-        Optional<CredentialUserIdPassword> credential = credentialRepo.findByUserId(userId, envConfigUtils.getSystemRealm(), true);
+        Optional<CredentialUserIdPassword> credential = systemDirectory.findCredentialByUserId(userId);
         if (credential.isEmpty()) {
             throw new IllegalStateException("Credential was not found for provisioned userId: " + userId);
         }
 
-        EntityReference credentialRef = credential.get().createEntityReference(envConfigUtils.getSystemRealm());
+        EntityReference credentialRef = credential.get().createEntityReference(systemDirectory.systemRealmId());
         Optional<UserProfile> existing = userProfileRepo.getByUserId(realmId, userId);
         if (existing.isPresent()) {
             UserProfile profile = existing.get();
@@ -692,12 +692,12 @@ public class TenantProvisioningService {
         if (normalizedRealmId.isBlank()) {
             throw new IllegalArgumentException("realmId cannot be blank");
         }
-        if (envConfigUtils.getSystemRealm().equalsIgnoreCase(normalizedRealmId)) {
+        if (systemDirectory.systemRealmId().equalsIgnoreCase(normalizedRealmId)) {
             throw new IllegalStateException("Refusing to delete the configured system realm");
         }
 
-        String systemRealm = envConfigUtils.getSystemRealm();
-        Realm realm = realmRepo.findByRefName(normalizedRealmId, true, systemRealm)
+        String systemRealm = systemDirectory.systemRealmId();
+        Realm realm = systemDirectory.findRealmByRefName(normalizedRealmId)
                 .orElseThrow(() -> new IllegalStateException("Realm was not found in the system catalog: " + normalizedRealmId));
 
         DeleteResult result = new DeleteResult();
