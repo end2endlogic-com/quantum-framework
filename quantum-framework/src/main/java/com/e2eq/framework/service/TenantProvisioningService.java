@@ -1,6 +1,7 @@
 package com.e2eq.framework.service;
 
 import com.e2eq.framework.api.system.SystemDirectory;
+import com.e2eq.framework.system.catalog.RealmCatalogService;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.base.EntityReference;
 import com.e2eq.framework.model.persistent.migration.base.MigrationService;
@@ -54,6 +55,10 @@ public class TenantProvisioningService {
     @Inject MigrationService migrationService;
     @Inject AuthProviderFactory authProviderFactory;
     @Inject EnvConfigUtils envConfigUtils;
+    // Realm catalog operations go through the control-plane catalog service;
+    // SystemDirectory is retained only for the credential (identity) lookup,
+    // which is not a catalog concern (it gets its own seam in Phase D).
+    @Inject RealmCatalogService realmCatalog;
     @Inject SystemDirectory systemDirectory;
     @Inject CredentialRepo credentialRepo;
     @Inject RealmTenantMembershipRepo realmTenantMembershipRepo;
@@ -253,7 +258,7 @@ public class TenantProvisioningService {
         return ProvisioningContext.builder()
             .command(command)
             .result(result)
-            .systemRealm(systemDirectory.systemRealmId())
+            .systemRealm(realmCatalog.systemRealmId())
             .realmId(realmId)
             .normalizedTenantDisplayName(normalizedTenantDisplayName)
             .domainContext(dc)
@@ -276,7 +281,7 @@ public class TenantProvisioningService {
 
     public void ensureRealmCatalog(ProvisioningContext context) {
         Log.infof("  computed realmId: %s", context.getRealmId());
-        Optional<Realm> existingOpt = systemDirectory.findRealmByEmailDomain(
+        Optional<Realm> existingOpt = realmCatalog.findByEmailDomain(
             context.getCommand().getTenantEmailDomain()
         );
 
@@ -313,7 +318,7 @@ public class TenantProvisioningService {
             return;
         }
 
-        systemDirectory.registerRealm(context.getDesiredRealm());
+        realmCatalog.register(context.getDesiredRealm());
         Log.infof("Created realm catalog entry for %s in system realm %s", context.getRealmId(), context.getSystemRealm());
         context.getResult().realmCreated = true;
     }
@@ -549,7 +554,7 @@ public class TenantProvisioningService {
             throw new IllegalStateException("Credential was not found for provisioned userId: " + userId);
         }
 
-        EntityReference credentialRef = credential.get().createEntityReference(systemDirectory.systemRealmId());
+        EntityReference credentialRef = credential.get().createEntityReference(realmCatalog.systemRealmId());
         Optional<UserProfile> existing = userProfileRepo.getByUserId(realmId, userId);
         if (existing.isPresent()) {
             UserProfile profile = existing.get();
@@ -692,12 +697,12 @@ public class TenantProvisioningService {
         if (normalizedRealmId.isBlank()) {
             throw new IllegalArgumentException("realmId cannot be blank");
         }
-        if (systemDirectory.systemRealmId().equalsIgnoreCase(normalizedRealmId)) {
+        if (realmCatalog.systemRealmId().equalsIgnoreCase(normalizedRealmId)) {
             throw new IllegalStateException("Refusing to delete the configured system realm");
         }
 
-        String systemRealm = systemDirectory.systemRealmId();
-        Realm realm = systemDirectory.findRealmByRefName(normalizedRealmId)
+        String systemRealm = realmCatalog.systemRealmId();
+        Realm realm = realmCatalog.findByRefName(normalizedRealmId)
                 .orElseThrow(() -> new IllegalStateException("Realm was not found in the system catalog: " + normalizedRealmId));
 
         DeleteResult result = new DeleteResult();
