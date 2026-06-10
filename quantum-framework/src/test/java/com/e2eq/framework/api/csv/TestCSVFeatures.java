@@ -4,6 +4,7 @@ package com.e2eq.framework.api.csv;
 import com.e2eq.framework.model.persistent.base.AuditInfo;
 import com.e2eq.framework.model.persistent.base.DynamicAttribute;
 import com.e2eq.framework.model.persistent.base.DynamicAttributeSet;
+import com.e2eq.framework.model.persistent.base.EntityReference;
 import com.e2eq.framework.model.persistent.imports.ImportProfile;
 import com.e2eq.framework.security.runtime.SecuritySession;
 import com.e2eq.framework.persistent.BaseRepoTest;
@@ -70,6 +71,48 @@ public class TestCSVFeatures extends BaseRepoTest {
                         .decimalField(new java.math.BigDecimal("20.5"))
                         .build()
         );
+    }
+
+    public static class AdditionalFieldsExportModel {
+        private EntityReference jobReference;
+        private Map<String, Object> additionalFields;
+
+        public EntityReference getJobReference() {
+            return jobReference;
+        }
+
+        public void setJobReference(EntityReference jobReference) {
+            this.jobReference = jobReference;
+        }
+
+        public Map<String, Object> getAdditionalFields() {
+            return additionalFields;
+        }
+
+        public void setAdditionalFields(Map<String, Object> additionalFields) {
+            this.additionalFields = additionalFields;
+        }
+    }
+
+    private EntityReference entityReference(String refName, String displayName) {
+        EntityReference reference = new EntityReference();
+        reference.setEntityRefName(refName);
+        reference.setEntityDisplayName(displayName);
+        return reference;
+    }
+
+    private AdditionalFieldsExportModel additionalFieldsRecord() {
+        EntityReference locationReference = entityReference("loc-001", "Location One");
+
+        EntityReference jobReference = entityReference("job-001", "Job One");
+        Map<String, Object> jobAdditionalFields = new HashMap<>();
+        jobAdditionalFields.put("locationReference", locationReference);
+        jobReference.setAdditionalFields(jobAdditionalFields);
+
+        AdditionalFieldsExportModel model = new AdditionalFieldsExportModel();
+        model.setJobReference(jobReference);
+        model.setAdditionalFields(Map.of("directValue", "root map value"));
+        return model;
     }
 
     private <T> void writeRecord(ICsvDozerBeanWriter beanWriter, T record, CellProcessor[] processors, String nestedProperty)
@@ -727,5 +770,63 @@ public class TestCSVFeatures extends BaseRepoTest {
         assertTrue(csvOutput.contains("alpha, beta, gamma"), "Should join String[] tags for CSV export");
         assertFalse(csvOutput.contains("[Ljava.lang.String"), "Should not export Java array toString");
         assertTrue(csvOutput.contains("creator@example.com"), "Should export nested auditInfo.creationIdentity");
+    }
+
+    @Test
+    public void testAdditionalFieldsNestedMapExport() throws IOException {
+        CSVExportHelper helper = new CSVExportHelper();
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        StreamingOutput streamingOutput = helper.streamCSVOut(
+                AdditionalFieldsExportModel.class,
+                List.of(additionalFieldsRecord()),
+                null,
+                ',',
+                List.of(
+                        "jobReference.additionalFields.locationReference.entityRefName",
+                        "jobReference.additionalFields.locationReference.entityDisplayName",
+                        "jobReference.additionalFields.missingReference.entityRefName"
+                ),
+                "QUOTE_WHERE_ESSENTIAL",
+                '"',
+                Charset.forName("UTF-8"),
+                false,
+                true,
+                null,
+                null);
+
+        streamingOutput.write(output);
+        String csvOutput = output.toString(Charset.forName("UTF-8"));
+
+        assertTrue(csvOutput.contains("jobReference.additionalFields.locationReference.entityRefName"),
+                "Should keep original requested column in header");
+        assertTrue(csvOutput.contains("loc-001"), "Should export nested additionalFields entityRefName");
+        assertTrue(csvOutput.contains("Location One"), "Should export a second column from the same additionalFields map");
+        assertTrue(csvOutput.contains("loc-001,Location One,"), "Missing map path should export as a blank cell");
+    }
+
+    @Test
+    public void testRootAdditionalFieldsExport() throws IOException {
+        CSVExportHelper helper = new CSVExportHelper();
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        StreamingOutput streamingOutput = helper.streamCSVOut(
+                AdditionalFieldsExportModel.class,
+                List.of(additionalFieldsRecord()),
+                null,
+                ',',
+                List.of("additionalFields.directValue"),
+                "QUOTE_WHERE_ESSENTIAL",
+                '"',
+                Charset.forName("UTF-8"),
+                false,
+                true,
+                null,
+                null);
+
+        streamingOutput.write(output);
+        String csvOutput = output.toString(Charset.forName("UTF-8"));
+
+        assertTrue(csvOutput.contains("root map value"), "Should export root additionalFields map values");
     }
 }

@@ -32,6 +32,7 @@ import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -41,6 +42,10 @@ import static java.lang.String.format;
  * A helper for CSV exports.
  */
 public class CSVExportHelper {
+
+    private static final String ADDITIONAL_FIELDS_SEGMENT = "additionalFields";
+    private static final String ADDITIONAL_FIELDS_PREFIX = ADDITIONAL_FIELDS_SEGMENT + ".";
+    private static final String ADDITIONAL_FIELDS_MARKER = "." + ADDITIONAL_FIELDS_SEGMENT + ".";
 
     final private static Pattern ARRAY_OPERATOR_RE = Pattern.compile(
             "\\[\\d+\\]"); // pattern to match array indices like [0], [1], [10], etc.
@@ -160,7 +165,7 @@ public class CSVExportHelper {
                                     .useQuoteMode(finalQmode)
                                     .build());
 
-                    String[] requestedColumnsAsArray = requestedColumns.toArray(new String[]{});
+                    String[] requestedColumnsAsArray = buildBeanMappingColumns(requestedColumns).toArray(new String[]{});
                     beanWriter.configureBeanMapping(clazz, requestedColumnsAsArray);
 
                     if (prependHeaderRow) {
@@ -450,7 +455,11 @@ public class CSVExportHelper {
         CellProcessor[] processors = new CellProcessor[cols.size()];
         for (int i = 0; i < cols.size(); i++) {
             String fieldName = cols.get(i);
-            if (hasNestedArrays(fieldName)) {
+            AdditionalFieldsPath additionalFieldsPath = splitAdditionalFieldsPath(fieldName);
+            if (additionalFieldsPath != null) {
+                processors[i] = new org.supercsv.cellprocessor.Optional(
+                        new MapPathCellProcessor(additionalFieldsPath.suffixPath));
+            } else if (hasNestedArrays(fieldName)) {
                 // Use nested array processor for nested arrays like dynamicAttributeSets[0].attributes[1].value
                 processors[i] = new org.supercsv.cellprocessor.Optional(new NestedArrayCellProcessor(fieldName));
             } else if (fieldName.contains("[")) {
@@ -476,6 +485,54 @@ public class CSVExportHelper {
             }
         }
         return processors;
+    }
+
+    private List<String> buildBeanMappingColumns(List<String> requestedColumns) {
+        List<String> beanMappingColumns = new ArrayList<>(requestedColumns.size());
+        for (String column : requestedColumns) {
+            beanMappingColumns.add(toBeanMappingColumn(column));
+        }
+        return beanMappingColumns;
+    }
+
+    private String toBeanMappingColumn(String column) {
+        AdditionalFieldsPath additionalFieldsPath = splitAdditionalFieldsPath(column);
+        return additionalFieldsPath == null ? column : additionalFieldsPath.mapPath;
+    }
+
+    private AdditionalFieldsPath splitAdditionalFieldsPath(String column) {
+        if (StringUtils.isBlank(column)) {
+            return null;
+        }
+
+        if (column.startsWith(ADDITIONAL_FIELDS_PREFIX)) {
+            return new AdditionalFieldsPath(ADDITIONAL_FIELDS_SEGMENT,
+                    column.substring(ADDITIONAL_FIELDS_PREFIX.length()));
+        }
+
+        int markerIndex = column.indexOf(ADDITIONAL_FIELDS_MARKER);
+        if (markerIndex < 0) {
+            return null;
+        }
+
+        int suffixStart = markerIndex + ADDITIONAL_FIELDS_MARKER.length();
+        if (suffixStart >= column.length()) {
+            return null;
+        }
+
+        return new AdditionalFieldsPath(
+                column.substring(0, markerIndex + ADDITIONAL_FIELDS_MARKER.length() - 1),
+                column.substring(suffixStart));
+    }
+
+    private static class AdditionalFieldsPath {
+        private final String mapPath;
+        private final String suffixPath;
+
+        private AdditionalFieldsPath(String mapPath, String suffixPath) {
+            this.mapPath = mapPath;
+            this.suffixPath = suffixPath;
+        }
     }
 
     private Class<?> getFieldType(Class<?> clazz, String name) {
@@ -727,24 +784,62 @@ public class CSVExportHelper {
         }
     }
 
+    /**
+     * Resolves the dynamic suffix after an additionalFields map has been read by Dozer.
+     */
+    public class MapPathCellProcessor extends CellProcessorAdaptor {
+        private final String suffixPath;
+
+        public MapPathCellProcessor(String suffixPath) {
+            this.suffixPath = suffixPath;
+        }
+
+        @Override
+        public Object execute(Object value, CsvContext context) {
+            Object current = value;
+            if (current == null) {
+                return next.execute("", context);
+            }
+
+            for (String segment : suffixPath.split("\\.")) {
+                if (current == null || StringUtils.isBlank(segment)) {
+                    return next.execute("", context);
+                }
+
+                try {
+                    if (current instanceof Map) {
+                        current = ((Map<?, ?>) current).get(segment);
+                    } else {
+                        current = PropertyUtils.getProperty(current, segment);
+                    }
+                } catch (IllegalAccessException | InvocationTargetException | NoSuchMethodException e) {
+                    return next.execute("", context);
+                }
+            }
+
+            return next.execute(current == null ? "" : current, context);
+        }
+    }
+
     private String screenRequestedColumns(List<String> requestedColumnsInParam,
                                           List<String> requestedColumnsOutParam)
             throws ValidationException {
 
         String soleNestedProperty = null;
         for (String col : requestedColumnsInParam) {
-            if (hasNestedArrays(col)) {
+            String projectionColumn = toBeanMappingColumn(col);
+            if (hasNestedArrays(projectionColumn)) {
                 // For nested arrays, remove all array indices for MongoDB projection
                 // The full path with indices is kept in requestedColumnsInParam for CSV extraction
                 // Example: dynamicAttributeSets[0].attributes[1].value -> dynamicAttributeSets.attributes.value
-                String projectionPath = col.replaceAll("\\[\\d+\\]", "");
+                String projectionPath = projectionColumn.replaceAll("\\[\\d+\\]", "");
                 requestedColumnsOutParam.add(projectionPath);
             } else {
                 // Handle single-level arrays or non-array properties
-                String[] parts = ARRAY_OPERATOR_RE.split(col);
+                String[] parts = ARRAY_OPERATOR_RE.split(projectionColumn);
                 if (parts.length == 1) {
                     // No array indices, add as-is
-                    requestedColumnsOutParam.add(col);
+                    requestedColumnsOutParam.add(projectionColumn);
                 } else {
                     // Single-level array - remove indices for MongoDB projection
                     // Track the first nested property for backward compatibility with row expansion logic
