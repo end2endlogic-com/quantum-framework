@@ -1,0 +1,38 @@
+{
+  "name": "combined",
+  "description": "Inverse and chain inference interact in one materialization (bible-structure shape): containment chain implies descendant verse; commentsOn materializes its inverse.",
+  "tbox": {
+    "version": 1,
+    "id": "vector-combined",
+    "openness": "closed",
+    "source": "external-corpus",
+    "classes": [
+      {"id": "Book"},
+      {"id": "Chapter"},
+      {"id": "Verse"},
+      {"id": "CommentarySection"}
+    ],
+    "properties": [
+      {"id": "containsChapter", "domain": "Book", "range": "Chapter"},
+      {"id": "containsVerse", "domain": "Chapter", "range": "Verse"},
+      {"id": "containsDescendantVerse", "domain": "Book", "range": "Verse", "inferred": true},
+      {"id": "commentsOn", "domain": "CommentarySection", "range": "Verse", "inverseOf": "hasCommentarySection"},
+      {"id": "hasCommentarySection", "domain": "Verse", "range": "CommentarySection", "inferred": true}
+    ],
+    "chains": [
+      {"chain": ["containsChapter", "containsVerse"], "implies": "containsDescendantVerse"}
+    ]
+  },
+  "explicit_edges": [
+    {"src_id": "book:john", "src_type": "Book", "predicate": "containsChapter", "dst_id": "ch:john-1", "dst_type": "Chapter"},
+    {"src_id": "ch:john-1", "src_type": "Chapter", "predicate": "containsVerse", "dst_id": "v:JHN.1.1", "dst_type": "Verse"},
+    {"src_id": "comm:logos", "src_type": "CommentarySection", "predicate": "commentsOn", "dst_id": "v:JHN.1.1", "dst_type": "Verse"}
+  ],
+  "expected": {
+    "status": "ok",
+    "inferred_edges": [
+      ["book:john", "Book", "containsDescendantVerse", "v:JHN.1.1", "Verse"],
+      ["v:JHN.1.1", "Verse", "hasCommentarySection", "comm:logos", "CommentarySection"]
+    ]
+  }
+}

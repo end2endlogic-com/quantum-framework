@@ -1,0 +1,32 @@
+{
+  "name": "chain",
+  "description": "Quantum's canonical property-chain example: placedBy then memberOf implies placedInOrg.",
+  "tbox": {
+    "version": 1,
+    "id": "vector-chain",
+    "openness": "closed",
+    "classes": [
+      {"id": "Order"},
+      {"id": "Customer"},
+      {"id": "Organization"}
+    ],
+    "properties": [
+      {"id": "placedBy", "domain": "Order", "range": "Customer", "functional": true},
+      {"id": "memberOf", "domain": "Customer", "range": "Organization"},
+      {"id": "placedInOrg", "domain": "Order", "range": "Organization", "inferred": true}
+    ],
+    "chains": [
+      {"chain": ["placedBy", "memberOf"], "implies": "placedInOrg"}
+    ]
+  },
+  "explicit_edges": [
+    {"src_id": "order:1", "src_type": "Order", "predicate": "placedBy", "dst_id": "cust:7", "dst_type": "Customer"},
+    {"src_id": "cust:7", "src_type": "Customer", "predicate": "memberOf", "dst_id": "org:acme", "dst_type": "Organization"}
+  ],
+  "expected": {
+    "status": "ok",
+    "inferred_edges": [
+      ["order:1", "Order", "placedInOrg", "org:acme", "Organization"]
+    ]
+  }
+}

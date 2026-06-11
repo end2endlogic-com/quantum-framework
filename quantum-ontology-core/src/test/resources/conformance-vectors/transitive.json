@@ -1,0 +1,25 @@
+{
+  "name": "transitive",
+  "description": "A transitive predicate materializes the closure over a 3-node path.",
+  "tbox": {
+    "version": 1,
+    "id": "vector-transitive",
+    "openness": "closed",
+    "classes": [
+      {"id": "Region"}
+    ],
+    "properties": [
+      {"id": "contains", "domain": "Region", "range": "Region", "transitive": true}
+    ]
+  },
+  "explicit_edges": [
+    {"src_id": "r:country", "src_type": "Region", "predicate": "contains", "dst_id": "r:state", "dst_type": "Region"},
+    {"src_id": "r:state", "src_type": "Region", "predicate": "contains", "dst_id": "r:city", "dst_type": "Region"}
+  ],
+  "expected": {
+    "status": "ok",
+    "inferred_edges": [
+      ["r:country", "Region", "contains", "r:city", "Region"]
+    ]
+  }
+}

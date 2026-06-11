@@ -1,0 +1,24 @@
+{
+  "name": "closed-rejection",
+  "description": "A closed ontology rejects runtime edges that reference unknown classes or predicates and reports them as discovery candidates.",
+  "tbox": {
+    "version": 1,
+    "id": "vector-closed-rejection",
+    "openness": "closed",
+    "classes": [
+      {"id": "KnownThing"}
+    ],
+    "properties": [
+      {"id": "knownRelation", "domain": "KnownThing", "range": "KnownThing"}
+    ]
+  },
+  "explicit_edges": [
+    {"src_id": "unknown:1", "src_type": "NewThing", "predicate": "newRelation", "dst_id": "known:1", "dst_type": "KnownThing"}
+  ],
+  "expected": {
+    "status": "invalid",
+    "inferred_edges": [],
+    "discovered_class_candidates": ["NewThing"],
+    "discovered_property_candidates": ["newRelation"]
+  }
+}
