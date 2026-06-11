@@ -1,0 +1,25 @@
+{
+  "name": "subpropertyof",
+  "description": "An edge asserted with a sub-property materializes the super-property edge.",
+  "tbox": {
+    "version": 1,
+    "id": "vector-subpropertyof",
+    "openness": "closed",
+    "classes": [
+      {"id": "Person"}
+    ],
+    "properties": [
+      {"id": "related_to", "domain": "Person", "range": "Person"},
+      {"id": "mother", "domain": "Person", "range": "Person", "subPropertyOf": ["related_to"]}
+    ]
+  },
+  "explicit_edges": [
+    {"src_id": "p:alice", "src_type": "Person", "predicate": "mother", "dst_id": "p:bob", "dst_type": "Person"}
+  ],
+  "expected": {
+    "status": "ok",
+    "inferred_edges": [
+      ["p:alice", "Person", "related_to", "p:bob", "Person"]
+    ]
+  }
+}
