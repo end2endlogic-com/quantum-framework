@@ -458,9 +458,37 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
             findOptions.sort(sorts.toArray(new Sort[sorts.size()]));
         }
 
-        if (projectionFields != null && !projectionFields.isEmpty()) {
+        // Field-level policy (deny-wins): excluded paths are removed at the
+        // datastore so the data never leaves Mongo. Mongo cannot mix include
+        // and exclude projections, so policy composes differently per case:
+        // no caller projection -> apply policy paths as excludes; caller
+        // include-projection -> drop policy paths from the include list
+        // (exclusion wins); caller exclude-projection -> union with policy.
+        java.util.Set<String> policyExcluded = securityFilterBuilder().buildExcludedFieldPaths();
+
+        List<ProjectionField> effectiveProjection = projectionFields;
+        if (!policyExcluded.isEmpty() && projectionFields != null && !projectionFields.isEmpty()) {
+            effectiveProjection = new ArrayList<>();
+            for (ProjectionField pf : projectionFields) {
+                if (pf.getProjectionType() == ProjectionField.ProjectionType.INCLUDE
+                        && policyExcluded.contains(pf.getFieldName())) {
+                    continue; // policy exclusion wins over a requested include
+                }
+                effectiveProjection.add(pf);
+            }
+            for (String path : policyExcluded) {
+                if (effectiveProjection.stream().anyMatch(pf ->
+                        pf.getProjectionType() == ProjectionField.ProjectionType.EXCLUDE)) {
+                    effectiveProjection.add(new ProjectionField(path, ProjectionField.ProjectionType.EXCLUDE));
+                }
+            }
+        }
+
+        if (effectiveProjection != null && !effectiveProjection.isEmpty()) {
             findOptions.projection().knownFields();
-            findOptions = convertToProjection(findOptions, projectionFields);
+            findOptions = convertToProjection(findOptions, effectiveProjection);
+        } else if (!policyExcluded.isEmpty()) {
+            findOptions.projection().exclude(policyExcluded.toArray(new String[0]));
         }
 
         return findOptions;
@@ -1609,6 +1637,37 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         return updateOperators;
     }
 
+
+    /**
+     * Field-level policy write gate: a principal whose policy excludes a field
+     * must not be able to overwrite it on update. For each excluded path, the
+     * stored document's current value is restored onto the incoming entity
+     * before persisting (preserve-hidden-field semantics). Top-level and
+     * one-level-nested ("parent.child") paths are supported in v1.
+     */
+    protected T restorePolicyExcludedFields(Datastore datastore, T entity) {
+        java.util.Set<String> excluded = securityFilterBuilder().buildExcludedFieldPaths();
+        if (excluded.isEmpty() || entity.getId() == null) {
+            return entity;
+        }
+        T stored = datastore.find(getPersistentClass())
+                .filter(dev.morphia.query.filters.Filters.eq("_id", entity.getId()))
+                .first();
+        if (stored == null) {
+            return entity;
+        }
+        for (String path : excluded) {
+            try {
+                com.e2eq.framework.model.securityrules.FieldPolicyEnforcer.copyPath(stored, entity, path);
+            } catch (ReflectiveOperationException e) {
+                throw new RuntimeException(
+                    "Field-level policy could not restore excluded path '" + path + "' on "
+                    + getPersistentClass().getSimpleName() + "; failing closed.", e);
+            }
+        }
+        return entity;
+    }
+
     @Override
     public T merge(@NotNull T entity){
         return merge(morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()), entity);
@@ -1623,6 +1682,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
              throw new RuntimeException("State transition validation failed", e);
           }
        }
+        entity = restorePolicyExcludedFields(datastore, entity);
         return datastore.merge(entity);
     }
 

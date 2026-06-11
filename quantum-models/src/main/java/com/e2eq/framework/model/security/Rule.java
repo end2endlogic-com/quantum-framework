@@ -31,6 +31,12 @@ public class Rule  {
    // if you need to join the anded filters and the ored filters together using a join operator set this
    FilterJoinOp joinOp;
 
+   // Field-level policy: dotted paths (e.g. "pricing.unitPrice") removed from
+   // reads (Mongo projection) and stripped from writes for principals matched
+   // by this rule. Deny-wins: the union of exclusions across all matched
+   // ALLOW rules applies. Additive key — absent means no field restriction.
+   protected java.util.List<String> excludedFields;
+
    // the rules effect
    @NotNull RuleEffect effect;
 
@@ -76,6 +82,7 @@ public class Rule  {
       String andFilterString;
       String orFilterString;
       FilterJoinOp joinOp;
+      java.util.List<String> excludedFields;
       @NotNull RuleEffect effect;
       int priority = DEFAULT_PRIORITY;
       boolean finalRule = false;
@@ -136,11 +143,18 @@ public class Rule  {
         return this;
       }
 
+      public Builder withExcludedFields(java.util.List<String> excludedFields) {
+        this.excludedFields = excludedFields;
+        return this;
+      }
+
       public Rule build() {
-         return new Rule( name, description,
+         Rule rule = new Rule( name, description,
             securityURI, preconditionScript,
             postconditionScript, effect, priority, finalRule,
             andFilterString, orFilterString, joinOp);
+         rule.setExcludedFields(excludedFields);
+         return rule;
       }
    }
 
@@ -224,6 +238,14 @@ public class Rule  {
 
    public void setOrFilterString (String orFilterString) {
       this.orFilterString = orFilterString;
+   }
+
+   public java.util.List<String> getExcludedFields () {
+      return excludedFields;
+   }
+
+   public void setExcludedFields (java.util.List<String> excludedFields) {
+      this.excludedFields = excludedFields;
    }
 
    public FilterJoinOp getJoinOp () {
