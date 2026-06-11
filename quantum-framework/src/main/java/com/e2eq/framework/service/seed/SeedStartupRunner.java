@@ -10,6 +10,7 @@ import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.model.persistent.migration.base.MigrationService;
+import com.e2eq.framework.api.system.SystemDirectory;
 import com.e2eq.framework.system.config.SystemRealmOwnership;
 import com.e2eq.framework.util.SecurityUtils;
 import com.mongodb.client.MongoClient;
@@ -62,6 +63,9 @@ public class SeedStartupRunner {
 
     @Inject
     SystemRealmOwnership systemRealmOwnership;
+
+    @Inject
+    SystemDirectory systemDirectory;
 
     @ConfigProperty(name = "quantum.seed-pack.enabled", defaultValue = "true")
     boolean enabled;
@@ -168,8 +172,14 @@ public class SeedStartupRunner {
         DistributedLock lock = getSeedLock(realm);
         lock.acquire();
         try {
-            Realm realmRecord = realmRepo.findByRefName(realm, true, envConfigUtils.getSystemRealm())
-                    .orElseGet(() -> realmRepo.findByDatabaseName(realm, true, envConfigUtils.getSystemRealm()).orElse(null));
+            // Phase C gap closed: the realm record resolves through
+            // SystemDirectory (local repos embedded; control-plane HTTP in
+            // remote mode). The by-database-name fallback has no contract
+            // equivalent yet and stays embedded-only.
+            Realm realmRecord = systemDirectory.findRealmByRefName(realm)
+                    .orElseGet(() -> systemRealmOwnership.ownedLocally()
+                        ? realmRepo.findByDatabaseName(realm, true, envConfigUtils.getSystemRealm()).orElse(null)
+                        : null);
 
             String emailDomain = resolveEmailDomain(realm, realmRecord);
             String baselineAdminUserId = "admin@" + emailDomain;
@@ -177,6 +187,12 @@ public class SeedStartupRunner {
 
             // Lookup admin user profile in the target realm to obtain its dataDomain without requiring SecurityContext
             CredentialUserIdPassword adminCred = null;
+            if (!systemRealmOwnership.ownedLocally()) {
+                // Remote mode: identity is control-plane-internal (B4/ADR) —
+                // no credential read crosses the seam. Seeding proceeds with
+                // the existing realm-only context degradation below.
+                Log.infof("SeedStartupRunner: quantum.mode=remote — seeding %s with realm-only context (identity stays in the control plane)", realm);
+            } else
             try {
                Optional<CredentialUserIdPassword> oAdminCred = credRepo.findByUserId(adminUserId, envConfigUtils.getSystemRealm(), true);
                if (!oAdminCred.isPresent()) {
