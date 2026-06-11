@@ -84,19 +84,27 @@ public class TestRemoteMode {
     }
 
     @Test
-    public void systemDirectoryFailsLoudUntilPhaseC() {
-        RuntimeException failure = Assertions.assertThrows(RuntimeException.class,
+    public void remoteDirectoryResolvesAndFailsLoudOnIdentitySurface() {
+        // Phase C: remote mode now resolves a control-plane-backed directory.
+        // Its identity/system-realm accessors fail loud BY DESIGN (JWKS
+        // validates identity; no local system realm exists in tier 2).
+        RuntimeException realmIdFailure = Assertions.assertThrows(RuntimeException.class,
             () -> systemDirectory.systemRealmId());
+        Assertions.assertTrue(messageChainContains(realmIdFailure, "remote mode"),
+            "systemRealmId must fail loud in remote mode, got: " + realmIdFailure);
 
-        boolean mentionsPhaseC = false;
+        RuntimeException credentialFailure = Assertions.assertThrows(RuntimeException.class,
+            () -> systemDirectory.findCredentialByUserId("anyone@example.com"));
+        Assertions.assertTrue(messageChainContains(credentialFailure, "control-plane-internal"),
+            "credential lookups must fail loud in remote mode, got: " + credentialFailure);
+    }
+
+    private static boolean messageChainContains(Throwable failure, String needle) {
         for (Throwable t = failure; t != null; t = t.getCause()) {
-            String message = t.getMessage();
-            if (message != null && message.contains("Phase C")) {
-                mentionsPhaseC = true;
-                break;
+            if (t.getMessage() != null && t.getMessage().contains(needle)) {
+                return true;
             }
         }
-        Assertions.assertTrue(mentionsPhaseC,
-            "remote SystemDirectory must fail loud (mentioning Phase C), got: " + failure);
+        return false;
     }
 }

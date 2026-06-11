@@ -42,6 +42,10 @@ public class SystemDirectoryProducer {
     @ConfigProperty(name = "quantum.system.directory.mode")
     Optional<String> directoryModeOverride;
 
+    /** Optional bearer for control-plane calls (service identity). */
+    @ConfigProperty(name = "quantum.system-service.token")
+    Optional<String> serviceToken;
+
     @Produces
     @ApplicationScoped
     public SystemDirectory systemDirectory() {
@@ -52,11 +56,13 @@ public class SystemDirectoryProducer {
             case MODE_LOCAL:
                 return new LocalSystemDirectory(realmRepo, credentialRepo, envConfigUtils);
             case MODE_REMOTE:
-                throw new IllegalStateException(
-                    "SystemDirectory remote mode is not available yet: the control-plane "
-                    + "client arrives in Phase C of the control-plane split. Use "
-                    + "quantum.mode=embedded (default) or override "
-                    + "quantum.system.directory.mode=local during migration.");
+                // Phase C: realm-catalog operations go to the control plane;
+                // identity/system-realm accessors fail loud by design (JWKS
+                // validates identity; no local system realm exists in tier 2).
+                return new com.e2eq.framework.system.remote.RemoteSystemDirectory(
+                    quantumModeConfig.systemServiceBaseUrl().orElseThrow(() ->
+                        new IllegalStateException("quantum.system-service.base-url is required for remote SystemDirectory")),
+                    serviceToken);
             default:
                 throw new IllegalStateException(
                     "Unknown quantum.system.directory.mode '" + directoryModeOverride.orElse(null)
