@@ -71,7 +71,7 @@ class RuleVocabularyValidatorTest {
         RuleVocabularyValidator validator = new RuleVocabularyValidator(registry());
 
         List<RuleVocabularyValidator.Violation> violations = validator.validate(List.of(
-                new RuleVocabularyValidator.RuleSource("plain-rule", List.of(
+                new RuleVocabularyValidator.RuleSource("plain-rule", java.util.Arrays.asList(
                         "pcontext.userId == rcontext.ownerId",
                         "dataDomain.tenantId:${pTenantId}",
                         null,
