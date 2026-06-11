@@ -346,6 +346,19 @@ Phase B progress (2026-06-10, branch helixorq-readiness):
   mirrors, it does not replace). Consumers headed across the plane boundary
   (admin resources for the future quantum-system-rest jar, helixorq-system)
   inject the contract; Phase C adds the remote implementation against it.
+- (B1 close-out decision, 2026-06-11): the original "move entities +
+  UserManagement into quantum-system" relocation is superseded by the
+  layering the Phase B/C increments established and is now the documented
+  end-state: **entities stay in quantum-models** (shared persistence
+  contracts every layer reads — moving them above the repos would invert the
+  build graph), **control-plane behavior lives in quantum-system**
+  (SystemDirectory, RealmCatalogService, TenantLifecycle,
+  RealmMembershipService, mode seam, remote clients), and **identity
+  provider implementations live in provider modules** (quantum-jwt-provider /
+  quantum-oauth-server), not quantum-framework. The physical
+  quantum-system-rest jar remains deferred to a major version per WP3 rule 3
+  (blocked on the TPS -> seed-subsystem closure); its *behavior* shipped as
+  the quantum.system-rest.enabled switch.
 - Known remote-mode gap for Phase C: when seeding *app* realms,
   `SeedStartupRunner` still reads realm records and admin credentials from
   the local system-realm database. In a true split deployment those reads
