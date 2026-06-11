@@ -361,3 +361,76 @@ This separation gives you flexibility:
 - use registration requests for self-service intake and approval
 - use access invites for controlled user admission into an existing tenant
 - use workflow configuration to decide which of those steps are mandatory in each tenant
+
+=== Choosing a Tenancy Model: Three Options
+
+With realm membership (see design/realm-membership-adr.adoc) the platform
+supports three deliberate configurations:
+
+[cols="1,2,2"]
+|===
+|Option |Shape |When to use
+
+|One tenant, one realm (default)
+|`POST /admin/tenants` provisions a realm with a single OWNER membership.
+|The standard SaaS tenant: full physical isolation, independent lifecycle,
+own backups/residency. This is what HelixorQ provisions per customer.
+
+|Shared collaboration realm
+|One OWNER org plus N PARTICIPANT memberships
+(`RealmTenantMembership.membershipRole`). All parties' data lives in one
+realm; *visibility* is shaped per org by DataDomain stamps plus
+relationship policies (`hasEdge`) and field-level exclusions.
+|Multi-party operations against shared entities — e.g. a fulfillment realm
+where carrier, supplier, and customer orgs collaborate on the same sales
+orders and fulfillment plans, each seeing their own slice.
+
+|GitHub-like multi-realm identity
+|Users hold ONE global identity and N per-realm role assignments
+(`UserRealmRole`): ADMIN in realm A, VIEWER in realm B.
+|Consultants, partners, and platform operators who work across several
+tenants without duplicate accounts.
+|===
+
+=== The GitHub-Like Identity Model, Mapped
+
+[cols="1,1,2"]
+|===
+|GitHub concept |Quantum primitive |Notes
+
+|Account
+|Credential (system realm)
+|One global identity; `defaultRealm` is the personal/default context.
+
+|Organization
+|Organization + Account entities
+|Carry DataDomain identity inside realms.
+
+|Org membership + role
+|`UserRealmRole` (userId, realmRefName, roles[], sponsoringOrgRefName)
+|ADMIN in A / VIEWER in B = two documents. `status`: active/invited/suspended.
+
+|Repository
+|Realm
+|The unit of placement and lifecycle (own database, migrations, seeds).
+
+|Repo transfer / ownership
+|`RealmTenantMembership.membershipRole = owner`
+|Exactly one owner per realm; owner holds lifecycle and billing authority.
+
+|Invitation
+|AccessInvite (`/access-invites`)
+|Existing invite flow grants a user into a realm; on acceptance a
+`UserRealmRole` records the granted roles.
+
+|Token scopes
+|JWT per-realm role claims
+|At issuance the IdP resolves `RealmMembershipService.rolesForUser(user,
+realm)`; the tenant plane validates via JWKS and routes by claims — no
+callback to the control plane per request.
+|===
+
+Resolution APIs live in `RealmMembershipService` (quantum-system):
+`membershipsForOrg`, `membersOfRealm`, `ownerOfRealm`, `realmsForUser`,
+`rolesForUser`. Embedded deployments resolve locally; remote (tier-2)
+deployments get the same surface backed by the control-plane client (Phase C).
