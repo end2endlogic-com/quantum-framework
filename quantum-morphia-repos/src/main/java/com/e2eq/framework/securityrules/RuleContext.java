@@ -149,6 +149,44 @@ public class RuleContext {
                 + "|" + getEvalModeForThread().name();
     }
 
+
+    /**
+     * Field-level policy (deny-wins): the union of {@code Rule.excludedFields}
+     * across every matched, applicable ALLOW rule for this principal/resource.
+     * Mirrors {@link #getFilters} — row filters scope WHICH documents a
+     * principal sees; this scopes WHICH FIELDS of those documents. Enforced at
+     * the datastore (Mongo projection on reads, strip on writes) so excluded
+     * data never leaves the database. Empty set = no field restriction.
+     */
+    public java.util.Set<String> getExcludedFieldPaths(
+            @Valid @NotNull(message = "Principal Context can not be null") PrincipalContext pcontext,
+            @Valid @NotNull(message = "Resource Context can not be null") ResourceContext rcontext) {
+        java.util.LinkedHashSet<String> excluded = new java.util.LinkedHashSet<>();
+        SecurityCheckResponse response = this.checkRules(pcontext, rcontext);
+        if (response == null || response.getFinalEffect() != RuleEffect.ALLOW
+                || response.getMatchedRuleResults() == null) {
+            return excluded;
+        }
+        for (RuleResult result : response.getMatchedRuleResults()) {
+            if (result == null || result.getRule() == null) {
+                continue;
+            }
+            if (result.getDeterminedEffect() == RuleDeterminedEffect.NOT_APPLICABLE) {
+                continue;
+            }
+            Rule rule = result.getRule();
+            if (rule.getExcludedFields() == null || rule.getExcludedFields().isEmpty()) {
+                continue;
+            }
+            for (String path : rule.getExcludedFields()) {
+                if (path != null && !path.isBlank()) {
+                    excluded.add(path.trim());
+                }
+            }
+        }
+        return excluded;
+    }
+
     private List<SecurityCheckResponse.RuleFilterInfo> collectMatchedAllowFilterRules(SecurityCheckResponse response) {
         LinkedHashMap<String, SecurityCheckResponse.RuleFilterInfo> infos = new LinkedHashMap<>();
         if (response == null || response.getMatchedRuleResults() == null) {
