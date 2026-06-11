@@ -1,6 +1,10 @@
 package com.e2eq.framework.service;
 
 import com.e2eq.framework.api.system.SystemDirectory;
+import com.e2eq.framework.api.tenant.TenantDeleteResult;
+import com.e2eq.framework.api.tenant.TenantLifecycle;
+import com.e2eq.framework.api.tenant.TenantProvisionRequest;
+import com.e2eq.framework.api.tenant.TenantProvisionResult;
 import com.e2eq.framework.system.catalog.RealmCatalogService;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.base.EntityReference;
@@ -44,7 +48,7 @@ import java.util.*;
  * and seeds an initial admin credential in the newly created realm.
  */
 @ApplicationScoped
-public class TenantProvisioningService {
+public class TenantProvisioningService implements TenantLifecycle {
     private static final int DROP_PENDING_MAX_RETRIES = 12;
     private static final int DROP_PENDING_RETRY_DELAY_MS = 500;
     private static final String DEFAULT_DEMO_PASSWORD = "demo123!";
@@ -839,5 +843,41 @@ public class TenantProvisioningService {
             return runtimeException;
         }
         return new IllegalStateException(exception.getMessage(), exception);
+    }
+
+    // ---- TenantLifecycle: the control-plane contract over this embedded implementation ----
+
+    @Override
+    public TenantProvisionResult provision(TenantProvisionRequest request) {
+        return toContractResult(provisionTenant(toCommand(request)));
+    }
+
+    @Override
+    public TenantDeleteResult delete(String realmId) {
+        return toContractResult(deleteTenant(realmId));
+    }
+
+    static ProvisionTenantCommand toCommand(TenantProvisionRequest request) {
+        return ProvisionTenantCommand.builder()
+            .tenantDisplayName(request.tenantDisplayName())
+            .tenantEmailDomain(request.tenantEmailDomain())
+            .orgRefName(request.orgRefName())
+            .accountId(request.accountId())
+            .adminUserId(request.adminUserId())
+            .adminSubject(request.adminSubject())
+            .adminPassword(request.adminPassword())
+            .archetypes(request.archetypes())
+            .overwriteAll(request.overwriteAll())
+            .build();
+    }
+
+    static TenantProvisionResult toContractResult(ProvisionResult r) {
+        return new TenantProvisionResult(r.realmId, r.realmCreated, r.userCreated,
+            r.appliedSeedArchetypes, r.warnings);
+    }
+
+    static TenantDeleteResult toContractResult(DeleteResult r) {
+        return new TenantDeleteResult(r.realmId, r.realmCatalogDeleted, r.databaseDropped,
+            r.deletedCredentialCount, r.warnings);
     }
 }
