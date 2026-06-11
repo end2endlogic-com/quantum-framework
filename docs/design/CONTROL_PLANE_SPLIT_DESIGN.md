@@ -338,6 +338,14 @@ Phase B progress (2026-06-10, branch helixorq-readiness):
   is deferred: the resources' dependency closure (TenantProvisioningService →
   seed subsystem; BaseResource REST infra) must move below the new jar first,
   which is the Phase B entity/service relocation work.
+- (5/n) `TenantLifecycle` contract in quantum-system
+  (`com.e2eq.framework.api.tenant`: `TenantLifecycle`,
+  `TenantProvisionRequest/Result`, `TenantDeleteResult` — dependency-light,
+  no Lombok). `TenantProvisioningService` implements it by delegation; its
+  existing signatures and inner types are untouched (wp3 rule 2 — the contract
+  mirrors, it does not replace). Consumers headed across the plane boundary
+  (admin resources for the future quantum-system-rest jar, helixorq-system)
+  inject the contract; Phase C adds the remote implementation against it.
 - Known remote-mode gap for Phase C: when seeding *app* realms,
   `SeedStartupRunner` still reads realm records and admin credentials from
   the local system-realm database. In a true split deployment those reads
