@@ -56,7 +56,7 @@ public final class CanonicalTBoxHasher {
         Map<String, Object> classes = new TreeMap<>();
         for (ClassDef c : tbox.classes().values()) {
             classes.put(c.name(), classDict(c.name(), c.parents(), c.disjointWith(), c.sameAs(),
-                    null, List.of(), Map.of()));
+                    c.label(), c.aliases(), c.metadata()));
         }
         root.put("classes", classes);
 
@@ -65,7 +65,7 @@ public final class CanonicalTBoxHasher {
             properties.put(p.name(), propertyDict(p.name(),
                     p.domain().orElse(null), p.range().orElse(null),
                     p.inverseOf().orElse(null), p.transitive(), p.symmetric(), p.functional(),
-                    p.subPropertyOf(), p.inferred(), null, List.of(), Map.of()));
+                    p.subPropertyOf(), p.inferred(), p.label(), p.aliases(), p.metadata()));
         }
         root.put("properties", properties);
 

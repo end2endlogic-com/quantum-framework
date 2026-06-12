@@ -42,11 +42,13 @@ class CanonicalTBoxHasherTest {
         // Same vocabulary expressed through the Java records + pack metadata
         // must hash identically to the authored pack form.
         Map<String, OntologyRegistry.ClassDef> classes = Map.of(
-                "Person", new OntologyRegistry.ClassDef("Person", Set.of(), Set.of(), Set.of()),
+                "Person", new OntologyRegistry.ClassDef("Person", Set.of(), Set.of(), Set.of(),
+                        "Person", Set.of("human"), Map.of("theme", "core")),
                 "Adult", new OntologyRegistry.ClassDef("Adult", Set.of("Person"), Set.of(), Set.of()));
         Map<String, OntologyRegistry.PropertyDef> properties = Map.of(
                 "knows", new OntologyRegistry.PropertyDef("knows", Optional.of("Person"), Optional.of("Person"),
-                        false, Optional.empty(), false, true, false, Set.of(), false));
+                        false, Optional.empty(), false, true, false, Set.of(), false,
+                        "Knows", Set.of("acquainted_with"), Map.of()));
         OntologyRegistry.TBox tbox = new OntologyRegistry.TBox(classes, properties, List.of());
 
         String fromRecords = CanonicalTBoxHasher.hashTBox(tbox,
@@ -57,12 +59,43 @@ class CanonicalTBoxHasherTest {
                 "name", "Parity",
                 "openness", "closed",
                 "classes", List.of(
-                        Map.of("id", "Person"),
+                        Map.of("id", "Person", "label", "Person", "aliases", List.of("human"),
+                                "metadata", Map.of("theme", "core")),
                         Map.of("id", "Adult", "parents", List.of("Person"))),
                 "properties", List.of(
-                        Map.of("id", "knows", "domain", "Person", "range", "Person", "symmetric", true))));
+                        Map.of("id", "knows", "domain", "Person", "range", "Person", "symmetric", true,
+                                "label", "Knows", "aliases", List.of("acquainted_with")))));
 
         assertEquals(fromMapping, fromRecords);
+    }
+
+    @Test
+    void yamlLoaderReadsHelixorPacksWithPresentationMetadata() throws Exception {
+        String pack = """
+                version: 1
+                id: bible-structure
+                openness: closed
+                source: external-corpus
+                classes:
+                  - id: verse
+                    label: Verse
+                    aliases: [scripture_verse]
+                  - id: chapter
+                  - id: adult_verse
+                    parents: [verse]
+                properties:
+                  - id: contains_verse
+                    domain: chapter
+                    range: verse
+                    label: Contains verse
+                """;
+        OntologyRegistry.TBox tbox = new YamlOntologyLoader()
+                .load(new java.io.ByteArrayInputStream(pack.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+
+        assertEquals("Verse", tbox.classes().get("verse").label());
+        assertEquals(Set.of("scripture_verse"), tbox.classes().get("verse").aliases());
+        assertEquals(Set.of("verse"), tbox.classes().get("adult_verse").parents());
+        assertEquals("Contains verse", tbox.properties().get("contains_verse").label());
     }
 
     @Test

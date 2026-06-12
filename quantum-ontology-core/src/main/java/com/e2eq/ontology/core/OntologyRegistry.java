@@ -36,7 +36,19 @@ public interface OntologyRegistry {
     }
 
     static OntologyRegistry inMemory(TBox tbox) { return new InMemoryOntologyRegistry(tbox); }
-    record ClassDef(String name, Set<String> parents, Set<String> disjointWith, Set<String> sameAs){}
+    // label/aliases/metadata carry pack presentation metadata (helixor-ontologies
+    // pack format); they participate in the canonical hash (CanonicalTBoxHasher).
+    record ClassDef(String name, Set<String> parents, Set<String> disjointWith, Set<String> sameAs,
+                    String label, Set<String> aliases, Map<String, Object> metadata){
+        public ClassDef {
+            aliases = aliases != null ? aliases : Set.of();
+            metadata = metadata != null ? metadata : Map.of();
+        }
+        // Backwards-compatible constructor without presentation metadata
+        public ClassDef(String name, Set<String> parents, Set<String> disjointWith, Set<String> sameAs) {
+            this(name, parents, disjointWith, sameAs, null, Set.of(), Map.of());
+        }
+    }
     // Extended PropertyDef to support subPropertyOf, symmetric, functional, and inferred characteristics
     record PropertyDef(String name,
                        Optional<String> domain,
@@ -47,7 +59,22 @@ public interface OntologyRegistry {
                        boolean symmetric,
                        boolean functional,
                        Set<String> subPropertyOf,
-                       boolean inferred){
+                       boolean inferred,
+                       String label,
+                       Set<String> aliases,
+                       Map<String, Object> metadata){
+        public PropertyDef {
+            aliases = aliases != null ? aliases : Set.of();
+            metadata = metadata != null ? metadata : Map.of();
+        }
+        // Backwards-compatible constructor without presentation metadata
+        public PropertyDef(String name, Optional<String> domain, Optional<String> range,
+                          boolean inverse, Optional<String> inverseOf, boolean transitive,
+                          boolean symmetric, boolean functional, Set<String> subPropertyOf,
+                          boolean inferred) {
+            this(name, domain, range, inverse, inverseOf, transitive, symmetric, functional,
+                    subPropertyOf, inferred, null, Set.of(), Map.of());
+        }
         // Backwards-compatible constructor without inferred field
         public PropertyDef(String name, Optional<String> domain, Optional<String> range,
                           boolean inverse, Optional<String> inverseOf, boolean transitive,
