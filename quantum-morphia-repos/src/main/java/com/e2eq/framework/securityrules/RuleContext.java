@@ -891,7 +891,7 @@ public class RuleContext {
      * @param rule the rule itself
      */
     public void addRule(@NotNull @Valid SecurityURIHeader key, @Valid @NotNull Rule rule) {
-        fireVocabularyCheck(rule);
+        fireVocabularyCheck(key, rule);
         // Store rules by identity in default system rules
         List<Rule> list = defaultSystemRules.get(key.getIdentity());
 
@@ -908,7 +908,7 @@ public class RuleContext {
      * Synchronously notifies vocabulary observers (ontology policy bridge);
      * an observer exception propagates and rejects the rule registration.
      */
-    private void fireVocabularyCheck(Rule rule) {
+    private void fireVocabularyCheck(SecurityURIHeader key, Rule rule) {
         if (ruleVocabularyCheckEvent == null) {
             return; // constructed outside CDI (tests)
         }
@@ -917,11 +917,9 @@ public class RuleContext {
         if (rule.getPostconditionScript() != null) sources.add(rule.getPostconditionScript());
         if (rule.getAndFilterString() != null) sources.add(rule.getAndFilterString());
         if (rule.getOrFilterString() != null) sources.add(rule.getOrFilterString());
-        if (sources.isEmpty()) {
-            return;
-        }
         ruleVocabularyCheckEvent.fire(
-                new com.e2eq.framework.model.securityrules.RuleVocabularyCheck(rule.getName(), sources));
+                new com.e2eq.framework.model.securityrules.RuleVocabularyCheck(
+                        rule.getName(), sources, key.getArea(), key.getFunctionalDomain(), key.getAction()));
     }
 
     /**

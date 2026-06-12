@@ -35,8 +35,17 @@ public class PolicyVocabularyGuard {
     @Inject
     TenantOntologyRegistryProvider registryProvider;
 
+    @Inject
+    com.e2eq.framework.model.persistent.morphia.FunctionalDomainRepo functionalDomainRepo;
+
     @ConfigProperty(name = "quantum.ontology.rule-vocabulary-validation.enabled", defaultValue = "true")
     boolean enabled;
+
+    @ConfigProperty(name = "quantum.ontology.functional-domain-validation.enabled", defaultValue = "true")
+    boolean functionalDomainValidationEnabled;
+
+    /** Lazy snapshot of the FunctionalDomain registry (domain refName -> action refNames). */
+    private volatile java.util.Map<String, java.util.Set<String>> functionalDomainSnapshot;
 
     void onRuleVocabularyCheck(@Observes RuleVocabularyCheck check) {
         if (!enabled) {
@@ -48,17 +57,90 @@ public class PolicyVocabularyGuard {
         } catch (RuntimeException e) {
             Log.debugf("Skipping rule vocabulary check for '%s': registry unavailable (%s)",
                     check.ruleName(), e.getMessage());
-            return;
+            registry = null;
         }
         check(check, registry);
+        if (functionalDomainValidationEnabled) {
+            checkFunctionalDomain(check, functionalDomainSnapshot());
+        }
     }
 
-    /** Core logic, separated from CDI resolution for direct unit testing. */
+    /** Core predicate logic, separated from CDI resolution for direct unit testing. */
     static void check(RuleVocabularyCheck check, OntologyRegistry registry) {
         if (registry == null || registry.properties().isEmpty()) {
             return; // no ontology vocabulary configured — nothing to validate against
         }
         new RuleVocabularyValidator(registry).validateOrThrow(List.of(
                 new RuleVocabularyValidator.RuleSource(check.ruleName(), check.scriptsAndFilters())));
+    }
+
+    /**
+     * Validates the rule header's functionalDomain/action axes against the
+     * FunctionalDomain registry. An EMPTY registry skips validation entirely
+     * (the registry is opt-in); wildcards and blank axes always pass.
+     */
+    static void checkFunctionalDomain(RuleVocabularyCheck check,
+                                      java.util.Map<String, java.util.Set<String>> domainActions) {
+        if (domainActions == null || domainActions.isEmpty()) {
+            return;
+        }
+        String domain = normalizeAxis(check.functionalDomain());
+        if (domain == null) {
+            return; // wildcard or unset
+        }
+        java.util.Set<String> actions = domainActions.get(domain);
+        if (actions == null) {
+            throw new IllegalStateException(
+                    "rule '" + check.ruleName() + "' references unknown functional domain '"
+                            + check.functionalDomain() + "' (registry declares: "
+                            + new java.util.TreeSet<>(domainActions.keySet()) + ")");
+        }
+        String action = normalizeAxis(check.action());
+        if (action != null && !actions.contains(action)) {
+            throw new IllegalStateException(
+                    "rule '" + check.ruleName() + "' references unknown action '" + check.action()
+                            + "' for functional domain '" + check.functionalDomain()
+                            + "' (declared actions: " + new java.util.TreeSet<>(actions) + ")");
+        }
+    }
+
+    private static String normalizeAxis(String value) {
+        if (value == null || value.isBlank() || value.equals("*")) {
+            return null;
+        }
+        return value.trim().toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private java.util.Map<String, java.util.Set<String>> functionalDomainSnapshot() {
+        java.util.Map<String, java.util.Set<String>> snapshot = functionalDomainSnapshot;
+        if (snapshot != null) {
+            return snapshot;
+        }
+        try {
+            java.util.Map<String, java.util.Set<String>> loaded = new java.util.HashMap<>();
+            for (var domain : functionalDomainRepo.getAllList()) {
+                java.util.Set<String> actions = new java.util.HashSet<>();
+                if (domain.getFunctionalActions() != null) {
+                    domain.getFunctionalActions().forEach(action -> {
+                        if (action.getRefName() != null) {
+                            actions.add(action.getRefName().toLowerCase(java.util.Locale.ROOT));
+                        }
+                    });
+                }
+                if (domain.getRefName() != null) {
+                    loaded.put(domain.getRefName().toLowerCase(java.util.Locale.ROOT), actions);
+                }
+            }
+            functionalDomainSnapshot = loaded;
+            return loaded;
+        } catch (RuntimeException e) {
+            Log.debugf("FunctionalDomain registry unavailable; skipping domain/action validation (%s)", e.getMessage());
+            return java.util.Map.of();
+        }
+    }
+
+    /** Invalidate the cached FunctionalDomain snapshot (e.g. after seeding). */
+    public void invalidateFunctionalDomainSnapshot() {
+        functionalDomainSnapshot = null;
     }
 }
