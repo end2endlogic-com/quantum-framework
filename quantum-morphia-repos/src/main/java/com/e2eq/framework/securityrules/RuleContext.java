@@ -55,6 +55,14 @@ public class RuleContext {
 
     @Inject
     Instance<AccessListResolver> resolvers;
+
+    /**
+     * Fired for every registered rule so ontology-aware observers can
+     * validate the vocabulary its scripts/filters reference (fail fast on
+     * unknown predicates). Null when RuleContext is constructed outside CDI.
+     */
+    @Inject
+    jakarta.enterprise.event.Event<com.e2eq.framework.model.securityrules.RuleVocabularyCheck> ruleVocabularyCheckEvent;
      @Inject
      SecurityUtils securityUtils;
 
@@ -883,6 +891,7 @@ public class RuleContext {
      * @param rule the rule itself
      */
     public void addRule(@NotNull @Valid SecurityURIHeader key, @Valid @NotNull Rule rule) {
+        fireVocabularyCheck(rule);
         // Store rules by identity in default system rules
         List<Rule> list = defaultSystemRules.get(key.getIdentity());
 
@@ -893,6 +902,26 @@ public class RuleContext {
 
         list.add(rule);
 
+    }
+
+    /**
+     * Synchronously notifies vocabulary observers (ontology policy bridge);
+     * an observer exception propagates and rejects the rule registration.
+     */
+    private void fireVocabularyCheck(Rule rule) {
+        if (ruleVocabularyCheckEvent == null) {
+            return; // constructed outside CDI (tests)
+        }
+        List<String> sources = new ArrayList<>(4);
+        if (rule.getPreconditionScript() != null) sources.add(rule.getPreconditionScript());
+        if (rule.getPostconditionScript() != null) sources.add(rule.getPostconditionScript());
+        if (rule.getAndFilterString() != null) sources.add(rule.getAndFilterString());
+        if (rule.getOrFilterString() != null) sources.add(rule.getOrFilterString());
+        if (sources.isEmpty()) {
+            return;
+        }
+        ruleVocabularyCheckEvent.fire(
+                new com.e2eq.framework.model.securityrules.RuleVocabularyCheck(rule.getName(), sources));
     }
 
     /**
