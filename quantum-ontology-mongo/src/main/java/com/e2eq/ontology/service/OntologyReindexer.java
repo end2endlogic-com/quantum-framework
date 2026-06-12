@@ -431,7 +431,7 @@ public class OntologyReindexer {
     }
 
     /** Pack id from the observed YAML source path, e.g. "/ontology.yaml" -> "ontology". */
-    static String packIdFromSource(String source) {
+    public static String packIdFromSource(String source) {
         if (source == null || source.isBlank() || source.equals("<none>")) {
             return "default";
         }

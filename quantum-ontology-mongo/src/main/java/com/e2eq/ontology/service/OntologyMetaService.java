@@ -82,6 +82,24 @@ public class OntologyMetaService {
                 realmId, packId, version, canonicalHash);
     }
 
+    /**
+     * Backfill the canonical pack pin for realms upgraded before pack pinning
+     * existed (canonicalTboxHash null). No-op when already recorded; never
+     * touches the legacy yamlHash/tboxHash drift-detection fields, so this
+     * cannot trigger a spurious reindex.
+     */
+    public void backfillCanonicalHashIfMissing(String realmId, com.e2eq.ontology.core.OntologyRegistry.TBox tbox,
+                                               String packId) {
+        Optional<OntologyMeta> meta = getMeta(realmId);
+        boolean missing = meta.map(m -> m.getCanonicalTboxHash() == null || m.getCanonicalTboxHash().isBlank())
+                .orElse(false); // no meta document yet: the first reindex will record the pin
+        if (!missing) {
+            return;
+        }
+        Integer version = meta.map(OntologyMeta::getYamlVersion).orElse(null);
+        recordPackPin(realmId, tbox, packId, version);
+    }
+
     public void clearReindexRequired() {
         // Use atomic update instead of read-modify-write
         metaRepo.getSingleton().ifPresent(m -> 
