@@ -18,9 +18,11 @@ import java.util.stream.Collectors;
  */
 public final class YamlOntologyLoader {
 
-    // DTOs mirroring YAML
+    // DTOs mirroring YAML (unknown root fields like openness/source are
+    // tolerated so helixor-ontologies pack files load directly)
     public record YOntology(Integer version, List<YClass> classes, List<YProperty> properties, List<YChain> chains) {}
-    public record YClass(String id) {}
+    public record YClass(String id, List<String> parents, List<String> subClassOf,
+                         String label, List<String> aliases, Map<String, Object> metadata) {}
     public record YProperty(
             String id,
             String domain,
@@ -33,11 +35,15 @@ public final class YamlOntologyLoader {
             Boolean symmetric,
             List<String> subPropertyOf,
             // Mark property as inferred/calculated (e.g., inverse or chain-implied)
-            Boolean inferred
+            Boolean inferred,
+            String label,
+            List<String> aliases,
+            Map<String, Object> metadata
     ) {}
     public record YChain(List<String> chain, String implies) {}
 
-    private final ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
+    private final ObjectMapper mapper = new ObjectMapper(new YAMLFactory())
+            .configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     public TBox loadFromClasspath(String resourcePath) throws IOException {
         try (InputStream in = getClass().getResourceAsStream(resourcePath)) {
@@ -59,7 +65,14 @@ public final class YamlOntologyLoader {
     private TBox toTBox(YOntology y) {
         List<YClass> yClasses = Optional.ofNullable(y.classes()).orElse(List.of());
         Map<String, ClassDef> classes = yClasses.stream()
-                .collect(Collectors.toMap(YClass::id, c -> new ClassDef(c.id(), new LinkedHashSet<>(), Set.of(), Set.of()), (a,b)->a, LinkedHashMap::new));
+                .collect(Collectors.toMap(YClass::id, c -> new ClassDef(
+                        c.id(),
+                        new LinkedHashSet<>(Optional.ofNullable(c.parents()).orElse(Optional.ofNullable(c.subClassOf()).orElse(List.of()))),
+                        Set.of(),
+                        Set.of(),
+                        c.label(),
+                        new LinkedHashSet<>(Optional.ofNullable(c.aliases()).orElse(List.of())),
+                        Optional.ofNullable(c.metadata()).orElse(Map.of())), (a,b)->a, LinkedHashMap::new));
 
         Map<String, PropertyDef> props = new LinkedHashMap<>();
         for (YProperty p : Optional.ofNullable(y.properties()).orElse(List.of())) {
@@ -90,7 +103,10 @@ public final class YamlOntologyLoader {
                     Boolean.TRUE.equals(p.symmetric()),
                     functional,
                     supers,
-                    isInferred
+                    isInferred,
+                    p.label(),
+                    new LinkedHashSet<>(Optional.ofNullable(p.aliases()).orElse(List.of())),
+                    Optional.ofNullable(p.metadata()).orElse(Map.of())
             );
             props.put(p.id(), def);
         }
