@@ -30,7 +30,8 @@ class VectorConformanceTest {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final List<String> VECTORS = List.of(
             "chain", "closed-rejection", "combined", "hash-golden",
-            "inverse", "subpropertyof", "symmetric", "transitive");
+            "inverse", "subpropertyof", "symmetric", "transitive",
+            "typing-precedence");
 
     @TestFactory
     List<DynamicTest> conformanceVectors() {

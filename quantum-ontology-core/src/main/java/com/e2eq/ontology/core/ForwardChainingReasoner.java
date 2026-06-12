@@ -322,18 +322,22 @@ public final class ForwardChainingReasoner implements Reasoner {
         return resolveTypeOptional(declared, nodeTypes, nodeId, fallback);
     }
 
+    // Typing precedence (pinned by the typing-precedence conformance vector):
+    // the OBSERVED node type wins; the property's declared domain/range is a
+    // fallback for nodes with no observed type. Declared-first would erase
+    // subclass information from inferred edges.
     private String resolveType(Optional<String> declared,
                                Map<String, String> nodeTypes,
                                String nodeId,
                                String fallback,
                                String role,
                                String property) {
-        if (declared.isPresent() && !declared.get().isBlank()) {
-            return declared.get();
-        }
         String fromMap = nodeTypes.get(nodeId);
         if (fromMap != null && !fromMap.isBlank()) {
             return fromMap;
+        }
+        if (declared.isPresent() && !declared.get().isBlank()) {
+            return declared.get();
         }
         if (fallback != null && !fallback.isBlank()) {
             return fallback;
@@ -345,12 +349,12 @@ public final class ForwardChainingReasoner implements Reasoner {
                                        Map<String, String> nodeTypes,
                                        String nodeId,
                                        String fallback) {
-        if (declared.isPresent() && !declared.get().isBlank()) {
-            return declared.get();
-        }
         String fromMap = nodeTypes.get(nodeId);
         if (fromMap != null && !fromMap.isBlank()) {
             return fromMap;
+        }
+        if (declared.isPresent() && !declared.get().isBlank()) {
+            return declared.get();
         }
         if (fallback != null && !fallback.isBlank()) {
             return fallback;
