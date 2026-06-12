@@ -83,6 +83,23 @@ public class OntologyMetaRepo extends MorphiaRepo<OntologyMeta> {
     }
 
     /**
+     * Record which shared ontology pack this realm enforces (id@version +
+     * canonical cross-stack hash). Upsert, race-safe; leaves the legacy
+     * yamlHash/tboxHash fields untouched.
+     */
+    public OntologyMeta recordPackPin(String realmId, String packId, String packVersion, String canonicalTboxHash) {
+        dev.morphia.ModifyOptions opts = new dev.morphia.ModifyOptions()
+                .upsert(true)
+                .returnDocument(ReturnDocument.AFTER);
+        return ds(realmId).find(OntologyMeta.class)
+                .filter(Filters.eq("refName", "global"))
+                .modify(opts, UpdateOperators.set("packId", packId),
+                        UpdateOperators.set("packVersion", packVersion),
+                        UpdateOperators.set("canonicalTboxHash", canonicalTboxHash),
+                        UpdateOperators.set("updatedAt", new Date()));
+    }
+
+    /**
      * Get the datastore for the current security context realm.
      * Uses getSecurityContextRealmId() to derive realm from security context,
      * falling back to defaultRealm if no security context is available.

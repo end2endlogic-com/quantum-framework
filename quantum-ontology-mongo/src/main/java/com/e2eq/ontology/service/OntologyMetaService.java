@@ -65,6 +65,23 @@ public class OntologyMetaService {
         metaRepo.markApplied(realmId, yamlHash, tboxHash, yamlVersion);
     }
 
+    /**
+     * Record the pack pin for a realm: pack identity plus the cross-stack
+     * canonical TBox hash (CanonicalTBoxHasher / HASH_SPEC.md), so a running
+     * realm can prove which vocabulary version it enforces.
+     */
+    public void recordPackPin(String realmId, com.e2eq.ontology.core.OntologyRegistry.TBox tbox,
+                              String packId, Integer packVersion) {
+        int version = packVersion != null ? packVersion : 1;
+        String canonicalHash = com.e2eq.ontology.core.CanonicalTBoxHasher.hashTBox(
+                tbox,
+                new com.e2eq.ontology.core.CanonicalTBoxHasher.PackMetadata(
+                        packId, packId, version, "closed", null, null));
+        metaRepo.recordPackPin(realmId, packId, String.valueOf(version), canonicalHash);
+        Log.infof("Recorded ontology pack pin for realm %s: %s@%s canonicalTboxHash=%s",
+                realmId, packId, version, canonicalHash);
+    }
+
     public void clearReindexRequired() {
         // Use atomic update instead of read-modify-write
         metaRepo.getSingleton().ifPresent(m -> 
