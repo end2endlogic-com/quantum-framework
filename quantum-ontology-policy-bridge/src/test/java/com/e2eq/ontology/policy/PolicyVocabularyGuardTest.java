@@ -62,4 +62,37 @@ class PolicyVocabularyGuardTest {
 
         assertDoesNotThrow(() -> PolicyVocabularyGuard.check(check, registryWith("canSeeLocation")));
     }
+
+    @Test
+    void functionalDomainValidationSkipsWhenRegistryEmptyAndPassesWildcards() {
+        RuleVocabularyCheck anyDomain = new RuleVocabularyCheck("r", List.of(), "sales", "anything", "view");
+        assertDoesNotThrow(() -> PolicyVocabularyGuard.checkFunctionalDomain(anyDomain, Map.of()));
+
+        Map<String, Set<String>> registry = Map.of("order_line", Set.of("view", "create"));
+        RuleVocabularyCheck wildcard = new RuleVocabularyCheck("r", List.of(), "*", "*", "*");
+        assertDoesNotThrow(() -> PolicyVocabularyGuard.checkFunctionalDomain(wildcard, registry));
+    }
+
+    @Test
+    void functionalDomainValidationAcceptsDeclaredDomainAndAction() {
+        Map<String, Set<String>> registry = Map.of("order_line", Set.of("view", "create"));
+        RuleVocabularyCheck check = new RuleVocabularyCheck("r", List.of(), "orders", "Order_Line", "VIEW");
+
+        assertDoesNotThrow(() -> PolicyVocabularyGuard.checkFunctionalDomain(check, registry));
+    }
+
+    @Test
+    void functionalDomainValidationRejectsUnknownDomainAndAction() {
+        Map<String, Set<String>> registry = Map.of("order_line", Set.of("view", "create"));
+
+        RuleVocabularyCheck badDomain = new RuleVocabularyCheck("stale", List.of(), "orders", "order_lines", "view");
+        IllegalStateException domainFailure = assertThrows(IllegalStateException.class,
+                () -> PolicyVocabularyGuard.checkFunctionalDomain(badDomain, registry));
+        assertTrue(domainFailure.getMessage().contains("order_lines"));
+
+        RuleVocabularyCheck badAction = new RuleVocabularyCheck("stale", List.of(), "orders", "order_line", "approve");
+        IllegalStateException actionFailure = assertThrows(IllegalStateException.class,
+                () -> PolicyVocabularyGuard.checkFunctionalDomain(badAction, registry));
+        assertTrue(actionFailure.getMessage().contains("approve"));
+    }
 }
