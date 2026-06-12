@@ -1082,17 +1082,25 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         if (ids == null || ids.isEmpty()) {
             filterStack.push(Filters.eq("_id", "__none__"));
         } else {
-            // Convert String IDs to ObjectIds for proper matching against _id field
+            // Edge ids may be ObjectId hex strings (annotation-extracted edges)
+            // or refNames (business-keyed edges): match each against the field
+            // it can actually equal.
             List<Object> objectIds = new ArrayList<>();
+            List<String> refNames = new ArrayList<>();
             for (String id : ids) {
                 try {
                     objectIds.add(new ObjectId(id));
                 } catch (IllegalArgumentException e) {
-                    // If not a valid ObjectId, use as-is (might be refName-based key)
-                    objectIds.add(id);
+                    refNames.add(id);
                 }
             }
-            filterStack.push(Filters.in("_id", objectIds));
+            if (!objectIds.isEmpty() && !refNames.isEmpty()) {
+                filterStack.push(Filters.or(Filters.in("_id", objectIds), Filters.in("refName", refNames)));
+            } else if (!refNames.isEmpty()) {
+                filterStack.push(Filters.in("refName", refNames));
+            } else {
+                filterStack.push(Filters.in("_id", objectIds));
+            }
         }
     }
 
@@ -1170,17 +1178,25 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         if (ids == null || ids.isEmpty()) {
             filterStack.push(Filters.eq("_id", "__none__"));
         } else {
-            // Convert String IDs to ObjectIds for proper matching against _id field
+            // Edge ids may be ObjectId hex strings (annotation-extracted edges)
+            // or refNames (business-keyed edges): match each against the field
+            // it can actually equal.
             List<Object> objectIds = new ArrayList<>();
+            List<String> refNames = new ArrayList<>();
             for (String id : ids) {
                 try {
                     objectIds.add(new ObjectId(id));
                 } catch (IllegalArgumentException e) {
-                    // If not a valid ObjectId, use as-is (might be refName-based key)
-                    objectIds.add(id);
+                    refNames.add(id);
                 }
             }
-            filterStack.push(Filters.in("_id", objectIds));
+            if (!objectIds.isEmpty() && !refNames.isEmpty()) {
+                filterStack.push(Filters.or(Filters.in("_id", objectIds), Filters.in("refName", refNames)));
+            } else if (!refNames.isEmpty()) {
+                filterStack.push(Filters.in("refName", refNames));
+            } else {
+                filterStack.push(Filters.in("_id", objectIds));
+            }
         }
     }
 
@@ -1291,17 +1307,25 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         if (ids == null || ids.isEmpty()) {
             filterStack.push(Filters.eq("_id", "__none__"));
         } else {
-            // Convert String IDs to ObjectIds for proper matching against _id field
+            // Edge ids may be ObjectId hex strings (annotation-extracted edges)
+            // or refNames (business-keyed edges): match each against the field
+            // it can actually equal.
             List<Object> objectIds = new ArrayList<>();
+            List<String> refNames = new ArrayList<>();
             for (String id : ids) {
                 try {
                     objectIds.add(new ObjectId(id));
                 } catch (IllegalArgumentException e) {
-                    // If not a valid ObjectId, use as-is (might be refName-based key)
-                    objectIds.add(id);
+                    refNames.add(id);
                 }
             }
-            filterStack.push(Filters.in("_id", objectIds));
+            if (!objectIds.isEmpty() && !refNames.isEmpty()) {
+                filterStack.push(Filters.or(Filters.in("_id", objectIds), Filters.in("refName", refNames)));
+            } else if (!refNames.isEmpty()) {
+                filterStack.push(Filters.in("refName", refNames));
+            } else {
+                filterStack.push(Filters.in("_id", objectIds));
+            }
         }
     }
 

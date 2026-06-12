@@ -43,6 +43,7 @@ public class FulfillmentCollaborationIT {
     @Inject OntologyEdgeRepo edgeRepo;
     @Inject ListQueryRewriter queryRewriter;
     @Inject MorphiaDatastore datastore;
+    @Inject com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper dataStoreWrapper;
 
     private static final String TENANT = "fulfillment-demo";
     private static final String CUSTOMER_ORG = "acme.com";
@@ -55,6 +56,7 @@ public class FulfillmentCollaborationIT {
     @BeforeEach
     public void seedRealm() {
         edgeRepo.deleteAll();
+        dataStoreWrapper.getDataStore("fulfillment-demo").getDatabase().getCollection("edges").drop();
         datastore.getDatabase().getCollection("demo_sales_orders").drop();
         datastore.getDatabase().getCollection("demo_fulfillment_plans").drop();
 

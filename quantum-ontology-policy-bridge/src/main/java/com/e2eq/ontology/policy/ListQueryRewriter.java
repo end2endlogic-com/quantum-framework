@@ -77,13 +77,37 @@ public class ListQueryRewriter {
      * @param dstId      the destination entity ID
      * @return a Filter that matches entities with the edge
      */
+    /**
+     * Edge src/dst ids may be ObjectId hex strings (annotation-extracted
+     * production edges) or refNames (seeded/business-keyed edges). Match each
+     * against the field it can actually equal — an id never matches both.
+     */
+    static Filter idsFilter(Set<String> ids) {
+        java.util.List<Object> objectIds = new java.util.ArrayList<>();
+        java.util.List<String> refNames = new java.util.ArrayList<>();
+        for (String id : ids) {
+            if (org.bson.types.ObjectId.isValid(id)) {
+                objectIds.add(new org.bson.types.ObjectId(id));
+            } else {
+                refNames.add(id);
+            }
+        }
+        if (!objectIds.isEmpty() && !refNames.isEmpty()) {
+            return Filters.or(Filters.in("_id", objectIds), Filters.in("refName", refNames));
+        }
+        if (!refNames.isEmpty()) {
+            return Filters.in("refName", refNames);
+        }
+        return Filters.in("_id", objectIds);
+    }
+
     public Filter hasEdge(DataDomain dataDomain, String predicate, String dstId) {
         Set<String> srcIds = srcIdsByDst(dataDomain, predicate, dstId);
         if (srcIds.isEmpty()) {
             // force empty result: impossible equality on _id
             return Filters.eq("_id", "__none__");
         }
-        return Filters.in("_id", srcIds);
+        return idsFilter(srcIds);
     }
 
     /**
@@ -99,7 +123,7 @@ public class ListQueryRewriter {
         if (dstIds.isEmpty()) {
             return Filters.eq("_id", "__none__");
         }
-        return Filters.in("_id", dstIds);
+        return idsFilter(dstIds);
     }
 
     /**
@@ -144,7 +168,7 @@ public class ListQueryRewriter {
         if (srcIds.isEmpty()) {
             return Filters.eq("_id", "__none__");
         }
-        return Filters.in("_id", srcIds);
+        return idsFilter(srcIds);
     }
 
     /**
@@ -174,7 +198,7 @@ public class ListQueryRewriter {
                 return Filters.eq("_id", "__none__");
             }
         }
-        return Filters.in("_id", intersection);
+        return idsFilter(intersection);
     }
 
     /**
@@ -209,7 +233,7 @@ public class ListQueryRewriter {
             // nothing to exclude
             return Filters.exists("_id");
         }
-        return Filters.nin("_id", srcIds);
+        return Filters.nor(idsFilter(srcIds));
     }
 
     /**
