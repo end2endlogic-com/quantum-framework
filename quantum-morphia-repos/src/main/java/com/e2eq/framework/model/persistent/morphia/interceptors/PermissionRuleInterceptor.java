@@ -42,6 +42,13 @@ public class PermissionRuleInterceptor implements EntityListener {
          return;
       }
 
+      if (SecurityContext.isIgnoringRules()) {
+         if (Log.isDebugEnabled()) {
+            Log.debugf("[PermissionRuleInterceptor] ignore-rules mode enabled; skipping check for %s", entity.getClass().getSimpleName());
+         }
+         return;
+      }
+
       if (SecurityContext.getResourceContext().isPresent()) {
          // Bypass when a test seeder marks the operation explicitly as a seed write
          ResourceContext rc = SecurityContext.getResourceContext().get();

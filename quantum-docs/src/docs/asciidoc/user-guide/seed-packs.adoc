@@ -53,6 +53,55 @@ The next section expands on why seed packs are beneficial and how to use them ef
 . The `SeedRegistry` (backed by `_seed_registry` via `MongoSeedRegistry`) records the checksum so
   unchanged datasets are skipped on later runs.
 
+== Seed packs vs BootstrapPacks
+
+Seed packs and BootstrapPacks solve adjacent problems, but they are not interchangeable.
+
+[cols="1,2,2", options="header"]
+|===
+| Question | Seed packs | BootstrapPacks
+
+| What they manage
+| Deterministic tenant data
+| Operational setup steps
+
+| Main representation
+| YAML manifest plus JSON/NDJSON datasets
+| Java pack definitions plus step handlers
+
+| Best use cases
+| Code lists, policies, defaults, baseline reference records
+| Calling services, validating prerequisites, external side effects, multi-step orchestration
+
+| Idempotency style
+| Natural keys plus dataset checksum tracking
+| Handler-driven behavior using apply modes and step policies
+|===
+
+Use a seed pack when the desired end state is "these records should exist in the realm."
+
+Examples:
+
+- install baseline code lists
+- create default security policies
+- ship default surveys or catalog metadata
+
+Use a BootstrapPack when the desired end state is "these setup actions should run in order."
+
+Examples:
+
+- invoke an application service to create a workspace
+- call an external registration endpoint
+- verify that a downstream dependency has been configured
+- publish already-seeded workflow metadata to another platform
+
+In practice, many products use both:
+
+- seed packs establish the durable tenant data model
+- BootstrapPacks orchestrate the operational work that sits around that data
+
+See xref:bootstrap-packs.adoc[Bootstrap Packs] for the runtime, SPI, startup, and admin API details.
+
 == Manifest quick reference
 
 [source,yaml]

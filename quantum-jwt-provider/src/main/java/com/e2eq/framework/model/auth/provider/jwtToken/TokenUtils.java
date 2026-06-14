@@ -113,6 +113,26 @@ public class TokenUtils {
 											 Set<String> groups,
 											 long expiresAt,
 											 String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+		// Back-compat: no tenant context (subject + groups only)
+		return generateUserToken(subject, null, groups, null, null, null, null, expiresAt, issuer);
+	}
+
+	/**
+	 * Tenant-aware token: projects the principal's DomainContext (realm, tenant,
+	 * org, account) plus userId into claims so relying parties (a consumer's
+	 * claims_to_principal, Quantum's IdentityAssembler) can scope the token to
+	 * its tenant. A centralized issuer MUST carry these — without them every
+	 * token is tenant-blind.
+	 */
+	public static String generateUserToken ( String subject,
+											 String userId,
+											 Set<String> groups,
+											 String realm,
+											 String tenantId,
+											 String orgRefName,
+											 String accountNum,
+											 long expiresAt,
+											 String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
 
 		Objects.requireNonNull(subject, "subject cannot be null");
 		Objects.requireNonNull(issuer, "Issuer cannot be null");
@@ -134,6 +154,13 @@ public class TokenUtils {
 		claimsBuilder.expiresAt(expiresAt);
 		claimsBuilder.groups(groups);
 		claimsBuilder.claim("scope", AUTH_SCOPE);
+
+		// Tenant projection from the credential's DomainContext (omit blanks)
+		if (userId != null && !userId.isBlank())         claimsBuilder.claim("userId", userId);
+		if (realm != null && !realm.isBlank())           claimsBuilder.claim("realm", realm);
+		if (tenantId != null && !tenantId.isBlank())     claimsBuilder.claim("tenantId", tenantId);
+		if (orgRefName != null && !orgRefName.isBlank()) claimsBuilder.claim("orgRefName", orgRefName);
+		if (accountNum != null && !accountNum.isBlank()) claimsBuilder.claim("accountNum", accountNum);
 
 		return claimsBuilder.jws().keyId(privateKeyLocation).sign(privateKey);
 	}

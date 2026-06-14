@@ -1,0 +1,13 @@
+seedPack: tracked-dbref-demo
+version: 1.0.0
+datasets:
+  - collection: ChildModel
+    file: classpath:seed-packs/tracked-dbref-demo/datasets/children.ndjson
+    naturalKey: [ refName ]
+    upsert: true
+    modelClass: com.e2eq.framework.test.ChildModel
+  - collection: ParentModel
+    file: classpath:seed-packs/tracked-dbref-demo/datasets/parents.ndjson
+    naturalKey: [ refName ]
+    upsert: true
+    modelClass: com.e2eq.framework.test.ParentModel

@@ -1,0 +1,117 @@
+openapi: 3.0.3
+info:
+  title: Quantum Control-Plane API (tenant -> system seam)
+  version: 1.0.0
+  description: >
+    The queries a tier-2 (quantum.mode=remote) deployment makes against the
+    control plane (quantum-system): realm catalog resolution and membership/
+    role resolution for routing. Identity is NOT here by design — the tenant
+    plane validates platform JWTs against the control plane's JWKS
+    (/oauth/jwks); credential material never crosses this seam. Java
+    consumers: RemoteSystemDirectory / remote RealmMembershipService in
+    quantum-system implement their contracts over this API.
+servers:
+  - url: http://quantum-system:8080
+security:
+  - bearerAuth: []
+paths:
+  /control/realms/by-domain/{emailDomain}:
+    get:
+      operationId: findRealmByEmailDomain
+      parameters:
+        - { name: emailDomain, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: catalog entry
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RealmCatalogEntry' }
+        '404': { description: no realm for that domain }
+  /control/realms/{refName}:
+    get:
+      operationId: findRealmByRefName
+      parameters:
+        - { name: refName, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: catalog entry
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RealmCatalogEntry' }
+        '404': { description: unknown realm }
+    put:
+      operationId: registerRealm
+      summary: Create or update a realm catalog entry (owner-plane operation)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RealmCatalogEntry' }
+      responses:
+        '200':
+          description: registered entry
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RealmCatalogEntry' }
+  /control/realms/{refName}/members:
+    get:
+      operationId: membersOfRealm
+      parameters:
+        - { name: refName, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: org/account memberships (one owner, N participants)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/RealmMembershipEntry' }
+  /control/users/{userId}/realms:
+    get:
+      operationId: realmsForUser
+      parameters:
+        - { name: userId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: the user's per-realm role assignments
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/UserRealmRoleEntry' }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  schemas:
+    RealmCatalogEntry:
+      type: object
+      required: [refName]
+      properties:
+        refName: { type: string }
+        displayName: { type: string }
+        databaseName: { type: string }
+        emailDomain: { type: string }
+        tenantId: { type: string }
+        orgRefName: { type: string }
+        accountNumber: { type: string }
+        connectionString: { type: string, description: "realm datastore address; control plane may withhold for non-owner callers" }
+        active: { type: boolean, default: true }
+    RealmMembershipEntry:
+      type: object
+      required: [realmRefName, organizationRefName, membershipRole]
+      properties:
+        realmRefName: { type: string }
+        organizationRefName: { type: string }
+        accountId: { type: string }
+        tenantId: { type: string }
+        membershipRole: { type: string, enum: [owner, participant] }
+        participationStatus: { type: string }
+    UserRealmRoleEntry:
+      type: object
+      required: [userId, realmRefName, roles]
+      properties:
+        userId: { type: string }
+        realmRefName: { type: string }
+        roles: { type: array, items: { type: string } }
+        sponsoringOrgRefName: { type: string }
+        status: { type: string, enum: [active, invited, suspended] }

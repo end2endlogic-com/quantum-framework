@@ -25,6 +25,17 @@ public class SeedAdminResourceIT {
                 .contentType(ContentType.JSON)
                 .body("size()", greaterThanOrEqualTo(0));
 
+        // 1b) Verification should succeed and return a report structure before apply
+        given()
+            .when()
+                .get("/admin/seeds/verify/{realm}", REALM)
+            .then()
+                .statusCode(200)
+                .contentType(ContentType.JSON)
+                .body("realm", equalTo(REALM))
+                .body("packs", notNullValue())
+                .body("issueCount", greaterThanOrEqualTo(0));
+
         // 2) Apply all (filtered by test property quantum.seed.apply.filter=demo-seed)
         given()
             .when()

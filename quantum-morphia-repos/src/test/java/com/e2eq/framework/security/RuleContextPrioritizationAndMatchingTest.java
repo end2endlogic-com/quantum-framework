@@ -75,6 +75,20 @@ public class RuleContextPrioritizationAndMatchingTest {
         assertFinal("security", "group", "view", RuleEffect.DENY);
     }
 
+    @Test
+    void scoped_snapshot_is_enabled_when_materialized_without_compiled_index() {
+        Rule viewAllow = rule("view-allow", header("user", "customs", "perspective", "view"), RuleEffect.ALLOW, 10, false);
+        ruleContext.addRule(viewAllow.getSecurityURI().getHeader(), viewAllow);
+
+        DataDomain requested = new DataDomain("acme.com", "A1", "tenant-1", 0, "u1@end2endlogic.com");
+
+        var snapshot = ruleContext.exportScopedAccessMatrixForIdentities(java.util.List.of("user"), requested);
+
+        assertTrue(snapshot.isEnabled(), "Scoped snapshots should be client-usable even when the compiled index is off");
+        assertEquals("org=acme.com|acct=A1|tenant=tenant-1|seg=0|owner=u1@end2endlogic.com", snapshot.getRequestedScope());
+        assertFalse(snapshot.getScopes().isEmpty(), "A materialized scope matrix should be exported");
+    }
+
     private void assertFinal(String area, String domain, String action, RuleEffect expected) {
         ResourceContext rc = new ResourceContext.Builder()
                 .withArea(area)

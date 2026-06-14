@@ -53,6 +53,7 @@ public final class YamlRuleMapper {
                     .withAndFilterString(yr.andFilterString)
                     .withOrFilterString(yr.orFilterString)
                     .withJoinOp(parseJoinOp(yr.joinOp))
+                    .withExcludedFields(yr.excludedFields)
                     .build();
 
             out.addAll(RuleExpander.expand(template, ch));

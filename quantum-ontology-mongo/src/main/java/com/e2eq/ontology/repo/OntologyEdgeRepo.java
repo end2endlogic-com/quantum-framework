@@ -99,6 +99,24 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
     }
 
     /**
+     * Resolves the datastore realm from a bare tenantId (no DataDomain available).
+     *
+     * Mirrors {@link #resolveRealmId(DataDomain)}: the active security-context realm is
+     * authoritative when a principal has been established, otherwise fall back to the
+     * historical tenantId-to-realm conversion. Used by the grammar hasEdge(...) path,
+     * which only carries a tenantId (from pTenantId) and cannot supply org/account.
+     */
+    private String resolveRealmId(String tenantId) {
+        if (SecurityContext.getPrincipalContext().isPresent()) {
+            String realm = SecurityContext.getPrincipalContext().get().getDefaultRealm();
+            if (realm != null && !realm.isBlank()) {
+                return realm;
+            }
+        }
+        return tenantIdToRealmId(tenantId);
+    }
+
+    /**
      * Validates that the DataDomain has all required fields for scoping.
      * @throws IllegalArgumentException if any required field is missing
      */
@@ -613,6 +631,28 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
         for (Filter f : dataDomainFilters(dataDomain)) {
             q.filter(f);
         }
+        for (OntologyEdge e : q.filter(Filters.eq("p", p)).filter(Filters.eq("dst", dst))) {
+            ids.add(e.getSrc());
+        }
+        return ids;
+    }
+
+    /**
+     * Tenant/realm-scoped source lookup for the grammar {@code hasEdge(predicate, dst)} /
+     * {@code hasOutgoingEdge(predicate, dst)} path.
+     *
+     * The query-rewrite listener (QueryToFilterListener) only carries a tenantId — it has no
+     * full DataDomain, so it cannot scope by org/account. This resolves the realm from the
+     * tenant and matches edges by predicate + destination within that tenant realm, returning
+     * the source ids. Org/account isolation is still enforced by the outer collection query
+     * that consumes the resulting id/refName filter, so this does not widen the caller's scope.
+     */
+    public Set<String> srcIdsByDst(String tenantId, String p, String dst) {
+        Set<String> ids = new HashSet<>();
+        if (tenantId == null || tenantId.isBlank()) {
+            return ids;
+        }
+        Query<OntologyEdge> q = ds(resolveRealmId(tenantId)).find(OntologyEdge.class);
         for (OntologyEdge e : q.filter(Filters.eq("p", p)).filter(Filters.eq("dst", dst))) {
             ids.add(e.getSrc());
         }

@@ -136,6 +136,7 @@ public final class SeedPackManifest {
         private Boolean upsert;
         private List<Index> requiredIndexes;
         private List<Transform> transforms;
+        private List<ReferenceBinding> references;
         // Optional: fully qualified class name of the UnversionedBaseModel to persist via Morphia
         private String modelClass;
         // Optional: fully qualified class name of the Morphia repository bean to use directly
@@ -167,6 +168,10 @@ public final class SeedPackManifest {
             return transforms == null ? List.of() : Collections.unmodifiableList(transforms);
         }
 
+        public List<ReferenceBinding> getReferences() {
+            return references == null ? List.of() : Collections.unmodifiableList(references);
+        }
+
         void validate(String source) {
             // collection may be omitted when modelClass or repoClass is specified; otherwise it's required
             boolean hasCollection = collection != null && !collection.isBlank();
@@ -187,6 +192,44 @@ public final class SeedPackManifest {
             }
             if (transforms != null) {
                 transforms.forEach(transform -> transform.validate(datasetId, source));
+            }
+            if (references != null) {
+                references.forEach(reference -> reference.validate(datasetId, source));
+            }
+        }
+    }
+
+    @Data
+    @EqualsAndHashCode
+    public static final class ReferenceBinding {
+        private String field;
+        private String targetModelClass;
+        private String targetCollection;
+        private String lookupBy;
+        private Boolean required;
+        private Boolean many;
+
+        public String getLookupBy() {
+            return lookupBy == null || lookupBy.isBlank() ? "refName" : lookupBy;
+        }
+
+        public boolean isRequired() {
+            return required == null || required;
+        }
+
+        public boolean isMany() {
+            return many != null && many;
+        }
+
+        void validate(String datasetId, String source) {
+            if (field == null || field.isBlank()) {
+                throw new IllegalStateException("Reference field is required for dataset " + datasetId + " in manifest " + source);
+            }
+            boolean hasTargetModel = targetModelClass != null && !targetModelClass.isBlank();
+            boolean hasTargetCollection = targetCollection != null && !targetCollection.isBlank();
+            if (!hasTargetModel && !hasTargetCollection) {
+                throw new IllegalStateException("Reference targetModelClass or targetCollection is required for field " + field
+                        + " in dataset " + datasetId + " in manifest " + source);
             }
         }
     }

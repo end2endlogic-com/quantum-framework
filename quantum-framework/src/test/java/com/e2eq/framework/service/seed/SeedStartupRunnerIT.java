@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
+import com.e2eq.framework.model.security.DomainContext;
+import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.test.MongoDbInitResource;
 import com.e2eq.framework.util.EnvConfigUtils;
 import com.mongodb.client.MongoClient;
@@ -89,6 +91,9 @@ public class SeedStartupRunnerIT {
         assertEquals(envConfigUtils.getSystemOrgRefName(), context.getOrgRefName().orElse(null));
         assertEquals(envConfigUtils.getSystemAccountNumber(), context.getAccountId().orElse(null));
         assertEquals(envConfigUtils.getSystemUserId(), context.getOwnerId().orElse(null));
+        assertEquals("admin@test-quantum.com", context.getVariable("baselineAdminUserId").orElse(null));
+        assertEquals("admin@test-quantum.com", context.getVariable("adminUserId").orElse(null));
+        assertEquals("demo@test-quantum.com", context.getVariable("demoUserId").orElse(null));
     }
 
     @Test
@@ -109,5 +114,22 @@ public class SeedStartupRunnerIT {
         assertEquals("tenant-org", context.getOrgRefName().orElse(null));
         assertEquals("12345", context.getAccountId().orElse(null));
         assertEquals("owner@test", context.getOwnerId().orElse(null));
+    }
+
+    @Test
+    void seedContextUsesRealmMetadataForTenantVariables() {
+        Realm realm = Realm.builder()
+                .refName("test-quantum-di-com")
+                .databaseName("test-quantum-di-com")
+                .emailDomain("test-quantum-di.com")
+                .defaultAdminUserId("tenant-admin@test-quantum-di.com")
+                .domainContext(new DomainContext())
+                .build();
+
+        SeedContext context = seedStartupRunner.buildSeedContext("test-quantum-di-com", realm, null);
+
+        assertEquals("tenant-admin@test-quantum-di.com", context.getVariable("adminUserId").orElse(null));
+        assertEquals("admin@test-quantum-di.com", context.getVariable("baselineAdminUserId").orElse(null));
+        assertEquals("demo@test-quantum-di.com", context.getVariable("demoUserId").orElse(null));
     }
 }

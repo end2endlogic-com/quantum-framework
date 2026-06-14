@@ -79,6 +79,10 @@ public class TenantOnboardingWorkflowDefaults {
 
         try {
             Map<String, Object> root = objectMapper.readValue(effectiveJson, new TypeReference<>() {});
+            List<TenantOnboardingWorkflowStepResponse> graphSteps = parseGraphSteps(root, defaultSurveyRefName);
+            if (!graphSteps.isEmpty()) {
+                return graphSteps;
+            }
             Object rawSteps = root.get("steps");
             if (!(rawSteps instanceof List<?> rawList) || rawList.isEmpty()) {
                 return fallbackSteps(defaultSurveyRefName, inviteRequired, registrationRequired, surveyRequired, adminApprovalRequired);
@@ -150,6 +154,105 @@ public class TenantOnboardingWorkflowDefaults {
         return steps;
     }
 
+    private List<TenantOnboardingWorkflowStepResponse> parseGraphSteps(
+        Map<String, Object> root,
+        String defaultSurveyRefName
+    ) {
+        Object rawNodes = root.get("nodes");
+        Object rawEdges = root.get("edges");
+        if (!(rawNodes instanceof List<?> nodeList) || nodeList.isEmpty() || !(rawEdges instanceof List<?> edgeList)) {
+            return List.of();
+        }
+
+        Map<String, Map<String, Object>> nodesByKey = new LinkedHashMap<>();
+        for (Object rawNode : nodeList) {
+            if (!(rawNode instanceof Map<?, ?> map)) {
+                continue;
+            }
+            String key = stringify(map.get("key"));
+            if (key == null) {
+                continue;
+            }
+            Map<String, Object> normalized = new LinkedHashMap<>();
+            map.forEach((k, v) -> normalized.put(String.valueOf(k), v));
+            nodesByKey.put(key, normalized);
+        }
+        if (nodesByKey.isEmpty()) {
+            return List.of();
+        }
+
+        Map<String, List<String>> outgoing = new LinkedHashMap<>();
+        for (Object rawEdge : edgeList) {
+            if (!(rawEdge instanceof Map<?, ?> map)) {
+                continue;
+            }
+            String sourceKey = stringify(map.get("source_key"));
+            String targetKey = stringify(map.get("target_key"));
+            if (sourceKey == null || targetKey == null) {
+                continue;
+            }
+            outgoing.computeIfAbsent(sourceKey, ignored -> new ArrayList<>()).add(targetKey);
+        }
+
+        List<Map<String, Object>> orderedNodes = new ArrayList<>();
+        String currentKey = findStartKey(nodesByKey);
+        List<String> visited = new ArrayList<>();
+        while (currentKey != null) {
+            if (!visited.contains(currentKey)) {
+                visited.add(currentKey);
+                Map<String, Object> node = nodesByKey.get(currentKey);
+                if (node != null) {
+                    orderedNodes.add(node);
+                }
+            }
+            List<String> nextTargets = outgoing.getOrDefault(currentKey, List.of());
+            currentKey = nextTargets.stream().filter(target -> !visited.contains(target)).findFirst().orElse(null);
+        }
+
+        for (Map.Entry<String, Map<String, Object>> entry : nodesByKey.entrySet()) {
+            if (!visited.contains(entry.getKey())) {
+                orderedNodes.add(entry.getValue());
+            }
+        }
+
+        List<TenantOnboardingWorkflowStepResponse> steps = new ArrayList<>();
+        for (Map<String, Object> node : orderedNodes) {
+            String type = stringify(node.get("step_type"));
+            if (type == null || "start".equalsIgnoreCase(type) || "success".equalsIgnoreCase(type) || "failure".equalsIgnoreCase(type)) {
+                continue;
+            }
+
+            Map<String, Object> config = asObjectMap(node.get("config"));
+            boolean required = asBoolean(config.get("required"), true);
+            String surveyRefName = stringify(config.get("survey_ref_name"));
+            String description = stringify(config.get("description"));
+            String label = stringify(node.get("label"));
+            String key = stringify(node.get("key"));
+
+            steps.add(TenantOnboardingWorkflowStepResponse.builder()
+                .key(key != null ? key : normalizeStepKey(type, label))
+                .label(label != null ? label : humanize(type))
+                .type(type)
+                .description(description)
+                .required(required)
+                .surveyRefName("survey".equalsIgnoreCase(type)
+                    ? (surveyRefName != null ? surveyRefName : normalizeSurveyRefName(defaultSurveyRefName))
+                    : surveyRefName)
+                .build());
+        }
+
+        return steps;
+    }
+
+    private String findStartKey(Map<String, Map<String, Object>> nodesByKey) {
+        for (Map.Entry<String, Map<String, Object>> entry : nodesByKey.entrySet()) {
+            if ("start".equalsIgnoreCase(stringify(entry.getValue().get("step_type")))) {
+                return entry.getKey();
+            }
+        }
+        return nodesByKey.keySet().stream().findFirst().orElse(null);
+    }
+
     private TenantOnboardingWorkflowStepResponse stepResponse(
         String key,
         String label,
@@ -200,6 +303,15 @@ public class TenantOnboardingWorkflowDefaults {
         }
         String text = String.valueOf(value).trim();
         return text.isEmpty() ? null : text;
+    }
+
+    private Map<String, Object> asObjectMap(Object value) {
+        if (!(value instanceof Map<?, ?> rawMap)) {
+            return Map.of();
+        }
+        Map<String, Object> normalized = new LinkedHashMap<>();
+        rawMap.forEach((k, v) -> normalized.put(String.valueOf(k), v));
+        return normalized;
     }
 
     private String humanize(String type) {

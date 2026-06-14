@@ -258,6 +258,127 @@ Example defaults:
 
 Tip: Even in a deny-based set, author low‑number DENY rules for critical protections. In most production systems, prefer the grant-based model and layer specific ALLOWs for each capability.
 
+== Row Filter Computation (Data Scoping)
+
+Matching decides _whether_ an action is allowed. Once the effect is `ALLOW`, the
+framework derives the row filter that scopes _which records_ a list/query
+returns. This is the data-scoping half of enforcement, and it is computed
+per-request from the principal, the matched rules, and (optionally) dynamic
+access lists.
+
+=== The pipeline
+
+. A `BaseResource` list/query calls `MorphiaRepo.getFilterArray(userFilters, modelClass)`. The caller's own query filters are the starting set; security filters are **AND-ed on top** of them.
+. `RepoSecurityFilterBuilder` short-circuits when `SecurityContext.isIgnoringRules()` is set — returning the filters **unscoped**. This `ignoreRules` path is reserved for system-internal/unauthenticated lookups (e.g. credential resolution at login, infrastructure reads). Otherwise it requires both a `PrincipalContext` and a `ResourceContext` and **fails closed** (throws) if either is missing.
+. `RuleContext.getFilters(filters, pcontext, rcontext, modelClass)` runs `checkRules`; if the final effect is not `ALLOW` the base filters are returned unchanged. Otherwise it resolves a variable bundle and, for each matched `ALLOW` rule, interpolates the rule's `andFilterString`/`orFilterString` via `MorphiaUtils.convertToFilter(...)`, combining them with the rule's `joinOp` (AND/OR) and de-duplicating.
+. The resulting `Filter[]` is AND-ed into the Morphia query.
+
+NOTE: The *realm* is not a row filter — `getRealmId(principal)` returns the
+principal's `defaultRealm`, which selects **which database** the query runs
+against (realm == database). Row filters scope records _within_ that database.
+
+=== What is scoped by default
+
+There is exactly **one** scope filter baked into the default/system rules:
+
+[source]
+----
+dataDomain.tenantId:${pTenantId}
+----
+
+A normal authenticated query therefore gets **tenant isolation only**. Scoping
+by organization, account, or data segment is **not automatic** — you must
+author rules that reference the corresponding variables (see below).
+
+=== Available substitution variables (static)
+
+`MorphiaUtils.createStandardVariableMapFrom` registers these scalars from the
+principal/resource context. They resolve from the principal's `DataDomain` and
+`DomainContext`, which are populated from the authenticated token's claims.
+
+[cols="1,3"]
+|===
+| Variable | Source
+
+| `${pTenantId}`        | `DataDomain.tenantId` (used by the default rule)
+| `${pAccountId}`       | `DataDomain.accountNum`
+| `${orgRefName}`       | `DataDomain.orgRefName` (note: no `p` prefix)
+| `${ownerId}`          | `DataDomain.ownerId`
+| `${defaultRealm}`     | `PrincipalContext.defaultRealm` (drives X-Realm scoping)
+| `${principalId}`      | `PrincipalContext.userId`
+| `${resourceId}`, `${action}`, `${functionalDomain}`, `${area}` | `ResourceContext`
+| `${dcTenantId}`, `${dcOrgRefName}`, `${dcAccountId}`, `${dcDataSegment}` | the `DomainContext` (X-Realm-aware; may differ from `DataDomain`)
+| `${systemTenantId}`   | `DataDomain.tenantId` (legacy alias)
+|===
+
+To scope by org and account in addition to tenant, author a rule whose filter
+combines them:
+
+[source,yaml]
+----
+- name: scope-by-org-and-account
+  priority: 500
+  securityURI:
+    header: { identity: '*', area: '*', functionalDomain: '*', action: 'view' }
+    body:   { realm: '*', tenantId: '*', accountNumber: '*', orgRefName: '*' }
+  andFilterString: "dataDomain.orgRefName:${orgRefName}"
+  orFilterString:  "dataDomain.accountId:${pAccountId}"
+  joinOp: AND
+  effect: ALLOW
+----
+
+IMPORTANT: Because every `${...}` value originates in the token, a token that
+omits tenant/org/account claims makes the corresponding filters unresolvable —
+even the default `${pTenantId}` filter. A centralized issuer MUST project the
+principal's `DomainContext` (realm/tenant/org/account) into token claims for
+this machinery to scope correctly.
+
+=== Dynamic access lists (the `AccessListResolver` SPI)
+
+Some scoping is not a static scalar but a *computed collection* — for example,
+"the set of location IDs this principal may see". These are supplied by
+`AccessListResolver` implementations rather than by the standard variable map.
+A resolver whose `key()` returns `accessibleLocationIds` makes the variable
+`${accessibleLocationIds}` available, referenced with the in-list operator:
+
+[source]
+----
+locationId:^[${accessibleLocationIds}]
+----
+
+The list can be derived however the resolver chooses — a territory assignment,
+a `PrincipalContextPropertiesResolver` custom property, or by **walking the
+ontology graph**. The ontology path is `ListQueryRewriter` (in
+`quantum-ontology-policy-bridge`), which derives accessible IDs from edges such
+as `hasEdge("canSeeLocation", ...)`. This is the ontology↔rule seam:
+*ontology edges → access list → `${accessibleLocationIds}` → rule filter*.
+Predicate references used this way are validated at rule-load time by
+`RuleVocabularyValidator`.
+
+Two behaviors distinguish dynamic lists from the static scalars:
+
+- **`supports()` gating.** A resolver is only invoked when its
+  `supports(pcontext, rcontext, modelClass)` returns true for the _current
+  request's_ context (not the rule's scope). Be permissive, or filter by
+  `modelClass`, or the variable will be unresolvable for valid requests.
+- **Skip-on-unresolved.** If a rule's filter references a variable that cannot
+  be resolved for the current model class (e.g. `${accessibleLocationIds}` on a
+  `UserProfile` query), `getFilters` **skips that rule's filter** rather than
+  erroring — so a Location access rule does not wrongly constrain unrelated
+  queries.
+
+=== Summary
+
+[cols="1,1,2"]
+|===
+| Scope | Kind | How it applies
+
+| Realm        | database selection | `getRealmId` → `defaultRealm` picks the DB
+| Tenant       | static, default    | built-in `dataDomain.tenantId:${pTenantId}`
+| Org / Account / Segment | static, opt-in | author a rule referencing `${orgRefName}` / `${pAccountId}` / `${dcDataSegment}`
+| Location (and similar) | dynamic, resolver-backed | `AccessListResolver` (often ontology-edge-backed) supplies `${accessibleLocationIds}`; requires a rule **and** a registered resolver
+|===
+
 == Feature Flags, Variants, and Target Rules
 
 Feature flags complement permission rules by controlling whether a capability is active for a given principal, cohort, or environment. Permissions answer “may this identity perform this action?”; feature flags answer “is this capability turned on, and which variant applies?” Use them together to achieve safe rollouts and fine‑grained authorization.
@@ -1024,6 +1145,90 @@ This keeps the default behavior (no breaking changes) while enabling clients to 
 - Author SecurityURI header (area/domain/action) as narrowly as needed for sensitive domains.
 - Prefer SecurityURI body fields and postconditionScript to refine matches without over-broad area/domain/action patterns.
 - Log matched rule names and applied scopes for auditability.
+
+== Field-Level Policy (Property Exclusions)
+
+Row filters (`andFilterString` / `orFilterString`) control *which documents* a
+principal can see. Field-level policy controls *which fields of those
+documents* — the common "the carrier may see the shipment but not the price"
+requirement.
+
+=== Declaring exclusions on a rule
+
+`Rule.excludedFields` carries dotted property paths. The exclusions apply to
+any principal/resource the rule matches, composing with the same matching
+algorithm as row filters:
+
+[source,java]
+----
+Rule.Builder()
+   .withName("carrier-fulfillment-view")
+   .withSecurityURI(uri)                       // who/what this rule matches
+   .withEffect(RuleEffect.ALLOW)
+   .withAndFilterString("hasEdge('assignedTo', ${principal.orgRefName})")
+   .withExcludedFields(List.of("pricing.unitPrice", "pricing.margin"))
+   .build();
+----
+
+Semantics are *deny-wins*: the union of `excludedFields` across **all**
+matched ALLOW rules applies. A field excluded by any applicable rule is
+excluded, even if another matched rule does not mention it. Paths that do not
+exist on a queried model are ignored (nothing to protect). Excluded fields are
+*omitted* from results, not nulled-and-present — clients should treat absence
+under an active field policy as "restricted", and the REST layer signals this
+with the `X-Field-Policy` response header listing the applied exclusions.
+
+=== Layered enforcement — one policy source, every egress guarded
+
+The resolved exclusion set comes from one place
+(`RuleContext.getExcludedFieldPaths`) and is enforced wherever data leaves the
+platform. The query language is a multi-datasource contract, so enforcement is
+*per egress*, not per database:
+
+[cols="1,2,2"]
+|===
+|Egress |Mechanism |Notes
+
+|MongoDB reads
+|Projection injection in `MorphiaRepo.buildFindOptions`
+|Excluded paths never leave the database. Caller `INCLUDE` projections have
+policy paths dropped (exclusion wins); caller `EXCLUDE` projections are
+unioned with policy paths.
+
+|MongoDB updates
+|Preserve-hidden-fields gate in `MorphiaRepo.merge`
+|A principal whose policy hides a field cannot blind-overwrite it: the stored
+value is restored (via `FieldPolicyEnforcer.copyPath`) before persisting.
+
+|In-memory / hierarchical / custom datasources
+|`FieldPolicyEnforcer.mask(result, paths)` at result materialization
+|For non-Mongo backends this *is* the datastore-level enforcement.
+**Implementing the query contract against a new datasource requires wiring
+the enforcer** — it is part of the adapter contract, exactly like honoring
+row-filter strings.
+
+|REST serialization
+|`FieldPolicyResponseInterceptor` (WriterInterceptor)
+|Defense-in-depth fed by the same resolved set: catches computed getters,
+reference-expanded fields, and responses assembled outside a secured repo.
+Adds the `X-Field-Policy` header when masking occurred.
+|===
+
+NOTE: A serializer-only approach (e.g. Jackson `@JsonView`) was considered and
+rejected as the primary mechanism: views are compile-time classes while
+Quantum policies are tenant-authorable runtime data, and serializer
+enforcement guards only the REST door while the reasoner, MCP surface,
+exports, and events read through repositories. The serializer layer is kept —
+as the last lock, driven by the same rule-resolved path set.
+
+=== Limitations (v1)
+
+* Wildcard paths (`pricing.*`) are not yet supported — list explicit paths.
+* The write gate applies on `merge` (partial update); full-document `save` of
+  a *new* entity is not field-filtered (the creator authored the values).
+* Field exclusions are resolved per (principal, resource) pair, like row
+  filters; per-*instance* visibility derives from relationship row filters
+  (`hasEdge`), not from per-document field lists.
 
 == How UIActions and DefaultUIActions are calculated
 

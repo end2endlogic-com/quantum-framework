@@ -9,6 +9,7 @@ import com.e2eq.framework.util.EncryptionUtils;
 import com.e2eq.ontology.annotations.OntologyClass;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.mongodb.client.model.CollationStrength;
+import com.e2eq.framework.model.persistent.base.EntityReference;
 import dev.morphia.annotations.*;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import com.e2eq.framework.model.persistent.base.BaseModel;
@@ -157,6 +158,27 @@ public class CredentialUserIdPassword extends BaseModel {
    @Override
    public String bmFunctionalDomain () {
       return "CREDENTIAL_USERID_PASSWORD";
+   }
+
+   @Override
+   public EntityReference createEntityReference() {
+      return EntityReference.builder()
+              .entityId(this.getId())
+              .entityType(this.getClass().getSimpleName())
+              .entityRefName(this.getSubject())
+              .entityDisplayName(this.getDisplayName() != null ? this.getDisplayName() : this.getUserId())
+              .build();
+   }
+
+   @Override
+   public EntityReference createEntityReference(String realmOverride) {
+      return EntityReference.builder()
+              .entityId(this.getId())
+              .entityType(this.getClass().getSimpleName())
+              .entityRefName(this.getSubject())
+              .entityDisplayName(this.getDisplayName() != null ? this.getDisplayName() : this.getUserId())
+              .realm(realmOverride)
+              .build();
    }
 
 }

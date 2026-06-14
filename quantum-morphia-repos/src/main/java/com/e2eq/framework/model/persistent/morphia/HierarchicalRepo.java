@@ -376,7 +376,8 @@ public abstract class HierarchicalRepo<
             Set<O> objectSet = new HashSet<>();
             if (oHierarchyNode.get().getStaticDynamicList() != null) {
                 StaticDynamicList<O> staticDynamicList = oHierarchyNode.get().getStaticDynamicList();
-                objectSet.addAll(objectListRepo.resolveItems(staticDynamicList, new ArrayList<>()));
+                List<O> resolvedItems = objectListRepo.resolveItems(staticDynamicList, new ArrayList<>());
+                objectSet.addAll(resolvedItems == null ? Collections.emptyList() : resolvedItems);
             }
 
             List<T> descendants = getAllChildren(oHierarchyNode.get().getId());
@@ -386,7 +387,8 @@ public abstract class HierarchicalRepo<
                     if (objectList == null) {
                         continue;
                     }
-                    objectSet.addAll(objectListRepo.getObjectsForList(objectList, new ArrayList<>()));
+                    List<O> descendantItems = objectListRepo.getObjectsForList(objectList, new ArrayList<>());
+                    objectSet.addAll(descendantItems == null ? Collections.emptyList() : descendantItems);
                 }
             }
             objects.addAll(objectSet);

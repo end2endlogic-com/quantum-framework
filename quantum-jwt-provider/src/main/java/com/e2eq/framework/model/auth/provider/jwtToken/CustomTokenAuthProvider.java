@@ -12,6 +12,7 @@ import com.e2eq.framework.model.auth.RoleAssignment;
 import com.e2eq.framework.model.auth.RoleSource;
 import com.e2eq.framework.model.auth.UserManagement;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
+import com.e2eq.framework.model.persistent.morphia.UserRealmRoleRepo;
 import com.e2eq.framework.model.persistent.morphia.UserGroupRepo;
 import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import com.e2eq.framework.model.security.CredentialRefreshToken;
@@ -72,6 +73,9 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
    CredentialRepo credentialRepo;
 
    @Inject
+   UserRealmRoleRepo userRealmRoleRepo;
+
+   @Inject
    UserProfileRepo userProfileRepo;
 
    @Inject
@@ -130,6 +134,33 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
       cred.setForceChangePassword(forceChangePassword);
       cred.setAuthProviderName(getName());
       credentialRepo.save( cred);
+   }
+
+   @Override
+   public void resendTemporaryPassword(String userId) throws SecurityException {
+      throw new UnsupportedOperationException(
+         "Resending temporary password is not supported by CustomTokenAuthProvider");
+   }
+
+   @Override
+   public void changeEmail(String userId, String newEmail) throws SecurityException {
+      throw new UnsupportedOperationException(
+         "Changing email is not supported by CustomTokenAuthProvider");
+   }
+
+   @Override
+   public void resetPassword(String userId, String newPassword, Boolean forceChangePassword) {
+      Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(userId);
+      if (!ocred.isPresent()) {
+         throw new NotFoundException(String.format("User with userId %s not found in realm %s", userId, envConfigUtils.getSystemRealm()));
+      }
+
+      CredentialUserIdPassword cred = ocred.get();
+      cred.setHashingAlgorithm(EncryptionUtils.hashAlgorithm());
+      cred.setPasswordHash(EncryptionUtils.hashPassword(newPassword));
+      cred.setForceChangePassword(forceChangePassword);
+      cred.setAuthProviderName(getName());
+      credentialRepo.save(cred);
    }
 
    @Override
@@ -490,6 +521,21 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                      credentialRepo.save(credential);
                   }
 
+                  // B4 membership ADR: one global identity, per-realm roles.
+                  // Union the user's UserRealmRole assignment for the realm
+                  // this token is scoped to into the token's role claims.
+                  String tokenRealm = (credential.getDomainContext() != null)
+                     ? credential.getDomainContext().getDefaultRealm()
+                     : envConfigUtils.getSystemRealm();
+                  java.util.Set<String> realmAssignedRoles = new java.util.LinkedHashSet<>();
+                  try {
+                     realmAssignedRoles.addAll(userRealmRoleRepo.findActiveRolesForRealmWithIgnoreRules(
+                        userId, tokenRealm, envConfigUtils.getSystemRealm()));
+                  } catch (Exception e) {
+                     Log.warn("Failed to resolve per-realm role assignments; continuing with credential roles", e);
+                  }
+                  groups.addAll(realmAssignedRoles);
+
                   String authToken = TokenUtils.generateUserToken(
                      subject,
                      groups,
@@ -502,9 +548,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                   // Compute role provenance locally for login response: IDP + CREDENTIAL + USERGROUP
                   // Auth plugins do NOT need to do this; it's optional for login response only.
                   // Use the credential's realm context instead of hardcoded system realm
-                  String realm = (credential.getDomainContext() != null)
-                     ? credential.getDomainContext().getDefaultRealm()
-                     : envConfigUtils.getSystemRealm();
+                  String realm = tokenRealm;
                   java.util.Set<String> idpRoles = (identity != null) ? new java.util.LinkedHashSet<>(identity.getRoles()) : java.util.Set.of();
                   java.util.Set<String> credentialRoles = new java.util.LinkedHashSet<>(Arrays.asList(credential.getRoles()));
                   java.util.Set<String> userGroupRoles = new java.util.LinkedHashSet<>();
@@ -528,6 +572,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                   rolesSet.addAll(idpRoles);
                   rolesSet.addAll(credentialRoles);
                   rolesSet.addAll(userGroupRoles);
+                  rolesSet.addAll(realmAssignedRoles);
 
                   java.util.List<RoleAssignment> roleAssignments = rolesSet.stream()
                           .filter(Objects::nonNull)
@@ -536,6 +581,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                              if (idpRoles.contains(role)) src.add(RoleSource.TOKEN);
                              if (credentialRoles.contains(role)) src.add(RoleSource.CREDENTIAL);
                              if (userGroupRoles.contains(role)) src.add(RoleSource.USERGROUP);
+                             if (realmAssignedRoles.contains(role)) src.add(RoleSource.REALM);
                              return new RoleAssignment(role, src);
                           })
                           .toList();

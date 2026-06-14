@@ -1,0 +1,24 @@
+{
+  "name": "symmetric",
+  "description": "A symmetric predicate materializes the mirrored edge; the mirror of the mirror dedups against the explicit edge.",
+  "tbox": {
+    "version": 1,
+    "id": "vector-symmetric",
+    "openness": "closed",
+    "classes": [
+      {"id": "Person"}
+    ],
+    "properties": [
+      {"id": "knows", "domain": "Person", "range": "Person", "symmetric": true}
+    ]
+  },
+  "explicit_edges": [
+    {"src_id": "p:ann", "src_type": "Person", "predicate": "knows", "dst_id": "p:ben", "dst_type": "Person"}
+  ],
+  "expected": {
+    "status": "ok",
+    "inferred_edges": [
+      ["p:ben", "Person", "knows", "p:ann", "Person"]
+    ]
+  }
+}

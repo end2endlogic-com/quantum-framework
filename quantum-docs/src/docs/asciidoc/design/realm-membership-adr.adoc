@@ -1,0 +1,63 @@
+= ADR: Realm Membership and Identity Model
+:toc:
+
+== Status
+Accepted (2026-06-11) — implemented incrementally on branch the integration branch
+(membershipRole + UserRealmRole + RealmMembershipService @ cf1a1641).
+
+== Context
+
+The framework had three half-articulated concepts: realms (a Mongo database
+with a catalog entry), DataDomain (org/account/tenant/owner/segment stamps on
+every document), and RealmTenantMembership (an onboarding record). What was
+undefined: what *delineates* a realm, how multiple orgs collaborate inside
+one realm, and how one user holds different roles in different realms. The
+a multi-tenant platform two-plane split and the fulfillment-style collaboration model
+(carrier/supplier/customer orgs against shared sales orders and fulfillment
+plans) both need these answers to be explicit.
+
+== Decision
+
+1. **Realm = placement + lifecycle.** A realm is the unit of physical
+   isolation: its own database (own connection, possibly own cluster), own
+   migration history, own seed state, own blast radius, own residency. When
+   you ask "what can be dropped/backed up/migrated as one unit", the answer
+   is a realm.
+
+2. **DataDomain = visibility.** Org/account/tenant/owner/segment stamps plus
+   the policy engine (row filters, relationship policies via
+   `hasEdge`, field-level exclusions) control *who sees what inside* a realm.
+   Placement never substitutes for policy, and policy never substitutes for
+   placement.
+
+3. **Orgs/accounts are MEMBERS of realms, with exactly one OWNER.**
+   `RealmTenantMembership.membershipRole`: the OWNER provisioned the realm
+   and holds lifecycle/billing authority; PARTICIPANTs are collaborating
+   orgs whose visibility comes entirely from DataDomain + policies. The
+   default (one tenant = one realm, owner only) remains what
+   `POST /admin/tenants` produces; participants are added deliberately.
+
+4. **Users have ONE global identity and N realm-role assignments.** The
+   credential (system realm) is the identity — the GitHub account.
+   `UserRealmRole` documents are the org-membership analog: (userId, realm,
+   roles[], sponsoring org, status). ADMIN in realm A / VIEWER in realm B is
+   two documents. `credential.roles[]` keeps meaning "roles in the default
+   realm" for compatibility. Invitations reuse `AccessInviteResource`.
+
+5. **The IdP unions assignments into per-realm claims.** At token issuance
+   the control plane resolves `RealmMembershipService.rolesForUser(user,
+   realm)`; the tenant plane routes by claims with no callback (JWKS
+   validation). Embedded mode resolves the same service locally.
+
+== Consequences
+
+* The fulfillment collaboration model is expressible without new isolation
+  machinery: one realm, one owner org, N participant orgs, relationship +
+  field policies shaping each org's slice.
+* Cross-realm queries stay forbidden; anything cross-realm goes through the
+  control plane's denormalized registry (design review §2.2).
+* Phase C's control-plane API must expose membership resolution alongside the
+  realm catalog (same seam, same fail-loud remote behavior).
+* GitHub-model mapping for product docs: account→credential, org→org,
+  org membership→UserRealmRole, repo→realm, repo role→roles[] per realm,
+  invitation→AccessInvite, personal default context→credential.defaultRealm.

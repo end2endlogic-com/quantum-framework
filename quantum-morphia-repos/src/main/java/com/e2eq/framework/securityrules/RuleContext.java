@@ -55,6 +55,24 @@ public class RuleContext {
 
     @Inject
     Instance<AccessListResolver> resolvers;
+
+    /**
+     * Fired for every registered rule so ontology-aware observers can
+     * validate the vocabulary its scripts/filters reference (fail fast on
+     * unknown predicates). Null when RuleContext is constructed outside CDI.
+     */
+    @Inject
+    jakarta.enterprise.event.Event<com.e2eq.framework.model.securityrules.RuleVocabularyCheck> ruleVocabularyCheckEvent;
+
+    /**
+     * True only while the {@code @PostConstruct} bootstrap is hydrating the default
+     * system rules. During that window the vocabulary-check event must not be fired:
+     * its observer (PolicyVocabularyGuard) performs realm-scoped registry/repo lookups
+     * that call back into this bean's proxy ({@link #getRealmId()}), re-entering its own
+     * construction and overflowing the stack. The system rules added at bootstrap carry
+     * no scripts/filters, so there is no ontology vocabulary to validate anyway.
+     */
+    private volatile boolean bootstrapping = false;
      @Inject
      SecurityUtils securityUtils;
 
@@ -147,6 +165,44 @@ public class RuleContext {
         return RuleContextRequestCache.buildPermissionCacheKey(pctx, rctx, defaultEffect)
                 + "|" + policyVersion
                 + "|" + getEvalModeForThread().name();
+    }
+
+
+    /**
+     * Field-level policy (deny-wins): the union of {@code Rule.excludedFields}
+     * across every matched, applicable ALLOW rule for this principal/resource.
+     * Mirrors {@link #getFilters} — row filters scope WHICH documents a
+     * principal sees; this scopes WHICH FIELDS of those documents. Enforced at
+     * the datastore (Mongo projection on reads, strip on writes) so excluded
+     * data never leaves the database. Empty set = no field restriction.
+     */
+    public java.util.Set<String> getExcludedFieldPaths(
+            @Valid @NotNull(message = "Principal Context can not be null") PrincipalContext pcontext,
+            @Valid @NotNull(message = "Resource Context can not be null") ResourceContext rcontext) {
+        java.util.LinkedHashSet<String> excluded = new java.util.LinkedHashSet<>();
+        SecurityCheckResponse response = this.checkRules(pcontext, rcontext);
+        if (response == null || response.getFinalEffect() != RuleEffect.ALLOW
+                || response.getMatchedRuleResults() == null) {
+            return excluded;
+        }
+        for (RuleResult result : response.getMatchedRuleResults()) {
+            if (result == null || result.getRule() == null) {
+                continue;
+            }
+            if (result.getDeterminedEffect() == RuleDeterminedEffect.NOT_APPLICABLE) {
+                continue;
+            }
+            Rule rule = result.getRule();
+            if (rule.getExcludedFields() == null || rule.getExcludedFields().isEmpty()) {
+                continue;
+            }
+            for (String path : rule.getExcludedFields()) {
+                if (path != null && !path.isBlank()) {
+                    excluded.add(path.trim());
+                }
+            }
+        }
+        return excluded;
     }
 
     private List<SecurityCheckResponse.RuleFilterInfo> collectMatchedAllowFilterRules(SecurityCheckResponse response) {
@@ -302,9 +358,8 @@ public class RuleContext {
      */
     public com.e2eq.framework.model.securityrules.RuleIndexSnapshot exportScopedAccessMatrixForIdentities(java.util.Collection<String> identities, com.e2eq.framework.model.persistent.base.DataDomain requested) {
         com.e2eq.framework.model.securityrules.RuleIndexSnapshot snap = new com.e2eq.framework.model.securityrules.RuleIndexSnapshot();
-        boolean enabled = indexEnabled && compiledIndex != null;
-        snap.setEnabled(enabled);
-        snap.setVersion(enabled ? compiledIndex.getVersion() : 0L);
+        long snapshotVersion = (compiledIndex != null) ? compiledIndex.getVersion() : getPolicyVersion();
+        snap.setVersion(snapshotVersion);
         snap.setPolicyVersion(getPolicyVersion());
         if (identities != null) snap.getSources().addAll(identities);
 
@@ -364,6 +419,15 @@ public class RuleContext {
                 return an.compareToIgnoreCase(bn);
             });
         }
+
+        // The scoped matrix is materialized directly from the effective rules and does not
+        // depend on the optional compiled trie index. If we produced a scope matrix or a
+        // requested scope/fallback chain, the client can evaluate against this snapshot.
+        boolean matrixAvailable =
+                !snap.getScopes().isEmpty()
+                        || snap.getRequestedScope() != null
+                        || requested == null;
+        snap.setEnabled(matrixAvailable);
 
         return snap;
     }
@@ -512,6 +576,7 @@ public class RuleContext {
      */
     @PostConstruct
     public void ensureDefaultRules() {
+        bootstrapping = true;
         try {
             reloadFromRepo(defaultRealm);
         } catch (Exception e) {
@@ -520,6 +585,8 @@ public class RuleContext {
             if (securityUtils != null && (defaultSystemRules.isEmpty() || rulesForIdentity(securityUtils.getSystemSecurityHeader().getIdentity()).isEmpty())) {
                 addSystemRules();
             }
+        } finally {
+            bootstrapping = false;
         }
     }
 
@@ -837,6 +904,7 @@ public class RuleContext {
      * @param rule the rule itself
      */
     public void addRule(@NotNull @Valid SecurityURIHeader key, @Valid @NotNull Rule rule) {
+        fireVocabularyCheck(key, rule);
         // Store rules by identity in default system rules
         List<Rule> list = defaultSystemRules.get(key.getIdentity());
 
@@ -847,6 +915,30 @@ public class RuleContext {
 
         list.add(rule);
 
+    }
+
+    /**
+     * Synchronously notifies vocabulary observers (ontology policy bridge);
+     * an observer exception propagates and rejects the rule registration.
+     */
+    private void fireVocabularyCheck(SecurityURIHeader key, Rule rule) {
+        if (ruleVocabularyCheckEvent == null) {
+            return; // constructed outside CDI (tests)
+        }
+        if (bootstrapping) {
+            // @PostConstruct hydration of system rules: firing here would re-enter
+            // this bean's construction via the observer's realm-scoped lookups (see
+            // the bootstrapping field). System rules carry no vocabulary to validate.
+            return;
+        }
+        List<String> sources = new ArrayList<>(4);
+        if (rule.getPreconditionScript() != null) sources.add(rule.getPreconditionScript());
+        if (rule.getPostconditionScript() != null) sources.add(rule.getPostconditionScript());
+        if (rule.getAndFilterString() != null) sources.add(rule.getAndFilterString());
+        if (rule.getOrFilterString() != null) sources.add(rule.getOrFilterString());
+        ruleVocabularyCheckEvent.fire(
+                new com.e2eq.framework.model.securityrules.RuleVocabularyCheck(
+                        rule.getName(), sources, key.getArea(), key.getFunctionalDomain(), key.getAction()));
     }
 
     /**

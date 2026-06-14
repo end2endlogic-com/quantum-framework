@@ -16,6 +16,7 @@ import dev.morphia.transactions.MorphiaSession;
 import io.quarkus.logging.Log;
 import io.quarkus.test.junit.QuarkusTest;
 import com.e2eq.framework.model.security.ApplicationRegistration;
+import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.UserProfile;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
@@ -64,13 +65,53 @@ public class TestBasicRepo extends BaseRepoTest{
       try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
          ensureUserProfile(dataStore.getDefaultSystemDataStore(), envConfigUtils.getSystemUserId(), "John", "Doe", new String[]{"ROLE_USER"}, "password");
          String subject = credentialRepo.findByUserId(envConfigUtils.getSystemUserId()).get().getSubject();
-         Filter x = MorphiaUtils.convertToFilter(String.format("credentialUserIdPasswordRef.entityRefName:%s" ,subject), UserProfile.class);
-         Query<UserProfile> q = dataStore.getDefaultSystemDataStore().find(UserProfile.class);
-         MongoCursor<UserProfile> cursor = q.filter(x).iterator(new FindOptions().skip(0).limit(10));
+         Optional<CredentialUserIdPassword> credential = credentialRepo.findBySubject(
+                 subject,
+                 envConfigUtils.getSystemRealm(),
+                 true);
+         assertTrue(credential.isPresent());
+         Optional<UserProfile> userProfile = userProfileRepo.getByUserId(
+                 dataStore.getDefaultSystemDataStore(),
+                 credential.get().getUserId());
+         assertTrue(userProfile.isPresent());
+      }
+   }
 
-         List<UserProfile> list = new ArrayList<>();
-         cursor.forEachRemaining((u) -> list.add(u));
-         assertTrue(!list.isEmpty());
+   @Test
+   public void testUserProfileLegacyCredentialReferenceLookupBySubject() {
+      PrincipalContext pContext = securityUtils.getSystemPrincipalContext();
+      try(final SecuritySession s = new SecuritySession(pContext, rContext)) {
+         Datastore ds = dataStore.getDefaultSystemDataStore();
+         UserProfile profile = ensureUserProfile(
+                 ds,
+                 envConfigUtils.getSystemUserId(),
+                 "John",
+                 "Doe",
+                 new String[]{"ROLE_USER"},
+                 "password");
+
+         Optional<CredentialUserIdPassword> credential = credentialRepo.findByUserId(
+                 envConfigUtils.getSystemUserId(),
+                 envConfigUtils.getSystemRealm(),
+                 true);
+         assertTrue(credential.isPresent());
+
+         CredentialUserIdPassword cred = credential.get();
+         String legacyEntityRefName = cred.getRefName() != null ? cred.getRefName() : cred.getUserId();
+         EntityReference legacyRef = EntityReference.builder()
+                 .entityId(cred.getId())
+                 .entityType(cred.getClass().getSimpleName())
+                 .entityRefName(legacyEntityRefName)
+                 .entityDisplayName(cred.getDisplayName() != null ? cred.getDisplayName() : cred.getUserId())
+                 .realm(envConfigUtils.getSystemRealm())
+                 .build();
+         profile.setCredentialUserIdPasswordRef(legacyRef);
+         profile = userProfileRepo.save(profile);
+
+         Optional<UserProfile> bySubject = userProfileRepo.getBySubject(ds, cred.getSubject());
+         assertTrue(bySubject.isPresent());
+         Assertions.assertEquals(profile.getId(), bySubject.get().getId());
+         Assertions.assertEquals(legacyEntityRefName, bySubject.get().getCredentialUserIdPasswordRef().getEntityRefName());
       }
    }
 
@@ -94,6 +135,17 @@ public class TestBasicRepo extends BaseRepoTest{
           securityUtils.getDefaultDomainContext());
          } else {
             userProfile = ouserProfile.get();
+            Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(
+                    userId,
+                    envConfigUtils.getSystemRealm(),
+                    true);
+            if (ocred.isPresent()) {
+               EntityReference expectedRef = ocred.get().createEntityReference(envConfigUtils.getSystemRealm());
+               if (!expectedRef.equals(userProfile.getCredentialUserIdPasswordRef())) {
+                  userProfile.setCredentialUserIdPasswordRef(expectedRef);
+                  userProfile = userProfileRepo.save(userProfile);
+               }
+            }
          }
          session.commitTransaction();
       }

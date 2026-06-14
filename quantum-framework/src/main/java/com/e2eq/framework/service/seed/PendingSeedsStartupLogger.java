@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.util.*;
 
 import com.e2eq.framework.util.EnvConfigUtils;
+import com.e2eq.framework.system.config.SystemRealmOwnership;
 
 /**
  * Logs a summary of pending seed packs at application startup for key realms.
@@ -24,6 +25,9 @@ public class PendingSeedsStartupLogger {
     @Inject
     EnvConfigUtils envConfigUtils;
 
+    @Inject
+    SystemRealmOwnership systemRealmOwnership;
+
     public void onStart() {
         List<String> realms = new ArrayList<>();
         // Log for system, default, and test realms if they differ
@@ -35,6 +39,7 @@ public class PendingSeedsStartupLogger {
             !envConfigUtils.getDefaultRealm().equals(envConfigUtils.getTestRealm())) {
             realms.add(envConfigUtils.getTestRealm());
         }
+        systemRealmOwnership.excludeSystemRealmIfNotOwned(realms, "PendingSeedsStartupLogger");
         for (String realm : realms) {
             try {
                 int pending = countPending(realm);

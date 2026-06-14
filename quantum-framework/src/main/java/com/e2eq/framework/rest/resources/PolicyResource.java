@@ -15,6 +15,7 @@ import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
@@ -29,6 +30,7 @@ import java.util.Map;
 import java.util.Optional;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.e2eq.framework.rest.models.CounterResponse;
 
 @Path("/security/permission/policies")
 public class PolicyResource extends BaseResource<Policy, PolicyRepo>{
@@ -137,6 +139,22 @@ public class PolicyResource extends BaseResource<Policy, PolicyRepo>{
       mergedCollection.setRealm(realmId == null ? repo.getDatabaseName() : realmId);
 
       return mergedCollection;
+   }
+
+   @Override
+   public CounterResponse getCount(@Context HttpHeaders headers, @QueryParam("filter") String filter) {
+      List<Policy> defaultPolicies = ruleContext.getDefaultSystemPolicies();
+      List<Policy> filteredDefaults = (filter != null && !filter.isEmpty())
+              ? applyFilterToPolicies(defaultPolicies, filter)
+              : new ArrayList<>(defaultPolicies);
+
+      CounterResponse dbCount = super.getCount(headers, filter);
+      long totalCount = filteredDefaults.size() + dbCount.getValue();
+
+      CounterResponse response = new CounterResponse(totalCount);
+      response.setStatusCode(Response.Status.OK.getStatusCode());
+      response.setMessage(String.format("Count: %d", totalCount));
+      return response;
    }
 
    private List<Policy> applyFilterToPolicies(List<Policy> policies, String filter) {

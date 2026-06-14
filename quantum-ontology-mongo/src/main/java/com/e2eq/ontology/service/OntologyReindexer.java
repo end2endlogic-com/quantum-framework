@@ -200,9 +200,15 @@ public class OntologyReindexer {
                     Optional<Path> p = src.filter(s -> s != null && !s.equals("<none>")).map(Path::of).filter(Files::exists);
                     var res = metaService.observeYaml(realmId, p, "/ontology.yaml");
                     // Get tboxHash from runtime registry and yamlVersion from metadata
-                    String tboxHash = registryProvider.getRegistryForRealm(realmId).getTBoxHash();
+                    var appliedRegistry = registryProvider.getRegistryForRealm(realmId);
+                    String tboxHash = appliedRegistry.getTBoxHash();
                     Integer yamlVersion = res.meta().getYamlVersion();
                     metaService.markApplied(realmId, res.currentHash(), tboxHash, yamlVersion);
+                    // Pin the applied pack (id@version + cross-stack canonical hash)
+                    metaService.recordPackPin(realmId,
+                            new com.e2eq.ontology.core.OntologyRegistry.TBox(
+                                    appliedRegistry.classes(), appliedRegistry.properties(), appliedRegistry.propertyChains()),
+                            packIdFromSource(res.meta().getSource()), yamlVersion);
                 });
                 status = "COMPLETED";
 
@@ -422,5 +428,22 @@ public class OntologyReindexer {
             Log.warn("OntologyReindexer: failed to discover entity classes", e);
             return List.of();
         }
+    }
+
+    /** Pack id from the observed YAML source path, e.g. "/ontology.yaml" -> "ontology". */
+    public static String packIdFromSource(String source) {
+        if (source == null || source.isBlank() || source.equals("<none>")) {
+            return "default";
+        }
+        String name = source.replace('\\', '/');
+        int slash = name.lastIndexOf('/');
+        if (slash >= 0) {
+            name = name.substring(slash + 1);
+        }
+        int dot = name.lastIndexOf('.');
+        if (dot > 0) {
+            name = name.substring(0, dot);
+        }
+        return name.isBlank() ? "default" : name;
     }
 }

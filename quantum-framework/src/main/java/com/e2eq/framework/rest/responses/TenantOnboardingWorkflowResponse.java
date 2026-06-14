@@ -20,6 +20,7 @@ public class TenantOnboardingWorkflowResponse {
     private boolean adminApprovalRequired;
     private boolean autoAssignSurveyOnInvite;
     private String defaultSurveyRefName;
+    private String defaultInviteEmailTemplateKey;
     private String completionMessage;
     private String workflowDefinitionJson;
     @Builder.Default

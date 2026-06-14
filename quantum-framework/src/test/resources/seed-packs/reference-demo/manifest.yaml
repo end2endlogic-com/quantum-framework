@@ -1,0 +1,13 @@
+seedPack: reference-demo
+version: 1.0.0
+datasets:
+  - collection: BookModel
+    file: classpath:seed-packs/reference-demo/datasets/books.ndjson
+    naturalKey: [ refName ]
+    upsert: true
+    modelClass: com.e2eq.framework.test.BookModel
+  - collection: AuthorModel
+    file: classpath:seed-packs/reference-demo/datasets/authors.ndjson
+    naturalKey: [ refName ]
+    upsert: true
+    modelClass: com.e2eq.framework.test.AuthorModel
