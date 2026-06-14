@@ -141,7 +141,19 @@ REFERENCE:'@@'OID
  }
  ;
 
-STRING: ([a-zA-Z0-9_.-]|' '|'\''|'/'|'@')+ ('&' STRING)*;
+// STRING must start and end with a non-space character; spaces are only allowed
+// *between* word characters (so multi-word unquoted values like `John Smith` still
+// work). This prevents STRING from swallowing the inter-token whitespace that
+// precedes keyword/grouping tokens — e.g. the space in `&& hasEdge(` — which would
+// otherwise shadow HASEDGE/LPAREN and break parsing. Leading/trailing whitespace
+// around tokens is consumed by the WS rule below.
+STRING: STRING_CORE ('&' STRING_CORE)*;
+fragment STRING_CORE: STRING_CHAR ((STRING_CHAR | ' ')* STRING_CHAR)?;
+fragment STRING_CHAR: [a-zA-Z0-9_./@'\-];
+
+// Skip inter-token whitespace. Whitespace inside QUOTED_STRING is preserved
+// because QUOTED_STRING matches it explicitly; this rule only applies between tokens.
+WS: [ \t\r\n]+ -> skip;
 
 QUOTED_STRING
  : '"' (~[\r\n"] | '""')* '"'
