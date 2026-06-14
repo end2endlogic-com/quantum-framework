@@ -87,7 +87,9 @@ public class ListQueryRewriterTest {
         
         Filter f = rw.hasEdge(testDataDomain, "placedInOrg", "OrgP");
         String s = String.valueOf(f);
-        assertTrue(s.contains("_id"));
+        // Business-key src ids (O1/O2 are not ObjectId-shaped) match the refName field;
+        // ObjectId-shaped ids would match _id. Accept either (see idsFilter).
+        assertTrue(s.contains("refName") || s.contains("_id"));
         assertTrue(s.contains("O1") && s.contains("O2"));
     }
 
@@ -104,7 +106,8 @@ public class ListQueryRewriterTest {
 
         Filter rNot = rw.notHasEdge(testDataDomain, "orderShipsToRegion", "West");
         String s2 = String.valueOf(rNot);
-        assertTrue(s2.toLowerCase().contains("nin"));
+        // notHasEdge negates the id/refName match with $nor (see ListQueryRewriter.notHasEdge).
+        assertTrue(s2.toLowerCase().contains("nor"));
         assertTrue(s2.contains("O1"));
     }
 

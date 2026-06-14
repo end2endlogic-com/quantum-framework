@@ -63,6 +63,16 @@ public class RuleContext {
      */
     @Inject
     jakarta.enterprise.event.Event<com.e2eq.framework.model.securityrules.RuleVocabularyCheck> ruleVocabularyCheckEvent;
+
+    /**
+     * True only while the {@code @PostConstruct} bootstrap is hydrating the default
+     * system rules. During that window the vocabulary-check event must not be fired:
+     * its observer (PolicyVocabularyGuard) performs realm-scoped registry/repo lookups
+     * that call back into this bean's proxy ({@link #getRealmId()}), re-entering its own
+     * construction and overflowing the stack. The system rules added at bootstrap carry
+     * no scripts/filters, so there is no ontology vocabulary to validate anyway.
+     */
+    private volatile boolean bootstrapping = false;
      @Inject
      SecurityUtils securityUtils;
 
@@ -566,6 +576,7 @@ public class RuleContext {
      */
     @PostConstruct
     public void ensureDefaultRules() {
+        bootstrapping = true;
         try {
             reloadFromRepo(defaultRealm);
         } catch (Exception e) {
@@ -574,6 +585,8 @@ public class RuleContext {
             if (securityUtils != null && (defaultSystemRules.isEmpty() || rulesForIdentity(securityUtils.getSystemSecurityHeader().getIdentity()).isEmpty())) {
                 addSystemRules();
             }
+        } finally {
+            bootstrapping = false;
         }
     }
 
@@ -911,6 +924,12 @@ public class RuleContext {
     private void fireVocabularyCheck(SecurityURIHeader key, Rule rule) {
         if (ruleVocabularyCheckEvent == null) {
             return; // constructed outside CDI (tests)
+        }
+        if (bootstrapping) {
+            // @PostConstruct hydration of system rules: firing here would re-enter
+            // this bean's construction via the observer's realm-scoped lookups (see
+            // the bootstrapping field). System rules carry no vocabulary to validate.
+            return;
         }
         List<String> sources = new ArrayList<>(4);
         if (rule.getPreconditionScript() != null) sources.add(rule.getPreconditionScript());
