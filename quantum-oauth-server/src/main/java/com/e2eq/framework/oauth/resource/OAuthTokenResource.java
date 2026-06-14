@@ -198,8 +198,18 @@ public class OAuthTokenResource {
                     ? new LinkedHashSet<>(Arrays.asList(cred.getRoles()))
                     : Set.of();
             long expiresAt = TokenUtils.expiresAt(tokenDuration);
+            // Project the credential's tenant context (realm/tenant/org/account)
+            // into the token so it is not tenant-blind. See DomainContext.
+            com.e2eq.framework.model.security.DomainContext dc = cred.getDomainContext();
             String accessToken = TokenUtils.generateUserToken(
-                    cred.getSubject(), roles, expiresAt, issuer);
+                    cred.getSubject(),
+                    cred.getUserId(),
+                    roles,
+                    dc != null ? dc.getDefaultRealm() : null,
+                    dc != null ? dc.getTenantId() : null,
+                    dc != null ? dc.getOrgRefName() : null,
+                    dc != null ? dc.getAccountId() : null,
+                    expiresAt, issuer);
             String refresh = TokenUtils.generateRefreshToken(
                     cred.getSubject(), tokenDuration * 2, issuer);
             return tokenResponse(accessToken, refresh, tokenDuration, "Bearer");
