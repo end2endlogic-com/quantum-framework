@@ -1,0 +1,25 @@
+{
+  "name": "typing-precedence",
+  "description": "Pins inferred-edge endpoint typing: the OBSERVED node type wins over the property's declared domain/range, which is only a fallback for nodes with no observed type. Here Adult is a subclass of Person and knows is declared Person->Person; the symmetric mirror must keep the endpoints typed Adult, not erase them to Person.",
+  "tbox": {
+    "version": 1,
+    "id": "vector-typing-precedence",
+    "openness": "closed",
+    "classes": [
+      {"id": "Person"},
+      {"id": "Adult", "parents": ["Person"]}
+    ],
+    "properties": [
+      {"id": "knows", "domain": "Person", "range": "Person", "symmetric": true}
+    ]
+  },
+  "explicit_edges": [
+    {"src_id": "p:ann", "src_type": "Adult", "predicate": "knows", "dst_id": "p:ben", "dst_type": "Adult"}
+  ],
+  "expected": {
+    "status": "ok",
+    "inferred_edges": [
+      ["p:ben", "Adult", "knows", "p:ann", "Adult"]
+    ]
+  }
+}

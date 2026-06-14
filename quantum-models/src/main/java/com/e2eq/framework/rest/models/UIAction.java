@@ -11,6 +11,8 @@ public class UIAction {
    protected String action;
    protected String icon;
    protected String onclick;
+   protected Boolean disabled;
+   protected String disabledReason;
 
    public String getLabel () {
       return label;
@@ -44,16 +46,37 @@ public class UIAction {
       this.action = action;
    }
 
+   public Boolean getDisabled() {
+      return disabled;
+   }
+
+   public void setDisabled(Boolean disabled) {
+      this.disabled = disabled;
+   }
+
+   public String getDisabledReason() {
+      return disabledReason;
+   }
+
+   public void setDisabledReason(String disabledReason) {
+      this.disabledReason = disabledReason;
+   }
+
    @Override
    public boolean equals(Object o) {
       if (this == o) return true;
       if (o == null || getClass() != o.getClass()) return false;
       UIAction uiAction = (UIAction) o;
-      return Objects.equals(label, uiAction.label) && Objects.equals(action, uiAction.action) && Objects.equals(icon, uiAction.icon) && Objects.equals(onclick, uiAction.onclick);
+      return Objects.equals(label, uiAction.label)
+         && Objects.equals(action, uiAction.action)
+         && Objects.equals(icon, uiAction.icon)
+         && Objects.equals(onclick, uiAction.onclick)
+         && Objects.equals(disabled, uiAction.disabled)
+         && Objects.equals(disabledReason, uiAction.disabledReason);
    }
 
    @Override
    public int hashCode() {
-      return Objects.hash(label, action, icon, onclick);
+      return Objects.hash(label, action, icon, onclick, disabled, disabledReason);
    }
 }

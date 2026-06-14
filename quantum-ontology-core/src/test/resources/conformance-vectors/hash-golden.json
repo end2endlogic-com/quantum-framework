@@ -1,0 +1,31 @@
+{
+  "name": "hash-golden",
+  "description": "Pins the canonical TBox hash (docs/HASH_SPEC.md). Exercises labels, aliases, source provenance, inverses, symmetric, chains. Both runtimes must reproduce expected.tbox_hash exactly.",
+  "tbox": {
+    "version": 1,
+    "id": "hash-golden",
+    "name": "Hash Golden",
+    "openness": "closed",
+    "source": "conformance",
+    "source_version": "v1",
+    "classes": [
+      {"id": "Person", "label": "Person", "aliases": ["human"]},
+      {"id": "Adult", "parents": ["Person"]}
+    ],
+    "properties": [
+      {"id": "knows", "domain": "Person", "range": "Person", "symmetric": true},
+      {"id": "parentOf", "domain": "Person", "range": "Person", "inverseOf": "childOf"},
+      {"id": "childOf", "domain": "Person", "range": "Person", "inferred": true},
+      {"id": "grandparentOf", "domain": "Person", "range": "Person", "inferred": true}
+    ],
+    "chains": [
+      {"chain": ["parentOf", "parentOf"], "implies": "grandparentOf"}
+    ]
+  },
+  "explicit_edges": [],
+  "expected": {
+    "status": "ok",
+    "tbox_hash": "003d6969c9dd4d227c5e30fbe7985742b1775c6ac431c6b3806d47490060e556",
+    "inferred_edges": []
+  }
+}

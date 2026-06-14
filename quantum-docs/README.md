@@ -61,7 +61,7 @@ git checkout main   # or your default branch
   - Source: "Deploy from a branch"
   - Branch: `gh-pages` and folder `/` (root)
 
-> Note: The Maven plugin will overwrite the contents of `gh-pages` with the generated docs; keeping an empty branch is fine.
+> Note: **LTS** (1.3.x line) is published to **`gh-pages` root** (default site URL). **1.4.0-SNAPSHOT** preview docs go under **`gh-pages/1.4.0-SNAPSHOT/`** only. See [Publishing the docs](#publishing-the-docs) below.
 
 ## Configure GitHub Pages
 
@@ -75,22 +75,56 @@ GitHub Pages will serve your docs at:
 
 ## Publishing the docs
 
-Once the branch exists, publish the docs from your local machine or CI:
+Once the branch exists, build and publish from the **repository root** (or use the same `-pl` paths from `quantum-docs/` if your reactor is set up that way).
+
+The **LTS** build replaces the **root** of `gh-pages` (what visitors see first). The **1.4** build only updates **`1.4.0-SNAPSHOT/`**; that directory is **not** removed when LTS publishes. The versioned `publish-scm` execution is **skipped by default**; activate one of the profiles below.
+
+### Profiles
+
+| Profile | Effect |
+|--------|--------|
+| `docs-ghpages-1.3.x` or `docs-ghpages-lts` | Publishes the built site to **`gh-pages/` root** (default URL = LTS docs). |
+| `docs-ghpages-1.4` | Publishes the built site to **`gh-pages/1.4.0-SNAPSHOT/`** (in-progress / non-default URL). |
+
+### Commands
+
+Build HTML/PDF only (no push to `gh-pages`):
 
 ```bash
-mvn -pl quantum-docs -am -DskipTests deploy
+mvn -pl quantum-docs -DskipTests -Dgpg.skip=true package
 ```
 
-What happens:
-- Asciidoctor builds HTML/PDF into `quantum-docs/target/site`.
-- `maven-scm-publish-plugin` checks out `gh-pages` into `quantum-docs/target/scmpublish`.
-- It copies the generated site into that checkout and commits/pushes to `gh-pages`.
+Publish **LTS** docs to the **site root** — **required:** `git checkout 1.3.x` (branch whose parent POM is **1.3.x**). The **“Version …”** banner comes from **`${project.version}`**; building on a **1.4** branch still produces **1.4** in the HTML even if you use the LTS profile.
+
+```bash
+mvn -pl quantum-docs -am -Pdocs-ghpages-1.3.x -DskipTests -Dgpg.skip=true package deploy
+```
+
+(`-Pdocs-ghpages-lts` is equivalent to `-Pdocs-ghpages-1.3.x`.)
+
+Publish **1.4.0-SNAPSHOT** preview docs (non-default URL: `…/1.4.0-SNAPSHOT/`):
+
+```bash
+mvn -pl quantum-docs -am -Pdocs-ghpages-1.4 -DskipTests -Dgpg.skip=true package deploy
+```
+
+What happens on `deploy` (with a profile):
+
+- Asciidoctor builds HTML/PDF into `quantum-docs/target/site` during `package`.
+- `maven-scm-publish-plugin` checks out `gh-pages`, copies the site to **root** (LTS) or **`1.4.0-SNAPSHOT/`** (preview), and commits/pushes.
+
+CI: pushes to branches `1.3.x` and `1.4.0-SNAPSHOT` can run the matching profile via `.github/workflows/publish-quantum-docs.yml` (see that file for exact steps).
+
+More detail: [PUBLISHING.md](./PUBLISHING.md).
 
 ## Authentication
 
-The SCM publish plugin pushes via the repository URL configured in the parent POM. Ensure one of the following is set up:
-- Your Git is configured with cached HTTPS credentials (Personal Access Token) for `https://github.com/...`.
-- Or an SSH-based URL is used and you have your SSH keys configured (adjust `pubScmUrl` if you prefer SSH).
+The SCM publish plugin uses Maven **`server` id `github`** in `~/.m2/settings.xml` (see `quantum-docs/pom.xml`). Alternatively, ensure Git can push to `https://github.com/...` (PAT or SSH, depending on your SCM URL).
+
+Also ensure one of the following is set up if you do not use `settings.xml` for SCM:
+
+- Cached HTTPS credentials (Personal Access Token) for `https://github.com/...`.
+- Or an SSH remote and keys (adjust `pubScmUrl` / developer connection if you prefer SSH).
 
 ## Troubleshooting
 

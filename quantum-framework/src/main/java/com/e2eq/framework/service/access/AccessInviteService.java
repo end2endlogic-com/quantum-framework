@@ -11,6 +11,7 @@ import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.CredentialUserIdPassword.RealmEntry;
 import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.security.UserProfile;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.rest.requests.AccessInviteAcceptRequest;
 import com.e2eq.framework.rest.requests.AccessInviteRequest;
@@ -72,6 +73,10 @@ public class AccessInviteService {
             throw new BadRequestException("Invite email or target user ID is required.");
         }
 
+        for (AccessInviteProvisioner provisioner : provisioners) {
+            provisioner.validateInviteCreation(realm, inviterUserId, request);
+        }
+
         List<String> scopeRefNames = resolveScopeRefNames(request);
         for (AccessInviteProvisioner provisioner : provisioners) {
             provisioner.validateScopes(realm, inviterUserId, scopeRefNames);
@@ -107,19 +112,19 @@ public class AccessInviteService {
     }
 
     public List<AccessInviteResponse> listInvites(String realm) {
-        return inviteRepo.getAllList(realm).stream()
+        return inviteRepo.getAllListIgnoreRules(realm).stream()
             .map(invite -> toResponse(invite, null))
             .toList();
     }
 
     public AccessInviteResponse getInvite(String realm, String refName) {
-        AccessInvite invite = inviteRepo.findByRefName(refName, realm)
+        AccessInvite invite = inviteRepo.findByRefNameIgnoreRules(realm, refName)
             .orElseThrow(() -> new NotFoundException("Invite not found: " + refName));
         return toResponse(invite, null);
     }
 
     public AccessInviteResponse revokeInvite(String realm, String refName) {
-        AccessInvite invite = inviteRepo.findByRefName(refName, realm)
+        AccessInvite invite = inviteRepo.findByRefNameIgnoreRules(realm, refName)
             .orElseThrow(() -> new NotFoundException("Invite not found: " + refName));
         invite.setStatus(AccessInvite.Status.REVOKED);
         invite = inviteRepo.save(realm, invite);
@@ -144,25 +149,56 @@ public class AccessInviteService {
             throw new BadRequestException("Invite is no longer pending.");
         }
 
-        String authenticatedUserId = SecurityContext.getPrincipalContext().map(pctx -> normalize(pctx.getUserId())).orElse(null);
+        String authenticatedUserId = SecurityContext.getPrincipalContext()
+            .map(pctx -> normalizeAuthenticatedUserId(pctx.getUserId()))
+            .orElse(null);
         String effectiveUserId = determineEffectiveUserId(invite, request, authenticatedUserId);
         if (authenticatedUserId != null && !authenticatedUserId.equalsIgnoreCase(effectiveUserId)) {
             throw new ForbiddenException("Authenticated user does not match this invite.");
         }
 
+        final String finalRealm = realm;
+        final String finalEffectiveUserId = effectiveUserId;
         String effectiveEmail = normalize(request.getEmail() != null ? request.getEmail() : invite.getEmail());
         if (effectiveEmail == null) {
             effectiveEmail = effectiveUserId;
         }
+        final String finalEffectiveEmail = effectiveEmail;
+        final String firstName = request.getFirstName();
+        final String lastName = request.getLastName();
+        final String password = request.getPassword();
 
+        return SecurityCallScope.runWithContexts(
+            securityUtils.getSystemPrincipalContext(),
+            securityUtils.getSystemSecurityResourceContext(),
+            () -> acceptInviteInSystemScope(
+                finalRealm,
+                invite,
+                finalEffectiveUserId,
+                finalEffectiveEmail,
+                firstName,
+                lastName,
+                password
+            )
+        );
+    }
+
+    private AccessInviteAcceptResponse acceptInviteInSystemScope(
+        String realm,
+        AccessInvite invite,
+        String effectiveUserId,
+        String effectiveEmail,
+        String firstName,
+        String lastName,
+        String password
+    ) {
         CredentialUserIdPassword credential = ensureUserCredential(
             realm,
             effectiveUserId,
-            request.getPassword(),
+            password,
             invite.getGrantedRoles()
         );
-        UserProfile profile = ensureUserProfile(realm, credential, effectiveUserId, effectiveEmail, request.getFirstName(), request.getLastName());
-
+        UserProfile profile = ensureUserProfile(realm, credential, effectiveUserId, effectiveEmail, firstName, lastName);
         for (AccessInviteProvisioner provisioner : provisioners) {
             provisioner.onInviteAccepted(realm, invite, credential, profile);
         }
@@ -309,6 +345,18 @@ public class AccessInviteService {
             return email;
         }
         throw new BadRequestException("Invite acceptance could not determine a target user ID.");
+    }
+
+    private String normalizeAuthenticatedUserId(String userId) {
+        String normalized = normalize(userId);
+        if (normalized == null) {
+            return null;
+        }
+        String anonymousUserId = normalize(securityUtils.getEnvConfigUtils().getAnonymousUserId());
+        if (anonymousUserId != null && anonymousUserId.equalsIgnoreCase(normalized)) {
+            return null;
+        }
+        return normalized;
     }
 
     private void expireInviteIfNeeded(String realm, AccessInvite invite) {

@@ -13,8 +13,8 @@ valueListExpr:
     value=(STRING | QUOTED_STRING | VARIABLE | OID | REFERENCE) (COMMA value=(STRING | QUOTED_STRING | VARIABLE | OID | REFERENCE))*
     rp=RBRKT;
 
-basicExpr: field=STRING op=(EQ|NEQ|LT|GT|LTE|GTE|EXISTS|IN) value=(STRING|VARIABLE|OID) #stringExpr
-| field=STRING op=(EQ | NEQ ) value=QUOTED_STRING #quotedExpr
+basicExpr: field=STRING op=(EQ|NEQ|LT|GT|LTE|GTE|EXISTS|IN) value=(STRING|VARIABLE|OID) caseMode? #stringExpr
+| field=STRING op=(EQ | NEQ ) value=QUOTED_STRING caseMode? #quotedExpr
 | field=STRING op=(EQ | LT | GT | NEQ | LTE | GTE) value=NUMBER #numberExpr
 | field=STRING op=(EQ | LT | GT | NEQ | LTE | GTE) value=WHOLENUMBER #wholenumberExpr
 | field=STRING op=(EQ | LT | GT | NEQ | LTE | GTE) value=DATE #dateExpr
@@ -24,11 +24,13 @@ basicExpr: field=STRING op=(EQ|NEQ|LT|GT|LTE|GTE|EXISTS|IN) value=(STRING|VARIAB
 notExpr: NOT allowedExpr;
 
 regex: ((leftW=WILDCARD value=STRING rightW=WILDCARD)
-| (leftw=WILDCARD value=QUOTED_STRING rightW=WILDCARD)
+| (leftW=WILDCARD value=QUOTED_STRING rightW=WILDCARD)
 | (leftW=WILDCARD value=STRING)
 | (leftW=WILDCARD value=QUOTED_STRING)
 | (value=STRING rightW=WILDCARD)
-| (value=QUOTED_STRING rightW=WILDCARD));
+| (value=QUOTED_STRING rightW=WILDCARD)) caseMode?;
+
+caseMode: CASE_SENSITIVE | CASE_INSENSITIVE;
 
 regexExpr: field=STRING op=(EQ | NEQ) regex;
 
@@ -58,6 +60,8 @@ HASOUTGOINGEDGE: 'hasOutgoingEdge';
 HASINCOMGINEDGE: 'hasIncomingEdge';
 EXPAND: 'expand';
 TEXT: 'text';
+CASE_SENSITIVE: '~cs';
+CASE_INSENSITIVE: '~ci';
 
 // Operators
 EQ: ':';
@@ -137,7 +141,19 @@ REFERENCE:'@@'OID
  }
  ;
 
-STRING: ([a-zA-Z0-9_.-]|' '|'\''|'/'|'@')+ ('&' STRING)*;
+// STRING must start and end with a non-space character; spaces are only allowed
+// *between* word characters (so multi-word unquoted values like `John Smith` still
+// work). This prevents STRING from swallowing the inter-token whitespace that
+// precedes keyword/grouping tokens — e.g. the space in `&& hasEdge(` — which would
+// otherwise shadow HASEDGE/LPAREN and break parsing. Leading/trailing whitespace
+// around tokens is consumed by the WS rule below.
+STRING: STRING_CORE ('&' STRING_CORE)*;
+fragment STRING_CORE: STRING_CHAR ((STRING_CHAR | ' ')* STRING_CHAR)?;
+fragment STRING_CHAR: [a-zA-Z0-9_./@'\-];
+
+// Skip inter-token whitespace. Whitespace inside QUOTED_STRING is preserved
+// because QUOTED_STRING matches it explicitly; this rule only applies between tokens.
+WS: [ \t\r\n]+ -> skip;
 
 QUOTED_STRING
  : '"' (~[\r\n"] | '""')* '"'

@@ -181,6 +181,33 @@ or reference absolute file paths. If both filesystem and classpath contain seed
 packs with the same name, the latest semantic version is applied.
 ====
 
+===== Bootstrap packs
+[source,properties]
+----
+# Enable BootstrapPack infrastructure
+quantum.bootstrap-pack.enabled=true
+
+# Apply discovered bootstrap packs on startup
+quantum.bootstrap-pack.apply.on-startup=false
+
+# Optional CSV list of realms to target on startup
+# If omitted, the framework uses the system/default/test realms when available
+quantum.bootstrap-pack.apply.realms=system-com,mycompany-com,test-com
+
+# Optional CSV filter to apply only selected pack refs
+quantum.bootstrap-pack.apply.filter=pack-a,pack-b
+----
+
+[NOTE]
+====
+Bootstrap packs are not the same thing as seed packs.
+
+- Use seed packs for deterministic baseline data.
+- Use bootstrap packs for idempotent operational setup steps.
+
+See xref:../user-guide/bootstrap-packs.adoc[Bootstrap Packs] for details.
+====
+
 ===== Security rules diagnostics
 [source,properties]
 ----
@@ -267,3 +294,40 @@ See also
 
 - xref:../user-guide/ontology.adoc[Ontologies in Quantum]
 - xref:../user-guide/ontology.adoc#ontology-integration-morphia-permissions-section[Integrating Ontology]
+
+==== Control-plane split (deployment mode)
+
+[cols="2,1,3"]
+|===
+|Property |Default |Description
+
+|`quantum.mode`
+|`embedded`
+|Deployment mode of the control-plane split. `embedded`: the app owns its
+system realm — system-realm migrations, baseline identity, seeds, and
+bootstrap packs run locally (today's behavior, wp3 tiers 0/1). `remote`: the
+control plane owns the system realm; this app skips system-realm startup
+work while app-realm work runs locally (tier 2). Unknown values fail loud at
+startup.
+
+|`quantum.system-service.base-url`
+|—
+|Control-plane service endpoint. Required when `quantum.mode=remote`
+(startup fails loud without it); unused in embedded mode.
+
+|`quantum.system.directory.mode`
+|follows `quantum.mode`
+|Optional override for the SystemDirectory implementation alone
+(`local`/`remote`) — for migration windows where an app runs remote but
+still resolves the directory locally. Remote directory resolution fails loud
+until the Phase C control-plane client ships.
+
+|`quantum.system-rest.enabled`
+|`true`
+|Build-time switch over the control-plane admin REST surface
+(`/admin/tenants*`, `/security/realm*`, `/security/realm-memberships`,
+`/admin/seeds`, `/system/migration`, `/admin/bootstrap-packs`,
+`/onboarding/*`). `false` removes all nine resources at build — the tier-1
+hardening that replaces per-type `quarkus.arc.exclude-types` lists, and what
+a tier-2 tenant-plane app sets.
+|===

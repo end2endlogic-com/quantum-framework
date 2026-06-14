@@ -11,7 +11,17 @@ import java.util.stream.Collectors;
 
 /**
  * Computes a stable hash of a TBox by canonicalizing to sorted JSON.
+ *
+ * @deprecated Legacy internal form (camelCase keys, sorted chains, no pack
+ * metadata, Jackson serialization) — NOT byte-comparable across stacks. Kept
+ * only because persisted tboxHash values and drift detection
+ * (OntologyMeta/OntologyTBox.findByHash) are keyed on it; they compare
+ * like-with-like so they remain correct. Pack identity and any cross-stack
+ * comparison MUST use {@link CanonicalTBoxHasher} (HASH_SPEC.md). Flipping
+ * drift detection to the canonical form requires a coordinated data
+ * migration of stored hashes — until then, do not mix the two forms.
  */
+@Deprecated
 public final class TBoxHasher {
     private TBoxHasher() {}
     

@@ -25,7 +25,9 @@ public class YamlRuleLoaderIT {
             assertEquals(1, rules.size(), "Expected exactly one expanded rule");
 
             Rule r = rules.get(0);
-            assertEquals("allow-singleton", r.getName());
+            // RuleExpander appends an [identity:area:domain:action] suffix to each
+            // expanded rule's name; assert on the base name before the suffix.
+            assertEquals("allow-singleton", baseName(r.getName()));
             assertEquals(RuleEffect.ALLOW, r.getEffect());
             assertEquals(7, r.getPriority());
             assertTrue(r.isFinalRule());
@@ -73,7 +75,7 @@ public class YamlRuleLoaderIT {
 
             // Verify meta carried over from template
             rules.forEach(r -> {
-                assertEquals("multi-combo", r.getName());
+                assertEquals("multi-combo", baseName(r.getName()));
                 assertEquals(RuleEffect.ALLOW, r.getEffect());
                 assertEquals(3, r.getPriority());
                 assertFalse(r.isFinalRule());
@@ -95,6 +97,11 @@ public class YamlRuleLoaderIT {
             assertEquals("read", h.getAction());
             assertEquals(RuleEffect.ALLOW, rules.get(0).getEffect());
         }
+    }
+
+    private static String baseName(String name) {
+        int idx = name.indexOf('[');
+        return idx < 0 ? name : name.substring(0, idx);
     }
 
     private static InputStream resource(String path) {

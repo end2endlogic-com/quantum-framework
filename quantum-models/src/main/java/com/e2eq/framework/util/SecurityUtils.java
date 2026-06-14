@@ -158,10 +158,16 @@ public class SecurityUtils {
    // If authorizedRealms present, intersect candidates with that list; else if realmRegEx present, filter by it;
    // else, return only the default realm from the credential's domain context if included in candidates; if
    // candidates is null, return a singleton list with the default realm.
+   // The credential's domainContext.defaultRealm is always implicitly authorized, so it is unioned into the
+   // result of the authorizedRealms and realmRegEx branches when it appears in the candidate catalog.
    public java.util.List<String> computeAllowedRealmRefNames(
            com.e2eq.framework.model.security.CredentialUserIdPassword credential,
            java.util.List<String> candidateRealmRefNames) {
       java.util.Objects.requireNonNull(credential, "credential cannot be null");
+
+      String defaultRealm = credential.getDomainContext() != null
+              ? credential.getDomainContext().getDefaultRealm()
+              : null;
 
       // Prefer explicit list
       var realms = credential.getAuthorizedRealms();
@@ -177,7 +183,8 @@ public class SecurityUtils {
          }
          java.util.List<String> out = new java.util.ArrayList<>();
          for (String r : candidateRealmRefNames) {
-            if (r != null && allowed.stream().anyMatch(a -> a.equalsIgnoreCase(r))) {
+            if (r != null && (allowed.stream().anyMatch(a -> a.equalsIgnoreCase(r))
+                    || r.equalsIgnoreCase(defaultRealm))) {
                out.add(r);
             }
          }
@@ -203,7 +210,7 @@ public class SecurityUtils {
             }
             java.util.List<String> out = new java.util.ArrayList<>();
             for (String r : candidateRealmRefNames) {
-               if (r != null && p.matcher(r).matches()) {
+               if (r != null && (p.matcher(r).matches() || r.equalsIgnoreCase(defaultRealm))) {
                   out.add(r);
                }
             }
@@ -216,15 +223,14 @@ public class SecurityUtils {
       }
 
       // Neither defined: default to the credential's default realm only
-      String def = credential.getDomainContext() != null ? credential.getDomainContext().getDefaultRealm() : null;
-      if (def == null) {
+      if (defaultRealm == null) {
          return java.util.Collections.emptyList();
       }
       if (candidateRealmRefNames == null) {
-         return java.util.List.of(def);
+         return java.util.List.of(defaultRealm);
       }
       for (String r : candidateRealmRefNames) {
-         if (r != null && r.equalsIgnoreCase(def)) {
+         if (r != null && r.equalsIgnoreCase(defaultRealm)) {
             return java.util.List.of(r);
          }
       }

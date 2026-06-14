@@ -1,7 +1,6 @@
 package com.e2eq.framework.model.general;
 
 import com.e2eq.framework.model.persistent.base.BaseModel;
-import com.fasterxml.jackson.databind.JsonNode;
 import dev.morphia.annotations.Entity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import lombok.AllArgsConstructor;
@@ -32,7 +31,7 @@ public class FeatureFlag extends BaseModel {
    // Environment Support: Environment-specific configuration
    private String environment;          // Environment (e.g., "dev", "staging", "prod")
    private String scope;  // an optional field to specify this feature flag is only relavant for  a certain scope
-   private JsonNode jsonConfiguration;  // Configuration of feature in JSON format
+   private Object jsonConfiguration;  // Configuration of feature in JSON format
 
    @Override
    public String bmFunctionalArea () {

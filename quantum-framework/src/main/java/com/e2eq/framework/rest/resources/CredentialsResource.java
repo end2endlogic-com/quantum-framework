@@ -4,17 +4,23 @@ import com.e2eq.framework.model.auth.AuthProvider;
 import com.e2eq.framework.model.auth.AuthProviderFactory;
 import com.e2eq.framework.model.auth.UserManagement;
 import com.e2eq.framework.model.security.CredentialType;
+import com.e2eq.framework.rest.models.ChangeEmailRequest;
 import com.e2eq.framework.rest.models.ChangePasswordRequest;
+import com.e2eq.framework.rest.models.ResetPasswordRequest;
 import com.e2eq.framework.rest.models.FileUpload;
 import com.e2eq.framework.rest.models.RestError;
+import com.e2eq.framework.rest.models.SuccessResponse;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import jakarta.inject.Inject;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.*;
+import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
+
+import com.e2eq.framework.rest.models.RealmInfo;
 
 import java.util.List;
 import java.util.Optional;
@@ -59,6 +65,7 @@ public class CredentialsResource extends BaseResource<CredentialUserIdPassword, 
     @RolesAllowed({ "user", "admin", "system" })
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
+    @Operation(summary = "Change a user's password")
     public Response changePassword(SecurityContext securityContext,
                                    ChangePasswordRequest changePasswordRequest,
                                    @QueryParam("provider") @DefaultValue("") String provider) {
@@ -102,6 +109,111 @@ public class CredentialsResource extends BaseResource<CredentialUserIdPassword, 
         return Response.status(Response.Status.OK).entity("Password changed").build();
     }
 
+    @Path("changeEmail")
+    @POST
+    @RolesAllowed({ "admin", "system" })
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Operation(summary = "Change a user's email")
+    public Response changeEmail(ChangeEmailRequest changeEmailRequest,
+                                @QueryParam("provider") @DefaultValue("") String provider) {
+
+        if (changeEmailRequest == null
+                || changeEmailRequest.getCurrentEmail() == null || changeEmailRequest.getCurrentEmail().isBlank()
+                || changeEmailRequest.getNewEmail() == null || changeEmailRequest.getNewEmail().isBlank()) {
+            RestError error = RestError.builder()
+                    .status(Response.Status.BAD_REQUEST.getStatusCode())
+                    .statusMessage("currentEmail and newEmail are required")
+                    .build();
+            return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+        }
+
+        if (changeEmailRequest.getCurrentEmail().equalsIgnoreCase(changeEmailRequest.getNewEmail())) {
+            RestError error = RestError.builder()
+                    .status(Response.Status.BAD_REQUEST.getStatusCode())
+                    .statusMessage("newEmail must differ from currentEmail")
+                    .build();
+            return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+        }
+
+        String requestedProvider = (provider == null || provider.isBlank())
+                ? changeEmailRequest.getAuthProvider()
+                : provider;
+
+        try {
+            UserManagement userManager = resolveUserManager(changeEmailRequest.getCurrentEmail(), requestedProvider);
+            userManager.changeEmail(changeEmailRequest.getCurrentEmail(), changeEmailRequest.getNewEmail());
+        } catch (UnsupportedOperationException e) {
+            RestError error = RestError.builder()
+                    .status(Response.Status.BAD_REQUEST.getStatusCode())
+                    .statusMessage("Changing email is not supported by the auth provider")
+                    .reasonMessage(e.getMessage())
+                    .build();
+            return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+        } catch (IllegalArgumentException e) {
+            RestError error = RestError.builder()
+                    .status(Response.Status.BAD_REQUEST.getStatusCode())
+                    .statusMessage("Invalid request")
+                    .reasonMessage(e.getMessage())
+                    .build();
+            return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+        } catch (Exception e) {
+            RestError error = RestError.builder()
+                    .status(Response.Status.INTERNAL_SERVER_ERROR.getStatusCode())
+                    .statusMessage("Failed to change email")
+                    .reasonMessage(e.getMessage())
+                    .build();
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(error).build();
+        }
+
+        SuccessResponse success = new SuccessResponse();
+        success.setStatusCode(Response.Status.OK.getStatusCode());
+        success.setMessage("Email changed successfully");
+        return Response.ok().entity(success).build();
+    }
+
+    @Path("resendTemporaryPassword")
+    @POST
+    @RolesAllowed({ "admin", "system" })
+    @Produces(MediaType.APPLICATION_JSON)
+    @Operation(summary = "Resend temporary password to a user")
+    public Response resendTemporaryPassword(
+            @QueryParam("userId") String userId,
+            @QueryParam("provider") @DefaultValue("") String provider) {
+
+        if (userId == null || userId.isBlank()) {
+            RestError error = RestError.builder()
+                    .status(Response.Status.BAD_REQUEST.getStatusCode())
+                    .statusMessage("userId is required")
+                    .build();
+            return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+        }
+
+        try {
+            UserManagement userManager = resolveUserManager(userId, provider);
+            userManager.resendTemporaryPassword(userId);
+        } catch (UnsupportedOperationException e) {
+            RestError error = RestError.builder()
+                    .status(Response.Status.BAD_REQUEST.getStatusCode())
+                    .statusMessage("Resending temporary password is not supported by the auth provider")
+                    .reasonMessage(e.getMessage())
+                    .build();
+            return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+        } catch (Exception e) {
+            RestError error = RestError.builder()
+                    .status(Response.Status.INTERNAL_SERVER_ERROR.getStatusCode())
+                    .statusMessage("Failed to resend temporary password")
+                    .reasonMessage(e.getMessage())
+                    .build();
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(error).build();
+        }
+
+        SuccessResponse success = new SuccessResponse();
+        success.setStatusCode(Response.Status.OK.getStatusCode());
+        success.setMessage("Temporary password resent successfully");
+        return Response.ok().entity(success).build();
+    }
+
     private UserManagement resolveUserManager(String userId, String requestedProvider) {
         if (requestedProvider != null && !requestedProvider.isBlank()) {
             return authProviderFactory.getUserManager(requestedProvider);
@@ -133,8 +245,65 @@ public class CredentialsResource extends BaseResource<CredentialUserIdPassword, 
     @Path("matching-realms")
     @RolesAllowed({ "user", "admin", "system" })
     @Produces(MediaType.APPLICATION_JSON)
+    @Operation(summary = "Get matching realms for current user")
+    @com.e2eq.framework.annotations.FunctionalAction(value = "VIEW", bypassDataScoping = true)
     public Response getMatchingRealms() {
-        List<String> realms = repo.getMatchingRealmsForCurrentUser();
+        List<RealmInfo> realms = repo.getMatchingRealmsForCurrentUser();
         return Response.ok(realms).build();
+    }
+
+    @GET
+    @Path("byUserId")
+    @RolesAllowed({ "user", "admin", "system" })
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response byUserId(@QueryParam("userId") String userId) {
+        if (userId == null || userId.isBlank()) {
+            return Response.status(Response.Status.BAD_REQUEST).entity(RestError.builder()
+                    .status(Response.Status.BAD_REQUEST.getStatusCode())
+                    .statusMessage("userId is required")
+                    .build()).build();
+        }
+
+        Optional<CredentialUserIdPassword> credentialOptional = repo.findByUserId(userId);
+        if (credentialOptional.isPresent()) {
+            repo.fillUIActions(credentialOptional.get());
+            return Response.ok(credentialOptional.get()).build();
+        }
+
+        return Response.status(Response.Status.NOT_FOUND).entity(RestError.builder()
+                .status(Response.Status.NOT_FOUND.getStatusCode())
+                .statusMessage("UserId:" + userId + " was not found")
+                .build()).build();
+    }
+
+    @POST
+    @Path("resetPassword")
+    @RolesAllowed({ "admin", "system" })
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response resetPassword(ResetPasswordRequest resetPasswordRequest,
+                                  @QueryParam("provider") @DefaultValue("") String provider) {
+        if (!resetPasswordRequest.getConfirmPassword().equals(resetPasswordRequest.getNewPassword())) {
+            return Response.status(Response.Status.BAD_REQUEST).entity("Passwords do not match password not changed").build();
+        }
+
+        String requestedProvider = provider == null || provider.isBlank()
+                ? resetPasswordRequest.getAuthProvider()
+                : provider;
+
+        try {
+            UserManagement userManager = resolveUserManager(resetPasswordRequest.getUserId(), requestedProvider);
+            userManager.resetPassword(
+                    resetPasswordRequest.getUserId(),
+                    resetPasswordRequest.getNewPassword(),
+                    Boolean.TRUE.equals(resetPasswordRequest.getForceChangePassword())
+            );
+        } catch (IllegalArgumentException e) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("Invalid auth provider configuration: " + e.getMessage())
+                    .build();
+        }
+
+        return Response.status(Response.Status.OK).entity("Password reset").build();
     }
 }

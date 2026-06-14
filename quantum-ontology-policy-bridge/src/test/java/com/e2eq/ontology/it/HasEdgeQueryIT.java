@@ -36,6 +36,9 @@ public class HasEdgeQueryIT {
     @Inject
     MorphiaDatastore datastore;
 
+    @Inject
+    com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper dataStoreWrapper;
+
     private static final String TENANT = "test-tenant";
     private ForwardChainingReasoner reasoner;
     private DataDomain testDataDomain;
@@ -44,6 +47,11 @@ public class HasEdgeQueryIT {
     public void setup() {
         reasoner = new ForwardChainingReasoner();
         edgeRepo.deleteAll();
+        // deleteAll() clears the security-context realm; upserts resolve the
+        // tenant realm (test-tenant) — purge that store too or inferred edges
+        // accumulate across test methods (pre-existing isolation bug exposed
+        // once id/refName matching actually worked).
+        dataStoreWrapper.getDataStore("test-tenant").getDatabase().getCollection("edges").drop();
 
         // Clean orders collection
         datastore.getDatabase().getCollection("orders").drop();

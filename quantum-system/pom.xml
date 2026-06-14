@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<project
+    xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd"
+>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.end2endlogic</groupId>
+  <artifactId>quantum-system</artifactId>
+  <version>1.4.0-SNAPSHOT</version>
+
+  <parent>
+    <groupId>com.end2endlogic</groupId>
+    <artifactId>quantum-parent</artifactId>
+    <version>1.4.0-SNAPSHOT</version>
+  </parent>
+
+  <name>${project.groupId}:${project.artifactId}</name>
+  <description>Control-plane module: SystemDirectory (cross-realm catalog + credential
+    directory), realm catalog service, tenant-lifecycle and metering contracts. No JAX-RS
+    resources live here (those belong to quantum-system-rest). See
+    docs/design/CONTROL_PLANE_SPLIT_DESIGN.md.</description>
+  <url>https://github.com/end2endlogic-com/quantum-framework</url>
+
+  <licenses>
+    <license>
+      <name>The Apache License, Version 2.0</name>
+      <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <properties>
+    <maven.compiler.release>17</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>${quarkus.platform.group-id}</groupId>
+        <artifactId>${quarkus.platform.artifact-id}</artifactId>
+        <version>${quarkus.platform.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <!-- CDI -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-arc</artifactId>
+    </dependency>
+
+    <!-- Realm/Credential repos + EnvConfigUtils; transitively brings quantum-models
+         (the security entities and the SystemDirectory contract's collaborators). -->
+    <dependency>
+      <groupId>com.end2endlogic</groupId>
+      <artifactId>quantum-morphia-repos</artifactId>
+      <version>${quantum.version}</version>
+    </dependency>
+
+    <!-- SDK-generated control-plane client (tenant -> system seam, Phase C) +
+         the MicroProfile Rest Client runtime that provides its transport. -->
+    <dependency>
+      <groupId>com.end2endlogic</groupId>
+      <artifactId>quantum-control-plane-client</artifactId>
+      <version>${quantum.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-rest-client-jackson</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-junit5</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <!-- Jandex index so Quarkus discovers the CDI producer (SystemDirectoryProducer)
+           when this jar is a runtime dependency of an application/framework. -->
+      <plugin>
+        <groupId>io.smallrye</groupId>
+        <artifactId>jandex-maven-plugin</artifactId>
+        <version>3.2.2</version>
+        <executions>
+          <execution>
+            <id>make-index</id>
+            <goals>
+              <goal>jandex</goal>
+            </goals>
+          </execution>
+        </executions>
+        <configuration>
+          <indexName>jandex.idx</indexName>
+          <verbose>true</verbose>
+          <jar/>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

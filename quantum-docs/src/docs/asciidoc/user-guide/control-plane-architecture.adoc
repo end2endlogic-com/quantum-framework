@@ -1,0 +1,162 @@
+= Control-Plane Architecture: the quantum-system Module and Deployment Modes
+:toc:
+
+This is the deep dive on the control-plane/data-plane split introduced on
+branch `the integration branch` (design source:
+`docs/design/CONTROL_PLANE_SPLIT_DESIGN.md`; work plan: WP1 workstream B;
+compatibility contract: WP3). It explains what the `quantum-system` module
+is, why each contract lives where it does, what `quantum.mode` changes at
+runtime, and how the deployment tiers map to configuration.
+
+== Why a split
+
+Historically every Quantum app owned a *system realm* (`system-psa-com`,
+`system-b2bi-com`, ...) holding credentials, the realm catalog, and tenant
+provisioning state, and exposed the admin REST surface that manages them. A
+multi-tenant platform deployment needs those concerns in ONE
+control plane — tenant lifecycle, identity, catalog, metering — while
+existing apps keep working unchanged. The split is therefore *strictly
+opt-in*: every existing app remains a valid embedded deployment forever.
+
+== Module layering
+
+----
+quantum-models          contracts & entities (Rule, Realm, UserRealmRole,
+        ▲               FieldPolicyEnforcer, RoleSource, ...)
+quantum-morphia-repos   repos + RuleContext (policy engine) + MigrationService
+        ▲
+quantum-system          CONTROL-PLANE module: SystemDirectory + local impl,
+        ▲               RealmCatalogService, TenantLifecycle contract,
+        |               QuantumModeConfig / SystemRealmOwnership,
+        |               RealmMembershipService, metering contracts.
+        |               No JAX-RS resources in this jar.
+quantum-framework       app framework: REST resources, seeds/bootstrap,
+                        startup coordination, TenantProvisioningService
+----
+
+Placement rules that shaped this:
+
+* **Contracts sit as low as their consumers.** `MigrationService` lives in
+  quantum-morphia-repos and therefore cannot see quantum-system; instead of
+  making it mode-aware it gained an explicit
+  `initializeStartupRealms(boolean includeSystemRealm)` overload — mode is
+  resolved above it and passed down.
+* **quantum-framework depends on quantum-system** (not vice versa), so every
+  existing app's classpath is unchanged and the control-plane contracts are
+  available to all of them.
+* **The embedded implementations are the defaults.** `TenantLifecycle` is
+  implemented by `TenantProvisioningService` by delegation — its existing
+  signatures are untouched (WP3 rule: the contract mirrors, never replaces).
+
+== The contracts
+
+[cols="1,2,2"]
+|===
+|Contract |Owns |Embedded implementation
+
+|`SystemDirectory`
+|system realm id, credential lookup, realm resolution
+|`LocalSystemDirectory` over the configured system realm
+
+|`RealmCatalogService`
+|realm catalog reads/writes (the tenant→realm registry)
+|system-realm repos
+
+|`TenantLifecycle`
+|provision/delete tenants (`TenantProvisionRequest/Result`)
+|`TenantProvisioningService` (delegation)
+
+|`RealmMembershipService`
+|org/account membership per realm (one OWNER, N PARTICIPANTs) and per-realm
+user roles (`UserRealmRole`)
+|system-realm repos; consumed by the IdP at token issuance
+|===
+
+In remote mode (Phase C, in progress) each contract gains an HTTP client
+implementation against the control-plane service; consumers are unaffected
+because they inject the contract.
+
+== quantum.mode: what actually changes
+
+`QuantumModeConfig` is the single source of the deployment mode;
+`SystemRealmOwnership` answers "does this deployment own the system realm?"
+
+[cols="2,1,1"]
+|===
+|Startup concern |embedded |remote
+
+|System-realm migrations |runs |skipped (control plane owns them)
+|Baseline identity (system users) |runs |skipped
+|System-realm seed packs |runs |excluded from realm list
+|System-realm bootstrap packs |runs |excluded from realm list
+|App-realm migrations/seeds/bootstrap |runs |*still runs locally*
+|SystemDirectory |local |remote client (fails loud until Phase C)
+|===
+
+Known Phase C gap (documented in the design doc): when seeding *app* realms,
+the seed runner still reads realm records and admin credentials from the
+local system-realm database; in a true split deployment those reads must
+route through `SystemDirectory`.
+
+== The admin REST surface
+
+`quantum.system-rest.enabled` (build-time, default `true`) gates the nine
+control-plane admin resources via `@IfBuildProperty`. Default-on keeps every
+existing app byte-identical; `false` removes the entire surface in one
+switch — tier-1 hardening, and the setting a tier-2 tenant app builds with.
+The *physical* `quantum-system-rest` jar split remains planned; it is blocked
+on relocating the resources' service closure (provisioning → seed subsystem,
+BaseResource REST infra) below the new jar.
+
+== Deployment tiers (WP3)
+
+[cols="1,2,3"]
+|===
+|Tier |Config |Meaning
+
+|0 (default)
+|nothing
+|Today's behavior: app owns its system realm and admin surface. Expected end
+state for existing apps indefinitely.
+
+|1 (hardened)
+|`quantum.system-rest.enabled=false` at build
+|Same embedded behavior; the app stops exposing tenant provisioning/admin
+endpoints publicly.
+
+|2 (split planes)
+|`quantum.mode=remote` +
+`quantum.system-service.base-url=...` +
+tier-1 build switch
+|Control plane owns the system realm and identity; this app runs only
+app-realm workloads and validates JWTs against the control plane's JWKS.
+the tenant-plane app is the reference deployment.
+|===
+
+== Identity in the split
+
+Per the realm-membership ADR: users hold ONE global identity (credential in
+the system realm) plus per-realm role assignments (`UserRealmRole`). At token
+issuance the IdP unions the assignment for the target realm into the JWT's
+role claims (`CustomTokenAuthProvider.login`), with role provenance exposed
+in the login response (`RoleSource.REALM`). The tenant plane validates via
+JWKS and routes by claims — no per-request callback to the control plane.
+
+== Field-level and relationship policy (one policy source, every egress)
+
+The same rules that scope rows (`andFilterString`/`orFilterString`,
+including ontology traversals like `hasEdge('assignedTo', ...)`) also scope
+fields (`excludedFields`). Resolution happens once
+(`RuleContext.getExcludedFieldPaths`); enforcement is layered per egress:
+Mongo projection on reads, preserve-hidden-fields on merge,
+`FieldPolicyEnforcer.mask` for non-Mongo datasources, and the REST
+serialization interceptor as the last lock. See the Field-Level Policy
+section of permissions.adoc.
+
+== Commit trail (the integration branch)
+
+`b8361878` SystemDirectory indirection · `854ea4f6` quantum-system module ·
+`a2a78bb7` catalog routing · `851bdebe` quantum.mode seam · `edf71e78`
+system-rest switch · `28714ade` TenantLifecycle contract · `40c48926`
+field-level policy · `cf1a1641`/`0053f835`/`78f2b130`/`dcacf1a6`/`f91c85fe`
+membership model, ADR, docs, integration test, per-realm token claims.

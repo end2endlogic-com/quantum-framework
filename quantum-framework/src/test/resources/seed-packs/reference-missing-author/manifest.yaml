@@ -1,0 +1,8 @@
+seedPack: reference-missing-author
+version: 1.0.0
+datasets:
+  - collection: BookModel
+    file: classpath:seed-packs/reference-missing-author/datasets/books.ndjson
+    naturalKey: [ refName ]
+    upsert: true
+    modelClass: com.e2eq.framework.test.BookModel

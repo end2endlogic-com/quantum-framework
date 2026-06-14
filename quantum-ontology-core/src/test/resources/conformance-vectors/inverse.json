@@ -1,0 +1,25 @@
+{
+  "name": "inverse",
+  "description": "An edge whose predicate declares inverseOf materializes the reversed edge.",
+  "tbox": {
+    "version": 1,
+    "id": "vector-inverse",
+    "openness": "closed",
+    "classes": [
+      {"id": "Person"}
+    ],
+    "properties": [
+      {"id": "parentOf", "domain": "Person", "range": "Person", "inverseOf": "childOf"},
+      {"id": "childOf", "domain": "Person", "range": "Person", "inferred": true}
+    ]
+  },
+  "explicit_edges": [
+    {"src_id": "p:ann", "src_type": "Person", "predicate": "parentOf", "dst_id": "p:ben", "dst_type": "Person"}
+  ],
+  "expected": {
+    "status": "ok",
+    "inferred_edges": [
+      ["p:ben", "Person", "childOf", "p:ann", "Person"]
+    ]
+  }
+}

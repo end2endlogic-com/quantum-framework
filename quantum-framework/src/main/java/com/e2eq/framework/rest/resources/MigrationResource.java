@@ -25,9 +25,11 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.Executor;
+import io.quarkus.arc.properties.IfBuildProperty;
 
 @Path("/system/migration")
 @RolesAllowed({"admin", "system"})
+@IfBuildProperty(name = "quantum.system-rest.enabled", stringValue = "true", enableIfMissing = true) // control-plane admin surface; one-switch opt-out (CONTROL_PLANE_SPLIT_DESIGN.md Phase B, wp3 tier 1)
 public class MigrationResource {
    @Inject
    Executor managedExecutor;

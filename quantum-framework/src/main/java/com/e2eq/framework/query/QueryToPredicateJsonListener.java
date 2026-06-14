@@ -223,7 +223,7 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
         String field = ctx.field.getText();
         String escaped = escapeRegexChars(ctx.regex().value.getText());
         String pattern = (ctx.regex().leftW == null ? "^" : ".*") + escaped + (ctx.regex().rightW == null ? "$" : ".*");
-        Pattern compiled = Pattern.compile(pattern);
+        Pattern compiled = Pattern.compile(pattern, isCaseSensitive(ctx.regex().caseMode()) ? 0 : Pattern.CASE_INSENSITIVE);
         Predicate<JsonNode> p = node -> {
             JsonNode v = getNodeAt(node, field);
             if (v == null || v.isMissingNode() || v.isNull()) return false;
@@ -272,9 +272,9 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
     }
 
     /** {@inheritDoc} */
-    @Override public void enterStringExpr(BIAPIQueryParser.StringExprContext ctx) { predicateStack.push(makeBasicPredicate(ctx.field, ctx.op, ctx.value)); }
+    @Override public void enterStringExpr(BIAPIQueryParser.StringExprContext ctx) { predicateStack.push(makeBasicPredicate(ctx.field, ctx.op, ctx.value, isCaseSensitive(ctx.caseMode()))); }
     /** {@inheritDoc} */
-    @Override public void enterQuotedExpr(BIAPIQueryParser.QuotedExprContext ctx) { predicateStack.push(makeBasicPredicate(ctx.field, ctx.op, ctx.value)); }
+    @Override public void enterQuotedExpr(BIAPIQueryParser.QuotedExprContext ctx) { predicateStack.push(makeBasicPredicate(ctx.field, ctx.op, ctx.value, isCaseSensitive(ctx.caseMode()))); }
     /** {@inheritDoc} */
     @Override public void enterNumberExpr(BIAPIQueryParser.NumberExprContext ctx) { predicateStack.push(makeBasicPredicate(ctx.field, ctx.op, ctx.value)); }
     /** {@inheritDoc} */
@@ -310,12 +310,25 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
     }
 
     // ---- helpers ----
+    private boolean isCaseSensitive(BIAPIQueryParser.CaseModeContext ctx) {
+        return ctx != null && ctx.getStart().getType() == BIAPIQueryParser.CASE_SENSITIVE;
+    }
+
     private Predicate<JsonNode> makeBasicPredicate(Token fieldTok, Token opTok, Object valueObj) {
+        return makeBasicPredicate(fieldTok, opTok, valueObj, false);
+    }
+
+    private Predicate<JsonNode> makeBasicPredicate(Token fieldTok, Token opTok, Object valueObj, boolean caseSensitive) {
         String field = fieldTok.getText();
+        CommonToken originalToken = valueObj instanceof CommonToken tok ? tok : null;
+        boolean caseInsensitiveStringEquality = originalToken != null
+                && !caseSensitive
+                && (opTok.getType() == BIAPIQueryParser.EQ || opTok.getType() == BIAPIQueryParser.NEQ)
+                && (originalToken.getType() == BIAPIQueryParser.STRING || originalToken.getType() == BIAPIQueryParser.QUOTED_STRING);
         Object value = coerceFromTokenMaybeSubstitute(valueObj);
         return switch (opTok.getType()) {
-            case BIAPIQueryParser.EQ -> node -> compare(node, field, value, ":");
-            case BIAPIQueryParser.NEQ -> node -> !compare(node, field, value, ":");
+            case BIAPIQueryParser.EQ -> node -> compare(node, field, value, caseInsensitiveStringEquality);
+            case BIAPIQueryParser.NEQ -> node -> !compare(node, field, value, caseInsensitiveStringEquality);
             case BIAPIQueryParser.GT -> node -> relational(node, field, value, ">");
             case BIAPIQueryParser.GTE -> node -> relational(node, field, value, ">=");
             case BIAPIQueryParser.LT -> node -> relational(node, field, value, "<");
@@ -426,14 +439,14 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
         return false;
     }
 
-    private boolean compare(JsonNode node, String path, Object rhs, String eq) {
+    private boolean compare(JsonNode node, String path, Object rhs, boolean ignoreCase) {
         JsonNode lhsNode = getNodeAt(node, path);
         if (lhsNode == null || lhsNode.isMissingNode()) return false;
         if (lhsNode.isArray()) {
-            for (JsonNode el : lhsNode) if (compareScalar(coerceFromJsonNode(el), rhs) == 0) return true;
+            for (JsonNode el : lhsNode) if (compareScalar(coerceFromJsonNode(el), rhs, ignoreCase) == 0) return true;
             return false;
         }
-        return compareScalar(coerceFromJsonNode(lhsNode), rhs) == 0;
+        return compareScalar(coerceFromJsonNode(lhsNode), rhs, ignoreCase) == 0;
     }
 
     private boolean relational(JsonNode node, String path, Object rhs, String op) {
@@ -454,6 +467,11 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     private int compareScalar(Object lhs, Object rhs) {
+        return compareScalar(lhs, rhs, false);
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private int compareScalar(Object lhs, Object rhs, boolean ignoreCase) {
         if (equalsWithDateFlex(lhs, rhs)) return 0;
 
         if (lhs instanceof Number ln && rhs instanceof Number rn) {
@@ -474,6 +492,7 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
 
         String ls = String.valueOf(lhs);
         String rs = String.valueOf(rhs);
+        if (ignoreCase && ls.equalsIgnoreCase(rs)) return 0;
         int s = ls.compareTo(rs);
         return s == 0 ? 0 : (s < 0 ? -1 : 1);
     }

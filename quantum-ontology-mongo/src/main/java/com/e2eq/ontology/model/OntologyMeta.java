@@ -27,12 +27,21 @@ import java.util.Date;
 public class OntologyMeta extends UnversionedBaseModel {
 
     private String yamlHash;      // SHA-256 of YAML source (last applied)
-    private String tboxHash;      // SHA-256 of canonicalized TBox (last applied)
+    private String tboxHash;      // SHA-256 of canonicalized TBox (last applied, legacy TBoxHasher form)
     private Integer yamlVersion;  // version number from YAML (last applied)
     private String source;        // classpath or file path (last observed)
     private Date updatedAt;       // last observation time
     private Date appliedAt;       // when yamlHash/tboxHash were last applied
     private boolean reindexRequired; // flag: edges should be recomputed due to ontology change
+
+    // Pack pin (the unified ontology design Q4): which
+    // shared ontology pack this realm enforces. canonicalTboxHash uses the
+    // cross-stack CanonicalTBoxHasher form (HASH_SPEC.md) and is comparable
+    // with the reference TBox stable-hash spec; tboxHash above remains the
+    // legacy internal drift-detection hash until the Q1 migration completes.
+    private String packId;
+    private String packVersion;
+    private String canonicalTboxHash;
 
     @Override
     public String bmFunctionalArea() {

@@ -29,7 +29,7 @@ public class TenantProvisioningResourceIT {
         );
 
         // 1) Provision
-        String realm = given()
+        io.restassured.path.json.JsonPath response = given()
                 .contentType(ContentType.JSON)
                 .body(body)
             .when()
@@ -38,8 +38,23 @@ public class TenantProvisioningResourceIT {
                 .statusCode(anyOf(is(200), is(201)))
                 .contentType(ContentType.JSON)
                 .body("realmId", equalTo("demo-archetype-example"))
+                .body("executionRef", notNullValue())
+                .body("status", equalTo("COMPLETED"))
                 .extract()
-                .jsonPath().getString("realmId");
+                .jsonPath();
+
+        String realm = response.getString("realmId");
+        String executionRef = response.getString("executionRef");
+
+        given()
+            .when()
+                .get("/admin/tenants/runs/{executionRef}", executionRef)
+            .then()
+                .statusCode(200)
+                .contentType(ContentType.JSON)
+                .body("executionRef", equalTo(executionRef))
+                .body("realmId", equalTo(realm))
+                .body("status", equalTo("COMPLETED"));
 
         // 2) Verify that history for the new realm includes demo-seed entries (archetype includes demo-seed)
         given()

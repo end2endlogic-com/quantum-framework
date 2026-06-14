@@ -116,6 +116,9 @@ This document describes how to add ontology support to the Query Gateway API (`P
 * *ontology.adoc* (or rest-crud):
 ** Add a short subsection that the Query Gateway (`POST /api/query/find`) honors ontology edge predicates in the BIAPI query when the request supplies a realm or the principal context has a tenantId; OntologyEdgeRepo (quantum-ontology-mongo) must be on the classpath.
 
+* *permissions.adoc* (done):
+** The "Row Filter Computation (Data Scoping)" section documents how list/query filters are derived — the static variable map (`${pTenantId}` is the only default scope; org/account/segment are opt-in via authored rules), and the dynamic `AccessListResolver` variables (e.g. `${accessibleLocationIds}`) including the ontology-edge-backed `ListQueryRewriter` path. The gateway's "pass the variableMap into planning" fix above is what makes those `${...}` values resolve for `POST /api/query/find`; without it the filter is built tenant-blind exactly as the Current State notes.
+
 === 4. Optional: Ontology context via gateway
 
 * Some clients may want "ontology edges for entity X" without calling a resource-specific endpoint. Options:

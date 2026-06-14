@@ -16,6 +16,7 @@ import dev.morphia.ModifyOptions;
 import dev.morphia.query.Query;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
+import dev.morphia.query.updates.UpdateOperator;
 import dev.morphia.query.updates.UpdateOperators;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -71,8 +72,31 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
       );
 
       UserProfile p = q.first();
+      if (p != null) {
+         return Optional.of(p);
+      }
 
-      return Optional.ofNullable(p);
+      // Compatibility fallback for older records that stored credential refs using refName/userId
+      // instead of the credential subject.
+      Optional<CredentialUserIdPassword> ocred = credentialRepo.findBySubject(
+              subject,
+              envConfigUtils.getSystemRealm(),
+              true);
+      if (ocred.isEmpty()) {
+         return Optional.empty();
+      }
+
+      CredentialUserIdPassword credential = ocred.get();
+      String legacyRefName = credential.getRefName();
+      String legacyUserId = credential.getUserId();
+      List<Filter> legacyFilters = new ArrayList<>();
+      addLegacyLookupFilters(legacyFilters, legacyUserId);
+      addLegacyLookupFilters(legacyFilters, legacyRefName);
+      Query<UserProfile> legacyQuery = datastore.find(this.getPersistentClass()).filter(
+         Filters.or(legacyFilters.toArray(new Filter[0]))
+      );
+
+      return Optional.ofNullable(legacyQuery.first());
    }
 
 
@@ -106,6 +130,30 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
       );
 
       return Optional.ofNullable(q.first());
+   }
+
+   public UserProfile persistStartupProfile(@NotNull String realm, @NotNull UserProfile profile) {
+      if (profile.getId() == null) {
+         return save(realm, profile);
+      }
+
+      Datastore datastore = morphiaDataStoreWrapper.getDataStore(realm);
+      List<UpdateOperator> ops = new ArrayList<>();
+      ops.add(UpdateOperators.set("refName", profile.getRefName()));
+      ops.add(UpdateOperators.set("userId", profile.getUserId()));
+      ops.add(UpdateOperators.set("email", profile.getEmail()));
+      ops.add(UpdateOperators.set("credentialUserIdPasswordRef", profile.getCredentialUserIdPasswordRef()));
+      ops.add(UpdateOperators.set("dataDomain", profile.getDataDomain()));
+
+      UpdateOperator[] updateOperators = ops.toArray(new UpdateOperator[0]);
+      UserProfile persisted = datastore.find(UserProfile.class)
+              .filter(Filters.eq("_id", profile.getId()))
+              .modify(
+                      new ModifyOptions().returnDocument(ReturnDocument.AFTER),
+                      updateOperators[0],
+                      Arrays.copyOfRange(updateOperators, 1, updateOperators.length)
+              );
+      return persisted == null ? profile : persisted;
    }
 
    @Override
@@ -250,7 +298,7 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
       long ret = 0;
 
       // Delete primary credential
-      Optional<CredentialUserIdPassword> ocred = credentialRepo.findByRefName( obj.getCredentialUserIdPasswordRef().getEntityRefName(), (obj.getCredentialUserIdPasswordRef().getRealm() != null) ? obj.getCredentialUserIdPasswordRef().getRealm() : envConfigUtils.getSystemRealm());
+      Optional<CredentialUserIdPassword> ocred = resolveCredentialReference(obj.getCredentialUserIdPasswordRef());
       if (ocred.isPresent()) {
          credentialRepo.delete(ocred.get());
       }
@@ -258,9 +306,7 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
       // Cascade-delete additional credentials (SERVICE_TOKEN, API_KEY, etc.)
       if (obj.getAdditionalCredentialRefs() != null) {
          for (EntityReference ref : obj.getAdditionalCredentialRefs()) {
-            Optional<CredentialUserIdPassword> additionalCred = credentialRepo.findByRefName(
-                    ref.getEntityRefName(),
-                    (ref.getRealm() != null) ? ref.getRealm() : envConfigUtils.getSystemRealm());
+            Optional<CredentialUserIdPassword> additionalCred = resolveCredentialReference(ref);
             additionalCred.ifPresent(cred -> {
                try {
                   credentialRepo.delete(cred);
@@ -275,5 +321,28 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
       ret= super.delete(realmId, obj);
 
       return ret;
+   }
+
+   private Optional<CredentialUserIdPassword> resolveCredentialReference(EntityReference reference) {
+      if (reference == null || reference.getEntityRefName() == null || reference.getEntityRefName().isBlank()) {
+         return Optional.empty();
+      }
+
+      String realm = (reference.getRealm() != null) ? reference.getRealm() : envConfigUtils.getSystemRealm();
+      return credentialRepo.findByRefName(reference.getEntityRefName(), realm)
+              .or(() -> credentialRepo.findBySubject(reference.getEntityRefName(), realm, true))
+              .or(() -> credentialRepo.findByUserId(reference.getEntityRefName(), realm, true));
+   }
+
+   private void addLegacyLookupFilters(List<Filter> filters, String value) {
+      if (value == null || value.isBlank()) {
+         return;
+      }
+
+      filters.add(Filters.eq("credentialUserIdPasswordRef.entityRefName", value));
+      filters.add(Filters.eq("additionalCredentialRefs.entityRefName", value));
+      filters.add(Filters.eq("userId", value));
+      filters.add(Filters.eq("email", value));
+      filters.add(Filters.eq("refName", value));
    }
 }

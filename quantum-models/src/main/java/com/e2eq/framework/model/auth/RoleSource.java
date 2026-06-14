@@ -7,5 +7,7 @@ import io.quarkus.runtime.annotations.RegisterForReflection;
 public enum RoleSource {
     @JsonProperty("usergroup") USERGROUP,
     @JsonProperty("token") TOKEN,
-    @JsonProperty("credential") CREDENTIAL
+    @JsonProperty("credential") CREDENTIAL,
+    /** Granted via a per-realm assignment (UserRealmRole — membership ADR). */
+    @JsonProperty("realm") REALM
 }

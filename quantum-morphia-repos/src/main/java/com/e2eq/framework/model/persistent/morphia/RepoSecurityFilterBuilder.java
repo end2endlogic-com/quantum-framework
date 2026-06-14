@@ -37,6 +37,28 @@ final class RepoSecurityFilterBuilder {
         throw new RuntimeException("SecurityContext is not set in thread; missing " + missingContext + ". Check security configuration.");
     }
 
+    /**
+     * Field-level policy companion to {@link #buildSecuredFilters}: the
+     * deny-wins union of excluded field paths for the current security
+     * context. Fail-closed on missing context exactly like row filters.
+     */
+    java.util.Set<String> buildExcludedFieldPaths() {
+        if (SecurityContext.getResourceContext().isEmpty() || SecurityContext.getPrincipalContext().isEmpty()) {
+            securityContextResolver.ensureSecurityContextFromIdentity();
+        }
+        if (SecurityContext.getResourceContext().isPresent() && SecurityContext.getPrincipalContext().isPresent()) {
+            return ruleContext.getExcludedFieldPaths(
+                    SecurityContext.getPrincipalContext().get(),
+                    SecurityContext.getResourceContext().get());
+        }
+        // Field exclusions are principal-relative: with no principal on the
+        // thread (system-internal/ignore-rules reads — e.g. the ontology edge
+        // store) there is nothing to exclude. Row-level security separately
+        // fails loud on the paths that REQUIRE a principal; this must not
+        // turn principal-less infrastructure reads into failures.
+        return java.util.Set.of();
+    }
+
     Filter[] getFilterArray(List<Filter> filters, Class<? extends UnversionedBaseModel> modelClass) {
         if (SecurityContext.isIgnoringRules()) {
             if (Log.isDebugEnabled()) {
