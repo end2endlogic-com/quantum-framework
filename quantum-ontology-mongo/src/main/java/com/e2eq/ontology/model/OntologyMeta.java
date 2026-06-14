@@ -34,10 +34,10 @@ public class OntologyMeta extends UnversionedBaseModel {
     private Date appliedAt;       // when yamlHash/tboxHash were last applied
     private boolean reindexRequired; // flag: edges should be recomputed due to ontology change
 
-    // Pack pin (helixor-ontologies UNIFIED_ONTOLOGY_DESIGN.md Q4): which
+    // Pack pin (the unified ontology design Q4): which
     // shared ontology pack this realm enforces. canonicalTboxHash uses the
     // cross-stack CanonicalTBoxHasher form (HASH_SPEC.md) and is comparable
-    // with helixor_ontologies TBox.stable_hash(); tboxHash above remains the
+    // with the reference TBox stable-hash spec; tboxHash above remains the
     // legacy internal drift-detection hash until the Q1 migration completes.
     private String packId;
     private String packVersion;

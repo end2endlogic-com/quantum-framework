@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Proves the centralized issuer projects the principal's DomainContext
  * (realm/tenant/org/account + userId) into token claims. Without this a
- * centrally-issued token is tenant-blind and Helixor's claims_to_principal
+ * centrally-issued token is tenant-blind and a consumer's claims-to-principal
  * would receive null realm/tenant/org.
  */
 class TokenUtilsTenantClaimsTest {
@@ -32,7 +32,7 @@ class TokenUtilsTenantClaimsTest {
         TokenUtils.configure("file:/tmp/quantum-auth-keys/privateKey.pem", "file:/tmp/quantum-auth-keys/publicKey.pem");
 
         String jwt = TokenUtils.generateUserToken(
-                "svc-helixor-001", "helixor-service", Set.of("admin", "service"),
+                "svc-account-001", "service-account", Set.of("admin", "service"),
                 "acme-com", "acme.com", "acme", "0010000101",
                 TokenUtils.expiresAt(3600), "https://auth.example.com");
 
@@ -41,8 +41,8 @@ class TokenUtilsTenantClaimsTest {
         assertTrue(claims.contains("\"tenantId\":\"acme.com\""), claims);
         assertTrue(claims.contains("\"orgRefName\":\"acme\""), claims);
         assertTrue(claims.contains("\"accountNum\":\"0010000101\""), claims);
-        assertTrue(claims.contains("\"userId\":\"helixor-service\""), claims);
-        assertTrue(claims.contains("\"sub\":\"svc-helixor-001\""), claims);
+        assertTrue(claims.contains("\"userId\":\"service-account\""), claims);
+        assertTrue(claims.contains("\"sub\":\"svc-account-001\""), claims);
     }
 
     @Test

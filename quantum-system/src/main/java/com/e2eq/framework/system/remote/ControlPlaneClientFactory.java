@@ -1,6 +1,6 @@
 package com.e2eq.framework.system.remote;
 
-import com.generated.helixorq.control.plane.api.DefaultEndpoint;
+import com.e2eq.framework.controlplane.api.DefaultEndpoint;
 import jakarta.ws.rs.client.ClientRequestFilter;
 import org.eclipse.microprofile.rest.client.RestClientBuilder;
 
