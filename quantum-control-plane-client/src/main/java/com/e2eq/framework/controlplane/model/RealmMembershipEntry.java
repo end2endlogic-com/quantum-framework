@@ -1,4 +1,4 @@
-package com.generated.helixorq.control.plane.model;
+package com.e2eq.framework.controlplane.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;

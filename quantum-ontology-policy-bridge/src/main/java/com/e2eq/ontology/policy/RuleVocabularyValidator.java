@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
 
 /**
  * Validates the ontology vocabulary referenced by security rules against a
- * pinned OntologyRegistry (Q3 in helixor-ontologies UNIFIED_ONTOLOGY_DESIGN.md).
+ * pinned OntologyRegistry (Q3 in the unified ontology design).
  *
  * <p>Rule scripts and filter templates reference ontology predicates as string
  * literals (e.g. {@code hasEdge("canSeeLocation", resourceId)}). Today those

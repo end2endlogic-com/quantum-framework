@@ -19,7 +19,7 @@ import java.util.stream.Collectors;
 public final class YamlOntologyLoader {
 
     // DTOs mirroring YAML (unknown root fields like openness/source are
-    // tolerated so helixor-ontologies pack files load directly)
+    // tolerated so ontology pack files load directly)
     public record YOntology(Integer version, List<YClass> classes, List<YProperty> properties, List<YChain> chains) {}
     public record YClass(String id, List<String> parents, List<String> subClassOf,
                          String label, List<String> aliases, Map<String, Object> metadata) {}

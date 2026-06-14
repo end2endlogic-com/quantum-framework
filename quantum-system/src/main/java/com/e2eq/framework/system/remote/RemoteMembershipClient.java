@@ -2,9 +2,9 @@ package com.e2eq.framework.system.remote;
 
 import com.e2eq.framework.model.security.RealmTenantMembership;
 import com.e2eq.framework.model.security.UserRealmRole;
-import com.generated.helixorq.control.plane.api.DefaultEndpoint;
-import com.generated.helixorq.control.plane.model.RealmMembershipEntry;
-import com.generated.helixorq.control.plane.model.UserRealmRoleEntry;
+import com.e2eq.framework.controlplane.api.DefaultEndpoint;
+import com.e2eq.framework.controlplane.model.RealmMembershipEntry;
+import com.e2eq.framework.controlplane.model.UserRealmRoleEntry;
 import jakarta.ws.rs.ProcessingException;
 import jakarta.ws.rs.WebApplicationException;
 
