@@ -9,7 +9,7 @@ import java.util.List;
  * the ontology policy bridge (PolicyVocabularyGuard) to fail fast on rules
  * referencing predicates the ontology does not declare, or functional
  * domains/actions the FunctionalDomain registry does not declare — see
- * helixor-ontologies UNIFIED_ONTOLOGY_DESIGN.md (Q3).
+ * the unified ontology design (Q3).
  *
  * <p>Lives in quantum-models so both the rule engine (quantum-morphia-repos)
  * and the bridge (quantum-ontology-policy-bridge) can see it without new

@@ -8,7 +8,7 @@ package com.e2eq.framework.api.tenant;
  * (the today's-behavior path). Remote mode (Phase C): implemented by an HTTP
  * client to the control-plane service. Consumers that should not depend on the
  * embedded provisioning machinery — admin REST resources headed for the
- * quantum-system-rest jar, helixorq-system orchestration — inject this
+ * quantum-system-rest jar, system-plane orchestration — inject this
  * interface instead of the concrete service.
  *
  * Contract DTOs ({@link TenantProvisionRequest}, {@link TenantProvisionResult},

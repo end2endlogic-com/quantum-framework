@@ -36,7 +36,7 @@ public interface OntologyRegistry {
     }
 
     static OntologyRegistry inMemory(TBox tbox) { return new InMemoryOntologyRegistry(tbox); }
-    // label/aliases/metadata carry pack presentation metadata (helixor-ontologies
+    // label/aliases/metadata carry pack presentation metadata (the unified ontology design
     // pack format); they participate in the canonical hash (CanonicalTBoxHasher).
     record ClassDef(String name, Set<String> parents, Set<String> disjointWith, Set<String> sameAs,
                     String label, Set<String> aliases, Map<String, Object> metadata){

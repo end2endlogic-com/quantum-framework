@@ -119,7 +119,7 @@ public class TokenUtils {
 
 	/**
 	 * Tenant-aware token: projects the principal's DomainContext (realm, tenant,
-	 * org, account) plus userId into claims so relying parties (Helixor's
+	 * org, account) plus userId into claims so relying parties (a consumer's
 	 * claims_to_principal, Quantum's IdentityAssembler) can scope the token to
 	 * its tenant. A centralized issuer MUST carry these — without them every
 	 * token is tenant-blind.

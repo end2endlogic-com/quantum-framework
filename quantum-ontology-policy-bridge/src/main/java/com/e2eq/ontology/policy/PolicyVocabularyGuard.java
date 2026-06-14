@@ -12,7 +12,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import java.util.List;
 
 /**
- * Enforcement wiring for rule vocabulary validation (Q3 in helixor-ontologies
+ * Enforcement wiring for rule vocabulary validation (Q3 in the unified ontology design
  * UNIFIED_ONTOLOGY_DESIGN.md): observes {@link RuleVocabularyCheck} events
  * fired by RuleContext.addRule and fails the registration when a rule's
  * scripts/filters reference ontology predicates the current registry does not

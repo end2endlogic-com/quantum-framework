@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * THE FULFILLMENT COLLABORATION DEMO as executable evidence (task: tenant-models
  * "shared collaboration realm" + permissions "Field-Level Policy" + ontology
- * relationship policies — see helixor-q/docs/fulfillment-collab-demo.md for the
+ * relationship policies — see the project demo docs for the
  * Postman walkthrough of the same story over REST).
  *
  * One realm, three member orgs (realm-membership ADR: one OWNER, N PARTICIPANTs):

@@ -70,7 +70,7 @@ class CanonicalTBoxHasherTest {
     }
 
     @Test
-    void yamlLoaderReadsHelixorPacksWithPresentationMetadata() throws Exception {
+    void yamlLoaderReadsOntologyPacksWithPresentationMetadata() throws Exception {
         String pack = """
                 version: 1
                 id: bible-structure
