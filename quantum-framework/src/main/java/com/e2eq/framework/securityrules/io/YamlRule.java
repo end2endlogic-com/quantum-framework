@@ -43,6 +43,11 @@ public class YamlRule {
     public Integer priority; // default if null
     public Boolean finalRule; // default if null
 
+    // Field-level policy: paths masked from results when this rule is the matched
+    // ALLOW (deny-wins, union across matched rules). Maps to Rule.excludedFields and
+    // is enforced by FieldPolicyEnforcer / FieldPolicyResponseInterceptor.
+    public List<String> excludedFields;
+
     // Body of the security URI (whatever your SecurityURIBody needs)
     @JsonProperty("body")
     public SecurityURIBody body;

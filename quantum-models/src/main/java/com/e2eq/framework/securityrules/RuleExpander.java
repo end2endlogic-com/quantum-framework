@@ -71,6 +71,7 @@ public final class RuleExpander {
                 .withAndFilterString(src.getAndFilterString())
                 .withOrFilterString(src.getOrFilterString())
                 .withJoinOp(src.getJoinOp())
+                .withExcludedFields(src.getExcludedFields())
                 .build();
     }
 }
