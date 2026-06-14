@@ -2,7 +2,7 @@
 :toc:
 
 This is the deep dive on the control-plane/data-plane split introduced on
-branch `helixorq-readiness` (design source:
+branch `the integration branch` (design source:
 `docs/design/CONTROL_PLANE_SPLIT_DESIGN.md`; work plan: WP1 workstream B;
 compatibility contract: WP3). It explains what the `quantum-system` module
 is, why each contract lives where it does, what `quantum.mode` changes at
@@ -13,7 +13,7 @@ runtime, and how the deployment tiers map to configuration.
 Historically every Quantum app owned a *system realm* (`system-psa-com`,
 `system-b2bi-com`, ...) holding credentials, the realm catalog, and tenant
 provisioning state, and exposed the admin REST surface that manages them. A
-multi-tenant platform deployment (HelixorQ) needs those concerns in ONE
+multi-tenant platform deployment needs those concerns in ONE
 control plane — tenant lifecycle, identity, catalog, metering — while
 existing apps keep working unchanged. The split is therefore *strictly
 opt-in*: every existing app remains a valid embedded deployment forever.
@@ -130,7 +130,7 @@ endpoints publicly.
 tier-1 build switch
 |Control plane owns the system realm and identity; this app runs only
 app-realm workloads and validates JWTs against the control plane's JWKS.
-helixorq-tenant is the reference deployment.
+the tenant-plane app is the reference deployment.
 |===
 
 == Identity in the split
@@ -153,7 +153,7 @@ Mongo projection on reads, preserve-hidden-fields on merge,
 serialization interceptor as the last lock. See the Field-Level Policy
 section of permissions.adoc.
 
-== Commit trail (helixorq-readiness)
+== Commit trail (the integration branch)
 
 `b8361878` SystemDirectory indirection · `854ea4f6` quantum-system module ·
 `a2a78bb7` catalog routing · `851bdebe` quantum.mode seam · `edf71e78`

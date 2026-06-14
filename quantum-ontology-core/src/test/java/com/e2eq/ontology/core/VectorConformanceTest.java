@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 /**
- * Runs the shared helixor-ontologies conformance vectors against the Java
+ * Runs the canonical TBox conformance vectors (repo-owned) against the Java
  * stack (Q2 in UNIFIED_ONTOLOGY_DESIGN.md): same TBox, same explicit edges,
  * same expected inferred-edge set as the Python MaterializationEngine. The
  * driver wraps the per-entity {@link ForwardChainingReasoner} in a graph
