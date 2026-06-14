@@ -4,7 +4,7 @@ Status: Draft
 Owner: (assign)
 Related: `TenantProvisioningService`, `UserManagement`, `Realm`, `RuleContext`,
 `quantum-oauth-server`, `quantum-jwt-provider`
-Consumers: HelixorQ (`helixor-q/backend/helixorq-system`, `helixor-q/backend/helixorq-tenant`)
+Consumers: a multi-tenant platform (`the system-plane app`, `the tenant-plane app`)
 
 ## 1. Problem
 
@@ -81,7 +81,7 @@ and exposes their endpoints:
 small, security-critical, highly available, and has its own database (the
 "system" database) and its own config (OIDC/Cognito, secrets).
 
-Data plane — the realm-scoped server (what `helixorq-tenant` is). Owns ontology,
+Data plane — the realm-scoped server (what `the tenant-plane app` is). Owns ontology,
 governance, business REST, per-realm databases. It **never reads the system
 database directly**; it trusts JWT claims and calls the control plane only for
 directory/provisioning operations it cannot derive from the token.
@@ -102,7 +102,7 @@ directory/provisioning operations it cannot derive from the token.
                                         │   resolve principal policy)
                          ┌──────────────▼────────────────┐
                          │  Data Plane (realm server,     │
-   request + JWT  ──────▶│  e.g. helixorq-tenant)         │
+   request + JWT  ──────▶│  e.g. the tenant-plane app)         │
                          │  routes by JWT claims, applies │
                          │  RuleContext, per-realm DB     │
                          └────────────────────────────────┘
@@ -275,7 +275,7 @@ The token is the boundary. Claims: `subject`, `tenantId`, `realm`,
 `orgRefName`, `roles` (plus standard OIDC). The data plane self-routes from
 `realm`/`orgRefName` and never calls back to resolve identity. This is the
 producer side of the contract already drafted on the consumer side in
-`helixor-q/contracts/system-to-tenant.openapi.yaml`; the control plane needs a
+`the system-to-tenant OpenAPI contract`; the control plane needs a
 complementary identity/org API (token issuance, org/user/account CRUD,
 invitations, principal-authorization resolution). Issuance is `quantum-oauth-server`
 + `quantum-jwt-provider` (see §3). On the data-plane side, `IdentityAssembler`
@@ -290,8 +290,8 @@ roles/membership from the token instead of the system realm.
   (security-critical). One shared instance across all tenants.
 - Data-plane realm servers: scale per tenant/realm; shared (realm-routed) or
   dedicated per enterprise tenant; faster release cadence.
-- HelixorQ: `helixorq-system` becomes a *deployment of the control plane*, not a
-  bespoke app. `helixorq-tenant` is a data-plane realm server in remote mode.
+- a multi-tenant platform: `the system-plane app` becomes a *deployment of the control plane*, not a
+  bespoke app. `the tenant-plane app` is a data-plane realm server in remote mode.
 
 ## 9. Phased, Backward-Compatible Migration
 
@@ -311,7 +311,7 @@ Phase B — Extract control-plane module.
 - Stand up `quantum-system` as a deployable using `quantum-oauth-server` /
   `quantum-jwt-provider` for token issuance.
 
-Phase B progress (2026-06-10, branch helixorq-readiness):
+Phase B progress (2026-06-10, branch the integration branch):
 - (1/n) `quantum-system` module created; `SystemDirectory` contract +
   local impl/producer relocated into it (FQNs of the contract unchanged);
   `RealmCatalogService` + metering contracts (`MeteringEvent`/`MeteringSink`)
@@ -344,7 +344,7 @@ Phase B progress (2026-06-10, branch helixorq-readiness):
   no Lombok). `TenantProvisioningService` implements it by delegation; its
   existing signatures and inner types are untouched (wp3 rule 2 — the contract
   mirrors, it does not replace). Consumers headed across the plane boundary
-  (admin resources for the future quantum-system-rest jar, helixorq-system)
+  (admin resources for the future quantum-system-rest jar, the system-plane app)
   inject the contract; Phase C adds the remote implementation against it.
 - (B1 close-out decision, 2026-06-11): the original "move entities +
   UserManagement into quantum-system" relocation is superseded by the
@@ -410,7 +410,7 @@ Phase E — Data migration.
 - Phase B/C: contract tests for the control-plane API; a docker-compose that
   runs `quantum-system` + one realm server + Mongo; e2e: issue token → realm
   server routes by claims → governed query.
-- HelixorQ ties in via `docker-compose.helixorq.yml` once `helixorq-system`
+- a multi-tenant platform ties in via `the platform compose overlay` once `the system-plane app`
   points at the control plane.
 
 ## 12. Risks / Open Questions

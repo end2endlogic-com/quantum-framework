@@ -1,17 +1,17 @@
 openapi: 3.0.3
 info:
-  title: HelixorQ Control-Plane API (tenant -> system seam)
+  title: Quantum Control-Plane API (tenant -> system seam)
   version: 1.0.0
   description: >
     The queries a tier-2 (quantum.mode=remote) deployment makes against the
-    control plane (helixorq-system): realm catalog resolution and membership/
+    control plane (quantum-system): realm catalog resolution and membership/
     role resolution for routing. Identity is NOT here by design — the tenant
     plane validates platform JWTs against the control plane's JWKS
     (/oauth/jwks); credential material never crosses this seam. Java
     consumers: RemoteSystemDirectory / remote RealmMembershipService in
     quantum-system implement their contracts over this API.
 servers:
-  - url: http://helixorq-system:8080
+  - url: http://quantum-system:8080
 security:
   - bearerAuth: []
 paths:

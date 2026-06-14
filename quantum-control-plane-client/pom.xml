@@ -16,12 +16,12 @@
   </parent>
 
   <name>${project.groupId}:${project.artifactId}</name>
-  <description>SDK-GENERATED control-plane client (tenant -> system seam): typed
+  <description>OpenAPI-generated control-plane client (tenant -> system seam): typed
     model DTOs + a standards-based JAX-RS interface (DefaultEndpoint), generated
-    by helixor-sdk-gen from src/main/resources/openapi/control-plane.openapi.yaml.
-    Consumers (quantum-system RemoteSystemDirectory / RemoteMembershipClient) bind
-    it via MicroProfile Rest Client — no hand-written transport. Regenerate:
-    helixor-sdk-gen generate &lt;cfg&gt; src/main/resources/openapi/control-plane.openapi.yaml.</description>
+    from src/main/resources/openapi/control-plane.openapi.yaml by an OpenAPI SDK
+    generator. Consumers (quantum-system RemoteSystemDirectory / RemoteMembershipClient)
+    bind it via MicroProfile Rest Client — no hand-written transport. Regenerate
+    from the OpenAPI document above.</description>
   <url>https://github.com/end2endlogic-com/quantum-framework</url>
 
   <licenses>

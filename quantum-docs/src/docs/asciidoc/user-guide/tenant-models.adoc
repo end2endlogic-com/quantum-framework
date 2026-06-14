@@ -374,7 +374,7 @@ supports three deliberate configurations:
 |One tenant, one realm (default)
 |`POST /admin/tenants` provisions a realm with a single OWNER membership.
 |The standard SaaS tenant: full physical isolation, independent lifecycle,
-own backups/residency. This is what HelixorQ provisions per customer.
+own backups/residency. This is what a multi-tenant platform provisions per customer.
 
 |Shared collaboration realm
 |One OWNER org plus N PARTICIPANT memberships

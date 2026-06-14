@@ -10,7 +10,7 @@ import java.util.TreeMap;
  * {@code ensure_ascii=True}: keys sorted at every level, no whitespace,
  * non-ASCII characters escaped as lowercase {@code \\uXXXX} (UTF-16 units, so
  * astral code points become surrogate-pair escapes). See
- * helixor-ontologies/docs/HASH_SPEC.md §2.
+ * the canonical TBox HASH_SPEC §2.
  */
 final class CanonicalJson {
     private CanonicalJson() {}

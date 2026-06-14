@@ -1,4 +1,4 @@
-package com.generated.helixorq.control.plane.api;
+package com.e2eq.framework.controlplane.api;
 
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
@@ -17,7 +17,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.util.List;
 import java.util.Map;
-import com.generated.helixorq.control.plane.model.*;
+import com.e2eq.framework.controlplane.model.*;
 
 @Produces(MediaType.APPLICATION_JSON)
 public interface DefaultEndpoint {

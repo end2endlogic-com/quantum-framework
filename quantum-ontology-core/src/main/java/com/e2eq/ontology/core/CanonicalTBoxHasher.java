@@ -18,10 +18,10 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 
 /**
- * Cross-stack canonical TBox hash per helixor-ontologies/docs/HASH_SPEC.md.
+ * Cross-stack canonical TBox hash per the canonical TBox HASH_SPEC.
  *
  * <p>This MUST stay byte-identical with the Python reference implementation
- * ({@code helixor_ontologies.models.TBox.stable_hash()}): canonical JSON with
+ * (the reference TBox stable-hash spec): canonical JSON with
  * sorted keys, compact separators, lowercase {@code \\uXXXX} escapes for all
  * non-ASCII characters, SHA-256 over UTF-8 bytes, lowercase hex digest. The
  * golden vector ({@code conformance-vectors/hash-golden.json}) pins it.

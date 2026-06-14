@@ -2,7 +2,7 @@
 :toc:
 
 == Status
-Accepted (2026-06-11) — implemented incrementally on branch helixorq-readiness
+Accepted (2026-06-11) — implemented incrementally on branch the integration branch
 (membershipRole + UserRealmRole + RealmMembershipService @ cf1a1641).
 
 == Context
@@ -12,7 +12,7 @@ with a catalog entry), DataDomain (org/account/tenant/owner/segment stamps on
 every document), and RealmTenantMembership (an onboarding record). What was
 undefined: what *delineates* a realm, how multiple orgs collaborate inside
 one realm, and how one user holds different roles in different realms. The
-HelixorQ two-plane split and the fulfillment-style collaboration model
+a multi-tenant platform two-plane split and the fulfillment-style collaboration model
 (carrier/supplier/customer orgs against shared sales orders and fulfillment
 plans) both need these answers to be explicit.
 
