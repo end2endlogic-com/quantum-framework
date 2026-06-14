@@ -31,7 +31,10 @@ public class JwksResource {
                     .keyID(TokenUtils.getPrivateKeyLocation())
                     .build();
             JWKSet jwkSet = new JWKSet(rsaKey);
-            return jwkSet.toJSONObject().toString();
+            // JWKSet.toString() emits RFC 7517 JSON (public members only).
+            // Do NOT use toJSONObject().toString() — that returns java.util.Map's
+            // {k=v} form, which is not valid JSON and breaks JWKS clients.
+            return jwkSet.toString();
         } catch (Exception e) {
             Log.error("Failed to build JWKS", e);
             throw new IllegalStateException("Unable to serve JWKS", e);
