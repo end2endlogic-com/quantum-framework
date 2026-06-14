@@ -63,7 +63,17 @@ public class QueryPlanner {
         if (query == null || query.isBlank()) {
             return new PlannerResult(PlannerResult.Mode.FILTER, List.of());
         }
-        BIAPIQueryLexer lexer = new BIAPIQueryLexer(CharStreams.fromString(query));
+        // The root-projection directive `fields:[...]` is handled by string
+        // preprocessing (parseRootProjection / stripExpandAndProjection), not the
+        // grammar — it has no `fields` rule. Strip it before parsing here too, or a
+        // projection query trips the parser ("no viable alternative at input
+        // 'fields:['") before plan() ever gets to strip it. expand(...) is left in
+        // place because the grammar parses it and analyze() needs it to detect mode.
+        String parseable = query.contains("fields:[") ? stripProjectionForParse(query) : query;
+        if (parseable.isBlank()) {
+            return new PlannerResult(PlannerResult.Mode.FILTER, List.of());
+        }
+        BIAPIQueryLexer lexer = new BIAPIQueryLexer(CharStreams.fromString(parseable));
         BIAPIQueryParser parser = new BIAPIQueryParser(new CommonTokenStream(lexer));
         parser.addErrorListener(new BaseErrorListener() {
             @Override
@@ -81,6 +91,17 @@ public class QueryPlanner {
 
     public <T extends UnversionedBaseModel> PlannedQuery plan(String query, Class<T> modelClass) {
         return plan(query, modelClass, null, null, null, null);
+    }
+
+    // Remove only the fields:[...] projection (keep expand(...) so analyze can detect
+    // it), then tidy any logical operator the removal left dangling.
+    private String stripProjectionForParse(String query) {
+        String s = query.replaceAll("(?i)fields:\\[[^]]*\\]", "");
+        s = s.replaceAll("\\s*&&\\s*", " && ");
+        s = s.replaceAll("\\s*\\|\\|\\s*", " || ");
+        s = s.replaceAll("^(?:\\s*(?:&&|\\|\\|)\\s*)+", "");
+        s = s.replaceAll("(?:\\s*(?:&&|\\|\\|)\\s*)+$", "");
+        return s.trim().replaceAll("\\s{2,}", " ");
     }
 
     // Remove expand(...) directives and fields:[...] projection from the raw query string
