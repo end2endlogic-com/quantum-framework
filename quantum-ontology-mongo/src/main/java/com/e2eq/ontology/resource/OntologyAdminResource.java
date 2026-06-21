@@ -1,6 +1,10 @@
 package com.e2eq.ontology.resource;
 
+import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.ontology.metrics.OntologyMetrics;
 import com.e2eq.ontology.model.OntologyMeta;
+import com.e2eq.ontology.mongo.BulkRecomputeService;
+import com.e2eq.ontology.mongo.ProvenanceMigrationService;
 import com.e2eq.ontology.repo.OntologyMetaRepo;
 import com.e2eq.ontology.service.OntologyReindexer;
 import io.smallrye.mutiny.Multi;
@@ -29,6 +33,15 @@ public class OntologyAdminResource {
 
     @Inject
     Executor managedExecutor;
+
+    @Inject
+    BulkRecomputeService bulkRecompute;
+
+    @Inject
+    OntologyMetrics ontologyMetrics;
+
+    @Inject
+    ProvenanceMigrationService provenanceMigration;
 
     @GET
     @Path("/meta")
@@ -109,5 +122,62 @@ public class OntologyAdminResource {
                 "status", reindexer.status(),
                 "result", reindexer.getResult()
         );
+    }
+
+    /**
+     * Bulk recompute / reconciliation for one provider.
+     *
+     * <p>Walks all source entities of the provider's source type via a
+     * registered {@code SourceEntityEnumerator}, recomputes their target
+     * sets, and either reports the deltas (dryRun=true) or applies them.</p>
+     *
+     * <p>Body:</p>
+     * <pre>
+     * {
+     *   "providerId": "AssociateCanSeeLocationProvider",
+     *   "realmId": "acme",
+     *   "dataDomain": { "orgRefName": "...", "accountNum": "...", "tenantId": "...", "dataSegment": 0 },
+     *   "sourceId": "optional-single-id",
+     *   "batchSize": 500,
+     *   "dryRun": true
+     * }
+     * </pre>
+     */
+    @POST
+    @Path("/recompute")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response recompute(BulkRecomputeService.Request req) {
+        if (req == null) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", "request body required")).build();
+        }
+        BulkRecomputeService.Result result = bulkRecompute.recompute(req);
+        if (result.error != null) {
+            return Response.status(Response.Status.BAD_REQUEST).entity(result).build();
+        }
+        return Response.ok(result).build();
+    }
+
+    /** Snapshot of per-provider metrics (invocations, durations, deltas, guard trips). */
+    @GET
+    @Path("/metrics")
+    public Map<String, Map<String, Object>> metrics() {
+        return ontologyMetrics.snapshot();
+    }
+
+    /**
+     * One-shot migration of inline provenance to the side
+     * {@code ontology_edge_provenance} collection. Idempotent.
+     *
+     * <p>Use {@code dryRun=true} to count candidates without writing.</p>
+     */
+    @POST
+    @Path("/provenance/migrate")
+    public ProvenanceMigrationService.Result migrateProvenance(
+            @QueryParam("realm") @DefaultValue("default") String realm,
+            @QueryParam("dryRun") @DefaultValue("false") boolean dryRun) {
+        ProvenanceMigrationService.Result r = provenanceMigration.migrate(realm, dryRun);
+        r.dryRun = dryRun;
+        return r;
     }
 }
