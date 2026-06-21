@@ -1,0 +1,25 @@
+version: 1
+classes:
+  - id: Associate
+  - id: Territory
+  - id: Location
+properties:
+  - id: assignedTerritories
+    domain: Associate
+    range: Territory
+    relation: ONE_TO_MANY
+computed:
+  - id: canSeeLocation
+    domain: Associate
+    range: Location
+    via:
+      hierarchy:
+        node: Territory
+        from: assignedTerritories
+        expand: descendants
+      list:
+        field: locationLists
+        mode: auto
+    dependsOn:
+      - type: Territory
+      - type: LocationList

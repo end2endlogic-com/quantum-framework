@@ -1,6 +1,7 @@
 package com.e2eq.ontology.core;
 
 import com.e2eq.ontology.annotations.OntologyClass;
+import com.e2eq.ontology.metrics.OntologyMetrics;
 import com.e2eq.ontology.spi.OntologyEdgeProvider;
 import io.quarkus.logging.Log;
 import io.quarkus.runtime.Startup;
@@ -60,8 +61,12 @@ public class ComputedEdgeProviderAutoDiscovery {
     @Inject
     ComputedEdgeRegistry registry;
 
+    @Inject
+    OntologyMetrics metrics;
+
     @PostConstruct
     void discoverAndRegister() {
+        ComputedEdgeProvider.setMetrics(metrics);
         int registered = 0;
         int total = 0;
         List<String> warnings = new ArrayList<>();
@@ -91,6 +96,11 @@ public class ComputedEdgeProviderAutoDiscovery {
                     registry.register(computedProvider);
                     registered++;
 
+                    // Staleness validation: every dependency type must have either an
+                    // override of getAffectedSourceIds OR a @DependsOn with a non-empty
+                    // 'via' (so the inverse-query resolver can derive it).
+                    validateStaleness(computedProvider, warnings);
+
                     if (hasOntologyClass) {
                         Log.infof("Auto-registered ComputedEdgeProvider: %s (source: %s, predicate: %s)",
                             computedProvider.getProviderId(),
@@ -116,6 +126,25 @@ public class ComputedEdgeProviderAutoDiscovery {
             Log.warnf("ComputedEdgeProvider auto-discovery complete: registered %d of %d OntologyEdgeProvider beans, " +
                 "%d provider(s) have configuration issues (see warnings above)",
                 registered, total, warnings.size());
+        }
+    }
+
+    private void validateStaleness(ComputedEdgeProvider<?> provider, List<String> warnings) {
+        ComputedEdgeStalenessValidator.ValidationResult vr =
+                ComputedEdgeStalenessValidator.validate(provider);
+        if (vr.ok()) return;
+
+        for (ComputedEdgeStalenessValidator.StalenessRisk risk : vr.risks()) {
+            String warning = String.format(
+                "Provider '%s' declares dependency on %s but %s. " +
+                "Changes to %s will NOT trigger recomputation; computed edges may go stale.",
+                risk.providerId(),
+                risk.dependencyType().getSimpleName(),
+                risk.reason(),
+                risk.dependencyType().getSimpleName());
+            warnings.add(warning);
+            Log.warnf(warning);
+            metrics.recordStalenessRisk(risk.providerId(), risk.dependencyType().getName());
         }
     }
 }
