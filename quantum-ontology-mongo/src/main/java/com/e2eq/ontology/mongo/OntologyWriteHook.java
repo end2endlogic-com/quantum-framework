@@ -4,9 +4,12 @@ import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.PostPersistHook;
 import com.e2eq.ontology.annotations.OntologyClass;
+import com.e2eq.ontology.core.ComputedEdgeProvider;
 import com.e2eq.ontology.core.DataDomainInfo;
+import com.e2eq.ontology.core.MaterializationMode;
 import com.e2eq.ontology.core.OntologyRegistry;
 import com.e2eq.ontology.core.Reasoner;
+import com.e2eq.ontology.metrics.OntologyMetrics;
 import com.e2eq.ontology.model.OntologyEdge;
 import com.e2eq.ontology.repo.OntologyEdgeRepo;
 import com.e2eq.ontology.spi.OntologyEdgeProvider;
@@ -29,6 +32,7 @@ public class OntologyWriteHook implements PostPersistHook {
     @Inject CascadeExecutor cascadeExecutor;
     @Inject OntologyEdgeRepo edgeRepo;
     @Inject Instance<OntologyEdgeProvider> providers;
+    @Inject OntologyMetrics metrics;
 
     @Override
     public void afterPersist(String realmId, Object entity) {
@@ -53,17 +57,31 @@ public class OntologyWriteHook implements PostPersistHook {
 
         // Extend with SPI-provided edges (includes ComputedEdgeProviders)
         DataDomainInfo dataDomainInfo = DataDomainConverter.toInfo(dataDomain);
-        try {
-            for (OntologyEdgeProvider p : providers) {
-                if (p.supports(entityClass)) {
-                    var extra = p.edges(realmId, dataDomainInfo, entity);
-                    if (extra != null && !extra.isEmpty()) {
-                        explicit.addAll(extra);
-                    }
-                }
+        for (OntologyEdgeProvider p : providers) {
+            if (!p.supports(entityClass)) continue;
+            String providerId = (p instanceof ComputedEdgeProvider<?> cep)
+                    ? cep.getProviderId()
+                    : p.getClass().getSimpleName();
+            // Honor materialization mode: only EAGER providers contribute at write time.
+            if (p instanceof ComputedEdgeProvider<?> cep
+                    && cep.getMaterializationMode() != MaterializationMode.EAGER) {
+                continue;
             }
-        } catch (Throwable t) {
-            io.quarkus.logging.Log.warn("OntologyWriteHook: provider extension failed", t);
+            long start = System.nanoTime();
+            int produced = 0;
+            try {
+                var extra = p.edges(realmId, dataDomainInfo, entity);
+                if (extra != null && !extra.isEmpty()) {
+                    produced = extra.size();
+                    explicit.addAll(extra);
+                }
+            } catch (Throwable t) {
+                metrics.recordProviderError(providerId);
+                io.quarkus.logging.Log.warnf(t, "OntologyWriteHook: provider %s failed", providerId);
+                continue;
+            } finally {
+                metrics.recordProviderInvocation(providerId, System.nanoTime() - start, produced);
+            }
         }
 
         String srcId = extractor.idOf(entity);
