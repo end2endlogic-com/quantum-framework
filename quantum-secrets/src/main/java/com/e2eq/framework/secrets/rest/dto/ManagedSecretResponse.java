@@ -20,4 +20,5 @@ public class ManagedSecretResponse {
     private String providerType;
     private Boolean realmDefault;
     private Boolean configured;
+    private Integer keyVersion;
 }
