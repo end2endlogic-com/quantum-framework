@@ -6,6 +6,7 @@ import java.util.*;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.ontology.core.DataDomainInfo;
 import com.e2eq.ontology.core.EdgeRecord;
+import com.e2eq.ontology.metrics.OntologyMetrics;
 import com.e2eq.ontology.model.OntologyEdge;
 import com.e2eq.ontology.repo.OntologyEdgeRepo;
 import jakarta.inject.Inject;
@@ -28,6 +29,32 @@ public class OntologyMaterializer {
 
    @Inject
    protected OntologyEdgeRepo edgeRepo;
+
+   @Inject
+   protected OntologyMetrics metrics;
+
+    /**
+     * Extract a provider id from a Reasoner.Edge's provenance, or null if the
+     * edge was not produced by a {@code ComputedEdgeProvider}.
+     */
+    private static String providerIdOf(Reasoner.Edge e) {
+        return e.prov()
+                .filter(p -> "computed".equals(p.rule()))
+                .map(p -> {
+                    Object v = p.inputs() == null ? null : p.inputs().get("providerId");
+                    return v == null ? null : v.toString();
+                })
+                .orElse(null);
+    }
+
+    /**
+     * Extract a provider id from a stored OntologyEdge's provenance.
+     */
+    private static String providerIdOf(OntologyEdge e) {
+        if (e == null || e.getProv() == null) return null;
+        Object v = e.getProv().get("providerId");
+        return v == null ? null : v.toString();
+    }
 
     /**
      * Apply materialization for an entity with full DataDomain scoping.
@@ -140,6 +167,8 @@ public class OntologyMaterializer {
                     OntologyEdge updated = findEdge(realmId, dataDomain, e.srcId(), e.p(), e.dstId());
                     if (existing == null) {
                         changes.added().add(toEdgeRecord(updated, dataDomain));
+                        String pid = providerIdOf(e);
+                        if (pid != null) metrics.recordEdgesAdded(pid, 1);
                     } else if (isModified(existing, updated)) {
                         changes.modified().add(toEdgeRecord(updated, dataDomain));
                     }
@@ -251,7 +280,11 @@ public class OntologyMaterializer {
 
             existingAfterUpsert.stream()
                     .filter(ex -> Objects.equals(ex.getP(), p) && Boolean.TRUE.equals(ex.isDerived()) && !ex.isInferred() && !keep.contains(ex.getDst()))
-                    .forEach(ex -> changes.removed().add(toEdgeRecord(ex, dataDomain)));
+                    .forEach(ex -> {
+                        changes.removed().add(toEdgeRecord(ex, dataDomain));
+                        String pid = providerIdOf(ex);
+                        if (pid != null) metrics.recordEdgesRemoved(pid, 1);
+                    });
 
             edgeRepo.deleteDerivedBySrcNotIn(realmId, dataDomain, entityId, p, keep);
             existingDerivedByP.remove(p);
@@ -260,7 +293,11 @@ public class OntologyMaterializer {
         for (String pAbsent : existingDerivedByP.keySet()) {
             existingAfterUpsert.stream()
                     .filter(ex -> Objects.equals(ex.getP(), pAbsent) && Boolean.TRUE.equals(ex.isDerived()) && !ex.isInferred())
-                    .forEach(ex -> changes.removed().add(toEdgeRecord(ex, dataDomain)));
+                    .forEach(ex -> {
+                        changes.removed().add(toEdgeRecord(ex, dataDomain));
+                        String pid = providerIdOf(ex);
+                        if (pid != null) metrics.recordEdgesRemoved(pid, 1);
+                    });
             edgeRepo.deleteDerivedBySrcNotIn(realmId, dataDomain, entityId, pAbsent, Set.of());
         }
 
