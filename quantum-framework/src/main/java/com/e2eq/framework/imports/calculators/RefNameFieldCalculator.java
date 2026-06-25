@@ -5,8 +5,6 @@ import com.e2eq.framework.imports.spi.ImportContext;
 import com.e2eq.framework.model.persistent.base.BaseModel;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Named;
-import org.apache.commons.text.WordUtils;
-
 import java.util.Map;
 import java.util.UUID;
 
@@ -24,7 +22,11 @@ public class RefNameFieldCalculator implements FieldCalculator {
     }
 
     @Override
-    public void calculate(BaseModel bean, Map<String, Object> rowData, ImportContext context) {
+    public void calculate(
+        BaseModel bean,
+        Map<String, Object> rowData,
+        ImportContext context
+    ) {
         if (bean.getRefName() == null || bean.getRefName().isEmpty()) {
             String refName = generateRefName(bean, rowData);
             bean.setRefName(refName);
@@ -36,7 +38,10 @@ public class RefNameFieldCalculator implements FieldCalculator {
         return 70; // Run after UUID calculator
     }
 
-    private String generateRefName(BaseModel bean, Map<String, Object> rowData) {
+    private String generateRefName(
+        BaseModel bean,
+        Map<String, Object> rowData
+    ) {
         // Try to derive from displayName
         String displayName = bean.getDisplayName();
         if (displayName != null && !displayName.isEmpty()) {
@@ -44,7 +49,12 @@ public class RefNameFieldCalculator implements FieldCalculator {
         }
 
         // Try common name fields from row data
-        for (String fieldName : new String[]{"name", "title", "code", "identifier"}) {
+        for (String fieldName : new String[] {
+            "name",
+            "title",
+            "code",
+            "identifier",
+        }) {
             Object value = rowData.get(fieldName);
             if (value != null && !value.toString().isEmpty()) {
                 return normalizeRefName(value.toString());
@@ -61,15 +71,17 @@ public class RefNameFieldCalculator implements FieldCalculator {
         }
 
         // Convert to lowercase, replace spaces with hyphens, remove special chars
-        String normalized = value.toLowerCase()
-                .replaceAll("\\s+", "-")
-                .replaceAll("[^a-z0-9\\-_]", "")
-                .replaceAll("-+", "-")
-                .replaceAll("^-|-$", "");
+        String normalized = value
+            .toLowerCase()
+            .replaceAll("\\s+", "-")
+            .replaceAll("[^a-z0-9\\-_]", "")
+            .replaceAll("-+", "-")
+            .replaceAll("^-|-$", "");
 
         // Ensure minimum length
         if (normalized.length() < 3) {
-            normalized = normalized + "-" + UUID.randomUUID().toString().substring(0, 8);
+            normalized =
+                normalized + "-" + UUID.randomUUID().toString().substring(0, 8);
         }
 
         // Truncate if too long (keeping it reasonable for database indexes)

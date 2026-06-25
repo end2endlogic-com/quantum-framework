@@ -14,14 +14,12 @@ import com.e2eq.framework.util.EnvConfigUtils;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
-
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 @ApplicationScoped
 public class BootstrapPackStartupRunner {
@@ -35,10 +33,16 @@ public class BootstrapPackStartupRunner {
     @Inject
     SystemRealmOwnership systemRealmOwnership;
 
-    @ConfigProperty(name = "quantum.bootstrap-pack.enabled", defaultValue = "true")
+    @ConfigProperty(
+        name = "quantum.bootstrap-pack.enabled",
+        defaultValue = "true"
+    )
     boolean enabled;
 
-    @ConfigProperty(name = "quantum.bootstrap-pack.apply.on-startup", defaultValue = "false")
+    @ConfigProperty(
+        name = "quantum.bootstrap-pack.apply.on-startup",
+        defaultValue = "false"
+    )
     boolean applyOnStartup;
 
     @ConfigProperty(name = "quantum.bootstrap-pack.apply.realms")
@@ -52,25 +56,35 @@ public class BootstrapPackStartupRunner {
 
     public void onStart() {
         if (!enabled || !applyOnStartup) {
-            Log.info("BootstrapPackStartupRunner disabled by configuration (quantum.bootstrap-pack.enabled / quantum.bootstrap-pack.apply.on-startup)");
+            Log.info(
+                "BootstrapPackStartupRunner disabled by configuration (quantum.bootstrap-pack.enabled / quantum.bootstrap-pack.apply.on-startup)"
+            );
             return;
         }
 
         List<String> realms = resolveStartupRealms();
         List<BootstrapPackDefinition> packs = resolveStartupPacks();
         if (realms.isEmpty() || packs.isEmpty()) {
-            Log.info("BootstrapPackStartupRunner: no startup bootstrap packs selected");
+            Log.info(
+                "BootstrapPackStartupRunner: no startup bootstrap packs selected"
+            );
             return;
         }
 
-        Log.infof("BootstrapPackStartupRunner: will apply bootstrap packs %s to realms %s", packs.stream().map(BootstrapPackDefinition::packRef).toList(), realms);
+        Log.infof(
+            "BootstrapPackStartupRunner: will apply bootstrap packs %s to realms %s",
+            packs.stream().map(BootstrapPackDefinition::packRef).toList(),
+            realms
+        );
         for (String realm : realms) {
             for (BootstrapPackDefinition pack : packs) {
                 try {
                     BootstrapPackRun run = SecurityCallScope.runWithContexts(
-                            startupPrincipalContext(realm),
-                            startupResourceContext(realm),
-                            () -> bootstrapPackService.apply(new ApplyBootstrapPackRequest(
+                        startupPrincipalContext(realm),
+                        startupResourceContext(realm),
+                        () ->
+                            bootstrapPackService.apply(
+                                new ApplyBootstrapPackRequest(
                                     pack.packRef(),
                                     BootstrapPackApplyMode.APPLY_MISSING,
                                     pack.productRef(),
@@ -79,13 +93,26 @@ public class BootstrapPackStartupRunner {
                                     null,
                                     null,
                                     "framework/bootstrap-startup"
-                            ))
+                                )
+                            )
                     );
-                    if (run != null && run.status() == BootstrapPackRunStatus.FAILED) {
-                        Log.warnf("BootstrapPackStartupRunner: bootstrap pack %s finished with status FAILED for realm %s", pack.packRef(), realm);
+                    if (
+                        run != null &&
+                        run.status() == BootstrapPackRunStatus.FAILED
+                    ) {
+                        Log.warnf(
+                            "BootstrapPackStartupRunner: bootstrap pack %s finished with status FAILED for realm %s",
+                            pack.packRef(),
+                            realm
+                        );
                     }
                 } catch (Exception ex) {
-                    Log.warnf("BootstrapPackStartupRunner: failed applying pack %s for realm %s: %s", pack.packRef(), realm, ex.getMessage());
+                    Log.warnf(
+                        "BootstrapPackStartupRunner: failed applying pack %s for realm %s: %s",
+                        pack.packRef(),
+                        realm,
+                        ex.getMessage()
+                    );
                 }
             }
         }
@@ -111,7 +138,10 @@ public class BootstrapPackStartupRunner {
         }
         List<String> resolved = new ArrayList<>(realms);
         // Covers this runner and PendingBootstrapPacksStartupLogger (which reuses this method).
-        systemRealmOwnership.excludeSystemRealmIfNotOwned(resolved, "BootstrapPackStartupRunner");
+        systemRealmOwnership.excludeSystemRealmIfNotOwned(
+            resolved,
+            "BootstrapPackStartupRunner"
+        );
         return resolved;
     }
 
@@ -121,9 +151,10 @@ public class BootstrapPackStartupRunner {
         if (filter.isEmpty()) {
             return packs;
         }
-        return packs.stream()
-                .filter(pack -> filter.contains(pack.packRef()))
-                .toList();
+        return packs
+            .stream()
+            .filter(pack -> filter.contains(pack.packRef()))
+            .toList();
     }
 
     private Set<String> resolvePackFilter() {
@@ -162,46 +193,54 @@ public class BootstrapPackStartupRunner {
     PrincipalContext startupPrincipalContext(String realm) {
         String effectiveRealm = normalize(realm);
         DataDomain dataDomain;
-        if (effectiveRealm != null && effectiveRealm.equals(envConfigUtils.getSystemRealm())) {
+        if (
+            effectiveRealm != null &&
+            effectiveRealm.equals(envConfigUtils.getSystemRealm())
+        ) {
             dataDomain = new DataDomain(
-                    envConfigUtils.getSystemOrgRefName(),
-                    envConfigUtils.getSystemAccountNumber(),
-                    envConfigUtils.getSystemTenantId(),
-                    envConfigUtils.getDefaultDataSegment(),
-                    envConfigUtils.getSystemUserId()
+                envConfigUtils.getSystemOrgRefName(),
+                envConfigUtils.getSystemAccountNumber(),
+                envConfigUtils.getSystemTenantId(),
+                envConfigUtils.getDefaultDataSegment(),
+                envConfigUtils.getSystemUserId()
             );
-        } else if (effectiveRealm != null && effectiveRealm.equals(envConfigUtils.getTestRealm())) {
+        } else if (
+            effectiveRealm != null &&
+            effectiveRealm.equals(envConfigUtils.getTestRealm())
+        ) {
             dataDomain = new DataDomain(
-                    envConfigUtils.getTestOrgRefName(),
-                    envConfigUtils.getTestAccountNumber(),
-                    envConfigUtils.getTestTenantId(),
-                    envConfigUtils.getDefaultDataSegment(),
-                    envConfigUtils.getSystemUserId()
+                envConfigUtils.getTestOrgRefName(),
+                envConfigUtils.getTestAccountNumber(),
+                envConfigUtils.getTestTenantId(),
+                envConfigUtils.getDefaultDataSegment(),
+                envConfigUtils.getSystemUserId()
             );
         } else {
             dataDomain = new DataDomain(
-                    envConfigUtils.getDefaultOrgRefName(),
-                    envConfigUtils.getDefaultAccountNumber(),
-                    envConfigUtils.getDefaultTenantId(),
-                    envConfigUtils.getDefaultDataSegment(),
-                    envConfigUtils.getSystemUserId()
+                envConfigUtils.getDefaultOrgRefName(),
+                envConfigUtils.getDefaultAccountNumber(),
+                envConfigUtils.getDefaultTenantId(),
+                envConfigUtils.getDefaultDataSegment(),
+                envConfigUtils.getSystemUserId()
             );
         }
         return SecurityCallScope.service(
-                effectiveRealm != null ? effectiveRealm : envConfigUtils.getSystemRealm(),
-                dataDomain,
-                envConfigUtils.getSystemUserId(),
-                "SYSTEM"
+            effectiveRealm != null
+                ? effectiveRealm
+                : envConfigUtils.getSystemRealm(),
+            dataDomain,
+            envConfigUtils.getSystemUserId(),
+            "SYSTEM"
         );
     }
 
     ResourceContext startupResourceContext(String realm) {
         return SecurityCallScope.resource(
-                startupPrincipalContext(realm),
-                realm,
-                "BOOTSTRAP",
-                "BOOTSTRAP_PACK",
-                "APPLY"
+            startupPrincipalContext(realm),
+            realm,
+            "BOOTSTRAP",
+            "BOOTSTRAP_PACK",
+            "APPLY"
         );
     }
 }

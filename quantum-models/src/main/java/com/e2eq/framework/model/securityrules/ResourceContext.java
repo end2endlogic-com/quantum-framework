@@ -1,11 +1,15 @@
 package com.e2eq.framework.model.securityrules;
 
+import com.e2eq.framework.model.persistent.base.DataDomain;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.graalvm.polyglot.HostAccess;
 
 import jakarta.validation.constraints.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -24,6 +28,8 @@ public class ResourceContext {
   protected @NotNull String action;             // the action we are trying to take
   protected String resourceId; // the id (objectId) if known
   protected String ownerId; // the id (ownerId) if known
+  protected DataDomain dataDomain; // effective data-domain attributes for this resource access
+  protected Map<String, Object> attributes; // optional extension attributes for policy/debug consumers
 
    public static ResourceContext DEFAULT_ANONYMOUS_CONTEXT = new ResourceContext("NONE", "NONE", "NONE", "NONE", null, null);
 
@@ -33,6 +39,17 @@ public class ResourceContext {
                    @NotNull(message="action can not be null") String action,
                    String resourceId,
                    String ownerId) {
+      this(realm, area, functionalDomain, action, resourceId, ownerId, null, Collections.emptyMap());
+   }
+
+   ResourceContext(@NotNull(message="realmId can not be null") String realm,
+                   @NotNull(message="area can not be null") String area,
+                   @NotNull(message="functional domain can not be null") String functionalDomain,
+                   @NotNull(message="action can not be null") String action,
+                   String resourceId,
+                   String ownerId,
+                   DataDomain dataDomain,
+                   Map<String, Object> attributes) {
       Objects.requireNonNull(realm, "realm can not be null");
       Objects.requireNonNull(area, "area can not be null");
       Objects.requireNonNull(functionalDomain, "functionalDomain can not be null");
@@ -45,6 +62,10 @@ public class ResourceContext {
       this.action = action.toLowerCase();
       this.resourceId = resourceId != null ? resourceId.toLowerCase() : null;
       this.ownerId = ownerId!= null ? ownerId.toLowerCase() : null;
+      this.dataDomain = dataDomain;
+      this.attributes = attributes == null || attributes.isEmpty()
+              ? Collections.emptyMap()
+              : Collections.unmodifiableMap(new HashMap<>(attributes));
    }
 
    public static class Builder {
@@ -56,6 +77,8 @@ public class ResourceContext {
       String action = any;
       String resourceId = any;
       String ownerId = any;
+      DataDomain dataDomain = null;
+      Map<String, Object> attributes = new HashMap<>();
 
       public Builder withRealm(String realm) {
          this.realm = realm.toLowerCase();
@@ -86,9 +109,28 @@ public class ResourceContext {
            return this;
        }
 
+      public Builder withDataDomain(DataDomain dataDomain) {
+         this.dataDomain = dataDomain;
+         return this;
+      }
+
+      public Builder withAttributes(Map<String, Object> attributes) {
+         if (attributes != null) {
+            this.attributes = new HashMap<>(attributes);
+         }
+         return this;
+      }
+
+      public Builder withAttribute(String key, Object value) {
+         if (key != null && !key.isBlank() && value != null) {
+            this.attributes.put(key, value);
+         }
+         return this;
+      }
+
       public ResourceContext build() {
          return new ResourceContext( realm, area,
-            functionalDomain, action, resourceId, ownerId);
+            functionalDomain, action, resourceId, ownerId, dataDomain, attributes);
       }
    };
 
@@ -137,6 +179,30 @@ public class ResourceContext {
    public void setOwnerId (String ownerId) {this.ownerId = ownerId.toLowerCase();}
 
    @HostAccess.Export
+   public @Nullable DataDomain getDataDomain() {
+      return dataDomain;
+   }
+
+   public void setDataDomain(DataDomain dataDomain) {
+      this.dataDomain = dataDomain;
+   }
+
+   @HostAccess.Export
+   public Map<String, Object> getAttributes() {
+      return attributes == null ? Collections.emptyMap() : attributes;
+   }
+
+   public void setAttributes(Map<String, Object> attributes) {
+      this.attributes = attributes == null || attributes.isEmpty()
+              ? Collections.emptyMap()
+              : Collections.unmodifiableMap(new HashMap<>(attributes));
+   }
+
+   public ResourceContext withDataDomain(DataDomain dataDomain) {
+      return new ResourceContext(realm, area, functionalDomain, action, resourceId, ownerId, dataDomain, attributes);
+   }
+
+   @HostAccess.Export
    @Override
    public boolean equals (Object o) {
       if (this == o) return true;
@@ -173,6 +239,8 @@ public class ResourceContext {
                 ", action='" + action + '\'' +
                 ", resourceId='" + resourceId + '\'' +
                 ", ownerId='" + ownerId + '\'' +
+                ", dataDomain='" + dataDomain + '\'' +
+                ", attributes='" + attributes + '\'' +
                 '}';
    }
 }
