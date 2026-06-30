@@ -84,7 +84,8 @@ public class QueryGatewayResourceIT {
             .body("limit", is(10))
             .body("filter", is("category:*test*"));
 
-        // Aggregation with unresolved target collection should return 422 (since feature flag is on in tests)
+        // Aggregation/expand execution is gated off (501) because the secured $match for the
+        // aggregation path is not yet implemented; shipping it would bypass row/field governance.
         body.put("query", "expand(customer) && category:default");
         given()
             .contentType(ContentType.JSON)
@@ -92,8 +93,8 @@ public class QueryGatewayResourceIT {
         .when()
             .post("/api/query/find")
         .then()
-            .statusCode(422)
-            .body("error", is("UnresolvedCollection"));
+            .statusCode(501)
+            .body("error", is("NotImplemented"));
     }
 
     // ========================================================================
