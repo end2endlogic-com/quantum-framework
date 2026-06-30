@@ -81,6 +81,44 @@ public class TenantOntologyRegistryProvider {
     }
 
     /**
+     * B5 vocabulary tier: the set of ontology predicates ADMITTED for policy
+     * (security-rule) use in the current security-context realm.
+     * <p>
+     * Resolves the realm the SAME way {@link #getRegistry()} does (via the current
+     * SecurityContext, falling back to {@code defaultRealm}), then reads the realm's
+     * ACTIVE {@link TenantOntologyTBox} fresh (NOT cached — admission state changes
+     * out-of-band). Returns:
+     * <ul>
+     *   <li>{@code Optional.of(set)} when an active tenant TBox exists and its
+     *       {@code admittedPredicates} field is non-null (governed realm); the set
+     *       defines exactly which declared predicates may be referenced by rules.</li>
+     *   <li>{@code Optional.empty()} otherwise — no active tenant doc, or a legacy
+     *       doc with a null {@code admittedPredicates} field — meaning "all declared
+     *       predicates admitted" (back-compat).</li>
+     * </ul>
+     * Read fresh on every call and fully null-safe.
+     * </p>
+     * @return the admitted-predicate set for the current realm, or empty for legacy
+     */
+    public java.util.Optional<java.util.Set<String>> admittedPredicatesForCurrentRealm() {
+        String realm = getCurrentRealm();
+        try {
+            Optional<TenantOntologyTBox> activeTenantTBox =
+                    tenantTboxRepo.findActiveTBox(realmDataDomain(realm));
+            if (activeTenantTBox.isPresent()) {
+                java.util.Set<String> admitted = activeTenantTBox.get().getAdmittedPredicates();
+                if (admitted != null) {
+                    return java.util.Optional.of(admitted);
+                }
+            }
+        } catch (Throwable t) {
+            Log.debugf("admittedPredicatesForCurrentRealm: could not resolve active tenant TBox for "
+                    + "realm %s, treating as legacy (all admitted): %s", realm, t.getMessage());
+        }
+        return java.util.Optional.empty();
+    }
+
+    /**
      * Get the ontology registry for a specific realm.
      * <p>
      * If no cached registry exists, attempts to load from persisted TBox.
