@@ -2,12 +2,14 @@ package com.e2eq.ontology.runtime;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
+import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.security.runtime.RuleContext;
 import com.e2eq.ontology.core.*;
 import com.e2eq.ontology.core.OntologyRegistry.TBox;
 import com.e2eq.ontology.mongo.MorphiaOntologyLoader;
 import com.e2eq.ontology.model.OntologyTBox;
+import com.e2eq.ontology.model.TenantOntologyTBox;
 import com.e2eq.ontology.repo.OntologyTBoxRepo;
 import com.e2eq.ontology.repo.TenantOntologyTBoxRepo;
 import com.e2eq.ontology.service.OntologyMetaService;
@@ -76,6 +78,94 @@ public class TenantOntologyRegistryProvider {
     public OntologyRegistry getRegistry() {
         String realm = getCurrentRealm();
         return getRegistryForRealm(realm);
+    }
+
+    /**
+     * B5 vocabulary tier: resolve the THREE-state admitted-predicate disposition
+     * for policy (security-rule) use in the current security-context realm.
+     * <p>
+     * Resolves the realm the SAME way {@link #getRegistry()} does (via the current
+     * SecurityContext, falling back to {@code defaultRealm}), then reads the realm's
+     * ACTIVE {@link TenantOntologyTBox} fresh (NOT cached — admission state changes
+     * out-of-band). Returns:
+     * <ul>
+     *   <li>{@link AdmittedVocabularyResult#governed(java.util.Set)} when an active
+     *       tenant TBox exists and its {@code admittedPredicates} field is non-null
+     *       (governed realm); the set defines exactly which declared predicates may
+     *       be referenced by rules. Decided at the {@code admitted != null} branch
+     *       below.</li>
+     *   <li>{@link AdmittedVocabularyResult#legacy()} when there is no active tenant
+     *       doc, or a legacy doc with a {@code null admittedPredicates} field —
+     *       meaning "all declared predicates admitted" (back-compat). Decided at the
+     *       fall-through {@code return legacy()} below.</li>
+     *   <li>{@link AdmittedVocabularyResult#unavailable()} when the read THREW (the
+     *       {@code catch (Throwable)} branch). This is the security-critical case:
+     *       the caller (policy guard) must fail CLOSED rather than treat the blip as
+     *       legacy/all-admitted. We do NOT silently downgrade a GOVERNED realm on a
+     *       transient Mongo failure.</li>
+     * </ul>
+     * Read fresh on every call and fully null-safe.
+     * </p>
+     *
+     * <p><b>Availability tradeoff (surfaced for review):</b> mapping the read
+     * failure to UNAVAILABLE means that during a Mongo outage, security-rule
+     * (re)loading for a GOVERNED realm is rejected (fail CLOSED). This is a
+     * deliberate trade of availability for security — it prevents a transient blip
+     * from re-opening every declared predicate. It intentionally does NOT add a
+     * bounded stale-TTL cache (B4, out of scope); it only fails closed and emits an
+     * observable signal so the downgrade-attempt is visible.</p>
+     *
+     * @return the 3-state admitted-vocabulary disposition for the current realm
+     */
+    public AdmittedVocabularyResult admittedVocabularyForCurrentRealm() {
+        String realm = getCurrentRealm();
+        // realmDataDomain(realm) is pure logic — compute it OUTSIDE the try so a bug there
+        // surfaces normally rather than being masked as a read failure (UNAVAILABLE).
+        var dataDomain = realmDataDomain(realm);
+        Optional<TenantOntologyTBox> activeTenantTBox;
+        try {
+            // ONLY the Mongo read may signal UNAVAILABLE. The null-check / GOVERNED-vs-LEGACY
+            // construction below is pure logic and must NOT be reclassified as a read failure,
+            // or a programming bug would masquerade as a transient outage.
+            activeTenantTBox = tenantTboxRepo.findActiveTBox(dataDomain);
+        } catch (Throwable t) {
+            // UNAVAILABLE: the read threw. Do NOT collapse to legacy/all-admitted —
+            // that is the fail-OPEN security downgrade this method exists to close.
+            // Log WITH the throwable (stack) so the fail-closed event is diagnosable
+            // (t.getMessage() is often null, e.g. for NPEs).
+            Log.warn("admittedVocabularyForCurrentRealm: admitted-set read FAILED for realm " + realm
+                    + "; returning UNAVAILABLE so the policy guard fails CLOSED (no predicates admitted "
+                    + "for rule references) instead of silently downgrading to all-admitted", t);
+            return AdmittedVocabularyResult.unavailable();
+        }
+        if (activeTenantTBox.isPresent()) {
+            java.util.Set<String> admitted = activeTenantTBox.get().getAdmittedPredicates();
+            if (admitted != null) {
+                // GOVERNED: enforce exactly this set for rule references.
+                return AdmittedVocabularyResult.governed(admitted);
+            }
+        }
+        // LEGACY: no active doc, or active doc with null admittedPredicates.
+        return AdmittedVocabularyResult.legacy();
+    }
+
+    /**
+     * Legacy 2-state projection of {@link #admittedVocabularyForCurrentRealm()}:
+     * GOVERNED -&gt; the admitted set, LEGACY and UNAVAILABLE -&gt; {@code empty()}.
+     * <p>
+     * <b>Do NOT use this from the policy guard.</b> It cannot distinguish the
+     * read-failure (UNAVAILABLE) state from legacy and therefore re-opens the
+     * fail-OPEN downgrade. It is retained only for any back-compat caller that
+     * predates the 3-state contract; new code must call
+     * {@link #admittedVocabularyForCurrentRealm()} and fail closed on UNAVAILABLE.
+     * </p>
+     * @return the admitted-predicate set for the current realm, or empty for legacy
+     * @deprecated prefer {@link #admittedVocabularyForCurrentRealm()} which exposes
+     *             the UNAVAILABLE state required to fail closed.
+     */
+    @Deprecated
+    public java.util.Optional<java.util.Set<String>> admittedPredicatesForCurrentRealm() {
+        return admittedVocabularyForCurrentRealm().asLegacyOptional();
     }
 
     /**
@@ -192,6 +282,25 @@ public class TenantOntologyRegistryProvider {
     }
 
     /**
+     * Build the realm's TBox PURELY from its sources (annotations + Morphia scan +
+     * YAML overlay), WITHOUT consulting the activation-preferring read path and
+     * WITHOUT mutating the per-realm registry cache.
+     * <p>
+     * This is the registry the {@code OntologyReindexer} just produced/applied:
+     * callers that need to pin/markApplied the rebuilt <em>source</em> TBox (rather
+     * than an activation-preferring registry that might return an admission-activated
+     * tenant TBox instead) must use this, not {@link #getRegistryForRealm(String)}.
+     * When no tenant TBox has been activated, this is identical to what
+     * {@code getRegistryForRealm} would have returned, so behaviour is unchanged.
+     * </p>
+     * @param realm the realm to build the source TBox for
+     * @return a freshly built, source-derived OntologyRegistry (not cached)
+     */
+    public OntologyRegistry buildSourceRegistry(String realm) {
+        return buildRegistryForRealm(realm);
+    }
+
+    /**
      * Check if a realm has a cached registry.
      */
     public boolean hasCachedRegistry(String realm) {
@@ -203,6 +312,58 @@ public class TenantOntologyRegistryProvider {
      */
     public Set<String> getCachedRealms() {
         return Collections.unmodifiableSet(realmRegistries.keySet());
+    }
+
+    // --- Canonical realm -> DataDomain derivation ----------------------------
+
+    /**
+     * Canonical realm -&gt; {@link DataDomain} derivation shared by the admission
+     * write path ({@code TBoxAdmissionService.dataDomainFor}) and the realm read
+     * path ({@link #loadOrBuildRegistryForRealm}). Centralizing it here is what
+     * guarantees the tenant-active store is keyed identically on write and read,
+     * so activation can never silently fail to be observed because the two sides
+     * derived different DataDomains (closes follow-up N3).
+     *
+     * <p><b>Principal-independent by contract.</b> This function is a PURE
+     * function of the {@code realm} string: it makes NO reference to the ambient
+     * {@link SecurityContext}/{@link PrincipalContext}. For a given realm it
+     * returns byte-identical org/account/tenantId/owner/dataSegment regardless of
+     * which caller (HTTP request under a JWT principal, the
+     * {@code OntologyReindexer} system principal, or no principal at all) invokes
+     * it. The fixed per-realm convention is:
+     * {@code tenantId == org == account == owner == realm} and
+     * {@code dataSegment == 0}.</p>
+     *
+     * <p>This is the single realm-deterministic key used by BOTH the admission
+     * write ({@code TBoxAdmissionService.dataDomainFor}) and the realm read
+     * ({@code findActiveTBox(realmDataDomain(realm))}). Because every caller now
+     * computes the identical key for a realm, the per-realm registry cache
+     * ({@code realmRegistries.computeIfAbsent(realm, ...)}) is also correct:
+     * whichever thread warms the cache first derives the same lookup key, so the
+     * first-warmer-wins behaviour can no longer pin a principal-dependent key.</p>
+     *
+     * <p>The tenant-active lookup ({@code TenantOntologyTBoxRepo.findActiveTBox})
+     * keys only on org/account/tenantId/dataSegment (not owner), all of which are
+     * constants of {@code realm} here, so write == read is deterministic per realm.
+     * Admission may additionally layer an explicit request-body DataDomain on top
+     * of this base, but it must not diverge from this key for {realm}-scoped
+     * endpoints (enforced in {@code TBoxAdmissionService.dataDomainFor}).</p>
+     *
+     * @param realm the realm (== tenantId); must be non-blank
+     * @return the canonical, principal-independent DataDomain for the realm
+     */
+    public static DataDomain realmDataDomain(String realm) {
+        // PURE function of realm: do NOT read SecurityContext/PrincipalContext here.
+        // The lookup key MUST be identical for the same realm across every caller
+        // (HTTP-under-JWT, OntologyReindexer system principal, or no principal),
+        // otherwise admission-write and realm-read can drift onto different keys
+        // and an activation is silently missed (the multi-principal blocker).
+        String tenantId = realm;
+        String org = realm;
+        String account = realm;
+        String owner = realm;
+        int segment = 0;
+        return new DataDomain(org, account, tenantId, segment, owner);
     }
 
     // --- Private Methods ---
@@ -224,6 +385,34 @@ public class TenantOntologyRegistryProvider {
                 .orElse(true);
         boolean forceRebuild = config.getOptionalValue("quantum.ontology.tbox.force-rebuild", Boolean.class)
                 .orElse(false);
+
+        // 0. B2 read-path unification: prefer an ACTIVATED TenantOntologyTBox for
+        // this realm if one exists. This is strictly additive — behavior changes
+        // ONLY when admission has activated a tenant TBox for realmDataDomain(realm);
+        // realms with no active tenant TBox fall through UNCHANGED to the legacy
+        // findLatest()/build path below. realmDataDomain() is the SAME derivation
+        // the admission write path uses, so write and read can never drift.
+        //
+        // This is intentionally NOT gated by force-rebuild: force-rebuild governs
+        // rebuilding the legacy/source-derived TBox, whereas an activated tenant
+        // TBox is an explicit admission decision that must be observed on reads.
+        try {
+            Optional<TenantOntologyTBox> activeTenantTBox =
+                    tenantTboxRepo.findActiveTBox(realmDataDomain(realm));
+            if (activeTenantTBox.isPresent()) {
+                TenantOntologyTBox doc = activeTenantTBox.get();
+                Log.infof("Realm %s: using ACTIVE TenantOntologyTBox (hash: %s) for read path",
+                        realm, doc.getTboxHash());
+                return new PersistedOntologyRegistry(
+                        doc.toTBox(),
+                        doc.getTboxHash(),
+                        doc.getYamlHash(),
+                        false);
+            }
+        } catch (Throwable t) {
+            Log.warnf("Failed to load active TenantOntologyTBox for realm %s, "
+                    + "falling back to legacy load: %s", realm, t.getMessage());
+        }
 
         // 1. Try to load from persisted TBox first (if persistence is enabled)
         if (persistTBox && !forceRebuild) {

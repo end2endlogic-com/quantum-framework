@@ -2,14 +2,14 @@ package com.e2eq.framework.rest.resources;
 
 
 import com.e2eq.framework.model.persistent.morphia.RealmRepo;
-import com.e2eq.framework.model.auth.AuthProvider;
 import com.e2eq.framework.model.auth.AuthProviderFactory;
-import com.e2eq.framework.model.auth.RoleAssignment;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.rest.models.*;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.model.securityrules.SecurityCheckException;
 import com.e2eq.framework.model.security.ApplicationRegistration;
+import com.e2eq.framework.rest.services.AuthLoginService;
 
 import com.e2eq.framework.model.security.UserProfile;
 import com.e2eq.framework.model.persistent.morphia.ApplicationRegistrationRequestRepo;
@@ -54,7 +54,6 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @OpenAPIDefinition(
         tags = {
@@ -105,6 +104,9 @@ public class SecurityResource {
 
     @Inject
     EnvConfigUtils envConfigUtils;
+
+    @Inject
+    AuthLoginService authLoginService;
 
     @ConfigProperty(name = "mp.jwt.verify.issuer")
     protected String issuer;
@@ -178,7 +180,9 @@ public class SecurityResource {
         registration.setLname(registrationRequest.getLname());
         registration.setUserTelephone(registrationRequest.getTelephone());
 
-        registration = registrationRepo.save(registration);
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+            registration = registrationRepo.save(registration);
+        }
         return Response.ok().entity(registration).status(Response.Status.CREATED).build();
     }
 
@@ -294,50 +298,19 @@ public class SecurityResource {
 
         Log.infof("Logging in userid: %s realm: %s",authRequest.getUserId(), realm);
 
-        AuthProvider authProvider;
-        Optional<CredentialUserIdPassword> credentialOptional = credentialRepo.findByUserId(authRequest.getUserId());
-        if (credentialOptional.isPresent()) {
-            CredentialUserIdPassword credential = credentialOptional.get();
-            if (credential.getAuthProviderName() != null && !credential.getAuthProviderName().isBlank()) {
-                authProvider = authProviderFactory.getProviderByName(credential.getAuthProviderName());
-            } else {
-                authProvider = authProviderFactory.getAuthProvider();
-            }
-        } else {
-            authProvider = authProviderFactory.getAuthProvider();
-        }
-
         try {
-            AuthProvider.LoginResponse loginResponse;
-            loginResponse = authProvider.login(authRequest.getUserId(), authRequest.getPassword());
-
-            if (loginResponse.authenticated()) {
-                Log.info("Login successful for userId:" + authRequest.getUserId());
-                Optional<CredentialUserIdPassword> credentialOp = findCredential(
-                        loginResponse.positiveResponse().identity() != null && loginResponse.positiveResponse().identity().getPrincipal() != null
-                                ? loginResponse.positiveResponse().identity().getPrincipal().getName()
-                                : null,
-                        loginResponse.positiveResponse().userId()
-                );
-                AuthResponse response = new AuthResponse();
-                response.setAccess_token(loginResponse.positiveResponse().accessToken());
-                response.setRefresh_token(loginResponse.positiveResponse().refreshToken());
-                response.setExpires_at(loginResponse.positiveResponse().expirationTime());
-                response.setMongodburl(loginResponse.positiveResponse().mongodbUrl());
-                response.setRealm(loginResponse.positiveResponse().realm());
-                response.setRoles(loginResponse.positiveResponse().roleAssignments().stream().map(RoleAssignment::toString).collect(Collectors.toList()));
-                response.setAuthProvider(authProvider.getName());
-                response.setAccessibleRealms(resolveAccessibleRealms(credentialOp.orElse(null)));
-                return Response.ok(response).build();
+            AuthLoginService.LoginResult loginResult = authLoginService.login(authRequest.getUserId(), authRequest.getPassword());
+            if (loginResult.authenticated()) {
+                Log.info("Login successful for userId:" + authRequest.getUserId() + " provider:" + loginResult.response().getAuthProvider());
+                return Response.ok(loginResult.response()).build();
             }
-            else {
-                Log.warn("Login failed for userId:" + authRequest.getUserId());
-                RestError error = RestError.builder()
-                        .statusMessage(loginResponse.negativeResponse().errorMessage())
-                        .status(Response.Status.UNAUTHORIZED.getStatusCode())
-                        .build();
-                return Response.status(Response.Status.UNAUTHORIZED).entity(error).build();
-            }
+            Log.warn("Login failed for userId:" + authRequest.getUserId() + " providers:" + loginResult.providerFailures());
+            RestError error = RestError.builder()
+                    .statusMessage("Authentication failed")
+                    .debugMessage(String.join("; ", loginResult.providerFailures()))
+                    .status(Response.Status.UNAUTHORIZED.getStatusCode())
+                    .build();
+            return Response.status(Response.Status.UNAUTHORIZED).entity(error).build();
 
         } catch (SecurityException e) {
             RestError error = RestError.builder()

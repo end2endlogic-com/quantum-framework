@@ -4,6 +4,28 @@
 
 *Delete prevention:* Query Gateway delete and deleteMany now enforce the same referential integrity as MorphiaRepo: `DeleteValidationService` runs before each delete (back-reference check for `@TrackReferences` and all `PreDeleteHook` beans, e.g. ontology BLOCK_IF_REFERENCED). On violation the gateway returns 409 (ReferentialIntegrity or DeleteBlocked). deleteMany loads matching entities (capped by `quantum.queryGateway.deleteMany.maxMatches`, default 2000), validates each, then deletes only those ids.
 
+*Row- and field-level governance (implemented):* The generic query path previously
+ran a raw `ds.find(...)` and bypassed both row- and field-level security. That gap is
+now closed. `find`, `count`, `delete`, `deleteMany`, and `export` build their row
+filter with `QueryGatewayResource.securedFilterArray(...)`, which ANDs the parsed query
+filter with the caller's DataDomain scope plus the `RuleContext` rule
+`filterConstraints` (mirroring `MorphiaRepo` / `RepoSecurityFilterBuilder`). `find`
+additionally applies `applyExcludedFieldProjection(...)`, projecting away the deny-wins
+`RuleContext.getExcludedFieldPaths(...)` at the MongoDB level. When neither
+`SecurityContext.isIgnoringRules()` is set nor a `PrincipalContext`/`ResourceContext`
+are present, the gateway **fails closed** with HTTP 500 `SecurityContextMissing` rather
+than running ungoverned. `delete` ANDs the `_id` filter with the secured filter, so an
+entity outside the caller's DataDomain returns HTTP 404 (no row-existence leak).
+
+*AGGREGATION/expand still ungoverned (501-gated):* The `expand(...)` / AGGREGATION path
+is NOT yet governed and is intentionally gated. `POST /api/query/find` returns HTTP 501
+for an AGGREGATION-mode query even when `feature.queryGateway.execution.enabled=true`,
+because a leading secured `$match` stage and an `excludedFields` `$project` have not yet
+been wired into the aggregation pipeline. `count` and `deleteMany` reject `expand(...)`
+with HTTP 400 (`InvalidQuery`). Re-enabling governed aggregation execution is the
+tracked follow-up below; see also
+xref:../user-guide/planner-and-query-gateway.adoc#query-gateway-governance[Planner and QueryGateway: row- and field-level governance].
+
 This document describes how to add ontology support to the Query Gateway API (`POST /api/query/find`, `POST /api/query/plan`, and related endpoints) so that callers can use ontology edge predicates (`hasEdge`, `hasOutgoingEdge`, `hasIncomingEdge`, and optionally `hasEdgeAny`, `notHasEdge`) in the query string and get correct, tenant-scoped results.
 
 == Current State

@@ -13,6 +13,7 @@ import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.UserProfile;
 import com.e2eq.framework.rest.requests.CreateUserRequest;
 import com.e2eq.framework.rest.requests.ServiceTokenRequest;
+import com.e2eq.framework.rest.services.AuthLoginService;
 import com.e2eq.framework.util.EnvConfigUtils;
 import io.quarkus.logging.Log;
 import jakarta.annotation.security.PermitAll;
@@ -47,6 +48,9 @@ public class AuthResource {
 
     @Inject
     EnvConfigUtils envConfigUtils;
+
+    @Inject
+    AuthLoginService authLoginService;
 
 
     @GET
@@ -89,21 +93,7 @@ public class AuthResource {
     public Response login(@QueryParam("userId") String userId,
                           @QueryParam("password") String password,
                           @QueryParam("provider") @DefaultValue("") String provider) {
-        var authProvider = provider.isBlank()
-                ? authProviderFactory.getAuthProvider()
-                : authProviderFactory.getProviderByName(provider);
-        var loginResponse = authProvider.login(userId, password);
-
-        if (!loginResponse.authenticated() || loginResponse.positiveResponse() == null) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                    .entity(Map.of("error", "Authentication failed")).build();
-        }
-
-        return Response.ok(Map.of(
-            "accessToken", loginResponse.positiveResponse().accessToken(),
-            "refreshToken", loginResponse.positiveResponse().refreshToken(),
-            "authProvider", authProvider.getName()
-        )).build();
+        return authLoginService.login(userId, password, provider).toResponse();
     }
 
     @POST

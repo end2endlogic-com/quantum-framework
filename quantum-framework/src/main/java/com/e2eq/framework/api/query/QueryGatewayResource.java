@@ -18,6 +18,7 @@ import com.e2eq.framework.model.persistent.imports.ImportSessionRow;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
+import com.e2eq.framework.security.runtime.RuleContext;
 import com.e2eq.framework.rest.models.Collection;
 import com.e2eq.framework.csv.CSVExportHelper;
 import com.e2eq.framework.csv.CSVImportHelper;
@@ -28,6 +29,7 @@ import dev.morphia.mapping.Mapper;
 import dev.morphia.mapping.codec.pojo.EntityModel;
 import dev.morphia.query.FindOptions;
 import dev.morphia.query.Query;
+import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
 import io.quarkus.logging.Log;
 import io.quarkus.runtime.annotations.RegisterForReflection;
@@ -116,6 +118,9 @@ public class QueryGatewayResource {
 
     @Inject
     MorphiaDataStoreWrapper morphiaDataStoreWrapper;
+
+    @Inject
+    RuleContext ruleContext;
 
     @Inject
     DeleteValidationService deleteValidationService;
@@ -219,7 +224,21 @@ public class QueryGatewayResource {
                 body.put("message", "Aggregation execution is disabled. Enable feature.queryGateway.execution.enabled to execute expand(...)");
                 return Response.status(Response.Status.NOT_IMPLEMENTED).entity(body).build();
             }
+            // SECURITY: the expand/aggregation path cannot yet inject the row-level security
+            // $match (DataDomain + rule filterConstraints) nor the excluded-field $project that the
+            // FILTER path enforces below. Executing it would bypass governance and leak rows/fields
+            // across DataDomain boundaries. Until the secured $match is reproduced for aggregation,
+            // short-circuit to 501 even when the feature flag is enabled so confidentiality never
+            // regresses on this path. FOLLOW-UP: translate securedFilterArray(...) into a leading
+            // $match stage and excludedFieldPaths() into a $project, then re-enable execution.
+            {
+                Map<String, Object> body = new HashMap<>();
+                body.put("error", "NotImplemented");
+                body.put("message", "Aggregation/expand execution is not governed by row-level and field-level security yet and is disabled to prevent data leakage. Tracked as a follow-up.");
+                return Response.status(Response.Status.NOT_IMPLEMENTED).entity(body).build();
+            }
             // Execution is enabled, but ensure the pipeline is executable
+            /* UNREACHABLE until the secured $match is implemented (see SECURITY note above).
             var pipeline = planned.getAggregation();
             boolean hasUnknownFrom = pipeline.stream()
                     .filter(d -> d instanceof org.bson.Document)
@@ -258,17 +277,25 @@ public class QueryGatewayResource {
                     .into(new java.util.ArrayList<>());
             Collection<org.bson.Document> col = new Collection<>(rows, effSkip, effLimit, req.query);
             return Response.ok(col).build();
+            END OF UNREACHABLE AGGREGATION BLOCK */
         }
         // FILTER path using Morphia
         String realm = resolveRealm(req.realm);
         Datastore ds = morphiaDataStoreWrapper.getDataStore(realm);
-        Query<? extends UnversionedBaseModel> q = ds.find(root);
+        // SECURITY: AND the caller's parsed filter with the row-level security filter array
+        // (DataDomain scope + rule filterConstraints) so results are scoped to the caller's
+        // org/account/tenant/dataSegment/owner boundary within the realm. Mirrors MorphiaRepo.
+        List<Filter> baseFilters = new ArrayList<>();
         if (planned.getFilter() != null) {
-            q = q.filter(planned.getFilter());
+            baseFilters.add(planned.getFilter());
         }
+        Filter[] securedFilters = securedFilterArray(baseFilters, root);
+        Query<? extends UnversionedBaseModel> q = ds.find(root).filter(securedFilters);
         int fLimit = req.page != null && req.page.limit != null ? req.page.limit : 50;
         int fSkip = req.page != null && req.page.skip != null ? req.page.skip : 0;
         FindOptions fo = new FindOptions().limit(fLimit).skip(fSkip);
+        // SECURITY: strip field-level excluded paths (deny-wins) at the datastore.
+        applyExcludedFieldProjection(fo);
         List<?> rows = q.iterator(fo).toList();
         Collection<?> col = new Collection<>(rows, fSkip, fLimit, req.query);
         return Response.ok(col).build();
@@ -287,8 +314,10 @@ public class QueryGatewayResource {
         Datastore ds = morphiaDataStoreWrapper.getDataStore(realm);
 
         try {
-            Query<? extends UnversionedBaseModel> q = ds.find(root);
-
+            // SECURITY: build the caller's parsed filter (if any), then AND it with the row-level
+            // security filter array before counting, so the count reflects only rows in the
+            // caller's DataDomain. Mirrors the governed read path in MorphiaRepo.
+            List<Filter> baseFilters = new ArrayList<>();
             if (req.query != null && !req.query.isBlank()) {
                 Map<String, String> variableMap = variableMapForQuery(req.realm);
                 PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(req.query, root, null, null, null, variableMap);
@@ -299,9 +328,11 @@ public class QueryGatewayResource {
                     return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
                 }
                 if (planned.getFilter() != null) {
-                    q = q.filter(planned.getFilter());
+                    baseFilters.add(planned.getFilter());
                 }
             }
+            Filter[] securedFilters = securedFilterArray(baseFilters, root);
+            Query<? extends UnversionedBaseModel> q = ds.find(root).filter(securedFilters);
 
             long count = q.count();
 
@@ -420,7 +451,13 @@ public class QueryGatewayResource {
 
         try {
             ObjectId objectId = new ObjectId(req.id);
-            Query<? extends UnversionedBaseModel> query = ds.find(root).filter(Filters.eq("_id", objectId));
+            // SECURITY: match on _id AND the row-level security filter so a row outside the
+            // caller's DataDomain is simply not found. We return 404 in that case (below) without
+            // distinguishing not-found from not-permitted, to avoid leaking row existence.
+            List<Filter> baseFilters = new ArrayList<>();
+            baseFilters.add(Filters.eq("_id", objectId));
+            Filter[] securedFilters = securedFilterArray(baseFilters, root);
+            Query<? extends UnversionedBaseModel> query = ds.find(root).filter(securedFilters);
             UnversionedBaseModel entity = query.first();
             if (entity == null) {
                 DeleteResponse notFound = new DeleteResponse();
@@ -489,7 +526,10 @@ public class QueryGatewayResource {
         Datastore ds = morphiaDataStoreWrapper.getDataStore(realm);
 
         try {
-            Query<? extends UnversionedBaseModel> query = ds.find(root);
+            // SECURITY: AND the caller's parsed filter with the row-level security filter array so
+            // only rows inside the caller's DataDomain are matched (and therefore deleted). Without
+            // this, deleteMany could read+delete rows across DataDomain boundaries.
+            List<Filter> baseFilters = new ArrayList<>();
 
             // Apply query filter if provided
             if (req.query != null && !req.query.isBlank()) {
@@ -502,9 +542,11 @@ public class QueryGatewayResource {
                     return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
                 }
                 if (planned.getFilter() != null) {
-                    query = query.filter(planned.getFilter());
+                    baseFilters.add(planned.getFilter());
                 }
             }
+            Filter[] securedFilters = securedFilterArray(baseFilters, root);
+            Query<? extends UnversionedBaseModel> query = ds.find(root).filter(securedFilters);
 
             // Load matching entities (capped) so we can validate each before delete
             List<? extends UnversionedBaseModel> toDelete = query
@@ -812,17 +854,24 @@ public class QueryGatewayResource {
                     quoteChar, charset, false, query, skip, limit,
                     includeHeader, null);
 
-            // Determine row count for threshold decision
+            // Determine row count for threshold decision.
+            // SECURITY: the streamed CSV data above flows through the governed repo path
+            // (repo.getStreamByQuery -> buildSecuredFilters + field projection), so it is already
+            // row- and field-scoped. The threshold count must match that scope, so AND the caller's
+            // parsed filter with the row-level security filter array here too; otherwise the count
+            // would leak the cross-DataDomain total and could mis-route inline vs file mode.
             String realm = resolveRealm(req.realm);
             Datastore ds = morphiaDataStoreWrapper.getDataStore(realm);
-            Query<? extends UnversionedBaseModel> countQuery = ds.find(root);
+            List<Filter> baseFilters = new ArrayList<>();
             if (query != null && !query.isBlank()) {
                 Map<String, String> variableMap = variableMapForQuery(req.realm);
                 PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(query, root, null, null, null, variableMap);
                 if (planned.getFilter() != null) {
-                    countQuery = countQuery.filter(planned.getFilter());
+                    baseFilters.add(planned.getFilter());
                 }
             }
+            Filter[] securedFilters = securedFilterArray(baseFilters, root);
+            Query<? extends UnversionedBaseModel> countQuery = ds.find(root).filter(securedFilters);
             long rowCount = countQuery.count();
 
             ExportResponse response = new ExportResponse();
@@ -889,6 +938,80 @@ public class QueryGatewayResource {
      * @param requestRealm optional realm from the request (may be null)
      * @return map of variable names to values (never null)
      */
+    /**
+     * Builds the row-level security filter array for a generic rootType, mirroring the governed
+     * read path in {@code MorphiaRepo}/{@code RepoSecurityFilterBuilder#getFilterArray}.
+     *
+     * <p>The supplied {@code baseFilters} (the caller's parsed query filter, if any) are ANDed with
+     * the RuleContext-derived DataDomain scope and rule filterConstraints for the current
+     * PrincipalContext/ResourceContext. This is what scopes results to the caller's
+     * org/account/tenant/dataSegment/owner boundary within the realm.</p>
+     *
+     * <p>Fail-closed: if SecurityContext is not populated (and rules are not being ignored) this
+     * throws, so a generic query can never run unscoped. When {@link SecurityContext#isIgnoringRules()}
+     * is active the base filters are returned unchanged, matching the repo layer.</p>
+     *
+     * @param baseFilters caller-supplied filters to be secured (never null; may be empty)
+     * @param modelClass  the resolved root entity class (used for variable resolution)
+     * @return the secured filter array to apply to the Morphia query
+     */
+    private Filter[] securedFilterArray(List<Filter> baseFilters, Class<? extends UnversionedBaseModel> modelClass) {
+        if (SecurityContext.isIgnoringRules()) {
+            return baseFilters.toArray(new Filter[0]);
+        }
+        java.util.Optional<PrincipalContext> pc = SecurityContext.getPrincipalContext();
+        java.util.Optional<ResourceContext> rc = SecurityContext.getResourceContext();
+        if (pc.isEmpty() || rc.isEmpty()) {
+            // Fail-closed: never execute a generic query without a resolved security context.
+            boolean missingP = pc.isEmpty();
+            boolean missingR = rc.isEmpty();
+            String missing = (missingP && missingR) ? "PrincipalContext and ResourceContext"
+                    : missingP ? "PrincipalContext" : "ResourceContext";
+            // Log the detail server-side; return a SANITIZED error to the client. A bare
+            // RuntimeException would be rendered by the exception mapper as a full stack trace in
+            // the response body (info-disclosure). No row/field data is exposed — no query ran.
+            Log.warnf("QueryGateway refusing ungoverned query: SecurityContext missing %s", missing);
+            throw new WebApplicationException(
+                    Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                            .entity(Map.of("error", "SecurityContextMissing",
+                                    "message", "Query cannot be governed: security context is not established for this request."))
+                            .build());
+        }
+        List<Filter> secured = ruleContext.getFilters(baseFilters, pc.get(), rc.get(), modelClass);
+        return secured.toArray(new Filter[0]);
+    }
+
+    /**
+     * Field-level policy companion to {@link #securedFilterArray}: the deny-wins set of excluded
+     * field paths for the current security context, mirroring
+     * {@code RepoSecurityFilterBuilder#buildExcludedFieldPaths}. Empty when rules are ignored or no
+     * principal is present (field exclusions are principal-relative).
+     */
+    private java.util.Set<String> excludedFieldPaths() {
+        if (SecurityContext.isIgnoringRules()) {
+            return java.util.Set.of();
+        }
+        java.util.Optional<PrincipalContext> pc = SecurityContext.getPrincipalContext();
+        java.util.Optional<ResourceContext> rc = SecurityContext.getResourceContext();
+        if (pc.isEmpty() || rc.isEmpty()) {
+            return java.util.Set.of();
+        }
+        return ruleContext.getExcludedFieldPaths(pc.get(), rc.get());
+    }
+
+    /**
+     * Applies the field-level exclusion projection (deny-wins) to a FindOptions, mirroring
+     * {@code MorphiaRepo#convertToProjection}. Excluded paths are stripped at the datastore so the
+     * data never leaves Mongo.
+     */
+    private FindOptions applyExcludedFieldProjection(FindOptions options) {
+        java.util.Set<String> excluded = excludedFieldPaths();
+        if (!excluded.isEmpty()) {
+            options.projection().exclude(excluded.toArray(new String[0]));
+        }
+        return options;
+    }
+
     private Map<String, String> variableMapForQuery(String requestRealm) {
         java.util.Optional<PrincipalContext> pc = SecurityContext.getPrincipalContext();
         java.util.Optional<ResourceContext> rc = SecurityContext.getResourceContext();

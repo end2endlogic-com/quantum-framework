@@ -55,6 +55,23 @@ You can generate a long-lived service token for use with the MCP server using th
 
 Tools are defined in `McpGatewayTools` using the Quarkiverse `@Tool` and `@ToolArg` annotations. Each tool is protected with `@Authenticated` and delegates to `AgentExecuteHandler`, which routes to the `QueryGatewayResource` -- reusing the same security, realm resolution, and query execution as the REST API.
 
+[NOTE]
+====
+Because the tools route through `QueryGatewayResource`, the data-access tools are
+row- and field-governed. `query_find`, `query_count`, `query_delete`,
+`query_deleteMany`, and `query_export` apply the caller's DataDomain scope plus the
+`RuleContext` rule `filterConstraints`, and `query_find` additionally excludes
+deny-wins `excludedFields` at the MongoDB level. The gateway **fails closed** (HTTP 500
+`SecurityContextMissing`) if no security context is established for the request, so an
+agent never executes an ungoverned query. `query_delete` returns "not found" for an id
+outside the caller's DataDomain rather than revealing that the row exists.
+
+`expand(...)` (aggregation) execution is currently disabled: a `query_find` with
+`expand(...)` returns HTTP 501 because the aggregation path is not yet governed by
+row- and field-level security. See
+xref:planner-and-query-gateway.adoc#query-gateway-governance[Planner and QueryGateway: row- and field-level governance].
+====
+
 [cols="1,3", options="header"]
 |===
 | Tool Name | Description
