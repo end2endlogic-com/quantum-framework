@@ -199,8 +199,16 @@ public class OntologyReindexer {
                     Optional<String> src = metaService.getMeta(realmId).map(m -> m.getSource());
                     Optional<Path> p = src.filter(s -> s != null && !s.equals("<none>")).map(Path::of).filter(Files::exists);
                     var res = metaService.observeYaml(realmId, p, "/ontology.yaml");
-                    // Get tboxHash from runtime registry and yamlVersion from metadata
-                    var appliedRegistry = registryProvider.getRegistryForRealm(realmId);
+                    // Pin/markApplied from the REBUILT SOURCE TBox we just produced
+                    // (annotations + Morphia scan + YAML), NOT from the activation-
+                    // preferring getRegistryForRealm(): after B2 read-path unification
+                    // that read path returns an admission-activated tenant TBox when one
+                    // exists, which would make the reindexer pin the activated hash
+                    // instead of the source TBox it just reindexed (a regression).
+                    // buildSourceRegistry() bypasses the activation preference and does
+                    // not touch the cache; with no activation present it is identical to
+                    // the prior getRegistryForRealm() result, so behaviour is unchanged.
+                    var appliedRegistry = registryProvider.buildSourceRegistry(realmId);
                     String tboxHash = appliedRegistry.getTBoxHash();
                     Integer yamlVersion = res.meta().getYamlVersion();
                     metaService.markApplied(realmId, res.currentHash(), tboxHash, yamlVersion);
