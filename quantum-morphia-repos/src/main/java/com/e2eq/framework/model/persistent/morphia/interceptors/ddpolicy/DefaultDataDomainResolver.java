@@ -11,6 +11,7 @@ import io.quarkus.arc.DefaultBean;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -107,12 +108,7 @@ public class DefaultDataDomainResolver implements DataDomainResolver {
 
         String fa = safe(functionalArea);
         String fd = safe(functionalDomain);
-        List<String> keys = Arrays.asList(
-                fa + ":" + fd,
-                fa + ":*",
-                "*:" + fd,
-                "*:*"
-        );
+        List<String> keys = buildSourceScopedKeys(fa, fd, attrs);
 
         // 1) Principal-attached policy via PrincipalContext
         Optional<PrincipalContext> pcOpt = SecurityContext.getPrincipalContext();
@@ -131,6 +127,69 @@ public class DefaultDataDomainResolver implements DataDomainResolver {
     }
 
     private String safe(String v) { return v == null ? "*" : v; }
+
+    /**
+     * Build the precedence-ordered policy key list for the source/ingestion (4-arg) path.
+     *
+     * <p>When {@code attrs} carries a non-blank {@code sourceId}, a source-scoped namespace is
+     * searched FIRST, most-specific to least-specific:
+     * <pre>
+     *   src/{sourceId}/{entityType}  (only when entityType is non-blank)
+     *   src/{sourceId}/*
+     *   src/*&#47;{entityType}            (only when entityType is non-blank)
+     * </pre>
+     * followed by the existing principal-namespace keys
+     * ({@code fa:fd → fa:* → *:fd → *:*}).</p>
+     *
+     * <p>When {@code attrs} is null or its {@code sourceId} is blank, the returned list is EXACTLY
+     * the legacy four keys, so resolution for ordinary entity creates is byte-identical to today.</p>
+     */
+    private List<String> buildSourceScopedKeys(String fa, String fd, SourceAttributes attrs) {
+        List<String> legacy = Arrays.asList(
+                fa + ":" + fd,
+                fa + ":*",
+                "*:" + fd,
+                "*:*"
+        );
+
+        if (attrs == null || isBlank(attrs.getSourceId())) {
+            return legacy;
+        }
+
+        String sourceId = attrs.getSourceId();
+        String entityType = attrs.getEntityType();
+        boolean hasEntityType = !isBlank(entityType);
+
+        // Defense-in-depth: sourceId/entityType are interpolated into the policy key path
+        // (src/{sourceId}/{entityType}). A value containing a key metacharacter (/ * :) could
+        // forge a collision with a wildcard policy entry (e.g. sourceId="*" selecting a
+        // cross-source "any source" entry) — a policy-selection/authz bypass once sourceId/
+        // entityType arrive over REST (S6). Reject tainted values by falling through to the
+        // legacy keys ("no usable source scope"); NEVER interpolate a tainted value into a key.
+        if (containsKeyMetachar(sourceId) || (hasEntityType && containsKeyMetachar(entityType))) {
+            return legacy;
+        }
+
+        List<String> keys = new ArrayList<>();
+        if (hasEntityType) {
+            keys.add("src/" + sourceId + "/" + entityType);
+        }
+        keys.add("src/" + sourceId + "/*");
+        if (hasEntityType) {
+            keys.add("src/*/" + entityType);
+        }
+        keys.addAll(legacy);
+        return keys;
+    }
+
+    /**
+     * True if {@code v} contains a policy-key metacharacter ({@code / * :}) that would let a
+     * tainted source attribute forge or restructure a key path. Used to reject such values from
+     * the {@code src/...} namespace (fail safe to the legacy keys) before they reach REST at S6.
+     */
+    private boolean containsKeyMetachar(String v) {
+        return v != null && (v.indexOf('/') >= 0 || v.indexOf('*') >= 0 || v.indexOf(':') >= 0);
+    }
 
     private DataDomain resolveFromPolicy(DataDomainPolicy policy, List<String> keys, DataDomain defaultDD, SourceAttributes attrs) {
         if (policy == null) return null;
