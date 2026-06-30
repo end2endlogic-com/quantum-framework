@@ -22,12 +22,19 @@ import java.util.Optional;
 public class DefaultDataDomainResolver implements DataDomainResolver {
 
     /**
-     * Distinguished sentinel returned by the {@code FROM_SOURCE} resolution path when a REQUIRED
-     * DataDomain component (orgRefName, accountNum, tenantId) cannot be derived from the source
-     * attributes (null/blank/missing). It is intentionally NOT the principal's DataDomain and NOT
-     * any configured default — S3 (the edge write + quarantine wiring) checks for this exact
-     * instance (via {@code ==}) to route the row to quarantine instead of stamping a fallback
-     * placement. Identity comparison is the contract; do not clone or mutate this instance.
+     * Distinguished sentinel returned by the LEGACY in-band {@code FROM_SOURCE} resolution path
+     * (the 4-arg {@link #resolveForCreate(String, String, Object, SourceAttributes)}) when a
+     * REQUIRED DataDomain component (orgRefName, accountNum, tenantId) cannot be derived from the
+     * source attributes (null/blank/missing).
+     *
+     * <p>NOTE (S3): this sentinel is RETAINED only for the inert 4-arg API and its S1/S2 tests,
+     * which compare it by identity ({@code ==}). The S1 code_review flagged that {@code ==} contract
+     * as fail-OPEN-fragile (a cloned/round-tripped DataDomain with these values is NOT {@code ==}
+     * this instance and would slip through). The GOVERNED ingest path no longer uses this sentinel
+     * at all — it uses the tagged {@link DataDomainResolution} (see {@link #resolveIngestRow}), where
+     * the unresolvable decision is carried by the type, not by a DataDomain value. The 4-arg path
+     * now delegates to that tagged resolution and maps {@code Unresolvable} back to this instance to
+     * preserve byte-identical legacy behavior.</p>
      */
     public static final DataDomain UNRESOLVABLE = DataDomain.builder()
             .orgRefName("__UNRESOLVABLE__")
@@ -220,15 +227,30 @@ public class DefaultDataDomainResolver implements DataDomainResolver {
     }
 
     /**
-     * Evaluate a {@code FROM_SOURCE} entry's component bindings against the supplied source
-     * attributes. Returns a freshly built {@link DataDomain} when all REQUIRED components
-     * (orgRefName, accountNum, tenantId) resolve to non-blank values, otherwise the
-     * {@link #UNRESOLVABLE} sentinel. Never returns null and never returns the principal DD.
+     * Legacy adapter: evaluate a {@code FROM_SOURCE} entry to a bare {@link DataDomain}, mapping the
+     * tagged {@link DataDomainResolution} back to the {@link #UNRESOLVABLE} sentinel so the inert
+     * 4-arg API (and its S1/S2 identity-based tests) keep their byte-identical behavior. New code
+     * MUST use {@link #resolveFromSourceTagged} / {@link #resolveIngestRow} and branch on the tag.
      */
     private DataDomain resolveFromSource(DataDomainPolicyEntry entry, SourceAttributes attrs) {
+        DataDomainResolution res = resolveFromSourceTagged(entry, attrs);
+        return res.isResolved() ? res.dataDomain() : UNRESOLVABLE;
+    }
+
+    /**
+     * Evaluate a {@code FROM_SOURCE} entry's component bindings against the supplied source
+     * attributes, returning a fail-closed tagged result. {@link DataDomainResolution.Resolved} when
+     * all REQUIRED components (orgRefName, accountNum, tenantId) resolve to non-blank values,
+     * otherwise {@link DataDomainResolution.Unresolvable} carrying the reason. Never returns null and
+     * never synthesizes a principal/default placement.
+     */
+    private DataDomainResolution resolveFromSourceTagged(DataDomainPolicyEntry entry, SourceAttributes attrs) {
         DataDomainComponentBinding binding = entry.getComponentBinding();
-        if (binding == null || attrs == null) {
-            return UNRESOLVABLE;
+        if (binding == null) {
+            return DataDomainResolution.unresolvable("FROM_SOURCE entry has no componentBinding");
+        }
+        if (attrs == null) {
+            return DataDomainResolution.unresolvable("no source attributes supplied for FROM_SOURCE entry");
         }
 
         String orgRefName = resolveString(binding.getOrgRefName(), attrs);
@@ -237,7 +259,12 @@ public class DefaultDataDomainResolver implements DataDomainResolver {
 
         // Required components must be present and non-blank.
         if (isBlank(orgRefName) || isBlank(accountNum) || isBlank(tenantId)) {
-            return UNRESOLVABLE;
+            StringBuilder missing = new StringBuilder();
+            if (isBlank(orgRefName)) missing.append("orgRefName ");
+            if (isBlank(accountNum)) missing.append("accountNum ");
+            if (isBlank(tenantId)) missing.append("tenantId ");
+            return DataDomainResolution.unresolvable(
+                    "required DataDomain component(s) could not be derived from source: " + missing.toString().trim());
         }
 
         // Optional components with sensible defaults.
@@ -247,13 +274,68 @@ public class DefaultDataDomainResolver implements DataDomainResolver {
             ownerId = "system";
         }
 
-        return DataDomain.builder()
+        return DataDomainResolution.resolved(DataDomain.builder()
                 .orgRefName(orgRefName)
                 .accountNum(accountNum)
                 .tenantId(tenantId)
                 .dataSegment(dataSegment)
                 .ownerId(ownerId)
-                .build();
+                .build());
+    }
+
+    /**
+     * Governed ingest resolution (S3). Resolves a single ingest row to a fail-closed
+     * {@link DataDomainResolution} using ONLY the explicitly supplied {@code policy} and the row's
+     * {@code attrs}. Does NOT consult {@link SecurityContext}/principal and never falls back to a
+     * principal or configured default — if no matching entry can place the row, the result is
+     * {@link DataDomainResolution.Unresolvable}.
+     *
+     * <p>Key precedence reuses the source-scoped keying from S2 ({@code src/{sourceId}/...} then the
+     * legacy {@code fa:fd → fa:* → *:fd → *:*}). Only {@code FROM_SOURCE} entries can produce a
+     * placement here; a {@code FIXED} entry yields its configured DataDomain; a
+     * {@code FROM_CREDENTIAL} entry is unresolvable on the ingest path (there is no credential).</p>
+     */
+    @Override
+    public DataDomainResolution resolveIngestRow(DataDomainPolicy policy,
+                                                 String functionalArea,
+                                                 String functionalDomain,
+                                                 SourceAttributes attrs) {
+        if (policy == null) {
+            return DataDomainResolution.unresolvable("no DataDomainPolicy supplied for ingest source");
+        }
+        Map<String, DataDomainPolicyEntry> entries = policy.getPolicyEntries();
+        if (entries == null || entries.isEmpty()) {
+            return DataDomainResolution.unresolvable("DataDomainPolicy has no entries");
+        }
+
+        String fa = safe(functionalArea);
+        String fd = safe(functionalDomain);
+        List<String> keys = buildSourceScopedKeys(fa, fd, attrs);
+
+        for (String key : keys) {
+            DataDomainPolicyEntry entry = entries.get(key);
+            if (entry == null) continue;
+
+            DataDomainPolicyEntry.ResolutionMode mode = entry.getResolutionMode();
+            if (mode == null) mode = DataDomainPolicyEntry.ResolutionMode.FROM_CREDENTIAL;
+            switch (mode) {
+                case FROM_SOURCE:
+                    return resolveFromSourceTagged(entry, attrs);
+                case FIXED:
+                    if (entry.getDataDomains() != null && !entry.getDataDomains().isEmpty()) {
+                        DataDomain dd = entry.getDataDomains().get(0);
+                        if (dd != null) return DataDomainResolution.resolved(dd);
+                    }
+                    return DataDomainResolution.unresolvable(
+                            "FIXED policy entry '" + key + "' has no configured DataDomain");
+                case FROM_CREDENTIAL:
+                default:
+                    // The ingest path has no authenticated credential to resolve against.
+                    return DataDomainResolution.unresolvable(
+                            "policy entry '" + key + "' is FROM_CREDENTIAL; not resolvable on the ingest path");
+            }
+        }
+        return DataDomainResolution.unresolvable("no policy entry matched keys " + keys);
     }
 
     private String resolveString(DataDomainComponentBinding.Binding b, SourceAttributes attrs) {
