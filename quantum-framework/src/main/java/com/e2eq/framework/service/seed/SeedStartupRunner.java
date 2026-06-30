@@ -91,6 +91,18 @@ public class SeedStartupRunner {
     @ConfigProperty(name = "quantum.seed-pack.apply.realms")
     Optional<String> startupRealmsCsv;
 
+    /**
+     * When true, the default (fallback) startup seed realm set is restricted to the cross-tenant
+     * SYSTEM realm only: the tenant-shaped TEST realm and the DEFAULT realm are not scanned (the
+     * default realm is kept only when it equals the system realm). Explicit
+     * {@code quantum.seed-pack.apply.realms} entries and {@code applySeedsOnStartup=true} realm
+     * flags are still honored, so a caller can opt a specific realm back in. Reuses the existing
+     * {@code quantum.realm.seed-system-only} flag so a "system-only" database neither creates nor
+     * even scans the test realm. Defaults to false so existing behavior is unchanged (non-breaking).
+     */
+    @ConfigProperty(name = "quantum.realm.seed-system-only", defaultValue = "false")
+    boolean seedSystemOnly;
+
     public void onStart() {
         if (!enabled || !applyOnStartup) {
             Log.info("SeedStartupRunner disabled by configuration (quantum.seed-pack.enabled / quantum.seed-pack.apply.on-startup)");
@@ -405,14 +417,22 @@ public class SeedStartupRunner {
             return realms;
         }
 
-        // Default behavior only if nothing was configured: system/default/test realms (deduped)
+        // Default behavior only if nothing was configured: system/default/test realms (deduped).
         if (!csvConfigured) {
             String system = envConfigUtils.getSystemRealm();
-            String def = envConfigUtils.getDefaultRealm();
-            String test = envConfigUtils.getTestRealm();
             realms.add(system);
-            if (!Objects.equals(system, def)) realms.add(def);
-            if (!Objects.equals(system, test) && !Objects.equals(def, test)) realms.add(test);
+            if (seedSystemOnly) {
+                // System-only mode: do NOT scan the default or test realms. The system realm above
+                // is the only fallback; the default realm is implicitly included only when it
+                // equals the system realm (already added). Explicit apply.realms / realm flags above
+                // can still opt a specific realm back in.
+                Log.debug("SeedStartupRunner: quantum.realm.seed-system-only=true, restricting default startup realms to the system realm");
+            } else {
+                String def = envConfigUtils.getDefaultRealm();
+                String test = envConfigUtils.getTestRealm();
+                if (!Objects.equals(system, def)) realms.add(def);
+                if (!Objects.equals(system, test) && !Objects.equals(def, test)) realms.add(test);
+            }
         }
         return realms;
     }
