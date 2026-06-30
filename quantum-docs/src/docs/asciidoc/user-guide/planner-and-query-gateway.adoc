@@ -76,10 +76,54 @@ See also: xref:query-expansion.adoc[Relationship hydration with expand(path)]. F
 [[query-gateway-rest]]
 === REST endpoints (v1)
 
-Two helper endpoints expose the planner and execution path. FILTER mode executes immediately. AGGREGATION mode is planned, and execution is guarded by a feature flag.
+The gateway (`QueryGatewayResource`, `@Path("/api/query")`,
+`@FunctionalMapping(area="integration", domain="query")`) exposes a planner endpoint
+plus the generic query operations. FILTER mode executes immediately; AGGREGATION mode
+(any `expand(...)`) is planned but execution is currently disabled (see
+<<query-gateway-governance>>).
 
 - POST /api/query/plan — returns planner mode and expand paths detected
-- POST /api/query/find — executes FILTER-mode queries and returns the standard Collection<T> envelope; when AGGREGATION is requested, behavior depends on a feature flag (see below)
+- POST /api/query/find — executes FILTER-mode queries and returns the standard Collection<T> envelope
+- POST /api/query/count — returns the governed count for a FILTER-mode query
+- POST /api/query/delete — deletes a single entity by id (governed; 404 across DataDomain boundaries)
+- POST /api/query/deleteMany — deletes the matching FILTER-mode set
+- POST /api/query/export — streams a governed CSV export
+
+[[query-gateway-governance]]
+=== Row- and field-level governance
+
+NOTE: Earlier the generic query path ran a raw `ds.find(...)` and therefore bypassed
+row- and field-level security. That gap is closed: `find`, `count`, `delete`,
+`deleteMany`, and `export` now run through the same `RuleContext`-derived security
+filter as `MorphiaRepo`, and they fail closed when no security context is established.
+
+For every governed operation the gateway:
+
+- builds the row filter with `securedFilterArray(...)`, which ANDs the parsed query
+  filter with the caller's DataDomain scope plus the rule `filterConstraints`
+  resolved from `RuleContext` (mirroring `MorphiaRepo` / `RepoSecurityFilterBuilder`);
+- applies the field-governance projection on `find` via `applyExcludedFieldProjection(...)`,
+  which excludes the deny-wins `excludedFieldPaths` (also from `RuleContext`) at the
+  MongoDB level so excluded fields never leave the datastore;
+- **fails closed** when neither `SecurityContext.isIgnoringRules()` is set nor a
+  `PrincipalContext` and `ResourceContext` are present: the request is refused with
+  HTTP 500 and `{"error":"SecurityContextMissing"}` rather than running ungoverned.
+
+`delete` ANDs the `_id` filter with the secured row filter, so an entity that exists
+but lies outside the caller's DataDomain simply does not match and the endpoint returns
+HTTP 404 (`deletedCount=0`, `success=false`). This deliberately does not distinguish
+"not found" from "not permitted", to avoid leaking row existence across tenants.
+
+[WARNING]
+====
+The `expand(...)` / AGGREGATION path is **not yet governed** and is intentionally
+gated. Even with `feature.queryGateway.execution.enabled=true`, `POST /api/query/find`
+returns HTTP 501 Not Implemented for an AGGREGATION-mode query, because a leading
+secured `$match` and an `excludedFields` `$project` have not yet been wired into the
+aggregation pipeline. `count` and `deleteMany` reject `expand(...)` queries up front
+with HTTP 400 (`InvalidQuery`). Re-enabling aggregation execution is a tracked
+follow-up; until then, expand-based hydration is planned but not executed.
+====
 
 ==== Request/Response: /api/query/plan
 
@@ -142,8 +186,8 @@ Parameters in the request body
 
 Behavior when AGGREGATION is requested
 
-- If the planner selects AGGREGATION (due to expand(...)) and the configuration property feature.queryGateway.execution.enabled=false (default), the endpoint responds with HTTP 501 Not Implemented and a message indicating execution is disabled.
-- If feature.queryGateway.execution.enabled=true, the gateway attempts to execute the aggregation pipeline. If the pipeline contains an unresolved $lookup.from ("__unknown__"), the endpoint responds with HTTP 422 Unprocessable Entity and an explanatory error. Otherwise, results are returned in the same Collection envelope shape, with rows being Documents.
+- If the planner selects AGGREGATION (due to `expand(...)`), `POST /api/query/find` responds with HTTP 501 Not Implemented. This holds regardless of `feature.queryGateway.execution.enabled`: when the flag is `false` (default) the message notes execution is disabled; when it is `true` the message notes that aggregation/expand execution is not yet governed by row- and field-level security and is disabled to prevent data leakage. See <<query-gateway-governance>>.
+- `count` and `deleteMany` reject `expand(...)` queries with HTTP 400 (`InvalidQuery`) because they support simple filter queries only.
 
 cURL examples
 
