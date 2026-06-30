@@ -32,4 +32,24 @@ public interface DataDomainResolver {
     default DataDomain resolveForCreate(String functionalArea, String functionalDomain, Object entity) {
         return resolveForCreate(functionalArea, functionalDomain);
     }
+
+    /**
+     * Resolve the DataDomain for a source/ingestion create where there is no authenticated
+     * principal and placement must be derived from the ingested row's attribute values plus
+     * the source binding (see {@code FROM_SOURCE} resolution mode).
+     *
+     * <p>The default implementation preserves the legacy contract by ignoring {@code attrs}
+     * and delegating to {@link #resolveForCreate(String, String, Object)}, so all existing
+     * implementations remain valid without change.</p>
+     *
+     * @param functionalArea the model's functional area
+     * @param functionalDomain the model's functional domain
+     * @param entity the concrete entity being persisted (may be null for raw source rows)
+     * @param attrs the ingested source-row values and source-binding metadata
+     * @return a non-null DataDomain. Implementations that support {@code FROM_SOURCE} may
+     *         return a distinguished UNRESOLVABLE sentinel when required components are missing.
+     */
+    default DataDomain resolveForCreate(String functionalArea, String functionalDomain, Object entity, SourceAttributes attrs) {
+        return resolveForCreate(functionalArea, functionalDomain, entity);
+    }
 }
