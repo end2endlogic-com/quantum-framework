@@ -64,6 +64,18 @@ public class MigrationService {
    @ConfigProperty(name = "quantum.migration.apply.realms")
    Optional<String> startupRealmsCsv;
 
+   /**
+    * When true, startup realm resolution is restricted to the cross-tenant SYSTEM realm only:
+    * the tenant-shaped TEST realm and the DEFAULT realm are dropped from the scan (the default
+    * realm is kept only when it equals the system realm). An explicit
+    * {@code quantum.migration.apply.realms} entry is still honored, so a caller can opt a specific
+    * realm back in. Reuses the existing {@code quantum.realm.seed-system-only} flag so a
+    * "system-only" database neither creates nor even scans the test realm. Defaults to false so
+    * existing multi-tenant/dev behavior is unchanged (non-breaking).
+    */
+   @ConfigProperty(name = "quantum.realm.seed-system-only", defaultValue = "false")
+   boolean seedSystemOnly;
+
    @Inject
    DatabaseVersionRepo databaseVersionRepo;
 
@@ -120,7 +132,10 @@ public class MigrationService {
       if (includeSystemRealm) {
          realms.add(systemRealm);
       }
-      if (existingDatabaseNames.contains(defaultRealm)) {
+      // System-only mode: do NOT auto-include the default (or test) realm in the scan. The
+      // default realm is kept only when it equals the system realm. Explicit apply.realms
+      // entries below are still honored so a caller can opt a specific realm back in.
+      if (!seedSystemOnly && existingDatabaseNames.contains(defaultRealm)) {
          realms.add(defaultRealm);
       }
 
