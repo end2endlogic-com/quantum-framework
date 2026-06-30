@@ -77,6 +77,32 @@ public class TenantOntologyTBoxRepo extends MorphiaRepo<TenantOntologyTBox> {
     }
 
     /**
+     * Find the TBox to roll back to when deactivating {@code excludeHash}: the most
+     * recently <em>genuinely activated</em> TBox for the tenant whose hash is NOT
+     * {@code excludeHash}. Selection is by activation time ({@code lastActivatedAt}),
+     * not submit time ({@code appliedAt}); a submitted-but-never-activated candidate
+     * (no {@code lastActivatedAt}) is never chosen, even if its {@code appliedAt} is
+     * later. Returns empty when the tenant has no other ever-activated TBox.
+     */
+    public Optional<TenantOntologyTBox> findPreviousActive(DataDomain dataDomain, String excludeHash) {
+        validateDataDomain(dataDomain);
+        Query<TenantOntologyTBox> q = ds().find(TenantOntologyTBox.class)
+                .filter(dataDomainFilters(dataDomain))
+                .filter(Filters.exists("lastActivatedAt"))
+                .filter(Filters.ne("lastActivatedAt", null));
+        if (excludeHash != null && !excludeHash.isBlank()) {
+            q = q.filter(Filters.ne("tboxHash", excludeHash));
+        }
+
+        FindOptions options = new FindOptions()
+                .sort(Sort.descending("lastActivatedAt"))
+                .limit(1);
+
+        List<TenantOntologyTBox> results = q.iterator(options).toList();
+        return results.isEmpty() ? Optional.empty() : Optional.of(results.get(0));
+    }
+
+    /**
      * Deactivate all TBoxes for a tenant (before activating a new one)
      */
     public void deactivateAll(DataDomain dataDomain) {

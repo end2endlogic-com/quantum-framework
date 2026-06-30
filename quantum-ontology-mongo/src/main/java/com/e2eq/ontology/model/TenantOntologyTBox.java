@@ -29,11 +29,17 @@ import java.util.Set;
                @Field("dataDomain.tenantId"),
                @Field("tboxHash")
            }),
-    @Index(options = @IndexOptions(name = "idx_tenant_tbox_active"), 
+    @Index(options = @IndexOptions(name = "idx_tenant_tbox_active"),
            fields = {
                @Field("dataDomain.tenantId"),
                @Field("active"),
                @Field("appliedAt")
+           }),
+    // Rollback selects the most-recently genuinely-activated TBox (B2): index lastActivatedAt.
+    @Index(options = @IndexOptions(name = "idx_tenant_tbox_last_activated"),
+           fields = {
+               @Field("dataDomain.tenantId"),
+               @Field("lastActivatedAt")
            }),
     @Index(options = @IndexOptions(name = "idx_tenant_tbox_version"), 
            fields = {
@@ -47,7 +53,8 @@ public class TenantOntologyTBox extends UnversionedBaseModel {
     
     private String tboxHash;           // SHA-256 hash of TBox content
     private String yamlHash;           // Hash of source YAML (for correlation)
-    private Date appliedAt;            // When this TBox was applied
+    private Date appliedAt;            // When this TBox was submitted/persisted (NOT activation time)
+    private Date lastActivatedAt;      // When this TBox was last genuinely activated (null if never activated)
     private String source;             // Source description (YAML path, etc.)
     private boolean active;            // Whether this is the active TBox for the tenant
     private String softwareVersion;   // Software version this TBox is compatible with
