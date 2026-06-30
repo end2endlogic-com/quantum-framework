@@ -54,6 +54,13 @@ public class AddRealms extends ChangeSetBase {
    @ConfigProperty(name = "quantum.realmConfig.testAccountNumber", defaultValue = "0000000001")
    String testAccountNumber;
 
+   /**
+    * When true, only the cross-tenant SYSTEM realm is seeded; the tenant-shaped TEST realm is skipped.
+    * Defaults to false so existing apps/tests retain the system + test realm behavior (non-breaking).
+    */
+   @ConfigProperty(name = "quantum.realm.seed-system-only", defaultValue = "false")
+   boolean seedSystemOnly;
+
 
     @Override
     public String getId() {
@@ -136,25 +143,30 @@ public class AddRealms extends ChangeSetBase {
         Log.info(".  Added system-com realm Successfully");
         emitter.emit(".  Added system-com realm Successfully");
 
-        // now add the test-quantum-com realm as well
-        domainContext = DomainContext.builder()
-                .tenantId(testTenantId)
-                .orgRefName(testOrgRefName)
-                .defaultRealm(testRealm)
-                .accountId(testAccountNumber)
-                .build();
-        realm = Realm.builder()
-                .refName(testRealm)
-                .displayName(testRealm)
-                .emailDomain(testTenantId)
-                .databaseName(testRealm)
-                .domainContext(domainContext)
-                .defaultPerspective("TENANT_ADMIN")
-                .build();
-        saveOrUpdateRealm(session, realm);
+        if (!seedSystemOnly) {
+            // now add the test-quantum-com realm as well
+            domainContext = DomainContext.builder()
+                    .tenantId(testTenantId)
+                    .orgRefName(testOrgRefName)
+                    .defaultRealm(testRealm)
+                    .accountId(testAccountNumber)
+                    .build();
+            realm = Realm.builder()
+                    .refName(testRealm)
+                    .displayName(testRealm)
+                    .emailDomain(testTenantId)
+                    .databaseName(testRealm)
+                    .domainContext(domainContext)
+                    .defaultPerspective("TENANT_ADMIN")
+                    .build();
+            saveOrUpdateRealm(session, realm);
 
-       Log.info(".  Added test-quantum-com realm Successfully");
-       emitter.emit(".  Added test-quantum-com realm Successfully");
+            Log.info(".  Added test-quantum-com realm Successfully");
+            emitter.emit(".  Added test-quantum-com realm Successfully");
+        } else {
+            Log.info(".  Skipping test realm creation (quantum.realm.seed-system-only=true)");
+            emitter.emit(".  Skipping test realm creation (quantum.realm.seed-system-only=true)");
+        }
     }
 
     private void saveOrUpdateRealm(MorphiaSession session, Realm desiredRealm) {

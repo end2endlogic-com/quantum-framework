@@ -1034,6 +1034,57 @@ public class Customer {
 - Never trust a client-supplied predicate or destination id blindly; combine with rule evaluation and whitelist allowed predicates per domain if needed.
 - For shared resources across tenants (rare), model cross-tenant permissions at the policy layer; don’t reuse edges across tenants unless explicitly designed.
 
+[[provisional-admitted-vocabulary-tier]]
+=== Provisional vs. admitted vocabulary tier
+
+Declaring a predicate in the ontology (the TBox) does not by itself authorize it for use
+in security rules. There are two tiers:
+
+- *Provisional* — a predicate declared in the active TBox's `properties`. It is usable for
+  facts and materialized edges, but a security rule that references it (for example
+  `hasEdge("placedInOrg", ...)`) is rejected.
+- *Admitted* — a predicate that has been explicitly admitted for policy use. Only admitted
+  predicates may be referenced by security rules.
+
+The realm-governance set lives on `TenantOntologyTBox.admittedPredicates`
+(`quantum-ontology-mongo`) and is three-valued:
+
+[cols="1,3",options="header"]
+|===
+| `admittedPredicates`
+| Meaning
+
+| `null`
+| Legacy realm: *all declared predicates are admitted*. This is the back-compatible default — realms that predate the tier are unaffected.
+
+| empty set
+| Governed realm that admits *no* predicates for rule use; every declared predicate is provisional.
+
+| populated set
+| Governed realm: *exactly* these predicates may be referenced by rules; everything else declared is provisional.
+|===
+
+Enforcement happens at rule-registration time. When `RuleContext` adds a rule it fires a
+`RuleVocabularyCheck`; `PolicyVocabularyGuard` (`quantum-ontology-policy-bridge`) observes
+it and runs `RuleVocabularyValidator` over the predicate literals the rule references.
+A reference to an undeclared predicate (`ABSENT`) or a declared-but-not-admitted predicate
+(`PROVISIONAL`) fails rule registration, naming the rule and the offending predicate.
+
+This is fail-closed by design. The disposition is read through the three-state
+`AdmittedVocabularyResult` (`LEGACY` / `GOVERNED` / `UNAVAILABLE`); if the admitted-set
+read fails (for example a transient Mongo outage) the result is `UNAVAILABLE` and the
+guard refuses to downgrade a governed realm to "all admitted" — rule registration that
+references any predicate is rejected rather than silently re-opening the vocabulary.
+
+NOTE: Admitting a predicate is an admin, audited, human-in-the-loop action. Promotion and
+demotion are performed through the enterprise ontology-governance control plane
+(`POST /v1/ontology/{realm}/vocabulary/{predicate}:promote` and `\...:demote`), which also
+owns TBox admission. The first promote/demote on a legacy realm grandfathers the
+currently-declared predicates so no existing rule is silently de-authorized. See the
+Quantum Enterprise book's *Ontology governance control plane* chapter for the admission
+and vocabulary endpoints, the canonical TBox hash version token, and the control-plane /
+data-plane split.
+
 === Developer workflow and DX checklist
 
 - When writing a rule: use hasEdge("<predicate>", <rhs>) and rely on RuleContext variables for the destination when possible.

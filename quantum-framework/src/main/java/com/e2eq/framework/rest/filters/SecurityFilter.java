@@ -157,6 +157,9 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         if (principalContext == null) {
             throw new IllegalStateException("Principal context came back null and should not be null");
         }
+        if (resourceContext != null && resourceContext.getDataDomain() == null) {
+            resourceContext = resourceContext.withDataDomain(principalContext.getDataDomain());
+        }
 
         // Always set the contexts - they may be needed by other parts of the application
         // even for @PermitAll endpoints. The policy checks will be bypassed elsewhere.

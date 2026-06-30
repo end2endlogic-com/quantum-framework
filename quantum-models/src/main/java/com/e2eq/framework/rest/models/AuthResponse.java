@@ -1,5 +1,6 @@
 package com.e2eq.framework.rest.models;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -27,5 +28,20 @@ public class AuthResponse {
         this.access_token = access_token;
         this.refresh_token = refresh_token;
         this.expires_at = expires_at;
+    }
+
+    @JsonProperty("accessToken")
+    public String getAccessToken() {
+        return access_token;
+    }
+
+    @JsonProperty("refreshToken")
+    public String getRefreshToken() {
+        return refresh_token;
+    }
+
+    @JsonProperty("expiresAt")
+    public long getExpiresAt() {
+        return expires_at;
     }
 }

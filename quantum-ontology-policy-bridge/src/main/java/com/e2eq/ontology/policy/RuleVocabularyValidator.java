@@ -32,9 +32,26 @@ public final class RuleVocabularyValidator {
     private static final Pattern PREDICATE_CALL = Pattern.compile(
             "\\b(hasEdge|notHasEdge|hasIncomingEdge|hasAnyEdges|hasAllEdges|relatedIds)\\s*\\(\\s*[\"']([A-Za-z_][\\w.-]*)[\"']");
 
-    public record Violation(String ruleName, String helperFunction, String predicate) {
+    /**
+     * Why a rule's predicate reference is rejected.
+     * <ul>
+     *   <li>{@link #ABSENT} — the predicate is not declared in the TBox at all
+     *       (undeclared / renamed-away). Today's behavior.</li>
+     *   <li>{@link #PROVISIONAL} — the predicate IS declared in the TBox but has
+     *       not been admitted for policy use in this realm (B5 vocabulary tier).</li>
+     * </ul>
+     */
+    public enum Reason { ABSENT, PROVISIONAL }
+
+    public record Violation(String ruleName, String helperFunction, String predicate, Reason reason) {
         @Override
         public String toString() {
+            if (reason == Reason.PROVISIONAL) {
+                return "rule '" + ruleName + "' references provisional ontology predicate '" + predicate
+                        + "' via " + helperFunction + "(...); it is declared but not admitted for policy use"
+                        + " — POST /v1/ontology/{realm}/vocabulary/" + predicate + ":promote to admit it"
+                        + " before referencing it in a security rule";
+            }
             return "rule '" + ruleName + "' references unknown ontology predicate '" + predicate
                     + "' via " + helperFunction + "(...)";
         }
@@ -44,8 +61,59 @@ public final class RuleVocabularyValidator {
 
     private final OntologyRegistry registry;
 
+    /**
+     * Predicates admitted for policy use in this realm. {@code null} means
+     * "all declared predicates are admitted" (legacy / back-compat): every
+     * predicate the registry declares is accepted for rule use — UNLESS
+     * {@link #failClosed} is set, in which case NO predicate is admitted.
+     */
+    private final Set<String> admittedPredicates;
+
+    /**
+     * B5 fail-CLOSED mode. When {@code true}, the realm's admitted set could not be
+     * read (Mongo UNAVAILABLE) and we must NOT fall back to all-admitted: every
+     * declared predicate referenced by a rule is treated as {@link Reason#PROVISIONAL}
+     * (not admitted). This converts a transient read failure into a rule-registration
+     * rejection rather than a silent security downgrade to accept-every-predicate.
+     */
+    private final boolean failClosed;
+
+    /** Back-compat: all declared predicates are admitted (no provisional tier). */
     public RuleVocabularyValidator(OntologyRegistry registry) {
+        this(registry, null, false);
+    }
+
+    /**
+     * @param admittedPredicates the realm's admitted-predicate set, or {@code null}
+     *        to admit every declared predicate (legacy behavior).
+     */
+    public RuleVocabularyValidator(OntologyRegistry registry, Set<String> admittedPredicates) {
+        this(registry, admittedPredicates, false);
+    }
+
+    /**
+     * @param admittedPredicates the realm's admitted-predicate set, or {@code null}
+     *        to admit every declared predicate (legacy behavior). Ignored when
+     *        {@code failClosed} is {@code true}.
+     * @param failClosed when {@code true} (B5 UNAVAILABLE), admit NO predicate for
+     *        rule use: every declared predicate referenced by a rule is rejected as
+     *        provisional. Use this when the admitted set could not be read so the
+     *        guard fails closed instead of downgrading to all-admitted.
+     */
+    public RuleVocabularyValidator(OntologyRegistry registry, Set<String> admittedPredicates, boolean failClosed) {
         this.registry = registry;
+        this.admittedPredicates = admittedPredicates;
+        this.failClosed = failClosed;
+    }
+
+    /**
+     * B5 fail-CLOSED factory: the admitted set is UNAVAILABLE (Mongo read failed).
+     * No declared predicate is admitted for rule references; absent predicates are
+     * still {@link Reason#ABSENT}. Use this rather than the legacy single-arg ctor
+     * on the read-failure path so a transient blip does not re-open the vocabulary.
+     */
+    public static RuleVocabularyValidator failClosed(OntologyRegistry registry) {
+        return new RuleVocabularyValidator(registry, null, true);
     }
 
     public List<Violation> validate(Collection<RuleSource> rules) {
@@ -57,8 +125,18 @@ public final class RuleVocabularyValidator {
                 while (matcher.find()) {
                     String predicate = matcher.group(2);
                     if (registry.propertyOf(predicate).isEmpty()) {
-                        violations.add(new Violation(rule.ruleName(), matcher.group(1), predicate));
+                        // Not declared in the TBox at all.
+                        violations.add(new Violation(rule.ruleName(), matcher.group(1), predicate, Reason.ABSENT));
+                    } else if (failClosed) {
+                        // B5 UNAVAILABLE: admitted set could not be read -> admit nothing.
+                        // A declared predicate referenced by a rule is rejected as provisional
+                        // rather than silently allowed (fail CLOSED, no security downgrade).
+                        violations.add(new Violation(rule.ruleName(), matcher.group(1), predicate, Reason.PROVISIONAL));
+                    } else if (admittedPredicates != null && !admittedPredicates.contains(predicate)) {
+                        // Declared but not admitted for policy use in this realm.
+                        violations.add(new Violation(rule.ruleName(), matcher.group(1), predicate, Reason.PROVISIONAL));
                     }
+                    // else: declared and (admittedPredicates == null || admitted) -> accept.
                 }
             }
         }

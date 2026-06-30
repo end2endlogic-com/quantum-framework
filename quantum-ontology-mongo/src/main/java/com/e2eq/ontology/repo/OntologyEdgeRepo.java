@@ -2,10 +2,14 @@ package com.e2eq.ontology.repo;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.morphia.MorphiaRepo;
+import com.e2eq.framework.model.persistent.morphia.interceptors.ddpolicy.DataDomainResolution;
+import com.e2eq.framework.model.persistent.morphia.interceptors.ddpolicy.DataDomainResolver;
+import com.e2eq.framework.model.persistent.morphia.interceptors.ddpolicy.SourceAttributes;
 import com.e2eq.ontology.core.EdgeRecord;
 import com.e2eq.ontology.core.OntologyRegistry;
 import com.e2eq.ontology.exceptions.CardinalityViolationException;
 import com.e2eq.ontology.model.OntologyEdge;
+import com.e2eq.ontology.model.QuarantinedEdge;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import dev.morphia.Datastore;
 import dev.morphia.query.Query;
@@ -37,6 +41,11 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
    // Uses Instance<> for lazy resolution
    @Inject
    Instance<com.e2eq.ontology.runtime.TenantOntologyRegistryProvider> registryProviderInstance;
+
+   // Governed-ingest resolver (S3). Lazy Instance<> so standalone/unit constructions of this repo
+   // (and any startup ordering) do not hard-require the resolver bean.
+   @Inject
+   Instance<DataDomainResolver> dataDomainResolverInstance;
 
    public void deleteAll() {
       deleteAll(getSecurityContextRealmId());
@@ -517,6 +526,153 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
                 }
             }
         }
+    }
+
+    // ========================================================================
+    // Governed source ingest (S3) — fail-closed edge write with quarantine
+    // ========================================================================
+
+    /**
+     * Governed ingest entry point for edges arriving from an external source (S3). This is the
+     * FIRST edge-write path that runs the DataDomain resolver: each row is resolved against the
+     * source's explicit {@link SourcePolicyContext#getPolicy() policy} to a fail-closed
+     * {@link DataDomainResolution}.
+     *
+     * <p>Per row:</p>
+     * <ul>
+     *   <li><b>Resolved</b> → stamp the resolved DataDomain and {@link #upsert} as usual (ACCEPTED).</li>
+     *   <li><b>Unresolvable</b> → write a {@link QuarantinedEdge} to {@code ontology_edge_quarantine},
+     *       write NOTHING to the {@code edges} collection, and NEVER synthesize a default/{@code
+     *       __unowned} domain (QUARANTINED).</li>
+     * </ul>
+     *
+     * <p>Partial-batch semantics: good rows persist and bad rows quarantine independently. A single
+     * poison row must NOT deny the rest of the tenant's ingest, so this method does not throw on an
+     * unplaceable (or otherwise rejected) row — it records it and continues, surfacing the
+     * {@code quarantinedCount} in the returned {@link EdgeIngestSummary}.</p>
+     *
+     * <p>This method deliberately does NOT touch the existing {@link #upsert}/{@link #upsertDerived}/
+     * {@link #bulkUpsertEdgeRecords}/{@link #upsertMany} paths — those legitimately carry an
+     * already-governed, caller-supplied DataDomain and remain unchanged.</p>
+     *
+     * @param ctx   the source policy context (sourceId + explicit DataDomainPolicy + base bindings)
+     * @param edges the raw ingest edges (DataDomainInfo on these is ignored; placement is resolved)
+     * @return a per-record + counted batch summary; never null
+     */
+    public EdgeIngestSummary ingestEdges(SourcePolicyContext ctx, Collection<EdgeRecord> edges) {
+        if (ctx == null) {
+            throw new IllegalArgumentException("SourcePolicyContext must be provided for governed ingest");
+        }
+        List<EdgeIngestResult> results = new ArrayList<>();
+        if (edges == null || edges.isEmpty()) {
+            return new EdgeIngestSummary(results);
+        }
+
+        DataDomainResolver resolver = (dataDomainResolverInstance != null && dataDomainResolverInstance.isResolvable())
+                ? dataDomainResolverInstance.get()
+                : null;
+
+        for (EdgeRecord e : edges) {
+            if (e == null) {
+                continue;
+            }
+            String entityType = e.getSrcType();
+            // Build the source attributes for this row: the literal base bindings first, then the
+            // row's own structural fields. The resolver reads FROM_ATTRIBUTE bindings out of these.
+            Map<String, Object> values = new HashMap<>(ctx.getBaseBindings());
+            values.put("src", e.getSrc());
+            values.put("srcType", e.getSrcType());
+            values.put("p", e.getP());
+            values.put("dst", e.getDst());
+            values.put("dstType", e.getDstType());
+            if (e.getProv() != null) {
+                // Expose provenance values (e.g. tenant_id carried in prov) without clobbering structural keys.
+                for (Map.Entry<String, Object> pe : e.getProv().entrySet()) {
+                    values.putIfAbsent(pe.getKey(), pe.getValue());
+                }
+            }
+            SourceAttributes attrs = new SourceAttributes(ctx.getSourceId(), entityType, values);
+
+            DataDomainResolution resolution = (resolver != null)
+                    ? resolver.resolveIngestRow(ctx.getPolicy(), "ontology", "edge", attrs)
+                    : DataDomainResolution.unresolvable("no DataDomainResolver available for governed ingest");
+
+            if (resolution.isResolved()) {
+                DataDomain dd = resolution.dataDomain();
+                try {
+                    // Stamp the governed domain and upsert via the existing, unchanged path.
+                    upsert(dd, e.getSrcType(), e.getSrc(), e.getP(), e.getDstType(), e.getDst(), e.isInferred(), e.getProv());
+                    results.add(EdgeIngestResult.accepted(e));
+                } catch (RuntimeException upsertEx) {
+                    // A resolvable row that the edge layer rejects (e.g. cardinality violation) must
+                    // not abort the whole batch either — quarantine it with the rejection reason.
+                    Log.warnf("Ingest row resolved but upsert rejected it; quarantining: %s", upsertEx.getMessage());
+                    quarantineSafely(ctx, e, attrs, upsertEx.getMessage(), results);
+                }
+            } else {
+                quarantineSafely(ctx, e, attrs, resolution.reason(), results);
+            }
+        }
+        return new EdgeIngestSummary(results);
+    }
+
+    /**
+     * Best-effort most-specific policy key hint for diagnostics on a quarantined row. This mirrors
+     * the resolver's source-scoped key shape but is only a HINT recorded on the QuarantinedEdge; the
+     * authoritative placement decision is the resolver's tagged result, not this string.
+     */
+    private String keyHintFor(SourceAttributes attrs) {
+        String sid = attrs.getSourceId();
+        String et = attrs.getEntityType();
+        if (sid != null && !sid.isBlank() && et != null && !et.isBlank()) {
+            return "src/" + sid + "/" + et;
+        }
+        if (sid != null && !sid.isBlank()) {
+            return "src/" + sid + "/*";
+        }
+        return "ontology:edge";
+    }
+
+    /**
+     * Quarantine a row WITHOUT ever throwing (the never-throw-on-poison contract). If the quarantine
+     * write itself fails, the row is STILL kept out of {@code edges} (fail-closed is preserved); only
+     * the quarantine record is lost, logged at ERROR for follow-up. Always records a QUARANTINED
+     * result so the row is accounted for in the {@link EdgeIngestSummary}.
+     */
+    private void quarantineSafely(SourcePolicyContext ctx, EdgeRecord e, SourceAttributes attrs,
+                                  String reason, java.util.List<EdgeIngestResult> results) {
+        try {
+            quarantine(ctx, e, attrs, keyHintFor(attrs), reason);
+        } catch (RuntimeException qEx) {
+            // Fail-closed is intact (the row never reached `edges`); we only lose the quarantine record.
+            Log.errorf("Quarantine WRITE failed for unplaceable ingest row (row kept OUT of edges; "
+                            + "quarantine record lost): src=%s p=%s dst=%s reason=%s quarantineError=%s",
+                    e.getSrc(), e.getP(), e.getDst(), reason, qEx.getMessage());
+        }
+        results.add(EdgeIngestResult.quarantined(e, reason));
+    }
+
+    /**
+     * Persist a {@link QuarantinedEdge} for an unplaceable ingest row. Writes ONLY to the
+     * {@code ontology_edge_quarantine} collection; never to {@code edges}. Uses the active
+     * security-context realm (there is no governed DataDomain to derive a realm from — that is the
+     * whole reason the row is quarantined).
+     */
+    private void quarantine(SourcePolicyContext ctx, EdgeRecord e, SourceAttributes attrs, String policyKey, String reason) {
+        QuarantinedEdge q = new QuarantinedEdge();
+        q.setRefName(ctx.getSourceId() + "|" + e.getSrc() + "|" + e.getP() + "|" + e.getDst() + "|" + System.nanoTime());
+        q.setSrc(e.getSrc());
+        q.setSrcType(e.getSrcType());
+        q.setP(e.getP());
+        q.setDst(e.getDst());
+        q.setDstType(e.getDstType());
+        q.setSourceId(ctx.getSourceId());
+        q.setEntityType(attrs.getEntityType());
+        q.setAttemptedAttributes(new HashMap<>(attrs.getValues()));
+        q.setPolicyKey(policyKey);
+        q.setReason(reason);
+        q.setQuarantinedAt(new Date());
+        ds().save(q);
     }
 
     /**

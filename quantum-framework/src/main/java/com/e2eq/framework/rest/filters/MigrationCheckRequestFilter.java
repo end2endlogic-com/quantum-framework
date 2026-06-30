@@ -11,6 +11,7 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ContainerRequestFilter;
 import jakarta.ws.rs.ext.Provider;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 
 import java.io.IOException;
@@ -35,10 +36,17 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
     @Inject
     JsonWebToken jwt;
 
+    @ConfigProperty(name = "quantum.database.migration.enabled", defaultValue = "true")
+    boolean migrationCheckEnabled;
+
     @Override
     public void filter(ContainerRequestContext requestContext) throws IOException {
         boolean failRequest=false;
         DatabaseMigrationException ex = null;
+
+        if (!migrationCheckEnabled) {
+            return;
+        }
 
         if (requestContext.getUriInfo().getPath().contains("hello")) {
             return;
