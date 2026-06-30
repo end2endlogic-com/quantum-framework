@@ -59,18 +59,44 @@ public class PolicyVocabularyGuard {
                     check.ruleName(), e.getMessage());
             registry = null;
         }
-        check(check, registry);
+        // B5 vocabulary tier: resolve the realm's admitted-predicate set. When present
+        // the validator enforces the provisional/admitted tier; when empty it falls back
+        // to the legacy single-arg validator (all declared predicates admitted).
+        java.util.Optional<java.util.Set<String>> admitted = java.util.Optional.empty();
+        if (registry != null) {
+            try {
+                admitted = registryProvider.admittedPredicatesForCurrentRealm();
+            } catch (RuntimeException e) {
+                Log.debugf("Skipping vocabulary tier for '%s': admitted set unavailable (%s)",
+                        check.ruleName(), e.getMessage());
+            }
+        }
+        check(check, registry, admitted.orElse(null));
         if (functionalDomainValidationEnabled) {
             checkFunctionalDomain(check, functionalDomainSnapshot());
         }
     }
 
-    /** Core predicate logic, separated from CDI resolution for direct unit testing. */
+    /**
+     * Legacy entry point: all declared predicates are admitted (no provisional tier).
+     * Equivalent to {@code check(check, registry, null)}.
+     */
     static void check(RuleVocabularyCheck check, OntologyRegistry registry) {
+        check(check, registry, null);
+    }
+
+    /**
+     * Core predicate logic, separated from CDI resolution for direct unit testing.
+     *
+     * @param admittedPredicates the realm's admitted-predicate set, or {@code null}
+     *        to admit every declared predicate (legacy behavior).
+     */
+    static void check(RuleVocabularyCheck check, OntologyRegistry registry,
+                      java.util.Set<String> admittedPredicates) {
         if (registry == null || registry.properties().isEmpty()) {
             return; // no ontology vocabulary configured — nothing to validate against
         }
-        new RuleVocabularyValidator(registry).validateOrThrow(List.of(
+        new RuleVocabularyValidator(registry, admittedPredicates).validateOrThrow(List.of(
                 new RuleVocabularyValidator.RuleSource(check.ruleName(), check.scriptsAndFilters())));
     }
 

@@ -67,6 +67,18 @@ public class TenantOntologyTBox extends UnversionedBaseModel {
     // Metadata
     private Integer version;            // Optional version number
     private String description;         // Optional description
+
+    // B5: realm-governance vocabulary tier. The set of ontology predicates ADMITTED
+    // for policy (security-rule) use in this realm. null == legacy "all declared
+    // predicates admitted". A predicate declared in the TBox (properties) but NOT in
+    // this set is "provisional": usable for facts/edges but rejected when referenced
+    // by a security rule.
+    //
+    // OUT-OF-BAND from pack identity/hash: this is realm-governance state, NOT part of
+    // the canonical TBox content. It MUST NOT be fed into toTBox()/convertProperties()
+    // or anything reaching CanonicalTBoxHasher — two docs differing only in
+    // admittedPredicates must hash identically.
+    private java.util.Set<String> admittedPredicates;
     
     public TenantOntologyTBox(TBox tbox, String tboxHash, String yamlHash, String source, String softwareVersion) {
         this.tboxHash = tboxHash;

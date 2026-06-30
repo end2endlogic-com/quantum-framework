@@ -64,6 +64,47 @@ class PolicyVocabularyGuardTest {
     }
 
     @Test
+    void provisionalPredicateRejectedWhenAdmittedSetPresent() {
+        // ownsTerritory is declared but NOT admitted -> registration must throw.
+        RuleVocabularyCheck check = new RuleVocabularyCheck("prov-rule",
+                List.of("hasEdge(\"ownsTerritory\", x)"));
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> PolicyVocabularyGuard.check(check, registryWith("canSeeLocation", "ownsTerritory"),
+                        Set.of("canSeeLocation")));
+
+        assertTrue(failure.getMessage().contains("ownsTerritory"));
+        assertTrue(failure.getMessage().contains("provisional"));
+        assertTrue(failure.getMessage().contains(":promote"));
+    }
+
+    @Test
+    void admittedPredicatePassesWhenAdmittedSetPresent() {
+        RuleVocabularyCheck check = new RuleVocabularyCheck("ok-rule",
+                List.of("hasEdge(\"canSeeLocation\", x)"));
+
+        assertDoesNotThrow(() -> PolicyVocabularyGuard.check(check,
+                registryWith("canSeeLocation", "ownsTerritory"), Set.of("canSeeLocation")));
+    }
+
+    @Test
+    void emptyAdmittedSetPreservesLegacyBehavior() {
+        // null admitted set (Optional.empty().orElse(null)) == legacy: all declared accepted.
+        RuleVocabularyCheck declared = new RuleVocabularyCheck("legacy-rule",
+                List.of("hasEdge(\"ownsTerritory\", x)"));
+        assertDoesNotThrow(() -> PolicyVocabularyGuard.check(declared,
+                registryWith("canSeeLocation", "ownsTerritory"), null));
+
+        // ... and an undeclared predicate still fails (ABSENT) under legacy.
+        RuleVocabularyCheck undeclared = new RuleVocabularyCheck("legacy-rule",
+                List.of("hasEdge(\"renamedAway\", x)"));
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> PolicyVocabularyGuard.check(undeclared,
+                        registryWith("canSeeLocation", "ownsTerritory"), null));
+        assertTrue(failure.getMessage().contains("renamedAway"));
+    }
+
+    @Test
     void functionalDomainValidationSkipsWhenRegistryEmptyAndPassesWildcards() {
         RuleVocabularyCheck anyDomain = new RuleVocabularyCheck("r", List.of(), "sales", "anything", "view");
         assertDoesNotThrow(() -> PolicyVocabularyGuard.checkFunctionalDomain(anyDomain, Map.of()));
