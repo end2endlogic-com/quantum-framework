@@ -86,6 +86,62 @@ public class TenantOntologyRegistryProviderAdmittedTest {
                 "must be null-safe and treat resolution failure as legacy (all admitted)");
     }
 
+    // --- B5 3-state disposition (admittedVocabularyForCurrentRealm) -----------
+
+    @Test
+    void governed_whenActiveDocHasNonNullAdmittedSet() {
+        TenantOntologyTBoxRepo tenantRepo = mock(TenantOntologyTBoxRepo.class);
+        when(tenantRepo.findActiveTBox(any(DataDomain.class)))
+                .thenReturn(Optional.of(docWithAdmitted(Set.of("canSeeLocation"))));
+
+        AdmittedVocabularyResult r = newProvider(tenantRepo).admittedVocabularyForCurrentRealm();
+
+        assertEquals(AdmittedVocabularyResult.Kind.GOVERNED, r.kind());
+        assertEquals(Set.of("canSeeLocation"), r.admitted());
+    }
+
+    @Test
+    void legacy_whenActiveDocHasNullAdmittedField() {
+        TenantOntologyTBoxRepo tenantRepo = mock(TenantOntologyTBoxRepo.class);
+        when(tenantRepo.findActiveTBox(any(DataDomain.class)))
+                .thenReturn(Optional.of(docWithAdmitted(null)));
+
+        assertEquals(AdmittedVocabularyResult.Kind.LEGACY,
+                newProvider(tenantRepo).admittedVocabularyForCurrentRealm().kind());
+    }
+
+    @Test
+    void legacy_whenNoActiveDoc() {
+        TenantOntologyTBoxRepo tenantRepo = mock(TenantOntologyTBoxRepo.class);
+        when(tenantRepo.findActiveTBox(any(DataDomain.class))).thenReturn(Optional.empty());
+
+        assertEquals(AdmittedVocabularyResult.Kind.LEGACY,
+                newProvider(tenantRepo).admittedVocabularyForCurrentRealm().kind());
+    }
+
+    @Test
+    void unavailable_whenRepoThrows_notLegacy() {
+        TenantOntologyTBoxRepo tenantRepo = mock(TenantOntologyTBoxRepo.class);
+        when(tenantRepo.findActiveTBox(any(DataDomain.class)))
+                .thenThrow(new RuntimeException("mongo down"));
+
+        AdmittedVocabularyResult r = newProvider(tenantRepo).admittedVocabularyForCurrentRealm();
+
+        assertEquals(AdmittedVocabularyResult.Kind.UNAVAILABLE, r.kind(),
+                "a read failure must surface as UNAVAILABLE (fail-closed), not LEGACY (fail-open)");
+    }
+
+    @Test
+    void legacyOptionalProjection_mapsUnavailableToEmpty_backCompat() {
+        // The deprecated 2-state method must preserve its exact prior behavior:
+        // read failure -> Optional.empty() (so pre-existing callers/tests stay green).
+        TenantOntologyTBoxRepo tenantRepo = mock(TenantOntologyTBoxRepo.class);
+        when(tenantRepo.findActiveTBox(any(DataDomain.class)))
+                .thenThrow(new RuntimeException("mongo down"));
+
+        assertTrue(newProvider(tenantRepo).admittedPredicatesForCurrentRealm().isEmpty());
+    }
+
     @Test
     void readsFreshOnEachCall_notCached() {
         TenantOntologyTBoxRepo tenantRepo = mock(TenantOntologyTBoxRepo.class);

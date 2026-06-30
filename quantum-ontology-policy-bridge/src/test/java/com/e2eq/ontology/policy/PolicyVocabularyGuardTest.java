@@ -3,6 +3,7 @@ package com.e2eq.ontology.policy;
 import com.e2eq.framework.model.securityrules.RuleVocabularyCheck;
 import com.e2eq.ontology.core.InMemoryOntologyRegistry;
 import com.e2eq.ontology.core.OntologyRegistry;
+import com.e2eq.ontology.runtime.AdmittedVocabularyResult;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -11,6 +12,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -102,6 +104,65 @@ class PolicyVocabularyGuardTest {
                 () -> PolicyVocabularyGuard.check(undeclared,
                         registryWith("canSeeLocation", "ownsTerritory"), null));
         assertTrue(failure.getMessage().contains("renamedAway"));
+    }
+
+    // --- B5 3-state vocabulary disposition ------------------------------------
+
+    @Test
+    void unavailableFailsClosed_rejectsDeclaredPredicateAndIncrementsCounter() {
+        // GOVERNED realm whose admitted set could not be read (Mongo blip).
+        // Even though canSeeLocation IS declared, the rule must be rejected
+        // (fail CLOSED) rather than silently admitted, and the counter must rise.
+        RuleVocabularyCheck check = new RuleVocabularyCheck("gov-rule",
+                List.of("hasEdge(\"canSeeLocation\", x)"));
+
+        long before = PolicyVocabularyGuard.readUnavailableCount();
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> PolicyVocabularyGuard.checkVocabulary(check, registryWith("canSeeLocation"),
+                        AdmittedVocabularyResult.unavailable()));
+
+        assertTrue(failure.getMessage().contains("canSeeLocation"));
+        assertTrue(failure.getMessage().contains("provisional"),
+                "fail-closed treats declared predicates as provisional (not admitted)");
+        assertEquals(before + 1, PolicyVocabularyGuard.readUnavailableCount(),
+                "UNAVAILABLE path must increment the read-unavailable counter");
+    }
+
+    @Test
+    void unavailableWithNoOntologyConfigured_isNoopAndDoesNotCount() {
+        // Empty registry == app does not use the ontology -> nothing to validate,
+        // no fail-closed, no counter bump.
+        RuleVocabularyCheck check = new RuleVocabularyCheck("any-rule",
+                List.of("hasEdge(\"whatever\", x)"));
+
+        long before = PolicyVocabularyGuard.readUnavailableCount();
+        assertDoesNotThrow(() -> PolicyVocabularyGuard.checkVocabulary(check, registryWith(),
+                AdmittedVocabularyResult.unavailable()));
+        assertEquals(before, PolicyVocabularyGuard.readUnavailableCount());
+    }
+
+    @Test
+    void legacyResultAdmitsAllDeclared() {
+        RuleVocabularyCheck check = new RuleVocabularyCheck("legacy-rule",
+                List.of("hasEdge(\"ownsTerritory\", x)"));
+
+        assertDoesNotThrow(() -> PolicyVocabularyGuard.checkVocabulary(check,
+                registryWith("canSeeLocation", "ownsTerritory"), AdmittedVocabularyResult.legacy()));
+    }
+
+    @Test
+    void governedResultRejectsProvisionalAndPassesAdmitted() {
+        RuleVocabularyCheck provisional = new RuleVocabularyCheck("prov-rule",
+                List.of("hasEdge(\"ownsTerritory\", x)"));
+        assertThrows(IllegalStateException.class, () -> PolicyVocabularyGuard.checkVocabulary(provisional,
+                registryWith("canSeeLocation", "ownsTerritory"),
+                AdmittedVocabularyResult.governed(Set.of("canSeeLocation"))));
+
+        RuleVocabularyCheck admittedRule = new RuleVocabularyCheck("ok-rule",
+                List.of("hasEdge(\"canSeeLocation\", x)"));
+        assertDoesNotThrow(() -> PolicyVocabularyGuard.checkVocabulary(admittedRule,
+                registryWith("canSeeLocation", "ownsTerritory"),
+                AdmittedVocabularyResult.governed(Set.of("canSeeLocation"))));
     }
 
     @Test

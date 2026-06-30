@@ -81,41 +81,91 @@ public class TenantOntologyRegistryProvider {
     }
 
     /**
-     * B5 vocabulary tier: the set of ontology predicates ADMITTED for policy
-     * (security-rule) use in the current security-context realm.
+     * B5 vocabulary tier: resolve the THREE-state admitted-predicate disposition
+     * for policy (security-rule) use in the current security-context realm.
      * <p>
      * Resolves the realm the SAME way {@link #getRegistry()} does (via the current
      * SecurityContext, falling back to {@code defaultRealm}), then reads the realm's
      * ACTIVE {@link TenantOntologyTBox} fresh (NOT cached — admission state changes
      * out-of-band). Returns:
      * <ul>
-     *   <li>{@code Optional.of(set)} when an active tenant TBox exists and its
-     *       {@code admittedPredicates} field is non-null (governed realm); the set
-     *       defines exactly which declared predicates may be referenced by rules.</li>
-     *   <li>{@code Optional.empty()} otherwise — no active tenant doc, or a legacy
-     *       doc with a null {@code admittedPredicates} field — meaning "all declared
-     *       predicates admitted" (back-compat).</li>
+     *   <li>{@link AdmittedVocabularyResult#governed(java.util.Set)} when an active
+     *       tenant TBox exists and its {@code admittedPredicates} field is non-null
+     *       (governed realm); the set defines exactly which declared predicates may
+     *       be referenced by rules. Decided at the {@code admitted != null} branch
+     *       below.</li>
+     *   <li>{@link AdmittedVocabularyResult#legacy()} when there is no active tenant
+     *       doc, or a legacy doc with a {@code null admittedPredicates} field —
+     *       meaning "all declared predicates admitted" (back-compat). Decided at the
+     *       fall-through {@code return legacy()} below.</li>
+     *   <li>{@link AdmittedVocabularyResult#unavailable()} when the read THREW (the
+     *       {@code catch (Throwable)} branch). This is the security-critical case:
+     *       the caller (policy guard) must fail CLOSED rather than treat the blip as
+     *       legacy/all-admitted. We do NOT silently downgrade a GOVERNED realm on a
+     *       transient Mongo failure.</li>
      * </ul>
      * Read fresh on every call and fully null-safe.
      * </p>
-     * @return the admitted-predicate set for the current realm, or empty for legacy
+     *
+     * <p><b>Availability tradeoff (surfaced for review):</b> mapping the read
+     * failure to UNAVAILABLE means that during a Mongo outage, security-rule
+     * (re)loading for a GOVERNED realm is rejected (fail CLOSED). This is a
+     * deliberate trade of availability for security — it prevents a transient blip
+     * from re-opening every declared predicate. It intentionally does NOT add a
+     * bounded stale-TTL cache (B4, out of scope); it only fails closed and emits an
+     * observable signal so the downgrade-attempt is visible.</p>
+     *
+     * @return the 3-state admitted-vocabulary disposition for the current realm
      */
-    public java.util.Optional<java.util.Set<String>> admittedPredicatesForCurrentRealm() {
+    public AdmittedVocabularyResult admittedVocabularyForCurrentRealm() {
         String realm = getCurrentRealm();
+        // realmDataDomain(realm) is pure logic — compute it OUTSIDE the try so a bug there
+        // surfaces normally rather than being masked as a read failure (UNAVAILABLE).
+        var dataDomain = realmDataDomain(realm);
+        Optional<TenantOntologyTBox> activeTenantTBox;
         try {
-            Optional<TenantOntologyTBox> activeTenantTBox =
-                    tenantTboxRepo.findActiveTBox(realmDataDomain(realm));
-            if (activeTenantTBox.isPresent()) {
-                java.util.Set<String> admitted = activeTenantTBox.get().getAdmittedPredicates();
-                if (admitted != null) {
-                    return java.util.Optional.of(admitted);
-                }
-            }
+            // ONLY the Mongo read may signal UNAVAILABLE. The null-check / GOVERNED-vs-LEGACY
+            // construction below is pure logic and must NOT be reclassified as a read failure,
+            // or a programming bug would masquerade as a transient outage.
+            activeTenantTBox = tenantTboxRepo.findActiveTBox(dataDomain);
         } catch (Throwable t) {
-            Log.debugf("admittedPredicatesForCurrentRealm: could not resolve active tenant TBox for "
-                    + "realm %s, treating as legacy (all admitted): %s", realm, t.getMessage());
+            // UNAVAILABLE: the read threw. Do NOT collapse to legacy/all-admitted —
+            // that is the fail-OPEN security downgrade this method exists to close.
+            // Log WITH the throwable (stack) so the fail-closed event is diagnosable
+            // (t.getMessage() is often null, e.g. for NPEs).
+            Log.warn("admittedVocabularyForCurrentRealm: admitted-set read FAILED for realm " + realm
+                    + "; returning UNAVAILABLE so the policy guard fails CLOSED (no predicates admitted "
+                    + "for rule references) instead of silently downgrading to all-admitted", t);
+            return AdmittedVocabularyResult.unavailable();
         }
-        return java.util.Optional.empty();
+        if (activeTenantTBox.isPresent()) {
+            java.util.Set<String> admitted = activeTenantTBox.get().getAdmittedPredicates();
+            if (admitted != null) {
+                // GOVERNED: enforce exactly this set for rule references.
+                return AdmittedVocabularyResult.governed(admitted);
+            }
+        }
+        // LEGACY: no active doc, or active doc with null admittedPredicates.
+        return AdmittedVocabularyResult.legacy();
+    }
+
+    /**
+     * Legacy 2-state projection of {@link #admittedVocabularyForCurrentRealm()}:
+     * GOVERNED -&gt; the admitted set, LEGACY and UNAVAILABLE -&gt; {@code empty()}.
+     * <p>
+     * <b>Do NOT use this from the policy guard.</b> It cannot distinguish the
+     * read-failure (UNAVAILABLE) state from legacy and therefore re-opens the
+     * fail-OPEN downgrade. It is retained only for any back-compat caller that
+     * predates the 3-state contract; new code must call
+     * {@link #admittedVocabularyForCurrentRealm()} and fail closed on UNAVAILABLE.
+     * </p>
+     * @return the admitted-predicate set for the current realm, or empty for legacy
+     * @deprecated prefer {@link #admittedVocabularyForCurrentRealm()} which exposes
+     *             the UNAVAILABLE state required to fail closed.
+     */
+    @Deprecated
+    public java.util.Optional<java.util.Set<String>> admittedPredicatesForCurrentRealm() {
+        return admittedVocabularyForCurrentRealm().asLegacyOptional();
     }
 
     /**
