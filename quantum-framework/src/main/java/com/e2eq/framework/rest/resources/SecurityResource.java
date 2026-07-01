@@ -3,12 +3,15 @@ package com.e2eq.framework.rest.resources;
 
 import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import com.e2eq.framework.model.auth.AuthProviderFactory;
+import com.e2eq.framework.model.auth.UserManagement;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.rest.models.*;
 import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.model.securityrules.SecurityCheckException;
 import com.e2eq.framework.model.security.ApplicationRegistration;
+import com.e2eq.framework.rest.requests.CreateUserRequest;
+import com.e2eq.framework.rest.services.AuthCredentialService;
 import com.e2eq.framework.rest.services.AuthLoginService;
 
 import com.e2eq.framework.model.security.UserProfile;
@@ -107,6 +110,9 @@ public class SecurityResource {
 
     @Inject
     AuthLoginService authLoginService;
+
+    @Inject
+    AuthCredentialService authCredentialService;
 
     @ConfigProperty(name = "mp.jwt.verify.issuer")
     protected String issuer;
@@ -277,7 +283,8 @@ public class SecurityResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @APIResponse(responseCode = "200", description = "Successful login", content = @Content(mediaType = "application/json", schema = @Schema(implementation = AuthResponse.class)))
     @APIResponse(responseCode = "401", description = "Unauthorized - Invalid credentials", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
-    public Response login(@Context HttpHeaders headers, AuthRequest authRequest) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+    public Response login(@Context HttpHeaders headers, AuthRequest authRequest,
+                          @QueryParam("provider") @DefaultValue("") String provider) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
         Response rc;
 
         String remoteAddress = headers.getRequestHeaders().getFirst("X-FORWARDED_FOR");
@@ -299,7 +306,9 @@ public class SecurityResource {
         Log.infof("Logging in userid: %s realm: %s",authRequest.getUserId(), realm);
 
         try {
-            AuthLoginService.LoginResult loginResult = authLoginService.login(authRequest.getUserId(), authRequest.getPassword());
+            AuthLoginService.LoginResult loginResult = provider == null || provider.isBlank()
+                    ? authLoginService.login(authRequest.getUserId(), authRequest.getPassword())
+                    : authLoginService.login(authRequest.getUserId(), authRequest.getPassword(), provider);
             if (loginResult.authenticated()) {
                 Log.info("Login successful for userId:" + authRequest.getUserId() + " provider:" + loginResult.response().getAuthProvider());
                 return Response.ok(loginResult.response()).build();
@@ -357,6 +366,54 @@ public class SecurityResource {
 
         return rc;
          */
+    }
+
+    @POST
+    @Path("/create-user")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    @RolesAllowed({ "admin", "system"})
+    public Response createUser(CreateUserRequest request,
+                               @QueryParam("provider") @DefaultValue("") String provider) {
+        if (request == null || request.getUserId() == null || request.getUserId().isBlank()) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(RestError.builder()
+                            .status(Response.Status.BAD_REQUEST.getStatusCode())
+                            .statusMessage("userId is required")
+                            .build())
+                    .build();
+        }
+        UserManagement userManager = provider == null || provider.isBlank()
+                ? authProviderFactory.getUserManager()
+                : authProviderFactory.getUserManager(provider);
+        userManager.createUser(
+                request.getUserId(),
+                request.getPassword(),
+                request.getForceChangePassword(),
+                request.getRoles(),
+                request.getDomainContext()
+        );
+        return Response.ok().build();
+    }
+
+    @POST
+    @Path("/reset-password")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    @RolesAllowed({ "admin", "system"})
+    public Response resetPassword(ResetPasswordRequest request,
+                                  @QueryParam("provider") @DefaultValue("") String provider) {
+        try {
+            authCredentialService.resetPassword(request, provider);
+        } catch (IllegalArgumentException e) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(RestError.builder()
+                            .status(Response.Status.BAD_REQUEST.getStatusCode())
+                            .statusMessage(e.getMessage())
+                            .build())
+                    .build();
+        }
+        return Response.ok().build();
     }
 
     protected AuthResponse generateAuthResponse(@NotNull (message = "subject for generating auth response can not be null") String subject,
