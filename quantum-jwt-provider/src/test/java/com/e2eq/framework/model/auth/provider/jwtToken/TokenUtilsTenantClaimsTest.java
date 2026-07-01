@@ -29,7 +29,7 @@ class TokenUtilsTenantClaimsTest {
 
     @Test
     void tenantAwareTokenCarriesDomainContextClaims() throws Exception {
-        TokenUtils.configure("file:/tmp/quantum-auth-keys/privateKey.pem", "file:/tmp/quantum-auth-keys/publicKey.pem");
+        TokenUtils.configure("privateKey.pem", "publicKey.pem");
 
         String jwt = TokenUtils.generateUserToken(
                 "svc-account-001", "service-account", Set.of("admin", "service"),
@@ -47,7 +47,7 @@ class TokenUtilsTenantClaimsTest {
 
     @Test
     void legacyOverloadStaysTenantBlind() throws Exception {
-        TokenUtils.configure("file:/tmp/quantum-auth-keys/privateKey.pem", "file:/tmp/quantum-auth-keys/publicKey.pem");
+        TokenUtils.configure("privateKey.pem", "publicKey.pem");
 
         String jwt = TokenUtils.generateUserToken(
                 "svc-1", Set.of("admin"), TokenUtils.expiresAt(3600), "https://auth.example.com");
