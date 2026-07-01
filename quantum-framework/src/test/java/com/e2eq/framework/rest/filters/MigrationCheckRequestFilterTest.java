@@ -98,6 +98,7 @@ class MigrationCheckRequestFilterTest {
         filter.credentialRepo = credentialRepo;
         filter.migrationService = migrationService;
         filter.jwt = jwt;
+        filter.migrationCheckEnabled = true;
         return filter;
     }
 
