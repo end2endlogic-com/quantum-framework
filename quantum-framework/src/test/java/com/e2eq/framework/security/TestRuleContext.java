@@ -293,6 +293,8 @@ public class TestRuleContext extends BaseRepoTest {
      * This is by design - @PermitAll bypasses the rule evaluation system entirely.
      */
     @Test
+    @ActivateRequestContext
+    @TestSecurity(user = "sysAdmin@system-com", roles = {"admin"})
     public void testDefaultRuleContext() {
         // Create roles for admin and user
         String[] adminRole = new String[]{"admin"};
@@ -334,9 +336,37 @@ public class TestRuleContext extends BaseRepoTest {
 
         List<Filter> filters = new ArrayList<>();
 
-        // Use the injected RuleContext which should already have seed data loaded via SeedStartupRunner
-        // Ensure it's reloaded from the test realm to get the latest policies including system rules from seed
         String testRealm = testUtils.getTestRealm();
+
+        // Self-sufficient seeding: the "view your own resource" rule this test asserts on (line ~380)
+        // is NOT a startup/system seed — addSystemRules() only adds the system, system-role, and
+        // tenant-admin rules, and no startup seed pack defines a userOwnResourcesPolicy. It is a
+        // realm-specific DB policy that a SIBLING test (testPolicyRepoHydration_*) happens to persist.
+        // Relying on that made this assertion order-dependent and flaky on a clean database. Seed the
+        // policy here so the test is self-contained and deterministic regardless of run order / DB state.
+        Policy userOwnResourcesPolicy = new Policy();
+        userOwnResourcesPolicy.setRefName("default-ctx-user-view-own");
+        userOwnResourcesPolicy.setDisplayName("User view-own (test seed)");
+        userOwnResourcesPolicy.setPrincipalId("user");
+        userOwnResourcesPolicy.setDataDomain(securityUtils.getSystemDataDomain());
+        SecurityURIHeader viewOwnHeader = new SecurityURIHeader.Builder()
+                .withIdentity("user").withArea("*").withFunctionalDomain("*").withAction("view").build();
+        SecurityURIBody viewOwnBody = new SecurityURIBody.Builder()
+                .withRealm("*").withOrgRefName("*").withAccountNumber("*")
+                .withTenantId("*").withOwnerId("*").withDataSegment("*").withResourceId("*").build();
+        Rule viewOwnRule = new Rule.Builder()
+                .withName("user-view-own")
+                .withSecurityURI(new SecurityURI(viewOwnHeader, viewOwnBody))
+                .withPostconditionScript("pcontext.getUserId() == rcontext.getOwnerId()")
+                .withAndFilterString("dataDomain.ownerId:${principalId}")
+                .withEffect(RuleEffect.ALLOW)
+                .withPriority(200)
+                .withFinalRule(false)
+                .build();
+        userOwnResourcesPolicy.getRules().add(viewOwnRule);
+        policyRepo.save(testRealm, userOwnResourcesPolicy);
+
+        // Reload so the just-seeded policy (plus default system rules) is loaded for the test realm.
         injectedRuleContext.reloadFromRepo(testRealm);
 
         // test that an admin can view system admins profile.
