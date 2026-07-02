@@ -40,6 +40,31 @@ public class TenantOntologyTBoxRepo extends MorphiaRepo<TenantOntologyTBox> {
     }
 
     /**
+     * Lightweight staleness probe: return ONLY the {@code tboxHash} of the active TBox
+     * for the tenant, projecting away the (potentially large) class/property/chain maps.
+     * <p>
+     * Used by {@code TenantOntologyRegistryProvider} to cheaply detect — from any cluster
+     * instance — that a DIFFERENT TBox has been activated since a registry was cached,
+     * so activation on one instance becomes visible on the others without a broker.
+     * </p>
+     */
+    public Optional<String> findActiveTBoxHash(DataDomain dataDomain) {
+        validateDataDomain(dataDomain);
+        Query<TenantOntologyTBox> q = ds().find(TenantOntologyTBox.class)
+                .filter(dataDomainFilters(dataDomain))
+                .filter(Filters.eq("active", true));
+
+        FindOptions options = new FindOptions()
+                .sort(Sort.descending("appliedAt"))
+                .limit(1);
+        options.projection().include("tboxHash");
+
+        List<TenantOntologyTBox> results = q.iterator(options).toList();
+        return results.isEmpty() ? Optional.empty()
+                : Optional.ofNullable(results.get(0).getTboxHash());
+    }
+
+    /**
      * Find TBox by hash for a specific tenant
      */
     public Optional<TenantOntologyTBox> findByHash(DataDomain dataDomain, String tboxHash) {
