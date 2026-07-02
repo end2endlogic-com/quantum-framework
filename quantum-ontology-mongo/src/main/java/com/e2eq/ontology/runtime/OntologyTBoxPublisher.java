@@ -96,7 +96,11 @@ public class OntologyTBoxPublisher {
             return;
         }
         try {
-            OntologyRegistry registry = registryProvider.getRegistryForRealm(realm);
+            // Build purely from sources (annotations + Morphia + YAML), bypassing the
+            // activation-preferring read path: once we activate a published TBox, a plain
+            // getRegistryForRealm would re-read THAT (possibly empty) active copy instead of
+            // the module's source annotations, so the federated TBox would never carry content.
+            OntologyRegistry registry = registryProvider.buildSourceRegistry(realm);
             publish(realm, registry, serviceBaseUrl.get());
         }
         catch (Exception e) {
@@ -109,6 +113,12 @@ public class OntologyTBoxPublisher {
      * Package-visible for testing.
      */
     void publish(String realm, OntologyRegistry registry, String baseUrl) throws Exception {
+        if (registry.classes().isEmpty() && registry.properties().isEmpty()) {
+            // Never clobber the central realm's TBox with an empty one — an empty source
+            // registry means there is nothing to federate (mis-scan or no annotations).
+            Log.warnf("Realm %s: source TBox is empty (0 classes, 0 properties); skipping publish.", realm);
+            return;
+        }
         String base = baseUrl.replaceAll("/+$", "") + "/v1/ontology/" + realm;
         String payload = objectMapper.writeValueAsString(buildSubmitBody(registry));
 
