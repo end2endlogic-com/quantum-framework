@@ -104,6 +104,14 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     @ConfigProperty(name = "quantum.security.filter.enforcePreAuth", defaultValue = "true")
     boolean enforcePreAuth;
 
+    // Delegated identity: when true, a token from the trusted central issuer whose subject is NOT
+    // present in the local credential store is trusted by its (already JWKS-validated) claims, and the
+    // principal is built from those claims — no local credential/database lookup. This lets a service
+    // delegate identity entirely to the central auth service (via its REST API/SDK) without sharing a
+    // database. Default false preserves the strict local-credential behavior.
+    @ConfigProperty(name = "quantum.auth.trust-token-claims", defaultValue = "false")
+    boolean trustTokenClaims;
+
     @Inject
     com.e2eq.framework.security.runtime.RuleContext ruleContext;
 
@@ -661,6 +669,11 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         }
 
         if (!ocreds.isPresent()) {
+            // Delegated identity: the credential store may live in another service/database we must not
+            // reach. When enabled, build the principal from the already-JWKS-validated token claims.
+            if (trustTokenClaims) {
+                return buildDelegatedClaimsContext(sub, realmOverride);
+            }
             throw new IllegalStateException(String.format(
                 "Subject %s not found in credentialUserIdPassword collection in realm:%s",
                 sub, envConfigUtils.getSystemRealm()));
@@ -696,6 +709,47 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 .withDataDomainPolicy(creds.getDataDomainPolicy())
                 .build();
         return new ContextBuildResult(context, creds);
+    }
+
+    /**
+     * Builds a PrincipalContext purely from a validated central-issuer token's claims, with NO local
+     * credential/database lookup. Used when {@code quantum.auth.trust-token-claims=true} and the token's
+     * subject is not present locally: the service delegates identity to the issuer (whose token is
+     * already JWKS-validated for signature/issuer/audience). Identity = userId/preferred_username claim
+     * (or the subject), roles = the token groups; the operating data realm comes from X-Realm, else the
+     * service's configured system realm. Richer profile data, if needed, is fetched from the issuer's
+     * REST API via the generated SDK — never from a shared database.
+     */
+    private ContextBuildResult buildDelegatedClaimsContext(String sub, String realmOverride) {
+        String userId = claimString("userId");
+        if (userId == null) userId = claimString("preferred_username");
+        if (userId == null) userId = claimString("username");
+        if (userId == null) userId = sub;
+
+        String contextRealm = (realmOverride != null && !realmOverride.isBlank())
+                ? realmOverride
+                : envConfigUtils.getSystemRealm();
+        String[] roles = resolveEffectiveRoles(securityIdentity, null, contextRealm);
+
+        Log.infof("Delegated identity: principal from trusted-issuer token claims (iss=%s, sub=%s, userId=%s, realm=%s, roles=%s)",
+                jwt.getIssuer(), sub, userId, contextRealm, java.util.Arrays.toString(roles));
+
+        PrincipalContext context = new PrincipalContext.Builder()
+                .withDefaultRealm(contextRealm)
+                .withDataDomain(securityUtils.getSystemDataDomain())
+                .withUserId(userId)
+                .withRoles(roles)
+                .withScope("AUTHENTICATED")
+                .build();
+        return new ContextBuildResult(context, null);
+    }
+
+    /** Returns the given JWT claim as a non-blank String, or null. */
+    private String claimString(String name) {
+        Object v = jwt.getClaim(name);
+        if (v == null) return null;
+        String s = v.toString();
+        return s.isBlank() ? null : s;
     }
 
     /**
