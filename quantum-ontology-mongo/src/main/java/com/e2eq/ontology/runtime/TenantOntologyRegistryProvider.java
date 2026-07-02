@@ -207,9 +207,13 @@ public class TenantOntologyRegistryProvider {
             Log.infof("Loading ontology registry for realm: %s", r);
             OntologyRegistry registry = loadOrBuildRegistryForRealm(r);
             // Snapshot the active-admission hash this entry reflects so later reads on
-            // this (or any) instance can detect a subsequent activation.
-            realmActiveHash.put(r, activeHashOrEmpty(r));
-            realmLastCheckedAt.put(r, System.currentTimeMillis());
+            // this (or any) instance can detect a subsequent activation. Skipped entirely
+            // when coherence checking is disabled (<0) so that path does ZERO extra probes
+            // — genuinely equivalent to legacy in-process-only behavior.
+            if (stalenessCheckIntervalMs >= 0) {
+                realmActiveHash.put(r, activeHashOrEmpty(r));
+                realmLastCheckedAt.put(r, System.currentTimeMillis());
+            }
             return registry;
         });
     }
@@ -363,9 +367,12 @@ public class TenantOntologyRegistryProvider {
         Log.infof("Force rebuilding TBox for realm: %s", realm);
         OntologyRegistry registry = buildRegistryForRealm(realm);
         realmRegistries.put(realm, registry);
-        // Re-stamp so the coherence check tracks this freshly built entry.
-        realmActiveHash.put(realm, activeHashOrEmpty(realm));
-        realmLastCheckedAt.put(realm, System.currentTimeMillis());
+        // Re-stamp so the coherence check tracks this freshly built entry (skipped when
+        // coherence checking is disabled, matching getRegistryForRealm).
+        if (stalenessCheckIntervalMs >= 0) {
+            realmActiveHash.put(realm, activeHashOrEmpty(realm));
+            realmLastCheckedAt.put(realm, System.currentTimeMillis());
+        }
         return registry;
     }
 
