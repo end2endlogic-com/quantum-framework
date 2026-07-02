@@ -569,6 +569,11 @@ public class TenantOntologyRegistryProvider {
                 if (!pkgs.isEmpty()) {
                     AnnotationOntologyLoader annoLoader = new AnnotationOntologyLoader();
                     TBox annoTBox = annoLoader.loadFromPackages(pkgs);
+                    // Close cross-module class references (e.g. a property whose range is a class
+                    // OWNED BY ANOTHER pack) to empty external stubs, so a single federated edge does
+                    // not make the strict validator reject — and thereby discard — every real class
+                    // this module declares. See OntologyReferenceCloser.
+                    annoTBox = OntologyReferenceCloser.closeClassReferences(annoTBox);
                     accumulated = OntologyMerger.merge(accumulated, annoTBox);
                     Log.debugf("Realm %s: Loaded %d classes from annotations", realm, annoTBox.classes().size());
                 }
@@ -583,6 +588,7 @@ public class TenantOntologyRegistryProvider {
             if (ds != null && ds.getMapper() != null) {
                 MorphiaOntologyLoader loader = new MorphiaOntologyLoader(ds);
                 TBox base = loader.loadTBox();
+                base = OntologyReferenceCloser.closeClassReferences(base);
                 accumulated = OntologyMerger.merge(accumulated, base);
                 Log.debugf("Realm %s: Loaded %d classes from Morphia", realm, base.classes().size());
             }
@@ -604,6 +610,7 @@ public class TenantOntologyRegistryProvider {
                 try { overlay = yaml.loadFromClasspath("/ontology.yaml"); } catch (Exception ignored) { }
             }
             if (overlay != null) {
+                overlay = OntologyReferenceCloser.closeClassReferences(overlay);
                 accumulated = OntologyMerger.merge(accumulated, overlay);
             }
             var result = metaService.observeYaml(yamlPath, "/ontology.yaml");
