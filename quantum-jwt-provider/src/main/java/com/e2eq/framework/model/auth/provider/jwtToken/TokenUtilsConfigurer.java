@@ -23,6 +23,8 @@ public class TokenUtilsConfigurer {
 
     private static final String PRIVATE_KEY_CONFIG = "quantum.jwt.private-key-location";
     private static final String PUBLIC_KEY_CONFIG = "quantum.jwt.public-key-location";
+    // Same property the JWKS endpoint publishes its kid from, so signed tokens and the JWKS agree.
+    private static final String KEY_ID_CONFIG = "auth.jwt.key-id";
 
     @Inject
     JwtKeyResolver jwtKeyResolver;
@@ -37,6 +39,14 @@ public class TokenUtilsConfigurer {
 
         validateConfiguredKeyLocations(activeProfiles, privateKeyConfig, publicKeyConfig);
         TokenUtils.configureKeyResolver(jwtKeyResolver);
+
+        // Stamp signed tokens with the same kid the JWKS advertises (auth.jwt.key-id), so JWKS-based
+        // verifiers (other services validating this issuer's tokens) can resolve the signing key.
+        String signingKeyId = config.getConfigValue(KEY_ID_CONFIG).getValue();
+        if (signingKeyId != null && !signingKeyId.isBlank()) {
+            TokenUtils.configureSigningKeyId(signingKeyId);
+            Log.infof("TokenUtils signing kid set to '%s' (from %s)", signingKeyId, KEY_ID_CONFIG);
+        }
 
         if (privLoc != null || pubLoc != null) {
             Log.infof("Configuring TokenUtils key locations from %s/%s for profiles %s",

@@ -45,6 +45,11 @@ public class TokenUtils {
         private static volatile String privateKeyLocation = DEFAULT_PRIVATE_KEY_LOCATION;
         private static volatile String publicKeyLocation = DEFAULT_PUBLIC_KEY_LOCATION;
 
+        // JWS "kid" written into signed tokens. When set (e.g. from auth.jwt.key-id), it MUST
+        // match the kid published in the JWKS so JWKS-based verifiers can resolve the key. When
+        // null, we fall back to the private key location for backward compatibility.
+        private static volatile String signingKeyId = null;
+
         private static volatile PrivateKey cachedPrivateKey;
         private static volatile PublicKey cachedPublicKey;
         private static volatile JwtKeyResolver keyResolver = new DefaultJwtKeyResolver();
@@ -75,6 +80,25 @@ public class TokenUtils {
                                 publicKeyLocation = publicKeyLoc;
                         }
                 }
+        }
+
+        /**
+         * Configure the JWS key id ("kid") stamped into signed tokens. Set this to the same value
+         * the JWKS advertises (auth.jwt.key-id) so JWKS-based verifiers can resolve the signing key.
+         */
+        public static void configureSigningKeyId(String keyId) {
+                if (keyId != null && !keyId.isBlank()) {
+                        signingKeyId = keyId;
+                }
+        }
+
+        /**
+         * The kid to stamp into signed tokens: the configured signing key id when present, otherwise
+         * the private key location (legacy behavior).
+         */
+        private static String resolveSigningKeyId() {
+                String kid = signingKeyId;
+                return (kid != null && !kid.isBlank()) ? kid : privateKeyLocation;
         }
 
         /**
@@ -162,7 +186,7 @@ public class TokenUtils {
 		if (orgRefName != null && !orgRefName.isBlank()) claimsBuilder.claim("orgRefName", orgRefName);
 		if (accountNum != null && !accountNum.isBlank()) claimsBuilder.claim("accountNum", accountNum);
 
-		return claimsBuilder.jws().keyId(privateKeyLocation).sign(privateKey);
+		return claimsBuilder.jws().keyId(resolveSigningKeyId()).sign(privateKey);
 	}
 
 	public static String generateRefreshToken(String subject,  long durationInSeconds, String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
@@ -176,7 +200,7 @@ public class TokenUtils {
 		claimsBuilder.audience("b2bi-api-client-refresh");
 		claimsBuilder.expiresAt(currentTimeInSecs + durationInSeconds + REFRESH_ADDITIONAL_DURATION_SECONDS);
 		claimsBuilder.claim("scope", REFRESH_SCOPE);
-		return claimsBuilder.jws().keyId(privateKeyLocation).sign(privateKey);
+		return claimsBuilder.jws().keyId(resolveSigningKeyId()).sign(privateKey);
 	}
 
         public static PrivateKey readPrivateKey(final String pemResName) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
