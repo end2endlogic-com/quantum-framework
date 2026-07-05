@@ -181,6 +181,24 @@ public final class AnnotationOntologyLoader {
         return clazz.getSimpleName();
     }
 
+    /**
+     * Build an ontology-class-id → Java class index over the given packages by scanning for
+     * {@link OntologyClass}-annotated types (same discovery used to build the TBox). Callers that
+     * need the concrete model class behind an ontology id — e.g. to read a type-level annotation
+     * such as {@code @FunctionalMapping} — use this instead of the resource-free {@code TBox}.
+     * The first class wins on id collision.
+     */
+    public Map<String, Class<?>> classIndex(Collection<String> packageNames) {
+        Map<String, Class<?>> index = new LinkedHashMap<>();
+        for (String pkg : packageNames) {
+            if (pkg == null || pkg.isBlank()) continue;
+            for (Class<?> c : findClassesWithAnnotation(pkg.trim(), OntologyClass.class)) {
+                index.putIfAbsent(classIdOf(c), c);
+            }
+        }
+        return index;
+    }
+
     private String derivedNameFromMethod(String methodName) {
         if (methodName.startsWith("get") && methodName.length() > 3) {
             String base = methodName.substring(3);
