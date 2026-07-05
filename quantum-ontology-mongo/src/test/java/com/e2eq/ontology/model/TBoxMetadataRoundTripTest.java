@@ -1,11 +1,13 @@
 package com.e2eq.ontology.model;
 
 import com.e2eq.ontology.core.OntologyRegistry.ClassDef;
+import com.e2eq.ontology.core.OntologyRegistry.PropertyDef;
 import com.e2eq.ontology.core.OntologyRegistry.TBox;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -23,7 +25,12 @@ class TBoxMetadataRoundTripTest {
         ClassDef cd = new ClassDef("Customer", Set.of(), Set.of(), Set.of(),
                 "Customer", Set.of("Client"),
                 Map.of("functionalArea", "crm", "functionalDomain", "customer", "defaultReadAction", "view"));
-        return new TBox(Map.of("Customer", cd), Map.of(), List.of());
+        // A relation carrying a join-key in its metadata (what Tier 2/3 reads).
+        PropertyDef pd = new PropertyDef("placedBy", Optional.of("Order"), Optional.of("Customer"),
+                false, Optional.of("places"), false, false, true, Set.of(), false,
+                "placed by", Set.of(),
+                Map.of("joinFromField", "customerId", "joinToField", "id"));
+        return new TBox(Map.of("Customer", cd), Map.of("placedBy", pd), List.of());
     }
 
     private static void assertGovernanceSurvives(TBox rt) {
@@ -34,6 +41,12 @@ class TBoxMetadataRoundTripTest {
         assertEquals("view", out.metadata().get("defaultReadAction"));
         assertEquals("Customer", out.label());
         assertTrue(out.aliases().contains("Client"));
+
+        PropertyDef pOut = rt.properties().get("placedBy");
+        assertNotNull(pOut, "placedBy property must survive round-trip");
+        assertEquals("customerId", pOut.metadata().get("joinFromField"));
+        assertEquals("id", pOut.metadata().get("joinToField"));
+        assertEquals("placed by", pOut.label());
     }
 
     @Test
