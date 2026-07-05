@@ -1907,6 +1907,118 @@ public class RuleContext {
     }
 
     /**
+     * Store-agnostic governance seam for the federated query gateway (data-virtualization).
+     *
+     * <p>{@link #getFilters} returns Morphia {@link Filter}s keyed on a Java model class — a
+     * federated SQL/REST source has no Java model. This method instead composes the governed
+     * predicate as a <b>BIAPIQuery grammar STRING</b> ({@code (userQuery) && (matched rule
+     * filters)}) that a non-Mongo executor can translate into its own dialect (e.g. via
+     * {@code QueryToSqlListener}). It mirrors {@code getFilters}' rule matching and AND/OR
+     * composition, with variables ({@code ${pTenantId}} …) substituted to concrete values.</p>
+     *
+     * <p><b>Deliberate governance difference — this FAILS CLOSED.</b> {@code getFilters} SKIPS a
+     * matched allow-filter rule whose variables cannot be resolved (correct for typed queries,
+     * where the rule genuinely doesn't apply to that model class). A federated query has no model
+     * class, so silently dropping a security filter would leak rows. Here, an unresolved variable
+     * in a matched filter rule — or a non-ALLOW effect, or a composed string that fails to parse —
+     * throws instead. Only scalar variables from the standard/custom bundle are substitutable;
+     * collection-typed resolver variables (which {@code QueryToFilterListener} expands internally)
+     * are not, and correctly trip the fail-closed guard.</p>
+     *
+     * <p>Every clause is parenthesized so a top-level {@code ||} in {@code userQuery} cannot escape
+     * the policy {@code &&} (which would be a governance leak). The empty result means ALLOW with no
+     * row filter and no user query — the caller may read the source unfiltered.</p>
+     *
+     * @param userQuery optional caller-supplied BIAPIQuery filter (null/blank = none)
+     * @param pcontext  principal context
+     * @param rcontext  resource context {@code (area, functionalDomain, action)} of the view
+     * @return the composed governed BIAPIQuery string, or empty if there is nothing to constrain
+     * @throws SecurityException if access is not ALLOW or a matched filter rule cannot be fully
+     *                           resolved to concrete values
+     */
+    public java.util.Optional<String> getGovernedFilterString(
+            String userQuery,
+            @Valid @NotNull(message = "Principal Context can not be null") PrincipalContext pcontext,
+            @Valid @NotNull(message = "Resource Context can not be null") ResourceContext rcontext) {
+
+        SecurityCheckResponse response = this.checkRules(pcontext, rcontext);
+        if (response.getFinalEffect() != RuleEffect.ALLOW) {
+            throw new SecurityException("Federated query denied by policy for resource "
+                    + rcontext.getArea() + "/" + rcontext.getFunctionalDomain() + "/" + rcontext.getAction()
+                    + " (effect=" + response.getFinalEffect() + ")");
+        }
+
+        // The same matched allow-filter rule set getFilters() composes from.
+        List<SecurityCheckResponse.RuleFilterInfo> filterInfos = collectMatchedAllowFilterRules(response);
+        if (response.getFilterConstraints() != null) {
+            for (SecurityCheckResponse.RuleFilterInfo info : response.getFilterConstraints()) {
+                if (info == null) {
+                    continue;
+                }
+                boolean alreadyPresent = filterInfos.stream().anyMatch(existing ->
+                        Objects.equals(existing.getRuleName(), info.getRuleName())
+                                && Objects.equals(existing.getAndFilterString(), info.getAndFilterString())
+                                && Objects.equals(existing.getOrFilterString(), info.getOrFilterString())
+                                && Objects.equals(existing.getJoinOp(), info.getJoinOp()));
+                if (!alreadyPresent) {
+                    filterInfos.add(info);
+                }
+            }
+        }
+
+        org.apache.commons.text.StringSubstitutor sub = new org.apache.commons.text.StringSubstitutor(
+                MorphiaUtils.buildVariableBundle(pcontext, rcontext, null).strings);
+
+        List<String> governedClauses = new ArrayList<>();
+        for (SecurityCheckResponse.RuleFilterInfo info : filterInfos) {
+            String andClause = resolveGovernedClause(info.getAndFilterString(), sub, info.getRuleName());
+            String orClause = resolveGovernedClause(info.getOrFilterString(), sub, info.getRuleName());
+            String clause;
+            if (andClause != null && orClause != null) {
+                String joinOp = (info.getJoinOp() != null && !info.getJoinOp().isBlank())
+                        ? info.getJoinOp() : "AND";
+                String glue = "OR".equalsIgnoreCase(joinOp) ? " || " : " && ";
+                clause = "(" + andClause + ")" + glue + "(" + orClause + ")";
+            } else if (andClause != null) {
+                clause = andClause;
+            } else if (orClause != null) {
+                clause = orClause;
+            } else {
+                continue;
+            }
+            governedClauses.add("(" + clause + ")");
+        }
+
+        List<String> all = new ArrayList<>();
+        if (userQuery != null && !userQuery.isBlank()) {
+            all.add("(" + userQuery.trim() + ")");
+        }
+        all.addAll(governedClauses);
+        if (all.isEmpty()) {
+            return java.util.Optional.empty();
+        }
+        String governed = String.join(" && ", all);
+
+        // Fail closed: the composed governed string must be a valid BIAPIQuery.
+        MorphiaUtils.validateQueryString(governed);
+        return java.util.Optional.of(governed);
+    }
+
+    private static String resolveGovernedClause(String filterString,
+            org.apache.commons.text.StringSubstitutor sub, String ruleName) {
+        if (filterString == null || filterString.isEmpty()) {
+            return null;
+        }
+        String resolved = sub.replace(filterString);
+        if (resolved.contains("${")) {
+            throw new SecurityException("Cannot lower security rule '" + ruleName
+                    + "' into a federated filter: unresolved variable(s) in \"" + filterString
+                    + "\". Federated queries fail closed rather than drop a security filter.");
+        }
+        return resolved;
+    }
+
+    /**
      * Get the list of filters that are applicable for the given principal and resource context.
      * @param ifilters
      * @param pcontext
