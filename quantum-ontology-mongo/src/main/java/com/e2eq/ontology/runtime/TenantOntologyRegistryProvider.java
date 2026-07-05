@@ -61,11 +61,31 @@ public class TenantOntologyRegistryProvider {
     @ConfigProperty(name = "quantum.realmConfig.defaultRealm")
     String defaultRealm;
 
+    /**
+     * Cluster cache-coherence window (ms). A cached realm registry is re-checked for a
+     * newer admission at most once per this interval, via a cheap projected active-hash
+     * query, so an {@code activate()} on one instance becomes visible on the others.
+     * <ul>
+     *   <li>{@code > 0} (default 5000): check at most once per window — bounds both
+     *       staleness and DB load.</li>
+     *   <li>{@code 0}: check on every read (strongest coherence, one small query/read).</li>
+     *   <li>{@code < 0}: never check — legacy in-process-only invalidation behavior.</li>
+     * </ul>
+     */
+    @ConfigProperty(name = "quantum.ontology.cache.staleness-check-interval-ms", defaultValue = "5000")
+    long stalenessCheckIntervalMs;
+
     // Cache of ontology registries per realm
     private final Map<String, OntologyRegistry> realmRegistries = new ConcurrentHashMap<>();
-    
+
     // Cache of ontology registries per DataDomain (for DataDomain-specific TBoxes)
     private final Map<String, OntologyRegistry> dataDomainRegistries = new ConcurrentHashMap<>();
+
+    // Cluster coherence stamps for realmRegistries: the active-admission tboxHash each
+    // cached entry reflects (empty string == "no active tenant TBox at load time"), and
+    // the last time we checked that realm against the durable store.
+    private final Map<String, String> realmActiveHash = new ConcurrentHashMap<>();
+    private final Map<String, Long> realmLastCheckedAt = new ConcurrentHashMap<>();
 
     /**
      * Get the ontology registry for the current security context realm.
@@ -178,10 +198,75 @@ public class TenantOntologyRegistryProvider {
      * @return OntologyRegistry for the realm
      */
     public OntologyRegistry getRegistryForRealm(String realm) {
+        // Cluster coherence: before serving a cached entry, cheaply check (throttled)
+        // whether a newer TBox has been activated on any instance and drop it if so.
+        if (realmRegistries.containsKey(realm)) {
+            maybeInvalidateIfStale(realm);
+        }
         return realmRegistries.computeIfAbsent(realm, r -> {
             Log.infof("Loading ontology registry for realm: %s", r);
-            return loadOrBuildRegistryForRealm(r);
+            OntologyRegistry registry = loadOrBuildRegistryForRealm(r);
+            // Snapshot the active-admission hash this entry reflects so later reads on
+            // this (or any) instance can detect a subsequent activation. Skipped entirely
+            // when coherence checking is disabled (<0) so that path does ZERO extra probes
+            // — genuinely equivalent to legacy in-process-only behavior.
+            if (stalenessCheckIntervalMs >= 0) {
+                realmActiveHash.put(r, activeHashOrEmpty(r));
+                realmLastCheckedAt.put(r, System.currentTimeMillis());
+            }
+            return registry;
         });
+    }
+
+    /**
+     * The canonical hash of the realm's ACTIVE tenant TBox, or {@code ""} when none is
+     * active. Empty string is used (never null) so it is safe as a {@link ConcurrentHashMap}
+     * value and compares cleanly against a cached stamp.
+     */
+    private String activeHashOrEmpty(String realm) {
+        try {
+            return tenantTboxRepo.findActiveTBoxHash(realmDataDomain(realm)).orElse("");
+        } catch (Throwable t) {
+            // A probe failure must never break registry loading; treat as "unknown" so the
+            // next check re-probes rather than pinning a bad stamp.
+            Log.warnf("Realm %s: active-hash probe failed (%s); leaving coherence stamp unset",
+                    realm, t.getMessage());
+            return "";
+        }
+    }
+
+    /**
+     * Throttled cluster cache-coherence check. If the realm's active-admission hash in the
+     * durable store differs from what the cached registry reflects — a peer instance (or an
+     * out-of-band admission) activated/deactivated a TBox — invalidate so the next read
+     * rebuilds. A negative interval disables the check (legacy in-process-only behavior).
+     */
+    private void maybeInvalidateIfStale(String realm) {
+        if (stalenessCheckIntervalMs < 0) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (stalenessCheckIntervalMs > 0) {
+            Long last = realmLastCheckedAt.get(realm);
+            if (last != null && (now - last) < stalenessCheckIntervalMs) {
+                return; // within the coherence window — skip the durable-store probe
+            }
+        }
+        try {
+            String durableActive = activeHashOrEmpty(realm);
+            String reflected = realmActiveHash.getOrDefault(realm, "");
+            if (!durableActive.equals(reflected)) {
+                Log.infof("Realm %s: active TBox changed (cache reflected '%s', now '%s'); "
+                        + "invalidating registry cache for cluster coherence", realm, reflected, durableActive);
+                invalidateRealm(realm);
+            } else {
+                realmLastCheckedAt.put(realm, now);
+            }
+        } catch (Throwable t) {
+            // Best-effort: never fail a read because the coherence probe failed.
+            Log.warnf("Realm %s: TBox staleness check failed, serving cached registry: %s",
+                    realm, t.getMessage());
+        }
     }
 
     /**
@@ -257,6 +342,8 @@ public class TenantOntologyRegistryProvider {
      */
     public void invalidateRealm(String realm) {
         realmRegistries.remove(realm);
+        realmActiveHash.remove(realm);
+        realmLastCheckedAt.remove(realm);
         Log.infof("Invalidated ontology registry cache for realm: %s", realm);
     }
 
@@ -266,6 +353,8 @@ public class TenantOntologyRegistryProvider {
     public void clearCache() {
         realmRegistries.clear();
         dataDomainRegistries.clear();
+        realmActiveHash.clear();
+        realmLastCheckedAt.clear();
         Log.info("Cleared all ontology registry caches");
     }
 
@@ -278,6 +367,12 @@ public class TenantOntologyRegistryProvider {
         Log.infof("Force rebuilding TBox for realm: %s", realm);
         OntologyRegistry registry = buildRegistryForRealm(realm);
         realmRegistries.put(realm, registry);
+        // Re-stamp so the coherence check tracks this freshly built entry (skipped when
+        // coherence checking is disabled, matching getRegistryForRealm).
+        if (stalenessCheckIntervalMs >= 0) {
+            realmActiveHash.put(realm, activeHashOrEmpty(realm));
+            realmLastCheckedAt.put(realm, System.currentTimeMillis());
+        }
         return registry;
     }
 
@@ -474,6 +569,11 @@ public class TenantOntologyRegistryProvider {
                 if (!pkgs.isEmpty()) {
                     AnnotationOntologyLoader annoLoader = new AnnotationOntologyLoader();
                     TBox annoTBox = annoLoader.loadFromPackages(pkgs);
+                    // Close cross-module class references (e.g. a property whose range is a class
+                    // OWNED BY ANOTHER pack) to empty external stubs, so a single federated edge does
+                    // not make the strict validator reject — and thereby discard — every real class
+                    // this module declares. See OntologyReferenceCloser.
+                    annoTBox = OntologyReferenceCloser.closeClassReferences(annoTBox);
                     accumulated = OntologyMerger.merge(accumulated, annoTBox);
                     Log.debugf("Realm %s: Loaded %d classes from annotations", realm, annoTBox.classes().size());
                 }
@@ -488,6 +588,7 @@ public class TenantOntologyRegistryProvider {
             if (ds != null && ds.getMapper() != null) {
                 MorphiaOntologyLoader loader = new MorphiaOntologyLoader(ds);
                 TBox base = loader.loadTBox();
+                base = OntologyReferenceCloser.closeClassReferences(base);
                 accumulated = OntologyMerger.merge(accumulated, base);
                 Log.debugf("Realm %s: Loaded %d classes from Morphia", realm, base.classes().size());
             }
@@ -509,6 +610,7 @@ public class TenantOntologyRegistryProvider {
                 try { overlay = yaml.loadFromClasspath("/ontology.yaml"); } catch (Exception ignored) { }
             }
             if (overlay != null) {
+                overlay = OntologyReferenceCloser.closeClassReferences(overlay);
                 accumulated = OntologyMerger.merge(accumulated, overlay);
             }
             var result = metaService.observeYaml(yamlPath, "/ontology.yaml");

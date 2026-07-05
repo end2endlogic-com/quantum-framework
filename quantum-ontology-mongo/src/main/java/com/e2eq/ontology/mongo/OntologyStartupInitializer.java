@@ -20,6 +20,9 @@ public class OntologyStartupInitializer {
     @Inject
     com.e2eq.ontology.service.OntologyMetaService metaService;
 
+    @Inject
+    com.e2eq.ontology.runtime.OntologyTBoxPublisher tboxPublisher;
+
     public OntologyStartupInitializer() {
         Log.debug("OntologyStartupInitializer constructed");
     }
@@ -38,6 +41,15 @@ public class OntologyStartupInitializer {
                     tbox, com.e2eq.ontology.service.OntologyReindexer.packIdFromSource(source));
         } catch (RuntimeException e) {
             Log.debugf("Skipping canonical pack-pin backfill at startup: %s", e.getMessage());
+        }
+
+        // Phase 2 federation: opt-in publish of this module's TBox to the central
+        // ontology-service. Runs on a daemon thread so a control-plane outage can never
+        // block or slow module boot (the publisher is itself best-effort/guarded).
+        if (tboxPublisher.isEnabled()) {
+            Thread t = new Thread(tboxPublisher::publishIfEnabled, "ontology-tbox-publisher");
+            t.setDaemon(true);
+            t.start();
         }
     }
 }
