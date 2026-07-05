@@ -917,6 +917,47 @@ Multiple fields can be separated by commas.
 so for example
  //localhost/location?sort=-name,+id would first sort by name decending and then by id ascending.
 
+==== Federated Source Translation (SQL)
+The same QuantumQuery grammar now drives *federated data sources*, not just MongoDB. When a
+governed query targets a virtual entity view backed by a SQL source, the gateway translates the
+grammar into a parameterized SQL `WHERE` clause (`QueryToSqlListener` in
+`com.e2eq.framework.grammar.sql`) and pushes it down to the source. See
+`applications/helixor-di/docs/FEDERATED_QUERY_ENGINE_BUILD_SPEC.md` for the full engine spec.
+
+**Governed and safe by construction**
+
+* The translated query is ```userQuery && <policy rule filter strings>``` — the same RuleContext
+filters that gate the Mongo path are composed into the SQL `WHERE`, so row-level security is
+identical across sources. No security logic is re-implemented per dialect.
+* All values are bound as SQL parameters (```?```); field names are validated as safe identifiers.
+* **Fail-closed**: any construct the SQL tier cannot translate exactly is REJECTED rather than
+partially rendered — a silently dropped predicate would be a governance leak.
+
+**Supported in SQL tier 1**
+
+* Comparisons ```field:value```, ```field:!value```, ```field:<```, ```field:>```, ```field:<=```,
+```field:>=``` over strings, numbers (```##```/```#```), quoted strings, dates, references, booleans.
+* Membership: ```field:^[...]``` (IN) and ```field:!^[...]``` (NIN).
+* Null / exists: ```field:null```, ```field:!null```, ```field:~```.
+* Logical ```&&``` / ```||``` with the SAME precedence as the Mongo path — **AND binds tighter than
+OR** (```a || b && c``` renders as ```a OR (b AND c)```).
+* Sorting (```+```/```-```) maps to ```ORDER BY```; pagination (skip/length) to ```OFFSET```/```LIMIT```.
+
+**Not yet translated to SQL (rejected in tier 1)**
+
+Explicit parenthesized grouping ```(...)```, ```!!``` (NOT), regex (```"*value*"```),
+```elemMatch```, ```text(...)```, and the ontology relation functions ```hasEdge``` /
+```hasIncomingEdge``` / ```expand``` (relation joins land in a later federation tier).
+
+**Examples**
+```
+status:ACTIVE && region:^[west,east]
+  -> WHERE (region IN (?, ?) AND status = ?)          params: [west, east, ACTIVE]
+
+age:>#30 || tier:GOLD && active:TRUE
+  -> WHERE (age > ? OR (tier = ? AND active = ?))      params: [30, GOLD, true]
+```
+
 ==== Projection
 A projection parameter can be provided to include or exclude specific fields in each result.
 Provide a comma-separated list of fields; prefix with + to include or - to exclude.
