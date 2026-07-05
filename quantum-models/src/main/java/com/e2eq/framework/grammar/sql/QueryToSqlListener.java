@@ -18,6 +18,7 @@ import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -61,10 +62,33 @@ public class QueryToSqlListener extends BIAPIQueryBaseListener {
     private final Deque<String> sqlStack = new ArrayDeque<>();
     private final Deque<Integer> opTypeStack = new ArrayDeque<>();
     private final Map<String, Object> named = new LinkedHashMap<>();
+    /** Maps an ontology field reference to its physical source column. Identity by default. */
+    private final Function<String, String> columnResolver;
     private int paramCounter = 0;
     private int queryDepth = 0;
 
+    private QueryToSqlListener(Function<String, String> columnResolver) {
+        this.columnResolver = columnResolver == null ? Function.identity() : columnResolver;
+    }
+
+    /** Translate with the field name used verbatim as the column (identity mapping). */
     public static SqlWhere translate(String query) {
+        return translate(query, Function.<String>identity());
+    }
+
+    /**
+     * Translate, mapping each ontology field reference to its physical source column via
+     * {@code fieldToColumn} (the reverse of the source→ontology mapping). Unmapped fields pass
+     * through unchanged. Both the field and the resolved column are validated as safe identifiers.
+     */
+    public static SqlWhere translate(String query, Map<String, String> fieldToColumn) {
+        Function<String, String> resolver = (fieldToColumn == null)
+                ? Function.identity()
+                : field -> fieldToColumn.getOrDefault(field, field);
+        return translate(query, resolver);
+    }
+
+    public static SqlWhere translate(String query, Function<String, String> columnResolver) {
         BIAPIQueryLexer lexer = new BIAPIQueryLexer(CharStreams.fromString(query == null ? "" : query));
         CommonTokenStream tokens = new CommonTokenStream(lexer);
         BIAPIQueryParser parser = new BIAPIQueryParser(tokens);
@@ -74,7 +98,7 @@ public class QueryToSqlListener extends BIAPIQueryBaseListener {
                 throw new UnsupportedQueryException("Query parse error at " + line + ":" + pos + " — " + msg);
             }
         });
-        QueryToSqlListener listener = new QueryToSqlListener();
+        QueryToSqlListener listener = new QueryToSqlListener(columnResolver);
         ParseTreeWalker.DEFAULT.walk(listener, parser.query());
         return listener.render();
     }
@@ -107,7 +131,11 @@ public class QueryToSqlListener extends BIAPIQueryBaseListener {
         if (name == null || !SAFE_IDENTIFIER.matcher(name).matches()) {
             throw new UnsupportedQueryException("Unsafe or empty field identifier: " + name);
         }
-        return name;
+        String column = columnResolver.apply(name);
+        if (column == null || !SAFE_IDENTIFIER.matcher(column).matches()) {
+            throw new UnsupportedQueryException("Unsafe or empty resolved column for field: " + name);
+        }
+        return column;
     }
 
     private String comparator(Token op) {
