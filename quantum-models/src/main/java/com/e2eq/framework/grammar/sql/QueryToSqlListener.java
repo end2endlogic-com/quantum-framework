@@ -28,10 +28,12 @@ import java.util.regex.Pattern;
  * <p><b>Federation tier 1.</b> Handles scalar comparison predicates, {@code IN/NIN}, {@code null}
  * and {@code exists}, composed with {@code &&} (AND) and {@code ||} (OR) using the SAME
  * precedence as the reference {@code QueryToFilterListener} — <b>AND binds tighter than OR</b>
- * (e.g. {@code a || b && c} → {@code a OR (b AND c)}). It <b>fails closed</b> on anything it
- * cannot translate exactly: explicit grouping {@code (...)}, {@code !!} (NOT), regex, elemMatch,
- * text, and the ontology edge/expand functions all throw {@link UnsupportedQueryException} —
- * a silently dropped/mis-composed predicate would be a governance leak.</p>
+ * (e.g. {@code a || b && c} → {@code a OR (b AND c)}), with explicit {@code (...)} grouping
+ * honored (so the gateway can safely compose {@code (userQuery) && (policyFilter)}). It
+ * <b>fails closed</b> on anything it cannot translate exactly: {@code !!} (NOT), regex,
+ * elemMatch, text, and the ontology edge/expand functions all throw
+ * {@link UnsupportedQueryException} — a silently dropped/mis-composed predicate would be a
+ * governance leak.</p>
  *
  * <p><b>Order-safety:</b> composition pops predicates in reverse, which would misalign positional
  * {@code ?} parameters. So leaves emit named placeholders ({@code :pN}) into a map, and the final
@@ -174,6 +176,10 @@ public class QueryToSqlListener extends BIAPIQueryBaseListener {
     private void buildComposite() {
         List<String> andParts = new ArrayList<>();
         List<String> orParts = new ArrayList<>();
+
+        // Unwind operators (mirrors QueryToFilterListener.buildCompositeSince, start=0). An
+        // LPAREN marker closes a group using ONLY inner-scope predicates; walk order guarantees
+        // outer operators sit below the marker and are processed in later iterations.
         while (!opTypeStack.isEmpty()) {
             int op = opTypeStack.pop();
             if (op == BIAPIQueryParser.AND) {
@@ -188,6 +194,23 @@ public class QueryToSqlListener extends BIAPIQueryBaseListener {
                 } else {
                     orParts.add(sqlStack.pop());
                 }
+            } else if (op == BIAPIQueryParser.LPAREN) {
+                if (sqlStack.isEmpty()) throw new UnsupportedQueryException("Group close found no inner predicate");
+                if (andParts.isEmpty()) {
+                    orParts.add(sqlStack.pop());
+                } else {
+                    andParts.add(sqlStack.pop());
+                    orParts.add(combine(andParts, " AND "));
+                    andParts = new ArrayList<>();
+                }
+                if (orParts.size() == 1) {
+                    sqlStack.push(orParts.get(0));
+                } else if (orParts.size() > 1) {
+                    sqlStack.push(combine(orParts, " OR "));
+                } else {
+                    throw new UnsupportedQueryException("Empty parenthesized group");
+                }
+                orParts = new ArrayList<>();
             } else {
                 throw new UnsupportedQueryException("Unsupported composition operator");
             }
@@ -296,9 +319,18 @@ public class QueryToSqlListener extends BIAPIQueryBaseListener {
 
     // --- fail closed: not translated in tier 1 ------------------------------------------
 
+    // --- explicit grouping: preserves precedence for governed composition -----------------
+    // Required so the gateway can compose `(userQuery) && (policyFilter)` without a top-level
+    // OR in userQuery escaping the policy AND (which would be a governance leak).
+
     @Override public void enterExprGroup(BIAPIQueryParser.ExprGroupContext ctx) {
-        throw new UnsupportedQueryException("Parenthesized grouping is not supported yet (tier 1)");
+        opTypeStack.push(ctx.lp.getType()); // LPAREN marker; closed in buildComposite
     }
+
+    @Override public void exitExprGroup(BIAPIQueryParser.ExprGroupContext ctx) {
+        buildComposite();
+    }
+
     @Override public void enterNotExpr(BIAPIQueryParser.NotExprContext ctx) {
         throw new UnsupportedQueryException("NOT (!!) is not supported yet (tier 1)");
     }
