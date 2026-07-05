@@ -55,12 +55,13 @@ public class OntologyTBox extends UnversionedBaseModel {
     }
     
     public TBox toTBox() {
-        Map<String, ClassDef> classDefs = classes != null ? 
+        Map<String, ClassDef> classDefs = classes != null ?
             classes.entrySet().stream()
                 .collect(java.util.stream.Collectors.toMap(
                     Map.Entry::getKey,
-                    e -> new ClassDef(e.getValue().name, e.getValue().parents, 
-                                     e.getValue().disjointWith, e.getValue().sameAs)
+                    e -> new ClassDef(e.getValue().name, e.getValue().parents,
+                                     e.getValue().disjointWith, e.getValue().sameAs,
+                                     e.getValue().label, e.getValue().aliases, e.getValue().metadata)
                 )) : Map.of();
         
         Map<String, PropertyDef> propDefs = properties != null ?
@@ -131,12 +132,20 @@ public class OntologyTBox extends UnversionedBaseModel {
         private Set<String> parents;
         private Set<String> disjointWith;
         private Set<String> sameAs;
-        
+        // Presentation + governance metadata — MUST round-trip so governance (functionalArea/
+        // domain/defaultReadAction) survives persistence and reaches OntologyResourceResolver.
+        private String label;
+        private Set<String> aliases;
+        private Map<String, Object> metadata;
+
         public ClassDefData(ClassDef def) {
             this.name = def.name();
             this.parents = def.parents();
             this.disjointWith = def.disjointWith();
             this.sameAs = def.sameAs();
+            this.label = def.label();
+            this.aliases = def.aliases();
+            this.metadata = def.metadata();
         }
     }
     

@@ -53,7 +53,11 @@ public final class AnnotationOntologyLoader {
                 if (annotatedClasses.contains(p)) parents.add(classIdOf(p));
                 p = p.getSuperclass();
             }
-            classes.put(id, new OntologyRegistry.ClassDef(id, parents, Set.of(), Set.of()));
+            // Carry row-governance (functionalArea/domain from @FunctionalMapping) into the TBox so a
+            // Java-backed class exposes the SAME governance metadata an admitted ontology-only class
+            // does — one governance vocabulary for OntologyResourceResolver (ontology-federation Phase 3).
+            Map<String, Object> metadata = functionalMetadataOf(c);
+            classes.put(id, new OntologyRegistry.ClassDef(id, parents, Set.of(), Set.of(), null, Set.of(), metadata));
         }
 
         // Build property defs from fields and methods on annotated classes
@@ -173,6 +177,33 @@ public final class AnnotationOntologyLoader {
 
     private boolean isCollectionOrArray(Class<?> t) {
         return t.isArray() || Collection.class.isAssignableFrom(t);
+    }
+
+    /**
+     * Reflectively read {@code @FunctionalMapping(area, domain)} (framework annotation, not a
+     * compile dependency of ontology-core) from the class or a superclass into TBox metadata keyed
+     * {@code functionalArea}/{@code functionalDomain}. Empty map when absent.
+     */
+    private Map<String, Object> functionalMetadataOf(Class<?> c) {
+        try {
+            @SuppressWarnings({"unchecked", "rawtypes"})
+            Class<? extends java.lang.annotation.Annotation> fmType =
+                    (Class) Class.forName("com.e2eq.framework.annotations.FunctionalMapping");
+            for (Class<?> k = c; k != null && k != Object.class; k = k.getSuperclass()) {
+                java.lang.annotation.Annotation fm = k.getAnnotation(fmType);
+                if (fm != null) {
+                    String area = (String) fmType.getMethod("area").invoke(fm);
+                    String domain = (String) fmType.getMethod("domain").invoke(fm);
+                    Map<String, Object> md = new LinkedHashMap<>();
+                    if (area != null && !area.isBlank()) md.put("functionalArea", area);
+                    if (domain != null && !domain.isBlank()) md.put("functionalDomain", domain);
+                    return md.isEmpty() ? Map.of() : md;
+                }
+            }
+        } catch (Throwable ignore) {
+            // FunctionalMapping not on classpath, or reflection failed → no governance metadata.
+        }
+        return Map.of();
     }
 
     private String classIdOf(Class<?> clazz) {
