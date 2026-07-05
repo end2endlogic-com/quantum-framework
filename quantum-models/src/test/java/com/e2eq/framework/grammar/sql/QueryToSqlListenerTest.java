@@ -105,12 +105,38 @@ class QueryToSqlListenerTest {
                 () -> QueryToSqlListener.translate("region:west", Map.of("region", "region; DROP TABLE x")));
     }
 
-    // --- fail closed -------------------------------------------------------------
+    // --- explicit grouping (governed composition) --------------------------------
 
     @Test
-    void parenthesizedGroupingRejected() {
-        assertThrows(UnsupportedQueryException.class, () -> QueryToSqlListener.translate("(a:1 || b:2) && c:3"));
+    void parenthesizedGroup_overridesPrecedence() {
+        // Without parens this is a:1 OR (b:2 AND c:3); the parens force the OR to be grouped
+        // and ANDed with c — the exact shape a governed `(userQuery) && (policyFilter)` needs.
+        // (Reference AND-ordering emits the right-hand operand first; params stay aligned.)
+        assertWhere("(a:1 || b:2) && c:3",
+                "(c = ? AND (b = ? OR a = ?))", List.of("3", "2", "1"));
     }
+
+    @Test
+    void singleElementGroup_unwraps() {
+        assertWhere("(name:Acme)", "name = ?", List.of("Acme"));
+    }
+
+    @Test
+    void governedComposition_userOrCannotEscapePolicyAnd() {
+        // The governance-critical case: a user query with a top-level OR, ANDed with a tenant
+        // policy filter. The tenant predicate MUST gate BOTH branches of the OR — and it does:
+        // it ANDs with the entire (b OR a) group, not just one branch.
+        assertWhere("(a:1 || b:2) && tenantId:t1",
+                "(tenantId = ? AND (b = ? OR a = ?))", List.of("t1", "2", "1"));
+    }
+
+    @Test
+    void nestedGroups() {
+        assertWhere("(a:1 || b:2) && (c:3 || d:4)",
+                "((d = ? OR c = ?) AND (b = ? OR a = ?))", List.of("4", "3", "2", "1"));
+    }
+
+    // --- fail closed -------------------------------------------------------------
 
     @Test
     void notRejected() {
