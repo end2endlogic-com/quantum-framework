@@ -3,6 +3,8 @@ package com.e2eq.ontology.runtime;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.ResourceContext;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.security.runtime.RuleContext;
 import com.e2eq.ontology.core.*;
@@ -569,6 +571,11 @@ public class TenantOntologyRegistryProvider {
                 if (!pkgs.isEmpty()) {
                     AnnotationOntologyLoader annoLoader = new AnnotationOntologyLoader();
                     TBox annoTBox = annoLoader.loadFromPackages(pkgs);
+                    // Close cross-module class references (e.g. a property whose range is a class
+                    // OWNED BY ANOTHER pack) to empty external stubs, so a single federated edge does
+                    // not make the strict validator reject — and thereby discard — every real class
+                    // this module declares. See OntologyReferenceCloser.
+                    annoTBox = OntologyReferenceCloser.closeClassReferences(annoTBox);
                     accumulated = OntologyMerger.merge(accumulated, annoTBox);
                     Log.debugf("Realm %s: Loaded %d classes from annotations", realm, annoTBox.classes().size());
                 }
@@ -583,6 +590,7 @@ public class TenantOntologyRegistryProvider {
             if (ds != null && ds.getMapper() != null) {
                 MorphiaOntologyLoader loader = new MorphiaOntologyLoader(ds);
                 TBox base = loader.loadTBox();
+                base = OntologyReferenceCloser.closeClassReferences(base);
                 accumulated = OntologyMerger.merge(accumulated, base);
                 Log.debugf("Realm %s: Loaded %d classes from Morphia", realm, base.classes().size());
             }
@@ -604,6 +612,7 @@ public class TenantOntologyRegistryProvider {
                 try { overlay = yaml.loadFromClasspath("/ontology.yaml"); } catch (Exception ignored) { }
             }
             if (overlay != null) {
+                overlay = OntologyReferenceCloser.closeClassReferences(overlay);
                 accumulated = OntologyMerger.merge(accumulated, overlay);
             }
             var result = metaService.observeYaml(yamlPath, "/ontology.yaml");
@@ -622,29 +631,88 @@ public class TenantOntologyRegistryProvider {
 
         // 5. Persist TBox if persistence is enabled
         if (persistTBox) {
-            try {
-                String tboxHash = TBoxHasher.computeHash(accumulated);
-                String source = yamlPath.map(Path::toString).orElse("/ontology.yaml");
-                
-                // Check if this TBox already exists
-                Optional<OntologyTBox> existing = tboxRepo.findByHash(tboxHash);
-                if (existing.isEmpty()) {
-                    OntologyTBox newTBox = new OntologyTBox(accumulated, tboxHash, currentHash, source);
-                    tboxRepo.save(newTBox);
-                    Log.infof("Persisted new TBox for realm %s (hash: %s, yamlHash: %s)", 
-                            realm, tboxHash, currentHash);
-                } else {
-                    Log.debugf("TBox already persisted for realm %s (hash: %s)", realm, tboxHash);
-                }
-            } catch (Throwable t) {
-                Log.warnf("Failed to persist TBox for realm %s: %s", realm, t.getMessage());
-            }
+            persistBuiltTBox(realm, accumulated, currentHash, yamlPath);
         }
 
-        Log.infof("Built ontology registry for realm %s: %d classes, %d properties", 
+        Log.infof("Built ontology registry for realm %s: %d classes, %d properties",
                 realm, accumulated.classes().size(), accumulated.properties().size());
 
         return new YamlBackedOntologyRegistry(accumulated, currentHash, needsReindex);
+    }
+
+    /**
+     * Persist the freshly built <em>source</em> TBox for {@code realm}, best-effort — so a
+     * later boot loads the persisted {@link OntologyTBox} instead of re-scanning annotations,
+     * Morphia, and YAML every time.
+     * <p>
+     * The Morphia save path resolves the target realm (and, via the audit interceptor, the
+     * acting identity) from the ambient {@link SecurityContext}, falling back to the
+     * request-scoped {@link io.quarkus.security.identity.SecurityIdentity} proxy when no
+     * context is set. That fallback is fatal when {@code buildRegistryForRealm} runs OUTSIDE a
+     * request/security context — e.g. the {@code OntologyStartupInitializer} daemon thread that
+     * publishes the TBox at boot ({@code "ontology-tbox-publisher"}), or a {@code @PostConstruct}
+     * startup path: dereferencing the proxy throws
+     * "RequestScoped context was not active …", the persist is skipped, and every subsequent
+     * rebuild re-scans. To make persistence work from any thread we run the save under a
+     * realm-scoped SYSTEM security context when — and only when — none is already active, so the
+     * realm resolves WITHOUT touching the request-scoped proxy. Request-scoped callers keep their
+     * existing context and behave exactly as before.
+     * <p>
+     * Best-effort by contract: any failure is caught and logged; startup is never broken.
+     */
+    private void persistBuiltTBox(String realm, TBox accumulated, String currentHash, Optional<Path> yamlPath) {
+        boolean contextActive = SecurityContext.getPrincipalContext().isPresent()
+                && SecurityContext.getResourceContext().isPresent();
+        if (contextActive) {
+            // Normal request path: an ambient security context already resolves the realm/identity.
+            doPersistBuiltTBox(realm, accumulated, currentHash, yamlPath);
+            return;
+        }
+        // Background/startup thread: no ambient context, so the repo would dereference the
+        // request-scoped SecurityIdentity proxy and fail. Establish a realm-scoped SYSTEM context
+        // (realmDataDomain is the SAME principal-independent key the read/admission paths use) so
+        // the persist resolves the realm without the proxy and lands in the correct realm database.
+        //
+        // Rules are bypassed for THIS branch only: there is no authenticated user to authorize the
+        // write — the system is persisting its OWN source-derived TBox as a bootstrap step — and a
+        // synthetic SYSTEM principal has no ONTOLOGY/TBOX write grant in every realm. The normal
+        // request path (contextActive above) keeps full permission enforcement, so a user-triggered
+        // rebuild still requires write permission; only genuine no-context system/startup threads
+        // (which never originate from an external caller) take this privileged path.
+        PrincipalContext principal = SecurityCallScope.service(
+                realm, realmDataDomain(realm), "ontology-tbox-publisher");
+        ResourceContext resource = SecurityCallScope.writeResource(principal, realm, "ONTOLOGY", "TBOX");
+        try (SecurityCallScope.Scope ctx = SecurityCallScope.open(principal, resource);
+             SecurityCallScope.Scope ignoreRules = SecurityCallScope.openIgnoringRules()) {
+            doPersistBuiltTBox(realm, accumulated, currentHash, yamlPath);
+        } catch (Throwable t) {
+            // Never break startup: a context-establishment failure is logged and swallowed.
+            Log.warnf("Failed to persist TBox for realm %s under system context: %s", realm, t.getMessage());
+        }
+    }
+
+    /**
+     * The actual persist: idempotent by canonical TBox hash. Assumes an active security context
+     * (see {@link #persistBuiltTBox}). Fully guarded so a persistence failure never propagates.
+     */
+    private void doPersistBuiltTBox(String realm, TBox accumulated, String currentHash, Optional<Path> yamlPath) {
+        try {
+            String tboxHash = TBoxHasher.computeHash(accumulated);
+            String source = yamlPath.map(Path::toString).orElse("/ontology.yaml");
+
+            // Check if this TBox already exists
+            Optional<OntologyTBox> existing = tboxRepo.findByHash(tboxHash);
+            if (existing.isEmpty()) {
+                OntologyTBox newTBox = new OntologyTBox(accumulated, tboxHash, currentHash, source);
+                tboxRepo.save(newTBox);
+                Log.infof("Persisted new TBox for realm %s (hash: %s, yamlHash: %s)",
+                        realm, tboxHash, currentHash);
+            } else {
+                Log.debugf("TBox already persisted for realm %s (hash: %s)", realm, tboxHash);
+            }
+        } catch (Throwable t) {
+            Log.warnf("Failed to persist TBox for realm %s: %s", realm, t.getMessage());
+        }
     }
 
     /**
