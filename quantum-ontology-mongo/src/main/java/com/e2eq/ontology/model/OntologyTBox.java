@@ -77,7 +77,11 @@ public class OntologyTBox extends UnversionedBaseModel {
                         e.getValue().transitive,
                         e.getValue().symmetric,
                         e.getValue().functional,
-                        e.getValue().subPropertyOf != null ? e.getValue().subPropertyOf : Set.of()
+                        e.getValue().subPropertyOf != null ? e.getValue().subPropertyOf : Set.of(),
+                        e.getValue().inferred,
+                        e.getValue().label,
+                        e.getValue().aliases,
+                        e.getValue().metadata
                     )
                 )) : Map.of();
         
@@ -161,7 +165,12 @@ public class OntologyTBox extends UnversionedBaseModel {
         private boolean symmetric;
         private boolean functional;
         private Set<String> subPropertyOf;
-        
+        // Round-trip inferred + presentation/governance metadata (e.g. a relation's join-key).
+        private boolean inferred;
+        private String label;
+        private Set<String> aliases;
+        private Map<String, Object> metadata;
+
         public PropertyDefData(PropertyDef def) {
             this.name = def.name();
             this.domain = def.domain().orElse(null);
@@ -172,6 +181,10 @@ public class OntologyTBox extends UnversionedBaseModel {
             this.symmetric = def.symmetric();
             this.functional = def.functional();
             this.subPropertyOf = def.subPropertyOf();
+            this.inferred = def.inferred();
+            this.label = def.label();
+            this.aliases = def.aliases();
+            this.metadata = def.metadata();
         }
     }
     
