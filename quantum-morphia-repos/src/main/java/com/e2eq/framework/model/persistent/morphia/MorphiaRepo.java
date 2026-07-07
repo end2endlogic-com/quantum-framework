@@ -14,6 +14,8 @@ import com.e2eq.framework.rest.models.Collection;
 import com.e2eq.framework.security.runtime.RuleContext;
 import com.fasterxml.jackson.module.jsonSchema.jakarta.JsonSchema;
 import com.google.common.reflect.TypeToken;
+import com.mongodb.client.model.Collation;
+import com.mongodb.client.model.CollationStrength;
 import com.mongodb.client.result.DeleteResult;
 import com.mongodb.client.result.UpdateResult;
 import dev.morphia.Datastore;
@@ -71,6 +73,19 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @ConfigProperty(name = "ontology.auto-materialize", defaultValue = "true")
     protected boolean autoMaterialize;
+
+    // Opt-in MongoDB collation applied to server-side list/aggregation sorts.
+    // Empty locale disables collation and preserves upstream binary-order behavior.
+    // Downstreams (e.g. Movista, MOV-12188) set locale=en, strength=2 (SECONDARY)
+    // to get case-insensitive text sorting for AG Grid list grids.
+    @ConfigProperty(name = "quantum.sort.collation.locale", defaultValue = "")
+    protected String sortCollationLocale;
+
+    @ConfigProperty(name = "quantum.sort.collation.strength", defaultValue = "2")
+    protected int sortCollationStrength;
+
+    private volatile Collation cachedSortCollation;
+    private volatile boolean sortCollationResolved;
 
     private void callPostPersistHooks(String realmId, Object entity) {
         lifecycleHooks().callPostPersistHooks(realmId, entity);
@@ -456,6 +471,10 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         if (sortFields != null && !sortFields.isEmpty()) {
             List<Sort> sorts = convertToSort(sortFields);
             findOptions.sort(sorts.toArray(new Sort[sorts.size()]));
+            Collation sortCollation = getSortCollation();
+            if (sortCollation != null) {
+                findOptions.collation(sortCollation);
+            }
         }
 
         // Field-level policy (deny-wins): excluded paths are removed at the
@@ -492,6 +511,38 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         }
 
         return findOptions;
+    }
+
+    /**
+     * Extension point returning the MongoDB {@link Collation} applied to
+     * server-side list sorts, or {@code null} to preserve upstream binary-order
+     * behavior.
+     *
+     * <p>Default implementation reads {@code quantum.sort.collation.locale}
+     * and {@code quantum.sort.collation.strength} config properties; a blank
+     * locale disables collation (upstream default). Subclasses may override
+     * to supply a fixed policy independent of configuration.
+     *
+     * <p>Applied by {@link #buildFindOptions(int, int, List, List)} for
+     * {@code find().sort(...)} queries. Aggregation/expand pipelines pass the
+     * same collation at execution time via {@code AggregationOptions} /
+     * {@code MongoCollection.aggregate(...).collation(...)}.
+     */
+    protected Collation getSortCollation() {
+        if (!sortCollationResolved) {
+            synchronized (this) {
+                if (!sortCollationResolved) {
+                    if (sortCollationLocale != null && !sortCollationLocale.isBlank()) {
+                        cachedSortCollation = Collation.builder()
+                                .locale(sortCollationLocale)
+                                .collationStrength(CollationStrength.fromInt(sortCollationStrength))
+                                .build();
+                    }
+                    sortCollationResolved = true;
+                }
+            }
+        }
+        return cachedSortCollation;
     }
 
     @Override

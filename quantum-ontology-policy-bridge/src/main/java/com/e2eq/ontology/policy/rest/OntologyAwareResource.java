@@ -12,6 +12,8 @@ import com.e2eq.framework.rest.models.Collection;
 import com.e2eq.framework.rest.resources.BaseResource;
 import com.e2eq.ontology.mongo.OntologyContextEnricherMongo;
 import com.e2eq.ontology.policy.ListQueryRewriter;
+import com.mongodb.client.model.Collation;
+import com.mongodb.client.model.CollationStrength;
 import dev.morphia.Datastore;
 import dev.morphia.annotations.Entity;
 import io.quarkus.logging.Log;
@@ -61,8 +63,44 @@ public abstract class OntologyAwareResource<T extends UnversionedBaseModel, R ex
     @ConfigProperty(name = "feature.ontologyList.aggregation.enabled", defaultValue = "false")
     boolean ontologyListAggregationEnabled;
 
+    // Mirrors MorphiaRepo's sort-collation config so aggregation/expand sorts
+    // stay consistent with find().sort() behavior. Blank locale = upstream binary order.
+    @ConfigProperty(name = "quantum.sort.collation.locale", defaultValue = "")
+    String sortCollationLocale;
+
+    @ConfigProperty(name = "quantum.sort.collation.strength", defaultValue = "2")
+    int sortCollationStrength;
+
+    private volatile Collation cachedSortCollation;
+    private volatile boolean sortCollationResolved;
+
     protected OntologyAwareResource(R repo) {
         super(repo);
+    }
+
+    /**
+     * Extension point returning the MongoDB {@link Collation} applied to
+     * aggregation/expand sorts, or {@code null} for upstream binary order.
+     *
+     * <p>Mirrors {@code MorphiaRepo#getSortCollation()} so aggregation results
+     * order identically to standard {@code find().sort()} results when both
+     * paths are configured with the same collation.
+     */
+    protected Collation getSortCollation() {
+        if (!sortCollationResolved) {
+            synchronized (this) {
+                if (!sortCollationResolved) {
+                    if (sortCollationLocale != null && !sortCollationLocale.isBlank()) {
+                        cachedSortCollation = Collation.builder()
+                                .locale(sortCollationLocale)
+                                .collationStrength(CollationStrength.fromInt(sortCollationStrength))
+                                .build();
+                    }
+                    sortCollationResolved = true;
+                }
+            }
+        }
+        return cachedSortCollation;
     }
 
     /**
@@ -171,10 +209,16 @@ public abstract class OntologyAwareResource<T extends UnversionedBaseModel, R ex
         }
         int effLimit = limit > 0 ? limit : 50;
         int effSkip = Math.max(0, skip);
-        List<org.bson.Document> rows = ds.getDatabase()
+        com.mongodb.client.AggregateIterable<org.bson.Document> aggregate = ds.getDatabase()
                 .getCollection(rootCollection)
-                .aggregate(clean, org.bson.Document.class)
-                .into(new ArrayList<>());
+                .aggregate(clean, org.bson.Document.class);
+        if (sortFields != null && !sortFields.isEmpty()) {
+            Collation sortCollation = getSortCollation();
+            if (sortCollation != null) {
+                aggregate = aggregate.collation(sortCollation);
+            }
+        }
+        List<org.bson.Document> rows = aggregate.into(new ArrayList<>());
         Collection<org.bson.Document> col = new Collection<>(rows, effSkip, effLimit, query, (long) rows.size());
         String realmId = headers.getHeaderString("X-Realm");
         col.setRealm(realmId == null ? repo.getDatabaseName() : realmId);
