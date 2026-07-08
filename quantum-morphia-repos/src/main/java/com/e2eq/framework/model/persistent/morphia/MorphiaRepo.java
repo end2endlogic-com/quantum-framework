@@ -514,35 +514,45 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
     /**
-     * Extension point returning the MongoDB {@link Collation} applied to
-     * server-side list sorts, or {@code null} to preserve upstream binary-order
-     * behavior.
+     * Default {@link BaseMorphiaRepo#getSortCollation()} implementation
+     * that reads {@code quantum.sort.collation.locale} and
+     * {@code quantum.sort.collation.strength} config properties; a blank
+     * locale disables collation (upstream default). An out-of-range strength
+     * value is logged at WARN and treated as disabled rather than throwing.
      *
-     * <p>Default implementation reads {@code quantum.sort.collation.locale}
-     * and {@code quantum.sort.collation.strength} config properties; a blank
-     * locale disables collation (upstream default). Subclasses may override
-     * to supply a fixed policy independent of configuration.
-     *
-     * <p>Applied by {@link #buildFindOptions(int, int, List, List)} for
-     * {@code find().sort(...)} queries. Aggregation/expand pipelines pass the
-     * same collation at execution time via {@code AggregationOptions} /
-     * {@code MongoCollection.aggregate(...).collation(...)}.
+     * <p>Subclasses may override to supply a fixed policy independent of
+     * configuration; the aggregation/expand path in
+     * {@code OntologyAwareResource} delegates to this method so an override
+     * applies to both {@code find().sort(...)} and aggregation sorts.
      */
-    protected Collation getSortCollation() {
+    @Override
+    public Collation getSortCollation() {
         if (!sortCollationResolved) {
             synchronized (this) {
                 if (!sortCollationResolved) {
-                    if (sortCollationLocale != null && !sortCollationLocale.isBlank()) {
-                        cachedSortCollation = Collation.builder()
-                                .locale(sortCollationLocale)
-                                .collationStrength(CollationStrength.fromInt(sortCollationStrength))
-                                .build();
-                    }
+                    cachedSortCollation = buildSortCollation();
                     sortCollationResolved = true;
                 }
             }
         }
         return cachedSortCollation;
+    }
+
+    private Collation buildSortCollation() {
+        if (sortCollationLocale == null || sortCollationLocale.isBlank()) {
+            return null;
+        }
+        try {
+            return Collation.builder()
+                    .locale(sortCollationLocale)
+                    .collationStrength(CollationStrength.fromInt(sortCollationStrength))
+                    .build();
+        } catch (IllegalArgumentException ex) {
+            Log.warnf(
+                    "Invalid quantum.sort.collation.strength=%d for locale=%s; disabling sort collation. Valid range is 1-5 (PRIMARY..IDENTICAL).",
+                    sortCollationStrength, sortCollationLocale);
+            return null;
+        }
     }
 
     @Override
