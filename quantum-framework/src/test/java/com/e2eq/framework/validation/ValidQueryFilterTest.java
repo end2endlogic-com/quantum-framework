@@ -1,4 +1,4 @@
-package annotations;
+package com.e2eq.framework.validation;
 
 import com.e2eq.framework.annotations.ValidQueryFilter;
 import com.e2eq.framework.model.persistent.base.BaseModel;
