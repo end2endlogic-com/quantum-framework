@@ -18,8 +18,10 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 import java.util.List;
@@ -36,9 +38,36 @@ public class ManagedSecretResource {
     private final ManagedSecretRepo repo;
     private final SecretEncryptor encryptor;
 
+    /**
+     * When no KEK is configured, controls whether the store degrades to
+     * plaintext (dev/bootstrap) or fails closed (deployed). Defaults to
+     * {@code false} — a misconfigured deployment MUST NOT silently store or
+     * return secrets in plaintext. Set {@code true} only in the local/dev
+     * profile (e.g. {@code %dev.quantum.secrets.allow-plaintext-fallback=true})
+     * to keep the pre-KEK bootstrap experience working.
+     */
+    @ConfigProperty(name = "quantum.secrets.allow-plaintext-fallback", defaultValue = "false")
+    boolean allowPlaintextFallback;
+
     public ManagedSecretResource(ManagedSecretRepo repo, SecretEncryptor encryptor) {
         this.repo = repo;
         this.encryptor = encryptor;
+    }
+
+    /**
+     * Fail-closed response for when a secret would be stored or returned in
+     * plaintext but the policy forbids it (no KEK + fallback disabled).
+     */
+    private WebApplicationException plaintextForbidden(String action) {
+        LOG.errorf("Refusing to %s secret in plaintext: no KEK configured and "
+                + "quantum.secrets.allow-plaintext-fallback is false. Configure "
+                + "quantum.secrets.kek.v1 (a base64 256-bit key).", action);
+        return new WebApplicationException(
+                Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                        .entity(Map.of("error",
+                                "Encryption keys not configured — refusing to " + action
+                                        + " secret in plaintext. Configure quantum.secrets.kek.v1."))
+                        .build());
     }
 
     @GET
@@ -78,9 +107,15 @@ public class ManagedSecretResource {
                     .build();
         }
 
-        // Legacy plaintext secret (pre-migration): iv is null, keyVersion is 0
+        // Legacy plaintext secret (pre-migration): iv is null, keyVersion is 0.
+        // Only surfaced when the plaintext fallback is explicitly allowed
+        // (dev/bootstrap); otherwise fail closed so the value is re-saved under
+        // a KEK rather than leaked from plaintext-at-rest.
         if (secret.getIv() == null || secret.getIv().isEmpty()) {
-            return Response.ok(Map.of("value", secret.getValueEncrypted())).build();
+            if (allowPlaintextFallback) {
+                return Response.ok(Map.of("value", secret.getValueEncrypted())).build();
+            }
+            throw plaintextForbidden("return");
         }
 
         if (!encryptor.isKeysAvailable()) {
@@ -243,11 +278,19 @@ public class ManagedSecretResource {
                 secret.setValueEncrypted(encrypted.getCiphertext());
                 secret.setIv(encrypted.getIv());
                 secret.setKeyVersion(encrypted.getKeyVersion());
-            } else {
-                // No KEKs configured yet — store as plaintext (will be migrated later)
-                LOG.warn("KEKs not configured — storing secret as plaintext. "
+            } else if (allowPlaintextFallback) {
+                // No KEKs configured — dev/bootstrap only. Store plaintext and
+                // warn; re-save after configuring quantum.secrets.kek.v1.
+                LOG.warn("KEKs not configured — storing secret as plaintext "
+                        + "(quantum.secrets.allow-plaintext-fallback=true). "
                         + "Run migration after configuring quantum.secrets.kek.v1");
                 secret.setValueEncrypted(request.getValue());
+                secret.setIv(null);
+                secret.setKeyVersion(0);
+            } else {
+                // Deployed profile with no KEK — fail closed rather than silently
+                // persisting a cleartext secret.
+                throw plaintextForbidden("store");
             }
         }
     }
