@@ -57,6 +57,21 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
             contextRealm = envConfigUtils.getSystemRealm();
         }
 
+        // Derive roles from the validated token's groups claim. A DELEGATED identity (a trusted
+        // central-issuer token whose subject has no local credential in this realm — the standard
+        // multi-app case) carries its credential's roles in the JWT `groups`, not in a local
+        // record. Without this, the coarse @RolesAllowed gate can't see the roles the token grants
+        // (only the RuleContext policy engine, which reads the token directly, does), so it 403s.
+        // Adding them here keeps both authz layers agreeing on the same role set.
+        if (identity.getPrincipal() instanceof org.eclipse.microprofile.jwt.JsonWebToken token) {
+            java.util.Set<String> groups = token.getGroups();
+            if (groups != null && !groups.isEmpty()) {
+                builder.addRoles(new HashSet<>(groups));
+                Log.debugf("RolesAugmentor: added %d role(s) from token groups for %s: %s",
+                        groups.size(), originalPrincipal, groups);
+            }
+        }
+
         Optional<CredentialUserIdPassword> ocred = credentialRepo.findBySubject(originalPrincipal, contextRealm, true);
         if (ocred.isPresent()) {
             CredentialUserIdPassword cred = ocred.get();

@@ -825,12 +825,14 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
             StateGraph stateGraph = field.getAnnotation(StateGraph.class);
             if (stateGraph != null) {
                field.setAccessible(true);
-               String newState = (String) field.get(newEntity);
-               String currentState = (String) field.get(existingEntity);
-               if (newState != null) {
+               Object newValue = field.get(newEntity);
+               Object currentValue = field.get(existingEntity);
+               String newState = StateGraphManager.stateName(newValue);
+               String currentState = StateGraphManager.stateName(currentValue);
+               if (newValue != null && !Objects.equals(currentState, newState)) {
                   stateGraphManager.validateTransition(
                      stateGraph.graphName(),
-                     currentState != null ? currentState : "",
+                     currentState,
                      newState
                   );
                }
@@ -845,8 +847,9 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
             StateGraph stateGraph = field.getAnnotation(StateGraph.class);
             if (stateGraph != null) {
                field.setAccessible(true);
-               String newState = (String) field.get(entity);
-               if (newState != null) {
+               Object newValue = field.get(entity);
+               String newState = StateGraphManager.stateName(newValue);
+               if (newValue != null) {
                   // Check if the state exists in the graph
                   StringState graph = stateGraphManager.getStateGraphs().get(stateGraph.graphName());
                   if (graph == null) {
@@ -1324,10 +1327,10 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
              StateGraph stateGraph = field.getAnnotation(StateGraph.class);
              if (stateGraph != null && pair.getValue() instanceof String) {
                 field.setAccessible(true);
-                String currentState = (String) field.get(currentEntity);
+                String currentState = StateGraphManager.stateName(field.get(currentEntity));
                 stateGraphManager.validateTransition(
                    stateGraph.graphName(),
-                   currentState != null ? currentState : "",
+                   currentState,
                    (String) pair.getValue()
                 );
              }

@@ -18,16 +18,32 @@ public class UserRealmRoleRepo extends MorphiaRepo<UserRealmRole> {
      * Assignments live in the system realm next to credentials.
      */
     public List<String> findActiveRolesForRealmWithIgnoreRules(String userId, String realmRefName, String systemRealmId) {
+        return findActiveAssignmentForRealmWithIgnoreRules(userId, realmRefName, systemRealmId)
+            .map(UserRealmRole::getRoles)
+            .orElse(List.of());
+    }
+
+    /**
+     * The user's active (non-suspended) membership assignment for a realm, bypassing
+     * security rules — same unauthenticated login path as {@link #findActiveRolesForRealmWithIgnoreRules}.
+     * Used at token issuance to read both the realm roles and the application grant.
+     */
+    public Optional<UserRealmRole> findActiveAssignmentForRealmWithIgnoreRules(String userId, String realmRefName, String systemRealmId) {
+        return findAssignmentForRealmWithIgnoreRules(userId, realmRefName, systemRealmId)
+            .filter(a -> !UserRealmRole.STATUS_SUSPENDED.equals(a.getStatus()));
+    }
+
+    /**
+     * The user's membership assignment for a realm regardless of status, bypassing
+     * security rules. Used by the admin surface to read/mutate the application grant
+     * (which must live in — and be read back from — the system realm the login path uses).
+     */
+    public Optional<UserRealmRole> findAssignmentForRealmWithIgnoreRules(String userId, String realmRefName, String systemRealmId) {
         MorphiaDatastore ds = morphiaDataStoreWrapper.getDataStore(systemRealmId);
-        Optional<UserRealmRole> assignment;
         try (var cursor = ds.find(UserRealmRole.class)
                 .filter(Filters.eq("userId", userId), Filters.eq("realmRefName", realmRefName))
                 .iterator()) {
-            assignment = cursor.hasNext() ? Optional.of(cursor.next()) : Optional.empty();
+            return cursor.hasNext() ? Optional.of(cursor.next()) : Optional.empty();
         }
-        return assignment
-            .filter(a -> !UserRealmRole.STATUS_SUSPENDED.equals(a.getStatus()))
-            .map(UserRealmRole::getRoles)
-            .orElse(List.of());
     }
 }

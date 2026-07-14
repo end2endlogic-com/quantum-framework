@@ -22,6 +22,10 @@ public class AuthResponse {
     protected List<String> roles;
     protected String authProvider;
     protected List<AccessibleRealmInfo> accessibleRealms;
+    /** Applications this token is valid for (the token's {@code aud} set). Null when app scoping is not configured. */
+    protected List<String> applications;
+    /** The application actively entered (the token's {@code azp} claim). Null when app scoping is not configured. */
+    protected String activeApplication;
 
     // Backward-compatible constructor
     public AuthResponse(String access_token, String refresh_token, long expires_at) {
