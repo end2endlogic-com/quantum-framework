@@ -189,6 +189,49 @@ public class TokenUtils {
 		return claimsBuilder.jws().keyId(resolveSigningKeyId()).sign(privateKey);
 	}
 
+	/**
+	 * Application-scoped token: mints a MULTI-audience token whose {@code aud} is the
+	 * set of applications the user is authorized for in the active realm (multi-aud
+	 * SSO — each suite app accepts a token whose {@code aud} contains its own id), and
+	 * an {@code azp} claim naming the application actively being entered. Claims
+	 * otherwise mirror {@link #generateUserToken(String, Set, long, String)}.
+	 *
+	 * @param audiences         the authorized application set (becomes {@code aud}); must be non-empty
+	 * @param activeApplication the actively-entered application (becomes {@code azp}); may be null
+	 */
+	public static String generateUserToken(String subject,
+											Set<String> groups,
+											Set<String> audiences,
+											String activeApplication,
+											long expiresAt,
+											String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+
+		Objects.requireNonNull(subject, "subject cannot be null");
+		Objects.requireNonNull(issuer, "Issuer cannot be null");
+		if (audiences == null || audiences.isEmpty()) {
+			throw new ValidationException("audiences cannot be empty for an application-scoped token");
+		}
+		if (expiresAt <= REFRESH_ADDITIONAL_DURATION_SECONDS) {
+			throw new ValidationException("Duration must be greater than" + REFRESH_ADDITIONAL_DURATION_SECONDS + " seconds");
+		}
+
+		PrivateKey privateKey = cachedPrivateKey != null ? cachedPrivateKey : readPrivateKey(privateKeyLocation);
+
+		JwtClaimsBuilder claimsBuilder = Jwt.claims();
+		long currentTimeInSecs = currentTimeInSecs();
+		claimsBuilder.issuer(issuer);
+		claimsBuilder.subject(subject);
+		claimsBuilder.issuedAt(currentTimeInSecs);
+		claimsBuilder.audience(audiences);
+		claimsBuilder.expiresAt(expiresAt);
+		claimsBuilder.groups(groups);
+		claimsBuilder.claim("scope", AUTH_SCOPE);
+		if (activeApplication != null && !activeApplication.isBlank()) {
+			claimsBuilder.claim("azp", activeApplication);
+		}
+		return claimsBuilder.jws().keyId(resolveSigningKeyId()).sign(privateKey);
+	}
+
 	public static String generateRefreshToken(String subject,  long durationInSeconds, String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
 
                 PrivateKey privateKey = cachedPrivateKey != null ? cachedPrivateKey : readPrivateKey(privateKeyLocation);

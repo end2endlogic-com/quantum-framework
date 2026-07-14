@@ -306,20 +306,21 @@ public class SecurityResource {
         Log.infof("Logging in userid: %s realm: %s",authRequest.getUserId(), realm);
 
         try {
-            AuthLoginService.LoginResult loginResult = provider == null || provider.isBlank()
-                    ? authLoginService.login(authRequest.getUserId(), authRequest.getPassword())
-                    : authLoginService.login(authRequest.getUserId(), authRequest.getPassword(), provider);
+            String providerOverride = (provider == null || provider.isBlank()) ? null : provider;
+            AuthLoginService.LoginResult loginResult = authLoginService.login(
+                    authRequest.getUserId(), authRequest.getPassword(), providerOverride, authRequest.getApplicationId());
             if (loginResult.authenticated()) {
                 Log.info("Login successful for userId:" + authRequest.getUserId() + " provider:" + loginResult.response().getAuthProvider());
                 return Response.ok(loginResult.response()).build();
             }
+            if (loginResult.needsApplicationSelection()) {
+                Log.infof("Login requires application selection for userId:%s applications:%s",
+                        authRequest.getUserId(), loginResult.applications());
+                return loginResult.toResponse();
+            }
             Log.warn("Login failed for userId:" + authRequest.getUserId() + " providers:" + loginResult.providerFailures());
-            RestError error = RestError.builder()
-                    .statusMessage("Authentication failed")
-                    .debugMessage(String.join("; ", loginResult.providerFailures()))
-                    .status(Response.Status.UNAUTHORIZED.getStatusCode())
-                    .build();
-            return Response.status(Response.Status.UNAUTHORIZED).entity(error).build();
+            // Honors the resolved status (403 for an unauthorized application, else 401).
+            return loginResult.toResponse();
 
         } catch (SecurityException e) {
             RestError error = RestError.builder()

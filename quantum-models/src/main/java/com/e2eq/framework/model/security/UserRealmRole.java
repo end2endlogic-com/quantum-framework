@@ -50,6 +50,31 @@ public class UserRealmRole extends BaseModel {
    /** Roles the user holds IN THAT REALM (e.g. admin, user, viewer). */
    protected List<String> roles;
 
+   /**
+    * Applications this user may authenticate for IN THIS REALM (application-scoped
+    * auth; nested (realm, application) grant). Values are {@code ApplicationDefinition.refName}s
+    * (the app registry lives in the enterprise layer, so these are held as plain
+    * refName strings here, not a typed reference). Semantics:
+    * <ul>
+    *   <li>{@code null}/empty — NOT configured: legacy behavior (single default
+    *       audience, no app scoping). Backward compatible.</li>
+    *   <li>a concrete list — the token's {@code aud} is the whole set (multi-aud
+    *       SSO across the suite); the active app is resolved into {@code azp}.</li>
+    *   <li>{@code "*"} — admin-only, audited "any app" grant. Because the installed
+    *       app set isn't enumerable from this layer, a {@code *} grant requires the
+    *       caller to name the applicationId; the token is scoped to that app.</li>
+    * </ul>
+    */
+   protected List<String> authorizedApplications;
+
+   /**
+    * The app to assume when the caller doesn't pass an applicationId and more than
+    * one is authorized. Must be one of {@link #authorizedApplications}. Optional.
+    */
+   protected String defaultApplication;
+
+   public static final String APPLICATION_WILDCARD = "*";
+
    /** Org within the realm that sponsored/invited this user (provenance). */
    protected String sponsoringOrgRefName;
 
