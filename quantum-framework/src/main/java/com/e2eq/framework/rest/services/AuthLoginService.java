@@ -35,11 +35,19 @@ public class AuthLoginService {
     @Inject
     EnvConfigUtils envConfigUtils;
 
+    /** Application-authorization signals a provider may return as a negative login response. */
+    private static final String APP_SELECTION_REQUIRED = "ApplicationSelectionRequired";
+    private static final String APP_NOT_AUTHORIZED = "ApplicationNotAuthorized";
+
     public LoginResult login(String userId, String password) {
-        return login(userId, password, null);
+        return login(userId, password, null, null);
     }
 
     public LoginResult login(String userId, String password, String providerOverride) {
+        return login(userId, password, providerOverride, null);
+    }
+
+    public LoginResult login(String userId, String password, String providerOverride, String applicationId) {
         Optional<CredentialUserIdPassword> credentialOptional = findLoginCredential(userId);
         List<AuthProvider> authProviders = authProviderFactory.getLoginProviders(
                 providerOverride,
@@ -47,7 +55,7 @@ public class AuthLoginService {
 
         List<String> providerFailures = new ArrayList<>();
         for (AuthProvider authProvider : authProviders) {
-            AuthProvider.LoginResponse loginResponse = authProvider.login(userId, password);
+            AuthProvider.LoginResponse loginResponse = authProvider.login(userId, password, applicationId);
             if (loginResponse.authenticated() && loginResponse.positiveResponse() != null) {
                 Optional<CredentialUserIdPassword> credentialOp = findCredential(
                         loginResponse.positiveResponse().identity() != null
@@ -57,6 +65,19 @@ public class AuthLoginService {
                         loginResponse.positiveResponse().userId());
                 AuthResponse response = toAuthResponse(authProvider, loginResponse, credentialOp.orElse(null));
                 return LoginResult.success(response);
+            }
+            // Application-authorization is a definitive decision for an authenticated user
+            // (the password matched but the app is unauthorized / needs selecting); do not
+            // fall through to other providers, which don't model app scoping.
+            AuthProvider.LoginNegativeResponse negative = loginResponse.negativeResponse();
+            if (negative != null && APP_SELECTION_REQUIRED.equals(negative.errorType())) {
+                List<String> applications = (negative.errorDetails() == null || negative.errorDetails().isBlank())
+                        ? List.of()
+                        : List.of(negative.errorDetails().split(","));
+                return LoginResult.needsApplicationSelection(applications, negative.errorMessage());
+            }
+            if (negative != null && APP_NOT_AUTHORIZED.equals(negative.errorType())) {
+                return LoginResult.applicationDenied(negative.errorMessage());
             }
             providerFailures.add(loginFailure(authProvider, loginResponse));
         }
@@ -126,6 +147,12 @@ public class AuthLoginService {
         response.setRoles(positive.roleAssignments().stream().map(RoleAssignment::toString).collect(Collectors.toList()));
         response.setAuthProvider(authProvider.getName());
         response.setAccessibleRealms(resolveAccessibleRealms(credential));
+        // Application-scoped auth: surface the token's aud set + azp so the UI can
+        // render an app switcher and know the active app (null when not configured).
+        if (positive.audiences() != null) {
+            response.setApplications(new ArrayList<>(positive.audiences()));
+        }
+        response.setActiveApplication(positive.activeApplication());
         return response;
     }
 
@@ -136,29 +163,58 @@ public class AuthLoginService {
         return authProvider.getName() + ": Authentication failed";
     }
 
-    public record LoginResult(AuthResponse response, List<String> providerFailures) {
+    public record LoginResult(AuthResponse response,
+                              List<String> providerFailures,
+                              int status,
+                              List<String> applications,
+                              String message) {
         public static LoginResult success(AuthResponse response) {
-            return new LoginResult(response, List.of());
+            return new LoginResult(response, List.of(), Response.Status.OK.getStatusCode(), null, null);
         }
 
         public static LoginResult failure(List<String> providerFailures) {
-            return new LoginResult(null, List.copyOf(providerFailures));
+            return new LoginResult(null, List.copyOf(providerFailures),
+                    Response.Status.UNAUTHORIZED.getStatusCode(), null, null);
+        }
+
+        /** Authenticated, but more than one application is authorized and none was selected. */
+        public static LoginResult needsApplicationSelection(List<String> applications, String message) {
+            return new LoginResult(null, List.of(), Response.Status.BAD_REQUEST.getStatusCode(),
+                    List.copyOf(applications), message);
+        }
+
+        /** Authenticated, but the requested application is not authorized for this user/realm. */
+        public static LoginResult applicationDenied(String message) {
+            return new LoginResult(null, List.of(), Response.Status.FORBIDDEN.getStatusCode(), null, message);
         }
 
         public boolean authenticated() {
             return response != null;
         }
 
+        public boolean needsApplicationSelection() {
+            return status == Response.Status.BAD_REQUEST.getStatusCode();
+        }
+
         public Response toResponse() {
             if (authenticated()) {
                 return Response.ok(response).build();
             }
+            if (needsApplicationSelection()) {
+                return Response.status(status)
+                        .entity(java.util.Map.of(
+                                "status", status,
+                                "statusMessage", message != null ? message : "Application selection required",
+                                "errorType", "ApplicationSelectionRequired",
+                                "applications", applications != null ? applications : List.of()))
+                        .build();
+            }
             RestError error = RestError.builder()
-                    .statusMessage("Authentication failed")
+                    .statusMessage(message != null ? message : "Authentication failed")
                     .debugMessage(String.join("; ", providerFailures))
-                    .status(Response.Status.UNAUTHORIZED.getStatusCode())
+                    .status(status)
                     .build();
-            return Response.status(Response.Status.UNAUTHORIZED).entity(error).build();
+            return Response.status(status).entity(error).build();
         }
     }
 }

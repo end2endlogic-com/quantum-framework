@@ -5,6 +5,7 @@ import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.auth.ApplicationAuthorizationResolver;
 import com.e2eq.framework.model.auth.AuthProvider;
 import com.e2eq.framework.model.auth.ClaimsAuthProvider;
 import com.e2eq.framework.model.auth.ProviderClaims;
@@ -18,6 +19,7 @@ import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import com.e2eq.framework.model.security.CredentialRefreshToken;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.DomainContext;
+import com.e2eq.framework.model.security.UserRealmRole;
 import com.e2eq.framework.plugins.BaseAuthProvider;
 import com.e2eq.framework.model.security.UserGroup;
 import com.e2eq.framework.util.EncryptionUtils;
@@ -478,6 +480,11 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
 
    @Override
    public LoginResponse login (String userId, String password) {
+      return login(userId, password, (String) null);
+   }
+
+   @Override
+   public LoginResponse login (String userId, String password, String applicationId) {
       try {
          String configuredRealm = envConfigUtils.getSystemRealm();
          Log.infof("Checking for auth against %s realm", configuredRealm);
@@ -527,20 +534,65 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                   String tokenRealm = (credential.getDomainContext() != null)
                      ? credential.getDomainContext().getDefaultRealm()
                      : envConfigUtils.getSystemRealm();
+                  Optional<UserRealmRole> realmAssignment = Optional.empty();
                   java.util.Set<String> realmAssignedRoles = new java.util.LinkedHashSet<>();
                   try {
-                     realmAssignedRoles.addAll(userRealmRoleRepo.findActiveRolesForRealmWithIgnoreRules(
-                        userId, tokenRealm, envConfigUtils.getSystemRealm()));
+                     realmAssignment = userRealmRoleRepo.findActiveAssignmentForRealmWithIgnoreRules(
+                        userId, tokenRealm, envConfigUtils.getSystemRealm());
+                     realmAssignment.map(UserRealmRole::getRoles).ifPresent(realmAssignedRoles::addAll);
                   } catch (Exception e) {
                      Log.warn("Failed to resolve per-realm role assignments; continuing with credential roles", e);
                   }
                   groups.addAll(realmAssignedRoles);
 
-                  String authToken = TokenUtils.generateUserToken(
-                     subject,
-                     groups,
-                     TokenUtils.expiresAt(durationInSeconds),
-                     issuer);
+                  // Application-scoped auth: resolve which application(s) this token is
+                  // scoped to from the user's per-realm grant. LEGACY = no grant configured
+                  // (single default audience, unchanged behavior); RESOLVED = multi-aud
+                  // token + azp; AMBIGUOUS/DENIED short-circuit to a negative response the
+                  // login resource maps to 400 (needs selection) / 403 (not authorized).
+                  ApplicationAuthorizationResolver.Result appAuth = ApplicationAuthorizationResolver.resolve(
+                     realmAssignment.map(UserRealmRole::getAuthorizedApplications).orElse(null),
+                     realmAssignment.map(UserRealmRole::getDefaultApplication).orElse(null),
+                     applicationId);
+                  switch (appAuth.outcome()) {
+                     case AMBIGUOUS:
+                        return new LoginResponse(false,
+                           new LoginNegativeResponse(userId, 400, 300,
+                              "Multiple applications are authorized; specify which application to sign into",
+                              "ApplicationSelectionRequired",
+                              String.join(",", appAuth.candidates()),
+                              tokenRealm));
+                     case DENIED:
+                        return new LoginResponse(false,
+                           new LoginNegativeResponse(userId, 403, 403,
+                              "Not authorized for application: " + appAuth.deniedApplication(),
+                              "ApplicationNotAuthorized",
+                              appAuth.deniedApplication(),
+                              tokenRealm));
+                     default:
+                        break; // LEGACY or RESOLVED — mint below
+                  }
+
+                  String authToken;
+                  if (appAuth.resolved()) {
+                     if (appAuth.wildcard()) {
+                        Log.warnf("Wildcard application grant exercised (audit): user=%s realm=%s activeApplication=%s",
+                           userId, tokenRealm, appAuth.activeApplication());
+                     }
+                     authToken = TokenUtils.generateUserToken(
+                        subject,
+                        groups,
+                        appAuth.audiences(),
+                        appAuth.activeApplication(),
+                        TokenUtils.expiresAt(durationInSeconds),
+                        issuer);
+                  } else {
+                     authToken = TokenUtils.generateUserToken(
+                        subject,
+                        groups,
+                        TokenUtils.expiresAt(durationInSeconds),
+                        issuer);
+                  }
 
                   String refreshToken = generateRefreshToken(credential.getUserId(), authToken,
                      TokenUtils.currentTimeInSecs() + durationInSeconds + TokenUtils.REFRESH_ADDITIONAL_DURATION_SECONDS);
@@ -597,7 +649,9 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                         refreshToken,
                         TokenUtils.currentTimeInSecs() + durationInSeconds,
                         mongodbConnectionString,
-                        realm)
+                        realm,
+                        appAuth.resolved() ? appAuth.audiences() : null,
+                        appAuth.resolved() ? appAuth.activeApplication() : null)
                   );
                } else {
                   return new LoginResponse(false,
