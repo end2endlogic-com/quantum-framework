@@ -35,8 +35,27 @@ public interface AuthProvider {
             @JsonProperty("refreshToken") String refreshToken,
             @JsonProperty("expirationTime") long expirationTime,
             @JsonProperty("mongodbUrl") String mongodbUrl,
-            @JsonProperty("realm") String realm
+            @JsonProperty("realm") String realm,
+            // Application-scoped auth: the token's aud set (all apps authorized in the
+            // active realm) and azp (the app actively entered). Null when app scoping
+            // is not configured for this user/realm (legacy single-audience token).
+            @JsonProperty("audiences") Set<String> audiences,
+            @JsonProperty("activeApplication") String activeApplication
             ) {
+        // Backward-compatible constructor (pre application-scoping): no aud set / azp.
+        public LoginPositiveResponse(String userId,
+                                     SecurityIdentity identity,
+                                     Set<String> roles,
+                                     java.util.List<RoleAssignment> roleAssignments,
+                                     String accessToken,
+                                     String refreshToken,
+                                     long expirationTime,
+                                     String mongodbUrl,
+                                     String realm) {
+            this(userId, identity, roles, roleAssignments, accessToken, refreshToken,
+                 expirationTime, mongodbUrl, realm, null, null);
+        }
+
         public LoginPositiveResponse(String userId,
                                      SecurityIdentity identity,
                                      Set<String> roles,
@@ -56,7 +75,9 @@ public interface AuthProvider {
                  refreshToken,
                  expirationTime,
                  mongodbUrl,
-                 realm);
+                 realm,
+                 null,
+                 null);
         }
     };
 
@@ -84,6 +105,22 @@ public interface AuthProvider {
     }
 
     LoginResponse login(String userId, String password);
+
+    /**
+     * Application-scoped login (application-scoped auth). Providers that support it
+     * resolve the user's authorized application set for the active realm, scope the
+     * token's {@code aud}/{@code azp} accordingly, and may return a selection-required
+     * or not-authorized negative response. The default ignores the applicationId and
+     * behaves exactly like {@link #login(String, String)}, so providers that don't
+     * model application scoping are unaffected.
+     *
+     * @param applicationId the application being signed into, or null to let the
+     *                      provider resolve it (single → assumed, many → default/prompt)
+     */
+    default LoginResponse login(String userId, String password, String applicationId) {
+        return login(userId, password);
+    }
+
     LoginResponse refreshTokens(String refreshToken);
 
     /**

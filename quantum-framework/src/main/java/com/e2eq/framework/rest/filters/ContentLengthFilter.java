@@ -29,11 +29,25 @@ public class ContentLengthFilter implements ContainerRequestFilter, ContainerRes
 
     @Override
     public void filter(ContainerRequestContext requestContext, ContainerResponseContext responseContext) throws JsonProcessingException {
-        // Add content length header to responses
-        if (responseContext.getEntity() != null && responseContext.getMediaType()!= null && responseContext.getMediaType().toString().equals("application/json;charset=UTF-8")) {
+        // Ensure JSON responses are sent with an explicit, correct Content-Length (some
+        // serverless / API-gateway fronts — e.g. AWS API Gateway / Lambda / ALB — require
+        // a fixed Content-Length and do not tolerate chunked Transfer-Encoding). We do this
+        // by buffering the serialized JSON into a String so the body length is known up
+        // front: the server then emits a correct fixed-length Content-Length itself and
+        // does NOT fall back to chunked encoding.
+        //
+        // We deliberately do NOT hand-add a Content-Length header. The previous code did
+        // (headers.add(CONTENT_LENGTH, entity.getBytes().length)) while the entity was still
+        // a streamed POJO — so on responses past the write-buffer threshold (~8KB) the server
+        // chunked the body AND a manual Content-Length was appended. A response carrying both
+        // Transfer-Encoding: chunked and Content-Length is illegal HTTP; upstream proxies
+        // (Cloud Run / Envoy) reset the stream with "protocol error, reset before headers",
+        // which surfaces to clients as a 502. Buffering to a String + letting the server own
+        // the header satisfies the serverless constraint without the conflict.
+        if (responseContext.getEntity() != null && responseContext.getMediaType() != null
+                && responseContext.getMediaType().toString().equals("application/json;charset=UTF-8")) {
             String entity = mapper.writeValueAsString(responseContext.getEntity());
             responseContext.setEntity(entity);
-            responseContext.getHeaders().add(HttpHeaders.CONTENT_LENGTH, entity.getBytes().length);
         }
         else if (responseContext.getMediaType()!= null && "text/event-stream".equals(responseContext.getMediaType().toString())){
            responseContext.getHeaders().putSingle("Cache-Control", "no-cache, no-transform");

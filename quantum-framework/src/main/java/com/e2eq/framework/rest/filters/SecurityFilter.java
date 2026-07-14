@@ -112,6 +112,15 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     @ConfigProperty(name = "quantum.auth.trust-token-claims", defaultValue = "false")
     boolean trustTokenClaims;
 
+    // Delegated-identity data-domain scoping: when true, a delegated principal (trusted-issuer
+    // token, no local credential) adopts the DATA DOMAIN of the tenant realm it operates in —
+    // resolved from that realm's registered Realm.DomainContext — instead of the cross-tenant
+    // system data domain. If the realm is NOT a registered tenant, the request FAILS CLOSED
+    // (403) rather than silently granting the system domain. Default false preserves the prior
+    // behavior (system data domain) for services that have not opted in.
+    @ConfigProperty(name = "quantum.auth.delegated.realm-scoped-domain", defaultValue = "false")
+    boolean delegatedRealmScopedDomain;
+
     @Inject
     com.e2eq.framework.security.runtime.RuleContext ruleContext;
 
@@ -726,17 +735,41 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         if (userId == null) userId = claimString("username");
         if (userId == null) userId = sub;
 
+        String systemRealm = envConfigUtils.getSystemRealm();
         String contextRealm = (realmOverride != null && !realmOverride.isBlank())
                 ? realmOverride
-                : envConfigUtils.getSystemRealm();
+                : systemRealm;
         String[] roles = resolveEffectiveRoles(securityIdentity, null, contextRealm);
 
         Log.infof("Delegated identity: principal from trusted-issuer token claims (iss=%s, sub=%s, userId=%s, realm=%s, roles=%s)",
                 jwt.getIssuer(), sub, userId, contextRealm, java.util.Arrays.toString(roles));
 
+        // A delegated principal adopts the DATA DOMAIN of the tenant realm it operates in
+        // (from the realm's registered DomainContext), not the cross-tenant system domain.
+        // The system domain is reserved for the system realm / system admins — never a silent
+        // fallback for an ordinary tenant user. Gated so services opt in explicitly.
+        DataDomain dataDomain;
+        if (!delegatedRealmScopedDomain || contextRealm.equals(systemRealm)) {
+            dataDomain = securityUtils.getSystemDataDomain();
+        } else {
+            Optional<Realm> realmOpt = realmRepo.findByRefName(contextRealm, true, systemRealm);
+            if (realmOpt.isEmpty()) {
+                realmOpt = realmRepo.findByDatabaseName(contextRealm, true, systemRealm);
+            }
+            if (realmOpt.isEmpty() || realmOpt.get().getDomainContext() == null) {
+                // Fail closed: the realm is not a registered tenant. Do NOT grant the
+                // cross-tenant system data domain to a delegated principal.
+                Log.warnf("Delegated principal denied: realm '%s' is not a registered tenant "
+                        + "(no system-domain fallback under quantum.auth.delegated.realm-scoped-domain)", contextRealm);
+                throw new jakarta.ws.rs.ForbiddenException(
+                        "Realm '" + contextRealm + "' is not a registered tenant.");
+            }
+            dataDomain = realmOpt.get().getDomainContext().toDataDomain(userId);
+        }
+
         PrincipalContext context = new PrincipalContext.Builder()
                 .withDefaultRealm(contextRealm)
-                .withDataDomain(securityUtils.getSystemDataDomain())
+                .withDataDomain(dataDomain)
                 .withUserId(userId)
                 .withRoles(roles)
                 .withScope("AUTHENTICATED")
