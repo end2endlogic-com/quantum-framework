@@ -3,6 +3,8 @@ package com.e2eq.framework.rest.filters;
 import com.e2eq.framework.model.securityrules.RuleEffect;
 import org.junit.jupiter.api.Test;
 
+import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -59,5 +61,22 @@ public class SecurityFilterPreAuthTest {
         // Pre-auth should not run when isPermitAll is true
         boolean shouldEnforce = !isPermitAll && enforcePreAuth;
         assertFalse(shouldEnforce, "@PermitAll should bypass pre-auth");
+    }
+
+    @Test
+    public void testAuthorizationErrorsUseGeneratedSdkContract() {
+        Map<String, String> error = SecurityFilter.apiError(
+            "ACCESS_DENIED",
+            "Access denied: user=local-test, area=DI, domain=ONTOLOGY_AGENT, action=VIEW"
+        );
+
+        assertEquals(
+            Map.of(
+                "code", "ACCESS_DENIED",
+                "message", "Access denied: user=local-test, area=DI, domain=ONTOLOGY_AGENT, action=VIEW"
+            ),
+            error
+        );
+        assertEquals(2, error.size(), "Generated SDK error schemas reject undeclared fields");
     }
 }
