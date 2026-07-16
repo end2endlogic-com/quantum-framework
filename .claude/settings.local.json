@@ -131,7 +131,9 @@
       "Bash(pnpm remove:*)",
       "Bash(find /Users/mingardia/dev/mrisys/end2endlogic/congi/congi/ui-nuxt -maxdepth 3 -type f \\\\\\(-name *mapper* -o -name *workflow* -o -name *data-map* \\\\\\))",
       "Bash(for f:*)",
-      "Bash(do echo:*)"
+      "Bash(do echo:*)",
+      "Bash(cat ~/.claude.json 2>/dev/null | python3 -c \"import json, sys; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\('mcpServers', {}\\), indent=2\\)\\)\" 2>/dev/null | head -100)",
+      "Bash(env)"
     ]
   }
 }
