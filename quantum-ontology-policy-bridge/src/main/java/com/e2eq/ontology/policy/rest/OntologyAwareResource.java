@@ -12,6 +12,7 @@ import com.e2eq.framework.rest.models.Collection;
 import com.e2eq.framework.rest.resources.BaseResource;
 import com.e2eq.ontology.mongo.OntologyContextEnricherMongo;
 import com.e2eq.ontology.policy.ListQueryRewriter;
+import com.mongodb.client.model.Collation;
 import dev.morphia.Datastore;
 import dev.morphia.annotations.Entity;
 import io.quarkus.logging.Log;
@@ -63,6 +64,25 @@ public abstract class OntologyAwareResource<T extends UnversionedBaseModel, R ex
 
     protected OntologyAwareResource(R repo) {
         super(repo);
+    }
+
+    /**
+     * Resolves the collation to attach to the aggregation pipeline, delegating
+     * to {@link BaseMorphiaRepo#getSortCollation()} so the aggregation/expand
+     * path stays consistent with {@code find().sort(...)} in
+     * {@link com.e2eq.framework.model.persistent.morphia.MorphiaRepo#buildFindOptions}.
+     *
+     * <p>Returns {@code null} when no sort is requested (so no-sort aggregations
+     * don't incur the in-memory collation sort) or when the repo hook opts out.
+     *
+     * <p>Package-private to support unit testing of the delegation contract
+     * without spinning up a full aggregation pipeline.
+     */
+    Collation resolveAggregationSortCollation(List<?> sortFields) {
+        if (sortFields == null || sortFields.isEmpty()) {
+            return null;
+        }
+        return repo.getSortCollation();
     }
 
     /**
@@ -171,10 +191,14 @@ public abstract class OntologyAwareResource<T extends UnversionedBaseModel, R ex
         }
         int effLimit = limit > 0 ? limit : 50;
         int effSkip = Math.max(0, skip);
-        List<org.bson.Document> rows = ds.getDatabase()
+        com.mongodb.client.AggregateIterable<org.bson.Document> aggregate = ds.getDatabase()
                 .getCollection(rootCollection)
-                .aggregate(clean, org.bson.Document.class)
-                .into(new ArrayList<>());
+                .aggregate(clean, org.bson.Document.class);
+        Collation sortCollation = resolveAggregationSortCollation(sortFields);
+        if (sortCollation != null) {
+            aggregate = aggregate.collation(sortCollation);
+        }
+        List<org.bson.Document> rows = aggregate.into(new ArrayList<>());
         Collection<org.bson.Document> col = new Collection<>(rows, effSkip, effLimit, query, (long) rows.size());
         String realmId = headers.getHeaderString("X-Realm");
         col.setRealm(realmId == null ? repo.getDatabaseName() : realmId);

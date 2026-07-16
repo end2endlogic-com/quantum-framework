@@ -49,6 +49,25 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
    MorphiaDatastore getMorphiaDataStore ();
 
    /**
+    * Extension point returning the MongoDB {@link com.mongodb.client.model.Collation}
+    * applied to server-side sorts (both {@code find().sort(...)} and aggregation
+    * {@code $sort} pipelines), or {@code null} to preserve upstream binary-order
+    * behavior.
+    *
+    * <p>Default returns {@code null} so upstream and existing implementers are
+    * unaffected. Downstream implementations (see
+    * {@link MorphiaRepo#getSortCollation()}) may source this from config or
+    * override with a fixed policy.
+    *
+    * <p>Callers on the aggregation side (e.g. {@code OntologyAwareResource})
+    * MUST delegate to this method rather than reading collation config directly,
+    * so an override picked up by the find path also applies to expand queries.
+    */
+   default com.mongodb.client.model.Collation getSortCollation() {
+      return null;
+   }
+
+   /**
     * Returns the logical database name backing this repository.
     *
     * @return the database name
