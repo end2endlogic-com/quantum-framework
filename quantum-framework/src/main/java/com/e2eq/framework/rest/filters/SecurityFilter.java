@@ -1254,12 +1254,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
                 requestContext.abortWith(
                     Response.status(Response.Status.FORBIDDEN)
-                        .entity(Map.of(
-                            "error", "Access Denied",
-                            "message", message,
-                            "decision", response.getDecision() != null ? response.getDecision() : "DENY",
-                            "scope", response.getDecisionScope() != null ? response.getDecisionScope() : "DEFAULT"
-                        ))
+                        .entity(apiError("ACCESS_DENIED", message))
                         .build()
                 );
                 return;
@@ -1300,10 +1295,21 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 principalContext.getUserId(), requestContext.getUriInfo().getPath());
             requestContext.abortWith(
                 Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                    .entity(Map.of("error", "Authorization check failed"))
+                    .entity(apiError(
+                        "AUTHORIZATION_CHECK_FAILED",
+                        "Authorization check failed. See server diagnostics for details."
+                    ))
                     .build()
             );
         }
+    }
+
+    /**
+     * Stable error contract consumed by generated SDKs. Authorization diagnostics stay in server
+     * logs; response bodies deliberately contain only the public, versioned API error fields.
+     */
+    static Map<String, String> apiError(String code, String message) {
+        return Map.of("code", code, "message", message);
     }
 
     /**

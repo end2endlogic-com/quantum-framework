@@ -1140,7 +1140,7 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
          String actualRealmId = getRealmIdFromModel(model);
          return deleteEntity(actualRealmId, model);
       } else {
-         Optional<T> model = repo.findByRefName(realmId, refName);
+         Optional<T> model = repo.findByRefName(refName, realmId);
          return deleteEntity(realmId, model);
       }
    }
@@ -1177,7 +1177,7 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
         String actualRealmId = getRealmIdFromModel(model);
         return deleteEntity(actualRealmId, id, model);
      } else {
-        Optional<T> model = repo.findById(realmId, id);
+        Optional<T> model = repo.findById(id, realmId);
         return deleteEntity(realmId, id, model);
      }
    }
