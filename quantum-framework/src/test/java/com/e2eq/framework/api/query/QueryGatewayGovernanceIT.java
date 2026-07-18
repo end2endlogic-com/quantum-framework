@@ -2,7 +2,9 @@ package com.e2eq.framework.api.query;
 
 import com.e2eq.framework.model.persistent.base.CodeList;
 import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.persistent.base.ProjectionField;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
+import com.e2eq.framework.model.persistent.morphia.CodeListRepo;
 import com.e2eq.framework.model.security.Rule;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
@@ -10,6 +12,7 @@ import com.e2eq.framework.model.securityrules.RuleEffect;
 import com.e2eq.framework.model.securityrules.SecurityURI;
 import com.e2eq.framework.model.securityrules.SecurityURIBody;
 import com.e2eq.framework.model.securityrules.SecurityURIHeader;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.security.runtime.RuleContext;
 import com.e2eq.framework.security.runtime.SecuritySession;
 import com.e2eq.framework.util.TestUtils;
@@ -17,11 +20,14 @@ import dev.morphia.MorphiaDatastore;
 import dev.morphia.query.filters.Filters;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.core.Response;
+import org.apache.commons.lang3.tuple.Pair;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.HashMap;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -53,6 +59,9 @@ public class QueryGatewayGovernanceIT {
 
     @Inject
     RuleContext ruleContext;
+
+    @Inject
+    CodeListRepo codeListRepo;
 
     private String realm;
     private String marker;
@@ -90,7 +99,29 @@ public class QueryGatewayGovernanceIT {
         cl.setDescription("secret-" + key);
         cl.setValueType("STRING");
         cl.setDataDomain(dd);
-        return ds.save(cl);
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+            return ds.save(cl);
+        }
+    }
+
+    private void installDescriptionExclusionRule() {
+        SecurityURIHeader header = new SecurityURIHeader.Builder()
+                .withIdentity("admin").withArea("*").withFunctionalDomain("*").withAction("*").build();
+        SecurityURIBody body = new SecurityURIBody.Builder()
+                .withOrgRefName("*").withAccountNumber("*").withRealm("*")
+                .withTenantId("*").withOwnerId("*").withDataSegment("*").build();
+        Rule excludeRule = new Rule.Builder()
+                .withName("gateway-test-exclude-description-" + marker)
+                .withSecurityURI(new SecurityURI(header, body))
+                .withEffect(RuleEffect.ALLOW)
+                .withAndFilterString("dataDomain.tenantId:${pTenantId}")
+                .withExcludedFields(List.of("description"))
+                .withPriority(-50)
+                .withFinalRule(false)
+                .build();
+        ruleContext.addRule(header, excludeRule);
+        ruleContext.clearCacheForRealm(realm);
+        RuleContext.clearRequestCache();
     }
 
     @SuppressWarnings("unchecked")
@@ -151,25 +182,7 @@ public class QueryGatewayGovernanceIT {
 
     @Test
     public void find_strips_excluded_fields() {
-        SecurityURIHeader header = new SecurityURIHeader.Builder()
-                .withIdentity("admin").withArea("*").withFunctionalDomain("*").withAction("*").build();
-        SecurityURIBody body = new SecurityURIBody.Builder()
-                .withOrgRefName("*").withAccountNumber("*").withRealm("*")
-                .withTenantId("*").withOwnerId("*").withDataSegment("*").build();
-        Rule excludeRule = new Rule.Builder()
-                .withName("gateway-test-exclude-description-" + marker)
-                .withSecurityURI(new SecurityURI(header, body))
-                .withEffect(RuleEffect.ALLOW)
-                .withAndFilterString("dataDomain.tenantId:${pTenantId}")
-                .withExcludedFields(List.of("description"))
-                .withPriority(-50)
-                .withFinalRule(false)
-                .build();
-        ruleContext.addRule(header, excludeRule);
-        // Invalidate the realm's compiled rule index so the newly added rule (with its
-        // excludedFields) is recompiled into the effective rule set for this realm.
-        ruleContext.clearCacheForRealm(realm);
-        RuleContext.clearRequestCache();
+        installDescriptionExclusionRule();
 
         try (SecuritySession ignored = new SecuritySession(pcA, rc)) {
             // Precondition: the rule's excludedFields must resolve for this principal/resource,
@@ -194,6 +207,209 @@ public class QueryGatewayGovernanceIT {
         } finally {
             ruleContext.clear();
             ruleContext.ensureDefaultRules();
+        }
+    }
+
+    @Test
+    public void repository_point_reads_apply_excluded_field_projection() {
+        CodeList stored = seedRow(ddA, marker + "-point", "point");
+        installDescriptionExclusionRule();
+
+        try (SecuritySession ignored = new SecuritySession(pcA, rc)) {
+            CodeList byId = codeListRepo.findById(stored.getId(), realm).orElseThrow();
+            assertNull(byId.getDescription(), "findById must apply field policy projection");
+
+            CodeList byRefName = codeListRepo.findByRefName(stored.getRefName(), realm).orElseThrow();
+            assertNull(byRefName.getDescription(), "findByRefName must apply field policy projection");
+
+            List<CodeList> byIds = codeListRepo.getListFromIds(realm, List.of(stored.getId()));
+            assertEquals(1, byIds.size());
+            assertNull(byIds.get(0).getDescription(), "getListFromIds must apply field policy projection");
+
+            List<CodeList> byRefNames = codeListRepo.getListFromRefNames(realm, List.of(stored.getRefName()));
+            assertEquals(1, byRefNames.size());
+            assertNull(byRefNames.get(0).getDescription(),
+                    "getListFromRefNames must apply field policy projection");
+
+            List<CodeList> protectedOnlyProjection = codeListRepo.getListByQuery(
+                    realm, 0, 10, "category:" + stored.getCategory(), null,
+                    List.of(new ProjectionField("description", ProjectionField.ProjectionType.INCLUDE)));
+            assertEquals(1, protectedOnlyProjection.size());
+            assertNotNull(protectedOnlyProjection.get(0).getId());
+            assertNull(protectedOnlyProjection.get(0).getDescription(),
+                    "removing the caller's only included field must not widen to a full document");
+            assertNotEquals(stored.getRefName(), protectedOnlyProjection.get(0).getRefName(),
+                    "an emptied include projection must not disclose the stored refName");
+        } finally {
+            ruleContext.clear();
+            ruleContext.ensureDefaultRules();
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // (b) save uses the registered repository and cannot choose another DataDomain
+    // ------------------------------------------------------------------
+
+    @Test
+    public void save_create_stamps_callers_dataDomain_instead_of_request_body_domain() {
+        QueryGatewayResource.SaveRequest req = new QueryGatewayResource.SaveRequest();
+        req.rootType = CodeList.class.getName();
+        req.realm = realm;
+        req.entity = new HashMap<>();
+        req.entity.put("category", marker + "-save");
+        req.entity.put("key", "created");
+        req.entity.put("refName", marker + "-save:created");
+        req.entity.put("valueType", "STRING");
+        req.entity.put("dataDomain", ddB);
+
+        String id;
+        ResourceContext saveContext = testUtils.getResourceContext("integration", "query", "save");
+        try (SecuritySession ignored = new SecuritySession(pcA, saveContext)) {
+            Response response = resource.save(req);
+            assertEquals(200, response.getStatus());
+            QueryGatewayResource.SaveResponse body = (QueryGatewayResource.SaveResponse) response.getEntity();
+            id = body.id;
+        }
+
+        MorphiaDatastore ds = morphiaDataStoreWrapper.getDataStore(realm);
+        CodeList stored = ds.find(CodeList.class)
+                .filter(Filters.eq("_id", new org.bson.types.ObjectId(id)))
+                .first();
+        assertNotNull(stored);
+        assertEquals(ddA.getTenantId(), stored.getDataDomain().getTenantId(),
+                "generic save must stamp the authenticated caller's DataDomain");
+        ds.find(CodeList.class).filter(Filters.eq("_id", stored.getId())).delete();
+    }
+
+    @Test
+    public void save_update_preserves_excluded_field_and_masks_save_response() {
+        CodeList stored = seedRow(ddA, marker + "-save-field", "protected");
+        installDescriptionExclusionRule();
+
+        QueryGatewayResource.SaveRequest req = new QueryGatewayResource.SaveRequest();
+        req.rootType = CodeList.class.getName();
+        req.realm = realm;
+        req.entity = new HashMap<>();
+        req.entity.put("id", stored.getId());
+        req.entity.put("category", stored.getCategory());
+        req.entity.put("key", stored.getKey());
+        req.entity.put("refName", stored.getRefName());
+        req.entity.put("version", stored.getVersion());
+        req.entity.put("description", "overwrite-attempt");
+        req.entity.put("valueType", "STRING");
+        req.entity.put("dataDomain", ddA);
+
+        ResourceContext saveContext = testUtils.getResourceContext("integration", "query", "save");
+        try (SecuritySession ignored = new SecuritySession(pcA, saveContext)) {
+            Response response = resource.save(req);
+            assertEquals(200, response.getStatus());
+            QueryGatewayResource.SaveResponse body = (QueryGatewayResource.SaveResponse) response.getEntity();
+            assertFalse(body.entity.containsKey("description"),
+                    "save response must not disclose a field excluded by policy");
+        } finally {
+            ruleContext.clear();
+            ruleContext.ensureDefaultRules();
+        }
+
+        CodeList persisted = morphiaDataStoreWrapper.getDataStore(realm).find(CodeList.class)
+                .filter(Filters.eq("_id", stored.getId())).first();
+        assertNotNull(persisted);
+        assertEquals("secret-protected", persisted.getDescription(),
+                "standard repository save must preserve the stored protected value");
+    }
+
+    @Test
+    public void save_create_rejects_policy_excluded_field() {
+        installDescriptionExclusionRule();
+        String refName = marker + "-create-field:protected";
+
+        QueryGatewayResource.SaveRequest req = new QueryGatewayResource.SaveRequest();
+        req.rootType = CodeList.class.getName();
+        req.realm = realm;
+        req.entity = new HashMap<>();
+        req.entity.put("category", marker + "-create-field");
+        req.entity.put("key", "protected");
+        req.entity.put("refName", refName);
+        req.entity.put("description", "create-attempt");
+        req.entity.put("valueType", "STRING");
+
+        ResourceContext saveContext = testUtils.getResourceContext("integration", "query", "save");
+        try (SecuritySession ignored = new SecuritySession(pcA, saveContext)) {
+            ForbiddenException denied = assertThrows(ForbiddenException.class, () -> resource.save(req));
+            assertTrue(denied.getMessage().contains("protected by field-level policy"));
+        } finally {
+            ruleContext.clear();
+            ruleContext.ensureDefaultRules();
+        }
+
+        CodeList persisted = morphiaDataStoreWrapper.getDataStore(realm).find(CodeList.class)
+                .filter(Filters.eq("refName", refName)).first();
+        assertNull(persisted, "a create containing a protected field must not be persisted");
+    }
+
+    @Test
+    public void direct_field_update_rejects_policy_excluded_path() {
+        CodeList stored = seedRow(ddA, marker + "-direct-field-update", "protected-update");
+        installDescriptionExclusionRule();
+
+        ResourceContext updateContext = testUtils.getResourceContext("integration", "query", "save");
+        try (SecuritySession ignored = new SecuritySession(pcA, updateContext)) {
+            MorphiaDatastore ds = morphiaDataStoreWrapper.getDataStore(realm);
+            assertThrows(SecurityException.class, () -> codeListRepo.update(
+                    ds, stored.getId(), Pair.of("description", "overwrite-attempt")));
+        } finally {
+            ruleContext.clear();
+            ruleContext.ensureDefaultRules();
+        }
+
+        CodeList persisted = morphiaDataStoreWrapper.getDataStore(realm).find(CodeList.class)
+                .filter(Filters.eq("_id", stored.getId())).first();
+        assertNotNull(persisted);
+        assertEquals("secret-protected-update", persisted.getDescription());
+    }
+
+    @Test
+    public void save_update_cannot_upsert_or_overwrite_cross_dataDomain_row() {
+        CodeList bRow = seedRow(ddB, marker + "-save-cross", "bSave");
+
+        QueryGatewayResource.SaveRequest req = new QueryGatewayResource.SaveRequest();
+        req.rootType = CodeList.class.getName();
+        req.realm = realm;
+        req.entity = new HashMap<>();
+        req.entity.put("id", bRow.getId());
+        req.entity.put("category", bRow.getCategory());
+        req.entity.put("key", bRow.getKey());
+        req.entity.put("refName", bRow.getRefName());
+        req.entity.put("description", "tenant-A-overwrite-attempt");
+        req.entity.put("valueType", "STRING");
+        req.entity.put("dataDomain", ddA);
+
+        ResourceContext saveContext = testUtils.getResourceContext("integration", "query", "save");
+        try (SecuritySession ignored = new SecuritySession(pcA, saveContext)) {
+            assertThrows(jakarta.ws.rs.NotFoundException.class, () -> resource.save(req));
+        }
+
+        MorphiaDatastore ds = morphiaDataStoreWrapper.getDataStore(realm);
+        CodeList stored = ds.find(CodeList.class).filter(Filters.eq("_id", bRow.getId())).first();
+        assertNotNull(stored);
+        assertEquals("secret-bSave", stored.getDescription(),
+                "a cross-domain update must leave the stored row unchanged");
+    }
+
+    @Test
+    public void save_rejects_body_realm_that_differs_from_authenticated_realm() {
+        QueryGatewayResource.SaveRequest req = new QueryGatewayResource.SaveRequest();
+        req.rootType = CodeList.class.getName();
+        req.realm = realm + "-OTHER";
+        req.entity = new HashMap<>();
+        req.entity.put("category", marker + "-realm");
+        req.entity.put("key", "wrong-realm");
+        req.entity.put("refName", marker + "-realm:wrong-realm");
+        req.entity.put("valueType", "STRING");
+
+        ResourceContext saveContext = testUtils.getResourceContext("integration", "query", "save");
+        try (SecuritySession ignored = new SecuritySession(pcA, saveContext)) {
+            assertThrows(jakarta.ws.rs.ForbiddenException.class, () -> resource.save(req));
         }
     }
 

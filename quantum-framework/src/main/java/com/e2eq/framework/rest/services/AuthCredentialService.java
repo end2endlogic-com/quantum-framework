@@ -44,7 +44,9 @@ public class AuthCredentialService {
         if (credentialOptional.isPresent()) {
             CredentialUserIdPassword credential = credentialOptional.get();
             if (credential.getCredentialType() != null && credential.getCredentialType() != CredentialType.PASSWORD) {
-                return authProviderFactory.getUserManager();
+                throw new IllegalArgumentException(String.format(
+                        "Credential type %s does not support password management",
+                        credential.getCredentialType()));
             }
 
             if (credential.getIssuer() != null && !credential.getIssuer().isBlank()) {
@@ -52,10 +54,9 @@ public class AuthCredentialService {
                 if (issuerProvider instanceof UserManagement userManagement) {
                     return userManagement;
                 }
-            }
-
-            if (credential.getAuthProviderName() != null && !credential.getAuthProviderName().isBlank()) {
-                return authProviderFactory.getUserManager(credential.getAuthProviderName());
+                throw new IllegalArgumentException(String.format(
+                        "Authentication provider for issuer '%s' does not support user management",
+                        credential.getIssuer()));
             }
         }
 

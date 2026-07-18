@@ -18,6 +18,7 @@ import com.e2eq.framework.model.persistent.imports.ImportSessionRow;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
+import com.e2eq.framework.model.securityrules.FieldPolicyEnforcer;
 import com.e2eq.framework.security.runtime.RuleContext;
 import com.e2eq.framework.rest.models.Collection;
 import com.e2eq.framework.csv.CSVExportHelper;
@@ -56,6 +57,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 
 /**
@@ -169,8 +171,9 @@ public class QueryGatewayResource {
     @GET
     @Path("/rootTypes")
     @FunctionalAction("listRootTypes")
-    public RootTypesResponse listRootTypes() {
-        MorphiaDatastore ds = morphiaDataStoreWrapper.getDataStore(defaultRealm);
+    public RootTypesResponse listRootTypes(@QueryParam("realm") String requestRealm) {
+        String realm = resolveRealm(requestRealm);
+        MorphiaDatastore ds = morphiaDataStoreWrapper.getDataStore(realm);
         Mapper mapper = ds.getMapper();
 
         List<RootTypeInfo> rootTypes = new ArrayList<>();
@@ -392,9 +395,22 @@ public class QueryGatewayResource {
         try {
             // Convert the Map to the target entity type
             UnversionedBaseModel entity = objectMapper.convertValue(req.entity, root);
+            @SuppressWarnings("unchecked")
+            BaseMorphiaRepo<UnversionedBaseModel> repo =
+                    resolveRepo((Class<UnversionedBaseModel>) root);
 
-            // Save (insert or update)
-            UnversionedBaseModel saved = ds.save(entity);
+            governEntityForSave(ds, root, entity);
+
+            // Morphia save is insert-only; updates must use merge. Reuse the registered
+            // repository in both cases so validation, policy-preservation, and
+            // state-transition checks remain centralized.
+            UnversionedBaseModel saved = entity.getId() == null
+                    ? repo.save(realm, entity)
+                    : repo.merge(ds, entity);
+
+            // The generic response is a DTO map, so the REST model interceptor cannot
+            // mask it. Apply the same policy before materializing the response payload.
+            FieldPolicyEnforcer.mask(saved, excludedFieldPaths());
 
             SaveResponse response = new SaveResponse();
             response.id = saved.getId() != null ? saved.getId().toHexString() : null;
@@ -402,6 +418,13 @@ public class QueryGatewayResource {
             response.rootType = root.getName();
 
             return Response.ok(response).build();
+        } catch (WebApplicationException e) {
+            throw e;
+        } catch (SecurityException e) {
+            // Repository policy denials are authorization failures.  Do not disguise them
+            // as generic save failures (500), since clients must be able to distinguish a
+            // forbidden field/row mutation from an infrastructure failure.
+            throw new ForbiddenException(e.getMessage(), e);
         } catch (IllegalArgumentException e) {
             Log.errorf(e, "Failed to convert entity to type %s", root.getName());
             Map<String, Object> error = new HashMap<>();
@@ -415,6 +438,71 @@ public class QueryGatewayResource {
             error.put("message", "Failed to save entity: " + e.getMessage());
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(error).build();
         }
+    }
+
+    /**
+     * Applies the same row/field governance expected by a typed Morphia resource before the
+     * generic save delegates to its registered repository.
+     *
+     * <p>Creates are stamped into the caller's effective DataDomain; a request body cannot choose
+     * another tenant placement. Updates must resolve the existing row through the secured filter,
+     * preserve its DataDomain, and restore fields excluded by policy before repository validation
+     * and persistence. An unknown id is treated as not-found rather than an upsert so a caller
+     * cannot manufacture a cross-domain record with a chosen identifier.</p>
+     */
+    private void governEntityForSave(
+            Datastore datastore,
+            Class<? extends UnversionedBaseModel> root,
+            UnversionedBaseModel entity) {
+        if (SecurityContext.isIgnoringRules()) {
+            return;
+        }
+
+        PrincipalContext principal = SecurityContext.getPrincipalContext()
+                .orElseThrow(() -> ungovernedMutation("PrincipalContext"));
+        SecurityContext.getResourceContext()
+                .orElseThrow(() -> ungovernedMutation("ResourceContext"));
+
+        if (entity.getId() == null) {
+            if (principal.getDataDomain() == null) {
+                throw ungovernedMutation("principal DataDomain");
+            }
+            entity.setDataDomain(principal.getDataDomain());
+            return;
+        }
+
+        List<Filter> idFilters = new ArrayList<>();
+        idFilters.add(Filters.eq("_id", entity.getId()));
+        UnversionedBaseModel stored = datastore.find(root)
+                .filter(securedFilterArray(idFilters, root))
+                .first();
+        if (stored == null) {
+            throw new NotFoundException("Entity was not found in the caller's governed data scope");
+        }
+
+        entity.setDataDomain(stored.getDataDomain());
+        for (String path : excludedFieldPaths()) {
+            try {
+                FieldPolicyEnforcer.copyPath(stored, entity, path);
+            } catch (ReflectiveOperationException e) {
+                throw new WebApplicationException(
+                        Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                                .entity(Map.of(
+                                        "error", "FieldPolicyEnforcementFailed",
+                                        "message", "A protected field could not be preserved; the save was rejected."))
+                                .build());
+            }
+        }
+    }
+
+    private WebApplicationException ungovernedMutation(String missingContext) {
+        Log.warnf("QueryGateway refusing ungoverned save: missing %s", missingContext);
+        return new WebApplicationException(
+                Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                        .entity(Map.of(
+                                "error", "SecurityContextMissing",
+                                "message", "Save cannot be governed: security context is not established for this request."))
+                        .build());
     }
 
     // ========================================================================
@@ -984,17 +1072,26 @@ public class QueryGatewayResource {
     /**
      * Field-level policy companion to {@link #securedFilterArray}: the deny-wins set of excluded
      * field paths for the current security context, mirroring
-     * {@code RepoSecurityFilterBuilder#buildExcludedFieldPaths}. Empty when rules are ignored or no
-     * principal is present (field exclusions are principal-relative).
+     * {@code RepoSecurityFilterBuilder#buildExcludedFieldPaths}. Empty only in an explicit
+     * ignore-rules scope; missing request security context fails closed.
      */
     private java.util.Set<String> excludedFieldPaths() {
         if (SecurityContext.isIgnoringRules()) {
             return java.util.Set.of();
         }
-        java.util.Optional<PrincipalContext> pc = SecurityContext.getPrincipalContext();
-        java.util.Optional<ResourceContext> rc = SecurityContext.getResourceContext();
+        Optional<PrincipalContext> pc = SecurityContext.getPrincipalContext();
+        Optional<ResourceContext> rc = SecurityContext.getResourceContext();
         if (pc.isEmpty() || rc.isEmpty()) {
-            return java.util.Set.of();
+            String missing = pc.isEmpty() && rc.isEmpty()
+                    ? "PrincipalContext and ResourceContext"
+                    : pc.isEmpty() ? "PrincipalContext" : "ResourceContext";
+            Log.warnf("QueryGateway refusing field-policy resolution: missing %s", missing);
+            throw new WebApplicationException(
+                    Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                            .entity(Map.of(
+                                    "error", "SecurityContextMissing",
+                                    "message", "Field policy cannot be resolved: security context is not established for this request."))
+                            .build());
         }
         return ruleContext.getExcludedFieldPaths(pc.get(), rc.get());
     }
@@ -1028,26 +1125,32 @@ public class QueryGatewayResource {
     }
 
     private String resolveRealm(String requestRealm) {
-        // 1. Explicit realm from request takes highest priority
+        Optional<PrincipalContext> principal = SecurityContext.getPrincipalContext();
+        if (principal.isPresent() && !SecurityContext.isIgnoringRules()) {
+            PrincipalContext pc = principal.get();
+            String effectiveRealm = pc.getDefaultRealm();
+            if (pc.getArea2RealmOverrides() != null) {
+                String areaOverride = pc.getArea2RealmOverrides().get(FUNCTIONAL_AREA);
+                if (areaOverride != null && !areaOverride.isBlank()) {
+                    effectiveRealm = areaOverride;
+                    Log.debugf("Using area2RealmOverride for area '%s': %s", FUNCTIONAL_AREA, areaOverride);
+                }
+            }
+            if (effectiveRealm == null || effectiveRealm.isBlank()) {
+                throw ungovernedMutation("effective realm");
+            }
+            if (requestRealm != null && !requestRealm.isBlank() && !requestRealm.equals(effectiveRealm)) {
+                throw new ForbiddenException("Requested realm does not match the authenticated operating realm");
+            }
+            return effectiveRealm;
+        }
+
+        // Bootstrap, migration, and explicitly rule-ignoring callers retain the existing explicit
+        // realm behavior. Authenticated governed requests are bound to the SecurityContext above.
         if (requestRealm != null && !requestRealm.isBlank()) {
             return requestRealm;
         }
-
-        // 2. Try to get from SecurityContext
-        return SecurityContext.getPrincipalContext()
-                .map(pc -> {
-                    // 2a. Check for area-specific realm override
-                    if (pc.getArea2RealmOverrides() != null) {
-                        String areaOverride = pc.getArea2RealmOverrides().get(FUNCTIONAL_AREA);
-                        if (areaOverride != null && !areaOverride.isBlank()) {
-                            Log.debugf("Using area2RealmOverride for area '%s': %s", FUNCTIONAL_AREA, areaOverride);
-                            return areaOverride;
-                        }
-                    }
-                    // 2b. Use principal's default realm (includes X-Realm override if applied)
-                    return pc.getDefaultRealm();
-                })
-                .orElse(defaultRealm);
+        return defaultRealm;
     }
 
     /**

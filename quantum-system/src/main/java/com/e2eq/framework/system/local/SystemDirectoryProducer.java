@@ -9,6 +9,7 @@ import com.e2eq.framework.util.EnvConfigUtils;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Produces;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.util.Optional;
@@ -38,6 +39,7 @@ public class SystemDirectoryProducer {
     @Inject CredentialRepo credentialRepo;
     @Inject EnvConfigUtils envConfigUtils;
     @Inject QuantumModeConfig quantumModeConfig;
+    @Inject JsonWebToken jwt;
 
     @ConfigProperty(name = "quantum.system.directory.mode")
     Optional<String> directoryModeOverride;
@@ -62,7 +64,18 @@ public class SystemDirectoryProducer {
                 return new com.e2eq.framework.system.remote.RemoteSystemDirectory(
                     quantumModeConfig.systemServiceBaseUrl().orElseThrow(() ->
                         new IllegalStateException("quantum.system-service.base-url is required for remote SystemDirectory")),
-                    serviceToken);
+                    () -> {
+                        try {
+                            String inboundToken = jwt.getRawToken();
+                            if (inboundToken != null && !inboundToken.isBlank()) {
+                                return Optional.of(inboundToken);
+                            }
+                        } catch (RuntimeException ignored) {
+                            // No active request context (for example, startup). A configured service
+                            // token is still allowed; otherwise the remote call fails closed.
+                        }
+                        return serviceToken;
+                    });
             default:
                 throw new IllegalStateException(
                     "Unknown quantum.system.directory.mode '" + directoryModeOverride.orElse(null)

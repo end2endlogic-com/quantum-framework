@@ -9,6 +9,7 @@ import com.e2eq.framework.model.security.*;
 import com.e2eq.framework.model.securityrules.FilterJoinOp;
 import com.e2eq.framework.security.runtime.RuleContext;
 import com.e2eq.framework.model.securityrules.RuleEffect;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.model.securityrules.SecurityURI;
 import com.e2eq.framework.model.securityrules.SecurityURIBody;
 import com.e2eq.framework.model.securityrules.SecurityURIHeader;
@@ -43,6 +44,8 @@ public class TestSeederService {
 
         int writes = 0;
 
+        try (SecurityCallScope.Scope privilegedSeedScope = SecurityCallScope.openIgnoringRules()) {
+
         // Ensure the system credential exists so repository security context resolution can succeed
         try { writes += ensureSystemCredential(); } catch (Throwable t) { Log.debug("ensureSystemCredential failed", t); }
 
@@ -67,7 +70,7 @@ public class TestSeederService {
                 .withRealm(envConfigUtils.getSystemRealm())
                 .withArea("security")
                 .withFunctionalDomain("auth")
-                .withAction("seed")
+                .withAction("WRITE")
                 .withOwnerId(pc.getUserId())
                 .build();
         com.e2eq.framework.model.securityrules.SecurityContext.setResourceContext(rc);
@@ -130,11 +133,12 @@ public class TestSeederService {
         // Finally, refresh rule context so tests can use the new policies
         try { ruleContext.reloadFromRepo(realm); } catch (Throwable t) { Log.debug("reloadFromRepo failed", t); }
 
-        // Clear contexts set for seeding
-        com.e2eq.framework.model.securityrules.SecurityContext.clearResourceContext();
-        com.e2eq.framework.model.securityrules.SecurityContext.clearPrincipalContext();
-
-        return writes;
+            return writes;
+        } finally {
+            // Never leak the test fixture's elevated contexts into the next test.
+            com.e2eq.framework.model.securityrules.SecurityContext.clearResourceContext();
+            com.e2eq.framework.model.securityrules.SecurityContext.clearPrincipalContext();
+        }
     }
 
     private int ensureCredentialInRealm(String userId, String realm, DataDomain fallback) {

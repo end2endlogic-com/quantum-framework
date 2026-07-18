@@ -158,8 +158,8 @@ public class SecurityUtils {
    // If authorizedRealms present, intersect candidates with that list; else if realmRegEx present, filter by it;
    // else, return only the default realm from the credential's domain context if included in candidates; if
    // candidates is null, return a singleton list with the default realm.
-   // The credential's domainContext.defaultRealm is always implicitly authorized, so it is unioned into the
-   // result of the authorizedRealms and realmRegEx branches when it appears in the candidate catalog.
+   // Preserve the 1.3 contract: the credential's domainContext.defaultRealm is implicitly authorized, so it is
+   // unioned into explicit-list and regex results when it appears in the candidate catalog.
    public java.util.List<String> computeAllowedRealmRefNames(
            com.e2eq.framework.model.security.CredentialUserIdPassword credential,
            java.util.List<String> candidateRealmRefNames) {

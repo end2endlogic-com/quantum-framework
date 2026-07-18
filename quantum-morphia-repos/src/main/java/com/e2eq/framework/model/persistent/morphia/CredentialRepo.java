@@ -139,6 +139,33 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
       return Optional.ofNullable(obj);
    }
 
+   public CredentialUserIdPassword saveApplicationRegExBySubject(
+           @NotNull String subject,
+           String applicationRegEx) {
+      if (subject.isBlank()) {
+         throw new IllegalArgumentException("Subject cannot be blank");
+      }
+      String normalizedPattern = applicationRegEx == null ? null : applicationRegEx.trim();
+      if (normalizedPattern != null && normalizedPattern.isEmpty()) {
+         throw new IllegalArgumentException("ApplicationRegEx cannot be blank");
+      }
+      if (normalizedPattern != null && !"*".equals(normalizedPattern)) {
+         try {
+            java.util.regex.Pattern.compile(normalizedPattern);
+         } catch (java.util.regex.PatternSyntaxException invalidPattern) {
+            throw new IllegalArgumentException(
+                    "ApplicationRegEx is invalid: " + invalidPattern.getDescription(),
+                    invalidPattern);
+         }
+      }
+      CredentialUserIdPassword credential = findBySubject(subject)
+              .orElseThrow(() -> new jakarta.ws.rs.NotFoundException(
+                      String.format("User with subject %s not found", subject)));
+      credential.setApplicationRegEx(normalizedPattern);
+      credential.setLastUpdate(new java.util.Date());
+      return save(credential);
+   }
+
 
    public Optional<CredentialUserIdPassword> findByUserId(@NotNull String userId)
    {

@@ -121,6 +121,18 @@ public interface AuthProvider {
         return login(userId, password);
     }
 
+    /**
+     * Realm- and application-scoped login. Providers that understand realm membership
+     * should validate {@code realmId} and mint only the roles effective in that realm.
+     * Other providers retain their existing behavior through this compatibility default.
+     */
+    default LoginResponse login(String userId, String password, String applicationId, String realmId) {
+        if (realmId != null && !realmId.isBlank()) {
+            throw new UnsupportedOperationException("This authentication provider does not support realm-scoped login");
+        }
+        return login(userId, password, applicationId);
+    }
+
     LoginResponse refreshTokens(String refreshToken);
 
     /**

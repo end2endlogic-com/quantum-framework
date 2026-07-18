@@ -1,19 +1,26 @@
 package com.e2eq.framework.rest.resources;
 
+import com.e2eq.framework.model.persistent.morphia.UserRealmRoleRepo;
+import com.e2eq.framework.util.EnvConfigUtils;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
 import io.restassured.http.ContentType;
+import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
 
 import static io.restassured.RestAssured.given;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 
 @QuarkusTest
 @TestSecurity(user = "sysAdmin@system-com", roles = {"admin"})
 public class TenantProvisioningResourceIT {
+
+    @Inject UserRealmRoleRepo userRealmRoleRepo;
+    @Inject EnvConfigUtils envConfigUtils;
 
     @Test
     void provision_with_archetype_applies_seed_packs() {
@@ -45,6 +52,15 @@ public class TenantProvisioningResourceIT {
 
         String realm = response.getString("realmId");
         String executionRef = response.getString("executionRef");
+
+        assertThat(
+            userRealmRoleRepo.findActiveRolesForRealmWithIgnoreRules(
+                "admin@demo-archetype.example",
+                realm,
+                envConfigUtils.getSystemRealm()
+            ),
+            containsInAnyOrder("admin", "user")
+        );
 
         given()
             .when()
