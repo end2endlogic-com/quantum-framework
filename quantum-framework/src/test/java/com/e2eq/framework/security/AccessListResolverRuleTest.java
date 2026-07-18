@@ -81,8 +81,10 @@ public class AccessListResolverRuleTest extends BaseRepoTest {
                 .build();
         p.getRules().add(r);
 
-        policyRepo.save(realm, p);
-        ruleContext.reloadFromRepo(realm);
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+            policyRepo.save(realm, p);
+            ruleContext.reloadFromRepo(realm);
+        }
 
         // Build contexts that match the resolver's supports() and the rule
         PrincipalContext pc = new PrincipalContext.Builder()

@@ -113,9 +113,18 @@ public class CredentialUserIdPassword extends BaseModel {
 
    protected List<RealmEntry> authorizedRealms;
    //@Regex
-   @ToString.Exclude
-   protected String realmRegEx; // if the authorizedRealms is not found or null, then this is used if defined
-   protected String authProviderName; // the provider this record belongs to.
+    protected String realmRegEx; // if the authorizedRealms is not found or null, then this is used if defined
+    /**
+     * Credential-wide application entitlement pattern. Per-realm application grants
+     * remain authoritative when present; otherwise this pattern is evaluated against
+     * the requested application. The value {@code "*"} authorizes any named application.
+     */
+    protected String applicationRegEx;
+   /**
+    * Informational provenance naming the provider that resolved the credential/token.
+    * This value is not an authentication routing or authorization binding.
+    */
+   protected String authProviderName;
 
    /**
     * Utility method to set the password hash from a plain text password.

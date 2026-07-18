@@ -43,6 +43,9 @@ final class RepoSecurityFilterBuilder {
      * context. Fail-closed on missing context exactly like row filters.
      */
     java.util.Set<String> buildExcludedFieldPaths() {
+        if (SecurityContext.isIgnoringRules()) {
+            return java.util.Set.of();
+        }
         if (SecurityContext.getResourceContext().isEmpty() || SecurityContext.getPrincipalContext().isEmpty()) {
             securityContextResolver.ensureSecurityContextFromIdentity();
         }
@@ -51,12 +54,9 @@ final class RepoSecurityFilterBuilder {
                     SecurityContext.getPrincipalContext().get(),
                     SecurityContext.getResourceContext().get());
         }
-        // Field exclusions are principal-relative: with no principal on the
-        // thread (system-internal/ignore-rules reads — e.g. the ontology edge
-        // store) there is nothing to exclude. Row-level security separately
-        // fails loud on the paths that REQUIRE a principal; this must not
-        // turn principal-less infrastructure reads into failures.
-        return java.util.Set.of();
+        throw new IllegalStateException(
+                "SecurityContext is not set in thread; cannot resolve field-level policy. "
+                        + "Use an explicit ignore-rules scope only for authorized internal reads.");
     }
 
     Filter[] getFilterArray(List<Filter> filters, Class<? extends UnversionedBaseModel> modelClass) {

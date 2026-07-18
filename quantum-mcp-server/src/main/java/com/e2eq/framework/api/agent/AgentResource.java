@@ -70,13 +70,14 @@ public class AgentResource {
      * Returns the list of entity types (root types) that can be used with the gateway.
      * Wraps GET /api/query/rootTypes for a single integration point.
      *
+     * @param realm optional realm; authenticated requests remain bound to their effective realm
      * @return root types list and count (same shape as QueryGatewayResource.listRootTypes)
      */
     @GET
     @Path("/schema")
     @FunctionalAction("listSchema")
-    public QueryGatewayResource.RootTypesResponse schema() {
-        return queryGatewayResource.listRootTypes();
+    public QueryGatewayResource.RootTypesResponse schema(@QueryParam("realm") String realm) {
+        return queryGatewayResource.listRootTypes(realm);
     }
 
     /**

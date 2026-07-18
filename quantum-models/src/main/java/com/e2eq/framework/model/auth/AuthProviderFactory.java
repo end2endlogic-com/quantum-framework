@@ -16,7 +16,7 @@ import java.util.Optional;
 @ApplicationScoped
 public class AuthProviderFactory {
 
-    public static final String DEFAULT_AUTH_PROVIDER_CHAIN = "custom,oidc";
+    public static final String DEFAULT_AUTH_PROVIDER_CHAIN = "custom";
 
     @ConfigProperty(name = "auth.provider", defaultValue = DEFAULT_AUTH_PROVIDER_CHAIN)
     String configuredAuthProviders; // supports comma-separated list (for example "custom,oidc")
@@ -31,14 +31,7 @@ public class AuthProviderFactory {
      * Backward compatible — single-value config works as before.
      */
     public AuthProvider getAuthProvider() {
-        for (String providerName : getConfiguredProviderNames()) {
-            Optional<AuthProvider> provider = findProviderByName(providerName);
-            if (provider.isPresent()) {
-                return provider.get();
-            }
-        }
-        throw new IllegalArgumentException(String.format(
-                "None of the configured auth providers are available: %s", getConfiguredProviderNames()));
+        return getProviderByName(getConfiguredProviderNames().get(0));
     }
 
     public List<String> getConfiguredProviderNames() {
@@ -90,35 +83,38 @@ public class AuthProviderFactory {
      *
      * <p>Resolution order:
      * <ol>
-     *   <li>Explicit request provider, when supplied. This disables fallback.</li>
-     *   <li>Credential-level provider override, when supplied. This must exist.</li>
-     *   <li>Configured provider list from {@code auth.provider}, in order. Missing
-     *       configured providers are skipped so open-source services can list optional
-     *       enterprise providers without depending on their jars.</li>
+     *   <li>Explicit request provider chain, when supplied. This replaces the configured
+     *       chain and is tried in the caller-supplied order.</li>
+     *   <li>Configured provider list from {@code auth.provider}, in order.</li>
      * </ol>
+     * Every named provider must be available. Configuration errors fail immediately
+     * rather than changing authentication semantics through silent provider skipping.
      */
-    public List<AuthProvider> getLoginProviders(String requestedProviderName, String credentialProviderName) {
-        if (requestedProviderName != null && !requestedProviderName.isBlank()) {
-            return List.of(getProviderByName(requestedProviderName));
+    public List<AuthProvider> getLoginProviders(String requestedProviderNames) {
+        List<String> providerNames = requestedProviderNames == null || requestedProviderNames.isBlank()
+                ? getConfiguredProviderNames()
+                : parseProviderNames(requestedProviderNames);
+        if (providerNames.isEmpty()) {
+            throw new IllegalArgumentException("The requested authentication provider chain is empty");
         }
 
         List<AuthProvider> providers = new ArrayList<>();
-        if (credentialProviderName != null && !credentialProviderName.isBlank()) {
-            providers.add(getProviderByName(credentialProviderName));
-        }
-
-        LinkedHashSet<String> configuredNames = new LinkedHashSet<>(getConfiguredProviderNames());
-        if (credentialProviderName != null && !credentialProviderName.isBlank()) {
-            configuredNames.removeIf(name -> name.equalsIgnoreCase(credentialProviderName.trim()));
-        }
-        for (String name : configuredNames) {
-            findProviderByName(name).ifPresent(providers::add);
-        }
-        if (providers.isEmpty()) {
-            throw new IllegalArgumentException(String.format(
-                    "None of the configured auth providers are available: %s", getConfiguredProviderNames()));
+        for (String providerName : providerNames) {
+            providers.add(getProviderByName(providerName));
         }
         return providers;
+    }
+
+    private List<String> parseProviderNames(String providerNames) {
+        LinkedHashSet<String> names = new LinkedHashSet<>();
+        if (providerNames != null) {
+            for (String part : providerNames.split(",")) {
+                if (part != null && !part.trim().isBlank()) {
+                    names.add(part.trim());
+                }
+            }
+        }
+        return new ArrayList<>(names);
     }
 
     /**
@@ -142,20 +138,23 @@ public class AuthProviderFactory {
     }
 
     /**
-     * Resolve provider by JWT issuer claim. Iterates configured providers
-     * and matches against their getIssuer(). Falls back to default provider.
+     * Resolve provider by JWT issuer claim. Unknown or missing issuers fail closed;
+     * callers that intentionally want the configured default must call
+     * {@link #getAuthProvider()} explicitly.
      */
     public AuthProvider getProviderForIssuer(String issuer) {
-        if (issuer == null) return getAuthProvider();
+        if (issuer == null || issuer.isBlank()) {
+            throw new IllegalArgumentException("JWT issuer is required to resolve an authentication provider");
+        }
 
         for (String providerName : getConfiguredProviderNames()) {
-            Optional<AuthProvider> provider = findProviderByName(providerName);
-            if (provider.isPresent() && issuer.equals(provider.get().getIssuer())) {
-                return provider.get();
+            AuthProvider provider = getProviderByName(providerName);
+            if (issuer.equals(provider.getIssuer())) {
+                return provider;
             }
         }
-        // No match — fall back to default provider
-        return getAuthProvider();
+        throw new IllegalArgumentException(String.format(
+                "No configured authentication provider matches issuer '%s'", issuer));
     }
 
     public UserManagement getUserManager() {

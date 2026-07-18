@@ -6,9 +6,7 @@ import dev.morphia.Datastore;
 import dev.morphia.EntityListener;
 import dev.morphia.annotations.PrePersist;
 import io.quarkus.logging.Log;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.bson.Document;
-import org.jboss.logging.Logger;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -19,9 +17,6 @@ public class PermissionRuleInterceptor implements EntityListener {
 
    @Inject
    RuleContext ruleContext;
-
-   @ConfigProperty(name = "quantum.test.seeding", defaultValue = "false")
-   boolean testSeedingBypass;
 
    @Override
    public boolean hasAnnotation(Class type) {
@@ -36,13 +31,7 @@ public class PermissionRuleInterceptor implements EntityListener {
       // Check that we have the permission to write
       // should do the permission check here.
 
-      // Test-only bypass to allow seed import without full permission wiring
-      if (testSeedingBypass) {
-         if (Log.isDebugEnabled()) Log.debugf("[PermissionRuleInterceptor] test seeding bypass enabled; skipping check for %s", entity.getClass().getSimpleName());
-         return;
-      }
-
-      if (SecurityContext.isIgnoringRules()) {
+       if (SecurityContext.isIgnoringRules()) {
          if (Log.isDebugEnabled()) {
             Log.debugf("[PermissionRuleInterceptor] ignore-rules mode enabled; skipping check for %s", entity.getClass().getSimpleName());
          }
@@ -50,43 +39,37 @@ public class PermissionRuleInterceptor implements EntityListener {
       }
 
       if (SecurityContext.getResourceContext().isPresent()) {
-         // Bypass when a test seeder marks the operation explicitly as a seed write
-         ResourceContext rc = SecurityContext.getResourceContext().get();
-         if (rc.getAction() != null && rc.getAction().equalsIgnoreCase("seed")) {
-            if (Log.isDebugEnabled()) Log.debugf("[PermissionRuleInterceptor] bypass for action=seed for fd:%s, id:%s", rc.getFunctionalDomain(), rc.getResourceId());
-            return;
-         }
-         if (!(SecurityContext.getResourceContext().get().getAction().equalsIgnoreCase("save") ||
-                 SecurityContext.getResourceContext().get().getAction().equalsIgnoreCase("update") ||
-                 SecurityContext.getResourceContext().get().getAction().equalsIgnoreCase("delete") ||
-                  SecurityContext.getResourceContext().get().getAction().equalsIgnoreCase("write") ||
-                 SecurityContext.getResourceContext().get().getAction().equals("*"))) {
-            if (Log.isEnabled(Logger.Level.WARN))
-               //  throw new RuntimeException("Configuration error, post persist called but action expected to be save or update and is:" + SecurityContext.getResourceContext().get().getAction());
-               Log.debugf("pre persist called but action expected to be save or update and is:%s" , SecurityContext.getResourceContext().get().getAction());
-
-         }
-         doCheck();
-      } else {
-         Log.warnf("No Resource Context found there for no permission check executed for entity:%s" , entity.getClass().getName() + " Document:" + document.toJson());
-      }
+          ResourceContext rc = SecurityContext.getResourceContext().get();
+          String action = rc.getAction();
+           if (action == null || !(action.equalsIgnoreCase("create")
+                   || action.equalsIgnoreCase("save")
+                   || action.equalsIgnoreCase("update")
+                   || action.equalsIgnoreCase("delete")
+                   || action.equalsIgnoreCase("apply")
+                   || action.equalsIgnoreCase("write")
+                  || action.equals("*"))) {
+             throw new SecurityException("Persistence callback requires an explicit write action; received: " + action);
+          }
+          doCheck();
+       } else {
+          throw new SecurityException("Persistence callback has no ResourceContext for entity "
+                  + entity.getClass().getName() + "; use SecurityCallScope for privileged internal writes");
+       }
    }
 
    void doCheck() {
       Optional<PrincipalContext> opPrincipalContext = SecurityContext.getPrincipalContext();
       Optional<ResourceContext> opResourceContext = SecurityContext.getResourceContext();
-      if (opPrincipalContext.isPresent())
-      {
-         if (opResourceContext.isPresent()) {
-            PrincipalContext pContext = opPrincipalContext.get();
-            ResourceContext rContext = opResourceContext.get();
-            SecurityCheckResponse response = ruleContext.checkRules(pContext, rContext);
-            if (!response.getFinalEffect().equals(RuleEffect.ALLOW)) {
-               Log.error(response.toString());
-               throw new SecurityCheckException(response);
-            }
-         }
-      }
+       if (opPrincipalContext.isEmpty() || opResourceContext.isEmpty()) {
+          throw new SecurityException("Permission evaluation requires explicit principal and resource contexts");
+       }
+       PrincipalContext pContext = opPrincipalContext.get();
+       ResourceContext rContext = opResourceContext.get();
+       SecurityCheckResponse response = ruleContext.checkRules(pContext, rContext);
+       if (!response.getFinalEffect().equals(RuleEffect.ALLOW)) {
+          Log.error(response.toString());
+          throw new SecurityCheckException(response);
+       }
    }
 
   /* @Override
