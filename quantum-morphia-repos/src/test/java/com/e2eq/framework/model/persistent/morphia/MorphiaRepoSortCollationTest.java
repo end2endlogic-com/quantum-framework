@@ -2,6 +2,7 @@ package com.e2eq.framework.model.persistent.morphia;
 
 import com.e2eq.framework.model.persistent.base.SortField;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.mongodb.client.model.Collation;
 import com.mongodb.client.model.CollationStrength;
 import dev.morphia.query.FindOptions;
@@ -9,6 +10,7 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -41,12 +43,14 @@ class MorphiaRepoSortCollationTest {
      */
     static class TestRepo extends MorphiaRepo<SortCollationTestModel> {
         TestRepo(String locale, int strength) {
-            this.sortCollationLocale = locale;
+            this.sortCollationLocale = Optional.ofNullable(locale);
             this.sortCollationStrength = strength;
         }
 
         FindOptions callBuildFindOptions(List<SortField> sortFields) {
-            return buildFindOptions(0, 0, sortFields, null);
+            try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+                return buildFindOptions(0, 0, sortFields, null);
+            }
         }
     }
 
@@ -64,7 +68,9 @@ class MorphiaRepoSortCollationTest {
         }
 
         FindOptions callBuildFindOptions(List<SortField> sortFields) {
-            return buildFindOptions(0, 0, sortFields, null);
+            try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+                return buildFindOptions(0, 0, sortFields, null);
+            }
         }
     }
 

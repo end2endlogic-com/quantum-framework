@@ -42,7 +42,14 @@ public class AgentExecuteHandler {
 
         return switch (tool) {
             case "query_rootTypes" -> {
-                QueryGatewayResource.RootTypesResponse r = queryGatewayResource.listRootTypes();
+                Object realmValue = arguments.get("realm");
+                if (realmValue != null && !(realmValue instanceof String)) {
+                    yield Response.status(Response.Status.BAD_REQUEST)
+                            .entity(Map.of("error", "InvalidRealm", "message", "realm must be a string"))
+                            .build();
+                }
+                QueryGatewayResource.RootTypesResponse r =
+                        queryGatewayResource.listRootTypes((String) realmValue);
                 yield Response.ok(r).build();
             }
             case "query_plan" -> {

@@ -1,27 +1,24 @@
 package com.e2eq.ontology.policy.rest;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.persistent.base.ProjectionField;
+import com.e2eq.framework.model.persistent.base.SortField;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
-import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
-import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
-import com.e2eq.framework.model.persistent.morphia.planner.PlannedQuery;
-import com.e2eq.framework.model.persistent.morphia.planner.PlannerResult;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.rest.models.Collection;
 import com.e2eq.framework.rest.resources.BaseResource;
+import com.e2eq.framework.rest.query.FilterUtils;
 import com.e2eq.ontology.mongo.OntologyContextEnricherMongo;
 import com.e2eq.ontology.policy.ListQueryRewriter;
 import com.mongodb.client.model.Collation;
-import dev.morphia.Datastore;
-import dev.morphia.annotations.Entity;
 import io.quarkus.logging.Log;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.Response;
+import org.bson.Document;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
-import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -55,9 +52,6 @@ public abstract class OntologyAwareResource<T extends UnversionedBaseModel, R ex
 
     @Inject
     OntologyContextEnricherMongo ontologyContextEnricher;
-
-    @Inject
-    MorphiaDataStoreWrapper morphiaDataStoreWrapper;
 
     @ConfigProperty(name = "feature.ontologyList.aggregation.enabled", defaultValue = "false")
     boolean ontologyListAggregationEnabled;
@@ -133,9 +127,35 @@ public abstract class OntologyAwareResource<T extends UnversionedBaseModel, R ex
 
         String fullFilter = buildFilterWithExpand(expand, filter);
         if (supportsExpandInOntologyList() && expand != null && !expand.isBlank() && ontologyListAggregationEnabled) {
-            return tryAggregationList(headers, skip, limit, fullFilter, sort, projection);
+            return getGovernedExpandedList(headers, skip, limit, fullFilter, sort, projection);
         }
         return super.getList(headers, skip, limit, fullFilter, sort, projection);
+    }
+
+    /**
+     * Executes an expand through the repository's governed aggregation contract.  The repository,
+     * rather than the REST layer, is responsible for applying the root entity policy and the row,
+     * relationship, and field policies for every joined entity before any document is returned.
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private Collection<T> getGovernedExpandedList(HttpHeaders headers,
+                                                   int skip,
+                                                   int limit,
+                                                   String query,
+                                                   String sort,
+                                                   String projection) {
+        String realmId = headers == null ? null : headers.getHeaderString("X-Realm");
+        List<SortField> sortFields = convertToSortField(sort);
+        List<ProjectionField> projectionFields = FilterUtils.convertProjectionFields(projection);
+        List<Document> rows = repo.getSecuredAggregationDocuments(
+                realmId, skip, limit, query, sortFields, projectionFields);
+
+        // Expanded rows are BSON documents because they may contain fields from related entity
+        // types that are not members of T.  Collection's generic parameter is erased at the REST
+        // boundary, so retain the existing endpoint signature while preserving the joined shape.
+        Collection<T> collection = new Collection((List) rows, skip, limit, query, (long) rows.size(), sortFields);
+        collection.setRealm(realmId == null ? repo.getDatabaseName() : realmId);
+        return collection;
     }
 
     /** Backward-compatible overload without expand. */
@@ -159,83 +179,6 @@ public abstract class OntologyAwareResource<T extends UnversionedBaseModel, R ex
         }
         String expandClause = "expand(" + paths + ")";
         return mergeFilters(expandClause, filter);
-    }
-
-    @SuppressWarnings("unchecked")
-    private Collection<T> tryAggregationList(HttpHeaders headers, int skip, int limit, String query, String sort, String projection) {
-        List<com.e2eq.framework.model.persistent.morphia.planner.LogicalPlan.SortSpec.Field> sortFields = toPlannerSortFields(sort);
-        PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(query, modelClass, limit, skip, sortFields);
-        if (planned.getMode() != PlannerResult.Mode.AGGREGATION) {
-            return super.getList(headers, skip, limit, query, sort, projection);
-        }
-        var pipeline = planned.getAggregation();
-        boolean hasUnknownFrom = pipeline.stream()
-                .filter(d -> d instanceof org.bson.Document)
-                .map(d -> (org.bson.Document) d)
-                .filter(doc -> doc.containsKey("$lookup"))
-                .map(doc -> doc.get("$lookup", org.bson.Document.class))
-                .anyMatch(lookup -> "__unknown__".equals(lookup != null ? lookup.getString("from") : null));
-        if (hasUnknownFrom) {
-            Log.warnf("Ontology list aggregation skipped: pipeline has unresolved $lookup.from for %s", modelClass.getSimpleName());
-            return super.getList(headers, skip, limit, query, sort, projection);
-        }
-        String realm = resolveRealm(headers);
-        Datastore ds = morphiaDataStoreWrapper.getDataStore(realm);
-        String rootCollection = resolveCollectionName(modelClass);
-        List<org.bson.conversions.Bson> clean = new ArrayList<>();
-        for (org.bson.conversions.Bson s : pipeline) {
-            if (s instanceof org.bson.Document d && d.containsKey("$plannedExpandPaths")) {
-                continue;
-            }
-            clean.add(s);
-        }
-        int effLimit = limit > 0 ? limit : 50;
-        int effSkip = Math.max(0, skip);
-        com.mongodb.client.AggregateIterable<org.bson.Document> aggregate = ds.getDatabase()
-                .getCollection(rootCollection)
-                .aggregate(clean, org.bson.Document.class);
-        Collation sortCollation = resolveAggregationSortCollation(sortFields);
-        if (sortCollation != null) {
-            aggregate = aggregate.collation(sortCollation);
-        }
-        List<org.bson.Document> rows = aggregate.into(new ArrayList<>());
-        Collection<org.bson.Document> col = new Collection<>(rows, effSkip, effLimit, query, (long) rows.size());
-        String realmId = headers.getHeaderString("X-Realm");
-        col.setRealm(realmId == null ? repo.getDatabaseName() : realmId);
-        @SuppressWarnings("unchecked")
-        Collection<T> result = (Collection<T>) (Collection<?>) col;
-        return result;
-    }
-
-    private List<com.e2eq.framework.model.persistent.morphia.planner.LogicalPlan.SortSpec.Field> toPlannerSortFields(String sort) {
-        if (sort == null || sort.isBlank()) return null;
-        List<com.e2eq.framework.model.persistent.morphia.planner.LogicalPlan.SortSpec.Field> out = new ArrayList<>();
-        for (String part : sort.split(",")) {
-            String p = part.trim();
-            if (p.isEmpty()) continue;
-            int dir = p.startsWith("-") ? -1 : 1;
-            String name = p.startsWith("-") || p.startsWith("+") ? p.substring(1) : p;
-            if (!name.isBlank()) {
-                out.add(new com.e2eq.framework.model.persistent.morphia.planner.LogicalPlan.SortSpec.Field(name, dir));
-            }
-        }
-        return out.isEmpty() ? null : out;
-    }
-
-    private String resolveRealm(HttpHeaders headers) {
-        String realm = headers.getHeaderString("X-Realm");
-        if (realm != null && !realm.isBlank()) return realm;
-        return SecurityContext.getPrincipalContext()
-                .map(pc -> pc.getDefaultRealm())
-                .orElse(repo.getDatabaseName());
-    }
-
-    private String resolveCollectionName(Class<? extends UnversionedBaseModel> root) {
-        Entity e = root.getAnnotation(Entity.class);
-        if (e != null && e.value() != null && !e.value().isBlank()) {
-            return e.value();
-        }
-        return root.getSimpleName();
     }
 
     /**
@@ -303,6 +246,9 @@ public abstract class OntologyAwareResource<T extends UnversionedBaseModel, R ex
     private String mergeFilters(String base, String clause) {
         if (base == null || base.isBlank()) {
             return clause;
+        }
+        if (clause == null || clause.isBlank()) {
+            return base;
         }
         return "(" + base + ") && " + clause;
     }

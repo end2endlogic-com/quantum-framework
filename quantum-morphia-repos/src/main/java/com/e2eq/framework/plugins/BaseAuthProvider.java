@@ -17,7 +17,7 @@ public class BaseAuthProvider implements UserManagementBase {
    CredentialRepo credentialRepo;
 
    @Inject
-   SecurityUtils securityUtils;
+   protected SecurityUtils securityUtils;
 
 
    @Override

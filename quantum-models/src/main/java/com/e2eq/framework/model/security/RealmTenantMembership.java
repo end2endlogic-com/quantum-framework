@@ -28,6 +28,9 @@ public class RealmTenantMembership extends BaseModel {
    protected String provisioningMode;
    protected String participationStatus;
 
+   public static final String PARTICIPATION_STATUS_ACTIVE = "ACTIVE";
+   public static final String PARTICIPATION_STATUS_SUSPENDED = "SUSPENDED";
+
    /**
     * Membership role of this org/account within the realm (B4 identity model;
     * realm-membership ADR): exactly one OWNER per realm (lifecycle authority:

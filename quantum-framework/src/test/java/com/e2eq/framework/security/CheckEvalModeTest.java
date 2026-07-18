@@ -61,8 +61,10 @@ public class CheckEvalModeTest extends BaseRepoTest {
                 .withFinalRule(false)
                 .build();
         p.getRules().add(r);
-        policyRepo.save(realm, p);
-        ruleContext.reloadFromRepo(realm);
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+            policyRepo.save(realm, p);
+            ruleContext.reloadFromRepo(realm);
+        }
     }
 
     private PrincipalContext pc(String realm) {

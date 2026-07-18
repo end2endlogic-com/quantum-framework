@@ -14,6 +14,7 @@ import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import com.e2eq.framework.model.persistent.morphia.RealmTenantMembershipRepo;
 import com.e2eq.framework.model.persistent.morphia.UserGroupRepo;
 import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
+import com.e2eq.framework.model.persistent.morphia.UserRealmRoleRepo;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.security.Realm;
@@ -21,6 +22,7 @@ import com.e2eq.framework.model.security.RealmTenantMembership;
 import com.e2eq.framework.model.security.RealmSetupStatus;
 import com.e2eq.framework.model.security.UserGroup;
 import com.e2eq.framework.model.security.UserProfile;
+import com.e2eq.framework.model.security.UserRealmRole;
 import com.e2eq.framework.model.auth.AuthProviderFactory;
 import com.e2eq.framework.model.auth.UserManagement;
 import com.e2eq.framework.service.seed.*;
@@ -29,7 +31,6 @@ import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.util.EnvConfigUtils;
 import com.mongodb.MongoCommandException;
-import com.mongodb.client.MongoClient;
 import dev.morphia.Datastore;
 import dev.morphia.query.filters.Filters;
 import io.quarkus.logging.Log;
@@ -68,8 +69,7 @@ public class TenantProvisioningService implements TenantLifecycle {
     @Inject RealmTenantMembershipRepo realmTenantMembershipRepo;
     @Inject UserProfileRepo userProfileRepo;
     @Inject UserGroupRepo userGroupRepo;
-    @Inject MongoClient mongoClient;
-
+    @Inject UserRealmRoleRepo userRealmRoleRepo;
     @Inject SeedLoaderService seedLoaderService;
 
     @Inject SeedDiscoveryService seedDiscoveryService;
@@ -285,9 +285,29 @@ public class TenantProvisioningService implements TenantLifecycle {
 
     public void ensureRealmCatalog(ProvisioningContext context) {
         Log.infof("  computed realmId: %s", context.getRealmId());
-        Optional<Realm> existingOpt = realmCatalog.findByEmailDomain(
+        Optional<Realm> existingByEmailDomain = realmCatalog.findByEmailDomain(
             context.getCommand().getTenantEmailDomain()
         );
+        Optional<Realm> existingByRefName = realmCatalog.findByRefName(context.getRealmId());
+
+        if (existingByEmailDomain.isPresent() && existingByRefName.isPresent()
+            && !Objects.equals(existingByEmailDomain.get().getRefName(), existingByRefName.get().getRefName())) {
+            throw new IllegalStateException(String.format(
+                "Realm catalog conflict: email domain '%s' resolves to realm '%s', but computed realm id '%s' "
+                    + "resolves to a different catalog entry",
+                context.getCommand().getTenantEmailDomain(),
+                existingByEmailDomain.get().getRefName(),
+                context.getRealmId()
+            ));
+        }
+
+        // A realm id is derived from the tenant domain. Distinct historical domain spellings can
+        // collapse to the same id (for example, dots and hyphens). Always inspect both keys so a
+        // provisioning retry fails with explicit differences instead of attempting a second
+        // registration against the same realm/database identity.
+        Optional<Realm> existingOpt = existingByEmailDomain.isPresent()
+            ? existingByEmailDomain
+            : existingByRefName;
 
         if (existingOpt.isPresent()) {
             Log.warnf("Realm %s already exists in the realm collection in realm %s", context.getRealmId(), context.getSystemRealm());
@@ -420,6 +440,13 @@ public class TenantProvisioningService implements TenantLifecycle {
             context.getDesiredRoles(),
             context.getDomainContext()
         );
+        ensureUserRealmRole(
+            context.getSystemRealm(),
+            context.getRealmId(),
+            context.getCommand().getAdminUserId(),
+            context.getDesiredRoles(),
+            context.getDomainContext()
+        );
 
         if (!context.getBaselineAdminUserId().equalsIgnoreCase(context.getCommand().getAdminUserId())) {
             ensureCredentialExists(
@@ -438,6 +465,13 @@ public class TenantProvisioningService implements TenantLifecycle {
                 context.getDesiredRoles(),
                 context.getDomainContext()
             );
+            ensureUserRealmRole(
+                context.getSystemRealm(),
+                context.getRealmId(),
+                context.getBaselineAdminUserId(),
+                context.getDesiredRoles(),
+                context.getDomainContext()
+            );
         }
 
         ensureCredentialExists(
@@ -452,6 +486,13 @@ public class TenantProvisioningService implements TenantLifecycle {
         ensureUserProfileInRealm(
             context.getRealmId(),
             context.getDemoUserId(),
+            context.getDemoUserId(),
+            Set.of("user"),
+            context.getDomainContext()
+        );
+        ensureUserRealmRole(
+            context.getSystemRealm(),
+            context.getRealmId(),
             context.getDemoUserId(),
             Set.of("user"),
             context.getDomainContext()
@@ -634,6 +675,47 @@ public class TenantProvisioningService implements TenantLifecycle {
         userGroupRepo.save(realmId, group);
     }
 
+    /**
+     * Reconciles the system-plane membership consumed by token issuance. Credentials are
+     * global identities; their flat roles describe only the compatibility/default realm.
+     * Every provisioned tenant therefore needs an explicit per-realm assignment or a login
+     * for that realm will correctly receive no tenant roles.
+     */
+    private void ensureUserRealmRole(String systemRealm,
+                                     String realmId,
+                                     String userId,
+                                     Set<String> roles,
+                                     DomainContext domainContext) {
+        CredentialUserIdPassword credential = systemDirectory.findCredentialByUserId(userId)
+            .orElseThrow(() -> new IllegalStateException(
+                "Credential was not found while creating realm membership for userId: " + userId
+            ));
+
+        UserRealmRole assignment = userRealmRoleRepo
+            .findAssignmentForRealmWithIgnoreRules(userId, realmId, systemRealm)
+            .orElseGet(() -> UserRealmRole.builder()
+                .refName("user-realm-role:" + userId + ":" + realmId)
+                .displayName(userId + " in " + realmId)
+                .userId(userId)
+                .realmRefName(realmId)
+                .build());
+
+        assignment.setUserId(userId);
+        assignment.setSubject(credential.getSubject());
+        assignment.setRealmRefName(realmId);
+        assignment.setRoles(roles.stream().sorted(String.CASE_INSENSITIVE_ORDER).toList());
+        assignment.setSponsoringOrgRefName(domainContext.getOrgRefName());
+        assignment.setStatus(UserRealmRole.STATUS_ACTIVE);
+        assignment.setDataDomain(DataDomain.builder()
+            .orgRefName(domainContext.getOrgRefName())
+            .accountNum(domainContext.getAccountId())
+            .tenantId(domainContext.getTenantId())
+            .ownerId(userId)
+            .build());
+
+        userRealmRoleRepo.save(systemRealm, assignment);
+    }
+
     private void upsertUserProfileReference(List<EntityReference> members, String userId) {
         if (userId == null || userId.isBlank()) {
             return;
@@ -701,64 +783,11 @@ public class TenantProvisioningService implements TenantLifecycle {
         if (normalizedRealmId.isBlank()) {
             throw new IllegalArgumentException("realmId cannot be blank");
         }
-        if (realmCatalog.systemRealmId().equalsIgnoreCase(normalizedRealmId)) {
-            throw new IllegalStateException("Refusing to delete the configured system realm");
-        }
-
-        String systemRealm = realmCatalog.systemRealmId();
-        Realm realm = realmCatalog.findByRefName(normalizedRealmId)
-                .orElseThrow(() -> new IllegalStateException("Realm was not found in the system catalog: " + normalizedRealmId));
-
-        DeleteResult result = new DeleteResult();
-        result.realmId = normalizedRealmId;
-
-        Datastore systemDatastore = credentialRepo.getMorphiaDataStoreWrapper().getDataStore(systemRealm);
-        List<CredentialUserIdPassword> tenantCredentials = systemDatastore.find(CredentialUserIdPassword.class)
-                .filter(Filters.or(
-                        Filters.eq("domainContext.defaultRealm", normalizedRealmId),
-                        Filters.eq("domainContext.tenantId", realm.getEmailDomain()),
-                        Filters.eq("userId", realm.getDefaultAdminUserId())
-                ))
-                .iterator()
-                .toList();
-
-        for (CredentialUserIdPassword credential : tenantCredentials) {
-            try {
-                credentialRepo.delete(systemRealm, credential);
-                result.deletedCredentialCount++;
-            } catch (Exception e) {
-                String warning = String.format("Failed to delete credential %s: %s", credential.getUserId(), e.getMessage());
-                Log.warn(warning);
-                result.addWarning(warning);
-            }
-        }
-
-        try {
-            mongoClient.getDatabase(normalizedRealmId).drop();
-            result.databaseDropped = true;
-        } catch (Exception e) {
-            String warning = String.format("Failed to drop database %s: %s", normalizedRealmId, e.getMessage());
-            Log.warn(warning);
-            result.addWarning(warning);
-        }
-
-        try {
-            Datastore systemRealmDatastore = realmRepo.getMorphiaDataStoreWrapper().getDataStore(systemRealm);
-            long deletedCount = systemRealmDatastore.find(Realm.class)
-                    .filter(Filters.eq("_id", realm.getId()))
-                    .delete()
-                    .getDeletedCount();
-            result.realmCatalogDeleted = deletedCount > 0;
-            if (!result.realmCatalogDeleted) {
-                result.addWarning("Realm catalog entry was not deleted from the system catalog: " + normalizedRealmId);
-            }
-        } catch (Exception e) {
-            String warning = String.format("Failed to delete realm catalog entry %s: %s", normalizedRealmId, e.getMessage());
-            Log.warn(warning);
-            result.addWarning(warning);
-        }
-
-        return result;
+        throw new UnsupportedOperationException(
+            "Direct destructive tenant deletion is disabled. Use the governed realm lifecycle "
+                + "decommission workflow; hard archive-and-drop is available only through its "
+                + "separately authorized system-administrator workflow."
+        );
     }
 
     @FunctionalInterface

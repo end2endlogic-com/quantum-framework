@@ -364,10 +364,11 @@ public class TestRuleContext extends BaseRepoTest {
                 .withFinalRule(false)
                 .build();
         userOwnResourcesPolicy.getRules().add(viewOwnRule);
-        policyRepo.save(testRealm, userOwnResourcesPolicy);
-
-        // Reload so the just-seeded policy (plus default system rules) is loaded for the test realm.
-        injectedRuleContext.reloadFromRepo(testRealm);
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+            policyRepo.save(testRealm, userOwnResourcesPolicy);
+            // Reload so the just-seeded policy (plus default system rules) is loaded for the test realm.
+            injectedRuleContext.reloadFromRepo(testRealm);
+        }
 
         // test that an admin can view system admins profile.
         // Admin should have access via the adminTenantPolicy from seed data
@@ -477,8 +478,10 @@ public class TestRuleContext extends BaseRepoTest {
         userPolicy.getRules().add(denyDelete);
 
         // Persist and hydrate
-        policyRepo.save(realm, userPolicy);
-        injectedRuleContext.reloadFromRepo(realm);
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+            policyRepo.save(realm, userPolicy);
+            injectedRuleContext.reloadFromRepo(realm);
+        }
 
         // Build principal and resource contexts
         String userId = testUtils.getTestUserId();
@@ -535,8 +538,10 @@ public class TestRuleContext extends BaseRepoTest {
                 .build();
         adminPolicy.getRules().add(adminAllowAll);
 
-        policyRepo.save(realm, adminPolicy);
-        injectedRuleContext.reloadFromRepo(realm);
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+            policyRepo.save(realm, adminPolicy);
+            injectedRuleContext.reloadFromRepo(realm);
+        }
 
         // Build principal and a random resource context
         PrincipalContext admin = new PrincipalContext.Builder()

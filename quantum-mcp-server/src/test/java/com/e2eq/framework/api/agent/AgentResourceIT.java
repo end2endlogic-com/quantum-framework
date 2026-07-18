@@ -119,6 +119,18 @@ public class AgentResourceIT {
     }
 
     @Test
+    public void execute_query_rootTypes_rejects_non_string_realm() {
+        given()
+            .contentType(ContentType.JSON)
+            .body("{\"tool\":\"query_rootTypes\",\"arguments\":{\"realm\":42}}")
+        .when()
+            .post("/api/agent/execute")
+        .then()
+            .statusCode(400)
+            .body("error", is("InvalidRealm"));
+    }
+
+    @Test
     public void execute_query_plan_returns_plan() {
         given()
             .contentType(ContentType.JSON)
