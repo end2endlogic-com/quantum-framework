@@ -1,11 +1,13 @@
 package com.e2eq.ontology.repo;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.ontology.core.OntologyRegistry.*;
 import com.e2eq.ontology.model.TenantOntologyTBox;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -24,9 +26,11 @@ public class TenantOntologyTBoxRepoTest {
     private DataDomain tenant1;
     private DataDomain tenant2;
     private TBox sampleTBox;
+    private SecurityCallScope.Scope ignoredRulesScope;
 
     @BeforeEach
     void setup() {
+        ignoredRulesScope = SecurityCallScope.openIgnoringRules();
         repo.deleteAll();
         
         tenant1 = new DataDomain("org1", "acc1", "tenant1", 0, "user1");
@@ -42,6 +46,13 @@ public class TenantOntologyTBoxRepoTest {
             Map.of("knows", knowsProperty),
             List.of()
         );
+    }
+
+    @AfterEach
+    void cleanup() {
+        if (ignoredRulesScope != null) {
+            ignoredRulesScope.close();
+        }
     }
 
     @Test

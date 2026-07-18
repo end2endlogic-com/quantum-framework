@@ -271,6 +271,21 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
    List<T> getListByQuery(@NotNull Datastore datastore, int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields);
 
    /**
+    * Executes an expand/aggregation query with row, field, and relationship policy
+    * applied to both the root collection and every declared join target.
+    */
+   default List<org.bson.Document> getSecuredAggregationDocuments(
+           @Nullable String realmId,
+           int skip,
+           int limit,
+           @NotNull String query,
+           @Nullable List<SortField> sortFields,
+           @Nullable List<ProjectionField> projectionFields) {
+      throw new UnsupportedOperationException(
+              "Governed aggregation is not implemented by repository " + getClass().getName());
+   }
+
+   /**
     * Returns entities based on the given filters and sort fields in the default realm.
     * @param skip    must be 0 or greater
     * @param limit   can be 0 or negative to return all; positive for page size

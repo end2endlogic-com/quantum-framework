@@ -130,9 +130,10 @@ public class MorphiaUtils {
    public static Map<String, String> createStandardVariableMapFrom(PrincipalContext pcontext, ResourceContext rcontext) {
       Map<String, String> variableMap = new HashMap<>();
       variableMap.put("principalId", pcontext.getUserId());
-      variableMap.put("pAccountId", pcontext.getDataDomain().getAccountNum());
-      variableMap.put("pTenantId", pcontext.getDataDomain().getTenantId());
-      variableMap.put("systemTenantId", pcontext.getDataDomain().getTenantId()); // fallback for legacy rules
+       variableMap.put("pAccountId", pcontext.getDataDomain().getAccountNum());
+       variableMap.put("pTenantId", pcontext.getDataDomain().getTenantId());
+       variableMap.put("pDataSegment", String.valueOf(pcontext.getDataDomain().getDataSegment()));
+       variableMap.put("systemTenantId", pcontext.getDataDomain().getTenantId()); // fallback for legacy rules
       variableMap.put("ownerId", pcontext.getDataDomain().getOwnerId());
       variableMap.put("orgRefName", pcontext.getDataDomain().getOrgRefName());
       variableMap.put("resourceId", rcontext.getResourceId());

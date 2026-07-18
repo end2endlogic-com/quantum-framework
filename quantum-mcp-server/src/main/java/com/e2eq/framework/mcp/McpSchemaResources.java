@@ -45,7 +45,7 @@ public class McpSchemaResources {
     @Resource(uri = "quantum://schema", description = "List all available entity types (root types) with class name, simple name, and collection name")
     ResourceResponse listSchema() {
         try {
-            QueryGatewayResource.RootTypesResponse rootTypes = queryGatewayResource.listRootTypes();
+            QueryGatewayResource.RootTypesResponse rootTypes = queryGatewayResource.listRootTypes(null);
             String json = objectMapper.writeValueAsString(rootTypes);
             return new ResourceResponse(List.of(
                     TextResourceContents.create("quantum://schema", json)));

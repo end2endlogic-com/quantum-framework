@@ -707,7 +707,7 @@ When you extend BaseAuthProvider, you inherit ready-to-use capabilities that red
 
 Best practices when deriving:
 
-* Always set the auth provider name in stored credentials so records can be traced to the correct provider.
+* Record the auth provider name in stored credentials as informational provenance. It tells callers which provider resolved the credential or token; it is not an authentication routing or authorization binding.
 * Reuse the role merge/remove patterns to avoid accidental role loss.
 * Prefer emitting precise exceptions (e.g., NotFound for missing users, SecurityException for access violations).
 
@@ -756,7 +756,7 @@ lastUpdate:: Timestamp for auditing and token invalidation strategies.
 area2RealmOverrides:: Optional map to route specific functional areas to different realms than the default (e.g., “Reporting” → analytics-realm).
 realmRegEx:: Optional regex to limit or override which realms this identity may act in; also used by impersonation/override flows.
 impersonateFilterScript:: Optional script indicating the filter/scope applied during impersonation so actions are constrained.
-authProviderName:: The name of the provider that owns this credential (e.g., “custom”, “oidc”), enabling multi-provider operations and audits.
+authProviderName:: Informational provenance naming the provider that resolved this credential or token (e.g., “custom”, “oidc”). Provider selection comes from an explicit request override or the ordered `auth.provider` configuration, never from this field.
 
 How DomainContext selects the realm for REST calls
 

@@ -2,11 +2,16 @@ package com.e2eq.framework.model.persistent.morphia.compiler.mongo;
 
 import com.e2eq.framework.model.persistent.morphia.metadata.JoinSpec;
 import com.e2eq.framework.model.persistent.morphia.planner.LogicalPlan;
+import dev.morphia.MorphiaDatastore;
+import dev.morphia.query.filters.Filter;
+import dev.morphia.query.filters.LogicalFilter;
+import dev.morphia.query.filters.RegexFilter;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * Mongo aggregation compiler (v1 incremental):
@@ -14,6 +19,16 @@ import java.util.List;
  * - Builds per-expand $lookup/$set/$project stages
  */
 public class MongoAggregationCompiler {
+
+    private final MorphiaDatastore datastore;
+
+    public MongoAggregationCompiler() {
+        this(null);
+    }
+
+    public MongoAggregationCompiler(MorphiaDatastore datastore) {
+        this.datastore = datastore;
+    }
 
     public List<Bson> compile(LogicalPlan plan) {
         List<Bson> pipeline = new ArrayList<>();
@@ -53,11 +68,15 @@ public class MongoAggregationCompiler {
             String path = e.path;
             String temp = tempAlias(path);
 
-            // Prefer JoinSpec if available
             JoinSpec j = e.join;
-            String from = (j != null && j.fromCollection != null && !j.fromCollection.isBlank()) ? j.fromCollection : "__unknown__";
-            String localIdExpr = (j != null && j.localIdExpr != null) ? j.localIdExpr : (stripArrayMarkers(path) + ".entityId");
-            String tenantField = (j != null) ? j.tenantField : null;
+            if (j == null || j.fromCollection == null || j.fromCollection.isBlank()
+                    || j.localIdExpr == null || j.localIdExpr.isBlank()) {
+                throw new IllegalArgumentException(
+                        "Expand path '" + path + "' has no complete join metadata; aggregation denied");
+            }
+            String from = j.fromCollection;
+            String localIdExpr = j.localIdExpr;
+            String tenantField = j.tenantField;
 
             Document letDoc = new Document(e.array ? "ids" : "id", "$" + localIdExpr);
             if (tenantField != null && !tenantField.isBlank()) {
@@ -132,48 +151,71 @@ public class MongoAggregationCompiler {
         return pipeline;
     }
 
-    // Minimal translator for common Morphia Filter operators to $match
-    private Document toMatch(dev.morphia.query.filters.Filter filter) {
+    /**
+     * Compiles a Morphia filter into a Mongo {@code $match} document.
+     * Unsupported filter shapes fail closed; they are never silently dropped.
+     */
+    public Document compileMatch(Filter filter) {
+        return toMatch(filter);
+    }
+
+    private Document toMatch(Filter filter) {
         if (filter == null) return null;
-        try {
-            String name = filter.getName();
-            String field = filter.getField();
-            Object value = filter.getValue();
-            if (name == null) return new Document();
-            // Equality can be emitted as direct field match for simplicity
-            switch (name) {
-                case "$eq":
-                    return new Document(field, value);
-                case "$ne":
-                    return new Document(field, new Document("$ne", value));
-                case "$gt":
-                    return new Document(field, new Document("$gt", value));
-                case "$gte":
-                    return new Document(field, new Document("$gte", value));
-                case "$lt":
-                    return new Document(field, new Document("$lt", value));
-                case "$lte":
-                    return new Document(field, new Document("$lte", value));
-                case "$in":
-                    return new Document(field, new Document("$in", value));
-                case "$nin":
-                    return new Document(field, new Document("$nin", value));
-                case "$exists":
-                    return new Document(field, new Document("$exists", value));
-                default:
-                    // Special handling for RegexFilter (Morphia)
-                    if (filter instanceof dev.morphia.query.filters.RegexFilter rf) {
-                        String f = rf.getField();
-                        Object v = rf.getValue();
-                        return new Document(f, new Document("$regex", v));
-                    }
-                    // Fallback: return empty to avoid emitting an invalid $match
-                    return new Document();
-            }
-        } catch (Throwable t) {
-            // Be conservative: on any unexpected shape, skip $match
-            return new Document();
+        String name = filter.getName();
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("Morphia filter has no operator; aggregation denied");
         }
+        if (filter instanceof LogicalFilter logical) {
+            List<Document> children = logical.filters().stream().map(this::toMatch).toList();
+            if (children.isEmpty()) {
+                throw new IllegalArgumentException("Logical filter " + name + " has no operands");
+            }
+            return new Document(name, children);
+        }
+
+        String field = datastore == null ? filter.getField() : filter.path(datastore.getMapper());
+        if (field == null || field.isBlank()) {
+            throw new IllegalArgumentException("Morphia filter " + name + " has no field; aggregation denied");
+        }
+        if (filter instanceof RegexFilter regex) {
+            Pattern pattern = regex.pattern();
+            if (pattern == null) {
+                throw new IllegalArgumentException("Regex filter for " + field + " has no pattern");
+            }
+            Document expression = new Document("$regex", pattern.pattern());
+            String options = regexOptions(pattern.flags());
+            if (!options.isEmpty()) {
+                expression.append("$options", options);
+            }
+            return new Document(field, filter.isNot() ? new Document("$not", expression) : expression);
+        }
+
+        Object value = datastore == null ? filter.getValue() : filter.getValue(datastore);
+        Document expression;
+        switch (name) {
+            case "$eq":
+                if (!filter.isNot()) {
+                    return new Document(field, value);
+                }
+                expression = new Document("$eq", value);
+                break;
+            case "$ne", "$gt", "$gte", "$lt", "$lte", "$in", "$nin", "$exists", "$size", "$all":
+                expression = new Document(name, value);
+                break;
+            default:
+                throw new IllegalArgumentException(
+                    "Unsupported Morphia filter operator '" + name + "' for aggregation; denied");
+        }
+        return new Document(field, filter.isNot() ? new Document("$not", expression) : expression);
+    }
+
+    private String regexOptions(int flags) {
+        StringBuilder options = new StringBuilder();
+        if ((flags & Pattern.CASE_INSENSITIVE) != 0) options.append('i');
+        if ((flags & Pattern.MULTILINE) != 0) options.append('m');
+        if ((flags & Pattern.DOTALL) != 0) options.append('s');
+        if ((flags & Pattern.COMMENTS) != 0) options.append('x');
+        return options.toString();
     }
 
     private static String tempAlias(String path) {

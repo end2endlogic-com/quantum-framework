@@ -40,6 +40,9 @@ public class TestRemoteSystemDirectoryClient {
                 e.setDisplayName("Acme");
                 e.setDatabaseName("acme-com");
                 e.setEmailDomain("acme.com");
+                e.setTenantId("acme.com");
+                e.setOrgRefName("acme");
+                e.setAccountNumber("0000000001");
                 return e;
             }
         });
@@ -47,6 +50,11 @@ public class TestRemoteSystemDirectoryClient {
         Assertions.assertTrue(realm.isPresent());
         Assertions.assertEquals("acme-com", realm.get().getRefName());
         Assertions.assertEquals("acme-com", realm.get().getDatabaseName());
+        Assertions.assertNotNull(realm.get().getDomainContext());
+        Assertions.assertEquals("acme.com", realm.get().getDomainContext().getTenantId());
+        Assertions.assertEquals("acme", realm.get().getDomainContext().getOrgRefName());
+        Assertions.assertEquals("0000000001", realm.get().getDomainContext().getAccountId());
+        Assertions.assertEquals("acme-com", realm.get().getDomainContext().getDefaultRealm());
     }
 
     @Test

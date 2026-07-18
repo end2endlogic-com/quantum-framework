@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 /**
  * Resolves which application(s) a token should be scoped to at login, from a
@@ -82,9 +84,21 @@ public final class ApplicationAuthorizationResolver {
     public static Result resolve(List<String> authorizedApplications,
                                  String defaultApplication,
                                  String requestedApplicationId) {
+        return resolve(authorizedApplications, null, defaultApplication, requestedApplicationId);
+    }
+
+    /**
+     * Resolves a per-realm application list, falling back to the credential-wide
+     * application pattern only when the list is absent. Patterns are matched against
+     * the complete application id; {@code "*"} is the unrestricted wildcard.
+     */
+    public static Result resolve(List<String> authorizedApplications,
+                                 String applicationRegEx,
+                                 String defaultApplication,
+                                 String requestedApplicationId) {
         List<String> granted = normalize(authorizedApplications);
         if (granted.isEmpty()) {
-            return Result.legacy();
+            return resolvePattern(applicationRegEx, defaultApplication, requestedApplicationId);
         }
 
         String requested = trimToNull(requestedApplicationId);
@@ -123,6 +137,48 @@ public final class ApplicationAuthorizationResolver {
         }
 
         return Result.ambiguous(new ArrayList<>(concrete), false);
+    }
+
+    private static Result resolvePattern(String applicationRegEx,
+                                         String defaultApplication,
+                                         String requestedApplicationId) {
+        String expression = trimToNull(applicationRegEx);
+        if (expression == null) {
+            String requested = trimToNull(requestedApplicationId);
+            return requested == null ? Result.legacy() : Result.denied(requested);
+        }
+
+        String requested = trimToNull(requestedApplicationId);
+        String defaultApp = trimToNull(defaultApplication);
+        boolean wildcard = WILDCARD.equals(expression);
+
+        if (requested != null) {
+            if (matches(expression, requested)) {
+                return Result.resolved(new LinkedHashSet<>(List.of(requested)), requested, wildcard);
+            }
+            return Result.denied(requested);
+        }
+
+        if (defaultApp != null && matches(expression, defaultApp)) {
+            return Result.resolved(new LinkedHashSet<>(List.of(defaultApp)), defaultApp, wildcard);
+        }
+
+        // A pattern can authorize an unbounded set, so callers must name an app.
+        return Result.ambiguous(List.of(), wildcard);
+    }
+
+    private static boolean matches(String expression, String applicationId) {
+        if (WILDCARD.equals(expression)) {
+            return true;
+        }
+        try {
+            return Pattern.compile(expression, Pattern.CASE_INSENSITIVE)
+                    .matcher(applicationId)
+                    .matches();
+        } catch (PatternSyntaxException ignored) {
+            // Persisted invalid patterns fail closed; validation should reject new ones.
+            return false;
+        }
     }
 
     private static List<String> normalize(List<String> apps) {
