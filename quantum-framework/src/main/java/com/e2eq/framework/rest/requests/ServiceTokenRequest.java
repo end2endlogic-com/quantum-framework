@@ -16,11 +16,16 @@ import java.util.Set;
  *                          Data planes running delegated-claims validation reject tokens
  *                          without one, so service tokens intended for tenant-plane calls
  *                          (e.g. the Install provisioning callback) must be realm-scoped.
+ * @param audiences         optional application audiences ({@code aud}). Data planes that
+ *                          enforce an expected audience reject the legacy default audience,
+ *                          so service tokens intended for audience-enforcing applications
+ *                          must name them here.
  */
 @RegisterForReflection
 public record ServiceTokenRequest(
         @NotNull Set<String> roles,
         Long expirationSeconds,
         String description,
-        String realm
+        String realm,
+        Set<String> audiences
 ) {}
