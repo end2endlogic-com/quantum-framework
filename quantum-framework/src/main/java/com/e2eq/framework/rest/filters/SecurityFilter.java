@@ -116,6 +116,15 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     @ConfigProperty(name = "quantum.auth.trust-token-claims", defaultValue = "false")
     boolean trustTokenClaims;
 
+    // Application audience admission: when set to this application's registry refName, a validated
+    // JWT that carries an aud claim must include it (401 otherwise — no silent fallback). Tokens
+    // without any aud claim are legacy-allowed until audience-required flips to true. Unset → no check.
+    @ConfigProperty(name = "quantum.auth.expected-audience")
+    java.util.Optional<String> expectedAudience;
+
+    @ConfigProperty(name = "quantum.auth.audience-required", defaultValue = "false")
+    boolean audienceRequired;
+
     @Inject
     com.e2eq.framework.security.runtime.RuleContext ruleContext;
 
@@ -146,6 +155,10 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         // we ignore the hello endpoint because it should never require authroization
         // and is used for heart beats, so we just let it go through
         if (requestContext.getUriInfo().getPath().contains("hello")) {
+            return;
+        }
+
+        if (!enforceAudience(requestContext)) {
             return;
         }
 
@@ -204,6 +217,50 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
         // Note: @PermitAll endpoints bypass policy checks at the Jakarta Security level,
         // but we still set up the contexts here for consistency and potential use by other filters/components.
+    }
+
+    /**
+     * Application-audience admission (see {@link com.e2eq.framework.service.application.AudiencePolicy}).
+     * Runs whenever a validated JWT is present — including @PermitAll endpoints, because a
+     * wrong-audience token must never be allowed to build a principal here.
+     *
+     * @return true to continue the filter chain; false when the request was aborted
+     */
+    private boolean enforceAudience(ContainerRequestContext requestContext) {
+        if (expectedAudience.isEmpty() || jwt == null || jwt.getRawToken() == null) {
+            return true;
+        }
+        com.e2eq.framework.service.application.AudiencePolicy.Decision decision =
+            com.e2eq.framework.service.application.AudiencePolicy.evaluate(
+                expectedAudience, audienceRequired, jwt.getAudience());
+        switch (decision) {
+            case ALLOW:
+                return true;
+            case REJECT_MISSING_AUDIENCE:
+                Log.warnf("Rejected token with no aud claim (audience-required): sub=%s path=%s",
+                    jwt.getSubject(), requestContext.getUriInfo().getPath());
+                requestContext.abortWith(
+                    Response.status(Response.Status.UNAUTHORIZED)
+                        .entity(apiError(
+                            "AUDIENCE_REQUIRED",
+                            "Token carries no aud claim; this service requires audience '"
+                                + expectedAudience.get().trim() + "'"))
+                        .build());
+                return false;
+            case REJECT_WRONG_AUDIENCE:
+            default:
+                Log.warnf("Rejected token for wrong audience: sub=%s aud=%s expected=%s path=%s",
+                    jwt.getSubject(), jwt.getAudience(), expectedAudience.get(),
+                    requestContext.getUriInfo().getPath());
+                requestContext.abortWith(
+                    Response.status(Response.Status.UNAUTHORIZED)
+                        .entity(apiError(
+                            "WRONG_AUDIENCE",
+                            "Token aud claim does not include this application's audience '"
+                                + expectedAudience.get().trim() + "'"))
+                        .build());
+                return false;
+        }
     }
 
         @Override
