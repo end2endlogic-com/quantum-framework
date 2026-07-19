@@ -105,9 +105,23 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
     * @return signed JWT token string
     */
    public String generateServiceToken(String subject, Set<String> roles, Long expirationSeconds) {
+      return generateServiceToken(subject, roles, expirationSeconds, null);
+   }
+
+   /**
+    * Realm-scoped variant: stamps the signed {@code realm} claim so data planes running
+    * delegated-claims validation (which fail closed on a missing realm claim) accept the
+    * token. No tenant data-domain claims are stamped — the consuming plane resolves the
+    * data domain from the realm (system realm requires the {@code system} role).
+    */
+   public String generateServiceToken(String subject, Set<String> roles, Long expirationSeconds, String realm) {
       long duration = (expirationSeconds != null) ? expirationSeconds : 60L * 60 * 24 * 365 * 100;
       try {
-         return TokenUtils.generateUserToken(subject, roles, TokenUtils.expiresAt(duration), issuer);
+         if (realm == null || realm.isBlank()) {
+            return TokenUtils.generateUserToken(subject, roles, TokenUtils.expiresAt(duration), issuer);
+         }
+         return TokenUtils.generateUserToken(subject, null, roles, realm,
+                 null, null, null, TokenUtils.expiresAt(duration), issuer);
       } catch (IOException | NoSuchAlgorithmException | InvalidKeySpecException e) {
          throw new RuntimeException("Failed to generate service token", e);
       }
