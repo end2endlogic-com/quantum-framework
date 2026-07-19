@@ -42,6 +42,22 @@ class ServiceTokenRealmClaimTest {
     }
 
     @Test
+    void audienceScopedServiceTokenCarriesApplicationAudiences() throws Exception {
+        TokenUtils.configure("privateKey.pem", "publicKey.pem");
+
+        String jwt = TokenUtils.generateUserToken(
+                "svc-install-2", null, Set.of("helixorq-system"),
+                "system-helixorq-com", null, null, null,
+                Set.of("helixor-scheduler"), null,
+                TokenUtils.expiresAt(3600), "https://auth.example.com");
+
+        String claims = payloadJson(jwt);
+        assertTrue(claims.contains("helixor-scheduler"), claims);
+        assertFalse(claims.contains("b2bi-api-client"), claims);
+        assertTrue(claims.contains("\"realm\":\"system-helixorq-com\""), claims);
+    }
+
+    @Test
     void realmBlindServiceTokenOmitsRealmClaim() throws Exception {
         TokenUtils.configure("privateKey.pem", "publicKey.pem");
 

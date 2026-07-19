@@ -115,8 +115,22 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
     * data domain from the realm (system realm requires the {@code system} role).
     */
    public String generateServiceToken(String subject, Set<String> roles, Long expirationSeconds, String realm) {
+      return generateServiceToken(subject, roles, expirationSeconds, realm, null);
+   }
+
+   /**
+    * Realm- and audience-scoped variant: additionally stamps {@code aud} with the target
+    * application ids so audience-enforcing data planes accept the token (the legacy
+    * default audience is rejected there).
+    */
+   public String generateServiceToken(String subject, Set<String> roles, Long expirationSeconds,
+                                      String realm, Set<String> audiences) {
       long duration = (expirationSeconds != null) ? expirationSeconds : 60L * 60 * 24 * 365 * 100;
       try {
+         if (audiences != null && !audiences.isEmpty()) {
+            return TokenUtils.generateUserToken(subject, null, roles, realm,
+                    null, null, null, audiences, null, TokenUtils.expiresAt(duration), issuer);
+         }
          if (realm == null || realm.isBlank()) {
             return TokenUtils.generateUserToken(subject, roles, TokenUtils.expiresAt(duration), issuer);
          }
