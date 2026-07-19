@@ -83,7 +83,11 @@ public class OntologyEdgeIngestQuarantineTest {
                 .withScope("AUTHENTICATED")
                 .build();
         SecurityContext.setPrincipalContext(principal);
-        SecurityContext.setResourceContext(ResourceContext.DEFAULT_ANONYMOUS_CONTEXT);
+        SecurityContext.setResourceContext(new ResourceContext.Builder()
+                .withRealm(REALM)
+                .withAction("WRITE")
+                .withDataDomain(principalDD)
+                .build());
 
         // Clean both collections in this realm.
         edgeRepo.deleteAll(REALM);

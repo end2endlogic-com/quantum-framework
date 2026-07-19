@@ -11,6 +11,7 @@ import com.e2eq.framework.persistent.TestEntityReferenceHolderRepo;
 import com.e2eq.framework.persistent.TestParentRepo;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.test.AuthorModel;
 import com.e2eq.framework.test.BookModel;
@@ -70,6 +71,8 @@ class MorphiaSeedRepositoryIntegrationTest {
     @Inject
     TestParentRepo testParentRepo;
 
+    private SecurityCallScope.Scope ignoredRulesScope;
+
     @BeforeEach
     void setup() {
         // Clean DB
@@ -91,10 +94,15 @@ class MorphiaSeedRepositoryIntegrationTest {
                 .build();
         SecurityContext.setPrincipalContext(pc);
         SecurityContext.setResourceContext(rc);
+        ignoredRulesScope = SecurityCallScope.openIgnoringRules();
     }
 
     @AfterEach
     void cleanUpThreads() {
+       if (ignoredRulesScope != null) {
+          ignoredRulesScope.close();
+          ignoredRulesScope = null;
+       }
        SecurityContext.clear();
     }
 

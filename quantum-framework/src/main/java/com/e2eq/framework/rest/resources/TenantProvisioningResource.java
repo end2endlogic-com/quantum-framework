@@ -1,5 +1,6 @@
 package com.e2eq.framework.rest.resources;
 
+import com.e2eq.framework.annotations.FunctionalMapping;
 import com.e2eq.framework.rest.models.RestError;
 import com.e2eq.framework.rest.requests.TenantProvisioningRetryRequest;
 import com.e2eq.framework.rest.responses.TenantProvisioningRunResponse;
@@ -29,6 +30,7 @@ import io.quarkus.arc.properties.IfBuildProperty;
  * Minimal REST endpoint to provision a new tenant. Intended for admin use.
  */
 @Path("/admin/tenants")
+@FunctionalMapping(area = "SECURITY", domain = "REALM")
 @Tag(name = "security", description = "Operations related to tenant provisioning")
 @IfBuildProperty(name = "quantum.system-rest.enabled", stringValue = "true", enableIfMissing = true) // control-plane admin surface; one-switch opt-out (CONTROL_PLANE_SPLIT_DESIGN.md Phase B, wp3 tier 1)
 public class TenantProvisioningResource {
@@ -145,12 +147,28 @@ public class TenantProvisioningResource {
         try {
             TenantProvisioningService.DeleteResult r = provisioningService.deleteTenant(realmId);
             return Response.ok(new DeleteTenantResponse(r)).build();
-        } catch (IllegalStateException | IllegalArgumentException e) {
+        } catch (UnsupportedOperationException e) {
+            Log.warn("Direct tenant deletion is disabled: " + e.getMessage());
+            throw buildProvisioningException(
+                Response.Status.CONFLICT,
+                "Direct tenant deletion is disabled.",
+                e.getMessage(),
+                null
+            );
+        } catch (IllegalArgumentException e) {
             Log.warn("Tenant deletion rejected: " + e.getMessage());
-            return Response.status(Response.Status.CONFLICT).entity(e.getMessage()).build();
+            throw buildProvisioningException(Response.Status.BAD_REQUEST, e.getMessage(), e.getMessage(), null);
+        } catch (IllegalStateException e) {
+            Log.warn("Tenant deletion rejected: " + e.getMessage());
+            throw buildProvisioningException(Response.Status.CONFLICT, e.getMessage(), e.getMessage(), null);
         } catch (Exception e) {
             Log.error("Tenant deletion failed", e);
-            return Response.serverError().entity(e.getMessage()).build();
+            throw buildProvisioningException(
+                Response.Status.INTERNAL_SERVER_ERROR,
+                "Tenant deletion failed.",
+                e.getMessage(),
+                null
+            );
         }
     }
 

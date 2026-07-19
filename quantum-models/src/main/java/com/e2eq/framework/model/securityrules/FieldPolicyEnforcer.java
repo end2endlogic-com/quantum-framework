@@ -28,7 +28,8 @@ import java.util.Collection;
  * Masking semantics: excluded paths are set to null on the materialized
  * object (with the platform's NON_NULL serialization defaults they are omitted
  * from JSON). Dotted paths descend embedded objects; collections are masked
- * element-wise. Unknown paths are ignored (nothing to protect on this type).
+ * element-wise. Invalid configured paths fail closed because silently ignoring
+ * a policy/schema mismatch would expose data.
  */
 public final class FieldPolicyEnforcer {
 
@@ -64,11 +65,14 @@ public final class FieldPolicyEnforcer {
         String[] parts = dottedPath.split("\\.", 2);
         Field field = findField(target.getClass(), parts[0]);
         if (field == null) {
-            return;
+            throw new NoSuchFieldException("Policy path '" + dottedPath
+                + "' does not exist on " + target.getClass().getName());
         }
         field.setAccessible(true);
         if (parts.length == 1) {
-            field.set(target, null);
+            field.set(target, field.getType().isPrimitive()
+                    ? primitiveDefaultValue(field.getType())
+                    : null);
             return;
         }
         Object child = field.get(target);
@@ -95,7 +99,8 @@ public final class FieldPolicyEnforcer {
         String[] parts = dottedPath.split("\\.", 2);
         Field field = findField(source.getClass(), parts[0]);
         if (field == null) {
-            return;
+            throw new NoSuchFieldException("Policy path '" + dottedPath
+                + "' does not exist on " + source.getClass().getName());
         }
         field.setAccessible(true);
         if (parts.length == 1) {
@@ -108,7 +113,93 @@ public final class FieldPolicyEnforcer {
             field.set(target, sourceChild);
             return;
         }
+        if (sourceChild instanceof Collection<?>) {
+            // Collection elements may be reordered or keyed independently. Preserving the
+            // complete stored collection is the only fail-closed generic operation without
+            // an explicit element identity contract.
+            field.set(target, sourceChild);
+            return;
+        }
         copyPath(sourceChild, targetChild, parts[1]);
+    }
+
+    /**
+     * Rejects a create payload that supplies any field hidden by policy.
+     *
+     * <p>Silently clearing a submitted value makes an unauthorized write look
+     * successful. Creates therefore fail explicitly; trusted seed/migration code
+     * must use an explicit {@link SecurityCallScope#openIgnoringRules()} boundary.</p>
+     */
+    public static void assertUnset(Object root, Collection<String> dottedPaths) {
+        if (root == null || dottedPaths == null || dottedPaths.isEmpty()) {
+            return;
+        }
+        for (String path : dottedPaths) {
+            if (path == null || path.isBlank()) {
+                continue;
+            }
+            try {
+                if (isSet(root, path.trim())) {
+                    throw new SecurityException(
+                        "Create payload supplies field '" + path + "' protected by field-level policy");
+                }
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException(
+                    "Field-level policy could not validate create path '" + path + "' on "
+                    + root.getClass().getSimpleName() + "; failing closed.", e);
+            }
+        }
+    }
+
+    private static boolean isSet(Object target, String dottedPath) throws ReflectiveOperationException {
+        if (target == null) {
+            return false;
+        }
+        if (target instanceof Collection<?> many) {
+            for (Object item : many) {
+                if (isSet(item, dottedPath)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        String[] parts = dottedPath.split("\\.", 2);
+        Field field = findField(target.getClass(), parts[0]);
+        if (field == null) {
+            throw new NoSuchFieldException("Policy path '" + dottedPath
+                + "' does not exist on " + target.getClass().getName());
+        }
+        field.setAccessible(true);
+        Object value = field.get(target);
+        if (parts.length == 1) {
+            return value != null && !isPrimitiveDefault(field.getType(), value);
+        }
+        return value != null && isSet(value, parts[1]);
+    }
+
+    private static boolean isPrimitiveDefault(Class<?> type, Object value) {
+        if (!type.isPrimitive()) {
+            return false;
+        }
+        if (type == boolean.class) {
+            return Boolean.FALSE.equals(value);
+        }
+        if (type == char.class) {
+            return Character.valueOf('\0').equals(value);
+        }
+        return value instanceof Number number && number.doubleValue() == 0D;
+    }
+
+    private static Object primitiveDefaultValue(Class<?> type) {
+        if (type == boolean.class) return false;
+        if (type == char.class) return '\0';
+        if (type == byte.class) return (byte) 0;
+        if (type == short.class) return (short) 0;
+        if (type == int.class) return 0;
+        if (type == long.class) return 0L;
+        if (type == float.class) return 0F;
+        if (type == double.class) return 0D;
+        throw new IllegalArgumentException("Unsupported primitive field type: " + type.getName());
     }
 
     static Field findField(Class<?> type, String name) {

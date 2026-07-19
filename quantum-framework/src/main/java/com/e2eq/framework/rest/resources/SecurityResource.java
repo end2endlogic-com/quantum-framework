@@ -1,6 +1,7 @@
 package com.e2eq.framework.rest.resources;
 
 
+import com.e2eq.framework.annotations.FunctionalMapping;
 import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import com.e2eq.framework.model.auth.AuthProviderFactory;
 import com.e2eq.framework.model.auth.UserManagement;
@@ -68,6 +69,7 @@ import java.util.*;
         )
 )
 @Path("/security")
+@FunctionalMapping(area = "SECURITY", domain = "CREDENTIAL_USERID_PASSWORD")
 @Tag(name = "security", description = "Operations related to security")
 @RequestScoped
 public class SecurityResource {
@@ -296,19 +298,20 @@ public class SecurityResource {
         if (Log.isInfoEnabled())
             Log.info("Authentication Attempt:" + authRequest.getUserId() + " Address:" + ((remoteAddress != null) ? remoteAddress : "unknown") + " UserAgent:" + ((userAgent != null) ? userAgent : "unknown"));
 
-        String qrealm = headers.getRequestHeaders().getFirst("X-Realm");
-        String realm= null;
-        if (qrealm != null ) {
-            Log.infof("Overriding to realm:%s ",  qrealm);
-            realm = qrealm;
+        String headerRealm = normalizeLoginRealm(headers.getRequestHeaders().getFirst("X-Realm"));
+        String bodyRealm = normalizeLoginRealm(authRequest.getRealm());
+        if (headerRealm != null && bodyRealm != null && !headerRealm.equalsIgnoreCase(bodyRealm)) {
+            throw new BadRequestException("Conflicting login realms were supplied in the request body and X-Realm header");
         }
+        String realm = bodyRealm != null ? bodyRealm : headerRealm;
 
         Log.infof("Logging in userid: %s realm: %s",authRequest.getUserId(), realm);
 
         try {
             String providerOverride = (provider == null || provider.isBlank()) ? null : provider;
             AuthLoginService.LoginResult loginResult = authLoginService.login(
-                    authRequest.getUserId(), authRequest.getPassword(), providerOverride, authRequest.getApplicationId());
+                    authRequest.getUserId(), authRequest.getPassword(), providerOverride,
+                    authRequest.getApplicationId(), realm);
             if (loginResult.authenticated()) {
                 Log.info("Login successful for userId:" + authRequest.getUserId() + " provider:" + loginResult.response().getAuthProvider());
                 return Response.ok(loginResult.response()).build();
@@ -369,8 +372,16 @@ public class SecurityResource {
          */
     }
 
+    private static String normalizeLoginRealm(String realm) {
+        if (realm == null || realm.isBlank()) {
+            return null;
+        }
+        return realm.trim();
+    }
+
     @POST
     @Path("/create-user")
+    @FunctionalMapping(area = "SECURITY", domain = "CREDENTIAL_USERID_PASSWORD")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
     @RolesAllowed({ "admin", "system"})
@@ -644,6 +655,29 @@ public class SecurityResource {
     public Response disableRealmOverride( @QueryParam("subject") String subject) {
         authProviderFactory.getUserManager().disableRealmOverrideWithSubject(subject);
         return Response.ok().build();
+    }
+
+    @PUT
+    @RolesAllowed({"admin", "system"})
+    @Path("/enableApplicationOverride")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response enableApplicationOverride(@QueryParam("subject") String subject,
+                                              @QueryParam("applicationRegEx") String applicationRegEx) {
+        try {
+            return Response.ok(credentialRepo.saveApplicationRegExBySubject(subject, applicationRegEx)).build();
+        } catch (IllegalArgumentException invalidPattern) {
+            throw new BadRequestException(invalidPattern.getMessage());
+        }
+    }
+
+    @PUT
+    @RolesAllowed({"admin", "system"})
+    @Path("/disableApplicationOverride")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response disableApplicationOverride(@QueryParam("subject") String subject) {
+        return Response.ok(credentialRepo.saveApplicationRegExBySubject(subject, null)).build();
     }
 
     @PUT

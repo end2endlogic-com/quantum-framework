@@ -38,24 +38,29 @@ public class AuthLoginService {
     /** Application-authorization signals a provider may return as a negative login response. */
     private static final String APP_SELECTION_REQUIRED = "ApplicationSelectionRequired";
     private static final String APP_NOT_AUTHORIZED = "ApplicationNotAuthorized";
+    private static final String REALM_NOT_AUTHORIZED = "RealmNotAuthorized";
+    private static final String REALM_AUTHORIZATION_UNAVAILABLE = "RealmAuthorizationUnavailable";
 
     public LoginResult login(String userId, String password) {
-        return login(userId, password, null, null);
+        return login(userId, password, null, null, null);
     }
 
     public LoginResult login(String userId, String password, String providerOverride) {
-        return login(userId, password, providerOverride, null);
+        return login(userId, password, providerOverride, null, null);
     }
 
     public LoginResult login(String userId, String password, String providerOverride, String applicationId) {
-        Optional<CredentialUserIdPassword> credentialOptional = findLoginCredential(userId);
-        List<AuthProvider> authProviders = authProviderFactory.getLoginProviders(
-                providerOverride,
-                credentialOptional.map(CredentialUserIdPassword::getAuthProviderName).orElse(null));
+        return login(userId, password, providerOverride, applicationId, null);
+    }
+
+    public LoginResult login(String userId, String password, String providerOverride,
+                             String applicationId, String realmId) {
+        List<AuthProvider> authProviders = authProviderFactory.getLoginProviders(providerOverride);
 
         List<String> providerFailures = new ArrayList<>();
         for (AuthProvider authProvider : authProviders) {
-            AuthProvider.LoginResponse loginResponse = authProvider.login(userId, password, applicationId);
+            AuthProvider.LoginResponse loginResponse = dispatchLogin(
+                    authProvider, userId, password, applicationId, realmId);
             if (loginResponse.authenticated() && loginResponse.positiveResponse() != null) {
                 Optional<CredentialUserIdPassword> credentialOp = findCredential(
                         loginResponse.positiveResponse().identity() != null
@@ -79,9 +84,19 @@ public class AuthLoginService {
             if (negative != null && APP_NOT_AUTHORIZED.equals(negative.errorType())) {
                 return LoginResult.applicationDenied(negative.errorMessage());
             }
+            if (negative != null && (REALM_NOT_AUTHORIZED.equals(negative.errorType())
+                    || REALM_AUTHORIZATION_UNAVAILABLE.equals(negative.errorType()))) {
+                return LoginResult.realmDenied(negative.errorMessage());
+            }
             providerFailures.add(loginFailure(authProvider, loginResponse));
         }
         return LoginResult.failure(providerFailures);
+    }
+
+    static AuthProvider.LoginResponse dispatchLogin(AuthProvider provider, String userId,
+                                                     String password, String applicationId,
+                                                     String realmId) {
+        return provider.login(userId, password, applicationId, realmId);
     }
 
     public Optional<CredentialUserIdPassword> findCredential(String subject, String userId) {
@@ -105,23 +120,13 @@ public class AuthLoginService {
         if (userId == null || userId.isBlank()) {
             return Optional.empty();
         }
-        try {
-            Optional<CredentialUserIdPassword> byUserId = credentialRepo.findByUserId(
-                    userId,
-                    envConfigUtils.getSystemRealm(),
-                    true);
-            if (byUserId.isPresent()) {
-                return byUserId;
-            }
-        } catch (RuntimeException e) {
-            Log.debugf("Unable to resolve login credential in system realm for %s: %s", userId, e.getMessage());
-        }
-        try {
-            return credentialRepo.findByUserId(userId);
-        } catch (RuntimeException e) {
-            Log.debugf("Unable to resolve login credential for %s: %s", userId, e.getMessage());
-            return Optional.empty();
-        }
+        // Authentication semantics must not change when the credential store is
+        // unavailable. A lookup failure is an operational error, not evidence that
+        // the credential is absent and permission to try a different provider.
+        return credentialRepo.findByUserId(
+                userId,
+                envConfigUtils.getSystemRealm(),
+                true);
     }
 
     public List<AccessibleRealmInfo> resolveAccessibleRealms(CredentialUserIdPassword credential) {
@@ -185,6 +190,10 @@ public class AuthLoginService {
 
         /** Authenticated, but the requested application is not authorized for this user/realm. */
         public static LoginResult applicationDenied(String message) {
+            return new LoginResult(null, List.of(), Response.Status.FORBIDDEN.getStatusCode(), null, message);
+        }
+
+        public static LoginResult realmDenied(String message) {
             return new LoginResult(null, List.of(), Response.Status.FORBIDDEN.getStatusCode(), null, message);
         }
 

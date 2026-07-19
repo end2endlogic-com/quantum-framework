@@ -77,32 +77,44 @@ public class DefaultMetadataRegistry implements MetadataRegistry {
         }
         String localIdExpr = dottedPath + ".entityId"; // convention for EntityReference
         // Attempt to resolve collection from @ReferenceTarget on the final field
-        String fromCollection = resolveCollectionFromAnnotation(rootType, dottedPath);
-        return new JoinSpec(fromCollection, /*remoteIdField*/ "_id", localIdExpr, /*tenantField*/ "dataDomain.tenantId", rp.isArray);
+        com.e2eq.framework.model.persistent.base.ReferenceTarget referenceTarget =
+                resolveReferenceTarget(rootType, dottedPath);
+        if (referenceTarget == null || referenceTarget.target() == null
+                || referenceTarget.target() == void.class) {
+            throw new QueryMetadataException("expand path '" + dottedPath
+                    + "' must declare @ReferenceTarget(target=...) for governed expansion");
+        }
+        String fromCollection = resolveCollection(referenceTarget);
+        return new JoinSpec(fromCollection, /*remoteIdField*/ "_id", localIdExpr,
+                /*tenantField*/ "dataDomain.tenantId", rp.isArray, referenceTarget.target());
     }
 
-    private String resolveCollectionFromAnnotation(Class<? extends UnversionedBaseModel> rootType, String dottedPath) {
+    private com.e2eq.framework.model.persistent.base.ReferenceTarget resolveReferenceTarget(
+            Class<? extends UnversionedBaseModel> rootType, String dottedPath) {
         try {
             Field f = findFieldAlongPath(rootType, dottedPath);
             if (f == null) return null;
-            var ann = f.getAnnotation(com.e2eq.framework.model.persistent.base.ReferenceTarget.class);
-            if (ann == null) return null;
-            String collectionValue = ann.collection();
-            if (collectionValue != null && !collectionValue.isBlank()) {
-                return collectionValue;
-            }
-            Class<?> target = ann.target();
-            if (target == null || target == void.class) return null;
-            // Check Morphia @Entity value
-            dev.morphia.annotations.Entity e = target.getAnnotation(dev.morphia.annotations.Entity.class);
-            if (e != null && e.value() != null && !e.value().isBlank()) {
-                return e.value();
-            }
-            String simpleName = target.getSimpleName();
-            return (simpleName != null && !simpleName.isBlank()) ? simpleName : null;
+            return f.getAnnotation(com.e2eq.framework.model.persistent.base.ReferenceTarget.class);
         } catch (Exception ex) {
-            return null;
+            throw new QueryMetadataException("Failed to resolve @ReferenceTarget for '" + dottedPath + "'", ex);
         }
+    }
+
+    private String resolveCollection(com.e2eq.framework.model.persistent.base.ReferenceTarget ann) {
+        String collectionValue = ann.collection();
+        if (collectionValue != null && !collectionValue.isBlank()) {
+            return collectionValue;
+        }
+        Class<?> target = ann.target();
+        dev.morphia.annotations.Entity e = target.getAnnotation(dev.morphia.annotations.Entity.class);
+        if (e != null && e.value() != null && !e.value().isBlank()) {
+            return e.value();
+        }
+        String simpleName = target.getSimpleName();
+        if (simpleName == null || simpleName.isBlank()) {
+            throw new QueryMetadataException("Reference target has no resolvable collection name: " + target);
+        }
+        return simpleName;
     }
 
     private Field findFieldAlongPath(Class<?> type, String dottedPath) {

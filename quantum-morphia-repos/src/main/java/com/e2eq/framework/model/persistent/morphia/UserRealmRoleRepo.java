@@ -11,6 +11,15 @@ import java.util.Optional;
 @ApplicationScoped
 public class UserRealmRoleRepo extends MorphiaRepo<UserRealmRole> {
 
+    public List<UserRealmRole> findByRealmRefNameWithIgnoreRules(String realmRefName, String systemRealmId) {
+        MorphiaDatastore ds = morphiaDataStoreWrapper.getDataStore(systemRealmId);
+        try (var cursor = ds.find(UserRealmRole.class)
+                .filter(Filters.eq("realmRefName", realmRefName))
+                .iterator()) {
+            return cursor.toList();
+        }
+    }
+
     /**
      * Active per-realm roles for a user, bypassing security rules — used by
      * the unauthenticated login path exactly like CredentialRepo.findByUserId

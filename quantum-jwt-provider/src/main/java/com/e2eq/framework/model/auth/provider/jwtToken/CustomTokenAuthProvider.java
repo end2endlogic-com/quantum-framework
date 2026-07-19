@@ -13,12 +13,14 @@ import com.e2eq.framework.model.auth.RoleAssignment;
 import com.e2eq.framework.model.auth.RoleSource;
 import com.e2eq.framework.model.auth.UserManagement;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
+import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import com.e2eq.framework.model.persistent.morphia.UserRealmRoleRepo;
 import com.e2eq.framework.model.persistent.morphia.UserGroupRepo;
 import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import com.e2eq.framework.model.security.CredentialRefreshToken;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.DomainContext;
+import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.model.security.UserRealmRole;
 import com.e2eq.framework.plugins.BaseAuthProvider;
 import com.e2eq.framework.model.security.UserGroup;
@@ -35,8 +37,6 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.NotFoundException;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.security.NoSuchAlgorithmException;
@@ -46,12 +46,6 @@ import java.util.Arrays;
 
 @ApplicationScoped
 public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthProvider, ClaimsAuthProvider, UserManagement{
-
-   @ConfigProperty(name = "auth.jwt.secret")
-   String secretKey;
-
-   @ConfigProperty(name = "auth.jwt.expiration")
-   Long expirationInMinutes;
 
    @ConfigProperty(name = "mp.jwt.verify.issuer")
    String issuer;
@@ -73,6 +67,9 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
 
    @Inject
    CredentialRepo credentialRepo;
+
+   @Inject
+   RealmRepo realmRepo;
 
    @Inject
    UserRealmRoleRepo userRealmRoleRepo;
@@ -480,11 +477,16 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
 
    @Override
    public LoginResponse login (String userId, String password) {
-      return login(userId, password, (String) null);
+      return login(userId, password, null, null);
    }
 
    @Override
    public LoginResponse login (String userId, String password, String applicationId) {
+      return login(userId, password, applicationId, null);
+   }
+
+   @Override
+   public LoginResponse login (String userId, String password, String applicationId, String requestedRealm) {
       try {
          String configuredRealm = envConfigUtils.getSystemRealm();
          Log.infof("Checking for auth against %s realm", configuredRealm);
@@ -510,30 +512,43 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                boolean isCredentialValid = EncryptionUtils.checkPassword(password, credential.getPasswordHash());
                if (isCredentialValid) {
                   // String authToken = generateAuthToken(userId);
-                  Set<String> groups = new HashSet<>(Arrays.asList(credential.getRoles()));
+                  String credentialRealm = (credential.getDomainContext() != null)
+                     ? credential.getDomainContext().getDefaultRealm()
+                     : envConfigUtils.getSystemRealm();
+                   String tokenRealm = (requestedRealm == null || requestedRealm.isBlank())
+                      ? credentialRealm
+                      : requestedRealm.trim();
+                   Optional<Realm> operatingRealm = Objects.equals(credentialRealm, tokenRealm)
+                      ? Optional.empty()
+                      : realmRepo.findByRefName(tokenRealm, true, envConfigUtils.getSystemRealm());
+                   if (!Objects.equals(credentialRealm, tokenRealm) && operatingRealm.isEmpty()) {
+                      return new LoginResponse(false,
+                         new LoginNegativeResponse(userId,
+                            403,
+                            403,
+                            "Realm is not registered: " + tokenRealm,
+                            "RealmNotAuthorized",
+                            tokenRealm,
+                            tokenRealm));
+                   }
+                  boolean credentialRealmAuthorized = securityUtils
+                     .computeAllowedRealmRefNames(credential, List.of(tokenRealm))
+                     .stream()
+                     .anyMatch(allowedRealm -> allowedRealm.equalsIgnoreCase(tokenRealm));
+                  Set<String> groups = new HashSet<>();
+                  if (Objects.equals(credentialRealm, tokenRealm) && credential.getRoles() != null) {
+                     groups.addAll(Arrays.asList(credential.getRoles()));
+                  }
 
-                  // Handle missing subject: use userId as fallback or generate one
                   String subject = credential.getSubject();
                   if (subject == null || subject.isEmpty()) {
-                     Log.warnf("Credential for userId:%s has null or empty subject, using userId as fallback", userId);
-                     // Use userId as fallback, or generate UUID if userId is also null/empty
-                     if (credential.getUserId() != null && !credential.getUserId().isEmpty()) {
-                        subject = credential.getUserId();
-                     } else {
-                        subject = java.util.UUID.randomUUID().toString();
-                        Log.warnf("Both subject and userId are null/empty for credential, generated new subject: %s", subject);
-                     }
-                     // Update the credential with the generated subject to fix it for future logins
-                     credential.setSubject(subject);
-                     credentialRepo.save(credential);
+                     throw new IllegalStateException(
+                        "Credential subject is required for userId: " + userId);
                   }
 
                   // B4 membership ADR: one global identity, per-realm roles.
                   // Union the user's UserRealmRole assignment for the realm
                   // this token is scoped to into the token's role claims.
-                  String tokenRealm = (credential.getDomainContext() != null)
-                     ? credential.getDomainContext().getDefaultRealm()
-                     : envConfigUtils.getSystemRealm();
                   Optional<UserRealmRole> realmAssignment = Optional.empty();
                   java.util.Set<String> realmAssignedRoles = new java.util.LinkedHashSet<>();
                   try {
@@ -541,7 +556,24 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                         userId, tokenRealm, envConfigUtils.getSystemRealm());
                      realmAssignment.map(UserRealmRole::getRoles).ifPresent(realmAssignedRoles::addAll);
                   } catch (Exception e) {
-                     Log.warn("Failed to resolve per-realm role assignments; continuing with credential roles", e);
+                     return new LoginResponse(false,
+                        new LoginNegativeResponse(userId,
+                           403,
+                           403,
+                           "Unable to verify authorization for realm: " + tokenRealm,
+                           "RealmAuthorizationUnavailable",
+                           tokenRealm,
+                           tokenRealm));
+                  }
+                  if (!credentialRealmAuthorized && realmAssignment.isEmpty()) {
+                     return new LoginResponse(false,
+                        new LoginNegativeResponse(userId,
+                           403,
+                           403,
+                           "Not authorized for realm: " + tokenRealm,
+                           "RealmNotAuthorized",
+                           tokenRealm,
+                           tokenRealm));
                   }
                   groups.addAll(realmAssignedRoles);
 
@@ -550,10 +582,11 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                   // (single default audience, unchanged behavior); RESOLVED = multi-aud
                   // token + azp; AMBIGUOUS/DENIED short-circuit to a negative response the
                   // login resource maps to 400 (needs selection) / 403 (not authorized).
-                  ApplicationAuthorizationResolver.Result appAuth = ApplicationAuthorizationResolver.resolve(
-                     realmAssignment.map(UserRealmRole::getAuthorizedApplications).orElse(null),
-                     realmAssignment.map(UserRealmRole::getDefaultApplication).orElse(null),
-                     applicationId);
+                   ApplicationAuthorizationResolver.Result appAuth = ApplicationAuthorizationResolver.resolve(
+                      realmAssignment.map(UserRealmRole::getAuthorizedApplications).orElse(null),
+                      credential.getApplicationRegEx(),
+                      realmAssignment.map(UserRealmRole::getDefaultApplication).orElse(null),
+                      applicationId);
                   switch (appAuth.outcome()) {
                      case AMBIGUOUS:
                         return new LoginResponse(false,
@@ -573,6 +606,14 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                         break; // LEGACY or RESOLVED — mint below
                   }
 
+                  DomainContext tokenDomainContext = Objects.equals(credentialRealm, tokenRealm)
+                     ? credential.getDomainContext()
+                     : operatingRealm.map(Realm::getDomainContext).orElse(null);
+                  if (tokenDomainContext == null) {
+                     throw new IllegalStateException(
+                        "Realm has no data-domain configuration: " + tokenRealm);
+                  }
+
                   String authToken;
                   if (appAuth.resolved()) {
                      if (appAuth.wildcard()) {
@@ -581,7 +622,12 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                      }
                      authToken = TokenUtils.generateUserToken(
                         subject,
+                        credential.getUserId(),
                         groups,
+                        tokenRealm,
+                        tokenDomainContext.getTenantId(),
+                        tokenDomainContext.getOrgRefName(),
+                        tokenDomainContext.getAccountId(),
                         appAuth.audiences(),
                         appAuth.activeApplication(),
                         TokenUtils.expiresAt(durationInSeconds),
@@ -589,25 +635,37 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                   } else {
                      authToken = TokenUtils.generateUserToken(
                         subject,
+                        credential.getUserId(),
                         groups,
+                        tokenRealm,
+                        tokenDomainContext.getTenantId(),
+                        tokenDomainContext.getOrgRefName(),
+                        tokenDomainContext.getAccountId(),
                         TokenUtils.expiresAt(durationInSeconds),
                         issuer);
                   }
 
-                  String refreshToken = generateRefreshToken(credential.getUserId(), authToken,
-                     TokenUtils.currentTimeInSecs() + durationInSeconds + TokenUtils.REFRESH_ADDITIONAL_DURATION_SECONDS);
+                  String refreshToken = generateRefreshToken(
+                     subject,
+                     credential.getUserId(),
+                     tokenRealm,
+                     appAuth.resolved() ? appAuth.activeApplication() : null,
+                     authToken,
+                     durationInSeconds);
                   SecurityIdentity identity = validateAccessToken(authToken);
                   // Compute role provenance locally for login response: IDP + CREDENTIAL + USERGROUP
                   // Auth plugins do NOT need to do this; it's optional for login response only.
                   // Use the credential's realm context instead of hardcoded system realm
                   String realm = tokenRealm;
                   java.util.Set<String> idpRoles = (identity != null) ? new java.util.LinkedHashSet<>(identity.getRoles()) : java.util.Set.of();
-                  java.util.Set<String> credentialRoles = new java.util.LinkedHashSet<>(Arrays.asList(credential.getRoles()));
+                  java.util.Set<String> credentialRoles = credentialRolesForRealm(
+                     credential.getRoles(), credentialRealm, tokenRealm);
                   java.util.Set<String> userGroupRoles = new java.util.LinkedHashSet<>();
                   try {
                      var userProfileOpt = userProfileRepo.getBySubject(realm, subject);
                      if (userProfileOpt.isPresent()) {
-                        var userGroups = userGroupRepo.findByUserProfileRef(userProfileOpt.get().createEntityReference());
+                        var userGroups = userGroupRepo.findByUserProfileRefWithIgnoreRules(
+                           realm, userProfileOpt.get().createEntityReference());
                         if (userGroups != null) {
                            for (UserGroup g : userGroups) {
                               if (g != null && g.getRoles() != null) {
@@ -617,7 +675,9 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                         }
                      }
                   } catch (Exception e) {
-                     Log.warn("Failed to expand roles via user groups; continuing without group roles", e);
+                     throw new IllegalStateException(
+                        "Unable to resolve user-group roles for user '" + userId
+                           + "' in realm '" + tokenRealm + "'", e);
                   }
 
                   java.util.Set<String> rolesSet = new java.util.LinkedHashSet<>();
@@ -692,80 +752,129 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
       }
    }
 
+   static Set<String> credentialRolesForRealm(String[] roles, String credentialRealm, String tokenRealm) {
+      if (!Objects.equals(credentialRealm, tokenRealm) || roles == null) {
+         return Set.of();
+      }
+      return new LinkedHashSet<>(Arrays.asList(roles));
+   }
+
    @Override
    public LoginResponse refreshTokens (String refreshToken) {
-      SecurityIdentity identity = validateAccessToken(refreshToken);
-      String refreshSubject = identity.getPrincipal().getName();
-      String newRefreshToken = null;
       try {
-         // Recompute provenance for refresh; optional for plugins, framework handles groups for checks
-         java.util.Set<String> idpRoles = (identity != null) ? new java.util.LinkedHashSet<>(identity.getRoles()) : java.util.Set.of();
-         java.util.Set<String> credentialRoles = new java.util.LinkedHashSet<>();
-         java.util.Set<String> userGroupRoles = new java.util.LinkedHashSet<>();
+         var refreshJwt = jwtParser.parse(refreshToken);
+         if (!TokenUtils.REFRESH_SCOPE.equals(claimString(refreshJwt, "scope"))) {
+            throw new SecurityException("Token is not a refresh token");
+         }
+         String refreshSubject = refreshJwt.getSubject();
+         String tokenRealm = claimString(refreshJwt, "realm");
+         String tokenUserId = claimString(refreshJwt, "userId");
+         String activeApplication = claimString(refreshJwt, "azp");
+         if (refreshSubject == null || refreshSubject.isBlank() || tokenRealm == null) {
+            throw new SecurityException("Refresh token is missing subject or realm authority");
+         }
+
          String configuredRealm = envConfigUtils.getSystemRealm();
-         Optional<CredentialUserIdPassword> ocred = getCredentials(configuredRealm, refreshSubject);
-         if (ocred.isEmpty()) {
-            Optional<CredentialUserIdPassword> bySubject = credentialRepo.findBySubject(refreshSubject, configuredRealm, true);
-            if (bySubject.isPresent()) {
-               ocred = bySubject;
-            }
-         }
-         if (ocred.isEmpty()) {
-            throw new SecurityException(String.format("No credential found for refresh subject: %s", refreshSubject));
-         }
-
-         CredentialUserIdPassword credential = ocred.get();
+         CredentialUserIdPassword credential = credentialRepo
+            .findBySubject(refreshSubject, configuredRealm, true)
+            .orElseThrow(() -> new SecurityException(
+               "No credential found for refresh subject: " + refreshSubject));
          String userId = credential.getUserId();
-         String tokenSubject = credential.getSubject();
-         if (tokenSubject == null || tokenSubject.isBlank()) {
-            throw new SecurityException(String.format("Credential subject missing for userId: %s", userId));
+         if (tokenUserId != null && !tokenUserId.equals(userId)) {
+            throw new SecurityException("Refresh-token userId does not match its credential subject");
          }
 
-         String newAuthToken = generateAuthToken(tokenSubject);
-         newRefreshToken = generateRefreshToken(userId, newAuthToken, durationInSeconds);
-         final String[] responseRealm = new String[] { envConfigUtils.getSystemRealm() };
+         String credentialRealm = credential.getDomainContext() != null
+            ? credential.getDomainContext().getDefaultRealm()
+            : null;
+         if (credentialRealm == null) {
+            throw new SecurityException("Credential has no home realm: " + userId);
+         }
+
+         Optional<Realm> operatingRealm = Objects.equals(credentialRealm, tokenRealm)
+            ? Optional.empty()
+            : realmRepo.findByRefName(tokenRealm, true, configuredRealm);
+         if (!Objects.equals(credentialRealm, tokenRealm) && operatingRealm.isEmpty()) {
+            throw new SecurityException("Refresh-token realm is not registered: " + tokenRealm);
+         }
+
+         Optional<UserRealmRole> realmAssignment;
          try {
-            if (credential.getRoles() != null) {
-               for (String r : credential.getRoles()) {
-                       if (r != null) credentialRoles.add(r);
+            realmAssignment = userRealmRoleRepo.findActiveAssignmentForRealmWithIgnoreRules(
+               userId, tokenRealm, configuredRealm);
+         } catch (RuntimeException e) {
+            throw new SecurityException("Unable to verify realm authorization during refresh", e);
+         }
+         boolean credentialRealmAuthorized = securityUtils
+            .computeAllowedRealmRefNames(credential, List.of(tokenRealm))
+            .stream()
+            .anyMatch(tokenRealm::equalsIgnoreCase);
+         if (!credentialRealmAuthorized && realmAssignment.isEmpty()) {
+            throw new SecurityException("Credential is no longer authorized for realm: " + tokenRealm);
+         }
+
+         Set<String> credentialRoles = credentialRolesForRealm(
+            credential.getRoles(), credentialRealm, tokenRealm);
+         Set<String> realmRoles = new LinkedHashSet<>();
+         realmAssignment.map(UserRealmRole::getRoles).ifPresent(realmRoles::addAll);
+         Set<String> userGroupRoles = new LinkedHashSet<>();
+         userProfileRepo.getBySubject(tokenRealm, credential.getSubject()).ifPresent(profile -> {
+            var userGroups = userGroupRepo.findByUserProfileRefWithIgnoreRules(
+               tokenRealm, profile.createEntityReference());
+            if (userGroups != null) {
+               for (UserGroup group : userGroups) {
+                  if (group != null && group.getRoles() != null) {
+                     userGroupRoles.addAll(group.getRoles());
+                  }
                }
             }
-            String credRealm = (credential.getDomainContext() != null)
-                  ? credential.getDomainContext().getDefaultRealm()
-                  : envConfigUtils.getSystemRealm();
-            responseRealm[0] = credRealm;
-            try {
-               userProfileRepo.getBySubject(credRealm, credential.getSubject()).ifPresent(profile -> {
-                  var userGroups = userGroupRepo.findByUserProfileRef(profile.createEntityReference());
-                  if (userGroups != null) {
-                     for (UserGroup g : userGroups) {
-                        if (g != null && g.getRoles() != null) {
-                           for (String r : g.getRoles()) {
-                              if (r != null) userGroupRoles.add(r);
-                           }
-                        }
-                     }
-                  }
-               });
-            } catch (Exception e) {
-               Log.warn("Failed to expand user-group roles during refresh; continuing", e);
-            }
-         } catch (Exception e) {
-            Log.warn("Credential lookup failed during refresh; proceeding with IDP roles only", e);
+         });
+
+         Set<String> allRoles = new LinkedHashSet<>();
+         allRoles.addAll(credentialRoles);
+         allRoles.addAll(realmRoles);
+         allRoles.addAll(userGroupRoles);
+
+         ApplicationAuthorizationResolver.Result appAuth = ApplicationAuthorizationResolver.resolve(
+            realmAssignment.map(UserRealmRole::getAuthorizedApplications).orElse(null),
+            credential.getApplicationRegEx(),
+            realmAssignment.map(UserRealmRole::getDefaultApplication).orElse(null),
+            activeApplication);
+         if (appAuth.outcome() == ApplicationAuthorizationResolver.Outcome.DENIED
+               || appAuth.outcome() == ApplicationAuthorizationResolver.Outcome.AMBIGUOUS) {
+            throw new SecurityException("Application authorization is no longer valid during refresh");
          }
 
-         java.util.Set<String> allRoles = new java.util.LinkedHashSet<>();
-         allRoles.addAll(idpRoles);
-         allRoles.addAll(credentialRoles);
-         allRoles.addAll(userGroupRoles);
+         DomainContext tokenDomainContext = Objects.equals(credentialRealm, tokenRealm)
+            ? credential.getDomainContext()
+            : operatingRealm.map(Realm::getDomainContext).orElse(null);
+         if (tokenDomainContext == null) {
+            throw new SecurityException("Realm has no data-domain configuration: " + tokenRealm);
+         }
+
+         String newAuthToken = appAuth.resolved()
+            ? TokenUtils.generateUserToken(
+               refreshSubject, userId, allRoles, tokenRealm,
+               tokenDomainContext.getTenantId(), tokenDomainContext.getOrgRefName(),
+               tokenDomainContext.getAccountId(), appAuth.audiences(),
+               appAuth.activeApplication(), TokenUtils.expiresAt(durationInSeconds), issuer)
+            : TokenUtils.generateUserToken(
+               refreshSubject, userId, allRoles, tokenRealm,
+               tokenDomainContext.getTenantId(), tokenDomainContext.getOrgRefName(),
+               tokenDomainContext.getAccountId(), TokenUtils.expiresAt(durationInSeconds), issuer);
+         String newRefreshToken = generateRefreshToken(
+            refreshSubject, userId, tokenRealm,
+            appAuth.resolved() ? appAuth.activeApplication() : null,
+            newAuthToken, durationInSeconds);
+         SecurityIdentity identity = validateAccessToken(newAuthToken);
 
          java.util.List<RoleAssignment> roleAssignments = allRoles.stream()
                  .filter(Objects::nonNull)
                  .map(role -> {
                     java.util.EnumSet<RoleSource> src = java.util.EnumSet.noneOf(RoleSource.class);
-                    if (idpRoles.contains(role)) src.add(RoleSource.TOKEN);
                     if (credentialRoles.contains(role)) src.add(RoleSource.CREDENTIAL);
                     if (userGroupRoles.contains(role)) src.add(RoleSource.USERGROUP);
+                    if (realmRoles.contains(role)) src.add(RoleSource.REALM);
                     return new RoleAssignment(role, src);
                  })
                  .toList();
@@ -780,12 +889,14 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
               newRefreshToken,
               TokenUtils.currentTimeInSecs() + durationInSeconds,
               mongodbConnectionString,
-              responseRealm[0]));
-      } catch (IOException | NoSuchAlgorithmException | InvalidKeySpecException e) {
+              tokenRealm,
+              appAuth.resolved() ? appAuth.audiences() : null,
+              appAuth.resolved() ? appAuth.activeApplication() : null));
+      } catch (IOException | NoSuchAlgorithmException | InvalidKeySpecException | ParseException e) {
          return new LoginResponse(false,
-            new LoginNegativeResponse(refreshSubject,
+            new LoginNegativeResponse(null,
                400,
-               500,
+               401,
                e.getMessage(),
                e.getClass().getName(),
                e.toString(),
@@ -797,10 +908,20 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
    public SecurityIdentity validateAccessToken (String token) {
       try {
          var jwt = jwtParser.parse(token);
-         String userId = jwt.getSubject();
+         if (!TokenUtils.AUTH_SCOPE.equals(claimString(jwt, "scope"))) {
+            throw new SecurityException("Token is not an access token");
+         }
+         String subject = jwt.getSubject();
          Set<String> roles = new HashSet<>(jwt.getGroups());
 
-         SecurityIdentity identity = buildIdentity(userId, roles);
+         SecurityIdentity identity = buildIdentity(subject, roles, Map.ofEntries(
+            Map.entry("userId", Objects.requireNonNullElse(claimString(jwt, "userId"), subject)),
+            Map.entry("realm", Objects.requireNonNullElse(claimString(jwt, "realm"), "")),
+            Map.entry("tenantId", Objects.requireNonNullElse(claimString(jwt, "tenantId"), "")),
+            Map.entry("orgRefName", Objects.requireNonNullElse(claimString(jwt, "orgRefName"), "")),
+            Map.entry("accountNum", Objects.requireNonNullElse(claimString(jwt, "accountNum"), "")),
+            Map.entry("activeApplication", Objects.requireNonNullElse(claimString(jwt, "azp"), ""))
+         ));
          return identity;
       } catch (ParseException e) {
          Log.error("Token validation failed", e);
@@ -812,6 +933,9 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
    public ProviderClaims validateTokenToClaims(String token) {
       try {
          var jwt = jwtParser.parse(token);
+         if (!TokenUtils.AUTH_SCOPE.equals(claimString(jwt, "scope"))) {
+            throw new SecurityException("Token is not an access token");
+         }
          String subject = jwt.getSubject();
          Set<String> roles = new HashSet<>(jwt.getGroups());
          ProviderClaims.Builder b = ProviderClaims.builder(subject)
@@ -824,6 +948,10 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
          if (email != null) b.putAttribute("email", email);
          String iss = jwt.getIssuer();
          if (iss != null) b.putAttribute("iss", iss);
+         for (String claim : List.of("userId", "realm", "tenantId", "orgRefName", "accountNum", "azp")) {
+            String value = claimString(jwt, claim);
+            if (value != null) b.putAttribute(claim, value);
+         }
          return b.build();
       } catch (ParseException e) {
          Log.error("Token validation to claims failed", e);
@@ -831,38 +959,21 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
       }
    }
 
-   private String generateAuthToken (String userId) {
-      try {
-         Date now = new Date();
-         Date expiration = new Date(now.getTime() + (expirationInMinutes * 60 * 1000));
-
-         String header = Base64.getUrlEncoder().encodeToString("{\"alg\":\"HS256\",\"typ\":\"JWT\"}".getBytes());
-         String payload =
-            Base64.getUrlEncoder().encodeToString(("{\"sub\":\"" + userId + "\",\"iat\":" + now.getTime() / 1000 + "," +
-                                                      "\"exp\":" + expiration.getTime() / 1000 + "}").getBytes());
-
-         String signature = sign(header + "." + payload, secretKey);
-
-         return header + "." + payload + "." + signature;
-      } catch (Exception e) {
-         throw new RuntimeException("Failed to generate auth token", e);
-      }
-   }
-
-   private String sign (String data, String secret) throws Exception {
-      Mac mac = Mac.getInstance("HmacSHA256");
-      SecretKeySpec secretKeySpec = new SecretKeySpec(secret.getBytes(), "HmacSHA256");
-      mac.init(secretKeySpec);
-      return Base64.getUrlEncoder().withoutPadding().encodeToString(mac.doFinal(data.getBytes()));
-   }
-
-   private String generateRefreshToken (String userId, String accessToken, long durationInSeconds) throws IOException
+   private String generateRefreshToken (String subject,
+                                        String userId,
+                                        String realm,
+                                        String activeApplication,
+                                        String accessToken,
+                                        long durationInSeconds) throws IOException
                                                                                                              ,
                                                                                                              NoSuchAlgorithmException, InvalidKeySpecException {
 
       String refreshToken = TokenUtils.generateRefreshToken(
+         subject,
          userId,
-         TokenUtils.currentTimeInSecs() + durationInSeconds + TokenUtils.REFRESH_ADDITIONAL_DURATION_SECONDS,
+         realm,
+         activeApplication,
+         durationInSeconds,
          issuer);
 
       CredentialRefreshToken refreshToken1 = CredentialRefreshToken.builder()
@@ -885,14 +996,26 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
    }
 
    private SecurityIdentity buildIdentity (String userId, Set<String> roles) {
+      return buildIdentity(userId, roles, Map.of());
+   }
+
+   private SecurityIdentity buildIdentity (String userId, Set<String> roles, Map<String, Object> attributes) {
       QuarkusSecurityIdentity.Builder builder = QuarkusSecurityIdentity.builder();
       builder.setPrincipal(() -> userId);
       roles.forEach(builder::addRole);
 
       builder.addAttribute("token_type", "custom");
       builder.addAttribute("auth_time", System.currentTimeMillis());
+      attributes.forEach(builder::addAttribute);
 
       return builder.build();
+   }
+
+   private String claimString(org.eclipse.microprofile.jwt.JsonWebToken jwt, String claim) {
+      Object value = jwt.getClaim(claim);
+      if (value == null) return null;
+      String text = String.valueOf(value).trim();
+      return text.isEmpty() ? null : text;
    }
 
 

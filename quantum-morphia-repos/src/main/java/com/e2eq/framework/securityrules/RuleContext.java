@@ -193,6 +193,12 @@ public class RuleContext {
                 continue;
             }
             Rule rule = result.getRule();
+            // Field exclusions are a restriction attached to an ALLOW grant. A matched DENY
+            // rule must never contribute projection metadata to a separately winning ALLOW
+            // decision; doing so would make the effective field contract depend on losing rules.
+            if (rule.getEffect() != RuleEffect.ALLOW) {
+                continue;
+            }
             if (rule.getExcludedFields() == null || rule.getExcludedFields().isEmpty()) {
                 continue;
             }

@@ -3,11 +3,13 @@ package com.e2eq.framework.model.persistent.morphia.compiler.mongo;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.metadata.JoinSpec;
 import com.e2eq.framework.model.persistent.morphia.planner.LogicalPlan;
+import dev.morphia.query.filters.Filters;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -43,5 +45,49 @@ public class MongoAggregationCompilerTest {
         // Should drop the temp alias with $project
         boolean hasProject = pipeline.stream().anyMatch(b -> b instanceof Document && ((Document) b).containsKey("$project"));
         assertTrue(hasProject, "Expected a $project cleanup stage");
+    }
+
+    @Test
+    void compileMatchPreservesLogicalPolicyFilters() {
+        MongoAggregationCompiler compiler = new MongoAggregationCompiler();
+
+        Document match = compiler.compileMatch(Filters.and(
+                Filters.eq("status", "ACTIVE"),
+                Filters.in("dataDomain.tenantId", List.of("TENANT-A", "TENANT-B"))));
+
+        List<?> clauses = match.getList("$and", Object.class);
+        assertEquals(2, clauses.size());
+        assertEquals("ACTIVE", ((Document) clauses.get(0)).getString("status"));
+        assertEquals(List.of("TENANT-A", "TENANT-B"),
+                ((Document) ((Document) clauses.get(1)).get("dataDomain.tenantId")).get("$in"));
+    }
+
+    @Test
+    void compileMatchPreservesRegexFlags() {
+        MongoAggregationCompiler compiler = new MongoAggregationCompiler();
+
+        Document match = compiler.compileMatch(
+                Filters.regex("displayName", Pattern.compile("century", Pattern.CASE_INSENSITIVE)));
+
+        Document expression = (Document) match.get("displayName");
+        assertEquals("century", expression.getString("$regex"));
+        assertEquals("i", expression.getString("$options"));
+    }
+
+    @Test
+    void unsupportedPolicyFilterFailsClosed() {
+        MongoAggregationCompiler compiler = new MongoAggregationCompiler();
+
+        assertThrows(IllegalArgumentException.class,
+                () -> compiler.compileMatch(Filters.mod("score", 5, 0)));
+    }
+
+    @Test
+    void expandWithoutJoinMetadataFailsClosed() {
+        LogicalPlan.Expand expansion = new LogicalPlan.Expand("customer", 1, null, false, null);
+        LogicalPlan plan = new LogicalPlan(Dummy.class, null, List.of(expansion), null, null);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> new MongoAggregationCompiler().compile(plan));
     }
 }

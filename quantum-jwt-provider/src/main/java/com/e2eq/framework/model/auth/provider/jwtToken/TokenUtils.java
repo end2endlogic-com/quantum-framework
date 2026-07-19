@@ -205,6 +205,21 @@ public class TokenUtils {
 											String activeApplication,
 											long expiresAt,
 											String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+		return generateUserToken(subject, null, groups, null, null, null, null,
+				audiences, activeApplication, expiresAt, issuer);
+	}
+
+	public static String generateUserToken(String subject,
+											String userId,
+											Set<String> groups,
+											String realm,
+											String tenantId,
+											String orgRefName,
+											String accountNum,
+											Set<String> audiences,
+											String activeApplication,
+											long expiresAt,
+											String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
 
 		Objects.requireNonNull(subject, "subject cannot be null");
 		Objects.requireNonNull(issuer, "Issuer cannot be null");
@@ -226,6 +241,7 @@ public class TokenUtils {
 		claimsBuilder.expiresAt(expiresAt);
 		claimsBuilder.groups(groups);
 		claimsBuilder.claim("scope", AUTH_SCOPE);
+		addPrincipalClaims(claimsBuilder, userId, realm, tenantId, orgRefName, accountNum);
 		if (activeApplication != null && !activeApplication.isBlank()) {
 			claimsBuilder.claim("azp", activeApplication);
 		}
@@ -233,7 +249,21 @@ public class TokenUtils {
 	}
 
 	public static String generateRefreshToken(String subject,  long durationInSeconds, String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+		return generateRefreshToken(subject, null, null, null, durationInSeconds, issuer);
+	}
 
+	public static String generateRefreshToken(String subject,
+											 String userId,
+											 String realm,
+											 String activeApplication,
+											 long durationInSeconds,
+											 String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+
+		Objects.requireNonNull(subject, "subject cannot be null");
+		Objects.requireNonNull(issuer, "Issuer cannot be null");
+		if (durationInSeconds <= 0) {
+			throw new ValidationException("Refresh-token duration must be greater than zero seconds");
+		}
                 PrivateKey privateKey = cachedPrivateKey != null ? cachedPrivateKey : readPrivateKey(privateKeyLocation);
 		JwtClaimsBuilder claimsBuilder = Jwt.claims();
 		long currentTimeInSecs = currentTimeInSecs();
@@ -243,7 +273,23 @@ public class TokenUtils {
 		claimsBuilder.audience("b2bi-api-client-refresh");
 		claimsBuilder.expiresAt(currentTimeInSecs + durationInSeconds + REFRESH_ADDITIONAL_DURATION_SECONDS);
 		claimsBuilder.claim("scope", REFRESH_SCOPE);
+		if (userId != null && !userId.isBlank()) claimsBuilder.claim("userId", userId);
+		if (realm != null && !realm.isBlank()) claimsBuilder.claim("realm", realm);
+		if (activeApplication != null && !activeApplication.isBlank()) claimsBuilder.claim("azp", activeApplication);
 		return claimsBuilder.jws().keyId(resolveSigningKeyId()).sign(privateKey);
+	}
+
+	private static void addPrincipalClaims(JwtClaimsBuilder claimsBuilder,
+										 String userId,
+										 String realm,
+										 String tenantId,
+										 String orgRefName,
+										 String accountNum) {
+		if (userId != null && !userId.isBlank()) claimsBuilder.claim("userId", userId);
+		if (realm != null && !realm.isBlank()) claimsBuilder.claim("realm", realm);
+		if (tenantId != null && !tenantId.isBlank()) claimsBuilder.claim("tenantId", tenantId);
+		if (orgRefName != null && !orgRefName.isBlank()) claimsBuilder.claim("orgRefName", orgRefName);
+		if (accountNum != null && !accountNum.isBlank()) claimsBuilder.claim("accountNum", accountNum);
 	}
 
         public static PrivateKey readPrivateKey(final String pemResName) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
