@@ -4,6 +4,7 @@ import com.e2eq.framework.grammar.BIAPIQueryBaseListener;
 import com.e2eq.framework.grammar.BIAPIQueryParser;
 
 import com.e2eq.framework.model.persistent.base.BaseModel;
+import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import dev.morphia.annotations.Reference;
 import dev.morphia.query.filters.Filter;
@@ -16,6 +17,7 @@ import org.antlr.v4.runtime.tree.ParseTreeWalker;
 import org.apache.commons.text.StringSubstitutor;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
+import com.e2eq.framework.model.securityrules.SecurityContext;
 import org.bson.types.ObjectId;
 
 
@@ -52,6 +54,124 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
     StringSubstitutor sub = null;
 
     Class<? extends UnversionedBaseModel> modelClass=null;
+
+    /**
+     * Resolve the complete data-domain boundary used by ontology relationship predicates.
+     * A tenant id alone is not sufficient because a realm may contain multiple org/account
+     * domains and business refNames are not guaranteed to be globally unique.
+     */
+    private DataDomain resolveOntologyDataDomain(String requestedTenantId) {
+        Optional<PrincipalContext> principalContext = SecurityContext.getPrincipalContext();
+        if (principalContext.isPresent()) {
+            DataDomain principalDataDomain = principalContext.get().getDataDomain();
+            if (principalDataDomain == null) {
+                throw new IllegalStateException(
+                    "Ontology relationship predicates require a principal DataDomain");
+            }
+            if (requestedTenantId != null && !requestedTenantId.isBlank()
+                && !Objects.equals(requestedTenantId, principalDataDomain.getTenantId())) {
+                throw new SecurityException(
+                    "Ontology relationship tenant does not match the authenticated principal DataDomain");
+            }
+            return principalDataDomain;
+        }
+
+        String tenantId = firstNonBlank(requestedTenantId, variable("pTenantId"), variable("tenantId"));
+        String orgRefName = firstNonBlank(variable("orgRefName"), variable("dcOrgRefName"));
+        String accountNum = firstNonBlank(variable("pAccountId"), variable("dcAccountId"));
+        String dataSegmentValue = firstNonBlank(variable("pDataSegment"), variable("dcDataSegment"));
+        if (tenantId == null || orgRefName == null || accountNum == null || dataSegmentValue == null) {
+            throw new IllegalStateException(
+                "Ontology relationship predicates require tenantId, orgRefName, accountId, and dataSegment");
+        }
+
+        final int dataSegment;
+        try {
+            dataSegment = Integer.parseInt(dataSegmentValue);
+        } catch (NumberFormatException e) {
+            throw new IllegalStateException(
+                "Ontology relationship dataSegment must be an integer", e);
+        }
+
+        DataDomain dataDomain = new DataDomain();
+        dataDomain.setTenantId(tenantId);
+        dataDomain.setOrgRefName(orgRefName);
+        dataDomain.setAccountNum(accountNum);
+        dataDomain.setDataSegment(dataSegment);
+        String ownerId = variable("ownerId");
+        if (ownerId != null && !ownerId.isBlank()) {
+            dataDomain.setOwnerId(ownerId);
+        }
+        return dataDomain;
+    }
+
+    private String variable(String name) {
+        return variableMap == null ? null : variableMap.get(name);
+    }
+
+    private static String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Set<String> ontologySrcIdsByDst(DataDomain dataDomain, String predicate, String dst) {
+        try {
+            var cdi = jakarta.enterprise.inject.spi.CDI.current();
+            if (cdi == null) {
+                throw new IllegalStateException("CDI is not available");
+            }
+            Class<?> edgeRepoClass = Class.forName("com.e2eq.ontology.repo.OntologyEdgeRepo");
+            var selection = cdi.select(edgeRepoClass);
+            if (selection.isUnsatisfied()) {
+                throw new IllegalStateException("OntologyEdgeRepo bean is not available");
+            }
+            Object edgeRepo = selection.get();
+            java.lang.reflect.Method method = edgeRepoClass.getMethod(
+                "srcIdsByDst", DataDomain.class, String.class, String.class);
+            Object result = method.invoke(edgeRepo, dataDomain, predicate, dst);
+            if (!(result instanceof Set<?>)) {
+                throw new IllegalStateException("OntologyEdgeRepo returned an invalid source-id result");
+            }
+            return (Set<String>) result;
+        } catch (ReflectiveOperationException | IllegalStateException e) {
+            throw new IllegalStateException(
+                "Unable to enforce ontology outgoing-edge predicate for DataDomain", e);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Set<String> ontologyDstIdsBySrc(DataDomain dataDomain, String predicate, String src) {
+        try {
+            var cdi = jakarta.enterprise.inject.spi.CDI.current();
+            if (cdi == null) {
+                throw new IllegalStateException("CDI is not available");
+            }
+            Class<?> edgeRepoClass = Class.forName("com.e2eq.ontology.repo.OntologyEdgeRepo");
+            var selection = cdi.select(edgeRepoClass);
+            if (selection.isUnsatisfied()) {
+                throw new IllegalStateException("OntologyEdgeRepo bean is not available");
+            }
+            Object edgeRepo = selection.get();
+            java.lang.reflect.Method method = edgeRepoClass.getMethod(
+                "dstIdsBySrc", DataDomain.class, String.class, String.class);
+            Object result = method.invoke(edgeRepo, dataDomain, predicate, src);
+            if (!(result instanceof Set<?>)) {
+                throw new IllegalStateException("OntologyEdgeRepo returned an invalid destination-id result");
+            }
+            return (Set<String>) result;
+        } catch (ReflectiveOperationException | IllegalStateException e) {
+            throw new IllegalStateException(
+                "Unable to enforce ontology incoming-edge predicate for DataDomain", e);
+        }
+    }
 
 
     public QueryToFilterListener(Map<String, String> variableMap, StringSubstitutor sub, Class<? extends UnversionedBaseModel> modelClass) {
@@ -1059,26 +1179,8 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
             }
         } catch (Throwable ignored) { /* if ontology not wired, continue with best-effort behavior */ }
 
-        Set<String> ids = Collections.emptySet();
-        if (tenantId != null && !tenantId.isBlank()) {
-            try {
-                var cdi = jakarta.enterprise.inject.spi.CDI.current();
-                if (cdi != null) {
-                    Class<?> edgeIface = Class.forName("com.e2eq.ontology.repo.OntologyEdgeRepo");
-                    var sel = cdi.select(edgeIface);
-                    Object store = sel.isUnsatisfied() ? null : sel.get();
-                    if (store != null) {
-                        java.lang.reflect.Method m = edgeIface.getMethod("srcIdsByDst", String.class, String.class, String.class);
-                        Object result = m.invoke(store, tenantId, predicate, dst);
-                        if (result instanceof java.util.Set) {
-                            ids = (Set<String>) result;
-                        }
-                    }
-                }
-            } catch (Throwable t) {
-                // ignore and fail closed below
-            }
-        }
+        DataDomain dataDomain = resolveOntologyDataDomain(tenantId);
+        Set<String> ids = ontologySrcIdsByDst(dataDomain, predicate, dst);
         if (ids == null || ids.isEmpty()) {
             filterStack.push(Filters.eq("_id", "__none__"));
         } else {
@@ -1155,26 +1257,8 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
             }
         } catch (Throwable ignored) { /* if ontology not wired, continue with best-effort behavior */ }
 
-        Set<String> ids = Collections.emptySet();
-        if (tenantId != null && !tenantId.isBlank()) {
-            try {
-                var cdi = jakarta.enterprise.inject.spi.CDI.current();
-                if (cdi != null) {
-                    Class<?> edgeIface = Class.forName("com.e2eq.ontology.repo.OntologyEdgeRepo");
-                    var sel = cdi.select(edgeIface);
-                    Object store = sel.isUnsatisfied() ? null : sel.get();
-                    if (store != null) {
-                        java.lang.reflect.Method m = edgeIface.getMethod("srcIdsByDst", String.class, String.class, String.class);
-                        Object result = m.invoke(store, tenantId, predicate, dst);
-                        if (result instanceof java.util.Set) {
-                            ids = (Set<String>) result;
-                        }
-                    }
-                }
-            } catch (Throwable t) {
-                // ignore and fail closed below
-            }
-        }
+        DataDomain dataDomain = resolveOntologyDataDomain(tenantId);
+        Set<String> ids = ontologySrcIdsByDst(dataDomain, predicate, dst);
         if (ids == null || ids.isEmpty()) {
             filterStack.push(Filters.eq("_id", "__none__"));
         } else {
@@ -1253,57 +1337,8 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
             }
         } catch (Throwable ignored) { /* if ontology not wired, continue with best-effort behavior */ }
 
-        Set<String> ids = Collections.emptySet();
-        if (tenantId != null && !tenantId.isBlank()) {
-            try {
-                var cdi = jakarta.enterprise.inject.spi.CDI.current();
-                if (cdi != null) {
-                    Class<?> edgeIface = Class.forName("com.e2eq.ontology.repo.OntologyEdgeRepo");
-                    var sel = cdi.select(edgeIface);
-                    Object store = sel.isUnsatisfied() ? null : sel.get();
-                    if (store != null) {
-                        // Use dstIdsBySrc to get destination IDs where src has edges
-                        java.lang.reflect.Method m = edgeIface.getMethod("dstIdsBySrc",
-                            com.e2eq.framework.model.persistent.base.DataDomain.class, String.class, String.class);
-
-                        // Build DataDomain from tenantId - use defaults for testing
-                        com.e2eq.framework.model.persistent.base.DataDomain dd =
-                            new com.e2eq.framework.model.persistent.base.DataDomain();
-                        dd.setTenantId(tenantId);
-                        // Try to get org and account from security context
-                        try {
-                            var secCtxOpt = com.e2eq.framework.model.securityrules.SecurityContext.getPrincipalContext();
-                            if (secCtxOpt.isPresent()) {
-                                var pctx = secCtxOpt.get();
-                                if (pctx.getDataDomain() != null) {
-                                    dd = pctx.getDataDomain();
-                                }
-                            }
-                        } catch (Throwable ignored2) { }
-                        // Set fallback values if not set
-                        if (dd.getOrgRefName() == null) dd.setOrgRefName("ontology");
-                        if (dd.getAccountNum() == null) dd.setAccountNum("0000000000");
-                        if (dd.getTenantId() == null) dd.setTenantId(tenantId);
-                        dd.setDataSegment(0);
-
-                        if (Log.isDebugEnabled()) {
-                            Log.debugf("hasIncomingEdge: calling dstIdsBySrc with dd=%s, predicate=%s, src=%s", dd, predicate, src);
-                        }
-                        Object result = m.invoke(store, dd, predicate, src);
-                        if (result instanceof java.util.Set) {
-                            ids = (Set<String>) result;
-                            if (Log.isDebugEnabled()) {
-                                Log.debugf("hasIncomingEdge: dstIdsBySrc returned %d IDs: %s", ids.size(), ids);
-                            }
-                        }
-                    }
-                }
-            } catch (Throwable t) {
-                if (Log.isDebugEnabled()) {
-                    Log.debugf(t, "hasIncomingEdge: Exception while querying edges");
-                }
-            }
-        }
+        DataDomain dataDomain = resolveOntologyDataDomain(tenantId);
+        Set<String> ids = ontologyDstIdsBySrc(dataDomain, predicate, src);
         if (ids == null || ids.isEmpty()) {
             filterStack.push(Filters.eq("_id", "__none__"));
         } else {

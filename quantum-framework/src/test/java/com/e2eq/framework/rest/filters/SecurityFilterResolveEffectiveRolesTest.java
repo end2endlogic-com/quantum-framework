@@ -5,8 +5,11 @@ import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.UserGroup;
 import com.e2eq.framework.model.security.UserProfile;
 import com.e2eq.framework.model.persistent.morphia.UserGroupRepo;
+import com.e2eq.framework.model.persistent.morphia.IdentityRoleResolver;
 import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
-import com.e2eq.framework.rest.models.Role;
+import com.e2eq.framework.model.persistent.morphia.UserRealmRoleRepo;
+import com.e2eq.framework.model.security.UserRealmRole;
+import com.e2eq.framework.util.EnvConfigUtils;
 import io.quarkus.security.identity.SecurityIdentity;
 import org.junit.jupiter.api.Test;
 
@@ -66,25 +69,54 @@ public class SecurityFilterResolveEffectiveRolesTest {
         public List<UserGroup> findByUserProfileRef(EntityReference userProfileRef) {
             return byEntityRef.getOrDefault(userProfileRef.getEntityRefName(), Collections.emptyList());
         }
+        @Override
+        public List<UserGroup> findByUserProfileRefWithIgnoreRules(String realm, EntityReference userProfileRef) {
+            return findByUserProfileRef(userProfileRef);
+        }
+    }
+
+    private static class StubUserRealmRoleRepo extends UserRealmRoleRepo {
+        @Override
+        public Optional<UserRealmRole> findActiveAssignmentForRealmWithIgnoreRules(
+                String userId, String realmRefName, String systemRealmId) {
+            return Optional.empty();
+        }
     }
 
     private static SecurityFilter newFilterWithRepos(StubUserProfileRepo upr, StubUserGroupRepo ugr) throws Exception {
         SecurityFilter filter = new SecurityFilter();
         setField(filter, "userProfileRepo", upr);
         setField(filter, "userGroupRepo", ugr);
+        IdentityRoleResolver resolver = new IdentityRoleResolver();
+        setDeclaredField(resolver, IdentityRoleResolver.class, "userProfileRepo", upr);
+        setDeclaredField(resolver, IdentityRoleResolver.class, "userGroupRepo", ugr);
+        setDeclaredField(resolver, IdentityRoleResolver.class, "userRealmRoleRepo", new StubUserRealmRoleRepo());
+        EnvConfigUtils envConfig = new EnvConfigUtils();
+        envConfig.setSystemRealm("system-com");
+        setDeclaredField(resolver, IdentityRoleResolver.class, "envConfigUtils", envConfig);
+        setField(filter, "identityRoleResolver", resolver);
         return filter;
     }
 
     private static void setField(Object target, String fieldName, Object value) throws Exception {
-        Field f = SecurityFilter.class.getDeclaredField(fieldName);
+        setDeclaredField(target, SecurityFilter.class, fieldName, value);
+    }
+
+    private static void setDeclaredField(Object target, Class<?> owner, String fieldName, Object value) throws Exception {
+        Field f = owner.getDeclaredField(fieldName);
         f.setAccessible(true);
         f.set(target, value);
     }
 
-    private static String[] invokeResolveEffectiveRoles(SecurityFilter filter, SecurityIdentity identity, CredentialUserIdPassword cred) throws Exception {
-        Method m = SecurityFilter.class.getDeclaredMethod("resolveEffectiveRoles", SecurityIdentity.class, CredentialUserIdPassword.class);
+    private static String[] invokeResolveEffectiveRoles(
+            SecurityFilter filter,
+            SecurityIdentity identity,
+            CredentialUserIdPassword cred,
+            String realm) throws Exception {
+        Method m = SecurityFilter.class.getDeclaredMethod(
+                "resolveEffectiveRoles", SecurityIdentity.class, CredentialUserIdPassword.class, String.class);
         m.setAccessible(true);
-        return (String[]) m.invoke(filter, identity, cred);
+        return (String[]) m.invoke(filter, identity, cred, realm);
     }
 
     @Test
@@ -129,7 +161,7 @@ public class SecurityFilterResolveEffectiveRolesTest {
 
         SecurityFilter filter = newFilterWithRepos(upr, ugr);
 
-        String[] effective = invokeResolveEffectiveRoles(filter, identity, cred);
+        String[] effective = invokeResolveEffectiveRoles(filter, identity, cred, "realmA");
         Set<String> result = new HashSet<>(Arrays.asList(effective));
 
         // Expected union: identity(user, viewer) U cred(editor, user) U groups(user, admin, developer)
@@ -145,7 +177,7 @@ public class SecurityFilterResolveEffectiveRolesTest {
         StubUserGroupRepo ugr = new StubUserGroupRepo();
         SecurityFilter filter = newFilterWithRepos(upr, ugr);
 
-        String[] effective = invokeResolveEffectiveRoles(filter, identity, null);
+        String[] effective = invokeResolveEffectiveRoles(filter, identity, null, "system-com");
         assertArrayEquals(new String[]{"ANONYMOUS"}, effective);
     }
 }

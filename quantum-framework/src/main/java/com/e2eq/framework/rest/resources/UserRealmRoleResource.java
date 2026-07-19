@@ -4,6 +4,8 @@ import com.e2eq.framework.model.persistent.morphia.UserRealmRoleRepo;
 import com.e2eq.framework.model.security.UserRealmRole;
 import com.e2eq.framework.rest.models.ApplicationGrantRequest;
 import com.e2eq.framework.rest.models.RestError;
+import com.e2eq.framework.service.application.ApplicationRegistryUnavailableException;
+import com.e2eq.framework.service.application.ApplicationRegistryValidator;
 import com.e2eq.framework.util.EnvConfigUtils;
 import io.quarkus.arc.properties.IfBuildProperty;
 import io.quarkus.logging.Log;
@@ -42,6 +44,9 @@ public class UserRealmRoleResource extends BaseResource<UserRealmRole, UserRealm
 
    @Inject
    EnvConfigUtils envConfigUtils;
+
+   @Inject
+   ApplicationRegistryValidator applicationRegistryValidator;
 
    protected UserRealmRoleResource(UserRealmRoleRepo repo) {
       super(repo);
@@ -106,6 +111,35 @@ public class UserRealmRoleResource extends BaseResource<UserRealmRole, UserRealm
             // "*" is an admin-only, deliberate grant — audit every time it is written.
             Log.warnf("Wildcard application grant WRITTEN (audit): user=%s realm=%s by=%s",
                     userId, realmRefName, callerName());
+         }
+
+         // Grants must reference registered applications; the wildcard is
+         // excluded (concrete) and the registry seam decides what "registered"
+         // means for this deployment (allow-all in embedded/legacy mode).
+         if (!concrete.isEmpty()) {
+            java.util.Set<String> unknown;
+            try {
+               unknown = applicationRegistryValidator.unknownApplications(concrete);
+            } catch (ApplicationRegistryUnavailableException e) {
+               Log.errorf(e, "Application registry unavailable while validating grant: user=%s realm=%s",
+                       userId, realmRefName);
+               return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                       .entity(RestError.builder()
+                               .status(Response.Status.SERVICE_UNAVAILABLE.getStatusCode())
+                               .statusMessage("Application registry unavailable; grant not written: "
+                                       + e.getMessage())
+                               .build())
+                       .build();
+            }
+            if (!unknown.isEmpty()) {
+               return Response.status(Response.Status.BAD_REQUEST)
+                       .entity(RestError.builder()
+                               .status(Response.Status.BAD_REQUEST.getStatusCode())
+                               .statusMessage("Unknown application id(s) — not in the application registry: "
+                                       + String.join(", ", new java.util.TreeSet<>(unknown)))
+                               .build())
+                       .build();
+            }
          }
 
          membership.setAuthorizedApplications(apps);

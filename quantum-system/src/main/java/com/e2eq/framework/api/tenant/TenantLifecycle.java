@@ -28,8 +28,12 @@ public interface TenantLifecycle {
     TenantProvisionResult provision(TenantProvisionRequest request);
 
     /**
-     * Delete a tenant's realm: catalog entry, database, credentials.
-     * Implementations refuse to delete system realms.
+     * Legacy compatibility boundary for tenant deletion.
+     *
+     * <p>The embedded open-source implementation must fail closed rather than
+     * deleting realm data synchronously. Soft decommission, verified archive,
+     * destructive approval, and restore belong to the governed system control
+     * plane workflow.</p>
      */
     TenantDeleteResult delete(String realmId);
 }

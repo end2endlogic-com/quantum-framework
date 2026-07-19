@@ -1,7 +1,6 @@
 package com.e2eq.framework.mcp;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
-import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.ontology.core.OntologyRegistry;
@@ -167,33 +166,37 @@ public class McpOntologyTools {
     }
 
     private DataDomain resolveDataDomain(String realm) {
-        // Try SecurityContext first
-        DataDomain dd = SecurityContext.getPrincipalContext()
-                .map(PrincipalContext::getDataDomain)
-                .orElse(null);
-        if (dd != null) {
-            return dd;
+        PrincipalContext principal = requirePrincipal();
+        requireEffectiveRealm(principal, realm);
+        DataDomain dataDomain = principal.getDataDomain();
+        if (dataDomain == null) {
+            throw new IllegalStateException("Authenticated principal has no effective DataDomain");
         }
-        // Fallback: build minimal DataDomain from realm
-        if (realm != null && !realm.isBlank()) {
-            dd = new DataDomain();
-            dd.setOrgRefName("system");
-            dd.setAccountNum("0000000000");
-            dd.setTenantId(realm.replace('-', '.'));
-            dd.setOwnerId("system");
-            dd.setDataSegment(0);
-            return dd;
-        }
-        return null;
+        return dataDomain;
     }
 
     private String resolveRealm(String requestRealm) {
-        if (requestRealm != null && !requestRealm.isBlank()) {
-            return requestRealm;
-        }
+        PrincipalContext principal = requirePrincipal();
+        return requireEffectiveRealm(principal, requestRealm);
+    }
+
+    private PrincipalContext requirePrincipal() {
         return SecurityContext.getPrincipalContext()
-                .map(PrincipalContext::getDefaultRealm)
-                .orElse("defaultRealm");
+                .orElseThrow(() -> new SecurityException(
+                        "Authenticated principal context is required for ontology access"));
+    }
+
+    private String requireEffectiveRealm(PrincipalContext principal, String requestRealm) {
+        String effectiveRealm = principal.getDefaultRealm();
+        if (effectiveRealm == null || effectiveRealm.isBlank()) {
+            throw new SecurityException("Authenticated principal has no effective realm");
+        }
+        if (requestRealm != null && !requestRealm.isBlank()
+                && !effectiveRealm.equals(requestRealm.trim())) {
+            throw new SecurityException("Requested realm '" + requestRealm
+                    + "' does not match authenticated effective realm '" + effectiveRealm + "'");
+        }
+        return effectiveRealm;
     }
 
     private static String escapeJson(String s) {

@@ -83,4 +83,16 @@ class TenantLifecycleAdapterTest {
         Assertions.assertEquals(3, contract.deletedCredentialCount());
         Assertions.assertEquals(List.of(), contract.warnings());
     }
+
+    @Test
+    void directDeleteFailsClosedWithoutTouchingRealmPersistence() {
+        TenantProvisioningService service = new TenantProvisioningService();
+
+        UnsupportedOperationException exception = Assertions.assertThrows(
+            UnsupportedOperationException.class,
+            () -> service.deleteTenant("acme-com")
+        );
+
+        Assertions.assertTrue(exception.getMessage().contains("governed realm lifecycle"));
+    }
 }

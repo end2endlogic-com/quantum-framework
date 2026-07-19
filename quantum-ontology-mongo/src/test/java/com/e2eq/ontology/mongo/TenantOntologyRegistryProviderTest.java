@@ -1,6 +1,7 @@
 package com.e2eq.ontology.mongo;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.ontology.core.OntologyRegistry;
 import com.e2eq.ontology.core.OntologyRegistry.*;
 import com.e2eq.ontology.model.TenantOntologyTBox;
@@ -9,6 +10,7 @@ import com.e2eq.ontology.runtime.TenantOntologyRegistryProvider;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -29,14 +31,23 @@ public class TenantOntologyRegistryProviderTest {
 
     private DataDomain tenant1;
     private DataDomain tenant2;
+    private SecurityCallScope.Scope ignoredRulesScope;
 
     @BeforeEach
     void setup() {
+        ignoredRulesScope = SecurityCallScope.openIgnoringRules();
         tboxRepo.deleteAll();
         provider.clearCache();
         
         tenant1 = new DataDomain("org1", "acc1", "tenant1", 0, "user1");
         tenant2 = new DataDomain("org1", "acc1", "tenant2", 0, "user2");
+    }
+
+    @AfterEach
+    void cleanup() {
+        if (ignoredRulesScope != null) {
+            ignoredRulesScope.close();
+        }
     }
 
     @Test

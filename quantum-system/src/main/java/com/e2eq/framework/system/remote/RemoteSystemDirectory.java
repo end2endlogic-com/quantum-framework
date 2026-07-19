@@ -31,15 +31,26 @@ import java.util.function.Supplier;
 public class RemoteSystemDirectory implements SystemDirectory {
 
     private final DefaultEndpoint client;
+    private final String baseUrl;
+    private final Supplier<Optional<String>> bearerTokenSupplier;
 
     /** Production: build the SDK client (transport via MP Rest Client). */
     public RemoteSystemDirectory(String baseUrl, Optional<String> bearerToken) {
-        this(ControlPlaneClientFactory.build(baseUrl, bearerToken));
+        this(baseUrl, () -> bearerToken);
+    }
+
+    /** Production request-scoped bearer forwarding for authenticated catalog reads. */
+    public RemoteSystemDirectory(String baseUrl, Supplier<Optional<String>> bearerTokenSupplier) {
+        this.client = null;
+        this.baseUrl = baseUrl;
+        this.bearerTokenSupplier = bearerTokenSupplier;
     }
 
     /** Direct injection of the typed client (tests, alternate transports). */
     public RemoteSystemDirectory(DefaultEndpoint client) {
         this.client = client;
+        this.baseUrl = null;
+        this.bearerTokenSupplier = null;
     }
 
     @Override
@@ -52,18 +63,19 @@ public class RemoteSystemDirectory implements SystemDirectory {
 
     @Override
     public Optional<Realm> findRealmByEmailDomain(String emailDomain) {
-        return getRealm(() -> client.findRealmByEmailDomain(emailDomain), "realm by email domain " + emailDomain);
+        return getRealm(() -> client().findRealmByEmailDomain(emailDomain), "realm by email domain " + emailDomain);
     }
 
     @Override
     public Optional<Realm> findRealmByRefName(String refName) {
-        return getRealm(() -> client.findRealmByRefName(refName), "realm " + refName);
+        return getRealm(() -> client().findRealmByRefName(refName), "realm " + refName);
     }
 
     @Override
     public Realm registerRealm(Realm realm) {
         try {
-            return fromEntry(client.registerRealm(toEntry(realm)));
+            return ControlPlaneRealmMapper.fromEntry(
+                client().registerRealm(ControlPlaneRealmMapper.toEntry(realm)));
         } catch (WebApplicationException e) {
             throw new IllegalStateException("Control plane rejected realm registration for "
                 + realm.getRefName() + ": HTTP " + e.getResponse().getStatus(), e);
@@ -84,7 +96,7 @@ public class RemoteSystemDirectory implements SystemDirectory {
 
     private Optional<Realm> getRealm(Supplier<RealmCatalogEntry> call, String what) {
         try {
-            return Optional.of(fromEntry(call.get()));
+            return Optional.of(ControlPlaneRealmMapper.fromEntry(call.get()));
         } catch (NotFoundException e) {
             return Optional.empty();
         } catch (WebApplicationException e) {
@@ -93,6 +105,16 @@ public class RemoteSystemDirectory implements SystemDirectory {
         } catch (ProcessingException e) {
             throw unreachable(what, e);
         }
+    }
+
+    private DefaultEndpoint client() {
+        if (client != null) {
+            return client;
+        }
+        Optional<String> bearerToken = bearerTokenSupplier == null
+            ? Optional.empty()
+            : bearerTokenSupplier.get();
+        return ControlPlaneClientFactory.build(baseUrl, bearerToken);
     }
 
     private static IllegalStateException unreachable(String what, Throwable cause) {
@@ -107,24 +129,4 @@ public class RemoteSystemDirectory implements SystemDirectory {
             + "(realm-membership ADR / B4). Port the calling path to JWT-claims-based identity.");
     }
 
-    /** Contract mapping: RealmCatalogEntry <-> Realm (catalog fields only). */
-    static Realm fromEntry(RealmCatalogEntry entry) {
-        Realm realm = new Realm();
-        realm.setRefName(entry.getRefName());
-        realm.setDisplayName(entry.getDisplayName());
-        realm.setDatabaseName(entry.getDatabaseName());
-        realm.setEmailDomain(entry.getEmailDomain());
-        realm.setConnectionString(entry.getConnectionString());
-        return realm;
-    }
-
-    static RealmCatalogEntry toEntry(Realm realm) {
-        RealmCatalogEntry entry = new RealmCatalogEntry();
-        entry.setRefName(realm.getRefName());
-        entry.setDisplayName(realm.getDisplayName());
-        entry.setDatabaseName(realm.getDatabaseName());
-        entry.setEmailDomain(realm.getEmailDomain());
-        entry.setConnectionString(realm.getConnectionString());
-        return entry;
-    }
 }

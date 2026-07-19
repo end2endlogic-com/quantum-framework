@@ -3,6 +3,7 @@ package com.e2eq.framework.model.auth;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -17,17 +18,43 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ApplicationAuthorizationResolverTest {
 
     @Test
-    void nullGrant_isLegacy() {
+    void credentialWildcardResolvesExplicitApplication() {
+        var r = ApplicationAuthorizationResolver.resolve(null, "*", null, "system-admin");
+        assertEquals(ApplicationAuthorizationResolver.Outcome.RESOLVED, r.outcome());
+        assertEquals(Set.of("system-admin"), r.audiences());
+        assertEquals("system-admin", r.activeApplication());
+        assertTrue(r.wildcard());
+    }
+
+    @Test
+    void credentialRegexAllowsMatchingApplicationAndDeniesOthers() {
+        var allowed = ApplicationAuthorizationResolver.resolve(null, "helixor-.*", null, "helixor-di");
+        var denied = ApplicationAuthorizationResolver.resolve(null, "helixor-.*", null, "quantum-system");
+
+        assertEquals(ApplicationAuthorizationResolver.Outcome.RESOLVED, allowed.outcome());
+        assertEquals(ApplicationAuthorizationResolver.Outcome.DENIED, denied.outcome());
+    }
+
+    @Test
+    void perRealmGrantTakesPrecedenceOverCredentialPattern() {
+        var r = ApplicationAuthorizationResolver.resolve(
+                List.of("tenant-console"), "*", null, "system-admin");
+
+        assertEquals(ApplicationAuthorizationResolver.Outcome.DENIED, r.outcome());
+    }
+
+    @Test
+    void nullGrant_deniesExplicitApplication() {
         var r = ApplicationAuthorizationResolver.resolve(null, null, "scheduler");
-        assertEquals(ApplicationAuthorizationResolver.Outcome.LEGACY, r.outcome());
+        assertEquals(ApplicationAuthorizationResolver.Outcome.DENIED, r.outcome());
         assertNull(r.audiences());
         assertNull(r.activeApplication());
     }
 
     @Test
-    void emptyGrant_isLegacy() {
+    void emptyGrant_deniesExplicitApplication() {
         var r = ApplicationAuthorizationResolver.resolve(List.of(), null, "scheduler");
-        assertEquals(ApplicationAuthorizationResolver.Outcome.LEGACY, r.outcome());
+        assertEquals(ApplicationAuthorizationResolver.Outcome.DENIED, r.outcome());
     }
 
     @Test

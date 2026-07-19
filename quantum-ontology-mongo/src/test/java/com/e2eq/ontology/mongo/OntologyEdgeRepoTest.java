@@ -4,6 +4,7 @@ import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.ontology.exceptions.CardinalityViolationException;
 import com.e2eq.ontology.repo.OntologyEdgeRepo;
@@ -31,14 +32,22 @@ public class OntologyEdgeRepoTest {
     
     private DataDomain testDataDomain;
     private DataDomain testDataDomainOrgB;
+    private SecurityCallScope.Scope privilegedRepoScope;
 
     @AfterEach
     void clearSecurityContext() {
+        if (privilegedRepoScope != null) {
+            privilegedRepoScope.close();
+            privilegedRepoScope = null;
+        }
         SecurityContext.clear();
     }
 
     @BeforeEach
     void clean() {
+        // These tests exercise the repository contract directly, outside an authenticated
+        // resource request. Declare that privileged test boundary explicitly.
+        privilegedRepoScope = SecurityCallScope.openIgnoringRules();
         edgeRepo.deleteAll("types-test");
         // Create test DataDomains for isolation testing
         testDataDomain = new DataDomain();

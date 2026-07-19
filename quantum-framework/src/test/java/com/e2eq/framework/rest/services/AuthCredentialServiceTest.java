@@ -54,7 +54,7 @@ class AuthCredentialServiceTest {
     }
 
     @Test
-    void credentialAuthProviderNameRoutesToNamedProvider() {
+    void credentialAuthProviderNameIsProvenanceNotRouting() {
         TestAuthProviderFactory factory = new TestAuthProviderFactory();
         TestUserManager defaultManager = new TestUserManager("custom", "https://custom.example.com");
         TestUserManager oidcManager = new TestUserManager("oidc", "https://oidc.example.com");
@@ -65,11 +65,11 @@ class AuthCredentialServiceTest {
         credential.setAuthProviderName("oidc");
         AuthCredentialService service = service(factory, Optional.of(credential));
 
-        assertSame(oidcManager, service.resolveUserManager("alice", null));
+        assertSame(defaultManager, service.resolveUserManager("alice", null));
     }
 
     @Test
-    void nonPasswordCredentialFallsBackToDefaultProvider() {
+    void nonPasswordCredentialCannotUsePasswordManagement() {
         TestAuthProviderFactory factory = new TestAuthProviderFactory();
         TestUserManager defaultManager = new TestUserManager("custom", "https://custom.example.com");
         TestUserManager oidcManager = new TestUserManager("oidc", "https://oidc.example.com");
@@ -81,7 +81,8 @@ class AuthCredentialServiceTest {
         credential.setAuthProviderName("oidc");
         AuthCredentialService service = service(factory, Optional.of(credential));
 
-        assertSame(defaultManager, service.resolveUserManager("alice", null));
+        assertThrows(IllegalArgumentException.class,
+                () -> service.resolveUserManager("alice", null));
     }
 
     @Test
