@@ -36,6 +36,12 @@ public class ServiceTokenCLI implements Runnable {
     @Option(names = {"-d", "--description"}, description = "Description for the service token")
     String description;
 
+    @Option(names = {"--realm"}, description = "Realm to stamp into the generated service token")
+    String realm;
+
+    @Option(names = {"--audience", "--audiences"}, description = "Comma-separated application audiences", split = ",")
+    Set<String> audiences = new HashSet<>();
+
     @Option(names = {"--url"}, description = "Base URL of the Quantum API", defaultValue = "http://localhost:8080")
     String baseUrl;
 
@@ -66,7 +72,7 @@ public class ServiceTokenCLI implements Runnable {
             // Based on ServiceTokenRequest JavaDoc: null for non-expiring (100-year token)
             Long apiExpiration = (expirationSeconds == -1) ? null : expirationSeconds;
 
-            ServiceTokenRequest tokenRequest = new ServiceTokenRequest(roles, apiExpiration, description);
+            ServiceTokenRequest tokenRequest = new ServiceTokenRequest(roles, apiExpiration, description, realm, audiences);
             Map<String, Object> result = authClient.generateServiceToken(bearerToken, tokenRequest);
 
             if (result != null && result.containsKey("accessToken")) {
