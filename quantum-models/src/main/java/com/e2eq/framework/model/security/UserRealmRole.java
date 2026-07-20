@@ -22,9 +22,11 @@ import java.util.List;
  *
  * Consumed at token issuance (the IdP unions these into per-realm role
  * claims) and by the tenant-plane routing registry (JWT claims → realm
- * datastore). The credential's flat roles[] remains the user's roles in
- * their default realm (compatibility); these assignments extend, never
- * replace, that behavior.
+ * datastore). The credential remains the authoritative realm-access boundary:
+ * an assignment can supply roles and application grants inside an authorized
+ * realm, but must never authorize a realm excluded by the credential's
+ * authorizedRealms/realmRegEx contract. The credential's flat roles[] remains
+ * the user's roles in their default realm for compatibility.
  */
 @Entity
 @RegisterForReflection

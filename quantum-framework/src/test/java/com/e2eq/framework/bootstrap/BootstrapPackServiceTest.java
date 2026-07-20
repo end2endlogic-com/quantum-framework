@@ -46,7 +46,8 @@ class BootstrapPackServiceTest {
                 "b2bi-com",
                 "b2bi.com",
                 "studio",
-                "tester"
+                "tester",
+                Map.of("orgRefName", "b2bi.com")
         ));
 
         assertEquals(BootstrapPackRunStatus.COMPLETED, run.status());
@@ -54,6 +55,7 @@ class BootstrapPackServiceTest {
         assertEquals(List.of("ensure-a", "ensure-b"), handler.executedSteps);
         assertEquals("local", run.scope().get("environmentRef"));
         assertEquals("b2bi-com", run.scope().get("realmRef"));
+        assertEquals("b2bi.com", run.scope().get("orgRefName"));
         assertEquals(1, service.listRuns().size());
     }
 
@@ -104,6 +106,32 @@ class BootstrapPackServiceTest {
         assertEquals(BootstrapPackRunStatus.FAILED, run.status());
         assertEquals(BootstrapStepStatus.FAILED, run.steps().get(0).status());
         assertEquals("NO_HANDLER", run.steps().get(0).details().get("reason"));
+    }
+
+    @Test
+    void recordsFailedRunWhenHandlerThrows() {
+        BootstrapPackService service = new BootstrapPackService(
+                new CdiBootstrapPackRegistry(List.of(new DemoPackContributor())),
+                List.of(new FailingHandler()),
+                new InMemoryBootstrapPackRunRepository()
+        );
+
+        BootstrapPackRun run = service.apply(new ApplyBootstrapPackRequest(
+                "demo-pack",
+                BootstrapPackApplyMode.APPLY_MISSING,
+                null,
+                null,
+                "broken-realm",
+                "broken-tenant",
+                null,
+                "tester"
+        ));
+
+        assertEquals(BootstrapPackRunStatus.FAILED, run.status());
+        assertEquals(BootstrapStepStatus.FAILED, run.steps().get(0).status());
+        assertEquals("HANDLER_EXECUTION_FAILED", run.steps().get(0).details().get("reason"));
+        assertEquals("boom", run.steps().get(0).details().get("message"));
+        assertEquals(1, service.listRuns().size());
     }
 
     private static final class DemoPackContributor implements BootstrapPackContributor {
@@ -157,6 +185,18 @@ class BootstrapPackServiceTest {
                     outcome,
                     Map.of("handledBy", "RecordingHandler", "resource", request.config().get("resource"))
             );
+        }
+    }
+
+    private static final class FailingHandler implements BootstrapPackStepHandler {
+        @Override
+        public boolean supports(BootstrapStepKind kind) {
+            return kind == BootstrapStepKind.APP_SERVICE;
+        }
+
+        @Override
+        public BootstrapStepResult execute(BootstrapStepRequest request) {
+            throw new IllegalStateException("boom");
         }
     }
 }

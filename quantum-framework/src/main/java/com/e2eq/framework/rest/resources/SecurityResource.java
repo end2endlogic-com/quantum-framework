@@ -58,6 +58,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.*;
+import java.util.function.Supplier;
 
 @OpenAPIDefinition(
         tags = {
@@ -122,6 +123,22 @@ public class SecurityResource {
     @ConfigProperty(name = "com.b2bi.jwt.duration")
     protected long tokenDuration;
 
+    private <T> T withAnonymousRegistrationAccess(String action, Supplier<T> supplier) {
+        var principal = SecurityCallScope.anonymous(
+                envConfigUtils.getSystemRealm(),
+                securityUtils.getSystemDataDomain(),
+                "anonymous-registration");
+        var resource = SecurityCallScope.resource(
+              principal,
+              null,
+              "SECURITY",
+              "APPLICATION_REGISTRATION",
+              action);
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.open(principal, resource)) {
+            return supplier.get();
+        }
+    }
+
     @Path("register")
     @PermitAll
     @POST
@@ -145,7 +162,8 @@ public class SecurityResource {
         }
 
         // check if registration request has already been made?
-        Optional<ApplicationRegistration> oRegRequest = registrationRepo.findByRefName(registrationRequest.getEmail());
+        Optional<ApplicationRegistration> oRegRequest = withAnonymousRegistrationAccess("view",
+                () -> registrationRepo.findByRefName(registrationRequest.getEmail()));
         if (oRegRequest.isPresent()) {
             ApplicationRegistration regRequest = oRegRequest.get();
             RestError error = RestError.builder()
@@ -172,7 +190,8 @@ public class SecurityResource {
         String secondHalf = email.split("@")[1];
         String identifier = secondHalf.split("\\.")[0];
 
-        Optional<ApplicationRegistration> eregistration = registrationRepo.findByCompanyIdentifier(identifier);
+        Optional<ApplicationRegistration> eregistration = withAnonymousRegistrationAccess("view",
+                () -> registrationRepo.findByCompanyIdentifier(identifier));
         if (eregistration.isPresent()) {
             RestError error =RestError.builder()
                     .status(Response.Status.BAD_REQUEST.getStatusCode())
@@ -188,9 +207,8 @@ public class SecurityResource {
         registration.setLname(registrationRequest.getLname());
         registration.setUserTelephone(registrationRequest.getTelephone());
 
-        try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
-            registration = registrationRepo.save(registration);
-        }
+        ApplicationRegistration registrationToSave = registration;
+        registration = withAnonymousRegistrationAccess("create", () -> registrationRepo.save(registrationToSave));
         return Response.ok().entity(registration).status(Response.Status.CREATED).build();
     }
 
@@ -200,7 +218,8 @@ public class SecurityResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response register(@QueryParam("refName") String refName) {
         Response response;
-        Optional<ApplicationRegistration> opRegRequest = registrationRepo.findByRefName(refName);
+        Optional<ApplicationRegistration> opRegRequest = withAnonymousRegistrationAccess("view",
+                () -> registrationRepo.findByRefName(refName));
 
         if (opRegRequest.isPresent()) {
             response = Response.ok(opRegRequest.get()).build();
@@ -460,42 +479,20 @@ public class SecurityResource {
     @Path("/refresh")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public Response refresh(AuthResponse refreshRequest) throws Exception {
-        if (Log.isEnabled(Logger.Level.WARN))
-            Log.warn(">> REFRESH TOKEN:" + refreshRequest.getRefresh_token());
-        JsonWebToken jwt = parser.parse(refreshRequest.getRefresh_token());
-
-        // ensure correct scope
-        if (!jwt.getClaim("scope").equals(TokenUtils.REFRESH_SCOPE)) {
-            RestError error = RestError.builder().build();
-            error.setStatusMessage("Token is not valid, it has an invalid scope:" + jwt.getClaim("scope"));
-            error.setStatus(Response.Status.UNAUTHORIZED.getStatusCode());
-            //error.setReasonMessage("Could not find credential combination");
-            return Response.status(Response.Status.UNAUTHORIZED).entity(error).build();
+    @APIResponse(responseCode = "200", description = "Session refreshed",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = AuthResponse.class)))
+    @APIResponse(responseCode = "401", description = "Refresh token invalid or no longer authorized",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
+    public Response refresh(AuthResponse refreshRequest) {
+        if (refreshRequest == null || refreshRequest.getRefresh_token() == null
+                || refreshRequest.getRefresh_token().isBlank()) {
+            RestError error = RestError.builder()
+                    .status(Response.Status.BAD_REQUEST.getStatusCode())
+                    .statusMessage("refresh_token is required")
+                    .build();
+            return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
         }
-
-        // validate the token signature?
-
-        String[] roles = new String[jwt.getGroups().size()];
-        roles = jwt.getGroups().toArray(roles);
-
-        Optional<CredentialUserIdPassword> credentialOp = findCredential(jwt.getSubject(), jwt.getSubject());
-        if (credentialOp.isEmpty()) {
-            RestError error = RestError.builder().build();
-            error.setStatusMessage("Refresh token subject could not be resolved to a credential");
-            error.setStatus(Response.Status.UNAUTHORIZED.getStatusCode());
-            return Response.status(Response.Status.UNAUTHORIZED).entity(error).build();
-        }
-
-        CredentialUserIdPassword credential = credentialOp.get();
-        AuthResponse response = generateAuthResponse(credential.getSubject(),
-                roles,
-                tokenDuration,
-                tokenDuration + 3200l,
-                issuer,
-                credential);
-
-        return Response.ok(response).build();
+        return authLoginService.refresh(refreshRequest.getRefresh_token()).toResponse();
     }
 
     private Optional<CredentialUserIdPassword> findCredential(String subject, String userId) {

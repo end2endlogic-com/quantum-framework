@@ -26,6 +26,7 @@ import com.e2eq.framework.plugins.BaseAuthProvider;
 import com.e2eq.framework.model.security.UserGroup;
 import com.e2eq.framework.util.EncryptionUtils;
 import com.e2eq.framework.util.EnvConfigUtils;
+import com.e2eq.framework.util.SecurityUtils;
 
 import io.quarkus.logging.Log;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -531,10 +532,8 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                             tokenRealm,
                             tokenRealm));
                    }
-                  boolean credentialRealmAuthorized = securityUtils
-                     .computeAllowedRealmRefNames(credential, List.of(tokenRealm))
-                     .stream()
-                     .anyMatch(allowedRealm -> allowedRealm.equalsIgnoreCase(tokenRealm));
+                  boolean credentialRealmAuthorized = credentialAuthorizesRealm(
+                     securityUtils, credential, tokenRealm);
                   Set<String> groups = new HashSet<>();
                   if (Objects.equals(credentialRealm, tokenRealm) && credential.getRoles() != null) {
                      groups.addAll(Arrays.asList(credential.getRoles()));
@@ -565,7 +564,11 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                            tokenRealm,
                            tokenRealm));
                   }
-                  if (!credentialRealmAuthorized && realmAssignment.isEmpty()) {
+                  // A role assignment describes what the identity may do inside
+                  // a realm; it must never expand the credential's realm
+                  // boundary. Preserve the 1.3 fail-closed contract: the
+                  // credential must authorize the realm independently.
+                  if (!credentialRealmAuthorized) {
                      return new LoginResponse(false,
                         new LoginNegativeResponse(userId,
                            403,
@@ -582,7 +585,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                   // (single default audience, unchanged behavior); RESOLVED = multi-aud
                   // token + azp; AMBIGUOUS/DENIED short-circuit to a negative response the
                   // login resource maps to 400 (needs selection) / 403 (not authorized).
-                   ApplicationAuthorizationResolver.Result appAuth = ApplicationAuthorizationResolver.resolve(
+                  ApplicationAuthorizationResolver.Result appAuth = ApplicationAuthorizationResolver.resolve(
                       realmAssignment.map(UserRealmRole::getAuthorizedApplications).orElse(null),
                       credential.getApplicationRegEx(),
                       realmAssignment.map(UserRealmRole::getDefaultApplication).orElse(null),
@@ -805,11 +808,9 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
          } catch (RuntimeException e) {
             throw new SecurityException("Unable to verify realm authorization during refresh", e);
          }
-         boolean credentialRealmAuthorized = securityUtils
-            .computeAllowedRealmRefNames(credential, List.of(tokenRealm))
-            .stream()
-            .anyMatch(tokenRealm::equalsIgnoreCase);
-         if (!credentialRealmAuthorized && realmAssignment.isEmpty()) {
+         boolean credentialRealmAuthorized = credentialAuthorizesRealm(
+            securityUtils, credential, tokenRealm);
+         if (!credentialRealmAuthorized) {
             throw new SecurityException("Credential is no longer authorized for realm: " + tokenRealm);
          }
 
@@ -902,6 +903,19 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                e.toString(),
                envConfigUtils.getSystemRealm()));
       }
+   }
+
+   static boolean credentialAuthorizesRealm(SecurityUtils securityUtils,
+                                             CredentialUserIdPassword credential,
+                                             String realm) {
+      Objects.requireNonNull(securityUtils, "securityUtils cannot be null");
+      Objects.requireNonNull(credential, "credential cannot be null");
+      if (realm == null || realm.isBlank()) {
+         return false;
+      }
+      return securityUtils.computeAllowedRealmRefNames(credential, List.of(realm))
+         .stream()
+         .anyMatch(allowedRealm -> allowedRealm.equalsIgnoreCase(realm));
    }
 
    @Override

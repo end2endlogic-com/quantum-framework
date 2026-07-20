@@ -2,6 +2,8 @@ package com.e2eq.framework.rest.models;
 
 import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.model.security.RealmSetupStatus;
+import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -11,6 +13,7 @@ import java.util.Date;
 @Data
 @NoArgsConstructor
 @RegisterForReflection
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class AccessibleRealmInfo {
     private String refName;
     private String displayName;
@@ -21,6 +24,7 @@ public class AccessibleRealmInfo {
     private Integer readySolutionCount;
     private Integer pendingSeedPackCount;
     private Integer pendingMigrationCount;
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
     private Date setupLastUpdated;
 
     public AccessibleRealmInfo(String refName, String displayName) {
