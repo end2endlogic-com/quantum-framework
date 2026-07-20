@@ -179,6 +179,21 @@ public class BootstrapPackService {
                     step.config()
                 )
             );
+        } catch (RuntimeException failure) {
+            return new BootstrapPackStepRun(
+                step.stepRef(),
+                BootstrapStepStatus.FAILED,
+                BootstrapStepOutcome.FAILED,
+                Map.of(
+                    "reason", "HANDLER_EXECUTION_FAILED",
+                    "errorType", failure.getClass().getName(),
+                    "message", failure.getMessage() == null
+                        ? failure.getClass().getSimpleName()
+                        : failure.getMessage()
+                ),
+                stepStartedAt,
+                Instant.now()
+            );
         }
 
         return new BootstrapPackStepRun(
@@ -219,6 +234,20 @@ public class BootstrapPackService {
         putIfPresent(scope, "realmRef", request.realmRef());
         putIfPresent(scope, "tenantRef", request.tenantRef());
         putIfPresent(scope, "workspaceRef", request.workspaceRef());
+        for (Map.Entry<String, Object> attribute : request.scopeAttributes().entrySet()) {
+            String key = attribute.getKey();
+            if (key == null || key.isBlank()) {
+                throw new IllegalArgumentException("Bootstrap scope attribute keys must be non-blank");
+            }
+            if (scope.containsKey(key)) {
+                throw new IllegalArgumentException(
+                    "Bootstrap scope attribute cannot replace reserved key: " + key
+                );
+            }
+            if (attribute.getValue() != null) {
+                scope.put(key, attribute.getValue());
+            }
+        }
         return scope;
     }
 

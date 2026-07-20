@@ -18,6 +18,7 @@ import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import jakarta.inject.Inject;
+import jakarta.ws.rs.ForbiddenException;
 import jakarta.enterprise.inject.Instance;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -705,6 +706,66 @@ public class RuleContext {
        Rule r = tenantAdminbuilder.build();
        this.addRule(header, r);
 
+       addAnonymousApplicationRegistrationRule("view");
+       addAnonymousApplicationRegistrationRule("create");
+       addAnonymousAuthenticationRule();
+
+    }
+
+    private void addAnonymousAuthenticationRule() {
+        SecurityURIHeader header = new SecurityURIHeader.Builder()
+                .withIdentity("ANONYMOUS")
+                .withArea("SECURITY")
+                .withFunctionalDomain("CREDENTIAL_USERID_PASSWORD")
+                .withAction("authenticate")
+                .build();
+
+        SecurityURIBody body = new SecurityURIBody.Builder()
+                .withRealm("*")
+                .withOrgRefName("*")
+                .withAccountNumber("*")
+                .withTenantId("*")
+                .withOwnerId("*")
+                .withDataSegment("*")
+                .build();
+
+        Rule rule = new Rule.Builder()
+                .withName("Anonymous can authenticate credentials")
+                .withDescription("Public login endpoints may resolve credentials only inside the explicit authentication action.")
+                .withSecurityURI(new SecurityURI(header, body))
+                .withEffect(RuleEffect.ALLOW)
+                .withPriority(0)
+                .withFinalRule(true)
+                .build();
+        this.addRule(header, rule);
+    }
+
+    private void addAnonymousApplicationRegistrationRule(String action) {
+        SecurityURIHeader header = new SecurityURIHeader.Builder()
+                .withIdentity("ANONYMOUS")
+                .withArea("SECURITY")
+                .withFunctionalDomain("APPLICATION_REGISTRATION")
+                .withAction(action)
+                .build();
+
+        SecurityURIBody body = new SecurityURIBody.Builder()
+                .withRealm("*")
+                .withOrgRefName("*")
+                .withAccountNumber("*")
+                .withTenantId("*")
+                .withOwnerId("*")
+                .withDataSegment("*")
+                .build();
+
+        Rule rule = new Rule.Builder()
+                .withName("Anonymous can " + action + " registration requests")
+                .withDescription("Public registration endpoints may access application-registration records through an explicit anonymous policy.")
+                .withSecurityURI(new SecurityURI(header, body))
+                .withEffect(RuleEffect.ALLOW)
+                .withPriority(0)
+                .withFinalRule(true)
+                .build();
+        this.addRule(header, rule);
     }
 
     /**
@@ -955,7 +1016,7 @@ public class RuleContext {
      * @return an optional list of rules
      */
     public Optional<List<Rule>> rulesForIdentity(@NotNull String identity, Map<String, List<Rule>> rulesMap) {
-        List<Rule> ruleList = rulesMap.get(identity);
+        List<Rule> ruleList = rulesMap.get(identity.toLowerCase(java.util.Locale.ROOT));
         if (ruleList == null) {
             return Optional.empty();
         }
@@ -969,7 +1030,7 @@ public class RuleContext {
      * @return an optional list of rules
      */
     public Optional<List<Rule>> rulesForIdentity(@NotNull String identity) {
-        List<Rule> ruleList = defaultSystemRules.get(identity);
+        List<Rule> ruleList = defaultSystemRules.get(identity.toLowerCase(java.util.Locale.ROOT));
         if (ruleList == null) {
             return Optional.empty();
         }
@@ -1098,12 +1159,12 @@ public class RuleContext {
         java.util.Set<String> identities = new java.util.HashSet<>();
         if (pcontext != null) {
             if (pcontext.getUserId() != null && !pcontext.getUserId().isBlank()) {
-                identities.add(pcontext.getUserId());
+                identities.add(pcontext.getUserId().toLowerCase(java.util.Locale.ROOT));
             }
             if (pcontext.getRoles() != null) {
                 for (String role : pcontext.getRoles()) {
                     if (role != null && !role.isBlank()) {
-                        identities.add(role);
+                        identities.add(role.toLowerCase(java.util.Locale.ROOT));
                     }
                 }
             }
@@ -2038,7 +2099,12 @@ public class RuleContext {
         SecurityCheckResponse response = this.checkRules(pcontext, rcontext);
 
         if (response.getFinalEffect() != RuleEffect.ALLOW) {
-            return filters;
+            throw new ForbiddenException(String.format(
+                    "Access denied: user=%s, area=%s, domain=%s, action=%s",
+                    pcontext.getUserId(),
+                    rcontext.getArea(),
+                    rcontext.getFunctionalDomain(),
+                    rcontext.getAction()));
         }
 
         List<Filter> andFilters = new ArrayList<>();

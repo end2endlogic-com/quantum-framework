@@ -3,6 +3,7 @@ package com.e2eq.framework.model.security;
 import dev.morphia.annotations.Entity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import com.e2eq.framework.model.persistent.base.FullBaseModel;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
@@ -37,7 +38,10 @@ public class Policy extends FullBaseModel {
    protected String description;
    protected List<Rule> rules = new ArrayList<>();
 
-   // Transient field to track policy source
+   // Non-persistent response metadata: policy source remains invisible to Morphia
+   // persistence, but must be visible to API clients so built-in policies are
+   // auditable instead of looking like hidden fail-open behavior.
+   @JsonProperty("policySource")
    protected transient String policySource;
 
 

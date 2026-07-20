@@ -254,16 +254,19 @@ public class MigrationService {
    }
 
    public void dropIndexOnCollection (String realm, String collectionName) {
+      requireRealmOwnedByThisMigrationService(realm, "drop indexes");
       mongoClient.getDatabase(realm).getCollection(collectionName).dropIndexes();
    }
 
    public void applyIndexes (String realmId) {
       Objects.requireNonNull(realmId, "RealmId cannot be null");
+      requireRealmOwnedByThisMigrationService(realmId, "apply indexes");
       morphiaDataStoreWrapper.getDataStore(realmId).applyIndexes();
    }
 
    public void applyIndexes (String realmId, String collection) {
       Objects.requireNonNull(realmId, "RealmId cannot be null");
+      requireRealmOwnedByThisMigrationService(realmId, "apply indexes");
       Optional<EntityModel> em = morphiaDataStoreWrapper.getDataStore(realmId).getMapper().getMappedEntities().stream().filter(entity -> entity.collectionName().equals(collection)).findFirst();
       if (!em.isPresent()) {
          throw new NotFoundException(String.format("Collection %s not found in realm %s", collection, realmId));
@@ -278,6 +281,7 @@ public class MigrationService {
     */
    public void applyAllIndexes(String realmId) {
       Objects.requireNonNull(realmId);
+      requireRealmOwnedByThisMigrationService(realmId, "apply all indexes");
       var datastore = morphiaDataStoreWrapper.getDataStore(realmId);
       var entities = datastore.getMapper().getMappedEntities();
       Log.infof("applyAllIndexes: ensuring indexes for %d mapped entity types in realm %s", entities.size(), realmId);
@@ -295,6 +299,7 @@ public class MigrationService {
 
    public void dropAllIndexes (String realmId) {
       Objects.requireNonNull(realmId, "RealmId cannot be null");
+      requireRealmOwnedByThisMigrationService(realmId, "drop all indexes");
       morphiaDataStoreWrapper.getDataStore(realmId).getMapper().getMappedEntities().forEach(entity -> {
          mongoClient.getDatabase(realmId).getCollection(entity.collectionName()).dropIndexes();
       });
@@ -521,6 +526,7 @@ public class MigrationService {
    }
 
    public void runChangeSetBean(String changeSetName, String realm, MultiEmitter<? super String> emitter) throws Exception {
+      requireRealmOwnedByThisMigrationService(realm, "run change set");
 
       List<ChangeSetBean> changeSets = getAllChangeSetBeans();
       Optional<ChangeSetBean> changeSetBeanOptional = changeSets.stream().filter(changeSetBean -> changeSetBean.getName().equals(changeSetName)).findFirst();
@@ -552,6 +558,7 @@ public class MigrationService {
    }
 
    public void runAllUnRunMigrations (String realm, MultiEmitter<? super String> emitter) {
+      requireRealmOwnedByThisMigrationService(realm, "run migrations");
 
       Log.info("-- Running all migrations for realm: " + realm);
       List<ChangeSetBean> changeSetList = getAllPendingChangeSetBeans(realm, emitter);
@@ -668,5 +675,38 @@ public class MigrationService {
         record.setSuccessful(true);
         return record;
     }
+
+   private void requireRealmOwnedByThisMigrationService(String realm, String operation) {
+      if (!seedSystemOnly || isSystemRealm(realm) || isExplicitlyConfiguredMigrationRealm(realm)) {
+         return;
+      }
+      throw new IllegalStateException(String.format(
+         "Refusing to %s for realm %s because quantum.realm.seed-system-only=true and this service only owns system realm %s. "
+            + "Set quantum.migration.apply.realms to explicitly opt in an additional managed realm.",
+         operation,
+         realm,
+         systemRealm
+      ));
+   }
+
+   private boolean isSystemRealm(String realm) {
+      return Objects.equals(realm, systemRealm);
+   }
+
+   private boolean isExplicitlyConfiguredMigrationRealm(String realm) {
+      if (startupRealmsCsv.isEmpty()) {
+         return false;
+      }
+      String csv = startupRealmsCsv.get().trim();
+      if (csv.isEmpty() || csv.equalsIgnoreCase("none")) {
+         return false;
+      }
+      for (String part : csv.split(",")) {
+         if (Objects.equals(part.trim(), realm)) {
+            return true;
+         }
+      }
+      return false;
+   }
 
 }

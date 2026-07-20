@@ -1,7 +1,11 @@
 package com.e2eq.framework.rest.resources;
 
+import com.e2eq.framework.annotations.FunctionalAction;
+import com.e2eq.framework.annotations.FunctionalMapping;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.ResourceContext;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.service.seed.SeedContext;
 import com.e2eq.framework.service.seed.SeedCollectionResolver;
@@ -25,8 +29,10 @@ import org.eclipse.microprofile.openapi.annotations.media.Content;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import java.io.IOException;
 import java.util.*;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import io.quarkus.arc.properties.IfBuildProperty;
 
@@ -54,11 +60,21 @@ public class SeedAdminResource {
     @Inject
     SeedVerificationService seedVerificationService;
 
+    @ConfigProperty(name = "quantum.realmConfig.systemRealm", defaultValue = "system-com")
+    String systemRealm;
+
+    @ConfigProperty(name = "quantum.realm.seed-system-only", defaultValue = "false")
+    boolean seedSystemOnly;
+
+    @ConfigProperty(name = "quantum.seed-pack.apply.realms")
+    Optional<String> seedApplyRealmsCsv;
 
     // ----- Endpoints -----
 
     @GET
     @Path("/pending/{realm}")
+    @FunctionalMapping(area="SEED", domain="SEED")
+    @FunctionalAction(value = "LIST_PENDING", bypassDataScoping = true)
     @Operation(summary = "List pending seed packs", description = "Returns seed packs that have new or updated datasets not yet applied to the given realm.")
     @APIResponse(responseCode = "200", description = "Pending seed packs",
             content = @Content(schema = @Schema(implementation = PendingSeedPack[].class)))
@@ -89,10 +105,13 @@ public class SeedAdminResource {
 
     @GET
     @Path("/history/{realm}")
+    @FunctionalMapping(area="SEED", domain="SEED")
+    @FunctionalAction(value = "LIST_HISTORY", bypassDataScoping = true)
     @Operation(summary = "Seed application history", description = "Returns the history of seed pack applications for the given realm.")
     @APIResponse(responseCode = "200", description = "Seed history entries",
             content = @Content(schema = @Schema(implementation = HistoryEntry[].class)))
     public List<HistoryEntry> history(@PathParam("realm") String realm) {
+        requireRealmOwnedByThisSeedService(realm, "list seed history");
         if (!(seedRegistry instanceof MorphiaSeedRegistry morphiaRegistry)) {
             throw new InternalServerErrorException("SeedRegistry is not MorphiaSeedRegistry");
         }
@@ -113,6 +132,8 @@ public class SeedAdminResource {
 
     @GET
     @Path("/verify/{realm}")
+    @FunctionalMapping(area="SEED", domain="SEED")
+    @FunctionalAction(value = "VERIFY", bypassDataScoping = true)
     public SeedVerificationService.VerifyResult verifyAll(@PathParam("realm") String realm,
                                                           @QueryParam("filter") String filterCsv) {
         return seedVerificationService.verifyLatestApplicable(buildSeedContext(realm), filterCsv);
@@ -120,6 +141,8 @@ public class SeedAdminResource {
 
     @GET
     @Path("/{realm}/{seedPack}/verify")
+    @FunctionalMapping(area="SEED", domain="SEED")
+    @FunctionalAction(value = "VERIFY", bypassDataScoping = true)
     public SeedVerificationService.VerifyResult verifyOne(@PathParam("realm") String realm,
                                                           @PathParam("seedPack") String seedPack) {
         return seedVerificationService.verifyOne(buildSeedContext(realm), seedPack);
@@ -127,6 +150,8 @@ public class SeedAdminResource {
 
     @POST
     @Path("/apply/{realm}")
+    @FunctionalMapping(area="SEED", domain="SEED")
+    @FunctionalAction(value = "APPLY", bypassDataScoping = true)
     @Operation(summary = "Apply all pending seed packs", description = "Discovers and applies all pending seed packs for the given realm.")
     @APIResponse(responseCode = "200", description = "Names of applied seed packs",
             content = @Content(schema = @Schema(implementation = ApplyResult.class)))
@@ -144,14 +169,18 @@ public class SeedAdminResource {
         List<SeedPackRef> refs = latestByPack.values().stream()
                 .map(d -> SeedPackRef.exact(d.getManifest().getSeedPack(), d.getManifest().getVersion()))
                 .collect(Collectors.toList());
-        seedLoaderService.applySeeds(context, refs);
-        ApplyResult result = new ApplyResult();
-        result.applied = latestByPack.keySet().stream().sorted().toList();
-        return result;
+        return withSeedApplyScope(realm, () -> {
+            seedLoaderService.applySeeds(context, refs);
+            ApplyResult result = new ApplyResult();
+            result.applied = latestByPack.keySet().stream().sorted().toList();
+            return result;
+        });
     }
 
     @GET
     @Path("/archetypes/{realm}")
+    @FunctionalMapping(area="SEED", domain="ARCHETYPE")
+    @FunctionalAction(value = "LIST", bypassDataScoping = true)
     @Operation(summary = "List available seed archetypes", description = "Returns archetypes defined in seed pack manifests that are applicable to the given realm.")
     @APIResponse(responseCode = "200", description = "Available archetypes",
             content = @Content(schema = @Schema(implementation = ArchetypeInfo[].class)))
@@ -184,20 +213,26 @@ public class SeedAdminResource {
 
     @POST
     @Path("/archetypes/{realm}/{archetypeName}/apply")
+    @FunctionalMapping(area="SEED", domain="ARCHETYPE")
+    @FunctionalAction(value = "APPLY", bypassDataScoping = true)
     @Operation(summary = "Apply a seed archetype", description = "Applies the named archetype, seeding all packs it includes into the given realm.")
     @APIResponse(responseCode = "200", description = "Applied archetype name",
             content = @Content(schema = @Schema(implementation = ApplyResult.class)))
     public ApplyResult applyArchetype(@PathParam("realm") String realm,
                                       @PathParam("archetypeName") String archetypeName) {
         SeedContext context = buildSeedContext(realm);
-        seedLoaderService.applyArchetype(context, archetypeName);
-        ApplyResult result = new ApplyResult();
-        result.applied = List.of(archetypeName);
-        return result;
+        return withSeedApplyScope(realm, () -> {
+            seedLoaderService.applyArchetype(context, archetypeName);
+            ApplyResult result = new ApplyResult();
+            result.applied = List.of(archetypeName);
+            return result;
+        });
     }
 
     @POST
     @Path("/{realm}/{seedPack}/apply")
+    @FunctionalMapping(area="SEED", domain="SEED")
+    @FunctionalAction(value = "APPLY", bypassDataScoping = true)
     @Operation(summary = "Apply a single seed pack", description = "Applies the latest version of the specified seed pack to the given realm.")
     @APIResponse(responseCode = "200", description = "Applied seed pack name",
             content = @Content(schema = @Schema(implementation = ApplyResult.class)))
@@ -222,10 +257,12 @@ public class SeedAdminResource {
                     return v != null ? v : org.semver4j.Semver.parse("0.0.0");
                 }))
                 .orElseThrow(() -> new NotFoundException("Seed pack not found or not applicable: " + seedPack));
-        seedLoaderService.applySeeds(context, List.of(SeedPackRef.exact(seedPack, latest.getManifest().getVersion())));
-        ApplyResult result = new ApplyResult();
-        result.applied = List.of(seedPack);
-        return result;
+        return withSeedApplyScope(realm, () -> {
+            seedLoaderService.applySeeds(context, List.of(SeedPackRef.exact(seedPack, latest.getManifest().getVersion())));
+            ApplyResult result = new ApplyResult();
+            result.applied = List.of(seedPack);
+            return result;
+        });
     }
 
     // ----- Helpers -----
@@ -239,6 +276,7 @@ public class SeedAdminResource {
      * @return a fully populated SeedContext
      */
     private SeedContext buildSeedContext(String realm) {
+        requireRealmOwnedByThisSeedService(realm, "use seed packs");
         SeedContext.Builder builder = SeedContext.builder(realm);
 
         // Extract DataDomain from security context if available
@@ -258,6 +296,48 @@ public class SeedAdminResource {
         }
 
         return builder.build();
+    }
+
+    private <T> T withSeedApplyScope(String realm, Supplier<T> operation) {
+        requireRealmOwnedByThisSeedService(realm, "apply seed packs");
+        ResourceContext seedResource = new ResourceContext.Builder()
+                .withRealm(realm)
+                .withArea("SEED")
+                .withFunctionalDomain("SEED")
+                .withAction("APPLY")
+                .build();
+
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.openResourceOnly(seedResource)) {
+            return operation.get();
+        }
+    }
+
+    private void requireRealmOwnedByThisSeedService(String realm, String operation) {
+        if (!seedSystemOnly || Objects.equals(realm, systemRealm) || isExplicitlyConfiguredSeedRealm(realm)) {
+            return;
+        }
+        throw new BadRequestException(String.format(
+                "Refusing to %s for realm %s because quantum.realm.seed-system-only=true and this service only owns system realm %s. "
+                        + "Set quantum.seed-pack.apply.realms to explicitly opt in an additional managed realm.",
+                operation,
+                realm,
+                systemRealm));
+    }
+
+    private boolean isExplicitlyConfiguredSeedRealm(String realm) {
+        if (seedApplyRealmsCsv.isEmpty()) {
+            return false;
+        }
+        String csv = seedApplyRealmsCsv.get().trim();
+        if (csv.isEmpty() || csv.equalsIgnoreCase("none")) {
+            return false;
+        }
+        for (String part : csv.split(",")) {
+            if (Objects.equals(part.trim(), realm)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private PendingSeedPack computePendingForDescriptor(SeedRegistry registry,

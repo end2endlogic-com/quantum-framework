@@ -149,5 +149,8 @@
       "mcp__Helixor_Code__helixor_code_index_status",
       "mcp__Helixor_Code__helixor_code_search"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "helixai"
+  ]
 }
