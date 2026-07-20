@@ -1,5 +1,7 @@
 package com.e2eq.framework.oauth.resource;
 
+import com.e2eq.framework.annotations.FunctionalAction;
+import com.e2eq.framework.annotations.FunctionalMapping;
 import io.quarkus.security.Authenticated;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
@@ -18,6 +20,7 @@ import java.util.Map;
  */
 @Path("/oauth/userinfo")
 @Authenticated
+@FunctionalMapping(area = "SECURITY", domain = "IDENTITY")
 public class OAuthUserInfoResource {
 
     @Inject
@@ -25,6 +28,7 @@ public class OAuthUserInfoResource {
 
     @GET
     @Produces(MediaType.APPLICATION_JSON)
+    @FunctionalAction("VIEW")
     public Response userinfo() {
         if (jwt.getSubject() == null) {
             return Response.status(401)

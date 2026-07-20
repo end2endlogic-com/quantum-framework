@@ -16,6 +16,7 @@ import com.e2eq.framework.util.WildCardMatcher;
 import dev.morphia.query.filters.Filter;
 import io.quarkus.logging.Log;
 import io.quarkus.test.junit.QuarkusTest;
+import jakarta.ws.rs.ForbiddenException;
 import jakarta.enterprise.context.control.ActivateRequestContext;
 import jakarta.inject.Inject;
 import org.graalvm.polyglot.Context;
@@ -241,14 +242,15 @@ public class TestRuleContext extends BaseRepoTest {
         Log.info("Test if mingardia is denied trying to view the system's profile with a default deny context'");
         checkRulesResponse = ruleContext.checkRules(mingardiaUserIdPC, sysAdminUserProfileRC);
         filters.clear();
-        filters1 = ruleContext.getFilters(filters, mingardiaUserIdPC, sysAdminUserProfileRC, UserProfile.class);
         logRuleResults("Test if mingardia is denied trying to view the system's profile with a default deny context'",
                 mingardiaUserIdPC,
                 sysAdminUserProfileRC,
                 checkRulesResponse,
-                filters1);
+                filters);
         assertTrue(checkRulesResponse.getFinalEffect().equals(RuleEffect.DENY));
-        assertTrue(filters1.isEmpty()); // will be empty because the post condition will cause the rule to be ignored / NA and the default is deny
+        assertThrows(ForbiddenException.class,
+                () -> ruleContext.getFilters(new ArrayList<>(), mingardiaUserIdPC, sysAdminUserProfileRC, UserProfile.class),
+                "Denied policy evaluation must fail closed rather than returning ungoverned filters");
 
         // show that its really about the default not an explicit rule
         checkRulesResponse = ruleContext.checkRules(mingardiaUserIdPC, sysAdminUserProfileRC, RuleEffect.ALLOW);
@@ -275,6 +277,31 @@ public class TestRuleContext extends BaseRepoTest {
         assertTrue(checkRulesResponse.getFinalEffect().equals(RuleEffect.ALLOW));
 
 
+    }
+
+    @Test
+    void testGetFiltersFailsClosedWhenNoPolicyAllowsResource() {
+        RuleContext ruleContext = new RuleContext();
+        PrincipalContext principal = new PrincipalContext.Builder()
+                .withDefaultRealm(testUtils.getTestRealm())
+                .withUserId("unprivileged@example.com")
+                .withRoles(new String[]{"unprivileged"})
+                .withDataDomain(testUtils.getTestDataDomain())
+                .withScope("AUTHENTICATED")
+                .build();
+        ResourceContext resource = new ResourceContext.Builder()
+                .withArea("sales")
+                .withFunctionalDomain("opportunity")
+                .withAction("view")
+                .withResourceId("OPP-1")
+                .build();
+
+        SecurityCheckResponse response = ruleContext.checkRules(principal, resource);
+        assertEquals(RuleEffect.DENY, response.getFinalEffect(),
+                "No matching policy must resolve to DENY");
+        assertThrows(ForbiddenException.class,
+                () -> ruleContext.getFilters(new ArrayList<>(), principal, resource, UserProfile.class),
+                "No matching policy must not return the caller's original filters as if access were allowed");
     }
 
     /**
@@ -556,5 +583,56 @@ public class TestRuleContext extends BaseRepoTest {
                 .withOwnerId(testUtils.getSystemUserId()).withResourceId("ORDER-1").build();
         SecurityCheckResponse resp = injectedRuleContext.checkRules(admin, anyRc);
         assertEquals(RuleEffect.ALLOW, resp.getFinalEffect());
+    }
+
+    @Test
+    @ActivateRequestContext
+    public void testAnonymousDefaultPolicyAllowsOnlyRegistrationRequests() {
+        String realm = envConfigUtils.getSystemRealm();
+        injectedRuleContext.reloadFromRepo(realm);
+
+        PrincipalContext anonymous = SecurityCallScope.anonymous(
+                realm,
+                securityUtils.getSystemDataDomain(),
+                "anonymous-registration-test");
+        ResourceContext allowed = SecurityCallScope.resource(
+                anonymous,
+                null,
+                "SECURITY",
+                "APPLICATION_REGISTRATION",
+                "create");
+
+        SecurityCheckResponse allowedResponse = injectedRuleContext.checkRules(anonymous, allowed);
+        assertEquals(RuleEffect.ALLOW, allowedResponse.getFinalEffect());
+
+        ResourceContext credentialAuthentication = SecurityCallScope.resource(
+                anonymous,
+                null,
+                "SECURITY",
+                "CREDENTIAL_USERID_PASSWORD",
+                "authenticate");
+        SecurityCheckResponse credentialAuthenticationResponse =
+                injectedRuleContext.checkRules(anonymous, credentialAuthentication);
+        assertEquals(RuleEffect.ALLOW, credentialAuthenticationResponse.getFinalEffect());
+
+        ResourceContext credentialView = SecurityCallScope.resource(
+                anonymous,
+                null,
+                "SECURITY",
+                "CREDENTIAL_USERID_PASSWORD",
+                "view");
+        SecurityCheckResponse credentialViewResponse = injectedRuleContext.checkRules(anonymous, credentialView);
+        assertEquals(RuleEffect.DENY, credentialViewResponse.getFinalEffect());
+
+        ResourceContext denied = SecurityCallScope.resource(
+                anonymous,
+                null,
+                "security",
+                "userProfile",
+                "view");
+        SecurityCheckResponse deniedResponse = injectedRuleContext.checkRules(anonymous, denied);
+        assertEquals(RuleEffect.DENY, deniedResponse.getFinalEffect());
+        assertThrows(ForbiddenException.class,
+                () -> injectedRuleContext.getFilters(new ArrayList<>(), anonymous, denied, UserProfile.class));
     }
 }

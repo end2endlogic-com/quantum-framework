@@ -61,6 +61,9 @@ public class SeedStartupRunner {
     @Inject
     MigrationService migrationService;
 
+    @ConfigProperty(name = "quantum.database.migration.enabled", defaultValue = "true")
+    boolean migrationEnabled;
+
     @Inject
     SystemRealmOwnership systemRealmOwnership;
 
@@ -145,7 +148,14 @@ public class SeedStartupRunner {
                     var db = mongoClient.getDatabase(realm);
                     var collections = db.listCollectionNames().into(new ArrayList<>());
                     if (!collections.isEmpty()) {
-                        migrationService.checkInitialized(realm);
+                        // Seed packs are deliberately version-agnostic and may be
+                        // enabled in services that explicitly disable migrations.
+                        // In that mode, a reachable non-empty database is ready;
+                        // requiring migration metadata makes the two independent
+                        // startup features impossible to configure separately.
+                        if (requiresMigrationReadiness()) {
+                            migrationService.checkInitialized(realm);
+                        }
                         Log.debugf("SeedStartupRunner: database %s is ready", realm);
                         return true;
                     }
@@ -178,6 +188,15 @@ public class SeedStartupRunner {
         }
         Log.warnf("SeedStartupRunner: database %s did not become ready after %d attempts", realm, maxRetries);
         return false;
+    }
+
+    /**
+     * Seed packs and schema migrations are independent startup capabilities.
+     * Keep this decision explicit and testable so services that intentionally
+     * disable migrations can still apply idempotent, version-agnostic seeds.
+     */
+    boolean requiresMigrationReadiness() {
+        return migrationEnabled;
     }
 
     private void applySeedsIfNeeded(String realm) throws Exception {

@@ -10,6 +10,7 @@ import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.base.EntityReference;
 import com.e2eq.framework.model.persistent.migration.base.MigrationService;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
+import com.e2eq.framework.model.persistent.morphia.OrganizationRepo;
 import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import com.e2eq.framework.model.persistent.morphia.RealmTenantMembershipRepo;
 import com.e2eq.framework.model.persistent.morphia.UserGroupRepo;
@@ -17,6 +18,7 @@ import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import com.e2eq.framework.model.persistent.morphia.UserRealmRoleRepo;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.DomainContext;
+import com.e2eq.framework.model.security.Organization;
 import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.model.security.RealmTenantMembership;
 import com.e2eq.framework.model.security.RealmSetupStatus;
@@ -66,6 +68,7 @@ public class TenantProvisioningService implements TenantLifecycle {
     @Inject RealmCatalogService realmCatalog;
     @Inject SystemDirectory systemDirectory;
     @Inject CredentialRepo credentialRepo;
+    @Inject OrganizationRepo organizationRepo;
     @Inject RealmTenantMembershipRepo realmTenantMembershipRepo;
     @Inject UserProfileRepo userProfileRepo;
     @Inject UserGroupRepo userGroupRepo;
@@ -179,6 +182,7 @@ public class TenantProvisioningService implements TenantLifecycle {
     public ProvisionResult provisionTenant(ProvisionTenantCommand command) {
         ProvisioningContext context = initializeContext(command);
         ensureRealmCatalog(context);
+        ensureOrganizationDirectory(context);
         ensureRealmMembership(context);
         runRealmMigrations(context);
         ensureTenantIdentities(context);
@@ -196,17 +200,18 @@ public class TenantProvisioningService implements TenantLifecycle {
         Objects.requireNonNull(command.getAdminUserId(), "adminUserId cannot be null");
         Objects.requireNonNull(command.getAdminSubject(), "adminSubject cannot be null");
 
-        String realmId = command.getTenantEmailDomain().replace('.', '-');
+        String realmId = normalizeDataDomainIdentifier(command.getTenantEmailDomain());
         String normalizedTenantDisplayName = command.getTenantDisplayName() == null || command.getTenantDisplayName().isBlank()
             ? realmId
             : command.getTenantDisplayName().trim();
+        String dataDomainOrgRefName = normalizeDataDomainIdentifier(command.getOrgRefName());
 
         ProvisionResult result = new ProvisionResult();
         result.realmId = realmId;
 
         DomainContext dc = DomainContext.builder()
-            .tenantId(command.getTenantEmailDomain())
-            .orgRefName(command.getOrgRefName())
+            .tenantId(realmId)
+            .orgRefName(dataDomainOrgRefName)
             .accountId(command.getAccountId())
             .defaultRealm(realmId)
             .build();
@@ -347,6 +352,48 @@ public class TenantProvisioningService implements TenantLifecycle {
         context.getResult().realmCreated = true;
     }
 
+    public void ensureOrganizationDirectory(ProvisioningContext context) {
+        if (organizationRepo == null) {
+            context.getResult().addWarning("Organization directory was not available; organization record was not reconciled.");
+            return;
+        }
+
+        String systemRealm = context.getSystemRealm();
+        String orgRefName = context.getDomainContext().getOrgRefName();
+        String displayName = context.getNormalizedTenantDisplayName();
+        DataDomain dataDomain = DataDomain.builder()
+            .orgRefName(orgRefName)
+            .accountNum(context.getDomainContext().getAccountId())
+            .tenantId(context.getDomainContext().getTenantId())
+            .ownerId(context.getCommand().getAdminUserId())
+            .build();
+
+        Optional<Organization> existing = organizationRepo.findByRefName(orgRefName, systemRealm);
+        if (existing.isPresent()) {
+            Organization organization = existing.get();
+            boolean changed = false;
+            if (organization.getDisplayName() == null || organization.getDisplayName().isBlank()) {
+                organization.setDisplayName(displayName);
+                changed = true;
+            }
+            if (organization.getDataDomain() == null) {
+                organization.setDataDomain(dataDomain);
+                changed = true;
+            }
+            if (changed) {
+                organizationRepo.save(systemRealm, organization);
+            }
+            return;
+        }
+
+        organizationRepo.createOrganization(
+            organizationRepo.getMorphiaDataStoreWrapper().getDataStore(systemRealm),
+            displayName,
+            orgRefName,
+            dataDomain
+        );
+    }
+
     public void ensureRealmMembership(ProvisioningContext context) {
         upsertRealmMembership(
             context.getSystemRealm(),
@@ -398,15 +445,15 @@ public class TenantProvisioningService implements TenantLifecycle {
             }
             CredentialUserIdPassword cred = credOpt.get();
             Set<String> storedRoles = cred.getRoles() == null ? Collections.emptySet() : new HashSet<>(Arrays.asList(cred.getRoles()));
-            boolean attributesMatch = Objects.equals(cred.getSubject(), context.getCommand().getAdminSubject())
+            boolean subjectCompatible = cred.getSubject() != null && !cred.getSubject().isBlank();
+            boolean attributesMatch = subjectCompatible
                 && Objects.equals(storedRoles, context.getDesiredRoles())
                 && Objects.equals(Boolean.FALSE, cred.getForceChangePassword())
                 && Objects.equals(cred.getDomainContext(), context.getDomainContext());
             if (!attributesMatch) {
                 List<String> diffs = new ArrayList<>();
-                if (!Objects.equals(cred.getSubject(), context.getCommand().getAdminSubject())) {
-                    diffs.add(String.format("subject: existing='%s', requested='%s'",
-                        cred.getSubject(), context.getCommand().getAdminSubject()));
+                if (!subjectCompatible) {
+                    diffs.add("subject is blank");
                 }
                 if (!Objects.equals(storedRoles, context.getDesiredRoles())) {
                     diffs.add(String.format("roles: existing='%s', requested='%s'",
@@ -774,6 +821,22 @@ public class TenantProvisioningService implements TenantLifecycle {
                         .build())
                 .build();
 
+        Optional<RealmTenantMembership> existing = realmTenantMembershipRepo.findByRefName(
+                membershipRefName, systemRealm);
+        if (existing.isPresent()) {
+            RealmTenantMembership record = existing.get();
+            record.setDisplayName(membership.getDisplayName());
+            record.setRealmDisplayName(membership.getRealmDisplayName());
+            record.setDefaultAdminUserId(membership.getDefaultAdminUserId());
+            record.setRealmEditionRefName(membership.getRealmEditionRefName());
+            record.setProvisioningMode(membership.getProvisioningMode());
+            record.setParticipationStatus(membership.getParticipationStatus());
+            record.setSetupStatus(membership.getSetupStatus());
+            record.setSetupCompletionPercent(membership.getSetupCompletionPercent());
+            realmTenantMembershipRepo.save(systemRealm, record);
+            return;
+        }
+
         realmTenantMembershipRepo.save(systemRealm, membership);
     }
 
@@ -825,6 +888,15 @@ public class TenantProvisioningService implements TenantLifecycle {
             .filter(value -> !value.isBlank())
             .distinct()
             .toList();
+    }
+
+    private static String normalizeDataDomainIdentifier(String value) {
+        String normalized = value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+        normalized = normalized.replaceAll("[^a-z0-9]+", "-").replaceAll("(^-|-$)", "");
+        if (normalized.isBlank()) {
+            throw new IllegalArgumentException("data-domain identifier cannot be blank");
+        }
+        return normalized;
     }
 
     private void withDropPendingRetry(String realmId, String operationName, ProvisioningAction action) {
