@@ -12,10 +12,20 @@ import java.util.Set;
  * @param roles             roles to embed in the token (required)
  * @param expirationSeconds seconds until expiry; null for non-expiring (100-year token)
  * @param description       optional human-readable description for the credential
+ * @param realm             optional realm to stamp as the token's signed {@code realm} claim.
+ *                          Data planes running delegated-claims validation reject tokens
+ *                          without one, so service tokens intended for tenant-plane calls
+ *                          (e.g. the Install provisioning callback) must be realm-scoped.
+ * @param audiences         optional application audiences ({@code aud}). Data planes that
+ *                          enforce an expected audience reject the legacy default audience,
+ *                          so service tokens intended for audience-enforcing applications
+ *                          must name them here.
  */
 @RegisterForReflection
 public record ServiceTokenRequest(
         @NotNull Set<String> roles,
         Long expirationSeconds,
-        String description
+        String description,
+        String realm,
+        Set<String> audiences
 ) {}
