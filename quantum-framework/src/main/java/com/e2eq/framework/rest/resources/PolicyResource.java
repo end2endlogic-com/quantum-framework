@@ -12,6 +12,7 @@ import jakarta.inject.Inject;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
@@ -180,9 +181,8 @@ public class PolicyResource extends BaseResource<Policy, PolicyRepo>{
             }
          }
       } catch (Exception e) {
-         // If filtering fails, return all policies
          io.quarkus.logging.Log.warnf(e, "Failed to apply filter to default policies: %s", filter);
-         return new ArrayList<>(policies);
+         throw new BadRequestException("Invalid policy filter: " + filter, e);
       }
 
       return filtered;

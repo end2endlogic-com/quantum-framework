@@ -10,8 +10,10 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @ApplicationScoped
 public class PolicyRepo extends MorphiaRepo<Policy> {
@@ -69,7 +71,10 @@ public class PolicyRepo extends MorphiaRepo<Policy> {
          Collection<String> identities) {
 
       Map<String, List<Rule>> rules = new HashMap<>();
-      Set<String> identitySet = new java.util.HashSet<>(identities);
+      Set<String> identitySet = identities.stream()
+         .filter(identity -> identity != null && !identity.isBlank())
+         .map(identity -> identity.toLowerCase(Locale.ROOT))
+         .collect(Collectors.toSet());
 
       // First add default system policies (filter to matching identities)
       if (defaultSystemPolicies != null) {
@@ -166,6 +171,6 @@ public class PolicyRepo extends MorphiaRepo<Policy> {
       if (identity == null || identity.isBlank()) {
          identity = p.getPrincipalId();
       }
-      return identity;
+      return identity == null ? null : identity.toLowerCase(Locale.ROOT);
    }
 }

@@ -69,7 +69,7 @@ final class RuleIndex {
         return idx;
     }
 
-    private static String n(String s) { return (s == null || s.isBlank()) ? "*" : s; }
+    private static String n(String s) { return (s == null || s.isBlank()) ? "*" : s.toLowerCase(Locale.ROOT); }
 
     private static Node step(Node node, String key) {
         if ("*".equals(key)) {
@@ -95,12 +95,12 @@ final class RuleIndex {
     List<Rule> getApplicableRules(PrincipalContext pc, ResourceContext rc) {
         // identities include the principalId and associated roles
         List<String> identities = new ArrayList<>();
-        if (pc.getUserId() != null) identities.add(pc.getUserId());
-        identities.addAll(Arrays.asList(pc.getRoles()));
+        if (pc.getUserId() != null) identities.add(n(pc.getUserId()));
+        identities.addAll(Arrays.stream(pc.getRoles()).map(RuleIndex::n).toList());
 
-        String area = rc.getArea() == null ? "*" : rc.getArea();
-        String domain = rc.getFunctionalDomain() == null ? "*" : rc.getFunctionalDomain();
-        String action = rc.getAction() == null ? "*" : rc.getAction();
+        String area = n(rc.getArea());
+        String domain = n(rc.getFunctionalDomain());
+        String action = n(rc.getAction());
 
         // Use a linked hash set to preserve insertion order and avoid duplicates
         LinkedHashSet<Rule> out = new LinkedHashSet<>();

@@ -6,11 +6,14 @@ import com.e2eq.framework.model.auth.RoleAssignment;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.rest.models.AccessibleRealmInfo;
 import com.e2eq.framework.rest.models.AuthResponse;
 import com.e2eq.framework.rest.models.RestError;
 import com.e2eq.framework.util.EnvConfigUtils;
+import com.e2eq.framework.util.SecurityUtils;
 import io.quarkus.logging.Log;
+import io.smallrye.jwt.auth.principal.JWTParser;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.core.Response;
@@ -18,6 +21,7 @@ import jakarta.ws.rs.core.Response;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 @ApplicationScoped
@@ -34,6 +38,12 @@ public class AuthLoginService {
 
     @Inject
     EnvConfigUtils envConfigUtils;
+
+    @Inject
+    SecurityUtils securityUtils;
+
+    @Inject
+    JWTParser jwtParser;
 
     /** Application-authorization signals a provider may return as a negative login response. */
     private static final String APP_SELECTION_REQUIRED = "ApplicationSelectionRequired";
@@ -59,15 +69,15 @@ public class AuthLoginService {
 
         List<String> providerFailures = new ArrayList<>();
         for (AuthProvider authProvider : authProviders) {
-            AuthProvider.LoginResponse loginResponse = dispatchLogin(
-                    authProvider, userId, password, applicationId, realmId);
+            AuthProvider.LoginResponse loginResponse = withAnonymousAuthenticationAccess(() ->
+                    dispatchLogin(authProvider, userId, password, applicationId, realmId));
             if (loginResponse.authenticated() && loginResponse.positiveResponse() != null) {
-                Optional<CredentialUserIdPassword> credentialOp = findCredential(
+                Optional<CredentialUserIdPassword> credentialOp = withAnonymousAuthenticationAccess(() -> findCredential(
                         loginResponse.positiveResponse().identity() != null
                                 && loginResponse.positiveResponse().identity().getPrincipal() != null
                                 ? loginResponse.positiveResponse().identity().getPrincipal().getName()
                                 : null,
-                        loginResponse.positiveResponse().userId());
+                        loginResponse.positiveResponse().userId()));
                 AuthResponse response = toAuthResponse(authProvider, loginResponse, credentialOp.orElse(null));
                 return LoginResult.success(response);
             }
@@ -123,10 +133,60 @@ public class AuthLoginService {
         // Authentication semantics must not change when the credential store is
         // unavailable. A lookup failure is an operational error, not evidence that
         // the credential is absent and permission to try a different provider.
-        return credentialRepo.findByUserId(
+        return withAnonymousAuthenticationAccess(() -> credentialRepo.findByUserId(
                 userId,
                 envConfigUtils.getSystemRealm(),
-                true);
+                true));
+    }
+
+    /**
+     * Refresh an authenticated session through the provider that issued the
+     * refresh token. Provider refresh is authoritative because it re-resolves
+     * the user's realm membership, roles, and application grant before minting
+     * replacement tokens.
+     */
+    public LoginResult refresh(String refreshToken) {
+        if (refreshToken == null || refreshToken.isBlank()) {
+            return LoginResult.failure(List.of("refresh: refresh token is required"));
+        }
+
+        try {
+            String tokenIssuer = jwtParser.parse(refreshToken).getIssuer();
+            AuthProvider provider = authProviderFactory.getProviderForIssuer(tokenIssuer);
+            AuthProvider.LoginResponse refreshResponse = withAnonymousAuthenticationAccess(() ->
+                    provider.refreshTokens(refreshToken));
+            if (refreshResponse != null
+                    && refreshResponse.authenticated()
+                    && refreshResponse.positiveResponse() != null) {
+                AuthProvider.LoginPositiveResponse positive = refreshResponse.positiveResponse();
+                Optional<CredentialUserIdPassword> credential = withAnonymousAuthenticationAccess(() -> findCredential(
+                        positive.identity() != null && positive.identity().getPrincipal() != null
+                                ? positive.identity().getPrincipal().getName()
+                                : null,
+                        positive.userId()));
+                return LoginResult.success(toAuthResponse(provider, refreshResponse, credential.orElse(null)));
+            }
+        } catch (Exception ignored) {
+            // Refresh failures are deliberately indistinguishable to clients.
+            // Provider details and token material must not cross this boundary.
+        }
+        return LoginResult.failure(List.of("refresh: token validation or authorization failed"));
+    }
+
+    private <T> T withAnonymousAuthenticationAccess(Supplier<T> supplier) {
+        var principal = SecurityCallScope.anonymous(
+                envConfigUtils.getSystemRealm(),
+                securityUtils.getSystemDataDomain(),
+                "anonymous-authentication");
+        var resource = SecurityCallScope.resource(
+                principal,
+                null,
+                "SECURITY",
+                "CREDENTIAL_USERID_PASSWORD",
+                "authenticate");
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.open(principal, resource)) {
+            return supplier.get();
+        }
     }
 
     public List<AccessibleRealmInfo> resolveAccessibleRealms(CredentialUserIdPassword credential) {

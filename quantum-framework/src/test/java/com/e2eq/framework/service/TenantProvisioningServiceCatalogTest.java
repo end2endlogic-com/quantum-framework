@@ -9,10 +9,38 @@ import org.junit.jupiter.api.Test;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TenantProvisioningServiceCatalogTest {
+
+    @Test
+    void initializeContextKeepsEmailDomainSeparateFromDataDomainIdentifiers() {
+        TenantProvisioningService service = new TenantProvisioningService();
+        service.realmCatalog = new RecordingRealmCatalog(null);
+
+        TenantProvisioningService.ProvisionTenantCommand command =
+            TenantProvisioningService.ProvisionTenantCommand.builder()
+                .tenantDisplayName("BASF — Global Bulk Shipper")
+                .tenantEmailDomain("basf.com")
+                .orgRefName("basf.com")
+                .accountId("0000000000")
+                .adminUserId("admin@basf.com")
+                .adminSubject("admin@basf.com")
+                .adminPassword("unused-in-context-test")
+                .build();
+
+        TenantProvisioningService.ProvisioningContext context = service.initializeContext(command);
+
+        assertEquals("basf-com", context.getRealmId());
+        assertEquals("basf.com", context.getDesiredRealm().getEmailDomain());
+        assertEquals("basf-com", context.getDomainContext().getTenantId());
+        assertEquals("basf-com", context.getDataDomain().getTenantId());
+        assertEquals("basf-com", context.getDomainContext().getOrgRefName());
+        assertEquals("basf-com", context.getDataDomain().getOrgRefName());
+        assertEquals("basf-com", context.getDesiredRealm().getDatabaseName());
+    }
 
     @Test
     void rejectsHistoricalDomainSpellingThatCollidesWithExistingRealmId() {
@@ -95,14 +123,25 @@ class TenantProvisioningServiceCatalogTest {
 
         @Override
         public Optional<Realm> findByEmailDomain(String emailDomain) {
+            if (existing == null) {
+                return Optional.empty();
+            }
             return Optional.of(existing)
                 .filter(realm -> realm.getEmailDomain().equals(emailDomain));
         }
 
         @Override
         public Optional<Realm> findByRefName(String refName) {
+            if (existing == null) {
+                return Optional.empty();
+            }
             return Optional.of(existing)
                 .filter(realm -> realm.getRefName().equals(refName));
+        }
+
+        @Override
+        public String systemRealmId() {
+            return "system-com";
         }
 
         @Override

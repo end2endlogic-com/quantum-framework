@@ -31,10 +31,15 @@ public class Organization extends FullBaseModel {
    @Override
    public void setRefName(String refName) {
 
-      // check if the refName follows the regular expression: regexp = "^[a-zA-Z0-9]+\\.[a-zA-Z0-9]{1,3}$"
-      // if not, throw an exception
-      if (!refName.matches("^[a-zA-Z0-9]+\\.[a-zA-Z0-9]{1,3}$")) {
-         throw new IllegalArgumentException("refName must follow the pattern 'string.min1.period.string.min1.max3'");
+      if (refName == null || refName.isBlank()) {
+         throw new IllegalArgumentException("refName must not be blank");
+      }
+
+      String trimmed = refName.trim();
+      boolean safeDirectoryRef = trimmed.matches("^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]$|^[a-zA-Z0-9]$");
+      boolean dnsDirectoryRef = trimmed.matches("^[a-zA-Z0-9][a-zA-Z0-9-]*(\\.[a-zA-Z0-9][a-zA-Z0-9-]*)+$");
+      if (!safeDirectoryRef && !dnsDirectoryRef) {
+         throw new IllegalArgumentException("refName must be a safe directory id or DNS-style organization id");
       }
 
       // check if the refName already exists in the database
@@ -43,7 +48,7 @@ public class Organization extends FullBaseModel {
 
       // call the parent class method to set the refName
 
-      super.setRefName(refName);
+      super.setRefName(trimmed);
    }
 
 

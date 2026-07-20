@@ -5,6 +5,8 @@ import com.e2eq.framework.annotations.FunctionalMapping;
 import com.e2eq.framework.model.persistent.migration.base.DatabaseVersion;
 import com.e2eq.framework.model.persistent.migration.base.MigrationService;
 import com.e2eq.framework.model.persistent.morphia.DatabaseVersionRepo;
+import com.e2eq.framework.model.securityrules.ResourceContext;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.security.runtime.RuleContext;
 import com.e2eq.framework.util.EnvConfigUtils;
 import com.e2eq.framework.util.SecurityUtils;
@@ -123,6 +125,8 @@ public class MigrationResource {
    @Path("/changeSet/execute/{realm}/{beanRefName}")
    @RolesAllowed({"admin", "system"})
    @Produces(MediaType.SERVER_SENT_EVENTS)
+   @FunctionalMapping(area="MIGRATION", domain="CHANGE_SET")
+   @FunctionalAction(value = "EXECUTE_CHANGE_SET", bypassDataScoping = true)
    public void executeChangeSet (@Context HttpHeaders headers, @PathParam("realm") String realm, @PathParam(
       "beanRefName") String beanRefName, SseEventSink eventSink, Sse sse) {
       if (!identity.isAnonymous() && identity.hasRole("admin")) {
@@ -154,6 +158,9 @@ public class MigrationResource {
    @POST
    @Path("/initialize/{realm}")
    @Produces(MediaType.SERVER_SENT_EVENTS)
+   @RolesAllowed({"admin", "system"})
+   @FunctionalMapping(area="MIGRATION", domain="DATABASE")
+   @FunctionalAction(value = "INITIALIZE", bypassDataScoping = true)
    public void initializeDatabase (@PathParam("realm") String realm, SseEventSink eventSink, Sse sse) {
 
       if (!identity.isAnonymous() && identity.hasRole("admin")) {
@@ -186,6 +193,8 @@ public class MigrationResource {
    @Path("/start")
    @RolesAllowed({"admin", "system"})
    @Produces(MediaType.SERVER_SENT_EVENTS)
+   @FunctionalMapping(area="MIGRATION", domain="DATABASE")
+   @FunctionalAction(value = "RUN_ALL", bypassDataScoping = true)
    public void startTask (SseEventSink eventSink, Sse sse) {
       Multi.createFrom().publisher(runMigrateAllTask())
          .emitOn(managedExecutor)
@@ -214,6 +223,8 @@ public class MigrationResource {
    @Path("/start/{realm}")
    @RolesAllowed({"admin", "system"})
    @Produces(MediaType.SERVER_SENT_EVENTS)
+   @FunctionalMapping(area="MIGRATION", domain="DATABASE")
+   @FunctionalAction(value = "RUN", bypassDataScoping = true)
    public void startSpecificTask (@PathParam("realm") String realm, SseEventSink eventSink, Sse sse) {
       Multi.createFrom().publisher(runMigrateSpecificTask(realm))
          .emitOn(managedExecutor)
@@ -246,8 +257,10 @@ public class MigrationResource {
             ruleContext.ensureDefaultRules();
             securityUtils.setSecurityContext();
             try {
-               Log.infof("----Running migrations for system realm:%s---- ", realm);
-               migrationService.runAllUnRunMigrations(realm, emitter);
+               runWithMigrationScope(realm, "INITIALIZE", () -> {
+                  Log.infof("----Running migrations for system realm:%s---- ", realm);
+                  migrationService.runAllUnRunMigrations(realm, emitter);
+               });
             } finally {
                securityUtils.clearSecurityContext();
             }
@@ -268,8 +281,10 @@ public class MigrationResource {
             ruleContext.ensureDefaultRules();
             securityUtils.setSecurityContext();
             try {
-               Log.infof("----Running changeSet for bean:%s---- ", beanRefName);
-               migrationService.runChangeSetBean(beanRefName, realm, emitter);
+               runWithMigrationScope(realm, "EXECUTE_CHANGE_SET", () -> {
+                  Log.infof("----Running changeSet for bean:%s---- ", beanRefName);
+                  migrationService.runChangeSetBean(beanRefName, realm, emitter);
+               });
             } finally {
                securityUtils.clearSecurityContext();
             }
@@ -291,12 +306,12 @@ public class MigrationResource {
             securityUtils.setSecurityContext();
             try {
                Log.info("----Running migrations for test realm:---- " + envConfigUtils.getTestRealm());
-               migrationService.runAllUnRunMigrations(envConfigUtils.getTestRealm(), emitter);
+               runWithMigrationScope(envConfigUtils.getTestRealm(), "RUN", () -> migrationService.runAllUnRunMigrations(envConfigUtils.getTestRealm(), emitter));
                Log.info("----Running migrations for system realm:---- " + envConfigUtils.getSystemRealm());
-               migrationService.runAllUnRunMigrations(envConfigUtils.getSystemRealm(), emitter);
+               runWithMigrationScope(envConfigUtils.getSystemRealm(), "RUN", () -> migrationService.runAllUnRunMigrations(envConfigUtils.getSystemRealm(), emitter));
                if (!envConfigUtils.getSystemRealm().equals(envConfigUtils.getDefaultRealm())) {
                   Log.info("----Running migrations for Default realm:---- " + envConfigUtils.getDefaultRealm());
-                  migrationService.runAllUnRunMigrations(envConfigUtils.getDefaultRealm(), emitter);
+                  runWithMigrationScope(envConfigUtils.getDefaultRealm(), "RUN", () -> migrationService.runAllUnRunMigrations(envConfigUtils.getDefaultRealm(), emitter));
                }
             } finally {
                securityUtils.clearSecurityContext();
@@ -318,8 +333,10 @@ public class MigrationResource {
             ruleContext.ensureDefaultRules();
             securityUtils.setSecurityContext();
             try {
-               Log.info("----Running migrations for realm:---- " + realm);
-               migrationService.runAllUnRunMigrations(realm, emitter);
+               runWithMigrationScope(realm, "RUN", () -> {
+                  Log.info("----Running migrations for realm:---- " + realm);
+                  migrationService.runAllUnRunMigrations(realm, emitter);
+               });
             } finally {
                securityUtils.clearSecurityContext();
             }
@@ -328,6 +345,24 @@ public class MigrationResource {
          } catch (Throwable e) {
             emitter.fail(e);
          }
-      });
+	      });
+	   }
+
+   private void runWithMigrationScope(String realm, String action, MigrationOperation operation) throws Exception {
+      ResourceContext migrationResource = new ResourceContext.Builder()
+         .withRealm(realm)
+         .withArea("MIGRATION")
+         .withFunctionalDomain("DATABASE")
+         .withAction(action)
+         .build();
+
+      try (SecurityCallScope.Scope ignored = SecurityCallScope.openResourceOnly(migrationResource)) {
+         operation.run();
+      }
    }
-}
+
+   @FunctionalInterface
+   private interface MigrationOperation {
+      void run() throws Exception;
+   }
+	}

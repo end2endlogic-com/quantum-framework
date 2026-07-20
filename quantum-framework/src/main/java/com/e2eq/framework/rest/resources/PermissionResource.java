@@ -194,9 +194,9 @@ public class PermissionResource {
    @Consumes(MediaType.APPLICATION_JSON)
    @Produces(MediaType.APPLICATION_JSON)
    @FunctionalAction("roleProvenance")
-   public Response roleProvenance(RoleProvenanceRequest req) {
+   public RoleProvenanceResponse roleProvenance(RoleProvenanceRequest req) {
       if (req == null || req.userId == null || req.userId.isBlank()) {
-         return Response.status(Response.Status.BAD_REQUEST).entity("userId is required").build();
+         throw new BadRequestException("userId is required");
       }
 
       String realm = (req.realm != null && !req.realm.isBlank())
@@ -312,7 +312,7 @@ public class PermissionResource {
       resp.netRoles = net;
       resp.assignments = identityRoleResolver.toAssignments(provenance);
 
-      return Response.ok(resp).build();
+      return resp;
    }
 
    protected List<EntityInfo> getInfoList() {
