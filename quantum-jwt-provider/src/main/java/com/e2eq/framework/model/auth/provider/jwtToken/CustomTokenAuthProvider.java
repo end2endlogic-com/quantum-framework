@@ -620,11 +620,23 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                       applicationId);
                   switch (appAuth.outcome()) {
                      case AMBIGUOUS:
+                        java.util.List<String> selectionCandidates = appAuth.candidates();
+                        if (selectionCandidates.isEmpty()) {
+                           // Pattern grants can't enumerate themselves; the realm
+                           // catalog doubles as the application-usage registry, so
+                           // offer the distinct in-use applications that satisfy
+                           // the credential's pattern — a selection prompt with an
+                           // empty candidate list is unactionable.
+                           String pattern = credential.getApplicationRegEx();
+                           selectionCandidates = realmRepo.findDistinctApplicationRefNames().stream()
+                              .filter(app -> ApplicationAuthorizationResolver.matches(pattern, app))
+                              .toList();
+                        }
                         return new LoginResponse(false,
                            new LoginNegativeResponse(userId, 400, 300,
                               "Multiple applications are authorized; specify which application to sign into",
                               "ApplicationSelectionRequired",
-                              String.join(",", appAuth.candidates()),
+                              String.join(",", selectionCandidates),
                               tokenRealm));
                      case DENIED:
                         return new LoginResponse(false,

@@ -14,10 +14,12 @@ import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.validation.constraints.NotNull;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 @ApplicationScoped
@@ -43,6 +45,23 @@ public class MorphiaDataStoreWrapper {
 
    @Inject
    EnvConfigUtils envConfigUtils;
+
+   /**
+    * Compatibility escape hatch only. The default keeps global identity/security
+    * resources out of tenant realm datastores; embedded auth still maps those
+    * resources in the configured system realm.
+    */
+   @ConfigProperty(name = "quantum.morphia.map-global-resources-to-tenant-realms", defaultValue = "false")
+   boolean mapGlobalResourcesToTenantRealms;
+
+   @ConfigProperty(
+       name = "quantum.morphia.tenant-excluded-entity-package-prefixes",
+       defaultValue = RealmEntityMappingPolicy.DEFAULT_TENANT_EXCLUDED_ENTITY_PACKAGE_PREFIXES
+   )
+   String tenantExcludedEntityPackagePrefixes;
+
+   @ConfigProperty(name = "quantum.morphia.tenant-excluded-entity-classes")
+   Optional<String> tenantExcludedEntityClasses;
 
 
 
@@ -87,9 +106,26 @@ public class MorphiaDataStoreWrapper {
       mdatastore.getMapper().addInterceptor(referenceInterceptor);
       mdatastore.getMapper().addInterceptor(persistenceAuditEventInterceptor);
 
-      // Reuse already-mapped entity types from the base datastore (no classpath scanning per realm)
+      // Reuse already-mapped entity types from the base datastore (no classpath scanning per realm),
+      // but do not project system-plane security/identity entities into tenant realms.
+      int mappedEntityCount = 0;
+      int skippedEntityCount = 0;
       for (Class<?> entityType : getMappedEntityTypesFromBase()) {
-         mdatastore.getMapper().map(entityType);
+         if (shouldMapEntityType(realm, entityType)) {
+            mdatastore.getMapper().map(entityType);
+            mappedEntityCount++;
+         } else {
+            skippedEntityCount++;
+            Log.debugf("Skipping system-plane entity type %s for tenant realm/database %s", entityType.getName(), realm);
+         }
+      }
+      if (skippedEntityCount > 0) {
+         Log.infof(
+             "MorphiaDataStoreWrapper: mapped %d entity types and skipped %d system-plane entity types for realm/database %s",
+             mappedEntityCount,
+             skippedEntityCount,
+             realm
+         );
       }
 
       // Apply indexes and document validations
@@ -122,6 +158,17 @@ public class MorphiaDataStoreWrapper {
          }
       }
       return cachedMappedEntityTypes;
+   }
+
+   private boolean shouldMapEntityType(String realm, Class<?> entityType) {
+      return RealmEntityMappingPolicy.shouldMapToRealm(
+          realm,
+          envConfigUtils.getSystemRealm(),
+          entityType,
+          mapGlobalResourcesToTenantRealms,
+          tenantExcludedEntityPackagePrefixes,
+          tenantExcludedEntityClasses.orElse("")
+      );
    }
 
     /* Original as of March 26th 2025

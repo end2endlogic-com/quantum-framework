@@ -46,4 +46,25 @@ class AudiencePolicyTest {
       assertEquals(Decision.ALLOW, AudiencePolicy.evaluate(
               Optional.of(" helixor-di "), true, Set.of("helixor-di")));
    }
+
+   @Test
+   void wildcardAudienceAdmittedByEveryApplication() {
+      // "*" aud = wildcard-entitled principal (bootstrap/ops): explicit, signed,
+      // auditable any-app token. Admission rule: ownAppId ∈ aud OR "*" ∈ aud.
+      assertEquals(Decision.ALLOW, AudiencePolicy.evaluate(
+              Optional.of("helixor-di"), true, Set.of("*")));
+      assertEquals(Decision.ALLOW, AudiencePolicy.evaluate(
+              Optional.of("helixor-scheduler"), true, Set.of("*")));
+   }
+
+   @Test
+   void wildcardMustBeInAudNotMerelyExpected() {
+      // A concrete token is still rejected by an app it does not name; the
+      // wildcard only widens tokens, never a service's expectation.
+      assertEquals(Decision.REJECT_WRONG_AUDIENCE, AudiencePolicy.evaluate(
+              Optional.of("helixor-di"), true, Set.of("helixor-scheduler")));
+      // And strict mode still rejects aud-less tokens even though "*" exists.
+      assertEquals(Decision.REJECT_MISSING_AUDIENCE, AudiencePolicy.evaluate(
+              Optional.of("helixor-di"), true, Set.of()));
+   }
 }

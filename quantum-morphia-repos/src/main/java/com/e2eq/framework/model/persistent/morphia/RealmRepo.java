@@ -32,6 +32,27 @@ public class RealmRepo extends MorphiaRepo<Realm> {
    }
 
 
+   /**
+    * The realm catalog doubles as the application-usage registry: every realm
+    * points at its owning application, so the distinct set of applicationRef
+    * refNames is "applications with at least one realm". Reads the system-realm
+    * database (the single home of the realm collection).
+    */
+   public java.util.List<String> findDistinctApplicationRefNames() {
+      MorphiaDatastore ds = morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId());
+      String collectionName = ds.getMapper().getEntityModel(Realm.class).collectionName();
+      java.util.List<String> out = new java.util.ArrayList<>();
+      ds.getDatabase().getCollection(collectionName)
+         .distinct("applicationRef.entityRefName", String.class)
+         .forEach(value -> {
+            if (value != null && !value.isBlank()) {
+               out.add(value);
+            }
+         });
+      java.util.Collections.sort(out);
+      return out;
+   }
+
    public java.util.List<Realm> getAllListWithIgnoreRules (String realmId) {
       MorphiaDatastore ds = morphiaDataStoreWrapper.getDataStore(realmId);
       String dataBase = ds.getDatabase().getName();
