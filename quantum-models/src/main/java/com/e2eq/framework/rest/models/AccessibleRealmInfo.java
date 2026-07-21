@@ -26,6 +26,8 @@ public class AccessibleRealmInfo {
     private Integer pendingMigrationCount;
     @JsonFormat(shape = JsonFormat.Shape.STRING)
     private Date setupLastUpdated;
+    /** Owning application refName (every realm belongs to exactly one application). */
+    private String application;
 
     public AccessibleRealmInfo(String refName, String displayName) {
         this.refName = refName;
@@ -58,7 +60,7 @@ public class AccessibleRealmInfo {
         if (realm == null) {
             return new AccessibleRealmInfo();
         }
-        return new AccessibleRealmInfo(
+        AccessibleRealmInfo info = new AccessibleRealmInfo(
                 realm.getRefName(),
                 realm.getDisplayName(),
                 realm.getSetupStatus(),
@@ -70,5 +72,9 @@ public class AccessibleRealmInfo {
                 realm.getPendingMigrationCount(),
                 realm.getSetupLastUpdated()
         );
+        if (realm.getApplicationRef() != null) {
+            info.setApplication(realm.getApplicationRef().getEntityRefName());
+        }
+        return info;
     }
 }

@@ -48,6 +48,7 @@ public class TenantProvisioningResource {
         public String adminUsername;               // legacy display field; not used for subject identity
         public String adminSubject;                // optional stable subject override; defaults to adminUserId
         @NotBlank public String adminPassword;     // plaintext; hashed in service
+        public String applicationId;               // owning application; falls back to quantum.tenant.provisioning.default-application
         public List<String> archetypes;            // legacy alias for seedArchetypes
         public List<String> seedArchetypes;        // optional list of seed-framework archetype names
     }
@@ -84,6 +85,7 @@ public class TenantProvisioningResource {
                     .adminUserId(req.adminUserId)
                     .adminSubject(resolveAdminSubject(req))
                     .adminPassword(req.adminPassword)
+                    .applicationId(req.applicationId)
                     .archetypes(archetypes)
                     .overwriteAll(true)
                     .build()

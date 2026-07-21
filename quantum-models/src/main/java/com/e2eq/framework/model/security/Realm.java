@@ -1,6 +1,9 @@
 package com.e2eq.framework.model.security;
 
 import com.e2eq.framework.model.persistent.base.BaseModel;
+import com.e2eq.framework.model.persistent.base.EntityReference;
+import com.e2eq.framework.model.persistent.base.ReferenceTarget;
+import com.e2eq.ontology.annotations.OntologyProperty;
 import dev.morphia.annotations.Entity;
 import dev.morphia.annotations.IndexOptions;
 import dev.morphia.annotations.Indexed;
@@ -75,6 +78,11 @@ public class Realm extends BaseModel {
     * which shell/menu shape to present when a user switches into the realm.
    */
    protected String defaultPerspective;
+
+
+   @ReferenceTarget(target = Application.class, collection = "application")
+   @OntologyProperty(id = "isPartOf", ref = "Application", materializeEdge = true)
+   protected EntityReference applicationRef;
 
    /**
     * Tenant setup projection used by system-perspective catalogs so they can show

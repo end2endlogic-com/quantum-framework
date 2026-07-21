@@ -21,8 +21,9 @@ import java.util.*;
  *   - roles from any UserGroup memberships of the associated UserProfile
  * - If a role is provided (no credential), no expansion is performed.
  *
- * Note: Credentials are always stored in system-com (global). The realm parameter
- * is used for UserProfile/UserGroup lookups in the tenant's database.
+ * Note: Credentials and central directory groups are stored in the configured
+ * system realm. Tenant-local UserProfile/UserGroup lookup remains only as a
+ * compatibility fallback for embedded auth mode.
  */
 @ApplicationScoped
 public class IdentityRoleResolver {
@@ -80,12 +81,10 @@ public class IdentityRoleResolver {
                                           String effectiveRealm) {
         String targetRealm = requireRealm(effectiveRealm);
         LinkedHashMap<String, EnumSet<RoleSource>> provenance = new LinkedHashMap<>();
-        boolean sameAuthorityRealm = sameRealm(authorityRealm, targetRealm);
-
-        if (sameAuthorityRealm && identity != null) {
+        if (identity != null) {
             addRoles(provenance, identity.getRoles(), RoleSource.TOKEN);
         }
-        if (sameAuthorityRealm && credential != null) {
+        if (credential != null) {
             addRoles(provenance, credential.getRoles(), RoleSource.CREDENTIAL);
         }
 
@@ -95,17 +94,9 @@ public class IdentityRoleResolver {
                                 credential.getUserId(), targetRealm, envConfigUtils.getSystemRealm())
                         .ifPresent(assignment -> addRoles(provenance, assignment.getRoles(), RoleSource.REALM));
 
-                Optional<UserProfile> profile = userProfileRepo.getBySubject(targetRealm, credential.getSubject());
-                if (profile.isPresent()) {
-                    List<UserGroup> groups = userGroupRepo.findByUserProfileRefWithIgnoreRules(
-                            targetRealm, profile.get().createEntityReference());
-                    if (groups != null) {
-                        for (UserGroup group : groups) {
-                            if (group != null) {
-                                addRoles(provenance, group.getRoles(), RoleSource.USERGROUP);
-                            }
-                        }
-                    }
+                addUserGroupRoles(provenance, credential, envConfigUtils.getSystemRealm());
+                if (!sameRealm(targetRealm, envConfigUtils.getSystemRealm())) {
+                    addUserGroupRoles(provenance, credential, targetRealm);
                 }
             } catch (RuntimeException e) {
                 throw new IllegalStateException(String.format(
@@ -138,8 +129,9 @@ public class IdentityRoleResolver {
      * If the identity matches a credential, include sources from IDP, CREDENTIAL, and USERGROUP.
      * If no credential exists, only IDP roles can be derived.
      *
-     * Note: Credentials are always looked up from system-com (global). The realm parameter
-     * is used for UserProfile/UserGroup lookups in the tenant's database.
+     * Note: Credentials and central directory groups are looked up from the
+     * configured system realm. Tenant-local UserProfile/UserGroup lookup remains
+     * only as a compatibility fallback for embedded auth mode.
      */
     public Map<String, EnumSet<RoleSource>> resolveRoleSources(String identity, String realm, SecurityIdentity securityIdentity) {
         LinkedHashMap<String, EnumSet<RoleSource>> out = new LinkedHashMap<>();
@@ -151,33 +143,45 @@ public class IdentityRoleResolver {
             authorityRealm = credentialHomeRealm(credential.get());
         }
 
-        if (sameRealm(authorityRealm, targetRealm) && currentIdentityMatches(identity, securityIdentity)) {
+        if (currentIdentityMatches(identity, securityIdentity)) {
             addRoles(out, securityIdentity.getRoles(), RoleSource.TOKEN);
         }
 
         if (credential.isPresent()) {
             CredentialUserIdPassword cred = credential.get();
-            if (sameRealm(credentialHomeRealm(cred), targetRealm)) {
-                addRoles(out, cred.getRoles(), RoleSource.CREDENTIAL);
-            }
+            addRoles(out, cred.getRoles(), RoleSource.CREDENTIAL);
             userRealmRoleRepo.findActiveAssignmentForRealmWithIgnoreRules(
                             cred.getUserId(), targetRealm, systemRealm)
                     .ifPresent(assignment -> addRoles(out, assignment.getRoles(), RoleSource.REALM));
 
-            Optional<UserProfile> profile = userProfileRepo.getBySubject(targetRealm, cred.getSubject());
-            if (profile.isPresent()) {
-                List<UserGroup> groups = userGroupRepo.findByUserProfileRefWithIgnoreRules(
-                        targetRealm, profile.get().createEntityReference());
-                if (groups != null) {
-                    for (UserGroup group : groups) {
-                        if (group != null) {
-                            addRoles(out, group.getRoles(), RoleSource.USERGROUP);
-                        }
-                    }
-                }
+            addUserGroupRoles(out, cred, systemRealm);
+            if (!sameRealm(targetRealm, systemRealm)) {
+                addUserGroupRoles(out, cred, targetRealm);
             }
         }
         return out;
+    }
+
+    private void addUserGroupRoles(Map<String, EnumSet<RoleSource>> target,
+                                   CredentialUserIdPassword credential,
+                                   String groupRealm) {
+        if (credential == null || credential.getSubject() == null || groupRealm == null || groupRealm.isBlank()) {
+            return;
+        }
+        Optional<UserProfile> profile = userProfileRepo.getBySubject(groupRealm, credential.getSubject());
+        if (profile.isEmpty()) {
+            return;
+        }
+        List<UserGroup> groups = userGroupRepo.findByUserProfileRefWithIgnoreRules(
+                groupRealm, profile.get().createEntityReference());
+        if (groups == null) {
+            return;
+        }
+        for (UserGroup group : groups) {
+            if (group != null) {
+                addRoles(target, group.getRoles(), RoleSource.USERGROUP);
+            }
+        }
     }
 
     private String credentialHomeRealm(CredentialUserIdPassword credential) {
