@@ -9,6 +9,7 @@ import com.e2eq.framework.system.catalog.RealmCatalogService;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.base.EntityReference;
 import com.e2eq.framework.model.persistent.migration.base.MigrationService;
+import com.e2eq.framework.model.persistent.morphia.ApplicationRepo;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.OrganizationRepo;
 import com.e2eq.framework.model.persistent.morphia.RealmRepo;
@@ -19,6 +20,7 @@ import com.e2eq.framework.model.persistent.morphia.UserRealmRoleRepo;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.security.Organization;
+import com.e2eq.framework.model.security.Application;
 import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.model.security.RealmTenantMembership;
 import com.e2eq.framework.model.security.RealmSetupStatus;
@@ -42,6 +44,7 @@ import jakarta.inject.Inject;
 import lombok.Builder;
 import lombok.Data;
 import org.eclipse.microprofile.config.ConfigProvider;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.io.IOException;
 import java.util.*;
@@ -77,6 +80,26 @@ public class TenantProvisioningService implements TenantLifecycle {
 
     @Inject SeedDiscoveryService seedDiscoveryService;
 
+    /**
+     * Compatibility escape hatch for legacy embedded deployments that projected
+     * user profile/group records into tenant realms. Default is false because
+     * credentials, organizations, groups, policies, and realm assignments are
+     * system-plane resources owned by the auth/system control plane.
+     */
+    @ConfigProperty(name = "quantum.tenant.provisioning.create-tenant-identity-projections", defaultValue = "false")
+    boolean createTenantIdentityProjections;
+
+    /**
+     * Every realm belongs to exactly one application; the realm catalog doubles
+     * as the application-usage registry. When a provision command names no
+     * application this default applies; with neither set, provisioning fails
+     * fast rather than creating an unowned realm.
+     */
+    @ConfigProperty(name = "quantum.tenant.provisioning.default-application")
+    Optional<String> defaultApplicationId;
+
+    @Inject ApplicationRepo applicationRepo;
+
     public static class ProvisionResult {
         public String realmId;
         public boolean realmCreated;
@@ -105,6 +128,8 @@ public class TenantProvisioningService implements TenantLifecycle {
         private String adminUserId;
         private String adminSubject;
         private String adminPassword;
+        /** Owning application for the realm; falls back to quantum.tenant.provisioning.default-application. */
+        private String applicationId;
         @Builder.Default
         private List<String> archetypes = List.of();
         @Builder.Default
@@ -223,6 +248,9 @@ public class TenantProvisioningService implements TenantLifecycle {
             .ownerId(command.getAdminUserId())
             .build();
 
+        // NOTE: the owning application is resolved and attached in
+        // ensureRealmCatalog (the persistence step) so context initialization
+        // stays a pure computation.
         Realm desiredRealm = Realm.builder()
             .refName(realmId)
             .displayName(normalizedTenantDisplayName)
@@ -288,6 +316,44 @@ public class TenantProvisioningService implements TenantLifecycle {
             .build();
     }
 
+    /** Command applicationId, else the configured platform default, else null. */
+    private String resolveApplicationIdOrNull(ProvisionTenantCommand command) {
+        if (command.getApplicationId() != null && !command.getApplicationId().isBlank()) {
+            return command.getApplicationId().trim();
+        }
+        Optional<String> fallback = defaultApplicationId == null ? Optional.empty() : defaultApplicationId;
+        return fallback.map(String::trim).filter(value -> !value.isEmpty()).orElse(null);
+    }
+
+    private String requireApplicationId(ProvisionTenantCommand command) {
+        String applicationId = resolveApplicationIdOrNull(command);
+        if (applicationId == null) {
+            throw new IllegalArgumentException(
+                "applicationId is required: every realm belongs to exactly one application. "
+                    + "Pass applicationId in the provision command or configure "
+                    + "quantum.tenant.provisioning.default-application.");
+        }
+        return applicationId;
+    }
+
+    /** Idempotently registers the owning application in the global registry. */
+    private Application registerOwningApplication(String applicationId, String ownerUserId) {
+        return applicationRepo.ensureRegistered(
+            applicationId,
+            DataDomain.builder()
+                .orgRefName(envConfigUtils.getSystemOrgRefName())
+                .accountNum(envConfigUtils.getSystemAccountNumber())
+                .tenantId(envConfigUtils.getSystemTenantId())
+                .ownerId(ownerUserId)
+                .build());
+    }
+
+    private static String applicationRefName(Realm realm) {
+        return realm == null || realm.getApplicationRef() == null
+            ? null
+            : realm.getApplicationRef().getEntityRefName();
+    }
+
     public void ensureRealmCatalog(ProvisioningContext context) {
         Log.infof("  computed realmId: %s", context.getRealmId());
         Optional<Realm> existingByEmailDomain = realmCatalog.findByEmailDomain(
@@ -338,17 +404,44 @@ public class TenantProvisioningService implements TenantLifecycle {
                 diffs.add(String.format("defaultPerspective: existing='%s', requested='%s'",
                     existing.getDefaultPerspective(), context.getDesiredRealm().getDefaultPerspective()));
             }
+            // A realm belongs to exactly ONE application: re-provisioning under a
+            // different application is a conflict, but a legacy realm without an
+            // application is backfilled below, not rejected.
+            String desiredApplication = resolveApplicationIdOrNull(context.getCommand());
+            String existingApplication = applicationRefName(existing);
+            if (existingApplication != null && desiredApplication != null
+                    && !existingApplication.equalsIgnoreCase(desiredApplication)) {
+                diffs.add(String.format("application: existing='%s', requested='%s'",
+                    existingApplication, desiredApplication));
+            }
 
             if (!diffs.isEmpty()) {
                 throw new IllegalStateException("Realm already exists; differences detected: " + String.join("; ", diffs));
+            }
+            if (existingApplication == null && desiredApplication != null) {
+                Application application = registerOwningApplication(
+                    desiredApplication, context.getCommand().getAdminUserId());
+                existing.setApplicationRef(application.createEntityReference());
+                realmCatalog.register(existing);
+                context.getResult().addWarning(
+                    "Realm existed without an owning application; linked to '" + desiredApplication + "'.");
+                Log.infof("Backfilled application '%s' onto existing realm %s", desiredApplication, context.getRealmId());
+                return;
             }
             Log.warnf("Realm %s already exists in system catalog; proceeding idempotently.", context.getRealmId());
             context.getResult().addWarning("Realm already exists; no catalog changes were made.");
             return;
         }
 
+        // New realm: resolve and register the owning application (fail-fast when
+        // neither the command nor the platform default names one), then attach it.
+        Application application = registerOwningApplication(
+            requireApplicationId(context.getCommand()),
+            context.getCommand().getAdminUserId());
+        context.getDesiredRealm().setApplicationRef(application.createEntityReference());
         realmCatalog.register(context.getDesiredRealm());
-        Log.infof("Created realm catalog entry for %s in system realm %s", context.getRealmId(), context.getSystemRealm());
+        Log.infof("Created realm catalog entry for %s in system realm %s (application %s)",
+            context.getRealmId(), context.getSystemRealm(), application.getRefName());
         context.getResult().realmCreated = true;
     }
 
@@ -480,7 +573,7 @@ public class TenantProvisioningService implements TenantLifecycle {
             context.getResult().addWarning("Admin user already exists; no user changes were made.");
         }
 
-        ensureUserProfileInRealm(
+        ensureUserProfileProjectionIfEnabled(
             context.getRealmId(),
             context.getCommand().getAdminUserId(),
             context.getCommand().getAdminUserId(),
@@ -505,7 +598,7 @@ public class TenantProvisioningService implements TenantLifecycle {
                 context.getResult(),
                 "Baseline tenant admin user"
             );
-            ensureUserProfileInRealm(
+            ensureUserProfileProjectionIfEnabled(
                 context.getRealmId(),
                 context.getBaselineAdminUserId(),
                 context.getBaselineAdminUserId(),
@@ -530,7 +623,7 @@ public class TenantProvisioningService implements TenantLifecycle {
             context.getResult(),
             "Demo tenant user"
         );
-        ensureUserProfileInRealm(
+        ensureUserProfileProjectionIfEnabled(
             context.getRealmId(),
             context.getDemoUserId(),
             context.getDemoUserId(),
@@ -545,7 +638,7 @@ public class TenantProvisioningService implements TenantLifecycle {
             context.getDomainContext()
         );
 
-        ensureTenantAdminMemberships(
+        ensureTenantAdminMembershipsIfEnabled(
             context.getRealmId(),
             context.getDomainContext(),
             context.getBaselineAdminUserId(),
@@ -634,6 +727,36 @@ public class TenantProvisioningService implements TenantLifecycle {
             .variable("baselineAdminUserId", context.getBaselineAdminUserId())
             .variable("demoUserId", context.getDemoUserId())
             .build();
+    }
+
+    private void ensureUserProfileProjectionIfEnabled(String realmId,
+                                                      String userId,
+                                                      String email,
+                                                      Set<String> roles,
+                                                      DomainContext domainContext) {
+        if (!createTenantIdentityProjections) {
+            Log.debugf(
+                "Tenant identity projections are disabled; skipping UserProfile projection for user %s in tenant realm %s",
+                userId,
+                realmId
+            );
+            return;
+        }
+        ensureUserProfileInRealm(realmId, userId, email, roles, domainContext);
+    }
+
+    private void ensureTenantAdminMembershipsIfEnabled(String realmId,
+                                                       DomainContext domainContext,
+                                                       String baselineAdminUserId,
+                                                       String requestedAdminUserId) {
+        if (!createTenantIdentityProjections) {
+            Log.debugf(
+                "Tenant identity projections are disabled; skipping tenant-local admin UserGroup projection in realm %s",
+                realmId
+            );
+            return;
+        }
+        ensureTenantAdminMemberships(realmId, domainContext, baselineAdminUserId, requestedAdminUserId);
     }
 
     private void ensureUserProfileInRealm(String realmId,

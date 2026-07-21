@@ -24,10 +24,13 @@ import java.util.regex.PatternSyntaxException;
  *   <li><b>Resolution order:</b> explicit requested app → single authorized app →
  *       configured default → otherwise ambiguous (the caller returns the set so the
  *       login UI can prompt). Origin/host is never consulted.</li>
- *   <li><b>{@code "*"} guardrail:</b> a wildcard grant is "may enter any app, but
- *       must name which" — it requires an explicit requested app (the installed set
- *       is not enumerable here), scopes the token to just that app, and flags the
- *       result so the caller can audit-log the wildcard issuance.</li>
+ *   <li><b>{@code "*"} semantics (decision 2026-07-20):</b> a wildcard grant means
+ *       the token is valid for ANY application. It resolves to the literal {@code "*"}
+ *       audience — admitted downstream by the shared audience policy ({@code aud}
+ *       contains the service's own app id OR {@code "*"}) — rather than forcing a
+ *       selection this layer cannot enumerate. {@code azp} records the app actively
+ *       entered when one was named. The result is flagged so the caller can
+ *       audit-log every wildcard issuance.</li>
  * </ul>
  */
 public final class ApplicationAuthorizationResolver {
@@ -110,14 +113,10 @@ public final class ApplicationAuthorizationResolver {
         concrete.remove(WILDCARD);
 
         if (wildcard) {
-            // "*" = may enter any app, but must name which; token is scoped to that one app.
-            if (requested == null) {
-                // Can't enumerate installed apps from this layer, so we can't default a "*" grant.
-                return Result.ambiguous(new ArrayList<>(concrete), true);
-            }
-            LinkedHashSet<String> aud = new LinkedHashSet<>();
-            aud.add(requested);
-            return Result.resolved(aud, requested, true);
+            // "*" = valid for any application: mint the wildcard audience instead of
+            // demanding a selection this layer cannot enumerate. azp = the app
+            // actively entered, when one was named or defaulted.
+            return Result.resolved(wildcardAudience(), requested != null ? requested : defaultApp, true);
         }
 
         if (requested != null) {
@@ -150,24 +149,42 @@ public final class ApplicationAuthorizationResolver {
 
         String requested = trimToNull(requestedApplicationId);
         String defaultApp = trimToNull(defaultApplication);
-        boolean wildcard = WILDCARD.equals(expression);
+
+        if (WILDCARD.equals(expression)) {
+            // Same "*" semantics as a wildcard grant entry: the token is valid for
+            // any application, carried as the literal "*" audience.
+            return Result.resolved(wildcardAudience(), requested != null ? requested : defaultApp, true);
+        }
 
         if (requested != null) {
             if (matches(expression, requested)) {
-                return Result.resolved(new LinkedHashSet<>(List.of(requested)), requested, wildcard);
+                return Result.resolved(new LinkedHashSet<>(List.of(requested)), requested, false);
             }
             return Result.denied(requested);
         }
 
         if (defaultApp != null && matches(expression, defaultApp)) {
-            return Result.resolved(new LinkedHashSet<>(List.of(defaultApp)), defaultApp, wildcard);
+            return Result.resolved(new LinkedHashSet<>(List.of(defaultApp)), defaultApp, false);
         }
 
-        // A pattern can authorize an unbounded set, so callers must name an app.
-        return Result.ambiguous(List.of(), wildcard);
+        // A concrete pattern is a deliberate application-scoping decision and can
+        // authorize an unbounded set, so callers must name an app.
+        return Result.ambiguous(List.of(), false);
     }
 
-    private static boolean matches(String expression, String applicationId) {
+    private static LinkedHashSet<String> wildcardAudience() {
+        LinkedHashSet<String> aud = new LinkedHashSet<>();
+        aud.add(WILDCARD);
+        return aud;
+    }
+
+    /**
+     * True when the application id satisfies the entitlement expression
+     * ({@code "*"} = unrestricted; otherwise full-string, case-insensitive
+     * regex). Public so callers (e.g. the auth provider) can intersect a
+     * pattern with the application registry when enumerating candidates.
+     */
+    public static boolean matches(String expression, String applicationId) {
         if (WILDCARD.equals(expression)) {
             return true;
         }

@@ -55,23 +55,33 @@ public class SecurityFilterResolveEffectiveRolesTest {
     // Simple stubs for repos
     private static class StubUserProfileRepo extends UserProfileRepo {
         private final Map<String, UserProfile> bySubject = new HashMap<>();
-        public void put(UserProfile up, String subject) { bySubject.put(subject, up); }
+        public void put(UserProfile up, String subject) { bySubject.put("*::" + subject, up); }
+        public void put(String realm, UserProfile up, String subject) { bySubject.put(realm + "::" + subject, up); }
         @Override
-        public Optional<UserProfile> getBySubject(String realm, String subject) { return Optional.ofNullable(bySubject.get(subject)); }
+        public Optional<UserProfile> getBySubject(String realm, String subject) {
+            UserProfile profile = bySubject.get(realm + "::" + subject);
+            if (profile == null) {
+                profile = bySubject.get("*::" + subject);
+            }
+            return Optional.ofNullable(profile);
+        }
         @Override
-        public Optional<UserProfile> getBySubject(String subject) { return Optional.ofNullable(bySubject.get(subject)); }
+        public Optional<UserProfile> getBySubject(String subject) { return Optional.ofNullable(bySubject.get("*::" + subject)); }
     }
 
     private static class StubUserGroupRepo extends UserGroupRepo {
         private final Map<String, List<UserGroup>> byEntityRef = new HashMap<>();
         public void put(EntityReference ref, List<UserGroup> groups) { byEntityRef.put(ref.getEntityRefName(), groups); }
+        public void put(String realm, EntityReference ref, List<UserGroup> groups) { byEntityRef.put(realm + "::" + ref.getEntityRefName(), groups); }
         @Override
         public List<UserGroup> findByUserProfileRef(EntityReference userProfileRef) {
             return byEntityRef.getOrDefault(userProfileRef.getEntityRefName(), Collections.emptyList());
         }
         @Override
         public List<UserGroup> findByUserProfileRefWithIgnoreRules(String realm, EntityReference userProfileRef) {
-            return findByUserProfileRef(userProfileRef);
+            return byEntityRef.getOrDefault(
+                    realm + "::" + userProfileRef.getEntityRefName(),
+                    findByUserProfileRef(userProfileRef));
         }
     }
 
@@ -167,6 +177,69 @@ public class SecurityFilterResolveEffectiveRolesTest {
         // Expected union: identity(user, viewer) U cred(editor, user) U groups(user, admin, developer)
         Set<String> expected = new HashSet<>(Arrays.asList("user", "viewer", "editor", "admin", "developer"));
         assertEquals(expected, result, "Effective roles should be the union without duplicates");
+    }
+
+    @Test
+    public void testSystemRealmUserGroupRolesApplyWhenResolvingTenantRealm() throws Exception {
+        SecurityIdentity identity = identityWithRoles(Set.of());
+        String subject = "sub-central";
+        CredentialUserIdPassword cred = CredentialUserIdPassword.builder()
+                .userId("u-central")
+                .subject(subject)
+                .domainContext(com.e2eq.framework.model.security.DomainContext.builder()
+                        .tenantId("tenant-a").defaultRealm("tenant-a").orgRefName("org1").accountId("acct1").build())
+                .lastUpdate(new Date())
+                .roles(new String[]{"user"})
+                .build();
+
+        UserProfile centralProfile = UserProfile.builder()
+                .credentialUserIdPasswordRef(EntityReference.builder().entityRefName(subject).entityDisplayName("cred").build())
+                .email("central@example.com")
+                .build();
+        centralProfile.setRefName("central-userProfile-" + subject);
+        centralProfile.setDisplayName("Central User Profile for " + subject);
+
+        UserGroup adminGroup = new UserGroup();
+        adminGroup.setRoles(Arrays.asList("admin", "user"));
+
+        StubUserProfileRepo upr = new StubUserProfileRepo();
+        upr.put("system-com", centralProfile, subject);
+
+        StubUserGroupRepo ugr = new StubUserGroupRepo();
+        ugr.put("system-com", centralProfile.createEntityReference(), List.of(adminGroup));
+
+        SecurityFilter filter = newFilterWithRepos(upr, ugr);
+
+        String[] effective = invokeResolveEffectiveRoles(filter, identity, cred, "tenant-a");
+        Set<String> result = new HashSet<>(Arrays.asList(effective));
+
+        assertEquals(Set.of("user", "admin"), result,
+                "Central system-realm user group roles should apply to tenant authorization without duplicates");
+    }
+
+    @Test
+    public void testCredentialRolesSurviveRealmOverride() throws Exception {
+        SecurityIdentity identity = identityWithRoles(Set.of("admin", "user"));
+        CredentialUserIdPassword cred = CredentialUserIdPassword.builder()
+                .userId("mingardia")
+                .subject("sub-admin")
+                .domainContext(com.e2eq.framework.model.security.DomainContext.builder()
+                        .tenantId("quantum-auth")
+                        .defaultRealm("quantum-auth")
+                        .orgRefName("system")
+                        .accountId("0000000001")
+                        .build())
+                .lastUpdate(new Date())
+                .roles(new String[]{"admin", "user"})
+                .build();
+
+        SecurityFilter filter = newFilterWithRepos(new StubUserProfileRepo(), new StubUserGroupRepo());
+
+        String[] effective = invokeResolveEffectiveRoles(filter, identity, cred, "century-logistics");
+        Set<String> result = new HashSet<>(Arrays.asList(effective));
+
+        assertEquals(Set.of("admin", "user"), result,
+                "A wildcard-authorized admin must not lose flat token/credential roles when X-Realm changes the data realm");
     }
 
     @Test
