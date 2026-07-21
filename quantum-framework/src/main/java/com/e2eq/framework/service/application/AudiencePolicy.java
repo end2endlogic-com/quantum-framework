@@ -9,10 +9,19 @@ import java.util.Set;
  * deployment opts into strict mode; a token WITH an {@code aud} claim that does
  * not name this application is always rejected — no silent fallback).
  *
+ * A token whose {@code aud} contains the literal {@code "*"} is admitted by
+ * every application (decision 2026-07-20): wildcard-entitled principals
+ * (bootstrap/ops) carry an explicit, signed, auditable any-app audience instead
+ * of an unmarked legacy token. The admission rule is exactly:
+ * {@code ownAppId ∈ aud OR "*" ∈ aud}.
+ *
  * Pure logic so the decision table is unit-testable without container
  * scaffolding; {@code SecurityFilter} owns the wiring.
  */
 public final class AudiencePolicy {
+
+   /** Literal audience minted for wildcard application entitlements. */
+   public static final String WILDCARD_AUDIENCE = "*";
 
    public enum Decision {
       /** No expected audience configured, or the token satisfies the policy. */
@@ -42,6 +51,7 @@ public final class AudiencePolicy {
          return audienceRequired ? Decision.REJECT_MISSING_AUDIENCE : Decision.ALLOW;
       }
       return tokenAudience.contains(expectedAudience.get().trim())
+              || tokenAudience.contains(WILDCARD_AUDIENCE)
               ? Decision.ALLOW
               : Decision.REJECT_WRONG_AUDIENCE;
    }

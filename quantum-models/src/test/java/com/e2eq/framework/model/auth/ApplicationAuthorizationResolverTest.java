@@ -21,9 +21,28 @@ class ApplicationAuthorizationResolverTest {
     void credentialWildcardResolvesExplicitApplication() {
         var r = ApplicationAuthorizationResolver.resolve(null, "*", null, "system-admin");
         assertEquals(ApplicationAuthorizationResolver.Outcome.RESOLVED, r.outcome());
-        assertEquals(Set.of("system-admin"), r.audiences());
+        assertEquals(Set.of("*"), r.audiences());
         assertEquals("system-admin", r.activeApplication());
         assertTrue(r.wildcard());
+    }
+
+    @Test
+    void credentialWildcardPattern_noRequest_noDefault_mintsWildcardAudience() {
+        // "*" = no application restriction: mint the wildcard audience instead of
+        // demanding a selection from an empty candidate list (this layer cannot
+        // enumerate installed apps). Downstream admission = own id ∈ aud or "*" ∈ aud.
+        var r = ApplicationAuthorizationResolver.resolve(null, "*", null, null);
+        assertEquals(ApplicationAuthorizationResolver.Outcome.RESOLVED, r.outcome());
+        assertEquals(Set.of("*"), r.audiences());
+        assertNull(r.activeApplication());
+        assertTrue(r.wildcard());
+    }
+
+    @Test
+    void concretePattern_noRequest_noDefault_isAmbiguous() {
+        // A concrete pattern is a deliberate scoping decision: callers must name an app.
+        var r = ApplicationAuthorizationResolver.resolve(null, "helixor-.*", null, null);
+        assertEquals(ApplicationAuthorizationResolver.Outcome.AMBIGUOUS, r.outcome());
     }
 
     @Test
@@ -110,30 +129,32 @@ class ApplicationAuthorizationResolverTest {
     }
 
     @Test
-    void wildcard_withRequest_scopesToRequestedOnly_andFlagsWildcard() {
+    void wildcard_withRequest_mintsWildcardAudience_azpIsRequested() {
         var r = ApplicationAuthorizationResolver.resolve(List.of("*"), null, "anything");
         assertTrue(r.resolved());
         assertTrue(r.wildcard());
         assertEquals("anything", r.activeApplication());
-        // cannot enumerate installed apps, so aud is scoped to just the named app
-        assertEquals(List.of("anything"), List.copyOf(r.audiences()));
+        // "*" grant = valid for any app; aud carries the literal wildcard
+        assertEquals(List.of("*"), List.copyOf(r.audiences()));
     }
 
     @Test
-    void wildcard_withoutRequest_isAmbiguous() {
+    void wildcard_withoutRequest_mintsWildcardAudience_noAzp() {
         var r = ApplicationAuthorizationResolver.resolve(List.of("*"), null, null);
-        assertEquals(ApplicationAuthorizationResolver.Outcome.AMBIGUOUS, r.outcome());
+        assertTrue(r.resolved());
         assertTrue(r.wildcard());
+        assertNull(r.activeApplication());
+        assertEquals(List.of("*"), List.copyOf(r.audiences()));
     }
 
     @Test
-    void wildcardPlusConcrete_withRequest_scopesToRequested() {
-        // "*" dominates: any requested app is allowed and the token is scoped to it
+    void wildcardPlusConcrete_withRequest_mintsWildcardAudience() {
+        // "*" dominates: the token is valid for any app; azp records the entered one
         var r = ApplicationAuthorizationResolver.resolve(List.of("*", "scheduler"), "scheduler", "di");
         assertTrue(r.resolved());
         assertTrue(r.wildcard());
         assertEquals("di", r.activeApplication());
-        assertEquals(List.of("di"), List.copyOf(r.audiences()));
+        assertEquals(List.of("*"), List.copyOf(r.audiences()));
     }
 
     @Test
