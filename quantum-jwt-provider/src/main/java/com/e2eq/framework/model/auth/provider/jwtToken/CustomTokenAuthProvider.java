@@ -212,6 +212,12 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
    @Override
    public String createUser (String userId, String password, Boolean forceChangePassword
       , Set<String> roles, DomainContext domainContext) throws SecurityException {
+      return createUser(userId, password, forceChangePassword, roles, domainContext, (String) null);
+   }
+
+   @Override
+   public String createUser (String userId, String password, Boolean forceChangePassword
+      , Set<String> roles, DomainContext domainContext, String applicationRegEx) throws SecurityException {
 
       Objects.requireNonNull(userId, "UserId cannot be null");
       Objects.requireNonNull(password, "Password cannot be null");
@@ -260,6 +266,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
          // createUser is the human-account path; service/system principals are
          // created through their own dedicated surfaces which stamp their type.
          credential.setAccountType(com.e2eq.framework.model.security.AccountType.USER);
+         credential.setApplicationRegEx(resolveApplicationBoundary(applicationRegEx));
          credentialRepo.save(credential);
       }
       return subject;
@@ -316,10 +323,41 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
             credential.setDataDomain(dataDomain);
          }
          credential.setAuthProviderName(getName());
+         credential.setApplicationRegEx(resolveApplicationBoundary(null));
          credentialRepo.save(credential);
 
       }
       return subject;
+   }
+
+   /**
+    * Application boundary stamped on every credential this provider creates. Login
+    * mints application-scoped tokens (the {@code aud} set comes from the credential's
+    * boundary or a per-realm application grant) and fails fast with a typed 422 when a
+    * credential has neither — so a credential created without a boundary would be
+    * unloginable. An explicit boundary is validated and used; otherwise the documented
+    * default {@code "*"} applies (any application — the pre-application-scoping
+    * behavior), which admins can narrow later with a concrete pattern or per-realm
+    * grants. Invalid patterns are rejected here, at create time, because the resolver
+    * fails closed on them at login — accepting one would recreate the unloginable-user
+    * defect with a harder-to-diagnose cause.
+    */
+   private static String resolveApplicationBoundary(String applicationRegEx) {
+      String boundary = applicationRegEx == null ? null : applicationRegEx.trim();
+      if (boundary == null || boundary.isEmpty()) {
+         return ApplicationAuthorizationResolver.WILDCARD;
+      }
+      if (!ApplicationAuthorizationResolver.WILDCARD.equals(boundary)) {
+         try {
+            java.util.regex.Pattern.compile(boundary);
+         } catch (java.util.regex.PatternSyntaxException e) {
+            throw new jakarta.ws.rs.WebApplicationException(
+               "Invalid applicationRegEx '" + boundary + "': " + e.getDescription()
+                  + ". Use '*' for any application or a valid regular expression.",
+               422);
+         }
+      }
+      return boundary;
    }
 
 
@@ -693,8 +731,23 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                               "ApplicationNotAuthorized",
                               appAuth.deniedApplication(),
                               tokenRealm));
+                     case LEGACY:
+                        // The credential authenticated but carries no application
+                        // authorization at all (applicationRegEx unset AND no per-realm
+                        // application grant). Application-scoped minting cannot produce a
+                        // valid audience set for it, so fail fast with a diagnostic the
+                        // operator can act on instead of letting the mint blow up as a 500.
+                        return new LoginResponse(false,
+                           new LoginNegativeResponse(userId, 422, 422,
+                              "Credential for user '" + userId + "' has no application authorization in realm '"
+                                 + tokenRealm + "': applicationRegEx is unset and the realm assigns no application "
+                                 + "grant. Set an application boundary on the credential (e.g. applicationRegEx '*') "
+                                 + "or grant applications on the user's realm role, then retry.",
+                              "ApplicationAuthorizationMissing",
+                              "applicationRegEx",
+                              tokenRealm));
                      default:
-                        break; // LEGACY or RESOLVED — mint below
+                        break; // RESOLVED — mint below
                   }
 
                   DomainContext tokenDomainContext = Objects.equals(credentialRealm, tokenRealm)
@@ -705,45 +758,28 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                         "Realm has no data-domain configuration: " + tokenRealm);
                   }
 
-                  String authToken;
-                  if (appAuth.resolved()) {
-                     if (appAuth.wildcard()) {
-                        Log.warnf("Wildcard application grant exercised (audit): user=%s realm=%s activeApplication=%s",
-                           userId, tokenRealm, appAuth.activeApplication());
-                     }
-                     authToken = TokenUtils.generateUserToken(
-                        subject,
-                        credential.getUserId(),
-                        groups,
-                        tokenRealm,
-                        tokenDomainContext.getTenantId(),
-                        tokenDomainContext.getOrgRefName(),
-                        tokenDomainContext.getAccountId(),
-                        appAuth.audiences(),
-                        appAuth.activeApplication(),
-                        // Signed realm boundary: lets delegated-claims validators
-                        // authorize X-Realm switches within the credential's own
-                        // declared boundary instead of pinning to the login realm.
-                        credential.getRealmRegEx(),
-                        TokenUtils.expiresAt(durationInSeconds),
-                        issuer);
-                  } else {
-                     authToken = TokenUtils.generateUserToken(
-                        subject,
-                        credential.getUserId(),
-                        groups,
-                        tokenRealm,
-                        tokenDomainContext.getTenantId(),
-                        tokenDomainContext.getOrgRefName(),
-                        tokenDomainContext.getAccountId(),
-                        null,
-                        null,
-                        // Signed realm boundary for delegated X-Realm switching,
-                        // matching the application-resolved branch above.
-                        credential.getRealmRegEx(),
-                        TokenUtils.expiresAt(durationInSeconds),
-                        issuer);
+                  // Only RESOLVED reaches the mint: LEGACY/AMBIGUOUS/DENIED all returned
+                  // typed negative responses above, so the audience set is always non-empty.
+                  if (appAuth.wildcard()) {
+                     Log.warnf("Wildcard application grant exercised (audit): user=%s realm=%s activeApplication=%s",
+                        userId, tokenRealm, appAuth.activeApplication());
                   }
+                  String authToken = TokenUtils.generateUserToken(
+                     subject,
+                     credential.getUserId(),
+                     groups,
+                     tokenRealm,
+                     tokenDomainContext.getTenantId(),
+                     tokenDomainContext.getOrgRefName(),
+                     tokenDomainContext.getAccountId(),
+                     appAuth.audiences(),
+                     appAuth.activeApplication(),
+                     // Signed realm boundary: lets delegated-claims validators
+                     // authorize X-Realm switches within the credential's own
+                     // declared boundary instead of pinning to the login realm.
+                     credential.getRealmRegEx(),
+                     TokenUtils.expiresAt(durationInSeconds),
+                     issuer);
 
                   String refreshToken = generateRefreshToken(
                      subject,
@@ -946,6 +982,14 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                || appAuth.outcome() == ApplicationAuthorizationResolver.Outcome.AMBIGUOUS) {
             throw new SecurityException("Application authorization is no longer valid during refresh");
          }
+         if (appAuth.outcome() == ApplicationAuthorizationResolver.Outcome.LEGACY) {
+            // The application boundary was removed after login (login fails fast on a
+            // boundary-less credential, so an active session can only get here through
+            // an admin change). Refresh must not widen it back with an unscoped token.
+            throw new SecurityException(
+               "Credential has no application authorization (applicationRegEx unset and no per-realm "
+                  + "application grant); cannot refresh an application-scoped session");
+         }
 
          DomainContext tokenDomainContext = Objects.equals(credentialRealm, tokenRealm)
             ? credential.getDomainContext()
@@ -954,16 +998,12 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
             throw new SecurityException("Realm has no data-domain configuration: " + tokenRealm);
          }
 
-         String newAuthToken = appAuth.resolved()
-            ? TokenUtils.generateUserToken(
-               refreshSubject, userId, allRoles, tokenRealm,
-               tokenDomainContext.getTenantId(), tokenDomainContext.getOrgRefName(),
-               tokenDomainContext.getAccountId(), appAuth.audiences(),
-               appAuth.activeApplication(), TokenUtils.expiresAt(durationInSeconds), issuer)
-            : TokenUtils.generateUserToken(
-               refreshSubject, userId, allRoles, tokenRealm,
-               tokenDomainContext.getTenantId(), tokenDomainContext.getOrgRefName(),
-               tokenDomainContext.getAccountId(), TokenUtils.expiresAt(durationInSeconds), issuer);
+         // Only RESOLVED reaches the mint (LEGACY/AMBIGUOUS/DENIED threw above).
+         String newAuthToken = TokenUtils.generateUserToken(
+            refreshSubject, userId, allRoles, tokenRealm,
+            tokenDomainContext.getTenantId(), tokenDomainContext.getOrgRefName(),
+            tokenDomainContext.getAccountId(), appAuth.audiences(),
+            appAuth.activeApplication(), TokenUtils.expiresAt(durationInSeconds), issuer);
          String newRefreshToken = generateRefreshToken(
             refreshSubject, userId, tokenRealm,
             appAuth.resolved() ? appAuth.activeApplication() : null,

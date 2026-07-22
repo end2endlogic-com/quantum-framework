@@ -30,6 +30,25 @@ public interface UserManagement extends UserManagementBase{
     String createUser(String userId, String password,  Set<String> roles,  DomainContext domainContext) throws SecurityException;
     String createUser(String userId, String password, Boolean forceChangePassword,  Set<String> roles,  DomainContext domainContext) throws SecurityException;
 
+    /**
+     * Creates a user with an explicit application boundary ({@code applicationRegEx}:
+     * {@code "*"} for any application, otherwise a regex matched against application ids).
+     * Login mints application-scoped tokens and rejects credentials that carry no
+     * boundary and no per-realm application grant, so providers that persist
+     * {@link com.e2eq.framework.model.security.CredentialUserIdPassword} MUST stamp a
+     * boundary at create time (the explicit value, or their documented default when null).
+     * The default implementation delegates to the boundary-less overload for a null
+     * boundary and fails fast for providers that don't model application boundaries.
+     */
+    default String createUser(String userId, String password, Boolean forceChangePassword,
+                    Set<String> roles, DomainContext domainContext, String applicationRegEx) throws SecurityException {
+        if (applicationRegEx == null) {
+            return createUser(userId, password, forceChangePassword, roles, domainContext);
+        }
+        throw new UnsupportedOperationException(
+                "This authentication provider does not support explicit application boundaries");
+    }
+
     // New overloads to support explicit DataDomain specification
     String createUser(String userId, String password,
                     Set<String> roles, DomainContext domainContext, DataDomain dataDomain) throws SecurityException;

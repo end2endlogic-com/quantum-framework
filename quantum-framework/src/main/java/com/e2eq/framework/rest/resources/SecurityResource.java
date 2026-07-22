@@ -422,7 +422,8 @@ public class SecurityResource {
                 request.getPassword(),
                 request.getForceChangePassword(),
                 request.getRoles(),
-                request.getDomainContext()
+                request.getDomainContext(),
+                request.getApplicationRegEx()
         );
         ensureDirectoryProfile(request);
         return Response.ok().build();
