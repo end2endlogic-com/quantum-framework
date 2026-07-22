@@ -1,7 +1,12 @@
 package com.e2eq.framework.rest.resources;
 
+import com.e2eq.framework.model.auth.ApplicationAuthorizationResolver;
+import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
+import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import com.e2eq.framework.model.persistent.morphia.UserRealmRoleRepo;
+import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.UserRealmRole;
+import com.e2eq.framework.rest.models.ApplicationAccessEvaluation;
 import com.e2eq.framework.rest.models.ApplicationGrantRequest;
 import com.e2eq.framework.rest.models.RestError;
 import com.e2eq.framework.service.application.ApplicationRegistryUnavailableException;
@@ -48,6 +53,12 @@ public class UserRealmRoleResource extends BaseResource<UserRealmRole, UserRealm
    @Inject
    ApplicationRegistryValidator applicationRegistryValidator;
 
+   @Inject
+   CredentialRepo credentialRepo;
+
+   @Inject
+   RealmRepo realmRepo;
+
    protected UserRealmRoleResource(UserRealmRoleRepo repo) {
       super(repo);
    }
@@ -63,6 +74,62 @@ public class UserRealmRoleResource extends BaseResource<UserRealmRole, UserRealm
          return notFound(userId, realmRefName);
       }
       return Response.ok(membership.get()).build();
+   }
+
+   /**
+    * Server-truth application-access evaluation: runs the SAME resolver a login
+    * runs (list-or-* contract) against the user's stored credential pattern and
+    * (user, realm) grant — without authenticating. Answers: what token scoping
+    * would a login to this realm (optionally naming an application) produce?
+    * AMBIGUOUS results with a pattern grant are enriched with candidates from
+    * the realm catalog (the application-usage registry), like login is.
+    */
+   @GET
+   @Path("{userId}/{realmRefName}/applications/evaluate")
+   @Produces(MediaType.APPLICATION_JSON)
+   public Response evaluateApplicationAccess(@PathParam("userId") String userId,
+                                             @PathParam("realmRefName") String realmRefName,
+                                             @jakarta.ws.rs.QueryParam("applicationId") String applicationId) {
+      Optional<CredentialUserIdPassword> credentialOp =
+              credentialRepo.findByUserId(userId, envConfigUtils.getSystemRealm(), true);
+      if (credentialOp.isEmpty()) {
+         return Response.status(Response.Status.NOT_FOUND)
+                 .entity(RestError.builder()
+                         .status(Response.Status.NOT_FOUND.getStatusCode())
+                         .statusMessage("No credential exists for userId '" + userId + "'")
+                         .build())
+                 .build();
+      }
+      CredentialUserIdPassword credential = credentialOp.get();
+      Optional<UserRealmRole> membership = loadMembership(userId, realmRefName);
+      List<String> granted = membership.map(UserRealmRole::getAuthorizedApplications).orElse(null);
+      String defaultApplication = membership.map(UserRealmRole::getDefaultApplication).orElse(null);
+
+      ApplicationAuthorizationResolver.Result result = ApplicationAuthorizationResolver.resolve(
+              granted, credential.getApplicationRegEx(), defaultApplication, trimToNull(applicationId));
+
+      List<String> candidates = result.candidates();
+      if (result.outcome() == ApplicationAuthorizationResolver.Outcome.AMBIGUOUS && candidates.isEmpty()) {
+         String pattern = credential.getApplicationRegEx();
+         candidates = realmRepo.findDistinctApplicationRefNames().stream()
+                 .filter(app -> ApplicationAuthorizationResolver.matches(pattern, app))
+                 .toList();
+      }
+
+      return Response.ok(new ApplicationAccessEvaluation(
+              userId,
+              realmRefName,
+              trimToNull(applicationId),
+              result.outcome().name(),
+              result.audiences(),
+              result.activeApplication(),
+              result.wildcard(),
+              candidates,
+              result.deniedApplication(),
+              credential.getApplicationRegEx(),
+              granted,
+              defaultApplication,
+              membership.isPresent())).build();
    }
 
    /**

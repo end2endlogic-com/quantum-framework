@@ -1,5 +1,7 @@
 package com.e2eq.framework.secrets.rest;
 
+import com.e2eq.framework.annotations.FunctionalAction;
+import com.e2eq.framework.annotations.FunctionalMapping;
 import com.e2eq.framework.secrets.crypto.EncryptedValue;
 import com.e2eq.framework.secrets.crypto.SecretEncryptor;
 import com.e2eq.framework.secrets.model.ManagedSecret;
@@ -31,6 +33,11 @@ import java.util.Map;
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 @RolesAllowed({"tenantAdmin", "platformAdmin", "admin", "system"})
+// Mirrors the ManagedSecret model's mapping. Without a RESOURCE-level mapping the
+// SecurityFilter builds an anonymous ResourceContext (action=none) for this path
+// and PermissionRuleInterceptor.prePersist fail-closes every save with
+// "Persistence callback requires an explicit write action".
+@FunctionalMapping(area = "SECURITY", domain = "SECRET")
 public class ManagedSecretResource {
 
     private static final Logger LOG = Logger.getLogger(ManagedSecretResource.class);
@@ -71,6 +78,7 @@ public class ManagedSecretResource {
     }
 
     @GET
+    @FunctionalAction("LIST")
     public Response list(@QueryParam("type") String secretType) {
         String realmId = repo.getSecurityContextRealmId();
         List<ManagedSecretResponse> response = repo.findAll(realmId, secretType)
@@ -82,6 +90,7 @@ public class ManagedSecretResource {
 
     @GET
     @Path("{refName}")
+    @FunctionalAction("VIEW")
     public Response get(@PathParam("refName") String refName) {
         String realmId = repo.getSecurityContextRealmId();
         ManagedSecret secret = repo.findByRefName(realmId, refName)
@@ -96,6 +105,7 @@ public class ManagedSecretResource {
     @GET
     @Path("{refName}/value")
     @RolesAllowed({"tenantAdmin", "platformAdmin", "admin", "system"})
+    @FunctionalAction("VIEW")
     public Response getValue(@PathParam("refName") String refName) {
         String realmId = repo.getSecurityContextRealmId();
         ManagedSecret secret = repo.findByRefName(realmId, refName)
@@ -134,6 +144,7 @@ public class ManagedSecretResource {
     }
 
     @POST
+    @FunctionalAction("CREATE")
     public Response create(ManagedSecretCreateUpdateRequest request) {
         if (request == null || request.getRefName() == null || request.getRefName().isBlank()) {
             return Response.status(Response.Status.BAD_REQUEST).entity("refName is required").build();
@@ -150,6 +161,7 @@ public class ManagedSecretResource {
 
     @PUT
     @Path("{refName}")
+    @FunctionalAction("UPDATE")
     public Response update(@PathParam("refName") String refName, ManagedSecretCreateUpdateRequest request) {
         if (request == null) {
             return Response.status(Response.Status.BAD_REQUEST).build();
@@ -164,6 +176,7 @@ public class ManagedSecretResource {
 
     @DELETE
     @Path("{refName}")
+    @FunctionalAction("DELETE")
     public Response delete(@PathParam("refName") String refName) {
         String realmId = repo.getSecurityContextRealmId();
         if (!repo.deleteByRefName(realmId, refName)) {
@@ -179,6 +192,7 @@ public class ManagedSecretResource {
     @POST
     @Path("rotate-keys")
     @RolesAllowed({"platformAdmin", "admin", "system"})
+    @FunctionalAction("UPDATE")
     public Response rotateKeys() {
         if (!encryptor.isKeysAvailable()) {
             return Response.status(Response.Status.SERVICE_UNAVAILABLE)
