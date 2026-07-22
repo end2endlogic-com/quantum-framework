@@ -9,7 +9,9 @@ import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.ProcessingException;
 import jakarta.ws.rs.WebApplicationException;
 
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
 /**
@@ -33,6 +35,22 @@ public class RemoteSystemDirectory implements SystemDirectory {
     private final DefaultEndpoint client;
     private final String baseUrl;
     private final Supplier<Optional<String>> bearerTokenSupplier;
+
+    // Realm lookups run on EVERY delegated (X-Realm) request; without caching that is one
+    // control-plane HTTP round-trip per request. The realm catalog changes rarely, so a short
+    // positive-only TTL cache removes the per-request hop while keeping newly-provisioned realms
+    // resolvable immediately (misses are NOT cached, so a realm registered after a miss resolves
+    // on the very next lookup). registerRealm refreshes the entry. The realm record is
+    // caller-independent, so entries are safely shared across principals.
+    private static final long CACHE_TTL_NANOS = 60_000_000_000L; // 60s
+    private final Map<String, CachedRealm> byRefName = new ConcurrentHashMap<>();
+    private final Map<String, CachedRealm> byEmailDomain = new ConcurrentHashMap<>();
+
+    private record CachedRealm(Realm realm, long expiresAtNanos) {
+        boolean fresh(long nowNanos) {
+            return nowNanos - expiresAtNanos < 0;
+        }
+    }
 
     /** Production: build the SDK client (transport via MP Rest Client). */
     public RemoteSystemDirectory(String baseUrl, Optional<String> bearerToken) {
@@ -63,24 +81,52 @@ public class RemoteSystemDirectory implements SystemDirectory {
 
     @Override
     public Optional<Realm> findRealmByEmailDomain(String emailDomain) {
-        return getRealm(() -> client().findRealmByEmailDomain(emailDomain), "realm by email domain " + emailDomain);
+        long now = System.nanoTime();
+        CachedRealm hit = byEmailDomain.get(emailDomain);
+        if (hit != null && hit.fresh(now)) {
+            return Optional.of(hit.realm());
+        }
+        Optional<Realm> resolved = getRealm(
+            () -> client().findRealmByEmailDomain(emailDomain), "realm by email domain " + emailDomain);
+        resolved.ifPresent(r -> cache(r, System.nanoTime()));
+        return resolved;
     }
 
     @Override
     public Optional<Realm> findRealmByRefName(String refName) {
-        return getRealm(() -> client().findRealmByRefName(refName), "realm " + refName);
+        long now = System.nanoTime();
+        CachedRealm hit = byRefName.get(refName);
+        if (hit != null && hit.fresh(now)) {
+            return Optional.of(hit.realm());
+        }
+        Optional<Realm> resolved = getRealm(() -> client().findRealmByRefName(refName), "realm " + refName);
+        resolved.ifPresent(r -> cache(r, System.nanoTime()));
+        return resolved;
     }
 
     @Override
     public Realm registerRealm(Realm realm) {
         try {
-            return ControlPlaneRealmMapper.fromEntry(
+            Realm saved = ControlPlaneRealmMapper.fromEntry(
                 client().registerRealm(ControlPlaneRealmMapper.toEntry(realm)));
+            cache(saved, System.nanoTime());
+            return saved;
         } catch (WebApplicationException e) {
             throw new IllegalStateException("Control plane rejected realm registration for "
                 + realm.getRefName() + ": HTTP " + e.getResponse().getStatus(), e);
         } catch (ProcessingException e) {
             throw unreachable("registering realm " + realm.getRefName(), e);
+        }
+    }
+
+    /** Refresh both lookup caches from a resolved/registered realm. */
+    private void cache(Realm realm, long nowNanos) {
+        CachedRealm entry = new CachedRealm(realm, nowNanos + CACHE_TTL_NANOS);
+        if (realm.getRefName() != null) {
+            byRefName.put(realm.getRefName(), entry);
+        }
+        if (realm.getEmailDomain() != null) {
+            byEmailDomain.put(realm.getEmailDomain(), entry);
         }
     }
 
