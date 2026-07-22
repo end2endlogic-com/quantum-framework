@@ -80,6 +80,13 @@ public class SecurityTest extends BaseRepoTest {
         if (credop.isPresent()) {
             Log.info("cred:" + credop.get().getUserId());
             cred = credop.get();
+            if (cred.getApplicationRegEx() == null) {
+                // Login mints application-scoped tokens and rejects credentials with no
+                // application boundary (typed 422); repair credentials persisted by
+                // earlier runs of this suite that predate the boundary requirement.
+                cred.setApplicationRegEx("*");
+                cred = credRepo.save(testUtils.getSystemRealm(), cred);
+            }
         } else {
             cred = new CredentialUserIdPassword();
             cred.setUserId(testUtils.getTestUserId());
@@ -107,6 +114,9 @@ public class SecurityTest extends BaseRepoTest {
             cred.setLastUpdate(new Date());
             cred.setDataDomain(dataDomain);
             cred.setRealmRegEx("*");
+            // Application boundary: without it the credential cannot be minted an
+            // application-scoped token and login fails fast with a typed 422.
+            cred.setApplicationRegEx("*");
             cred.setImpersonateFilterScript("return true");
             cred = credRepo.save(testUtils.getSystemRealm(),cred);
         }

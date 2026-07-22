@@ -48,6 +48,7 @@ public class AuthLoginService {
     /** Application-authorization signals a provider may return as a negative login response. */
     private static final String APP_SELECTION_REQUIRED = "ApplicationSelectionRequired";
     private static final String APP_NOT_AUTHORIZED = "ApplicationNotAuthorized";
+    private static final String APP_AUTHORIZATION_MISSING = "ApplicationAuthorizationMissing";
     private static final String REALM_NOT_AUTHORIZED = "RealmNotAuthorized";
     private static final String REALM_AUTHORIZATION_UNAVAILABLE = "RealmAuthorizationUnavailable";
 
@@ -93,6 +94,13 @@ public class AuthLoginService {
             }
             if (negative != null && APP_NOT_AUTHORIZED.equals(negative.errorType())) {
                 return LoginResult.applicationDenied(negative.errorMessage());
+            }
+            if (negative != null && APP_AUTHORIZATION_MISSING.equals(negative.errorType())) {
+                // Authenticated, but the credential has no application boundary and no
+                // per-realm grant — a configuration defect, not bad credentials. Surface
+                // the provider's diagnostic as a typed 422 instead of falling through to
+                // other providers or a generic 401.
+                return LoginResult.applicationAuthorizationMissing(negative.errorMessage());
             }
             if (negative != null && (REALM_NOT_AUTHORIZED.equals(negative.errorType())
                     || REALM_AUTHORIZATION_UNAVAILABLE.equals(negative.errorType()))) {
@@ -253,6 +261,16 @@ public class AuthLoginService {
             return new LoginResult(null, List.of(), Response.Status.FORBIDDEN.getStatusCode(), null, message);
         }
 
+        /**
+         * Authenticated, but the credential carries no application authorization at all
+         * (no applicationRegEx, no per-realm grant) — application-scoped tokens cannot
+         * be minted for it. 422: the request is well-formed; the account configuration
+         * is not.
+         */
+        public static LoginResult applicationAuthorizationMissing(String message) {
+            return new LoginResult(null, List.of(), 422, null, message);
+        }
+
         public static LoginResult realmDenied(String message) {
             return new LoginResult(null, List.of(), Response.Status.FORBIDDEN.getStatusCode(), null, message);
         }
@@ -263,6 +281,10 @@ public class AuthLoginService {
 
         public boolean needsApplicationSelection() {
             return status == Response.Status.BAD_REQUEST.getStatusCode();
+        }
+
+        public boolean applicationAuthorizationMissing() {
+            return status == 422;
         }
 
         public Response toResponse() {
@@ -280,6 +302,7 @@ public class AuthLoginService {
             }
             RestError error = RestError.builder()
                     .statusMessage(message != null ? message : "Authentication failed")
+                    .reasonMessage(applicationAuthorizationMissing() ? APP_AUTHORIZATION_MISSING : null)
                     .debugMessage(String.join("; ", providerFailures))
                     .status(status)
                     .build();
