@@ -792,12 +792,35 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             throw new jakarta.ws.rs.ForbiddenException(
                     "Trusted-issuer token is missing the required realm claim");
         }
+        // The issuer signs the credential's realm boundary into the token as
+        // realmRegEx ("*" = all realms, otherwise a regex). An X-Realm switch is
+        // honored only inside that signed boundary, and never INTO the system
+        // realm -- system authority requires logging in against it directly.
+        boolean realmSwitched = false;
+        String contextRealm = signedRealm;
         if (realmOverride != null && !realmOverride.isBlank()
                 && !realmOverride.equalsIgnoreCase(signedRealm)) {
-            throw new jakarta.ws.rs.ForbiddenException(
-                    "X-Realm does not match the realm authorized by the token");
+            String realmBoundary = claimString("realmRegEx");
+            boolean withinBoundary = false;
+            if (realmBoundary != null && !realmOverride.equalsIgnoreCase(systemRealm)) {
+                if ("*".equals(realmBoundary)) {
+                    withinBoundary = true;
+                } else {
+                    try {
+                        withinBoundary = realmOverride.matches(realmBoundary);
+                    } catch (java.util.regex.PatternSyntaxException e) {
+                        throw new jakarta.ws.rs.ForbiddenException(
+                                "Signed realm boundary is not a valid pattern");
+                    }
+                }
+            }
+            if (!withinBoundary) {
+                throw new jakarta.ws.rs.ForbiddenException(
+                        "X-Realm does not match the realm authorized by the token");
+            }
+            contextRealm = realmOverride;
+            realmSwitched = true;
         }
-        String contextRealm = signedRealm;
         String[] roles = resolveEffectiveRoles(
                 securityIdentity, null, signedRealm, contextRealm);
 
@@ -821,7 +844,9 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             String tenantId = claimString("tenantId");
             String orgRefName = claimString("orgRefName");
             String accountNum = claimString("accountNum");
-            if (tenantId != null && orgRefName != null && accountNum != null) {
+            // Token data-domain claims describe the LOGIN realm; a switched
+            // realm's data domain must come from the realm catalog below.
+            if (!realmSwitched && tenantId != null && orgRefName != null && accountNum != null) {
                 dataDomain = new DataDomain(orgRefName, accountNum, tenantId, 0, userId);
             } else {
                 // Older trusted tokens may not carry the full data-domain projection. Resolve
