@@ -3,6 +3,8 @@ package com.e2eq.framework.security.auth;
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.auth.AuthProvider;
 import com.e2eq.framework.model.auth.AuthProviderFactory;
+import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
+import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.security.runtime.RuleContext;
@@ -33,6 +35,12 @@ public class SecureResourceTest {
 
     @Inject
     RuleContext ruleContext;
+
+    @Inject
+    UserProfileRepo userProfileRepo;
+
+    @Inject
+    CredentialRepo credentialRepo;
 
     @Test
     public void testSecuredEndpoints() throws ReferentialIntegrityViolationException {
@@ -113,16 +121,22 @@ public class SecureResourceTest {
         try (final SecuritySession ss = new SecuritySession(pContext, rContext)) {
 
             if (authFactory.getUserManager().userIdExists("testuser@end2endlogic.com")) {
+                TestDirectoryProfiles.remove(userProfileRepo, testUtils.getSystemRealm(), "testuser@end2endlogic.com");
                 authFactory.getUserManager().removeUserWithUserId("testuser@end2endlogic.com");
             }
 
             authFactory.getUserManager().createUser( "testuser@end2endlogic.com", "P@55w@rd", Set.of("user"), testUtils.getTestDomainContext());
+            TestDirectoryProfiles.ensure(userProfileRepo, credentialRepo, testUtils.getSystemRealm(),
+                    testUtils.getSystemDataDomain(), "testuser@end2endlogic.com", "testuser@end2endlogic.com");
 
             if (authFactory.getUserManager().userIdExists("testadmin@end2endlogic.com")) {
+                TestDirectoryProfiles.remove(userProfileRepo, testUtils.getSystemRealm(), "testadmin@end2endlogic.com");
                 authFactory.getUserManager().removeUserWithUserId("testadmin@end2endlogic.com");
             }
 
             authFactory.getUserManager().createUser("testadmin@end2endlogic.com", "P@55w@rd",  Set.of("admin"), testUtils.getTestDomainContext());
+            TestDirectoryProfiles.ensure(userProfileRepo, credentialRepo, testUtils.getSystemRealm(),
+                    testUtils.getSystemDataDomain(), "testadmin@end2endlogic.com", "testadmin@end2endlogic.com");
             authFactory.getUserManager().enableImpersonationWithUserId("testadmin@end2endlogic.com", "true", "*", testUtils.getSystemRealm());
 
            loginResponse = authFactory.getAuthProvider().login("testadmin@end2endlogic.com", "P@55w@rd");

@@ -1,6 +1,8 @@
 package com.e2eq.framework.security.auth;
 
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
+import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
+import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.auth.AuthProvider;
 import com.e2eq.framework.model.auth.AuthProviderFactory;
@@ -31,6 +33,12 @@ public class TestCustTokenAuthProvider extends BaseRepoTest {
     @Inject
     TestUtils testUtils;
 
+    @Inject
+    UserProfileRepo userProfileRepo;
+
+    @Inject
+    CredentialRepo credentialRepo;
+
 
 
     @Test
@@ -46,8 +54,11 @@ public class TestCustTokenAuthProvider extends BaseRepoTest {
                 AuthProvider authProvider = authProviderFactory.getAuthProvider();
                 UserManagement userManager = authProviderFactory.getUserManager();
 
+                TestDirectoryProfiles.remove(userProfileRepo, testUtils.getSystemRealm(), "testuser");
                 userManager.removeUserWithUserId("testuser"); // remove if exists
                 String subject = userManager.createUser("testuser", "test123456",  Set.of("user"), domainContext);
+                TestDirectoryProfiles.ensure(userProfileRepo, credentialRepo, testUtils.getSystemRealm(),
+                        testUtils.getSystemDataDomain(), "testuser", "testuser@example.test");
                 Set<String> roles = userManager.getUserRolesForSubject(subject);
                 Assert.assertTrue(roles.contains("user"));
                 AuthProvider.LoginResponse response = authProvider.login("testuser", "test123456");
@@ -57,6 +68,7 @@ public class TestCustTokenAuthProvider extends BaseRepoTest {
                 Assert.assertTrue(userManager.getUserRolesForSubject(subject).contains("admin"));
                 userManager.removeRolesForSubject(subject, Set.of("admin"));
                 Assert.assertFalse(userManager.getUserRolesForSubject(subject).contains("admin"));
+                TestDirectoryProfiles.remove(userProfileRepo, testUtils.getSystemRealm(), "testuser");
                 userManager.removeUserWithSubject(subject);
                 Assert.assertFalse(userManager.subjectExists(subject));
                 Assert.assertFalse(userManager.userIdExists("testuser"));
@@ -76,8 +88,11 @@ public class TestCustTokenAuthProvider extends BaseRepoTest {
                                                  .build();
                 AuthProvider authProvider = authProviderFactory.getAuthProvider();
                 UserManagement userManager = authProviderFactory.getUserManager();
+                TestDirectoryProfiles.remove(userProfileRepo, testUtils.getSystemRealm(), "testuser");
                 userManager.removeUserWithUserId("testuser"); // remove if exists
                 String subject = userManager.createUser("testuser", "test123456", Set.of("user"), domainContext);
+                TestDirectoryProfiles.ensure(userProfileRepo, credentialRepo, testUtils.getSystemRealm(),
+                        testUtils.getSystemDataDomain(), "testuser", "testuser@example.test");
                 Set<String> roles = userManager.getUserRolesForSubject(subject);
                 Assert.assertTrue(roles.contains("user"));
                 AuthProvider.LoginResponse response = authProvider.login("testuser", "test123456");
@@ -87,6 +102,7 @@ public class TestCustTokenAuthProvider extends BaseRepoTest {
                 Assert.assertTrue(userManager.getUserRolesForSubject(subject).contains("admin"));
                 userManager.removeRolesForUserId("testuser", Set.of("admin"));
                 Assert.assertFalse(userManager.getUserRolesForSubject(subject).contains("admin"));
+                TestDirectoryProfiles.remove(userProfileRepo, testUtils.getSystemRealm(), "testuser");
                 userManager.removeUserWithSubject(subject);
                 Assert.assertFalse(userManager.subjectExists(subject));
             }

@@ -111,7 +111,8 @@ public class UserProfileResource extends BaseResource<UserProfile, UserProfileRe
             createUserRequest.getPassword(),
             createUserRequest.getForceChangePassword(),
             createUserRequest.getRoles(),
-            createUserRequest.getDomainContext());
+            createUserRequest.getDomainContext(),
+            createUserRequest.getApplicationRegEx());
 
          Optional<CredentialUserIdPassword> ocred = credentialRepo.findByUserId(createUserRequest.getUserId());
          if (!ocred.isPresent())
