@@ -424,7 +424,55 @@ public class SecurityResource {
                 request.getRoles(),
                 request.getDomainContext()
         );
+        ensureDirectoryProfile(request);
         return Response.ok().build();
+    }
+
+    /**
+     * A credential without a directory profile is a half-created user: it can
+     * log in, but it is invisible to the global directory (admin user lists,
+     * access assignments) and 404s on {@code /security/me}. Creating a user
+     * therefore creates BOTH records in one operation. Idempotent: an existing
+     * profile is left untouched. Directory profiles carry the SYSTEM data
+     * domain — the global directory is a system-plane surface; per-tenant
+     * visibility remains the policy engine's job.
+     */
+    private void ensureDirectoryProfile(CreateUserRequest request) {
+        String systemRealm = envConfigUtils.getSystemRealm();
+        CredentialUserIdPassword credential = credentialRepo
+                .findByUserId(request.getUserId(), systemRealm, true)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Credential missing immediately after create for userId: " + request.getUserId()));
+
+        Optional<UserProfile> existing = userProfileRepo.getBySubject(systemRealm, credential.getSubject());
+        if (existing.isEmpty()) {
+            existing = userProfileRepo.getByUserIdWithIgnoreRules(systemRealm, request.getUserId());
+        }
+        if (existing.isPresent()) {
+            return;
+        }
+
+        UserProfile profile = new UserProfile();
+        profile.setUserId(request.getUserId());
+        profile.setRefName(request.getUserId());
+        profile.setDisplayName(request.getDisplayName() != null && !request.getDisplayName().isBlank()
+                ? request.getDisplayName() : request.getUserId());
+        profile.setEmail(request.getEmail());
+        profile.setFname(request.getFirstName() != null && !request.getFirstName().isBlank()
+                ? request.getFirstName() : request.getUserId());
+        profile.setLname(request.getLastName() != null && !request.getLastName().isBlank()
+                ? request.getLastName() : "user");
+        profile.setStatus(UserProfile.Status.ACTIVE);
+        profile.setCredentialUserIdPasswordRef(credential.createEntityReference(systemRealm));
+        profile.setDataDomain(com.e2eq.framework.model.persistent.base.DataDomain.builder()
+                .orgRefName(envConfigUtils.getSystemOrgRefName())
+                .accountNum(envConfigUtils.getSystemAccountNumber())
+                .tenantId(envConfigUtils.getSystemTenantId())
+                .dataSegment(0)
+                .ownerId(request.getUserId())
+                .build());
+        userProfileRepo.save(systemRealm, profile);
+        Log.infof("createUser: created directory profile for %s in realm %s", request.getUserId(), systemRealm);
     }
 
     @POST
