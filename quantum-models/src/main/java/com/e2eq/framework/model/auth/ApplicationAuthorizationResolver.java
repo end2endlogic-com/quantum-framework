@@ -41,7 +41,12 @@ public final class ApplicationAuthorizationResolver {
     }
 
     public enum Outcome {
-        /** No application grant configured for this membership — use legacy (single-audience) behavior. */
+        /**
+         * No application authorization configured at all (no per-realm grant AND no
+         * credential-wide pattern). Tokens are application-scoped, so nothing can be
+         * minted for this credential: login fails fast with a typed diagnostic
+         * (ApplicationAuthorizationMissing, 422) and refresh fails closed.
+         */
         LEGACY,
         /** Resolved to a concrete audience set + active application. */
         RESOLVED,

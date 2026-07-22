@@ -58,4 +58,14 @@ public class CreateUserRequest {
    @NonNull
    @Valid
    DomainContext domainContext;
+
+   /**
+    * Application boundary for the created credential: {@code "*"} authorizes any
+    * application; otherwise a regular expression matched against application ids.
+    * Login mints application-scoped tokens and rejects credentials that carry no
+    * boundary and no per-realm application grant, so when this field is omitted the
+    * provider applies its documented default ({@code "*"} for the custom provider —
+    * the pre-application-scoping behavior) to keep the new user loginable.
+    */
+   String applicationRegEx;
 }
