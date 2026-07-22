@@ -423,10 +423,16 @@ public class PermissionResource {
 
          Set<String> actions = ensureAreaDomain(areaDomainActions, area, domain);
          if (includeActions) {
+            // Entity-backed domains genuinely serve generic CRUD via BaseResource.
             if (ei.actions != null) actions.addAll(ei.actions);
             addDefaultActions(actions);
          }
       }
+
+      // 1.5) From REST resources' @FunctionalMapping/@FunctionalAction — their
+      // DECLARED verbs only (a browse resource is view-only, a profile resource
+      // declares password verbs); never widened to CRUD.
+      mergeResourceMappings(areaDomainActions, discoverResourceMappings(), includeActions);
 
       // 2) From DB (FunctionalDomain collection)
       List<FunctionalDomain> stored = functionalDomainRepo.getAllList();
@@ -439,14 +445,17 @@ public class PermissionResource {
 
             Set<String> actions = ensureAreaDomain(areaDomainActions, area, domain);
             if (includeActions) {
+               boolean declaredAny = false;
                if (fd.getFunctionalActions() != null) {
                   for (com.e2eq.framework.model.security.FunctionalAction a : fd.getFunctionalActions()) {
                      if (a == null) continue;
                      String ref = safe(a.getRefName());
-                     if (!ref.isEmpty()) actions.add(ref);
+                     if (!ref.isEmpty()) { actions.add(ref); declaredAny = true; }
                   }
                }
-               addDefaultActions(actions);
+               // A record that DECLARES its actions means them; CRUD is only the
+               // fallback for records that declare nothing.
+               if (!declaredAny) addDefaultActions(actions);
             }
          }
       }
@@ -489,6 +498,68 @@ public class PermissionResource {
       target.add("DELETE");
       target.add("VIEW");
       target.add("LIST");
+   }
+
+   /**
+    * Domains declared by REST resources via {@code @FunctionalMapping}, with the
+    * ACTIONS THEY ACTUALLY DECLARE via {@code @FunctionalAction} methods. Actions
+    * are not a fixed CRUD set — a user-profile resource declares verbs like a
+    * password reset, a browse resource declares only {@code view}. A resource
+    * that declares a mapping but no explicit actions falls back to the CRUD
+    * defaults (we know nothing better). Entity-backed domains keep their CRUD
+    * defaults elsewhere — BaseResource genuinely serves them.
+    */
+   private Map<String, Map<String, Set<String>>> discoverResourceMappings() {
+      Map<String, Map<String, Set<String>>> out = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+      try {
+         jakarta.enterprise.inject.spi.BeanManager beanManager =
+                 jakarta.enterprise.inject.spi.CDI.current().getBeanManager();
+         java.util.Set<jakarta.enterprise.inject.spi.Bean<?>> beans =
+                 beanManager.getBeans(Object.class, jakarta.enterprise.inject.Any.Literal.INSTANCE);
+         io.quarkus.logging.Log.debugf("Resource @FunctionalMapping discovery scanning %d beans", beans.size());
+         for (jakarta.enterprise.inject.spi.Bean<?> bean : beans) {
+            Class<?> clazz = bean.getBeanClass();
+            if (clazz == null) continue;
+            com.e2eq.framework.annotations.FunctionalMapping fm =
+                    clazz.getAnnotation(com.e2eq.framework.annotations.FunctionalMapping.class);
+            if (fm == null) continue;
+            // Only REST resources contribute here; entities are discovered from the model.
+            if (clazz.getAnnotation(jakarta.ws.rs.Path.class) == null) continue;
+            String area = safe(fm.area());
+            String domain = safe(fm.domain());
+            if (area.isEmpty() || domain.isEmpty()) continue;
+            Set<String> declared = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+            for (Method m : clazz.getDeclaredMethods()) {
+               com.e2eq.framework.annotations.FunctionalAction fa =
+                       m.getAnnotation(com.e2eq.framework.annotations.FunctionalAction.class);
+               if (fa == null) continue;
+               String val = safe(fa.value());
+               declared.add(val.isEmpty() ? m.getName() : val);
+            }
+            Set<String> actions = ensureAreaDomain(out, area, domain);
+            if (declared.isEmpty()) {
+               addDefaultActions(actions);
+            } else {
+               actions.addAll(declared);
+            }
+         }
+      } catch (Throwable t) {
+         io.quarkus.logging.Log.warnf("Resource @FunctionalMapping discovery skipped: %s", t);
+      }
+      io.quarkus.logging.Log.debugf("Resource @FunctionalMapping discovery found %d areas: %s", out.size(), out.keySet());
+      return out;
+   }
+
+   /** Merge resource-declared mappings into a discovery map without widening declared action sets. */
+   private static void mergeResourceMappings(Map<String, Map<String, Set<String>>> target,
+                                             Map<String, Map<String, Set<String>>> resourceMappings,
+                                             boolean includeActions) {
+      for (Map.Entry<String, Map<String, Set<String>>> areaEntry : resourceMappings.entrySet()) {
+         for (Map.Entry<String, Set<String>> domainEntry : areaEntry.getValue().entrySet()) {
+            Set<String> actions = ensureAreaDomain(target, areaEntry.getKey(), domainEntry.getKey());
+            if (includeActions) actions.addAll(domainEntry.getValue());
+         }
+      }
    }
 
 
@@ -781,6 +852,8 @@ public class PermissionResource {
          if (ei.actions != null) actions.addAll(ei.actions);
          addDefaultActions(actions);
       }
+      // 1.5) REST resources' declared verbs (see /fd) — never widened to CRUD.
+      mergeResourceMappings(discovered, discoverResourceMappings(), true);
       // 2) From DB FunctionalDomain collection
       List<FunctionalDomain> stored = functionalDomainRepo.getAllList();
       if (stored != null) {
@@ -790,14 +863,15 @@ public class PermissionResource {
             String d = safe(fd.getRefName());
             if (a.isEmpty() || d.isEmpty()) continue;
             Set<String> actions = ensureAreaDomain(discovered, a, d);
+            boolean declaredAny = false;
             if (fd.getFunctionalActions() != null) {
                for (com.e2eq.framework.model.security.FunctionalAction fa : fd.getFunctionalActions()) {
                   if (fa == null) continue;
                   String ref = safe(fa.getRefName());
-                  if (!ref.isEmpty()) actions.add(ref);
+                  if (!ref.isEmpty()) { actions.add(ref); declaredAny = true; }
                }
             }
-            addDefaultActions(actions);
+            if (!declaredAny) addDefaultActions(actions);
          }
       }
 

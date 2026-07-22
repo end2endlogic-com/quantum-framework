@@ -143,6 +143,13 @@ public class CredentialUserIdPassword extends BaseModel {
    @Builder.Default
    protected CredentialType credentialType = CredentialType.PASSWORD;
 
+   /**
+    * The NATURE of the account (orthogonal to the mechanism above): USER
+    * requires a directory UserProfile (enforced at login), SERVICE/SYSTEM do
+    * not. null = legacy/unclassified (flagged, not locked out).
+    */
+   protected AccountType accountType;
+
    /** For SERVICE_TOKEN credentials: the subject of the owning PASSWORD credential. */
    protected String parentCredentialSubject;
 

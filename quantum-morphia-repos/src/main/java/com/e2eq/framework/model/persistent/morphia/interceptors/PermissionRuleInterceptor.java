@@ -47,6 +47,10 @@ public class PermissionRuleInterceptor implements EntityListener {
                    || action.equalsIgnoreCase("delete")
                    || action.equalsIgnoreCase("apply")
                    || action.equalsIgnoreCase("write")
+                   // Imperative execution verb: migrations and runs mutate state
+                   // by definition (DatabaseVersion, ChangeSetRecord). The rule
+                   // check below still decides WHETHER the principal may do it.
+                   || action.equalsIgnoreCase("run")
                   || action.equals("*"))) {
              throw new SecurityException("Persistence callback requires an explicit write action; received: " + action);
           }

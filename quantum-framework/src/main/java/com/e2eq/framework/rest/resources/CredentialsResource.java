@@ -223,6 +223,37 @@ public class CredentialsResource extends BaseResource<CredentialUserIdPassword, 
         return Response.ok(realms).build();
     }
 
+    /**
+     * Classify the NATURE of an account (USER / SERVICE / SYSTEM). USER
+     * accounts must have a directory profile — login enforces it — so
+     * classifying legacy credentials is how admins retire "unclassified"
+     * rows surfaced by the account audit.
+     */
+    @PUT
+    @Path("accountType/{id}")
+    @RolesAllowed({ "admin", "system" })
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response setAccountType(@PathParam("id") String id,
+                                   @QueryParam("accountType") com.e2eq.framework.model.security.AccountType accountType) {
+        if (id == null || id.isBlank() || accountType == null) {
+            return Response.status(Response.Status.BAD_REQUEST).entity(RestError.builder()
+                    .status(Response.Status.BAD_REQUEST.getStatusCode())
+                    .statusMessage("id and accountType (USER|SERVICE|SYSTEM) are required")
+                    .build()).build();
+        }
+        Optional<CredentialUserIdPassword> credentialOptional = repo.findById(id);
+        if (credentialOptional.isEmpty()) {
+            return Response.status(Response.Status.NOT_FOUND).entity(RestError.builder()
+                    .status(Response.Status.NOT_FOUND.getStatusCode())
+                    .statusMessage("No credential with id " + id)
+                    .build()).build();
+        }
+        CredentialUserIdPassword credential = credentialOptional.get();
+        credential.setAccountType(accountType);
+        credential.setLastUpdate(new java.util.Date());
+        return Response.ok(repo.save(credential)).build();
+    }
+
     @GET
     @Path("byUserId")
     @RolesAllowed({ "user", "admin", "system" })

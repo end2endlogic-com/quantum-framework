@@ -4,6 +4,7 @@ package com.e2eq.framework.model.auth.provider.jwtToken;
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 
 
+import com.e2eq.framework.model.persistent.base.ActiveStatus;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.auth.ApplicationAuthorizationResolver;
 import com.e2eq.framework.model.auth.AuthProvider;
@@ -256,6 +257,9 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
          credential.setRoles(roles.toArray(new String[roles.size()]));
          credential.setLastUpdate(new Date());
          credential.setAuthProviderName(getName());
+         // createUser is the human-account path; service/system principals are
+         // created through their own dedicated surfaces which stamp their type.
+         credential.setAccountType(com.e2eq.framework.model.security.AccountType.USER);
          credentialRepo.save(credential);
       }
       return subject;
@@ -525,6 +529,50 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
 
          if (ocredential.isPresent()) {
             CredentialUserIdPassword credential = ocredential.get();
+            // Disabled credentials must not authenticate. null activeStatus is
+            // legacy-allowed (rows that predate the flag); INACTIVE/DELETED are
+            // authoritative. The negative envelope stays generic so account
+            // state is not disclosed to callers; the real reason is logged.
+            if (credentialDisabled(credential)) {
+               Log.warnf("Login rejected: credential %s has activeStatus=%s", userId, credential.getActiveStatus());
+               return new LoginResponse(false,
+                  new LoginNegativeResponse(userId,
+                     400,
+                     401,
+                     "Invalid credentials",
+                     "Invalid credentials",
+                     "credentials did not match",
+                     envConfigUtils.getSystemRealm())
+               );
+            }
+            // Account-nature invariant: a USER account must have a directory
+            // profile (half-created accounts can otherwise log in while being
+            // invisible to every admin surface). Legacy credentials (null
+            // accountType) are flagged in the log but not locked out.
+            if (credential.getAccountType() == com.e2eq.framework.model.security.AccountType.USER
+                  || credential.getAccountType() == null) {
+               boolean hasProfile = userProfileRepo
+                     .getBySubject(envConfigUtils.getSystemRealm(), credential.getSubject()).isPresent()
+                     || userProfileRepo
+                     .getByUserIdWithIgnoreRules(envConfigUtils.getSystemRealm(), credential.getUserId()).isPresent();
+               if (!hasProfile) {
+                  if (credential.getAccountType() == com.e2eq.framework.model.security.AccountType.USER) {
+                     Log.warnf("Login rejected: USER account %s has no directory profile (half-created account)",
+                           userId);
+                     return new LoginResponse(false,
+                        new LoginNegativeResponse(userId,
+                           400,
+                           401,
+                           "Invalid credentials",
+                           "Invalid credentials",
+                           "credentials did not match",
+                           envConfigUtils.getSystemRealm())
+                     );
+                  }
+                  Log.warnf("Unclassified credential %s has no directory profile — classify its accountType "
+                        + "and create a profile, or mark it SERVICE/SYSTEM", userId);
+               }
+            }
             if (credential.getForceChangePassword() != null && credential.getForceChangePassword()) {
                return new LoginResponse(false,
                   new LoginNegativeResponse(userId,
@@ -673,6 +721,10 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                         tokenDomainContext.getAccountId(),
                         appAuth.audiences(),
                         appAuth.activeApplication(),
+                        // Signed realm boundary: lets delegated-claims validators
+                        // authorize X-Realm switches within the credential's own
+                        // declared boundary instead of pinning to the login realm.
+                        credential.getRealmRegEx(),
                         TokenUtils.expiresAt(durationInSeconds),
                         issuer);
                   } else {
@@ -684,6 +736,11 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                         tokenDomainContext.getTenantId(),
                         tokenDomainContext.getOrgRefName(),
                         tokenDomainContext.getAccountId(),
+                        null,
+                        null,
+                        // Signed realm boundary for delegated X-Realm switching,
+                        // matching the application-resolved branch above.
+                        credential.getRealmRegEx(),
                         TokenUtils.expiresAt(durationInSeconds),
                         issuer);
                   }
@@ -853,6 +910,10 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
          if (!credentialRealmAuthorized) {
             throw new SecurityException("Credential is no longer authorized for realm: " + tokenRealm);
          }
+         if (credentialDisabled(credential)) {
+            Log.warnf("Refresh rejected: credential %s has activeStatus=%s", userId, credential.getActiveStatus());
+            throw new SecurityException("Credential is no longer authorized");
+         }
 
          Set<String> credentialRoles = credentialRolesForRealm(
             credential.getRoles(), credentialRealm, tokenRealm);
@@ -943,6 +1004,16 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                e.toString(),
                envConfigUtils.getSystemRealm()));
       }
+   }
+
+   /**
+    * A credential marked INACTIVE or DELETED must not authenticate or refresh.
+    * null is legacy-allowed: rows created before the flag existed carry no
+    * status, and "unknown" must not lock every existing deployment out.
+    */
+   static boolean credentialDisabled(CredentialUserIdPassword credential) {
+      ActiveStatus status = credential.getActiveStatus();
+      return status == ActiveStatus.INACTIVE || status == ActiveStatus.DELETED;
    }
 
    static boolean credentialAuthorizesRealm(SecurityUtils securityUtils,

@@ -220,6 +220,28 @@ public class TokenUtils {
 											String activeApplication,
 											long expiresAt,
 											String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+		return generateUserToken(subject, userId, groups, realm, tenantId, orgRefName, accountNum,
+				audiences, activeApplication, null, expiresAt, issuer);
+	}
+
+	/**
+	 * Application-scoped token that also carries the credential's REALM BOUNDARY
+	 * ({@code realmRegEx} claim — {@code "*"} or a regex). Delegated-claims
+	 * validators use it to authorize X-Realm switches inside the boundary the
+	 * issuer signed, instead of pinning the session to the login realm.
+	 */
+	public static String generateUserToken(String subject,
+											String userId,
+											Set<String> groups,
+											String realm,
+											String tenantId,
+											String orgRefName,
+											String accountNum,
+											Set<String> audiences,
+											String activeApplication,
+											String realmBoundary,
+											long expiresAt,
+											String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
 
 		Objects.requireNonNull(subject, "subject cannot be null");
 		Objects.requireNonNull(issuer, "Issuer cannot be null");
@@ -244,6 +266,9 @@ public class TokenUtils {
 		addPrincipalClaims(claimsBuilder, userId, realm, tenantId, orgRefName, accountNum);
 		if (activeApplication != null && !activeApplication.isBlank()) {
 			claimsBuilder.claim("azp", activeApplication);
+		}
+		if (realmBoundary != null && !realmBoundary.isBlank()) {
+			claimsBuilder.claim("realmRegEx", realmBoundary.trim());
 		}
 		return claimsBuilder.jws().keyId(resolveSigningKeyId()).sign(privateKey);
 	}
