@@ -661,24 +661,22 @@ public class TenantOntologyRegistryProvider {
      * Best-effort by contract: any failure is caught and logged; startup is never broken.
      */
     private void persistBuiltTBox(String realm, TBox accumulated, String currentHash, Optional<Path> yamlPath) {
-        boolean contextActive = SecurityContext.getPrincipalContext().isPresent()
-                && SecurityContext.getResourceContext().isPresent();
-        if (contextActive) {
-            // Normal request path: an ambient security context already resolves the realm/identity.
-            doPersistBuiltTBox(realm, accumulated, currentHash, yamlPath);
-            return;
-        }
-        // Background/startup thread: no ambient context, so the repo would dereference the
-        // request-scoped SecurityIdentity proxy and fail. Establish a realm-scoped SYSTEM context
-        // (realmDataDomain is the SAME principal-independent key the read/admission paths use) so
-        // the persist resolves the realm without the proxy and lands in the correct realm database.
-        //
-        // Rules are bypassed for THIS branch only: there is no authenticated user to authorize the
-        // write — the system is persisting its OWN source-derived TBox as a bootstrap step — and a
-        // synthetic SYSTEM principal has no ONTOLOGY/TBOX write grant in every realm. The normal
-        // request path (contextActive above) keeps full permission enforcement, so a user-triggered
-        // rebuild still requires write permission; only genuine no-context system/startup threads
-        // (which never originate from an external caller) take this privileged path.
+        // Persisting the source-derived TBox is a SYSTEM cache operation (annotations + YAML), not a
+        // user-authored write. It can be reached three ways, and ALL of them must resolve to a
+        // realm-scoped SYSTEM write context — never the ambient request context:
+        //   1. A no-context startup/daemon thread (e.g. "ontology-tbox-publisher"): the repo would
+        //      otherwise dereference the request-scoped SecurityIdentity proxy and throw.
+        //   2. A READ request (GET /tbox) that misses the active tenant TBox and falls through to the
+        //      source rebuild: the ambient ResourceContext carries action=VIEW/NONE, so the
+        //      persistence guard rejects the save with "Persistence callback requires an explicit
+        //      write action; received: none" — the persist is skipped and every later read re-scans.
+        //   3. An admission write: already carries a write context; re-scoping it is harmless.
+        // realmDataDomain(realm) is the SAME principal-independent key the read/admission paths use,
+        // so the save lands in the correct realm database. Rules are bypassed because there is no
+        // authenticated user authorizing THIS write — the system is caching its OWN source-derived
+        // TBox — and a synthetic SYSTEM principal holds no per-realm ONTOLOGY/TBOX grant. Only
+        // genuine internal rebuild/startup paths reach here; external writes go through admission,
+        // which keeps full permission enforcement.
         PrincipalContext principal = SecurityCallScope.service(
                 realm, realmDataDomain(realm), "ontology-tbox-publisher");
         ResourceContext resource = SecurityCallScope.writeResource(principal, realm, "ONTOLOGY", "TBOX");
@@ -686,7 +684,7 @@ public class TenantOntologyRegistryProvider {
              SecurityCallScope.Scope ignoreRules = SecurityCallScope.openIgnoringRules()) {
             doPersistBuiltTBox(realm, accumulated, currentHash, yamlPath);
         } catch (Throwable t) {
-            // Never break startup: a context-establishment failure is logged and swallowed.
+            // Best-effort by contract: never break a read or startup on a persist failure.
             Log.warnf("Failed to persist TBox for realm %s under system context: %s", realm, t.getMessage());
         }
     }
