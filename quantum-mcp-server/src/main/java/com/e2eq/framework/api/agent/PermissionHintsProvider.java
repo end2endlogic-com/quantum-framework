@@ -15,7 +15,8 @@ import java.util.Map;
  * and generate least-privilege rules for a scenario.
  *
  * @see AgentResource
- * @see com.e2eq.framework.rest.resources.PermissionResource
+ * The corresponding HTTP contract is exposed by the system REST module's
+ * {@code PermissionResource}.
  */
 @ApplicationScoped
 public class PermissionHintsProvider {

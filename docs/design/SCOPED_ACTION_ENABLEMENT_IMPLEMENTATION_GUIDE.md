@@ -7,7 +7,7 @@ This guide turns the scoped-action enablement design into an executable implemen
 Primary references:
 
 - [SCOPED_ACTION_ENABLEMENT_DESIGN.md](/Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/docs/design/SCOPED_ACTION_ENABLEMENT_DESIGN.md)
-- [PermissionResource.java](/Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-framework/src/main/java/com/e2eq/framework/rest/resources/PermissionResource.java)
+- [PermissionResource.java](/Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-system-rest/src/main/java/com/e2eq/framework/rest/resources/security/PermissionResource.java)
 - [SecurityCheckResponse.java](/Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-models/src/main/java/com/e2eq/framework/model/securityrules/SecurityCheckResponse.java)
 - [FeatureFlag.java](/Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-models/src/main/java/com/e2eq/framework/model/general/FeatureFlag.java)
 
@@ -226,7 +226,7 @@ Dependency type:
 Behavior:
 
 - construct a `SecurityURIHeader`-equivalent request using the target `ScopedActionRef`
-- evaluate using the existing policy stack through the same underlying rule context used by [PermissionResource.java](/Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-framework/src/main/java/com/e2eq/framework/rest/resources/PermissionResource.java)
+- evaluate using the existing policy stack through the same underlying rule context used by [PermissionResource.java](/Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-system-rest/src/main/java/com/e2eq/framework/rest/resources/security/PermissionResource.java)
 
 Blocker example:
 

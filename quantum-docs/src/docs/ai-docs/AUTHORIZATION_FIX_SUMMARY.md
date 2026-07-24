@@ -143,7 +143,7 @@ Add to `application.properties`:
 ```properties
 quarkus.log.category."com.e2eq.framework.rest.filters.SecurityFilter".level=DEBUG
 quarkus.log.category."com.e2eq.framework.securityrules.RuleContext".level=DEBUG
-quarkus.log.category."com.e2eq.framework.rest.resources.PermissionResource".level=DEBUG
+quarkus.log.category."com.e2eq.framework.rest.resources.security.PermissionResource".level=DEBUG
 ```
 
 Then check logs for:

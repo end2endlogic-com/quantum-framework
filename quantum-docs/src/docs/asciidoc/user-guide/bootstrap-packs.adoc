@@ -9,7 +9,14 @@ They are intentionally distinct from migrations and seed packs:
 - seed packs materialize deterministic datasets
 - BootstrapPacks orchestrate operational setup steps across one or more systems
 
-The framework now provides the BootstrapPack runtime, admin APIs, startup runner, and SPI hooks. Product modules contribute actual packs and step handlers.
+`quantum-bootstrap-core` provides the BootstrapPack runtime, startup runner,
+models, and SPI hooks. Product modules contribute actual packs and step
+handlers by depending on that endpoint-free artifact.
+
+`quantum-bootstrap-rest` is the opt-in system-management adapter that exposes
+the admin API. It is selected by `quantum-system-service`; ordinary
+application backends should omit it and consume the generated system-service
+SDK instead.
 
 ==== What a BootstrapPack is
 
@@ -200,7 +207,8 @@ public class DemoAppServiceHandler implements BootstrapPackStepHandler {
 
 ==== Admin REST API
 
-The framework exposes admin endpoints at `/admin/bootstrap-packs`:
+The system-management service exposes the `quantum-bootstrap-rest` admin
+endpoints at `/admin/bootstrap-packs`:
 
 [cols="1,3", options="header"]
 |===
