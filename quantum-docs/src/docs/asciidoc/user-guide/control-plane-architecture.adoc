@@ -100,13 +100,17 @@ route through `SystemDirectory`.
 
 == The admin REST surface
 
-`quantum.system-rest.enabled` (build-time, default `true`) gates the nine
-control-plane admin resources via `@IfBuildProperty`. Default-on keeps every
-existing app byte-identical; `false` removes the entire surface in one
-switch — tier-1 hardening, and the setting a tier-2 tenant app builds with.
-The *physical* `quantum-system-rest` jar split remains planned; it is blocked
-on relocating the resources' service closure (provisioning → seed subsystem,
-BaseResource REST infra) below the new jar.
+The physical `quantum-system-rest` jar split landed in `1.4.1-SNAPSHOT`.
+Tenant applications omit that server module and therefore do not expose its
+security and control-plane endpoints. `quantum-auth-service` explicitly adds
+the module and publishes the API consumed through its generated SDK.
+
+For deployments that include the server module,
+`quantum.system-rest.enabled` remains a build-time, default-true gate for the
+annotated control-plane admin resources. The next modularization step moves
+the resources' service closure (provisioning → seed subsystem and shared
+BaseResource REST infrastructure) below the server jar so it no longer needs
+the full `quantum-framework` dependency.
 
 == Deployment tiers (WP3)
 

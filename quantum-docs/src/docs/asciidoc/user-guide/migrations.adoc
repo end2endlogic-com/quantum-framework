@@ -106,6 +106,11 @@ These are typical examples of idempotent change sets that can be safely re‑eva
 
 Base path: /system/migration
 
+The deployable `quantum-system-service` owns this API by selecting the
+`com.end2endlogic:quantum-migration-rest` adapter. Application backends and
+SDK-only consumers should omit that artifact so they do not expose database
+administration endpoints.
+
 Security: Most endpoints require admin role; dbversion is PermitAll for introspection.
 
 - GET /system/migration/dbversion/{realm}
@@ -118,10 +123,22 @@ Security: Most endpoints require admin role; dbversion is PermitAll for introspe
   - Example:
     curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8080/system/migration/indexes/applyIndexes/system-com
 
+- POST /system/migration/indexes/applyIndexes/{realm}/{collection}
+  - Admin only. Applies indexes for one mapped collection in the realm.
+
+- POST /system/migration/indexes/applyAllIndexes/{realm}
+  - Admin only. Applies all declared indexes across mapped collections, bypassing data scoping for this system-level operation.
+
 - POST /system/migration/indexes/dropAllIndexes/{realm}
   - Admin only. Drops all indexes on all mapped collections in the realm. Useful before re‑creation or when changing index definitions.
   - Example:
     curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8080/system/migration/indexes/dropAllIndexes/system-com
+
+- POST /system/migration/indexes/drop/{realm}/{collection}
+  - Admin only. Drops indexes for one collection in the realm.
+
+- POST /system/migration/changeSet/execute/{realm}/{beanRefName}
+  - Admin only. SSE stream that executes the named change-set bean for the realm.
 
 - POST /system/migration/initialize/{realm}
   - Admin only. Server‑Sent Events (SSE) stream that executes all pending change sets for the specific realm.

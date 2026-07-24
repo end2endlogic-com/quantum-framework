@@ -334,10 +334,189 @@ Phase B progress (2026-06-10, branch the integration branch):
   `/system/migration`, `/admin/bootstrap-packs`, `/onboarding/*`) via
   `@IfBuildProperty` — superseding the per-type `quarkus.arc.exclude-types`
   pattern for tier-1 hardening, and what a tier-2 tenant-plane app sets at
-  build time. The *physical* `quantum-system-rest` jar split stays planned but
-  is deferred: the resources' dependency closure (TenantProvisioningService →
-  seed subsystem; BaseResource REST infra) must move below the new jar first,
-  which is the Phase B entity/service relocation work.
+  build time.
+- (6/n, `1.4.1-SNAPSHOT`) Physical `quantum-system-rest` extraction: the
+  security and control-plane JAX-RS resources moved out of `quantum-framework`
+  into an independently selectable, Jandex-indexed server module. The Java
+  resource classes are grouped under the `.security` package, while every
+  endpoint `@Path` value is unchanged. As the first compatibility slice,
+  `quantum-system-rest` depends on `quantum-framework`; later slices move its
+  service and persistence closure into narrower modules.
+- (7/n, `1.4.1-SNAPSHOT`) Physical `quantum-ontology-rest` extraction: the
+  ontology registry, graph, administration, and drift-repair JAX-RS resources
+  moved out of `quantum-ontology-mongo` with packages and `@Path` values
+  unchanged. `quantum-ontology-mongo` is now endpoint-free and no longer
+  depends on `quantum-framework`; only the standalone
+  `quantum-ontology-service` selects the REST module. The policy bridge now
+  declares its REST-core dependency directly instead of receiving the full
+  framework accidentally through the Mongo module.
+- (8/n, `1.4.1-SNAPSHOT`) Shared `quantum-rest-core` extraction:
+  `BaseResource`, CSV import/export, and their import-processing closure moved
+  into a Jandex-indexed module containing no concrete application endpoint.
+  `quantum-ontology-rest` and `quantum-ontology-policy-bridge` now use this
+  module without depending on `quantum-framework`. The implementation lives at
+  `com.e2eq.framework.rest.core.BaseResource`; `quantum-framework` retains the
+  historical `com.e2eq.framework.rest.resources.BaseResource` as a source- and
+  binary-compatible bridge for existing applications. Endpoint `@Path` values
+  are unaffected. `quantum-system-rest` uses the new core directly but still
+  depends on `quantum-framework` for provisioning, onboarding, policy-loading,
+  and authentication services; extracting that service closure is the next
+  slice.
+- (9/n, `1.4.1-SNAPSHOT`) Endpoint-free system runtime extraction:
+  `quantum-seed-core` now owns seed-pack loading and persistence,
+  `quantum-system-management` owns authentication, tenant provisioning,
+  onboarding, application admission, policy-file loading, and the associated
+  shared REST payload/service packages, and `quantum-security-runtime` owns
+  request authorization and security filters. Package ownership remains
+  intact rather than being split across jars. `quantum-seed-s3` now depends on
+  seed core directly. Most importantly, `quantum-system-rest` no longer
+  depends on `quantum-framework`; it composes REST core, the endpoint-free
+  management/security runtimes, and the JWT provider. The three new runtime
+  artifacts contain no concrete JAX-RS resource classes, while all 19
+  system-control-plane resources retain the `@Path` annotations established
+  before the physical extraction.
+- Workflow boundary review: the Enterprise workflow client is already split
+  into models, client, and Quarkus integration jars. Its only local JAX-RS
+  resource is `/workflow/resolvers/...`, an intentional runtime callback into
+  application-owned settings, secrets, and credentials—not a duplicated
+  workflow-engine API. It remains application-side; applications that do not
+  provide this callback use `quantum-workflow-client` rather than
+  `quantum-workflow-quarkus`.
+- (10/n, `1.4.1-SNAPSHOT`) Authentication-host dependency closure:
+  contract hashing and compatibility checks moved into the endpoint-free
+  `quantum-contract-core`, so the Enterprise auth client provider no longer
+  pulls `quantum-framework`, repositories, or server resources into consuming
+  applications. `quantum-auth-service` now composes `quantum-system-rest`,
+  `quantum-system-management`, `quantum-jwt-provider`, and the endpoint-free
+  Enterprise `quantum-filesystem-core` directly. The filesystem REST adapter
+  remains independently selectable and retains both existing endpoint paths.
+  `quantum-camel` and `quantum-action-enablement-enterprise` also select the
+  endpoint-free core because they consume only its managed-directory SPI and
+  persistence models.
+  The `Pair` query-parameter converter required by inherited
+  `BaseResource` operations also moved into `quantum-rest-core`, completing
+  that REST infrastructure closure without changing its package or behavior.
+- (11/n, `1.4.1-SNAPSHOT`) Enterprise Camel framework decoupling:
+  `quantum-camel` no longer depends on `quantum-framework`. Its eleven
+  inherited CRUD resources now extend `quantum-rest-core` directly, while
+  models, security-rule runtime, persistence, ontology ingest, and managed
+  directory contracts resolve from their existing narrow owners. All Camel
+  resource packages and `@Path` annotations are unchanged. The module still
+  intentionally contains both its integration runtime and operational REST
+  resources; a later physical `quantum-camel-core` / `quantum-camel-rest`
+  split can make those independently selectable.
+- (12/n, `1.4.1-SNAPSHOT`) Physical Enterprise Camel split:
+  `quantum-camel-core` now owns the endpoint-free integration runtime,
+  models, repositories, managed-directory and SFTP components, route
+  lifecycle, transmission tracking, ontology ingest, extension SPI, runtime
+  configuration, and tests. The historical `quantum-camel` coordinates are
+  retained as the REST adapter and contain only the eleven operational
+  resource classes plus a Jandex index. The adapter depends on core and
+  `quantum-rest-core`; core depends on neither the adapter nor REST core.
+  All resource packages and `@Path` values remain unchanged.
+- (13/n, `1.4.1-SNAPSHOT`) Physical Enterprise workflow Quarkus split:
+  `quantum-workflow-quarkus-core` now owns the endpoint-free CDI runtime-client
+  producer, security-context mapper, and connector resolver SPI without
+  repository dependencies. The optional `quantum-workflow-onboarding` owns the
+  repository-backed tenant-onboarding bridge and work-item mapper.
+  `quantum-workflow-resolver-rest` contains only the optional application-side
+  connector resolver resource and depends on core, while the historical
+  `quantum-workflow-quarkus` coordinates remain a compatibility bundle over
+  all three slices. Its `/workflow/resolvers`
+  root and all three callback subpaths are unchanged and pinned by a contract
+  test. Applications that need CDI workflow integration without hosting
+  callbacks select core directly. Duplicate onboarding request/response
+  classes were removed from Enterprise in favor of their canonical
+  `quantum-system-management` owners.
+- (14/n, `1.4.1-SNAPSHOT`) Physical Enterprise job-runner split:
+  `quantum-jobrunner-core` now owns the endpoint-free JobRunr scheduling and
+  execution runtime, models, repositories, metrics, built-in `run-flow` type,
+  and contribution SPI. `quantum-jobrunner-rest` owns only
+  `JobAdminResource`; its `/system/jobrunner` root and all thirteen method
+  paths are unchanged and pinned by a contract test. The historical
+  `quantum-jobrunner` coordinates compose both slices for compatibility.
+  `quantum-jobrunner-service` now hosts the REST adapter with the narrow
+  security, JWT, model, and repository owners and no longer depends on
+  `quantum-framework`. Missing tenant or run-as identity now fails fast
+  instead of running a background job under system context.
+- (15/n, `1.4.1-SNAPSHOT`) Physical Enterprise ontology-service split:
+  `quantum-ontology-service-core` now owns the endpoint-free TBox admission,
+  vocabulary governance, ontology read, policy-decision, DTO, and
+  repository-facing implementation. `quantum-ontology-service-rest` owns only
+  the four service-specific JAX-RS resources. The historical
+  `quantum-ontology-service` coordinates remain the deployable Quarkus host,
+  with runtime configuration, governance seed pack, deployment assets,
+  integration tests, OpenAPI contract, and generated SDKs. Its eight
+  service-specific HTTP method/path combinations are unchanged and pinned by
+  a contract test; the host no longer depends on `quantum-framework`.
+  Application backends consume the generated SDK and therefore expose none of
+  these endpoints and pull in none of the ontology repositories.
+- (16/n, `1.4.1-SNAPSHOT`) Physical Enterprise surveys split:
+  `quantum-surveys-core` now owns the endpoint-free survey models,
+  repositories, publishing, campaigns, respondent submissions, result
+  aggregation, DTOs, and attachment storage SPI. `quantum-surveys-rest`
+  owns only the three resource types. The historical `quantum-surveys`
+  coordinates compose both slices for compatibility. Existing Java packages,
+  the `/psa/survey-campaigns` and `/psa/survey-versions` roots, all thirteen
+  campaign method paths, and the abstract `SurveyResource` extension paths
+  are unchanged and pinned by a contract test. Core and REST use narrow
+  `1.4.1-SNAPSHOT` framework owners and neither depends on
+  `quantum-framework`.
+- (17/n, `1.4.1-SNAPSHOT`) Physical Query Gateway REST split:
+  `quantum-query-rest` now owns `QueryGatewayResource` as the opt-in HTTP
+  adapter for generic Morphia query operations. Its Java package, `/api/query`
+  root, and all twelve method/path combinations are unchanged and pinned by a
+  contract test. The historical `quantum-framework` coordinates compose this
+  module for compatibility, while `quantum-mcp-server` and the Enterprise
+  `quantum-system-service` select it directly. The system service now depends
+  on narrow REST, security, system, seed, secrets, repository, ontology, and
+  MCP owners instead of `quantum-framework`; therefore it hosts its own
+  control-plane resources and `/api/query` without also exposing the rest of
+  the compatibility bundle.
+- (18/n, `1.4.1-SNAPSHOT`) Physical seed administration REST split:
+  `quantum-seed-core` remains the endpoint-free discovery, validation,
+  persistence, and loading runtime, while `quantum-seed-rest` now solely owns
+  `SeedAdminResource`. Its Java package, `/admin/seeds` root, and all eight
+  method/path combinations are unchanged and pinned by a contract test.
+  `quantum-system-service` selects the adapter explicitly because its
+  generated SDK already publishes these operations. Neither
+  `quantum-framework` nor `quantum-system-rest` includes the adapter at
+  runtime, preventing application backends and `quantum-auth-service` from
+  unintentionally hosting seed administration. The existing framework
+  integration harness retains the adapter only in test scope.
+- (19/n, `1.4.1-SNAPSHOT`) Physical migration administration REST split:
+  `quantum-migration-rest` now solely owns `MigrationResource`, including
+  database-version introspection, index administration, change-set execution,
+  and migration SSE operations. Its Java package, `/system/migration` root,
+  and all ten method/path combinations are unchanged and pinned by a contract
+  test. `quantum-system-service` selects the adapter explicitly and publishes
+  the operations through its generated contract/SDK seam. Neither
+  `quantum-framework` nor `quantum-system-rest` includes the adapter at
+  runtime, preventing application backends and `quantum-auth-service` from
+  unintentionally hosting database administration. The existing framework
+  integration harness retains the adapter only in test scope.
+- (20/n, `1.4.1-SNAPSHOT`) Physical bootstrap-pack core/REST split:
+  `quantum-bootstrap-core` now owns the endpoint-free models, contributor and
+  handler SPI, execution runtime, run history, and startup infrastructure.
+  `quantum-bootstrap-rest` solely owns `BootstrapPackAdminResource`. Its Java
+  package, `/admin/bootstrap-packs` root, and all seven method/path
+  combinations are unchanged and pinned by a contract test.
+  `quantum-system-service` selects the REST adapter explicitly; product and
+  application modules that contribute packs select only the core artifact.
+  `quantum-framework` retains core startup behavior for compatibility but
+  includes the REST adapter only in test scope, so application backends and
+  `quantum-auth-service` no longer unintentionally host bootstrap-pack
+  administration.
+- (21/n, `1.4.1-SNAPSHOT`) Physical contract-identity REST split:
+  `quantum-contract-core` remains the endpoint-free canonical hashing and
+  compatibility runtime, while `quantum-contract-rest` now solely owns
+  `ContractHashResource`. Its Java package and `GET /contract-hash` endpoint
+  are unchanged and pinned by a contract test. The framework compatibility
+  bundle retains the adapter because the endpoint describes the host's own
+  generated contract rather than a shared control-plane API.
+  `quantum-auth-service` selects it directly, restoring its required generated
+  SDK handshake without pulling `quantum-framework` or unrelated repositories
+  back into the service.
 - (5/n) `TenantLifecycle` contract in quantum-system
   (`com.e2eq.framework.api.tenant`: `TenantLifecycle`,
   `TenantProvisionRequest/Result`, `TenantDeleteResult` — dependency-light,
@@ -356,9 +535,9 @@ Phase B progress (2026-06-10, branch the integration branch):
   RealmMembershipService, mode seam, remote clients), and **identity
   provider implementations live in provider modules** (quantum-jwt-provider /
   quantum-oauth-server), not quantum-framework. The physical
-  quantum-system-rest jar remains deferred to a major version per WP3 rule 3
-  (blocked on the TPS -> seed-subsystem closure); its *behavior* shipped as
-  the quantum.system-rest.enabled switch.
+  `quantum-system-rest` JAR subsequently landed on the `1.4.1-SNAPSHOT`
+  modularization line. The `quantum.system-rest.enabled` switch remains for
+  build-time selection within deployments that include the server module.
 - Known remote-mode gap for Phase C: when seeding *app* realms,
   `SeedStartupRunner` still reads realm records and admin credentials from
   the local system-realm database. In a true split deployment those reads

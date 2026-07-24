@@ -7,7 +7,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.end2endlogic</groupId>
     <artifactId>quantum-parent</artifactId>
-    <version>1.4.0-SNAPSHOT</version>
+    <version>1.4.1-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>${project.groupId}:${project.artifactId}</name>
@@ -58,7 +58,7 @@
         <skipITs>true</skipITs>
         <surefire-plugin.version>3.2.5</surefire-plugin.version>
         <lombrok.version>1.18.38</lombrok.version>
-        <quantum.version>1.4.0-SNAPSHOT</quantum.version>
+        <quantum.version>1.4.1-SNAPSHOT</quantum.version>
         <apachecommons.lang3.version>3.18.0</apachecommons.lang3.version>
     </properties>
 
@@ -67,16 +67,29 @@
         <module>quantum-ontology-core</module>
         <module>quantum-ontology-policy-bridge</module>
         <module>quantum-ontology-mongo</module>
+        <module>quantum-ontology-rest</module>
         <module>quantum-models</module>
         <module>quantum-morphia-repos</module>
+        <module>quantum-contract-core</module>
+        <module>quantum-contract-rest</module>
+        <module>quantum-rest-core</module>
+        <module>quantum-query-rest</module>
+        <module>quantum-security-runtime</module>
         <module>quantum-control-plane-client</module>
         <module>quantum-system</module>
+        <module>quantum-bootstrap-core</module>
+        <module>quantum-bootstrap-rest</module>
+        <module>quantum-seed-core</module>
+        <module>quantum-seed-rest</module>
+        <module>quantum-migration-rest</module>
+        <module>quantum-system-management</module>
         <module>quantum-action-enablement-models</module>
         <module>quantum-action-enablement-quarkus</module>
         <module>quantum-default-keys</module>
         <module>quantum-jwt-provider</module>
         <module>quantum-oauth-server</module>
         <module>quantum-framework</module>
+        <module>quantum-system-rest</module>
         <module>quantum-seed-s3</module>
         <module>quantum-secrets</module>
         <module>quantum-mcp-server</module>
@@ -259,12 +272,25 @@
                 <module>quantum-ontology-policy-bridge</module>
                 <module>quantum-models</module>
                 <module>quantum-morphia-repos</module>
+                <module>quantum-contract-core</module>
+                <module>quantum-contract-rest</module>
+                <module>quantum-rest-core</module>
+                <module>quantum-query-rest</module>
+                <module>quantum-security-runtime</module>
                 <module>quantum-control-plane-client</module>
                 <module>quantum-system</module>
+                <module>quantum-bootstrap-core</module>
+                <module>quantum-bootstrap-rest</module>
+                <module>quantum-seed-core</module>
+                <module>quantum-seed-rest</module>
+                <module>quantum-migration-rest</module>
+                <module>quantum-system-management</module>
                 <module>quantum-default-keys</module>
                 <module>quantum-jwt-provider</module>
                 <module>quantum-oauth-server</module>
                 <module>quantum-framework</module>
+                <module>quantum-system-rest</module>
+                <module>quantum-ontology-rest</module>
                 <module>quantum-seed-s3</module>
                 <module>quantum-mcp-server</module>
             </modules>

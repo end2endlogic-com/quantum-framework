@@ -7,6 +7,8 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 import java.util.Date;
 
@@ -25,6 +27,7 @@ public class AccessibleRealmInfo {
     private Integer pendingSeedPackCount;
     private Integer pendingMigrationCount;
     @JsonFormat(shape = JsonFormat.Shape.STRING)
+    @Schema(type = SchemaType.STRING, format = "date-time")
     private Date setupLastUpdated;
     /** Owning application refName (every realm belongs to exactly one application). */
     private String application;

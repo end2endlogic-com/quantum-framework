@@ -34,6 +34,13 @@ Add Quantum dependencies to `pom.xml`:
 </dependency>
 ----
 
+`quantum-framework` is the compatibility bundle and includes the framework's
+server-side REST adapters. For a service with an explicit endpoint boundary,
+select the narrower modules instead. For example, add
+`com.end2endlogic:quantum-query-rest` only when that backend is intended to
+host the existing `/api/query` API. SDK-only consumers should omit REST and
+repository modules so they do not expose or persist server-owned APIs.
+
 === Configuration
 
 Create `.env` file (copy from template):
@@ -231,6 +238,7 @@ Quick checklist
 
 1) Add dependencies (app-level)
 - quantum-ontology-core, quantum-ontology-mongo, quantum-ontology-policy-bridge
+- Do not add quantum-ontology-rest unless this application intentionally hosts the ontology control-plane API. Normal consumers call quantum-ontology-service through its generated SDK.
 
 2) Turn it on via config
 
