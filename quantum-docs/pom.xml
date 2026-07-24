@@ -6,7 +6,7 @@
     <parent>
         <groupId>com.end2endlogic</groupId>
         <artifactId>quantum-parent</artifactId>
-        <version>1.4.0-SNAPSHOT</version>
+        <version>1.4.0</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
@@ -176,7 +176,7 @@
                     <subDirectory>${docs.ghpages.subdir}</subDirectory>
                     <!-- When LTS publishes to root, do not remove the in-progress docs tree. -->
                     <ignorePathsToDelete>
-                        <string>1.4.0-SNAPSHOT</string>
+                        <string>1.4.0</string>
                     </ignorePathsToDelete>
                 </configuration>
                 <executions>
@@ -239,11 +239,11 @@
                 <docs.ghpages.skip.versioned.publish>false</docs.ghpages.skip.versioned.publish>
             </properties>
         </profile>
-        <!-- In-progress 1.4 line: non-default URL …/1.4.0-SNAPSHOT/ only. Build from git branch 1.4.0-SNAPSHOT. -->
+        <!-- In-progress 1.4 line: non-default URL …/1.4.0/ only. Build from git branch 1.4.0. -->
         <profile>
             <id>docs-ghpages-1.4</id>
             <properties>
-                <docs.ghpages.subdir>1.4.0-SNAPSHOT</docs.ghpages.subdir>
+                <docs.ghpages.subdir>1.4.0</docs.ghpages.subdir>
                 <docs.ghpages.skip.versioned.publish>false</docs.ghpages.skip.versioned.publish>
             </properties>
         </profile>
