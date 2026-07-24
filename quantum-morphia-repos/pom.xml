@@ -100,7 +100,7 @@
     <dependency>
       <groupId>com.end2endlogic</groupId>
       <artifactId>quantum-extension</artifactId>
-      <version>1.4.0-SNAPSHOT</version>
+      <version>1.4.1-SNAPSHOT</version>
     </dependency>
    <!--
     Not needed here is in the quantum extension
