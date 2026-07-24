@@ -69,7 +69,7 @@ public static class TargetRule {
 
 ### REST API
 
-**Location**: `quantum-framework/src/main/java/com/e2eq/framework/rest/resources/FeatureFlagResource.java`
+**Location**: `quantum-system-rest/src/main/java/com/e2eq/framework/rest/resources/security/FeatureFlagResource.java`
 
 - **Base path**: `/features/flags`
 - **Inherits full CRUD** from `BaseResource`

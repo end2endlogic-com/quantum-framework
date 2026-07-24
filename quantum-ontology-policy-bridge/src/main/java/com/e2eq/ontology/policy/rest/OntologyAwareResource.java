@@ -7,7 +7,7 @@ import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.rest.models.Collection;
-import com.e2eq.framework.rest.resources.BaseResource;
+import com.e2eq.framework.rest.core.BaseResource;
 import com.e2eq.framework.rest.query.FilterUtils;
 import com.e2eq.ontology.mongo.OntologyContextEnricherMongo;
 import com.e2eq.ontology.policy.ListQueryRewriter;

@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<project
+    xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd"
+>
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.end2endlogic</groupId>
+    <artifactId>quantum-parent</artifactId>
+    <version>1.4.1-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>quantum-system-rest</artifactId>
+  <name>Quantum System REST</name>
+  <description>
+    Server-side REST resources for the shared Quantum security and system-management
+    control plane. Applications consume the generated service SDK instead of this module.
+  </description>
+  <packaging>jar</packaging>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.end2endlogic</groupId>
+      <artifactId>quantum-rest-core</artifactId>
+      <version>${quantum.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.end2endlogic</groupId>
+      <artifactId>quantum-security-runtime</artifactId>
+      <version>${quantum.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.end2endlogic</groupId>
+      <artifactId>quantum-system-management</artifactId>
+      <version>${quantum.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.end2endlogic</groupId>
+      <artifactId>quantum-jwt-provider</artifactId>
+      <version>${quantum.version}</version>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>io.smallrye</groupId>
+        <artifactId>jandex-maven-plugin</artifactId>
+        <version>3.2.2</version>
+        <executions>
+          <execution>
+            <id>make-index</id>
+            <goals>
+              <goal>jandex</goal>
+            </goals>
+          </execution>
+        </executions>
+        <configuration>
+          <indexName>jandex.idx</indexName>
+          <verbose>true</verbose>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

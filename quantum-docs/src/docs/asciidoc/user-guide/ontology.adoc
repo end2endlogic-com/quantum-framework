@@ -1871,9 +1871,9 @@ These patterns keep your REST and database contracts clear while allowing ontolo
 [[ontology-rest-api]]
 == Exploring the ontology via REST and JointJS
 
-This section shows how to inspect your ontology (TBox) and your instance relationships (ABox) through a small, read‑only REST API and how to render the results in a browser using JointJS. These endpoints are implemented in the quantum-ontology-mongo module and are intended for diagnostics, admin tooling, and lightweight visualization.
+This section shows how to inspect your ontology (TBox) and your instance relationships (ABox) through a small, read‑only REST API and how to render the results in a browser using JointJS. These endpoints are implemented in the server-only quantum-ontology-rest module and are intended for diagnostics, admin tooling, and lightweight visualization. The quantum-ontology-mongo module contains the persistence and runtime services without exposing endpoints.
 
-TIP: For a complete, copy‑paste friendly reference of every parameter and more examples, see the module guide at quantum-ontology-mongo/README.md. The summary below is intentionally concise to keep this document flowing without duplication.
+TIP: For a complete, copy‑paste friendly reference of every parameter and more examples, see the module guide at quantum-ontology-rest/README.md. The summary below is intentionally concise to keep this document flowing without duplication.
 
 === Base info
 
@@ -1970,7 +1970,7 @@ NOTE: JointJS will honor the attrs/labels we return. You can add a legend in you
 - During troubleshooting: confirm that edges exist for the predicates your queries or policies reference (see also xref:ontology-integration-morphia-permissions-section[Integrating Ontology]).
 - For lightweight admin tools: the JointJS payload can be embedded in a simple HTML page to visualize current relationships.
 
-For deep dives, parameter matrices, and additional examples (including large graph considerations), consult quantum-ontology-mongo/README.md in this repository.
+For deep dives, parameter matrices, and additional examples (including large graph considerations), consult quantum-ontology-rest/README.md in this repository.
 
 
 

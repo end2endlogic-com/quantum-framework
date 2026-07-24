@@ -83,7 +83,7 @@ Source of truth:
 - Cognito provider module when needed
 - `quantum-framework`
   - `com.e2eq.framework.rest.resources.AuthResource`
-  - `com.e2eq.framework.rest.resources.SecurityResource`
+  - `com.e2eq.framework.rest.resources.security.SecurityResource`
 - `quantum-oauth-server`
   - OAuth/OIDC authorize/token/userinfo/JWKS/discovery resources
 

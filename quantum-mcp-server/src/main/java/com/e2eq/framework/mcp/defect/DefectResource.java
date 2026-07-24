@@ -1,6 +1,6 @@
 package com.e2eq.framework.mcp.defect;
 
-import com.e2eq.framework.rest.resources.BaseResource;
+import com.e2eq.framework.rest.core.BaseResource;
 import jakarta.ws.rs.Path;
 
 /**

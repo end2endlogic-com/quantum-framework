@@ -2,6 +2,8 @@ package com.e2eq.framework.rest.models;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import org.junit.jupiter.api.Test;
 
 import java.util.Date;
@@ -52,5 +54,15 @@ class AuthResponseTest {
         assertEquals("demo", realmPayload.get("refName").asText());
         assertTrue(realmPayload.get("setupLastUpdated").isTextual());
         assertFalse(realmPayload.has("setupSummary"));
+    }
+
+    @Test
+    void advertisesAccessibleRealmTimestampAsOpenApiDateTime() throws Exception {
+        Schema schema = AccessibleRealmInfo.class
+                .getDeclaredField("setupLastUpdated")
+                .getAnnotation(Schema.class);
+
+        assertEquals(SchemaType.STRING, schema.type());
+        assertEquals("date-time", schema.format());
     }
 }
