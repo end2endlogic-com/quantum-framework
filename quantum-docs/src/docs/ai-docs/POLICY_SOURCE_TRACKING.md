@@ -62,7 +62,7 @@ This method:
 
 ### 3. PolicyResource List API Override
 
-**File**: `quantum-framework/src/main/java/com/e2eq/framework/rest/resources/PolicyResource.java`
+**File**: `quantum-system-rest/src/main/java/com/e2eq/framework/rest/resources/security/PolicyResource.java`
 
 Overrode the `getList()` method to merge default system policies with database policies:
 

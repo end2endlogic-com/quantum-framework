@@ -7,12 +7,12 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.end2endlogic</groupId>
   <artifactId>quantum-framework</artifactId>
-  <version>1.4.0-SNAPSHOT</version>
+  <version>1.4.1-SNAPSHOT</version>
 
   <parent>
     <groupId>com.end2endlogic</groupId>
     <artifactId>quantum-parent</artifactId>
-    <version>1.4.0-SNAPSHOT</version>
+    <version>1.4.1-SNAPSHOT</version>
   </parent>
 
   <name>${project.groupId}:${project.artifactId}</name>
@@ -149,12 +149,87 @@
       <artifactId>quantum-morphia-repos</artifactId>
       <version>${quantum.version}</version>
     </dependency>
+    <dependency>
+      <groupId>com.end2endlogic</groupId>
+      <artifactId>quantum-rest-core</artifactId>
+      <version>${quantum.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.end2endlogic</groupId>
+      <artifactId>quantum-query-rest</artifactId>
+      <version>${quantum.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.end2endlogic</groupId>
+      <artifactId>quantum-contract-core</artifactId>
+      <version>${quantum.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.end2endlogic</groupId>
+      <artifactId>quantum-contract-rest</artifactId>
+      <version>${quantum.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.end2endlogic</groupId>
+      <artifactId>quantum-security-runtime</artifactId>
+      <version>${quantum.version}</version>
+    </dependency>
     <!-- Control-plane module: SystemDirectory contract + producer (CDI-discovered
          via its Jandex index), RealmCatalogService, metering contracts.
          CONTROL_PLANE_SPLIT_DESIGN.md Phase B. -->
     <dependency>
       <groupId>com.end2endlogic</groupId>
       <artifactId>quantum-system</artifactId>
+      <version>${quantum.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.end2endlogic</groupId>
+      <artifactId>quantum-bootstrap-core</artifactId>
+      <version>${quantum.version}</version>
+    </dependency>
+    <!-- Bootstrap-pack administration is control-plane-only. Keep the REST
+         adapter off the framework runtime classpath while retaining the
+         historical integration harness as coverage. -->
+    <dependency>
+      <groupId>com.end2endlogic</groupId>
+      <artifactId>quantum-bootstrap-rest</artifactId>
+      <version>${quantum.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.end2endlogic</groupId>
+      <artifactId>quantum-seed-core</artifactId>
+      <version>${quantum.version}</version>
+    </dependency>
+    <!-- Seed administration is control-plane-only. Keep it off the framework
+         runtime classpath while retaining the existing framework integration
+         harness as coverage during the modularization window. -->
+    <dependency>
+      <groupId>com.end2endlogic</groupId>
+      <artifactId>quantum-seed-rest</artifactId>
+      <version>${quantum.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <!-- Migration administration is control-plane-only. Keep it off the
+         framework runtime classpath while retaining the existing framework
+         integration harness as coverage during the modularization window. -->
+    <dependency>
+      <groupId>com.end2endlogic</groupId>
+      <artifactId>quantum-migration-rest</artifactId>
+      <version>${quantum.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <!-- Preserve the historical framework control-plane integration harness
+         without restoring system-management endpoints to the runtime bundle. -->
+    <dependency>
+      <groupId>com.end2endlogic</groupId>
+      <artifactId>quantum-system-rest</artifactId>
+      <version>${quantum.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.end2endlogic</groupId>
+      <artifactId>quantum-system-management</artifactId>
       <version>${quantum.version}</version>
     </dependency>
     <dependency>

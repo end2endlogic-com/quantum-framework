@@ -1112,7 +1112,13 @@ On success, the new realm (demo-archetype-example) will have the datasets from t
 
 == REST API for seed packs
 
-The framework exposes admin-only endpoints to inspect and apply seed packs per realm (tenant DB). These are disabled to non-admin users via role checks.
+The `quantum-system-service` exposes admin-only endpoints to inspect and apply
+seed packs per realm (tenant DB). The service opts into the
+`com.end2endlogic:quantum-seed-rest` adapter; application backends and SDK-only
+consumers should omit that module. The endpoint-free runtime lives in
+`quantum-seed-core`.
+
+The endpoints are disabled to non-admin users via role checks.
 
 Base path: /admin/seeds
 
@@ -1157,6 +1163,18 @@ Endpoints:
 
 - GET /admin/seeds/history/{realm}
   - Returns the per-dataset seeding history as recorded in the `_seed_registry` collection.
+
+- GET /admin/seeds/verify/{realm}
+  - Verifies all applicable seed packs for the realm.
+
+- GET /admin/seeds/{realm}/{seedPack}/verify
+  - Verifies one seed pack for the realm.
+
+- GET /admin/seeds/archetypes/{realm}
+  - Lists the seed archetypes applicable to the realm.
+
+- POST /admin/seeds/archetypes/{realm}/{archetypeName}/apply
+  - Applies all packs included by the named archetype.
 
 Authentication and roles:
 - All endpoints require role admin. In integration tests you can use @TestSecurity(user="admin", roles={"admin").
