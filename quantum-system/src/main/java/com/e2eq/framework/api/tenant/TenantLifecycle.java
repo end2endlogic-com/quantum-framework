@@ -27,6 +27,19 @@ public interface TenantLifecycle {
     TenantProvisionResult provision(TenantProvisionRequest request);
 
     /**
+     * Governed topology-aware tenant decommissioning.
+     *
+     * <p>The default preserves compatibility for existing lifecycle adapters
+     * while failing closed. A control-plane implementation must verify the
+     * archive and the topology-specific destructive boundary before returning
+     * a result.</p>
+     */
+    default TenantDecommissionResult decommission(TenantDecommissionRequest request) {
+        throw new TenantDecommissionUnavailableException(
+            "No governed tenant decommission workflow is installed");
+    }
+
+    /**
      * Legacy compatibility boundary for tenant deletion.
      *
      * <p>The embedded open-source implementation must fail closed rather than
