@@ -178,6 +178,37 @@ Example pooled admission:
 
 Provisioning is designed to be largely idempotent. If the same tenant or admin user already exists with matching attributes, the service proceeds and returns warnings instead of blindly recreating state. If existing state conflicts with the request, the service rejects the operation.
 
+==== 2. Tenant decommissioning: archive before topology-specific cleanup
+
+Tenant deletion is a governed lifecycle operation, not a direct CRUD delete.
+The placement topology determines the cleanup boundary:
+
+* `DEDICATED_REALM`: revoke tenant access, create and verify a database
+  archive, then drop the tenant database and retire its realm catalog state.
+* `POOLED_REALM`: revoke tenant access, export only rows matching the
+  canonical tenant `DataDomain` identity (`orgRefName`, `accountNum`,
+  `tenantId`, and `dataSegment`), then stamp every matching row with one
+  immutable purge batch reference and one `purgeAfter` timestamp. The shared
+  database and realm are never dropped.
+
+MongoDB TTL cleanup is asynchronous and may remove documents from different
+collections at different times. Revoking tenant access before expiration is
+therefore the logical atomic barrier: users cannot observe a partially drained
+tenant. Before the workflow reports the pooled purge as scheduled, it must
+reconcile archive and expiration counts for every collection declared
+tenant-scoped.
+
+TTL indexes must be installed explicitly by realm migrations for every
+tenant-scoped collection. Large collections may be stamped in resumable
+batches, but every batch uses the same purge reference and timestamp. Blob
+payloads owned by tenant rows are part of both archive and expiration coverage.
+
+`ownerId` is not part of tenant deletion identity. It can narrow policy access,
+but using it for archive or purge selection can leave tenant-owned data behind.
+Direct `DELETE /admin/tenants/{realmId}` remains disabled until a governed
+control-plane workflow supplies archive verification, collection-scope
+metadata, and purge reconciliation.
+
 Direct tenant deletion is disabled. Decommissioning must use the governed
 control-plane lifecycle. In particular, pooled tenant removal is a scoped
 DataDomain operation and must never drop its shared realm/database.
