@@ -66,6 +66,22 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/RealmMembershipEntry' }
+    put:
+      operationId: upsertRealmMembership
+      summary: Create or update an organization/account membership in a realm
+      parameters:
+        - { name: refName, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RealmMembershipEntry' }
+      responses:
+        '200':
+          description: persisted membership
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RealmMembershipEntry' }
   /control/users/{userId}/realms:
     get:
       operationId: realmsForUser
@@ -79,6 +95,22 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/UserRealmRoleEntry' }
+    put:
+      operationId: upsertUserRealmRole
+      summary: Create or update one of the user's per-realm role assignments
+      parameters:
+        - { name: userId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserRealmRoleEntry' }
+      responses:
+        '200':
+          description: persisted role assignment
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserRealmRoleEntry' }
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }

@@ -50,6 +50,14 @@ public class RemoteMembershipClient {
         return members;
     }
 
+    public RealmTenantMembership upsertRealmMembership(RealmTenantMembership membership) {
+        RealmMembershipEntry entry = toEntry(membership);
+        RealmMembershipEntry persisted = call(
+            () -> client.upsertRealmMembership(membership.getRealmRefName(), entry),
+            "upserting membership in realm " + membership.getRealmRefName());
+        return fromEntry(persisted);
+    }
+
     public List<UserRealmRole> realmsForUser(String userId) {
         List<UserRealmRoleEntry> entries = call(() -> client.realmsForUser(userId),
             "realms for user " + userId);
@@ -66,6 +74,14 @@ public class RemoteMembershipClient {
         return assignments;
     }
 
+    public UserRealmRole upsertUserRealmRole(UserRealmRole assignment) {
+        UserRealmRoleEntry entry = toEntry(assignment);
+        UserRealmRoleEntry persisted = call(
+            () -> client.upsertUserRealmRole(assignment.getUserId(), entry),
+            "upserting realm role for user " + assignment.getUserId());
+        return fromEntry(persisted);
+    }
+
     private <T> T call(java.util.function.Supplier<T> supplier, String what) {
         try {
             return supplier.get();
@@ -76,5 +92,48 @@ public class RemoteMembershipClient {
             throw new IllegalStateException("Control plane unreachable for " + what
                 + " — failing loud, no local fallback.", e);
         }
+    }
+
+
+    public static RealmMembershipEntry toEntry(RealmTenantMembership membership) {
+        RealmMembershipEntry entry = new RealmMembershipEntry();
+        entry.setRealmRefName(membership.getRealmRefName());
+        entry.setOrganizationRefName(membership.getOrganizationRefName());
+        entry.setAccountId(membership.getAccountId());
+        entry.setTenantId(membership.getTenantId());
+        entry.setMembershipRole(membership.getMembershipRole());
+        entry.setParticipationStatus(membership.getParticipationStatus());
+        return entry;
+    }
+
+    public static RealmTenantMembership fromEntry(RealmMembershipEntry entry) {
+        RealmTenantMembership membership = new RealmTenantMembership();
+        membership.setRealmRefName(entry.getRealmRefName());
+        membership.setOrganizationRefName(entry.getOrganizationRefName());
+        membership.setAccountId(entry.getAccountId());
+        membership.setTenantId(entry.getTenantId());
+        membership.setMembershipRole(entry.getMembershipRole());
+        membership.setParticipationStatus(entry.getParticipationStatus());
+        return membership;
+    }
+
+    public static UserRealmRoleEntry toEntry(UserRealmRole assignment) {
+        UserRealmRoleEntry entry = new UserRealmRoleEntry();
+        entry.setUserId(assignment.getUserId());
+        entry.setRealmRefName(assignment.getRealmRefName());
+        entry.setRoles(assignment.getRoles());
+        entry.setSponsoringOrgRefName(assignment.getSponsoringOrgRefName());
+        entry.setStatus(assignment.getStatus());
+        return entry;
+    }
+
+    public static UserRealmRole fromEntry(UserRealmRoleEntry entry) {
+        UserRealmRole assignment = new UserRealmRole();
+        assignment.setUserId(entry.getUserId());
+        assignment.setRealmRefName(entry.getRealmRefName());
+        assignment.setRoles(entry.getRoles());
+        assignment.setSponsoringOrgRefName(entry.getSponsoringOrgRefName());
+        assignment.setStatus(entry.getStatus());
+        return assignment;
     }
 }

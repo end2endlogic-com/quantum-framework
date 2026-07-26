@@ -69,6 +69,41 @@ public class TestRemoteMembershipClient {
     }
 
     @Test
+    public void mapsTypedMembershipAndRoleWrites() {
+        DefaultEndpoint endpoint = new DefaultEndpoint() {
+            @Override public RealmCatalogEntry findRealmByEmailDomain(String e) { return null; }
+            @Override public RealmCatalogEntry findRealmByRefName(String r) { return null; }
+            @Override public RealmCatalogEntry registerRealm(RealmCatalogEntry b) { return b; }
+            @Override public List<RealmMembershipEntry> membersOfRealm(String refName) { return List.of(); }
+            @Override public List<UserRealmRoleEntry> realmsForUser(String userId) { return List.of(); }
+            @Override public RealmMembershipEntry upsertRealmMembership(String refName, RealmMembershipEntry body) {
+                Assertions.assertEquals(refName, body.getRealmRefName());
+                return body;
+            }
+            @Override public UserRealmRoleEntry upsertUserRealmRole(String userId, UserRealmRoleEntry body) {
+                Assertions.assertEquals(userId, body.getUserId());
+                return body;
+            }
+        };
+        RemoteMembershipClient client = new RemoteMembershipClient(endpoint);
+
+        RealmTenantMembership membership = new RealmTenantMembership();
+        membership.setRealmRefName("helixor-ai");
+        membership.setOrganizationRefName("HelixorAI");
+        membership.setMembershipRole("owner");
+        Assertions.assertEquals("HelixorAI",
+            client.upsertRealmMembership(membership).getOrganizationRefName());
+
+        UserRealmRole assignment = new UserRealmRole();
+        assignment.setUserId("erik@helixor.ai");
+        assignment.setRealmRefName("helixor-ai");
+        assignment.setRoles(List.of("admin"));
+        assignment.setStatus("active");
+        Assertions.assertEquals(List.of("admin"),
+            client.upsertUserRealmRole(assignment).getRoles());
+    }
+
+    @Test
     public void unreachableControlPlaneFailsLoud() {
         RemoteMembershipClient client = new RemoteMembershipClient(new DefaultEndpoint() {
             @Override public RealmCatalogEntry findRealmByEmailDomain(String e) { return null; }

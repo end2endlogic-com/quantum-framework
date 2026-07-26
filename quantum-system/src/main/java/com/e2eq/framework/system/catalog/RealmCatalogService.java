@@ -69,8 +69,8 @@ public class RealmCatalogService {
             throw new IllegalArgumentException("realm.refName must be set before registration");
         }
         Realm saved = systemDirectory.registerRealm(realm);
-        Log.infof("RealmCatalogService: registered realm %s in system realm %s",
-                saved.getRefName(), systemRealmId());
+        Log.infof("RealmCatalogService: registered realm %s through the configured system directory",
+                saved.getRefName());
         return saved;
     }
 }
