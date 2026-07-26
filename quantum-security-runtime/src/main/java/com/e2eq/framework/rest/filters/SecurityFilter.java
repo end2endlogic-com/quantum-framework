@@ -99,9 +99,6 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     @ConfigProperty(name = "quantum.security.scripting.allowAllAccess", defaultValue = "false")
     boolean scriptingAllowAllAccess;
 
-    @ConfigProperty(name = "quantum.security.scripting.maxMemoryBytes", defaultValue = "10000000")
-    long scriptingMaxMemoryBytes;
-
     @ConfigProperty(name = "quantum.security.scripting.maxStatements", defaultValue = "10000")
     long scriptingMaxStatements;
 
@@ -115,15 +112,6 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     // database. Default false preserves the strict local-credential behavior.
     @ConfigProperty(name = "quantum.auth.trust-token-claims", defaultValue = "false")
     boolean trustTokenClaims;
-
-    // Application audience admission: when set to this application's registry refName, a validated
-    // JWT that carries an aud claim must include it (401 otherwise — no silent fallback). Tokens
-    // without any aud claim are legacy-allowed until audience-required flips to true. Unset → no check.
-    @ConfigProperty(name = "quantum.auth.expected-audience")
-    java.util.Optional<String> expectedAudience;
-
-    @ConfigProperty(name = "quantum.auth.audience-required", defaultValue = "false")
-    boolean audienceRequired;
 
     @Inject
     com.e2eq.framework.security.runtime.RuleContext ruleContext;
@@ -155,10 +143,6 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         // we ignore the hello endpoint because it should never require authroization
         // and is used for heart beats, so we just let it go through
         if (requestContext.getUriInfo().getPath().contains("hello")) {
-            return;
-        }
-
-        if (!enforceAudience(requestContext)) {
             return;
         }
 
@@ -217,50 +201,6 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
         // Note: @PermitAll endpoints bypass policy checks at the Jakarta Security level,
         // but we still set up the contexts here for consistency and potential use by other filters/components.
-    }
-
-    /**
-     * Application-audience admission (see {@link com.e2eq.framework.service.application.AudiencePolicy}).
-     * Runs whenever a validated JWT is present — including @PermitAll endpoints, because a
-     * wrong-audience token must never be allowed to build a principal here.
-     *
-     * @return true to continue the filter chain; false when the request was aborted
-     */
-    private boolean enforceAudience(ContainerRequestContext requestContext) {
-        if (expectedAudience.isEmpty() || jwt == null || jwt.getRawToken() == null) {
-            return true;
-        }
-        com.e2eq.framework.service.application.AudiencePolicy.Decision decision =
-            com.e2eq.framework.service.application.AudiencePolicy.evaluate(
-                expectedAudience, audienceRequired, jwt.getAudience());
-        switch (decision) {
-            case ALLOW:
-                return true;
-            case REJECT_MISSING_AUDIENCE:
-                Log.warnf("Rejected token with no aud claim (audience-required): sub=%s path=%s",
-                    jwt.getSubject(), requestContext.getUriInfo().getPath());
-                requestContext.abortWith(
-                    Response.status(Response.Status.UNAUTHORIZED)
-                        .entity(apiError(
-                            "AUDIENCE_REQUIRED",
-                            "Token carries no aud claim; this service requires audience '"
-                                + expectedAudience.get().trim() + "'"))
-                        .build());
-                return false;
-            case REJECT_WRONG_AUDIENCE:
-            default:
-                Log.warnf("Rejected token for wrong audience: sub=%s aud=%s expected=%s path=%s",
-                    jwt.getSubject(), jwt.getAudience(), expectedAudience.get(),
-                    requestContext.getUriInfo().getPath());
-                requestContext.abortWith(
-                    Response.status(Response.Status.UNAUTHORIZED)
-                        .entity(apiError(
-                            "WRONG_AUDIENCE",
-                            "Token aud claim does not include this application's audience '"
-                                + expectedAudience.get().trim() + "'"))
-                        .build());
-                return false;
-        }
     }
 
         @Override
@@ -498,7 +438,6 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         boolean enabled = scriptingEnabled;
         boolean allowAll = scriptingAllowAllAccess;
         long timeoutMs = scriptingTimeoutMillis;
-        long maxMemoryBytes = scriptingMaxMemoryBytes;
         long maxStatementsValue = scriptingMaxStatements;
         try {
             org.eclipse.microprofile.config.Config cfg = org.eclipse.microprofile.config.ConfigProvider.getConfig();
@@ -506,12 +445,10 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 enabled = cfg.getOptionalValue("quantum.security.scripting.enabled", Boolean.class).orElse(Boolean.TRUE);
                 allowAll = cfg.getOptionalValue("quantum.security.scripting.allowAllAccess", Boolean.class).orElse(Boolean.FALSE);
                 timeoutMs = cfg.getOptionalValue("quantum.security.scripting.timeout.millis", Long.class).orElse(1500L);
-                maxMemoryBytes = cfg.getOptionalValue("quantum.security.scripting.maxMemoryBytes", Long.class).orElse(10000000L);
                 maxStatementsValue = cfg.getOptionalValue("quantum.security.scripting.maxStatements", Long.class).orElse(10000L);
             }
         } catch (Throwable ignored) {
             if (timeoutMs <= 0) timeoutMs = 1500L;
-            if (maxMemoryBytes <= 0) maxMemoryBytes = 10000000L;
             if (maxStatementsValue <= 0) maxStatementsValue = 10000L;
         }
         if (timeoutMs < 500L) timeoutMs = 1500L;
@@ -552,10 +489,6 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             return th;
         });
         try {
-            // Monitor memory usage
-            Runtime runtime = Runtime.getRuntime();
-            long beforeMemory = runtime.totalMemory() - runtime.freeMemory();
-
             java.util.concurrent.Future<Boolean> fut = executor.submit(() -> {
                 Engine eng = Engine.newBuilder().build();
                 try (Context c = Context.newBuilder("js")
@@ -582,15 +515,6 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 }
             });
             Boolean result = fut.get(Math.max(1L, timeoutMs), java.util.concurrent.TimeUnit.MILLISECONDS);
-
-            // Check memory usage
-            long afterMemory = runtime.totalMemory() - runtime.freeMemory();
-            long memoryUsed = afterMemory - beforeMemory;
-            if (memoryUsed > maxMemoryBytes) {
-                Log.warnf("Script exceeded memory limit: %d bytes (limit: %d bytes); returning false", memoryUsed, maxMemoryBytes);
-                return false;
-            }
-
             return result;
         } catch (java.util.concurrent.TimeoutException te) {
             Log.warnf("Impersonation script timed out after %d ms; returning false", (timeoutMs <= 0 ? 1500L : timeoutMs));
@@ -636,7 +560,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     }
 
     private ContextBuildResult buildBaseContextWithCredentials(String authHeader, String realm) {
-        if (authHeader != null && jwt != null) {
+        if (authHeader != null && currentJwt() != null) {
             return buildJwtContextWithCredentials(authHeader, realm);
         } else if (securityIdentity != null && !securityIdentity.isAnonymous()) {
             return buildIdentityContextWithCredentials(realm);
@@ -712,6 +636,11 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
         if (sub == null) {
             throw new IllegalStateException("sub attribute not provided but is required in token claims");
+        }
+        if (com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.SERVICE_TOKEN_TYPE
+                .equalsIgnoreCase(claimString(
+                        com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.TOKEN_TYPE_CLAIM))) {
+            return buildServiceClaimsContext(sub, realmOverride);
         }
 
         // Credentials are looked up from the configured system realm (global credential store)
@@ -872,12 +801,68 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         return new ContextBuildResult(context, null);
     }
 
+    /**
+     * Build the authenticated calling-service context. The service token does
+     * not carry a tenant/application resource binding; X-Realm remains request
+     * context and user delegation is applied separately after this step.
+     */
+    private ContextBuildResult buildServiceClaimsContext(String sub, String realmOverride) {
+        String contextRealm = realmOverride == null || realmOverride.isBlank()
+                ? envConfigUtils.getSystemRealm()
+                : realmOverride.trim();
+        String serviceUserId = claimString("userId");
+        if (serviceUserId == null) {
+            serviceUserId = sub;
+        }
+        String[] roles = securityIdentity == null
+                ? new String[0]
+                : securityIdentity.getRoles().toArray(String[]::new);
+
+        DataDomain dataDomain;
+        if (contextRealm.equalsIgnoreCase(envConfigUtils.getSystemRealm())) {
+            dataDomain = securityUtils.getSystemDataDomain();
+        } else {
+            Realm realm = systemDirectory.findRealmByRefName(contextRealm)
+                    .filter(candidate -> candidate.getDomainContext() != null)
+                    .orElseThrow(() -> new jakarta.ws.rs.ForbiddenException(
+                            "Delegated service request names an unregistered realm: " + contextRealm));
+            dataDomain = realm.getDomainContext().toDataDomain(serviceUserId);
+        }
+
+        PrincipalContext context = new PrincipalContext.Builder()
+                .withDefaultRealm(contextRealm)
+                .withDataDomain(dataDomain)
+                .withUserId(serviceUserId)
+                .withRoles(roles)
+                .withScope("SERVICE")
+                .build();
+        return new ContextBuildResult(context, null);
+    }
+
     /** Returns the given JWT claim as a non-blank String, or null. */
     private String claimString(String name) {
-        Object v = jwt.getClaim(name);
+        JsonWebToken currentJwt = currentJwt();
+        if (currentJwt == null) {
+            return null;
+        }
+        Object v = currentJwt.getClaim(name);
         if (v == null) return null;
         String s = v.toString();
         return s.isBlank() ? null : s;
+    }
+
+    /**
+     * The injected JWT is a request-scoped proxy and throws when Quarkus
+     * authenticates the request with another mechanism (for example,
+     * {@code @TestSecurity}). Inspect the established identity before touching
+     * that proxy.
+     */
+    private JsonWebToken currentJwt() {
+        if (securityIdentity == null || securityIdentity.getPrincipal() == null
+                || !(securityIdentity.getPrincipal() instanceof JsonWebToken)) {
+            return null;
+        }
+        return (JsonWebToken) securityIdentity.getPrincipal();
     }
 
     /**
@@ -899,7 +884,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 credentials,
                 context.getDefaultRealm(),
                 context.getUserId(),
-                jwt,
+                currentJwt(),
                 requestContext,
                 context.getDataDomain(),
                 context.getDomainContext()
@@ -963,6 +948,50 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 "Impersonation Subject: %s and impersonate UserId:%s can only pass one of them but not both",
                 impersonateSubject, impersonateUserId));
         }
+
+        String delegatedSubject = requestContext.getHeaderString(
+                com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.EFFECTIVE_SUBJECT);
+        String delegatedUserId = requestContext.getHeaderString(
+                com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.EFFECTIVE_USER_ID);
+        String originalSubject = requestContext.getHeaderString(
+                com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.ORIGINAL_SUBJECT);
+        String originalUserId = requestContext.getHeaderString(
+                com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.ORIGINAL_USER_ID);
+        String tokenType = claimString(
+                com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.TOKEN_TYPE_CLAIM);
+        validateDelegationHeaders(
+                tokenType,
+                delegatedSubject,
+                delegatedUserId,
+                originalSubject,
+                originalUserId);
+    }
+
+    static void validateDelegationHeaders(
+            String tokenType,
+            String delegatedSubject,
+            String delegatedUserId,
+            String originalSubject,
+            String originalUserId) {
+        boolean delegationRequested = nonBlank(delegatedSubject) || nonBlank(delegatedUserId)
+                || nonBlank(originalSubject) || nonBlank(originalUserId);
+        if (!delegationRequested) {
+            return;
+        }
+
+        if (!com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.SERVICE_TOKEN_TYPE
+                .equalsIgnoreCase(tokenType)) {
+            throw new jakarta.ws.rs.ForbiddenException(
+                    "Working-on-behalf-of identity is accepted only from a trusted service token");
+        }
+        if (!nonBlank(delegatedSubject) && !nonBlank(delegatedUserId)) {
+            throw new jakarta.ws.rs.BadRequestException(
+                    "Working-on-behalf-of requires an effective subject or userId");
+        }
+    }
+
+    private static boolean nonBlank(String value) {
+        return value != null && !value.isBlank();
     }
 
     private Optional<CredentialUserIdPassword> findCredentialByPrincipalClaims(String sub) {
@@ -1062,8 +1091,14 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     private PrincipalContext handleImpersonation(ContainerRequestContext requestContext, PrincipalContext baseContext) {
         String impersonateSubject = requestContext.getHeaderString("X-Impersonate-Subject");
         String impersonateUserId = requestContext.getHeaderString("X-Impersonate-UserId");
-        String actingOnBehalfOfSubject = requestContext.getHeaderString("X-Acting-On-Behalf-Of-Subject");
-        String actingOnBehalfOfUserId = requestContext.getHeaderString("X-Acting-On-Behalf-Of-UserId");
+        String actingOnBehalfOfSubject = requestContext.getHeaderString(
+                com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.EFFECTIVE_SUBJECT);
+        String actingOnBehalfOfUserId = requestContext.getHeaderString(
+                com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.EFFECTIVE_USER_ID);
+        String originallyAuthenticatedSubject = requestContext.getHeaderString(
+                com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.ORIGINAL_SUBJECT);
+        String originallyAuthenticatedUserId = requestContext.getHeaderString(
+                com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.ORIGINAL_USER_ID);
 
         if (impersonateSubject == null && impersonateUserId == null) {
             return new PrincipalContext.Builder()
@@ -1079,11 +1114,13 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                     .withOriginalDataDomain(baseContext.getOriginalDataDomain())
                     .withActingOnBehalfOfSubject(actingOnBehalfOfSubject)
                     .withActingOnBehalfOfUserId(actingOnBehalfOfUserId)
+                    .withImpersonatedBySubject(originallyAuthenticatedSubject)
+                    .withImpersonatedByUserId(originallyAuthenticatedUserId)
                     .build();
         }
 
         // Find the original credential for impersonation validation
-        String sub = jwt != null ? jwt.getClaim("sub") : null;
+        String sub = claimString("sub");
         if (sub == null) {
             throw new IllegalStateException("Cannot impersonate without valid JWT subject");
         }
