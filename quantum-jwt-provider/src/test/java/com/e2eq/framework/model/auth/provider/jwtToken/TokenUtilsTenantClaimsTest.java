@@ -57,4 +57,20 @@ class TokenUtilsTenantClaimsTest {
         assertFalse(claims.contains("\"realm\""), claims);
         assertFalse(claims.contains("\"tenantId\""), claims);
     }
+
+    @Test
+    void authenticatedUserTokenIsNotBoundToAnApplication() throws Exception {
+        TokenUtils.configure("privateKey.pem", "publicKey.pem");
+
+        String jwt = TokenUtils.generateAuthenticatedUserToken(
+                "michael-subject", "michael", Set.of("user"),
+                "demo-realm", "demo", "demo-org", "1001", "*",
+                TokenUtils.expiresAt(3600), "https://auth.example.com");
+
+        String claims = payloadJson(jwt);
+        assertTrue(claims.contains("\"sub\":\"michael-subject\""), claims);
+        assertTrue(claims.contains("\"realm\":\"demo-realm\""), claims);
+        assertFalse(claims.contains("\"aud\""), claims);
+        assertFalse(claims.contains("\"azp\""), claims);
+    }
 }

@@ -573,6 +573,20 @@ public class TenantProvisioningService implements TenantLifecycle {
             context.getResult().addWarning("Admin user already exists; no user changes were made.");
         }
 
+        // The SYSTEM-realm directory profile is NOT optional and NOT a "projection":
+        // CustomTokenAuthProvider rejects a USER credential that has no profile in the system
+        // realm as a "half-created account", so provisioning without it yields an admin who
+        // cannot log in while every step still reports success. The tenant-realm projection
+        // below stays opt-in (createTenantIdentityProjections) because that is a genuine
+        // compatibility concern; this one is a login precondition.
+        ensureUserProfileInRealm(
+            context.getSystemRealm(),
+            context.getCommand().getAdminUserId(),
+            context.getCommand().getAdminUserId(),
+            context.getDesiredRoles(),
+            context.getDomainContext()
+        );
+
         ensureUserProfileProjectionIfEnabled(
             context.getRealmId(),
             context.getCommand().getAdminUserId(),
@@ -697,6 +711,40 @@ public class TenantProvisioningService implements TenantLifecycle {
                 migrationService.checkInitialized(context.getRealmId());
             })
         );
+        verifyAdminIsLoginCapable(context);
+    }
+
+    /**
+     * A provisioned realm nobody can sign in to is not provisioned.
+     *
+     * <p>Database initialization was the only thing this step used to check, which is how a run
+     * could report COMPLETED while the admin had a credential but no directory profile — an
+     * account {@code CustomTokenAuthProvider} refuses as half-created. Verification now asserts
+     * the login PRECONDITIONS rather than authenticating (provisioning should not mint tokens):
+     * the credential exists in the system realm, and so does its directory profile.</p>
+     */
+    private void verifyAdminIsLoginCapable(ProvisioningContext context) {
+        String systemRealm = context.getSystemRealm();
+        String userId = context.getCommand().getAdminUserId();
+        List<String> missing = new ArrayList<>();
+
+        Optional<CredentialUserIdPassword> credential =
+            credentialRepo.findByUserId(userId, systemRealm, true);
+        if (credential.isEmpty()) {
+            missing.add("credential in realm " + systemRealm);
+        }
+        if (userProfileRepo.getByUserIdWithIgnoreRules(systemRealm, userId).isEmpty()) {
+            missing.add("directory profile (UserProfile) in realm " + systemRealm
+                + " — the login check requires one for USER accounts");
+        }
+
+        if (!missing.isEmpty()) {
+            throw new IllegalStateException(String.format(
+                "Realm %s is not usable: admin %s is missing %s. Provisioning must not report "
+                    + "success for an account that cannot authenticate.",
+                context.getRealmId(), userId, String.join("; ", missing)));
+        }
+        Log.infof("Verified admin %s is login-capable in realm %s", userId, context.getRealmId());
     }
 
     private void ensureCredentialExists(String realmId,
