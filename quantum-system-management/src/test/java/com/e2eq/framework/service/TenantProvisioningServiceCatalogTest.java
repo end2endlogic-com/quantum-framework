@@ -1,9 +1,13 @@
 package com.e2eq.framework.service;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.api.tenant.TenantDeploymentTopology;
 import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.security.Realm;
+import com.e2eq.framework.model.security.RealmTenantMembership;
 import com.e2eq.framework.system.catalog.RealmCatalogService;
+import com.e2eq.framework.system.membership.RealmMembershipService;
+import com.e2eq.framework.util.EnvConfigUtils;
 import org.junit.jupiter.api.Test;
 
 import java.util.Optional;
@@ -19,6 +23,7 @@ class TenantProvisioningServiceCatalogTest {
     void initializeContextKeepsEmailDomainSeparateFromDataDomainIdentifiers() {
         TenantProvisioningService service = new TenantProvisioningService();
         service.realmCatalog = new RecordingRealmCatalog(null);
+        service.envConfigUtils = env();
 
         TenantProvisioningService.ProvisionTenantCommand command =
             TenantProvisioningService.ProvisionTenantCommand.builder()
@@ -40,6 +45,78 @@ class TenantProvisioningServiceCatalogTest {
         assertEquals("basf-com", context.getDomainContext().getOrgRefName());
         assertEquals("basf-com", context.getDataDomain().getOrgRefName());
         assertEquals("basf-com", context.getDesiredRealm().getDatabaseName());
+        assertEquals(TenantDeploymentTopology.DEDICATED_REALM, context.getDeploymentTopology());
+    }
+
+    @Test
+    void pooledContextSeparatesTenantVisibilityFromRealmPlacement() {
+        Realm pool = realm("shared-app", "shared.example", "platform-owner");
+        RecordingRealmCatalog catalog = new RecordingRealmCatalog(pool);
+        RecordingMembershipService memberships = new RecordingMembershipService();
+        TenantProvisioningService service = new TenantProvisioningService();
+        service.realmCatalog = catalog;
+        service.realmMembershipService = memberships;
+        service.envConfigUtils = env();
+
+        TenantProvisioningService.ProvisioningContext context = service.initializeContext(
+            TenantProvisioningService.ProvisionTenantCommand.builder()
+                .tenantDisplayName("Acme Corp")
+                .tenantEmailDomain("acme.com")
+                .orgRefName("acme.com")
+                .accountId("4444555566")
+                .adminUserId("admin@acme.com")
+                .adminSubject("subject-acme")
+                .adminPassword("unused-in-context-test")
+                .deploymentTopology(TenantDeploymentTopology.POOLED_REALM)
+                .placementRealmId("shared-app")
+                .build()
+        );
+
+        assertEquals("shared-app", context.getRealmId());
+        assertEquals("shared-app", context.getDomainContext().getDefaultRealm());
+        assertEquals("acme-com", context.getTenantId());
+        assertEquals("acme-com", context.getDomainContext().getTenantId());
+        assertEquals("acme-com", context.getDataDomain().getTenantId());
+
+        service.ensureRealmCatalog(context);
+        service.runRealmMigrations(context);
+        service.ensureRealmMembership(context);
+
+        assertFalse(catalog.registerCalled);
+        assertEquals(pool, context.getDesiredRealm());
+        assertEquals(RealmTenantMembership.MEMBERSHIP_ROLE_PARTICIPANT,
+            memberships.saved.getMembershipRole());
+        assertEquals("shared-app", memberships.saved.getRealmRefName());
+        assertEquals("acme-com", memberships.saved.getTenantId());
+        assertEquals("admin@acme.com", memberships.saved.getDefaultAdminUserId());
+    }
+
+    @Test
+    void pooledAdmissionFailsClosedWhenTargetRealmDoesNotExist() {
+        TenantProvisioningService service = new TenantProvisioningService();
+        service.realmCatalog = new RecordingRealmCatalog(null);
+        service.envConfigUtils = env();
+
+        TenantProvisioningService.ProvisioningContext context = service.initializeContext(
+            TenantProvisioningService.ProvisionTenantCommand.builder()
+                .tenantDisplayName("Acme Corp")
+                .tenantEmailDomain("acme.com")
+                .orgRefName("acme.com")
+                .accountId("4444555566")
+                .adminUserId("admin@acme.com")
+                .adminSubject("subject-acme")
+                .deploymentTopology(TenantDeploymentTopology.POOLED_REALM)
+                .placementRealmId("missing-pool")
+                .build()
+        );
+
+        IllegalStateException error = assertThrows(
+            IllegalStateException.class,
+            () -> service.ensureRealmCatalog(context)
+        );
+
+        assertTrue(error.getMessage().contains("existing realm catalog entry"));
+        assertFalse(service.realmCatalog.findByRefName("missing-pool").isPresent());
     }
 
     @Test
@@ -57,6 +134,7 @@ class TenantProvisioningServiceCatalogTest {
         RecordingRealmCatalog catalog = new RecordingRealmCatalog(existing);
         TenantProvisioningService service = new TenantProvisioningService();
         service.realmCatalog = catalog;
+        service.envConfigUtils = env();
 
         TenantProvisioningService.ProvisionTenantCommand command =
             TenantProvisioningService.ProvisionTenantCommand.builder()
@@ -86,6 +164,12 @@ class TenantProvisioningServiceCatalogTest {
         assertTrue(error.getMessage().contains("northstar.field.service.com"));
         assertTrue(error.getMessage().contains("northstar-field-service.com"));
         assertFalse(catalog.registerCalled);
+    }
+
+    private static EnvConfigUtils env() {
+        EnvConfigUtils env = new EnvConfigUtils();
+        env.setSystemRealm("system-com");
+        return env;
     }
 
     private static Realm realm(String refName, String emailDomain, String tenantId) {
@@ -148,6 +232,16 @@ class TenantProvisioningServiceCatalogTest {
         public Realm register(Realm realm) {
             registerCalled = true;
             return realm;
+        }
+    }
+
+    private static final class RecordingMembershipService extends RealmMembershipService {
+        private RealmTenantMembership saved;
+
+        @Override
+        public RealmTenantMembership upsertMembership(RealmTenantMembership membership) {
+            saved = membership;
+            return membership;
         }
     }
 }

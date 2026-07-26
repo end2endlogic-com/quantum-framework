@@ -1,6 +1,7 @@
 package com.e2eq.framework.rest.resources.security;
 
 import com.e2eq.framework.annotations.FunctionalMapping;
+import com.e2eq.framework.api.tenant.TenantDeploymentTopology;
 import com.e2eq.framework.rest.models.RestError;
 import com.e2eq.framework.rest.requests.TenantProvisioningRetryRequest;
 import com.e2eq.framework.rest.responses.TenantProvisioningRunResponse;
@@ -49,6 +50,8 @@ public class TenantProvisioningResource {
         public String adminSubject;                // optional stable subject override; defaults to adminUserId
         @NotBlank public String adminPassword;     // plaintext; hashed in service
         public String applicationId;               // owning application; falls back to quantum.tenant.provisioning.default-application
+        public TenantDeploymentTopology deploymentTopology; // defaults from deployment configuration
+        public String placementRealmId;             // required for POOLED_REALM unless configured globally
         public List<String> archetypes;            // legacy alias for seedArchetypes
         public List<String> seedArchetypes;        // optional list of seed-framework archetype names
     }
@@ -86,6 +89,8 @@ public class TenantProvisioningResource {
                     .adminSubject(resolveAdminSubject(req))
                     .adminPassword(req.adminPassword)
                     .applicationId(req.applicationId)
+                    .deploymentTopology(req.deploymentTopology)
+                    .placementRealmId(req.placementRealmId)
                     .archetypes(archetypes)
                     .overwriteAll(true)
                     .build()

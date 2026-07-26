@@ -17,6 +17,8 @@ public class TenantProvisioningRunResponse {
     private String runtimeExecutionRef;
     private String runtimeStatus;
     private String realmId;
+    private String tenantId;
+    private String deploymentTopology;
     private String tenantDisplayName;
     private String tenantEmailDomain;
     private String orgRefName;

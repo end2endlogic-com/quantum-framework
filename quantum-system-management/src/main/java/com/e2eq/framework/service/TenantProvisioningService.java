@@ -2,6 +2,7 @@ package com.e2eq.framework.service;
 
 import com.e2eq.framework.api.system.SystemDirectory;
 import com.e2eq.framework.api.tenant.TenantDeleteResult;
+import com.e2eq.framework.api.tenant.TenantDeploymentTopology;
 import com.e2eq.framework.api.tenant.TenantLifecycle;
 import com.e2eq.framework.api.tenant.TenantProvisionRequest;
 import com.e2eq.framework.api.tenant.TenantProvisionResult;
@@ -51,8 +52,9 @@ import java.io.IOException;
 import java.util.*;
 
 /**
- * Service to provision a new tenant: creates a Realm, runs migrations on that realm DB,
- * and seeds an initial admin credential in the newly created realm.
+ * Service to provision a tenant into a dedicated realm or admit it into an
+ * existing pooled realm. Realm controls Mongo placement/lifecycle; DataDomain
+ * controls tenant visibility.
  */
 @ApplicationScoped
 public class TenantProvisioningService implements TenantLifecycle {
@@ -100,10 +102,29 @@ public class TenantProvisioningService implements TenantLifecycle {
     @ConfigProperty(name = "quantum.tenant.provisioning.default-application")
     Optional<String> defaultApplicationId;
 
+    /**
+     * Deployment default used when a command does not explicitly select a
+     * topology. Dedicated mode preserves the historical behavior.
+     */
+    @ConfigProperty(
+        name = "quantum.tenant.provisioning.deployment-topology",
+        defaultValue = "DEDICATED_REALM"
+    )
+    TenantDeploymentTopology defaultDeploymentTopology;
+
+    /**
+     * Existing realm used for pooled admission when the command does not name
+     * one. Required whenever the resolved topology is POOLED_REALM.
+     */
+    @ConfigProperty(name = "quantum.tenant.provisioning.pooled-realm")
+    Optional<String> defaultPooledRealmId;
+
     @Inject ApplicationRepo applicationRepo;
 
     public static class ProvisionResult {
         public String realmId;
+        public String tenantId;
+        public TenantDeploymentTopology deploymentTopology;
         public boolean realmCreated;
         public boolean userCreated;
         public List<String> appliedSeedArchetypes = new java.util.ArrayList<>();
@@ -132,6 +153,10 @@ public class TenantProvisioningService implements TenantLifecycle {
         private String adminPassword;
         /** Owning application for the realm; falls back to quantum.tenant.provisioning.default-application. */
         private String applicationId;
+        /** Optional command override; otherwise the deployment configuration applies. */
+        private TenantDeploymentTopology deploymentTopology;
+        /** Existing target realm for POOLED_REALM; unused for DEDICATED_REALM. */
+        private String placementRealmId;
         @Builder.Default
         private List<String> archetypes = List.of();
         @Builder.Default
@@ -145,6 +170,8 @@ public class TenantProvisioningService implements TenantLifecycle {
         private ProvisionResult result;
         private String systemRealm;
         private String realmId;
+        private String tenantId;
+        private TenantDeploymentTopology deploymentTopology;
         private String normalizedTenantDisplayName;
         private DomainContext domainContext;
         private DataDomain dataDomain;
@@ -227,17 +254,21 @@ public class TenantProvisioningService implements TenantLifecycle {
         Objects.requireNonNull(command.getAdminUserId(), "adminUserId cannot be null");
         Objects.requireNonNull(command.getAdminSubject(), "adminSubject cannot be null");
 
-        String realmId = normalizeDataDomainIdentifier(command.getTenantEmailDomain());
+        TenantDeploymentTopology deploymentTopology = resolveDeploymentTopology(command);
+        String tenantId = normalizeDataDomainIdentifier(command.getTenantEmailDomain());
+        String realmId = resolvePlacementRealmId(command, deploymentTopology, tenantId);
         String normalizedTenantDisplayName = command.getTenantDisplayName() == null || command.getTenantDisplayName().isBlank()
-            ? realmId
+            ? tenantId
             : command.getTenantDisplayName().trim();
         String dataDomainOrgRefName = normalizeDataDomainIdentifier(command.getOrgRefName());
 
         ProvisionResult result = new ProvisionResult();
         result.realmId = realmId;
+        result.tenantId = tenantId;
+        result.deploymentTopology = deploymentTopology;
 
         DomainContext dc = DomainContext.builder()
-            .tenantId(realmId)
+            .tenantId(tenantId)
             .orgRefName(dataDomainOrgRefName)
             .accountId(command.getAccountId())
             .defaultRealm(realmId)
@@ -299,6 +330,8 @@ public class TenantProvisioningService implements TenantLifecycle {
             .result(result)
             .systemRealm(envConfigUtils.getSystemRealm())
             .realmId(realmId)
+            .tenantId(tenantId)
+            .deploymentTopology(deploymentTopology)
             .normalizedTenantDisplayName(normalizedTenantDisplayName)
             .domainContext(dc)
             .dataDomain(dataDomain)
@@ -316,6 +349,43 @@ public class TenantProvisioningService implements TenantLifecycle {
                 .orElse(DEFAULT_DEMO_PASSWORD))
             .archetypes(normalizeArchetypes(command.getArchetypes()))
             .build();
+    }
+
+    private TenantDeploymentTopology resolveDeploymentTopology(ProvisionTenantCommand command) {
+        if (command.getDeploymentTopology() != null) {
+            return command.getDeploymentTopology();
+        }
+        return defaultDeploymentTopology == null
+            ? TenantDeploymentTopology.DEDICATED_REALM
+            : defaultDeploymentTopology;
+    }
+
+    private String resolvePlacementRealmId(ProvisionTenantCommand command,
+                                           TenantDeploymentTopology topology,
+                                           String tenantId) {
+        if (topology == TenantDeploymentTopology.DEDICATED_REALM) {
+            if (command.getPlacementRealmId() != null && !command.getPlacementRealmId().isBlank()
+                && !tenantId.equals(command.getPlacementRealmId().trim())) {
+                throw new IllegalArgumentException(
+                    "placementRealmId cannot override the tenant-derived realm in DEDICATED_REALM mode");
+            }
+            return tenantId;
+        }
+
+        String commandRealm = command.getPlacementRealmId();
+        Optional<String> configuredRealm = defaultPooledRealmId == null
+            ? Optional.empty()
+            : defaultPooledRealmId;
+        String realmId = commandRealm != null && !commandRealm.isBlank()
+            ? commandRealm.trim()
+            : configuredRealm.map(String::trim).filter(value -> !value.isBlank()).orElse(null);
+        if (realmId == null) {
+            throw new IllegalArgumentException(
+                "placementRealmId is required for POOLED_REALM tenant admission. "
+                    + "Pass it in the provision command or configure "
+                    + "quantum.tenant.provisioning.pooled-realm.");
+        }
+        return realmId;
     }
 
     /** Command applicationId, else the configured platform default, else null. */
@@ -358,6 +428,29 @@ public class TenantProvisioningService implements TenantLifecycle {
 
     public void ensureRealmCatalog(ProvisioningContext context) {
         Log.infof("  computed realmId: %s", context.getRealmId());
+        if (context.getDeploymentTopology() == TenantDeploymentTopology.POOLED_REALM) {
+            Realm poolRealm = realmCatalog.findByRefName(context.getRealmId())
+                .orElseThrow(() -> new IllegalStateException(
+                    "POOLED_REALM admission requires an existing realm catalog entry: "
+                        + context.getRealmId()));
+            if (poolRealm.getDatabaseName() == null || poolRealm.getDatabaseName().isBlank()) {
+                throw new IllegalStateException(
+                    "POOLED_REALM target realm has no databaseName: " + context.getRealmId());
+            }
+            String requestedApplication = resolveApplicationIdOrNull(context.getCommand());
+            String poolApplication = applicationRefName(poolRealm);
+            if (requestedApplication != null
+                && !requestedApplication.equalsIgnoreCase(Objects.toString(poolApplication, ""))) {
+                throw new IllegalStateException(String.format(
+                    "POOLED_REALM application conflict: realm '%s' belongs to '%s', requested '%s'",
+                    context.getRealmId(), poolApplication, requestedApplication));
+            }
+            context.setDesiredRealm(poolRealm);
+            Log.infof("Resolved existing pooled realm %s for tenant %s",
+                context.getRealmId(), context.getTenantId());
+            return;
+        }
+
         Optional<Realm> existingByEmailDomain = realmCatalog.findByEmailDomain(
             context.getCommand().getTenantEmailDomain()
         );
@@ -493,11 +586,19 @@ public class TenantProvisioningService implements TenantLifecycle {
         upsertRealmMembership(
             context.getDesiredRealm(),
             context.getDomainContext(),
-            context.getArchetypes()
+            context.getArchetypes(),
+            context.getDeploymentTopology(),
+            context.getNormalizedTenantDisplayName(),
+            context.getCommand().getAdminUserId()
         );
     }
 
     public void runRealmMigrations(ProvisioningContext context) {
+        if (context.getDeploymentTopology() == TenantDeploymentTopology.POOLED_REALM) {
+            Log.infof("Skipping realm migrations for pooled tenant %s in existing realm %s",
+                context.getTenantId(), context.getRealmId());
+            return;
+        }
         withDropPendingRetry(context.getRealmId(), "run migrations", () ->
             SecurityCallScope.runWithContexts(context.getTenantPrincipal(), context.getMigrationResource(), () ->
                 migrationService.runAllUnRunMigrations(context.getRealmId(), context.getEmitter())
@@ -706,12 +807,17 @@ public class TenantProvisioningService implements TenantLifecycle {
     }
 
     public void verifyRealmInitialization(ProvisioningContext context) {
-        withDropPendingRetry(context.getRealmId(), "apply indexes and verify initialization", () ->
-            SecurityCallScope.runWithContexts(context.getTenantPrincipal(), context.getMigrationResource(), () -> {
-                migrationService.applyIndexes(context.getRealmId());
-                migrationService.checkInitialized(context.getRealmId());
-            })
-        );
+        if (context.getDeploymentTopology() == TenantDeploymentTopology.DEDICATED_REALM) {
+            withDropPendingRetry(context.getRealmId(), "apply indexes and verify initialization", () ->
+                SecurityCallScope.runWithContexts(context.getTenantPrincipal(), context.getMigrationResource(), () -> {
+                    migrationService.applyIndexes(context.getRealmId());
+                    migrationService.checkInitialized(context.getRealmId());
+                })
+            );
+        } else {
+            Log.infof("Skipping realm index initialization for pooled tenant %s in existing realm %s",
+                context.getTenantId(), context.getRealmId());
+        }
         verifyAdminIsLoginCapable(context);
     }
 
@@ -957,7 +1063,10 @@ public class TenantProvisioningService implements TenantLifecycle {
 
     private void upsertRealmMembership(Realm realm,
                                        DomainContext dc,
-                                       List<String> archetypes) {
+                                       List<String> archetypes,
+                                       TenantDeploymentTopology deploymentTopology,
+                                       String tenantDisplayName,
+                                       String tenantAdminUserId) {
         String primaryArchetype = (archetypes != null && !archetypes.isEmpty()) ? archetypes.get(0) : null;
         String provisioningMode = primaryArchetype == null
                 ? "CUSTOM"
@@ -972,24 +1081,27 @@ public class TenantProvisioningService implements TenantLifecycle {
 
         RealmTenantMembership membership = RealmTenantMembership.builder()
                 .refName(membershipRefName)
-                .displayName(realm.getDisplayName())
+                .displayName(tenantDisplayName)
                 .realmRefName(realm.getRefName())
                 .realmDisplayName(realm.getDisplayName())
                 .organizationRefName(dc.getOrgRefName())
                 .accountId(dc.getAccountId())
                 .tenantId(dc.getTenantId())
                 .realmEmailDomain(realm.getEmailDomain())
-                .defaultAdminUserId(realm.getDefaultAdminUserId())
+                .defaultAdminUserId(tenantAdminUserId)
                 .realmEditionRefName(primaryArchetype)
                 .provisioningMode(provisioningMode)
                 .participationStatus("ACTIVE")
+                .membershipRole(deploymentTopology == TenantDeploymentTopology.POOLED_REALM
+                    ? RealmTenantMembership.MEMBERSHIP_ROLE_PARTICIPANT
+                    : RealmTenantMembership.MEMBERSHIP_ROLE_OWNER)
                 .setupStatus(realm.getSetupStatus() == null ? null : realm.getSetupStatus().name())
                 .setupCompletionPercent(realm.getSetupCompletionPercent())
                 .dataDomain(DataDomain.builder()
                         .orgRefName(dc.getOrgRefName())
                         .accountNum(dc.getAccountId())
                         .tenantId(dc.getTenantId())
-                        .ownerId(realm.getDefaultAdminUserId())
+                        .ownerId(tenantAdminUserId)
                         .build())
                 .build();
 
@@ -1123,13 +1235,16 @@ public class TenantProvisioningService implements TenantLifecycle {
             .adminUserId(request.adminUserId())
             .adminSubject(request.adminSubject())
             .adminPassword(request.adminPassword())
+            .deploymentTopology(request.deploymentTopology())
+            .placementRealmId(request.placementRealmId())
             .archetypes(request.archetypes())
             .overwriteAll(request.overwriteAll())
             .build();
     }
 
     static TenantProvisionResult toContractResult(ProvisionResult r) {
-        return new TenantProvisionResult(r.realmId, r.realmCreated, r.userCreated,
+        return new TenantProvisionResult(r.realmId, r.tenantId, r.deploymentTopology,
+            r.realmCreated, r.userCreated,
             r.appliedSeedArchetypes, r.warnings);
     }
 

@@ -19,6 +19,8 @@ public final class TenantProvisionRequest {
     private final String adminUserId;
     private final String adminSubject;
     private final String adminPassword;
+    private final TenantDeploymentTopology deploymentTopology;
+    private final String placementRealmId;
     private final List<String> archetypes;
     private final boolean overwriteAll;
 
@@ -30,6 +32,8 @@ public final class TenantProvisionRequest {
         this.adminUserId = Objects.requireNonNull(b.adminUserId, "adminUserId cannot be null");
         this.adminSubject = b.adminSubject;
         this.adminPassword = b.adminPassword;
+        this.deploymentTopology = b.deploymentTopology;
+        this.placementRealmId = b.placementRealmId;
         this.archetypes = b.archetypes == null ? List.of() : List.copyOf(b.archetypes);
         this.overwriteAll = b.overwriteAll;
     }
@@ -41,6 +45,8 @@ public final class TenantProvisionRequest {
     public String adminUserId() { return adminUserId; }
     public String adminSubject() { return adminSubject; }
     public String adminPassword() { return adminPassword; }
+    public TenantDeploymentTopology deploymentTopology() { return deploymentTopology; }
+    public String placementRealmId() { return placementRealmId; }
     public List<String> archetypes() { return archetypes; }
     public boolean overwriteAll() { return overwriteAll; }
 
@@ -54,6 +60,8 @@ public final class TenantProvisionRequest {
         private String adminUserId;
         private String adminSubject;
         private String adminPassword;
+        private TenantDeploymentTopology deploymentTopology;
+        private String placementRealmId;
         private List<String> archetypes = List.of();
         private boolean overwriteAll = true;
 
@@ -64,6 +72,8 @@ public final class TenantProvisionRequest {
         public Builder adminUserId(String v) { this.adminUserId = v; return this; }
         public Builder adminSubject(String v) { this.adminSubject = v; return this; }
         public Builder adminPassword(String v) { this.adminPassword = v; return this; }
+        public Builder deploymentTopology(TenantDeploymentTopology v) { this.deploymentTopology = v; return this; }
+        public Builder placementRealmId(String v) { this.placementRealmId = v; return this; }
         public Builder archetypes(List<String> v) { this.archetypes = v; return this; }
         public Builder overwriteAll(boolean v) { this.overwriteAll = v; return this; }
 

@@ -3,7 +3,7 @@
 
 Quantum supports multiple multi-tenant models for MongoDB deployments:
 
-=== One Tenant per Database (in a MongoDB Cluster)
+=== `DEDICATED_REALM`: One Tenant per Database
 
 - Each tenant is mapped to a dedicated MongoDB database within a cluster.
 - Strong isolation at the database level; operational controls via MongoDB roles.
@@ -15,7 +15,7 @@ How Quantum helps:
 - DataDomain carries tenant identifiers (e.g., tenantId, ownerId, orgRefName) on each model.
 - Repositories can resolve connections/DB selection per tenant, enabling routing to the appropriate database.
 
-=== Many Tenants in One Database (Shared Database)
+=== `POOLED_REALM`: Many Tenants in One Database
 
 - Multiple tenants share a single database and collections.
 - Isolation is enforced at the application layer using DataDomain filters.
@@ -25,8 +25,13 @@ How Quantum helps:
 How Quantum helps:
 
 - DataDomain is part of every persisted model, enabling programmatic, rule-based filtering.
-- RuleContext and DomainContext can be used to inject tenant-aware filters into repositories and resources.
+- RuleContext and DomainContext inject tenant-aware filters into governed repositories and resources.
 - Cross-tenant sharing can be modeled by specific DataDomain fields and RuleContext logic granting read access across tenants on a per-functional-area basis.
+
+In both modes, realm means MongoDB placement and schema lifecycle while
+DataDomain means row visibility. `POOLED_REALM` is therefore safe only for
+models and repository paths that participate in governed DataDomain
+filtering. A shared database does not weaken or replace the policy boundary.
 
 === Freemium and Trial Tenants
 
@@ -43,9 +48,12 @@ Quantum patterns:
 [[tenant-onboarding-and-invites]]
 === Tenant Onboarding and Access Invites
 
-Quantum separates tenant creation from user access and from the user-facing onboarding journey. Those are related, but they are not the same thing:
+Quantum separates realm creation, tenant admission, user access, and the
+user-facing onboarding journey. Those are related, but they are not the same
+thing:
 
-- Tenant provisioning creates the tenant realm, runs migrations, and establishes the initial admin user.
+- Dedicated provisioning creates the tenant realm, runs realm migrations, and establishes the initial admin user.
+- Pooled admission adds a tenant to an existing realm and does not create or initialize a database.
 - Tenant onboarding workflow defines the steps a tenant user should complete before access is considered fully activated.
 - Access invites bring an individual user into an existing tenant and can attach scoped access metadata.
 
@@ -58,7 +66,9 @@ The admin tenant provisioning API is exposed at:
 - `POST /admin/tenants`
 - `DELETE /admin/tenants/{realmId}`
 
-Provisioning is intended for `admin` and `system` roles. The request creates the tenant catalog entry, initializes the tenant database, and ensures an initial admin credential exists.
+Provisioning is intended for `admin` and `system` roles. The same endpoint
+supports both deployment topologies. Omitting `deploymentTopology` preserves
+the historical `DEDICATED_REALM` behavior.
 
 Request fields:
 
@@ -86,6 +96,15 @@ Request fields:
 
 | `adminPassword`
 | Initial password for the admin user
+
+| `deploymentTopology`
+| `DEDICATED_REALM` or `POOLED_REALM`; when omitted, uses
+`quantum.tenant.provisioning.deployment-topology` (default
+`DEDICATED_REALM`)
+
+| `placementRealmId`
+| Existing target realm for `POOLED_REALM`; when omitted, uses
+`quantum.tenant.provisioning.pooled-realm`
 
 | `seedArchetypes` or `archetypes`
 | Optional list of seed archetypes to apply during tenant creation
@@ -131,15 +150,37 @@ What provisioning does:
 - optionally applies requested seed archetypes
 - applies indexes and verifies initialization
 
+For `POOLED_REALM`, provisioning instead:
+
+- derives a distinct tenant id from `tenantEmailDomain`
+- resolves `placementRealmId` to an existing `Realm` catalog record
+- creates a PARTICIPANT `RealmTenantMembership`
+- assigns the tenant's users to the shared realm with the tenant's own
+  `DomainContext` and `DataDomain`
+- skips realm migrations and index initialization
+- never creates or drops the shared realm/database
+
+Example pooled admission:
+
+[source,json]
+----
+{
+  "tenantDisplayName": "Acme Logistics",
+  "tenantEmailDomain": "acme.example",
+  "orgRefName": "acme.example",
+  "accountId": "1000000001",
+  "adminUserId": "admin@acme.example",
+  "adminPassword": "change-me-now",
+  "deploymentTopology": "POOLED_REALM",
+  "placementRealmId": "shared-logistics"
+}
+----
+
 Provisioning is designed to be largely idempotent. If the same tenant or admin user already exists with matching attributes, the service proceeds and returns warnings instead of blindly recreating state. If existing state conflicts with the request, the service rejects the operation.
 
-Deleting a tenant removes:
-
-- the tenant database
-- the tenant's `Realm` catalog entry
-- matching credentials associated with that tenant setup
-
-CAUTION: `DELETE /admin/tenants/{realmId}` is destructive and is intentionally blocked for the configured system realm.
+Direct tenant deletion is disabled. Decommissioning must use the governed
+control-plane lifecycle. In particular, pooled tenant removal is a scoped
+DataDomain operation and must never drop its shared realm/database.
 
 ==== 2. Tenant onboarding workflow: define the journey after invite/registration
 
