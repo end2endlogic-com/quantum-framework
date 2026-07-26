@@ -190,6 +190,71 @@ public class TokenUtils {
 	}
 
 	/**
+	 * Generic authenticated-user token. Application admission is evaluated by
+	 * the application front door before this token is minted; it is deliberately
+	 * not bound to an application audience or requested resource.
+	 */
+	public static String generateAuthenticatedUserToken(String subject,
+											 String userId,
+											 Set<String> groups,
+											 String realm,
+											 String tenantId,
+											 String orgRefName,
+											 String accountNum,
+											 String realmBoundary,
+											 long expiresAt,
+											 String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+		Objects.requireNonNull(subject, "subject cannot be null");
+		Objects.requireNonNull(issuer, "Issuer cannot be null");
+		if (expiresAt <= REFRESH_ADDITIONAL_DURATION_SECONDS) {
+			throw new ValidationException("Duration must be greater than" + REFRESH_ADDITIONAL_DURATION_SECONDS + " seconds");
+		}
+
+		PrivateKey privateKey = cachedPrivateKey != null ? cachedPrivateKey : readPrivateKey(privateKeyLocation);
+		JwtClaimsBuilder claimsBuilder = Jwt.claims();
+		long currentTimeInSecs = currentTimeInSecs();
+		claimsBuilder.issuer(issuer);
+		claimsBuilder.subject(subject);
+		claimsBuilder.issuedAt(currentTimeInSecs);
+		claimsBuilder.expiresAt(expiresAt);
+		claimsBuilder.groups(groups);
+		claimsBuilder.claim("scope", AUTH_SCOPE);
+		addPrincipalClaims(claimsBuilder, userId, realm, tenantId, orgRefName, accountNum);
+		if (realmBoundary != null && !realmBoundary.isBlank()) {
+			claimsBuilder.claim("realmRegEx", realmBoundary.trim());
+		}
+		return claimsBuilder.jws().keyId(resolveSigningKeyId()).sign(privateKey);
+	}
+
+	/**
+	 * Trusted service identity. User delegation is carried separately in the
+	 * request, never by reusing the interactive user's bearer token.
+	 */
+	public static String generateServiceToken(String subject,
+										 Set<String> groups,
+										 long expiresAt,
+										 String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+		Objects.requireNonNull(subject, "subject cannot be null");
+		Objects.requireNonNull(issuer, "Issuer cannot be null");
+		if (expiresAt <= REFRESH_ADDITIONAL_DURATION_SECONDS) {
+			throw new ValidationException("Duration must be greater than" + REFRESH_ADDITIONAL_DURATION_SECONDS + " seconds");
+		}
+
+		PrivateKey privateKey = cachedPrivateKey != null ? cachedPrivateKey : readPrivateKey(privateKeyLocation);
+		long currentTimeInSecs = currentTimeInSecs();
+		return Jwt.claims()
+				.issuer(issuer)
+				.subject(subject)
+				.issuedAt(currentTimeInSecs)
+				.expiresAt(expiresAt)
+				.groups(groups)
+				.claim("scope", AUTH_SCOPE)
+				.claim(com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.TOKEN_TYPE_CLAIM,
+						com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.SERVICE_TOKEN_TYPE)
+				.jws().keyId(resolveSigningKeyId()).sign(privateKey);
+	}
+
+	/**
 	 * Application-scoped token: mints a MULTI-audience token whose {@code aud} is the
 	 * set of applications the user is authorized for in the active realm (multi-aud
 	 * SSO — each suite app accepts a token whose {@code aud} contains its own id), and

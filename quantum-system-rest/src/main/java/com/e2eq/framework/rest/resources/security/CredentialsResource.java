@@ -26,7 +26,7 @@ import java.util.Optional;
 
 @Path("/user/credentials")
 @RolesAllowed({ "user", "admin", "system" })
-@Tag(name = "user", description = "Operations related to managing users")
+@Tag(name = "credentials", description = "Operations related to managing user credentials")
 public class CredentialsResource extends BaseResource<CredentialUserIdPassword, CredentialRepo> {
 
     @Inject

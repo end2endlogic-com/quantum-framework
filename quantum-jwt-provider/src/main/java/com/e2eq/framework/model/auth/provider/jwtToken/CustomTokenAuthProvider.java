@@ -121,23 +121,16 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
    }
 
    /**
-    * Realm- and audience-scoped variant: additionally stamps {@code aud} with the target
-    * application ids so audience-enforcing data planes accept the token (the legacy
-    * default audience is rejected there).
+    * Compatibility overload for older callers that still send realm/audience
+    * parameters. Service identity is deliberately not resource-bound, so both
+    * parameters are ignored.
     */
    public String generateServiceToken(String subject, Set<String> roles, Long expirationSeconds,
                                       String realm, Set<String> audiences) {
       long duration = (expirationSeconds != null) ? expirationSeconds : 60L * 60 * 24 * 365 * 100;
       try {
-         if (audiences != null && !audiences.isEmpty()) {
-            return TokenUtils.generateUserToken(subject, null, roles, realm,
-                    null, null, null, audiences, null, TokenUtils.expiresAt(duration), issuer);
-         }
-         if (realm == null || realm.isBlank()) {
-            return TokenUtils.generateUserToken(subject, roles, TokenUtils.expiresAt(duration), issuer);
-         }
-         return TokenUtils.generateUserToken(subject, null, roles, realm,
-                 null, null, null, TokenUtils.expiresAt(duration), issuer);
+         return TokenUtils.generateServiceToken(
+                 subject, roles, TokenUtils.expiresAt(duration), issuer);
       } catch (IOException | NoSuchAlgorithmException | InvalidKeySpecException e) {
          throw new RuntimeException("Failed to generate service token", e);
       }
@@ -764,7 +757,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                      Log.warnf("Wildcard application grant exercised (audit): user=%s realm=%s activeApplication=%s",
                         userId, tokenRealm, appAuth.activeApplication());
                   }
-                  String authToken = TokenUtils.generateUserToken(
+                  String authToken = TokenUtils.generateAuthenticatedUserToken(
                      subject,
                      credential.getUserId(),
                      groups,
@@ -772,8 +765,6 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                      tokenDomainContext.getTenantId(),
                      tokenDomainContext.getOrgRefName(),
                      tokenDomainContext.getAccountId(),
-                     appAuth.audiences(),
-                     appAuth.activeApplication(),
                      // Signed realm boundary: lets delegated-claims validators
                      // authorize X-Realm switches within the credential's own
                      // declared boundary instead of pinning to the login realm.
@@ -999,11 +990,11 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
          }
 
          // Only RESOLVED reaches the mint (LEGACY/AMBIGUOUS/DENIED threw above).
-         String newAuthToken = TokenUtils.generateUserToken(
+         String newAuthToken = TokenUtils.generateAuthenticatedUserToken(
             refreshSubject, userId, allRoles, tokenRealm,
             tokenDomainContext.getTenantId(), tokenDomainContext.getOrgRefName(),
-            tokenDomainContext.getAccountId(), appAuth.audiences(),
-            appAuth.activeApplication(), TokenUtils.expiresAt(durationInSeconds), issuer);
+            tokenDomainContext.getAccountId(), credential.getRealmRegEx(),
+            TokenUtils.expiresAt(durationInSeconds), issuer);
          String newRefreshToken = generateRefreshToken(
             refreshSubject, userId, tokenRealm,
             appAuth.resolved() ? appAuth.activeApplication() : null,
