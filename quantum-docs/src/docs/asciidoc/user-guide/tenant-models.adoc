@@ -198,6 +198,21 @@ tenant. Before the workflow reports the pooled purge as scheduled, it must
 reconcile archive and expiration counts for every collection declared
 tenant-scoped.
 
+Before a pooled purge is planned, the persisted collection inventory must be
+reconciled with the collection ownership catalog. Every existing user
+collection must have exactly one scope:
+
+* `TENANT_SCOPED`: selectable by the canonical tenant identity and eligible
+  for tenant archive and expiration.
+* `REALM_SHARED`: shared within the realm and excluded from every individual
+  tenant purge.
+* `SYSTEM_GLOBAL`: owned by the system management plane and excluded from
+  tenant purge.
+
+An existing collection without a scope declaration blocks the operation.
+Declaring a collection as shared or global also forbids tenant-selection and
+expiration field mappings for that collection.
+
 TTL indexes must be installed explicitly by realm migrations for every
 tenant-scoped collection. Large collections may be stamped in resumable
 batches, but every batch uses the same purge reference and timestamp. Blob
