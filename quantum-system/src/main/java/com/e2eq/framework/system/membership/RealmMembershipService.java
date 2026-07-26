@@ -90,27 +90,40 @@ public class RealmMembershipService {
             throw new IllegalArgumentException("membership.realmRefName must not be blank");
         }
         if (quantumModeConfig.isRemote()) {
-            return remote().upsertRealmMembership(membership);
+            throw new IllegalStateException(
+                "Realm membership writes are not exposed by the generated control-plane contract; "
+                    + "provision through an embedded system-management plane.");
         }
         String systemRealmId = systemDirectory.systemRealmId();
         Optional<RealmTenantMembership> existingMembership = membershipRepo.findByRealmRefNameWithIgnoreRules(
                 systemRealmId, membership.getRealmRefName()).stream()
-            .filter(existing -> java.util.Objects.equals(
-                existing.getOrganizationRefName(), membership.getOrganizationRefName()))
+            .filter(existing -> java.util.Objects.equals(existing.getRefName(), membership.getRefName())
+                || (java.util.Objects.equals(existing.getOrganizationRefName(), membership.getOrganizationRefName())
+                    && java.util.Objects.equals(existing.getAccountId(), membership.getAccountId())
+                    && java.util.Objects.equals(existing.getTenantId(), membership.getTenantId())))
             .findFirst();
         if (existingMembership.isPresent()) {
             RealmTenantMembership existing = existingMembership.get();
+            existing.setRefName(membership.getRefName());
+            existing.setRealmRefName(membership.getRealmRefName());
+            existing.setRealmDisplayName(membership.getRealmDisplayName());
+            existing.setOrganizationRefName(membership.getOrganizationRefName());
             existing.setAccountId(membership.getAccountId());
             existing.setTenantId(membership.getTenantId());
+            existing.setRealmEmailDomain(membership.getRealmEmailDomain());
+            existing.setDefaultAdminUserId(membership.getDefaultAdminUserId());
+            existing.setRealmEditionRefName(membership.getRealmEditionRefName());
+            existing.setProvisioningMode(membership.getProvisioningMode());
             existing.setMembershipRole(membership.getMembershipRole());
             existing.setParticipationStatus(membership.getParticipationStatus());
-            if (membership.getDisplayName() != null) {
-                existing.setDisplayName(membership.getDisplayName());
-            }
+            existing.setSetupStatus(membership.getSetupStatus());
+            existing.setSetupCompletionPercent(membership.getSetupCompletionPercent());
+            existing.setDisplayName(membership.getDisplayName());
+            existing.setDataDomain(membership.getDataDomain());
             return membershipRepo.save(systemRealmId, existing);
         }
         membership.setId(stableObjectId("realm-membership", membership.getRealmRefName(),
-            membership.getOrganizationRefName()));
+            membership.getRefName()));
         return membershipRepo.save(systemRealmId, membership);
     }
 
@@ -147,19 +160,30 @@ public class RealmMembershipService {
             throw new IllegalArgumentException("assignment.realmRefName must not be blank");
         }
         if (quantumModeConfig.isRemote()) {
-            return remote().upsertUserRealmRole(assignment);
+            throw new IllegalStateException(
+                "User realm-role writes are not exposed by the generated control-plane contract; "
+                    + "provision through an embedded system-management plane.");
         }
         String systemRealmId = systemDirectory.systemRealmId();
         Optional<UserRealmRole> existingRole = userRealmRoleRepo.findAssignmentForRealmWithIgnoreRules(
                 assignment.getUserId(), assignment.getRealmRefName(), systemRealmId);
         if (existingRole.isPresent()) {
             UserRealmRole existing = existingRole.get();
+            if (!java.util.Objects.equals(existing.getDataDomain(), assignment.getDataDomain())) {
+                throw new IllegalStateException(
+                    "A user may have only one tenant DataDomain assignment per realm. "
+                        + "Use a distinct identity or realm until explicit tenant selection is supported.");
+            }
+            existing.setRefName(assignment.getRefName());
+            existing.setUserId(assignment.getUserId());
+            existing.setSubject(assignment.getSubject());
+            existing.setRealmRefName(assignment.getRealmRefName());
             existing.setRoles(assignment.getRoles());
+            existing.setAuthorizedApplications(assignment.getAuthorizedApplications());
+            existing.setDefaultApplication(assignment.getDefaultApplication());
             existing.setSponsoringOrgRefName(assignment.getSponsoringOrgRefName());
             existing.setStatus(assignment.getStatus());
-            if (assignment.getDisplayName() != null) {
-                existing.setDisplayName(assignment.getDisplayName());
-            }
+            existing.setDisplayName(assignment.getDisplayName());
             return userRealmRoleRepo.save(systemRealmId, existing);
         }
         assignment.setId(stableObjectId("user-realm-role", assignment.getUserId(),

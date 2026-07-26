@@ -3,6 +3,25 @@
 
 Quantum supports multiple multi-tenant models for MongoDB deployments:
 
+Every persisted `Realm` has a `deploymentType`:
+
+* `DEDICATED` is the default. Realm records created before this field existed,
+  and any record whose value is absent or null, resolve to `DEDICATED`.
+* `SHARED` must be set explicitly before the realm can accept pooled tenant
+  admissions.
+
+The system-management realm catalog exposes this value so operators can see
+the database topology directly. Tenant lifecycle requests use
+`DEDICATED_REALM` and `POOLED_REALM`; those request values must agree with the
+realm's persisted `DEDICATED` or `SHARED` type.
+
+Database migration `1.0.6` backfills existing system-realm catalog records.
+It updates only Realm documents where `deploymentType` is missing or null,
+setting them to `DEDICATED`; an explicitly configured `SHARED` value is
+preserved. Deployments should advance `quantum.database.version` to `1.0.6`
+and run the normal Quantum migration workflow rather than patching Realm
+documents individually.
+
 === `DEDICATED_REALM`: One Tenant per Database
 
 - Each tenant is mapped to a dedicated MongoDB database within a cluster.
@@ -68,7 +87,9 @@ The admin tenant provisioning API is exposed at:
 
 Provisioning is intended for `admin` and `system` roles. The same endpoint
 supports both deployment topologies. Omitting `deploymentTopology` preserves
-the historical `DEDICATED_REALM` behavior.
+the historical `DEDICATED_REALM` behavior. `POOLED_REALM` admission succeeds
+only when `placementRealmId` identifies an existing Realm explicitly marked
+`SHARED`; legacy and untyped realms are treated as `DEDICATED`.
 
 Request fields:
 
@@ -97,6 +118,9 @@ Request fields:
 | `adminPassword`
 | Initial password for the admin user
 
+| `applicationId`
+| Application that owns the realm placement; may use the configured default
+
 | `deploymentTopology`
 | `DEDICATED_REALM` or `POOLED_REALM`; when omitted, uses
 `quantum.tenant.provisioning.deployment-topology` (default
@@ -107,7 +131,9 @@ Request fields:
 `quantum.tenant.provisioning.pooled-realm`
 
 | `seedArchetypes` or `archetypes`
-| Optional list of seed archetypes to apply during tenant creation
+| Optional list of seed archetypes for dedicated realm creation. Pooled
+admission rejects archetypes until the seed contract can prove all writes are
+tenant-scoped.
 |===
 
 Representative request:
@@ -157,8 +183,17 @@ For `POOLED_REALM`, provisioning instead:
 - creates a PARTICIPANT `RealmTenantMembership`
 - assigns the tenant's users to the shared realm with the tenant's own
   `DomainContext` and `DataDomain`
-- skips realm migrations and index initialization
+- creates only the requested administrator identity and tenant-scoped realm
+  assignment; it does not create baseline or demo identities
+- skips realm migrations, base seed packs, archetypes, and index initialization
 - never creates or drops the shared realm/database
+
+The pooled realm must therefore be provisioned and migrated before admitting
+tenants. Every persisted model reachable by a pooled tenant must participate
+in governed `DataDomain` filtering for reads and writes. A user currently has
+one active tenant `DataDomain` assignment per realm; admitting the same
+identity into a second tenant in that realm fails closed until an explicit
+tenant-selection claim is available.
 
 Example pooled admission:
 
@@ -198,6 +233,12 @@ tenant. Before the workflow reports the pooled purge as scheduled, it must
 reconcile archive and expiration counts for every collection declared
 tenant-scoped.
 
+Revocation verification includes already-issued tokens or sessions, not only
+future logins. Suspending a system-plane membership by itself is not a safe
+barrier for a stateless tenant plane. A deployment must install a revocation
+provider that invalidates active access (or waits behind an equivalent
+verified write/read fence) before archive and expiration proceed.
+
 Before a pooled purge is planned, the persisted collection inventory must be
 reconciled with the collection ownership catalog. Every existing user
 collection must have exactly one scope:
@@ -213,10 +254,28 @@ An existing collection without a scope declaration blocks the operation.
 Declaring a collection as shared or global also forbids tenant-selection and
 expiration field mappings for that collection.
 
-TTL indexes must be installed explicitly by realm migrations for every
-tenant-scoped collection. Large collections may be stamped in resumable
-batches, but every batch uses the same purge reference and timestamp. Blob
-payloads owned by tenant rows are part of both archive and expiration coverage.
+The default Mongo registry is configured with comma-separated collection
+names:
+
+[source,properties]
+----
+quantum.tenant-storage.tenant-scoped-collections=orders,orderEvents,tenantFiles.files,tenantFiles.chunks
+quantum.tenant-storage.realm-shared-collections=realmConfiguration
+quantum.tenant-storage.system-global-collections=
+----
+
+Only MongoDB internal `system.*` namespaces are excluded automatically.
+GridFS and other blob collections are ordinary user collections for this
+purpose and must be classified explicitly. Reading the inventory does not
+create a Morphia datastore, collections, or indexes.
+
+TTL indexes must exist on the configured `purgeAfter` field for every
+tenant-scoped collection. Realm bootstrap/migrations should install them; the
+default Mongo expiration provider also creates the absolute-time TTL index
+idempotently before it stamps rows. Large collections may be processed in
+resumable batches, but every batch uses the same purge reference and
+timestamp. Blob payloads owned by tenant rows are part of both archive and
+expiration coverage.
 
 `ownerId` is not part of tenant deletion identity. It can narrow policy access,
 but using it for archive or purge selection can leave tenant-owned data behind.

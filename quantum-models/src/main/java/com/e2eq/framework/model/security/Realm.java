@@ -25,6 +25,23 @@ import java.util.Date;
 public class Realm extends BaseModel {
 
    /**
+    * Persistence topology for this realm. Missing legacy values are resolved
+    * as DEDICATED; a realm is shared only when it is explicitly marked SHARED.
+    */
+   @Builder.Default
+   protected RealmDeploymentType deploymentType = RealmDeploymentType.DEDICATED;
+
+   public RealmDeploymentType getDeploymentType() {
+      return deploymentType == null ? RealmDeploymentType.DEDICATED : deploymentType;
+   }
+
+   public void setDeploymentType(RealmDeploymentType deploymentType) {
+      this.deploymentType = deploymentType == null
+         ? RealmDeploymentType.DEDICATED
+         : deploymentType;
+   }
+
+   /**
     this is the last part of a given email which is being used as an identifier.  So
     mingardia@end2endlogic.com for example the email domain would be "end2endlogic.com".
     */

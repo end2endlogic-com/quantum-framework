@@ -2,8 +2,7 @@
 :toc:
 
 == Status
-Accepted (2026-06-11) — implemented incrementally on branch the integration branch
-(membershipRole + UserRealmRole + RealmMembershipService @ cf1a1641).
+Accepted (2026-06-11) — implemented incrementally on the integration branch.
 
 == Context
 
@@ -24,7 +23,9 @@ plans) both need these answers to be explicit.
    realm has one tenant OWNER. A pooled realm has one platform/operator OWNER
    plus many tenant PARTICIPANT memberships. When you ask "what can be
    dropped/backed up/migrated as one unit", the answer is a realm, never an
-   individual participant in a pooled realm.
+   individual participant in a pooled realm. `Realm.deploymentType` persists
+   this invariant as `DEDICATED` or `SHARED`. Missing legacy values resolve to
+   `DEDICATED`; only an explicit `SHARED` value permits pooled admission.
 
 2. **DataDomain = visibility.** Org/account/tenant/owner/segment stamps plus
    the policy engine (row filters, relationship policies via
@@ -38,7 +39,7 @@ plans) both need these answers to be explicit.
    orgs whose visibility comes entirely from DataDomain + policies. The
    `POST /admin/tenants` defaults to `DEDICATED_REALM` (one tenant OWNER) and
    accepts `POOLED_REALM` to deliberately admit a PARTICIPANT to an existing
-   realm.
+   realm whose persisted deployment type is `SHARED`.
 
 4. **Users have ONE global identity and N realm-role assignments.** The
    credential (system realm) is the identity — the GitHub account.
@@ -61,12 +62,24 @@ plans) both need these answers to be explicit.
    cleanup may drain collections asynchronously; the access revocation is the
    externally atomic barrier, and per-collection count reconciliation is the
    completion gate. The pooled workflow never drops or migrates the shared
-   realm. TTL indexes are migration-managed and blob payloads participate in
-   archive and expiration coverage. Before planning the purge, the runtime
+   realm. Revocation must cover already-issued sessions/tokens as well as
+   future authentication; suspending only the catalog membership is not a
+   verified barrier for stateless tenant planes. TTL indexes are installed
+   during realm initialization and verified
+   or created idempotently by the expiration provider before stamping. Blob
+   payloads participate in archive and expiration coverage. Before planning
+   the purge, the runtime
    reconciles every existing user collection against an explicit
    `TENANT_SCOPED`, `REALM_SHARED`, or `SYSTEM_GLOBAL` declaration.
    Unclassified collections fail closed; only existing collections declared
    `TENANT_SCOPED` enter the purge plan.
+
+7. **Pooled admission is metadata-only.** The target realm must already be
+   migrated, indexed, and seeded. Admitting a participant creates the tenant
+   membership and requested administrator assignment, but does not run
+   migrations, base seeds, archetypes, or compatibility/demo identity setup.
+   A user has at most one active tenant DataDomain assignment in a realm until
+   token issuance supports explicit tenant selection.
 
 == Consequences
 

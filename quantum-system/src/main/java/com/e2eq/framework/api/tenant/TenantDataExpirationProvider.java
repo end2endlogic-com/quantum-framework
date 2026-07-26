@@ -17,7 +17,15 @@ public interface TenantDataExpirationProvider {
 
     ExpirationManifest stampAndVerify(ExpirationRequest request);
 
-    ExpirationManifest inspect(String purgeBatchRef);
+    /**
+     * Optional provider-specific reconciliation lookup. Providers that do not
+     * persist a purge journal must fail closed rather than infer a tenant scope
+     * from an ambiguous batch reference.
+     */
+    default ExpirationManifest inspect(String purgeBatchRef) {
+        throw new TenantDecommissionUnavailableException(
+            "Expiration manifest inspection is not supported by this provider");
+    }
 
     record ExpirationRequest(
         String executionRef,

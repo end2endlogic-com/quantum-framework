@@ -41,26 +41,8 @@ public interface DefaultEndpoint {
     @Consumes(MediaType.APPLICATION_JSON)
     @Valid List<RealmMembershipEntry> membersOfRealm(@PathParam("refName") @NotNull String refName);
 
-    @PUT
-    @Path("/control/realms/{refName}/members")
-    @Consumes(MediaType.APPLICATION_JSON)
-    default @Valid RealmMembershipEntry upsertRealmMembership(
-        @PathParam("refName") @NotNull String refName,
-        @Valid @NotNull RealmMembershipEntry body) {
-        throw new UnsupportedOperationException("Realm membership writes are not implemented by this endpoint");
-    }
-
     @GET
     @Path("/control/users/{userId}/realms")
     @Consumes(MediaType.APPLICATION_JSON)
     @Valid List<UserRealmRoleEntry> realmsForUser(@PathParam("userId") @NotNull String userId);
-
-    @PUT
-    @Path("/control/users/{userId}/realms")
-    @Consumes(MediaType.APPLICATION_JSON)
-    default @Valid UserRealmRoleEntry upsertUserRealmRole(
-        @PathParam("userId") @NotNull String userId,
-        @Valid @NotNull UserRealmRoleEntry body) {
-        throw new UnsupportedOperationException("User realm-role writes are not implemented by this endpoint");
-    }
 }
