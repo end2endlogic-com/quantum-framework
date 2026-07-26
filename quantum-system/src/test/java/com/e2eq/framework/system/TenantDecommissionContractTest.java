@@ -4,6 +4,9 @@ import com.e2eq.framework.api.tenant.RealmArchiveManifest;
 import com.e2eq.framework.api.tenant.RealmArchiveProvider;
 import com.e2eq.framework.api.tenant.TenantDataExpirationProvider;
 import com.e2eq.framework.api.tenant.TenantDataScope;
+import com.e2eq.framework.api.tenant.TenantCollectionInventory;
+import com.e2eq.framework.api.tenant.TenantCollectionMetadata;
+import com.e2eq.framework.api.tenant.TenantCollectionStorageScope;
 import com.e2eq.framework.api.tenant.TenantDecommissionRequest;
 import com.e2eq.framework.api.tenant.TenantDecommissionResult;
 import com.e2eq.framework.api.tenant.TenantDecommissionStrategy;
@@ -17,6 +20,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 
 class TenantDecommissionContractTest {
 
@@ -83,6 +87,67 @@ class TenantDecommissionContractTest {
         Assertions.assertFalse(new TenantDataExpirationProvider.ExpirationManifest(
             "run-2", "shared-orders", "acme-example", "purge-run-2",
             Instant.parse("2026-08-01T00:00:00Z"), List.of()).coverageVerified());
+    }
+
+    @Test
+    void collectionInventoryFailsClosedWhenAnExistingCollectionIsUnclassified() {
+        TenantCollectionMetadata orders = TenantCollectionMetadata.tenantScoped(
+            "orders",
+            new TenantCollectionMetadata.TenantFieldMapping(
+                "dataDomain.orgRefName",
+                "dataDomain.accountNum",
+                "dataDomain.tenantId",
+                "dataDomain.dataSegment",
+                "purgeBatchRef",
+                "purgeAfter"));
+
+        Assertions.assertThrows(IllegalArgumentException.class, () ->
+            new TenantCollectionInventory(
+                "shared-orders",
+                "shared-orders",
+                Set.of("orders", "realmConfiguration"),
+                List.of(orders)));
+    }
+
+    @Test
+    void collectionInventoryPlansOnlyExplicitTenantScopedCollections() {
+        TenantCollectionMetadata orders = TenantCollectionMetadata.tenantScoped(
+            "orders",
+            new TenantCollectionMetadata.TenantFieldMapping(
+                "dataDomain.orgRefName",
+                "dataDomain.accountNum",
+                "dataDomain.tenantId",
+                "dataDomain.dataSegment",
+                "purgeBatchRef",
+                "purgeAfter"));
+        TenantCollectionMetadata realmConfiguration =
+            TenantCollectionMetadata.realmShared("realmConfiguration");
+
+        TenantCollectionInventory inventory = new TenantCollectionInventory(
+            "shared-orders",
+            "shared-orders",
+            Set.of("orders", "realmConfiguration"),
+            List.of(orders, realmConfiguration));
+
+        Assertions.assertEquals(List.of(orders), inventory.tenantPurgeCollections());
+    }
+
+    @Test
+    void sharedCollectionsCannotDeclareTenantSelectionFields() {
+        TenantCollectionMetadata.TenantFieldMapping mapping =
+            new TenantCollectionMetadata.TenantFieldMapping(
+                "dataDomain.orgRefName",
+                "dataDomain.accountNum",
+                "dataDomain.tenantId",
+                "dataDomain.dataSegment",
+                "purgeBatchRef",
+                "purgeAfter");
+
+        Assertions.assertThrows(IllegalArgumentException.class, () ->
+            new TenantCollectionMetadata(
+                "realmConfiguration",
+                TenantCollectionStorageScope.REALM_SHARED,
+                mapping));
     }
 
     @Test
