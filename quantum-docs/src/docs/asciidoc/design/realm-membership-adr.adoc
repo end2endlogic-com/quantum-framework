@@ -18,11 +18,13 @@ plans) both need these answers to be explicit.
 
 == Decision
 
-1. **Realm = placement + lifecycle.** A realm is the unit of physical
-   isolation: its own database (own connection, possibly own cluster), own
-   migration history, own seed state, own blast radius, own residency. When
-   you ask "what can be dropped/backed up/migrated as one unit", the answer
-   is a realm.
+1. **Realm = placement + lifecycle.** A realm selects a logical Mongo
+   database (and possibly its own connection or cluster) and owns migration,
+   index, seed, backup, residency, and destructive lifecycle. A dedicated
+   realm has one tenant OWNER. A pooled realm has one platform/operator OWNER
+   plus many tenant PARTICIPANT memberships. When you ask "what can be
+   dropped/backed up/migrated as one unit", the answer is a realm, never an
+   individual participant in a pooled realm.
 
 2. **DataDomain = visibility.** Org/account/tenant/owner/segment stamps plus
    the policy engine (row filters, relationship policies via
@@ -34,8 +36,9 @@ plans) both need these answers to be explicit.
    `RealmTenantMembership.membershipRole`: the OWNER provisioned the realm
    and holds lifecycle/billing authority; PARTICIPANTs are collaborating
    orgs whose visibility comes entirely from DataDomain + policies. The
-   default (one tenant = one realm, owner only) remains what
-   `POST /admin/tenants` produces; participants are added deliberately.
+   `POST /admin/tenants` defaults to `DEDICATED_REALM` (one tenant OWNER) and
+   accepts `POOLED_REALM` to deliberately admit a PARTICIPANT to an existing
+   realm.
 
 4. **Users have ONE global identity and N realm-role assignments.** The
    credential (system realm) is the identity — the GitHub account.

@@ -1,6 +1,7 @@
 package com.e2eq.framework.service.provisioning;
 
 import com.e2eq.framework.model.persistent.morphia.TenantProvisioningRunRepo;
+import com.e2eq.framework.api.tenant.TenantDeploymentTopology;
 import com.e2eq.framework.model.security.TenantProvisioningRun;
 import com.e2eq.framework.model.security.TenantProvisioningWorkflow;
 import com.e2eq.framework.rest.responses.TenantProvisioningRunResponse;
@@ -52,6 +53,8 @@ public class TenantProvisioningRunService {
             .workflowVersion(workflow.getWorkflowVersion())
             .workflowDefinitionJson(workflow.getWorkflowDefinitionJson())
             .realmId(context.getRealmId())
+            .tenantId(context.getTenantId())
+            .deploymentTopology(context.getDeploymentTopology().name())
             .tenantDisplayName(context.getNormalizedTenantDisplayName())
             .tenantEmailDomain(command.getTenantEmailDomain())
             .orgRefName(command.getOrgRefName())
@@ -88,6 +91,8 @@ public class TenantProvisioningRunService {
             .adminUserId(run.getAdminUserId())
             .adminSubject(run.getAdminSubject())
             .adminPassword(adminPassword)
+            .deploymentTopology(parseDeploymentTopology(run.getDeploymentTopology()))
+            .placementRealmId(run.getRealmId())
             .archetypes(run.getRequestedArchetypes())
             .overwriteAll(run.isOverwriteAll())
             .build();
@@ -199,6 +204,10 @@ public class TenantProvisioningRunService {
     }
 
     private boolean shouldSkip(TenantProvisioningRun.StepState step, TenantProvisioningService.ProvisioningContext context) {
+        if (TenantProvisioningWorkflowDefaults.STEP_REALM_MIGRATIONS.equals(step.getKey())
+            && context.getDeploymentTopology() == TenantDeploymentTopology.POOLED_REALM) {
+            return true;
+        }
         return TenantProvisioningWorkflowDefaults.STEP_REQUESTED_ARCHETYPES.equals(step.getKey())
             && (context.getArchetypes() == null || context.getArchetypes().isEmpty());
     }
@@ -293,6 +302,8 @@ public class TenantProvisioningRunService {
             .runtimeExecutionRef(run.getRuntimeExecutionRef())
             .runtimeStatus(run.getRuntimeStatus())
             .realmId(run.getRealmId())
+            .tenantId(run.getTenantId())
+            .deploymentTopology(run.getDeploymentTopology())
             .tenantDisplayName(run.getTenantDisplayName())
             .tenantEmailDomain(run.getTenantEmailDomain())
             .orgRefName(run.getOrgRefName())
@@ -316,6 +327,20 @@ public class TenantProvisioningRunService {
             .warnings(run.getWarnings() == null ? List.of() : new ArrayList<>(run.getWarnings()))
             .steps(steps)
             .build();
+    }
+
+    private TenantDeploymentTopology parseDeploymentTopology(String value) {
+        if (value == null || value.isBlank()) {
+            return TenantDeploymentTopology.DEDICATED_REALM;
+        }
+        try {
+            return TenantDeploymentTopology.valueOf(value);
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalStateException(
+                "Unsupported deployment topology persisted on provisioning run: " + value,
+                exception
+            );
+        }
     }
 
     private String newExecutionRef() {

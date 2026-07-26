@@ -19,11 +19,10 @@ package com.e2eq.framework.api.tenant;
 public interface TenantLifecycle {
 
     /**
-     * Provision a tenant: realm catalog entry, realm membership, migrations,
-     * admin/demo identities, base seed packs, requested archetypes,
-     * verification. Idempotent per the embedded implementation's semantics
-     * (re-provisioning an existing realm reports realmCreated=false and
-     * warnings rather than failing).
+     * Provision or admit a tenant according to
+     * {@link TenantProvisionRequest#deploymentTopology()}. Dedicated
+     * provisioning owns realm lifecycle; pooled admission targets an existing
+     * realm while DataDomain remains the tenant visibility boundary.
      */
     TenantProvisionResult provision(TenantProvisionRequest request);
 

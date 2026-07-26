@@ -1,6 +1,7 @@
 package com.e2eq.framework.service;
 
 import com.e2eq.framework.api.tenant.TenantDeleteResult;
+import com.e2eq.framework.api.tenant.TenantDeploymentTopology;
 import com.e2eq.framework.api.tenant.TenantProvisionRequest;
 import com.e2eq.framework.api.tenant.TenantProvisionResult;
 import org.junit.jupiter.api.Assertions;
@@ -25,6 +26,8 @@ class TenantLifecycleAdapterTest {
             .adminUserId("admin@acme.com")
             .adminSubject("subj-123")
             .adminPassword("s3cret!")
+            .deploymentTopology(TenantDeploymentTopology.POOLED_REALM)
+            .placementRealmId("shared-app")
             .archetypes(List.of("b2b-starter"))
             .overwriteAll(false)
             .build();
@@ -39,6 +42,8 @@ class TenantLifecycleAdapterTest {
         Assertions.assertEquals("admin@acme.com", command.getAdminUserId());
         Assertions.assertEquals("subj-123", command.getAdminSubject());
         Assertions.assertEquals("s3cret!", command.getAdminPassword());
+        Assertions.assertEquals(TenantDeploymentTopology.POOLED_REALM, command.getDeploymentTopology());
+        Assertions.assertEquals("shared-app", command.getPlacementRealmId());
         Assertions.assertEquals(List.of("b2b-starter"), command.getArchetypes());
         Assertions.assertFalse(command.isOverwriteAll());
     }
@@ -53,6 +58,8 @@ class TenantLifecycleAdapterTest {
     void provisionResultMapsToContract() {
         TenantProvisioningService.ProvisionResult r = new TenantProvisioningService.ProvisionResult();
         r.realmId = "acme-com";
+        r.tenantId = "tenant-acme";
+        r.deploymentTopology = TenantDeploymentTopology.POOLED_REALM;
         r.realmCreated = true;
         r.userCreated = true;
         r.appliedSeedArchetypes.add("b2b-starter");
@@ -61,6 +68,8 @@ class TenantLifecycleAdapterTest {
         TenantProvisionResult contract = TenantProvisioningService.toContractResult(r);
 
         Assertions.assertEquals("acme-com", contract.realmId());
+        Assertions.assertEquals("tenant-acme", contract.tenantId());
+        Assertions.assertEquals(TenantDeploymentTopology.POOLED_REALM, contract.deploymentTopology());
         Assertions.assertTrue(contract.realmCreated());
         Assertions.assertTrue(contract.userCreated());
         Assertions.assertEquals(List.of("b2b-starter"), contract.appliedSeedArchetypes());
