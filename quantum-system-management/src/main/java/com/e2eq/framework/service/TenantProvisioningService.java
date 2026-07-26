@@ -6,6 +6,7 @@ import com.e2eq.framework.api.tenant.TenantLifecycle;
 import com.e2eq.framework.api.tenant.TenantProvisionRequest;
 import com.e2eq.framework.api.tenant.TenantProvisionResult;
 import com.e2eq.framework.system.catalog.RealmCatalogService;
+import com.e2eq.framework.system.membership.RealmMembershipService;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.base.EntityReference;
 import com.e2eq.framework.model.persistent.migration.base.MigrationService;
@@ -70,6 +71,7 @@ public class TenantProvisioningService implements TenantLifecycle {
     // which is not a catalog concern (it gets its own seam in Phase D).
     @Inject RealmCatalogService realmCatalog;
     @Inject SystemDirectory systemDirectory;
+    @Inject RealmMembershipService realmMembershipService;
     @Inject CredentialRepo credentialRepo;
     @Inject OrganizationRepo organizationRepo;
     @Inject RealmTenantMembershipRepo realmTenantMembershipRepo;
@@ -295,7 +297,7 @@ public class TenantProvisioningService implements TenantLifecycle {
         return ProvisioningContext.builder()
             .command(command)
             .result(result)
-            .systemRealm(realmCatalog.systemRealmId())
+            .systemRealm(envConfigUtils.getSystemRealm())
             .realmId(realmId)
             .normalizedTenantDisplayName(normalizedTenantDisplayName)
             .domainContext(dc)
@@ -381,7 +383,7 @@ public class TenantProvisioningService implements TenantLifecycle {
             : existingByRefName;
 
         if (existingOpt.isPresent()) {
-            Log.warnf("Realm %s already exists in the realm collection in realm %s", context.getRealmId(), context.getSystemRealm());
+            Log.warnf("Realm %s already exists in the configured realm catalog", context.getRealmId());
             Realm existing = existingOpt.get();
             List<String> diffs = new ArrayList<>();
             if (!Objects.equals(existing.getEmailDomain(), context.getDesiredRealm().getEmailDomain())) {
@@ -440,8 +442,8 @@ public class TenantProvisioningService implements TenantLifecycle {
             context.getCommand().getAdminUserId());
         context.getDesiredRealm().setApplicationRef(application.createEntityReference());
         realmCatalog.register(context.getDesiredRealm());
-        Log.infof("Created realm catalog entry for %s in system realm %s (application %s)",
-            context.getRealmId(), context.getSystemRealm(), application.getRefName());
+        Log.infof("Created realm catalog entry for %s (application %s)",
+            context.getRealmId(), application.getRefName());
         context.getResult().realmCreated = true;
     }
 
@@ -489,7 +491,6 @@ public class TenantProvisioningService implements TenantLifecycle {
 
     public void ensureRealmMembership(ProvisioningContext context) {
         upsertRealmMembership(
-            context.getSystemRealm(),
             context.getDesiredRealm(),
             context.getDomainContext(),
             context.getArchetypes()
@@ -904,13 +905,14 @@ public class TenantProvisioningService implements TenantLifecycle {
                                      String userId,
                                      Set<String> roles,
                                      DomainContext domainContext) {
-        CredentialUserIdPassword credential = systemDirectory.findCredentialByUserId(userId)
+        String subject = authProviderFactory.getUserManager().getSubjectForUserId(userId)
             .orElseThrow(() -> new IllegalStateException(
                 "Credential was not found while creating realm membership for userId: " + userId
             ));
 
-        UserRealmRole assignment = userRealmRoleRepo
-            .findAssignmentForRealmWithIgnoreRules(userId, realmId, systemRealm)
+        UserRealmRole assignment = realmMembershipService.realmsForUser(userId).stream()
+            .filter(existing -> realmId.equals(existing.getRealmRefName()))
+            .findFirst()
             .orElseGet(() -> UserRealmRole.builder()
                 .refName("user-realm-role:" + userId + ":" + realmId)
                 .displayName(userId + " in " + realmId)
@@ -919,7 +921,7 @@ public class TenantProvisioningService implements TenantLifecycle {
                 .build());
 
         assignment.setUserId(userId);
-        assignment.setSubject(credential.getSubject());
+        assignment.setSubject(subject);
         assignment.setRealmRefName(realmId);
         assignment.setRoles(roles.stream().sorted(String.CASE_INSENSITIVE_ORDER).toList());
         assignment.setSponsoringOrgRefName(domainContext.getOrgRefName());
@@ -931,7 +933,7 @@ public class TenantProvisioningService implements TenantLifecycle {
             .ownerId(userId)
             .build());
 
-        userRealmRoleRepo.save(systemRealm, assignment);
+        realmMembershipService.upsertUserRealmRole(assignment);
     }
 
     private void upsertUserProfileReference(List<EntityReference> members, String userId) {
@@ -953,8 +955,7 @@ public class TenantProvisioningService implements TenantLifecycle {
                 .build());
     }
 
-    private void upsertRealmMembership(String systemRealm,
-                                       Realm realm,
+    private void upsertRealmMembership(Realm realm,
                                        DomainContext dc,
                                        List<String> archetypes) {
         String primaryArchetype = (archetypes != null && !archetypes.isEmpty()) ? archetypes.get(0) : null;
@@ -992,23 +993,7 @@ public class TenantProvisioningService implements TenantLifecycle {
                         .build())
                 .build();
 
-        Optional<RealmTenantMembership> existing = realmTenantMembershipRepo.findByRefName(
-                membershipRefName, systemRealm);
-        if (existing.isPresent()) {
-            RealmTenantMembership record = existing.get();
-            record.setDisplayName(membership.getDisplayName());
-            record.setRealmDisplayName(membership.getRealmDisplayName());
-            record.setDefaultAdminUserId(membership.getDefaultAdminUserId());
-            record.setRealmEditionRefName(membership.getRealmEditionRefName());
-            record.setProvisioningMode(membership.getProvisioningMode());
-            record.setParticipationStatus(membership.getParticipationStatus());
-            record.setSetupStatus(membership.getSetupStatus());
-            record.setSetupCompletionPercent(membership.getSetupCompletionPercent());
-            realmTenantMembershipRepo.save(systemRealm, record);
-            return;
-        }
-
-        realmTenantMembershipRepo.save(systemRealm, membership);
+        realmMembershipService.upsertMembership(membership);
     }
 
     public DeleteResult deleteTenant(String realmId) {

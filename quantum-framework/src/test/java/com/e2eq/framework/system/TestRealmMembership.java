@@ -4,6 +4,7 @@ import com.e2eq.framework.model.persistent.morphia.RealmTenantMembershipRepo;
 import com.e2eq.framework.model.persistent.morphia.UserRealmRoleRepo;
 import com.e2eq.framework.model.security.RealmTenantMembership;
 import com.e2eq.framework.model.security.UserRealmRole;
+import com.e2eq.framework.api.system.SystemDirectory;
 import com.e2eq.framework.security.runtime.SecuritySession;
 import com.e2eq.framework.persistent.BaseRepoTest;
 import com.e2eq.framework.system.membership.RealmMembershipService;
@@ -25,6 +26,7 @@ public class TestRealmMembership extends BaseRepoTest {
     @Inject RealmMembershipService membershipService;
     @Inject RealmTenantMembershipRepo membershipRepo;
     @Inject UserRealmRoleRepo userRealmRoleRepo;
+    @Inject SystemDirectory systemDirectory;
 
     private static final String REALM = "membership-test-realm-com";
 
@@ -58,6 +60,47 @@ public class TestRealmMembership extends BaseRepoTest {
                 "suspended assignments resolve to no roles");
         } finally {
             cleanup();
+        }
+    }
+
+    @Test
+    public void membershipAndUserRoleUpsertsAreIdempotent() {
+        String realm = REALM + "-upsert";
+        try (final SecuritySession ignored = new SecuritySession(pContext, rContext)) {
+            RealmTenantMembership first = membership("helixor-ai", RealmTenantMembership.MEMBERSHIP_ROLE_OWNER);
+            first.setRealmRefName(realm);
+            RealmTenantMembership second = membership("helixor-ai", RealmTenantMembership.MEMBERSHIP_ROLE_OWNER);
+            second.setRealmRefName(realm);
+            second.setParticipationStatus("active");
+            membershipService.upsertMembership(first);
+            membershipService.upsertMembership(second);
+            var savedMemberships = membershipRepo.findByRealmRefNameWithIgnoreRules(
+                    systemDirectory.systemRealmId(), realm).stream()
+                .filter(value -> "helixor-ai".equals(value.getOrganizationRefName()))
+                .toList();
+            Assertions.assertEquals(1, savedMemberships.size(), () -> savedMemberships.stream()
+                .map(value -> String.valueOf(value.getId()))
+                .toList()
+                .toString());
+
+            UserRealmRole firstRole = role("erik@helixor.ai", realm, List.of("user"), UserRealmRole.STATUS_ACTIVE);
+            UserRealmRole secondRole = role("erik@helixor.ai", realm, List.of("admin", "user"), UserRealmRole.STATUS_ACTIVE);
+            membershipService.upsertUserRealmRole(firstRole);
+            membershipService.upsertUserRealmRole(secondRole);
+            var savedRoles = userRealmRoleRepo.findByRealmRefNameWithIgnoreRules(
+                    realm, systemDirectory.systemRealmId()).stream()
+                .filter(value -> "erik@helixor.ai".equals(value.getUserId()))
+                .toList();
+            Assertions.assertEquals(1, savedRoles.size());
+            Assertions.assertEquals(List.of("admin", "user"), savedRoles.get(0).getRoles());
+        } finally {
+            try (final SecuritySession ignored = new SecuritySession(pContext, rContext)) {
+                String systemRealmId = systemDirectory.systemRealmId();
+                membershipRepo.findByRealmRefNameWithIgnoreRules(systemRealmId, realm)
+                    .forEach(value -> deleteQuietly(systemRealmId, value));
+                userRealmRoleRepo.findByRealmRefNameWithIgnoreRules(realm, systemRealmId)
+                    .forEach(value -> deleteRoleQuietly(systemRealmId, value));
+            }
         }
     }
 
@@ -118,6 +161,22 @@ public class TestRealmMembership extends BaseRepoTest {
     private void deleteRoleQuietly(UserRealmRole r) {
         try {
             userRealmRoleRepo.delete(r);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void deleteQuietly(String realm, RealmTenantMembership membership) {
+        try {
+            membershipRepo.delete(realm, membership);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void deleteRoleQuietly(String realm, UserRealmRole role) {
+        try {
+            userRealmRoleRepo.delete(realm, role);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
