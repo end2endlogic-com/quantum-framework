@@ -85,6 +85,7 @@
         <module>quantum-system-management</module>
         <module>quantum-action-enablement-models</module>
         <module>quantum-action-enablement-quarkus</module>
+        <module>quantum-observability-quarkus</module>
         <module>quantum-default-keys</module>
         <module>quantum-jwt-provider</module>
         <module>quantum-oauth-server</module>
@@ -285,6 +286,7 @@
                 <module>quantum-seed-rest</module>
                 <module>quantum-migration-rest</module>
                 <module>quantum-system-management</module>
+                <module>quantum-observability-quarkus</module>
                 <module>quantum-default-keys</module>
                 <module>quantum-jwt-provider</module>
                 <module>quantum-oauth-server</module>
