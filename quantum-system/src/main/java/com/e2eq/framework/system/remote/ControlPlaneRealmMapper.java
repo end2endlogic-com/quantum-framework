@@ -3,6 +3,7 @@ package com.e2eq.framework.system.remote;
 import com.e2eq.framework.controlplane.model.RealmCatalogEntry;
 import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.security.Realm;
+import com.e2eq.framework.model.security.RealmDeploymentType;
 
 /** Shared typed mapping at the generated control-plane contract boundary. */
 public final class ControlPlaneRealmMapper {
@@ -14,6 +15,7 @@ public final class ControlPlaneRealmMapper {
         realm.setRefName(entry.getRefName());
         realm.setDisplayName(entry.getDisplayName());
         realm.setDatabaseName(entry.getDatabaseName());
+        realm.setDeploymentType(parseDeploymentType(entry.getDeploymentType()));
         realm.setEmailDomain(entry.getEmailDomain());
         realm.setConnectionString(entry.getConnectionString());
         if (hasText(entry.getTenantId()) && hasText(entry.getOrgRefName())
@@ -33,6 +35,7 @@ public final class ControlPlaneRealmMapper {
         entry.setRefName(realm.getRefName());
         entry.setDisplayName(realm.getDisplayName());
         entry.setDatabaseName(realm.getDatabaseName());
+        entry.setDeploymentType(realm.getDeploymentType().name());
         entry.setEmailDomain(realm.getEmailDomain());
         entry.setConnectionString(realm.getConnectionString());
         if (realm.getDomainContext() != null) {
@@ -45,5 +48,18 @@ public final class ControlPlaneRealmMapper {
 
     private static boolean hasText(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private static RealmDeploymentType parseDeploymentType(String value) {
+        if (!hasText(value)) {
+            return RealmDeploymentType.DEDICATED;
+        }
+        try {
+            return RealmDeploymentType.valueOf(value);
+        } catch (IllegalArgumentException error) {
+            throw new IllegalStateException(
+                "Unsupported realm deploymentType from control plane: " + value,
+                error);
+        }
     }
 }

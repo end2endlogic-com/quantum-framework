@@ -4,6 +4,7 @@ import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.api.tenant.TenantDeploymentTopology;
 import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.security.Realm;
+import com.e2eq.framework.model.security.RealmDeploymentType;
 import com.e2eq.framework.model.security.RealmTenantMembership;
 import com.e2eq.framework.system.catalog.RealmCatalogService;
 import com.e2eq.framework.system.membership.RealmMembershipService;
@@ -51,6 +52,7 @@ class TenantProvisioningServiceCatalogTest {
     @Test
     void pooledContextSeparatesTenantVisibilityFromRealmPlacement() {
         Realm pool = realm("shared-app", "shared.example", "platform-owner");
+        pool.setDeploymentType(RealmDeploymentType.SHARED);
         RecordingRealmCatalog catalog = new RecordingRealmCatalog(pool);
         RecordingMembershipService memberships = new RecordingMembershipService();
         TenantProvisioningService service = new TenantProvisioningService();
@@ -80,6 +82,7 @@ class TenantProvisioningServiceCatalogTest {
 
         service.ensureRealmCatalog(context);
         service.runRealmMigrations(context);
+        service.applyBaseSeedPacks(context);
         service.ensureRealmMembership(context);
 
         assertFalse(catalog.registerCalled);
@@ -89,6 +92,107 @@ class TenantProvisioningServiceCatalogTest {
         assertEquals("shared-app", memberships.saved.getRealmRefName());
         assertEquals("acme-com", memberships.saved.getTenantId());
         assertEquals("admin@acme.com", memberships.saved.getDefaultAdminUserId());
+    }
+
+    @Test
+    void pooledContextDerivesDefaultPodRealmFromApplication() {
+        TenantProvisioningService service = new TenantProvisioningService();
+        service.realmCatalog = new RecordingRealmCatalog(null);
+        service.envConfigUtils = env();
+        service.defaultPooledRealmPod = 1;
+
+        TenantProvisioningService.ProvisioningContext context = service.initializeContext(
+            TenantProvisioningService.ProvisionTenantCommand.builder()
+                .tenantDisplayName("HelixorAI")
+                .tenantEmailDomain("helixor.ai")
+                .orgRefName("HelixorAI")
+                .accountId("helixorai")
+                .adminUserId("admin@helixor.ai")
+                .adminSubject("subject-helixorai")
+                .deploymentTopology(TenantDeploymentTopology.POOLED_REALM)
+                .applicationId("Helixor Code")
+                .build()
+        );
+
+        assertEquals("helixor-code-P1", context.getRealmId());
+        assertEquals("helixor-code-P1", context.getDomainContext().getDefaultRealm());
+        assertEquals("helixor-ai", context.getTenantId());
+        assertEquals("helixorai", context.getDomainContext().getOrgRefName());
+    }
+
+    @Test
+    void dedicatedContextDerivesApplicationScopedRealmName() {
+        TenantProvisioningService service = new TenantProvisioningService();
+        service.realmCatalog = new RecordingRealmCatalog(null);
+        service.envConfigUtils = env();
+
+        TenantProvisioningService.ProvisioningContext context = service.initializeContext(
+            TenantProvisioningService.ProvisionTenantCommand.builder()
+                .tenantDisplayName("End2End Logic")
+                .tenantEmailDomain("end2endlogic.com")
+                .orgRefName("end2endlogic")
+                .accountId("end2endlogic")
+                .adminUserId("admin@end2endlogic.com")
+                .adminSubject("subject-end2endlogic")
+                .deploymentTopology(TenantDeploymentTopology.DEDICATED_REALM)
+                .applicationId("Helixor Code")
+                .build()
+        );
+
+        assertEquals("helixor-code-D-end2endlogic-com", context.getRealmId());
+        assertEquals("helixor-code-D-end2endlogic-com",
+            context.getDomainContext().getDefaultRealm());
+        assertEquals("end2endlogic-com", context.getTenantId());
+        assertEquals("end2endlogic", context.getDomainContext().getOrgRefName());
+    }
+
+    @Test
+    void pooledAdmissionRejectsRealmWithoutExplicitSharedType() {
+        Realm legacyDedicated = realm(
+            "legacy-realm", "legacy.example", "legacy-tenant");
+        legacyDedicated.setDeploymentType(null);
+        TenantProvisioningService service = new TenantProvisioningService();
+        service.realmCatalog = new RecordingRealmCatalog(legacyDedicated);
+        service.envConfigUtils = env();
+
+        TenantProvisioningService.ProvisioningContext context =
+            service.initializeContext(
+                TenantProvisioningService.ProvisionTenantCommand.builder()
+                    .tenantDisplayName("Acme Corp")
+                    .tenantEmailDomain("acme.com")
+                    .orgRefName("acme.com")
+                    .accountId("4444555566")
+                    .adminUserId("admin@acme.com")
+                    .adminSubject("subject-acme")
+                    .deploymentTopology(TenantDeploymentTopology.POOLED_REALM)
+                    .placementRealmId("legacy-realm")
+                    .build());
+
+        IllegalStateException error = assertThrows(
+            IllegalStateException.class,
+            () -> service.ensureRealmCatalog(context));
+
+        assertTrue(error.getMessage().contains("explicitly marked SHARED"));
+        assertEquals(RealmDeploymentType.DEDICATED,
+            legacyDedicated.getDeploymentType());
+    }
+
+    @Test
+    void pooledAdmissionRejectsUnprovenSeedArchetypes() {
+        TenantProvisioningService service = new TenantProvisioningService();
+        TenantProvisioningService.ProvisioningContext context =
+            TenantProvisioningService.ProvisioningContext.builder()
+                .deploymentTopology(TenantDeploymentTopology.POOLED_REALM)
+                .realmId("shared-app")
+                .tenantId("acme-com")
+                .archetypes(java.util.List.of("starter"))
+                .build();
+
+        IllegalStateException error = assertThrows(
+            IllegalStateException.class,
+            () -> service.applyRequestedArchetypes(context));
+
+        assertTrue(error.getMessage().contains("tenant-scoped"));
     }
 
     @Test

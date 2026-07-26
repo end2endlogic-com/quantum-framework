@@ -26,6 +26,7 @@ class TenantLifecycleAdapterTest {
             .adminUserId("admin@acme.com")
             .adminSubject("subj-123")
             .adminPassword("s3cret!")
+            .applicationId("orders")
             .deploymentTopology(TenantDeploymentTopology.POOLED_REALM)
             .placementRealmId("shared-app")
             .archetypes(List.of("b2b-starter"))
@@ -42,6 +43,7 @@ class TenantLifecycleAdapterTest {
         Assertions.assertEquals("admin@acme.com", command.getAdminUserId());
         Assertions.assertEquals("subj-123", command.getAdminSubject());
         Assertions.assertEquals("s3cret!", command.getAdminPassword());
+        Assertions.assertEquals("orders", command.getApplicationId());
         Assertions.assertEquals(TenantDeploymentTopology.POOLED_REALM, command.getDeploymentTopology());
         Assertions.assertEquals("shared-app", command.getPlacementRealmId());
         Assertions.assertEquals(List.of("b2b-starter"), command.getArchetypes());

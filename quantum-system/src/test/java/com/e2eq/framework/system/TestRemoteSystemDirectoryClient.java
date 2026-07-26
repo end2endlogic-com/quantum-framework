@@ -1,6 +1,7 @@
 package com.e2eq.framework.system;
 
 import com.e2eq.framework.model.security.Realm;
+import com.e2eq.framework.model.security.RealmDeploymentType;
 import com.e2eq.framework.system.remote.RemoteSystemDirectory;
 import com.e2eq.framework.controlplane.api.DefaultEndpoint;
 import com.e2eq.framework.controlplane.model.RealmCatalogEntry;
@@ -39,6 +40,7 @@ public class TestRemoteSystemDirectoryClient {
                 e.setRefName("acme-com");
                 e.setDisplayName("Acme");
                 e.setDatabaseName("acme-com");
+                e.setDeploymentType("SHARED");
                 e.setEmailDomain("acme.com");
                 e.setTenantId("acme.com");
                 e.setOrgRefName("acme");
@@ -50,11 +52,27 @@ public class TestRemoteSystemDirectoryClient {
         Assertions.assertTrue(realm.isPresent());
         Assertions.assertEquals("acme-com", realm.get().getRefName());
         Assertions.assertEquals("acme-com", realm.get().getDatabaseName());
+        Assertions.assertEquals(
+            RealmDeploymentType.SHARED, realm.get().getDeploymentType());
         Assertions.assertNotNull(realm.get().getDomainContext());
         Assertions.assertEquals("acme.com", realm.get().getDomainContext().getTenantId());
         Assertions.assertEquals("acme", realm.get().getDomainContext().getOrgRefName());
         Assertions.assertEquals("0000000001", realm.get().getDomainContext().getAccountId());
         Assertions.assertEquals("acme-com", realm.get().getDomainContext().getDefaultRealm());
+    }
+
+    @Test
+    public void absentRemoteDeploymentTypeDefaultsToDedicated() {
+        RealmCatalogEntry entry = new RealmCatalogEntry();
+        entry.setRefName("legacy");
+        entry.setDatabaseName("legacy");
+        entry.setEmailDomain("legacy.example");
+
+        Realm realm =
+            com.e2eq.framework.system.remote.ControlPlaneRealmMapper.fromEntry(entry);
+
+        Assertions.assertEquals(
+            RealmDeploymentType.DEDICATED, realm.getDeploymentType());
     }
 
     @Test

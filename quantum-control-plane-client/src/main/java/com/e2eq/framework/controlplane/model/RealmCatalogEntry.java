@@ -10,6 +10,7 @@ public class RealmCatalogEntry {
     private String refName;
     private String displayName;
     private String databaseName;
+    private String deploymentType;
     private String emailDomain;
     private String tenantId;
     private String orgRefName;
@@ -34,6 +35,16 @@ public class RealmCatalogEntry {
 
     @JsonProperty("databaseName")
     public void setDatabaseName(String databaseName) { this.databaseName = databaseName; }
+
+    @JsonProperty("deploymentType")
+    public String getDeploymentType() {
+        return deploymentType == null ? "DEDICATED" : deploymentType;
+    }
+
+    @JsonProperty("deploymentType")
+    public void setDeploymentType(String deploymentType) {
+        this.deploymentType = deploymentType == null ? "DEDICATED" : deploymentType;
+    }
 
     @JsonProperty("emailDomain")
     public String getEmailDomain() { return emailDomain; }
