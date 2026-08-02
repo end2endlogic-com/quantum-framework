@@ -121,11 +121,15 @@ public class SecurityResource {
     @ConfigProperty(name = "com.b2bi.jwt.duration")
     protected long tokenDuration;
 
+    @ConfigProperty(name = "quantum.security.anonymous-registration-application", defaultValue = "quantum-auth")
+    protected String anonymousRegistrationApplication;
+
     private <T> T withAnonymousRegistrationAccess(String action, Supplier<T> supplier) {
         var principal = SecurityCallScope.anonymous(
                 envConfigUtils.getSystemRealm(),
                 securityUtils.getSystemDataDomain(),
-                "anonymous-registration");
+                "anonymous-registration",
+                anonymousRegistrationApplication);
         var resource = SecurityCallScope.resource(
               principal,
               null,
