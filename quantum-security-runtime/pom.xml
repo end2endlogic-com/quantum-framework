@@ -50,12 +50,6 @@
             <version>${quantum.version}</version>
         </dependency>
         <dependency>
-            <groupId>com.end2endlogic</groupId>
-            <artifactId>quantum-system-management</artifactId>
-            <version>${quantum.version}</version>
-        </dependency>
-
-        <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-arc</artifactId>
         </dependency>

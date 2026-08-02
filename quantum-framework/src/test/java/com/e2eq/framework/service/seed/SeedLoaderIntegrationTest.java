@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
 class SeedLoaderIntegrationTest {
 
     private static final Path SEED_ROOT = Path.of("src", "test", "resources", "seed-packs");
-    private static final String REALM = "seed-loader-it";
+    private static final String REALM = "test-seed-loader-it";
 
     @Inject
     MongoClient mongoClient;

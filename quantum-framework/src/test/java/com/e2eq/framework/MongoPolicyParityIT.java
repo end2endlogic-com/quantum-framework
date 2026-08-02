@@ -29,7 +29,7 @@ public class MongoPolicyParityIT {
     @Inject
     RuleContext ruleContext;
 
-    private static final String REALM = "parity-realm"; // isolated realm for this test
+    private static final String REALM = "test-parity-realm"; // isolated realm for this test
 
     private PrincipalContext admin;
     private PrincipalContext user;

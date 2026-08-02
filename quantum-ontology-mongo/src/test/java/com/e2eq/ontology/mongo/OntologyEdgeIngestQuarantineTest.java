@@ -44,7 +44,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @QuarkusTest
 public class OntologyEdgeIngestQuarantineTest {
 
-    private static final String REALM = "ingest-quarantine-test";
+    private static final String REALM = "test-ingest-quarantine";
 
     @Inject
     OntologyEdgeRepo edgeRepo;

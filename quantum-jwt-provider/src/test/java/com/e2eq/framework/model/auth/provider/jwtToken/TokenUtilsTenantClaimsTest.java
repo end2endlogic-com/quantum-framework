@@ -73,4 +73,21 @@ class TokenUtilsTenantClaimsTest {
         assertFalse(claims.contains("\"aud\""), claims);
         assertFalse(claims.contains("\"azp\""), claims);
     }
+
+    @Test
+    void applicationScopedTokenCarriesAudienceAndActiveApplication() throws Exception {
+        TokenUtils.configure("privateKey.pem", "publicKey.pem");
+
+        String jwt = TokenUtils.generateUserToken(
+                "michael-subject", "michael", Set.of("scheduler-user"),
+                "acme-com", "acme", "acme-org", "1001",
+                Set.of("scheduler", "reporting"), "scheduler", "acme-.*",
+                TokenUtils.expiresAt(3600), "https://auth.example.com");
+
+        String claims = payloadJson(jwt);
+        assertTrue(claims.contains("\"azp\":\"scheduler\""), claims);
+        assertTrue(claims.contains("\"aud\""), claims);
+        assertTrue(claims.contains("scheduler"), claims);
+        assertTrue(claims.contains("reporting"), claims);
+    }
 }

@@ -3,6 +3,8 @@ package com.e2eq.framework.rest.filters;
 
 import com.e2eq.framework.model.auth.AuthProvider;
 import com.e2eq.framework.model.auth.AuthProviderFactory;
+import com.e2eq.framework.model.auth.ClaimsAuthProvider;
+import com.e2eq.framework.model.auth.ProviderClaims;
 import com.e2eq.framework.model.persistent.morphia.IdentityRoleResolver;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.morphia.UserGroupRepo;
@@ -105,11 +107,10 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     @ConfigProperty(name = "quantum.security.filter.enforcePreAuth", defaultValue = "true")
     boolean enforcePreAuth;
 
-    // Delegated identity: when true, a token from the trusted central issuer whose subject is NOT
-    // present in the local credential store is trusted by its (already JWKS-validated) claims, and the
-    // principal is built from those claims — no local credential/database lookup. This lets a service
-    // delegate identity entirely to the central auth service (via its REST API/SDK) without sharing a
-    // database. Default false preserves the strict local-credential behavior.
+    // Delegated identity: when true, the configured ClaimsAuthProvider validates the bearer token and
+    // supplies provider-neutral claims before any local identity repository is touched. This lets a
+    // service delegate identity entirely to its provider without sharing a credential database.
+    // Default false preserves the embedded/local-credential behavior.
     @ConfigProperty(name = "quantum.auth.trust-token-claims", defaultValue = "false")
     boolean trustTokenClaims;
 
@@ -317,6 +318,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                             action = "LIST";
                         }
                         rcontext = new ResourceContext.Builder()
+                                .withApplicationId(currentApplicationId())
                                 .withArea(area)
                                 .withFunctionalDomain(functionalDomain)
                                 .withAction(action)
@@ -613,6 +615,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
             PrincipalContext context = new PrincipalContext.Builder()
                     .withDefaultRealm(credentialRealm)
+                    .withApplicationId(currentApplicationId())
                     .withDomainContext(creds.getDomainContext())
                     .withDataDomain(dataDomain)
                     .withUserId(creds.getUserId())
@@ -627,8 +630,6 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     }
 
     private ContextBuildResult buildJwtContextWithCredentials(String authHeader, String realmOverride) {
-        // Extract token (variable kept for potential future use)
-        @SuppressWarnings("unused")
         String token = authHeader.substring(AUTHENTICATION_SCHEME.length()).trim();
         String sub = jwt.getClaim("sub");
 
@@ -643,6 +644,19 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             return buildServiceClaimsContext(sub, realmOverride);
         }
 
+        // A delegated provider owns identity data. Resolve its provider-neutral claims
+        // before touching any local credential/profile/realm repository.
+        if (trustTokenClaims) {
+            AuthProvider selectedProvider = authProviderFactory.getAuthProvider();
+            if (!(selectedProvider instanceof ClaimsAuthProvider claimsProvider)) {
+                throw new jakarta.ws.rs.ForbiddenException(
+                        "Configured auth provider does not support delegated token claims: "
+                                + selectedProvider.getName());
+            }
+            ProviderClaims providerClaims = claimsProvider.validateTokenToClaims(token);
+            return buildDelegatedClaimsContext(providerClaims, realmOverride);
+        }
+
         // Credentials are looked up from the configured system realm (global credential store)
         Optional<CredentialUserIdPassword> ocreds = credentialRepo.findBySubject(sub, envConfigUtils.getSystemRealm(), true);
         if (!ocreds.isPresent()) {
@@ -650,11 +664,6 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         }
 
         if (!ocreds.isPresent()) {
-            // Delegated identity: the credential store may live in another service/database we must not
-            // reach. When enabled, build the principal from the already-JWKS-validated token claims.
-            if (trustTokenClaims) {
-                return buildDelegatedClaimsContext(sub, realmOverride);
-            }
             throw new IllegalStateException(String.format(
                 "Subject %s not found in credentialUserIdPassword collection in realm:%s",
                 sub, envConfigUtils.getSystemRealm()));
@@ -689,6 +698,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         DataDomain dataDomain = effectiveDomainContext.toDataDomain(creds.getUserId());
         PrincipalContext context = new PrincipalContext.Builder()
                 .withDefaultRealm(authorityRealm)
+                .withApplicationId(currentApplicationId())
                 .withDomainContext(effectiveDomainContext)
                 .withDataDomain(dataDomain)
                 .withUserId(creds.getUserId())
@@ -701,22 +711,21 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     }
 
     /**
-     * Builds a PrincipalContext purely from a validated central-issuer token's claims, with NO local
-     * credential/database lookup. Used when {@code quantum.auth.trust-token-claims=true} and the token's
-     * subject is not present locally: the service delegates identity to the issuer (whose token is
-     * already JWKS-validated for signature/issuer/audience). Identity = userId/preferred_username claim
-     * (or the subject), roles = the token groups; the operating data realm comes from X-Realm, else the
-     * service's configured system realm. Richer profile data, if needed, is fetched from the issuer's
-     * REST API via the generated SDK — never from a shared database.
+     * Builds a PrincipalContext purely from claims validated by the configured provider, with no local
+     * credential/profile lookup. Used when {@code quantum.auth.trust-token-claims=true}. Identity comes
+     * from userId/preferred_username/username (or the subject), and roles come from the provider claims.
      */
-    private ContextBuildResult buildDelegatedClaimsContext(String sub, String realmOverride) {
-        String userId = claimString("userId");
-        if (userId == null) userId = claimString("preferred_username");
-        if (userId == null) userId = claimString("username");
+    private ContextBuildResult buildDelegatedClaimsContext(ProviderClaims claims, String realmOverride) {
+        Objects.requireNonNull(claims, "Delegated provider claims are required");
+        String sub = claims.getSubject();
+        String userId = providerClaim(claims, "userId");
+        if (userId == null) userId = providerClaim(claims, "preferred_username");
+        if (userId == null) userId = claims.getUsername();
+        if (userId == null) userId = providerClaim(claims, "username");
         if (userId == null) userId = sub;
 
         String systemRealm = envConfigUtils.getSystemRealm();
-        String signedRealm = claimString("realm");
+        String signedRealm = providerClaim(claims, "realm");
         if (signedRealm == null) {
             throw new jakarta.ws.rs.ForbiddenException(
                     "Trusted-issuer token is missing the required realm claim");
@@ -729,7 +738,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         String contextRealm = signedRealm;
         if (realmOverride != null && !realmOverride.isBlank()
                 && !realmOverride.equalsIgnoreCase(signedRealm)) {
-            String realmBoundary = claimString("realmRegEx");
+            String realmBoundary = providerClaim(claims, "realmRegEx");
             boolean withinBoundary = false;
             if (realmBoundary != null && !realmOverride.equalsIgnoreCase(systemRealm)) {
                 if ("*".equals(realmBoundary)) {
@@ -750,11 +759,10 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             contextRealm = realmOverride;
             realmSwitched = true;
         }
-        String[] roles = resolveEffectiveRoles(
-                securityIdentity, null, signedRealm, contextRealm);
+        String[] roles = claims.getTokenRoles().toArray(String[]::new);
 
         Log.infof("Delegated identity: principal from trusted-issuer token claims (iss=%s, sub=%s, userId=%s, realm=%s, roles=%s)",
-                jwt.getIssuer(), sub, userId, contextRealm, java.util.Arrays.toString(roles));
+                claims.getIssuer(), sub, userId, contextRealm, java.util.Arrays.toString(roles));
 
         // A delegated principal adopts the DATA DOMAIN of the tenant realm it operates in
         // (from the realm's registered DomainContext), not the cross-tenant system domain.
@@ -770,9 +778,9 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             }
             dataDomain = securityUtils.getSystemDataDomain();
         } else {
-            String tenantId = claimString("tenantId");
-            String orgRefName = claimString("orgRefName");
-            String accountNum = claimString("accountNum");
+            String tenantId = providerClaim(claims, "tenantId");
+            String orgRefName = providerClaim(claims, "orgRefName");
+            String accountNum = providerClaim(claims, "accountNum");
             // Token data-domain claims describe the LOGIN realm; a switched
             // realm's data domain must come from the realm catalog below.
             if (!realmSwitched && tenantId != null && orgRefName != null && accountNum != null) {
@@ -793,12 +801,22 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
         PrincipalContext context = new PrincipalContext.Builder()
                 .withDefaultRealm(contextRealm)
+                .withApplicationId(providerClaim(claims, "azp"))
                 .withDataDomain(dataDomain)
                 .withUserId(userId)
                 .withRoles(roles)
                 .withScope("AUTHENTICATED")
                 .build();
         return new ContextBuildResult(context, null);
+    }
+
+    private static String providerClaim(ProviderClaims claims, String name) {
+        Object value = claims.getAttributes().get(name);
+        if (value == null) {
+            return null;
+        }
+        String text = String.valueOf(value).trim();
+        return text.isEmpty() ? null : text;
     }
 
     /**
@@ -831,6 +849,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
         PrincipalContext context = new PrincipalContext.Builder()
                 .withDefaultRealm(contextRealm)
+                .withApplicationId(currentApplicationId())
                 .withDataDomain(dataDomain)
                 .withUserId(serviceUserId)
                 .withRoles(roles)
@@ -849,6 +868,22 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         if (v == null) return null;
         String s = v.toString();
         return s.isBlank() ? null : s;
+    }
+
+    private String currentApplicationId() {
+        String tokenApplication = claimString("azp");
+        if (tokenApplication != null) {
+            return tokenApplication;
+        }
+        if (securityIdentity == null) {
+            return null;
+        }
+        Object value = securityIdentity.getAttribute("azp");
+        if (value == null) {
+            return null;
+        }
+        String applicationId = String.valueOf(value).trim();
+        return applicationId.isEmpty() ? null : applicationId;
     }
 
     /**
@@ -922,6 +957,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         // Rebuild context with custom properties
         return new PrincipalContext.Builder()
                 .withDefaultRealm(context.getDefaultRealm())
+                .withApplicationId(context.getApplicationId())
                 .withDataDomain(context.getDataDomain())
                 .withDomainContext(context.getDomainContext())
                 .withUserId(context.getUserId())
@@ -1053,7 +1089,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             throw new IllegalStateException("IdentityRoleResolver is required to build an authenticated principal");
         }
         return identityRoleResolver.resolveEffectiveRoles(
-                identity, credential, authorityRealm, effectiveRealm);
+                identity, credential, authorityRealm, effectiveRealm, currentApplicationId());
     }
 
     private void validateRealmAccess(CredentialUserIdPassword creds, String realm) {
@@ -1103,6 +1139,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         if (impersonateSubject == null && impersonateUserId == null) {
             return new PrincipalContext.Builder()
                     .withDefaultRealm(baseContext.getDefaultRealm())
+                    .withApplicationId(baseContext.getApplicationId())
                     .withDomainContext(baseContext.getDomainContext())
                     .withDataDomain(baseContext.getDataDomain())
                     .withUserId(baseContext.getUserId())
@@ -1177,6 +1214,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
         return new PrincipalContext.Builder()
                 .withDefaultRealm(targetRealm)
+                .withApplicationId(currentApplicationId())
                 .withDomainContext(targetCreds.getDomainContext())
                 .withDataDomain(dataDomain)
                 .withUserId(targetCreds.getUserId())
@@ -1248,6 +1286,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         // Rebuild the context with the target realm's DataDomain and DomainContext
         return new PrincipalContext.Builder()
                 .withDefaultRealm(realm)
+                .withApplicationId(context.getApplicationId())
                 .withDomainContext(targetDomainContext)
                 .withDataDomain(effectiveDataDomain)
                 .withUserId(context.getUserId())

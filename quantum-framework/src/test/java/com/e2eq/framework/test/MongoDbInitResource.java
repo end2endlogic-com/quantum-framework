@@ -33,20 +33,28 @@ import java.util.Set;
  */
 public class MongoDbInitResource implements QuarkusTestResourceLifecycleManager {
 
+    static final String TEST_DATABASE_PREFIX = "test-";
+
     private MongoClient mongoClient;
 
     @Override
     public Map<String, String> start() {
         try {
+            String systemRealm = getCfg("quantum.realmConfig.systemRealm", "test-system-com");
+            String testRealm = getCfg("quantum.realmConfig.testRealm", "test-system-com");
+            String defaultRealm = getCfg("quantum.realmConfig.defaultRealm", "test-mycompanyxyz-com");
+
+            requireTestDatabaseName(systemRealm, "quantum.realmConfig.systemRealm");
+            requireTestDatabaseName(testRealm, "quantum.realmConfig.testRealm");
+            requireTestDatabaseName(defaultRealm, "quantum.realmConfig.defaultRealm");
+            requireConfiguredTestDatabaseName("quarkus.mongodb.database");
+            requireConfiguredTestDatabaseName("quarkus.morphia.database");
+
             String conn = ConfigProvider.getConfig().getValue("quarkus.mongodb.connection-string", String.class);
             this.mongoClient = MongoClients.create(conn);
 
             String requiredVersionStr = ConfigProvider.getConfig().getValue("quantum.database.version", String.class);
             Semver required = Semver.parse(requiredVersionStr);
-
-            String systemRealm = getCfg("quantum.realmConfig.systemRealm", "system-com");
-            String testRealm = getCfg("quantum.realmConfig.testRealm", "test-system-com");
-            String defaultRealm = getCfg("quantum.realmConfig.defaultRealm", "mycompanyxyz-com");
 
             // Ensure system and test DBs are at required version; if not, drop (BaseRepoTest will migrate)
             ensureRealmInitialized(systemRealm, required);
@@ -178,6 +186,7 @@ public class MongoDbInitResource implements QuarkusTestResourceLifecycleManager 
     }
 
     private void dropDatabaseQuietly(String dbName) {
+        requireTestDatabaseName(dbName, "database selected for test cleanup");
         try {
             mongoClient.getDatabase(dbName).drop();
         } catch (Exception e) {
@@ -331,6 +340,20 @@ public class MongoDbInitResource implements QuarkusTestResourceLifecycleManager 
 
     private String getCfg(String name, String defVal) {
         return ConfigProvider.getConfig().getOptionalValue(name, String.class).orElse(defVal);
+    }
+
+    private void requireConfiguredTestDatabaseName(String configName) {
+        ConfigProvider.getConfig().getOptionalValue(configName, String.class)
+                .ifPresent(databaseName -> requireTestDatabaseName(databaseName, configName));
+    }
+
+    static String requireTestDatabaseName(String databaseName, String source) {
+        if (databaseName == null || !databaseName.startsWith(TEST_DATABASE_PREFIX)) {
+            throw new IllegalArgumentException(
+                    source + " must name a test database beginning with '"
+                            + TEST_DATABASE_PREFIX + "'; received: " + databaseName);
+        }
+        return databaseName;
     }
 
     private String emailDomainFromTenantId(String tenantId) {

@@ -757,7 +757,10 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                      Log.warnf("Wildcard application grant exercised (audit): user=%s realm=%s activeApplication=%s",
                         userId, tokenRealm, appAuth.activeApplication());
                   }
-                  String authToken = TokenUtils.generateAuthenticatedUserToken(
+                  java.util.Set<String> userGroupRoles = resolveUserGroupRoles(
+                     subject, tokenRealm, appAuth.activeApplication());
+                  groups.addAll(userGroupRoles);
+                  String authToken = TokenUtils.generateUserToken(
                      subject,
                      credential.getUserId(),
                      groups,
@@ -765,6 +768,8 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                      tokenDomainContext.getTenantId(),
                      tokenDomainContext.getOrgRefName(),
                      tokenDomainContext.getAccountId(),
+                     appAuth.audiences(),
+                     appAuth.activeApplication(),
                      // Signed realm boundary: lets delegated-claims validators
                      // authorize X-Realm switches within the credential's own
                      // declared boundary instead of pinning to the login realm.
@@ -787,26 +792,6 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                   java.util.Set<String> idpRoles = (identity != null) ? new java.util.LinkedHashSet<>(identity.getRoles()) : java.util.Set.of();
                   java.util.Set<String> credentialRoles = credentialRolesForRealm(
                      credential.getRoles(), credentialRealm, tokenRealm);
-                  java.util.Set<String> userGroupRoles = new java.util.LinkedHashSet<>();
-                  try {
-                     var userProfileOpt = userProfileRepo.getBySubject(realm, subject);
-                     if (userProfileOpt.isPresent()) {
-                        var userGroups = userGroupRepo.findByUserProfileRefWithIgnoreRules(
-                           realm, userProfileOpt.get().createEntityReference());
-                        if (userGroups != null) {
-                           for (UserGroup g : userGroups) {
-                              if (g != null && g.getRoles() != null) {
-                                 userGroupRoles.addAll(new java.util.LinkedHashSet<>(g.getRoles()));
-                              }
-                           }
-                        }
-                     }
-                  } catch (Exception e) {
-                     throw new IllegalStateException(
-                        "Unable to resolve user-group roles for user '" + userId
-                           + "' in realm '" + tokenRealm + "'", e);
-                  }
-
                   java.util.Set<String> rolesSet = new java.util.LinkedHashSet<>();
                   rolesSet.addAll(idpRoles);
                   rolesSet.addAll(credentialRoles);
@@ -946,23 +931,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
             credential.getRoles(), credentialRealm, tokenRealm);
          Set<String> realmRoles = new LinkedHashSet<>();
          realmAssignment.map(UserRealmRole::getRoles).ifPresent(realmRoles::addAll);
-         Set<String> userGroupRoles = new LinkedHashSet<>();
-         userProfileRepo.getBySubject(tokenRealm, credential.getSubject()).ifPresent(profile -> {
-            var userGroups = userGroupRepo.findByUserProfileRefWithIgnoreRules(
-               tokenRealm, profile.createEntityReference());
-            if (userGroups != null) {
-               for (UserGroup group : userGroups) {
-                  if (group != null && group.getRoles() != null) {
-                     userGroupRoles.addAll(group.getRoles());
-                  }
-               }
-            }
-         });
-
-         Set<String> allRoles = new LinkedHashSet<>();
-         allRoles.addAll(credentialRoles);
-         allRoles.addAll(realmRoles);
-         allRoles.addAll(userGroupRoles);
+         Set<String> userGroupRoles;
 
          ApplicationAuthorizationResolver.Result appAuth = ApplicationAuthorizationResolver.resolve(
             realmAssignment.map(UserRealmRole::getAuthorizedApplications).orElse(null),
@@ -981,6 +950,12 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                "Credential has no application authorization (applicationRegEx unset and no per-realm "
                   + "application grant); cannot refresh an application-scoped session");
          }
+         userGroupRoles = resolveUserGroupRoles(
+            credential.getSubject(), tokenRealm, appAuth.activeApplication());
+         Set<String> allRoles = new LinkedHashSet<>();
+         allRoles.addAll(credentialRoles);
+         allRoles.addAll(realmRoles);
+         allRoles.addAll(userGroupRoles);
 
          DomainContext tokenDomainContext = Objects.equals(credentialRealm, tokenRealm)
             ? credential.getDomainContext()
@@ -990,10 +965,11 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
          }
 
          // Only RESOLVED reaches the mint (LEGACY/AMBIGUOUS/DENIED threw above).
-         String newAuthToken = TokenUtils.generateAuthenticatedUserToken(
+         String newAuthToken = TokenUtils.generateUserToken(
             refreshSubject, userId, allRoles, tokenRealm,
             tokenDomainContext.getTenantId(), tokenDomainContext.getOrgRefName(),
-            tokenDomainContext.getAccountId(), credential.getRealmRegEx(),
+            tokenDomainContext.getAccountId(), appAuth.audiences(),
+            appAuth.activeApplication(), credential.getRealmRegEx(),
             TokenUtils.expiresAt(durationInSeconds), issuer);
          String newRefreshToken = generateRefreshToken(
             refreshSubject, userId, tokenRealm,
@@ -1076,6 +1052,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
             Map.entry("tenantId", Objects.requireNonNullElse(claimString(jwt, "tenantId"), "")),
             Map.entry("orgRefName", Objects.requireNonNullElse(claimString(jwt, "orgRefName"), "")),
             Map.entry("accountNum", Objects.requireNonNullElse(claimString(jwt, "accountNum"), "")),
+            Map.entry("azp", Objects.requireNonNullElse(claimString(jwt, "azp"), "")),
             Map.entry("activeApplication", Objects.requireNonNullElse(claimString(jwt, "azp"), ""))
          ));
          return identity;
@@ -1149,6 +1126,42 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
 
    private Optional<CredentialUserIdPassword> getCredentials (String realm, String userId) {
       return (realm == null) ? credentialRepo.findByUserId(userId) : credentialRepo.findByUserId(userId, realm);
+   }
+
+   private Set<String> resolveUserGroupRoles(String subject, String operatingRealm, String applicationId) {
+      if (subject == null || subject.isBlank()) return Set.of();
+      LinkedHashSet<String> roles = new LinkedHashSet<>();
+      LinkedHashSet<String> directoryRealms = new LinkedHashSet<>();
+      directoryRealms.add(envConfigUtils.getSystemRealm());
+      if (operatingRealm != null && !operatingRealm.isBlank()) directoryRealms.add(operatingRealm);
+      try {
+         for (String directoryRealm : directoryRealms) {
+            userProfileRepo.getBySubject(directoryRealm, subject).ifPresent(profile -> {
+               List<UserGroup> groups = userGroupRepo.findByUserProfileRefWithIgnoreRules(
+                  directoryRealm, profile.createEntityReference());
+               if (groups == null) return;
+               for (UserGroup group : groups) {
+                  if (group != null && group.getRoles() != null
+                        && groupAppliesToApplication(group, applicationId)) {
+                     roles.addAll(group.getRoles());
+                  }
+               }
+            });
+         }
+      } catch (RuntimeException e) {
+         throw new IllegalStateException(
+            "Unable to resolve application-scoped user-group roles for subject '"
+               + subject + "' in realm '" + operatingRealm + "'", e);
+      }
+      return roles;
+   }
+
+   private boolean groupAppliesToApplication(UserGroup group, String applicationId) {
+      if (applicationId == null || applicationId.isBlank()) return false;
+      String groupApplication = group.getApplicationId();
+      return groupApplication != null
+         && ("*".equals(groupApplication.trim())
+            || groupApplication.trim().equalsIgnoreCase(applicationId.trim()));
    }
 
    private SecurityIdentity buildIdentity (String userId, Set<String> roles) {

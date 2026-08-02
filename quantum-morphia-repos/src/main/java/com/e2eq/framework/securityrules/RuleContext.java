@@ -3,6 +3,9 @@ package com.e2eq.framework.security.runtime;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
 import com.e2eq.framework.model.persistent.morphia.PolicyRepo;
+import com.e2eq.framework.model.auth.AuthProvider;
+import com.e2eq.framework.model.auth.AuthProviderFactory;
+import com.e2eq.framework.model.auth.AuthorizationProvider;
 import com.e2eq.framework.model.security.Policy;
 import com.e2eq.framework.model.security.Rule;
 import com.e2eq.framework.model.securityrules.*;
@@ -83,6 +86,9 @@ public class RuleContext {
      @Inject
      PolicyRepo policyRepo;
 
+     @Inject
+     AuthProviderFactory authProviderFactory;
+
     /**
      * This holds ONLY the default system rules, indexed by identity.
      * Using ConcurrentHashMap for thread-safe access during concurrent requests.
@@ -128,6 +134,17 @@ public class RuleContext {
     @ConfigProperty(name = "quantum.realmConfig.defaultRealm", defaultValue = "system-com")
     protected String defaultRealm;
 
+    /**
+     * Optional central datastore realm for policy documents. When blank, embedded
+     * mode retains the historical behavior of reading policy from the request realm.
+     */
+    @ConfigProperty(name = "quantum.security.policy-store-realm")
+    Optional<String> policyStoreRealm = Optional.empty();
+
+    /** Fail closed when application-scoped policy evaluation has no application id. */
+    @ConfigProperty(name = "quantum.security.policy-scope.require-application", defaultValue = "false")
+    boolean requireApplicationScope;
+
     // Scripting controls (sandbox & timeout)
     @ConfigProperty(name = "quantum.security.scripting.enabled", defaultValue = "true")
     boolean scriptingEnabled;
@@ -166,6 +183,39 @@ public class RuleContext {
         return RuleContextRequestCache.buildPermissionCacheKey(pctx, rctx, defaultEffect)
                 + "|" + policyVersion
                 + "|" + getEvalModeForThread().name();
+    }
+
+    private String resolveApplicationId(PrincipalContext principalContext, ResourceContext resourceContext) {
+        String principalApplication = normalizeScope(principalContext == null ? null : principalContext.getApplicationId());
+        String resourceApplication = normalizeScope(resourceContext == null ? null : resourceContext.getApplicationId());
+        if (principalApplication != null && resourceApplication != null
+                && !principalApplication.equals(resourceApplication)) {
+            throw new IllegalArgumentException(
+                    "Principal and resource application scopes do not match: "
+                            + principalApplication + " != " + resourceApplication);
+        }
+        String applicationId = resourceApplication != null ? resourceApplication : principalApplication;
+        if (requireApplicationScope && applicationId == null) {
+            throw new IllegalStateException("Application-scoped authorization requires an applicationId");
+        }
+        return applicationId;
+    }
+
+    private String policyDatastoreRealm(String requestRealm) {
+        return policyStoreRealm
+                .filter(value -> !value.isBlank())
+                .map(String::trim)
+                .orElse(requestRealm);
+    }
+
+    private String policyScopeKey(String requestRealm, String applicationId) {
+        return policyDatastoreRealm(requestRealm) + "|"
+                + (applicationId == null ? "<legacy>" : applicationId) + "|"
+                + requestRealm;
+    }
+
+    private static String normalizeScope(String value) {
+        return value == null || value.isBlank() ? null : value.trim().toLowerCase(java.util.Locale.ROOT);
     }
 
 
@@ -618,6 +668,8 @@ public class RuleContext {
             policy.setRefName("system-default-" + identity);
             policy.setDisplayName("System Default: " + identity);
             policy.setDescription("Default system rules for " + identity);
+            policy.setApplicationId("*");
+            policy.setRealmRefName("*");
             policy.setPrincipalType("system".equals(identity) ?
                 com.e2eq.framework.model.security.Policy.PrincipalType.USER :
                 com.e2eq.framework.model.security.Policy.PrincipalType.ROLE);
@@ -793,14 +845,17 @@ public class RuleContext {
      */
     public void clearCacheForRealm(String realm) {
         if (realm != null) {
-            compiledIndexes.remove(realm);
-            cachedEffectiveRules.remove(realm);
-            realmBuildLocks.remove(realm);
+            java.util.function.Predicate<String> matchesRealm = key -> key.equals(realm)
+                    || key.startsWith(realm + "|")
+                    || key.endsWith("|" + realm);
+            compiledIndexes.keySet().removeIf(matchesRealm);
+            cachedEffectiveRules.keySet().removeIf(matchesRealm);
+            realmBuildLocks.keySet().removeIf(matchesRealm);
             synchronized (evictionLock) {
-                realmAccessOrder.remove(realm);
+                realmAccessOrder.keySet().removeIf(matchesRealm);
             }
             // Also clear legacy single-index if it matches
-            if (realm.equals(compiledIndexRealm)) {
+            if (compiledIndexRealm != null && matchesRealm.test(compiledIndexRealm)) {
                 compiledIndex = null;
                 compiledIndexRealm = null;
             }
@@ -883,6 +938,10 @@ public class RuleContext {
      * @return the built RuleIndex, or null if building failed
      */
     public RuleIndex rebuildIndex(@NotNull String realm) {
+        return rebuildIndex(realm, null);
+    }
+
+    private RuleIndex rebuildIndex(String realm, String applicationId) {
         if (!indexEnabled) {
             Log.debug("RuleContext: index rebuild skipped - indexEnabled is false");
             return null;
@@ -890,11 +949,12 @@ public class RuleContext {
 
         // Get or create a lock object for this specific realm
         // This allows different realms to build indexes concurrently
-        Object realmLock = realmBuildLocks.computeIfAbsent(realm, k -> new Object());
+        String scopeKey = policyScopeKey(realm, applicationId);
+        Object realmLock = realmBuildLocks.computeIfAbsent(scopeKey, k -> new Object());
 
         synchronized (realmLock) {
             // Double-check: another thread may have built the index while we were waiting
-            RuleIndex existingIndex = compiledIndexes.get(realm);
+            RuleIndex existingIndex = compiledIndexes.get(scopeKey);
             if (existingIndex != null) {
                 Log.debugf("RuleContext: index for realm %s was built by another thread", realm);
                 return existingIndex;
@@ -905,7 +965,8 @@ public class RuleContext {
                 Map<String, List<Rule>> effectiveRules;
                 if (policyRepo != null) {
                     List<Policy> defaults = getDefaultSystemPolicies();
-                    effectiveRules = policyRepo.getEffectiveRules(realm, defaults);
+                    effectiveRules = policyRepo.getEffectiveRules(
+                            policyDatastoreRealm(realm), defaults, applicationId, realm, !requireApplicationScope);
                 } else {
                     effectiveRules = new HashMap<>(defaultSystemRules);
                 }
@@ -922,19 +983,19 @@ public class RuleContext {
                 RuleIndex newIndex = RuleIndex.build(allRules);
 
                 // Store in per-realm cache (atomic put)
-                compiledIndexes.put(realm, newIndex);
+                compiledIndexes.put(scopeKey, newIndex);
 
                 // Update LRU tracking and handle eviction
                 synchronized (evictionLock) {
                     // LinkedHashMap with accessOrder=true automatically moves accessed entries to end
-                    realmAccessOrder.put(realm, Boolean.TRUE);
+                    realmAccessOrder.put(scopeKey, Boolean.TRUE);
 
                     // Evict oldest entries if we exceed maxRealms
                     if (realmAccessOrder.size() > indexMaxRealms) {
                         Iterator<String> it = realmAccessOrder.keySet().iterator();
                         while (it.hasNext() && realmAccessOrder.size() > indexMaxRealms) {
                             String oldestRealm = it.next();
-                            if (!oldestRealm.equals(realm)) {
+                            if (!oldestRealm.equals(scopeKey)) {
                                 it.remove();
                                 compiledIndexes.remove(oldestRealm);
                                 realmBuildLocks.remove(oldestRealm);
@@ -946,16 +1007,16 @@ public class RuleContext {
 
                 // Update legacy single-index fields for backward compatibility
                 compiledIndex = newIndex;
-                compiledIndexRealm = realm;
+                compiledIndexRealm = scopeKey;
 
                 Log.infof("RuleContext: rebuilt compiled index with %d rules for realm %s (cached realms: %d)",
                     allRules.size(), realm, compiledIndexes.size());
                 return newIndex;
             } catch (Exception e) {
                 Log.warnf(e, "RuleContext: failed to rebuild index for realm %s; index will remain null", realm);
-                compiledIndexes.remove(realm);
+                compiledIndexes.remove(scopeKey);
                 synchronized (evictionLock) {
-                    realmAccessOrder.remove(realm);
+                    realmAccessOrder.remove(scopeKey);
                 }
                 compiledIndex = null;
                 compiledIndexRealm = null;
@@ -1077,22 +1138,24 @@ public class RuleContext {
         String requestRealm = pcontext != null && pcontext.getDefaultRealm() != null
             ? pcontext.getDefaultRealm()
             : defaultRealm;
+        String applicationId = resolveApplicationId(pcontext, rcontext);
+        String scopeKey = policyScopeKey(requestRealm, applicationId);
 
         // If the compiled index is enabled, try to use per-realm cached index
         if (indexEnabled) {
             // Check per-realm cache first (atomic get from ConcurrentHashMap)
-            RuleIndex realmIndex = compiledIndexes.get(requestRealm);
+            RuleIndex realmIndex = compiledIndexes.get(scopeKey);
 
             if (realmIndex == null) {
                 // No cached index for this realm - rebuild it
                 // rebuildIndex handles its own locking per-realm
                 Log.debugf("RuleContext: no cached index for realm=%s, building...", requestRealm);
-                realmIndex = rebuildIndex(requestRealm);
+                realmIndex = rebuildIndex(requestRealm, applicationId);
             } else {
                 // Update LRU tracking for cache hit (lightweight operation)
                 synchronized (evictionLock) {
                     // LinkedHashMap with accessOrder=true moves entry to end on access
-                    realmAccessOrder.get(requestRealm);
+                    realmAccessOrder.get(scopeKey);
                 }
             }
 
@@ -1107,7 +1170,7 @@ public class RuleContext {
         }
 
         // Legacy/fallback behavior: get fresh effective rules and gather by identity/roles
-        Map<String, List<Rule>> effectiveRules = getEffectiveRulesForRequest(pcontext);
+        Map<String, List<Rule>> effectiveRules = getEffectiveRulesForRequest(pcontext, rcontext);
 
         // Legacy behavior: gather rules by identity and roles, then sort by priority
         List<Rule> applicableRules = new ArrayList<Rule>();
@@ -1182,7 +1245,7 @@ public class RuleContext {
      *
      * Thread-safe: Uses per-realm locking for cache building.
      */
-    private Map<String, List<Rule>> getEffectiveRulesForRequest(PrincipalContext pcontext) {
+    private Map<String, List<Rule>> getEffectiveRulesForRequest(PrincipalContext pcontext, ResourceContext rcontext) {
         // In test contexts without CDI, fall back to in-memory rules only
         if (policyRepo == null) {
             return new HashMap<>(defaultSystemRules);
@@ -1191,6 +1254,8 @@ public class RuleContext {
         String realm = pcontext != null && pcontext.getDefaultRealm() != null
             ? pcontext.getDefaultRealm()
             : defaultRealm;
+        String applicationId = resolveApplicationId(pcontext, rcontext);
+        String scopeKey = policyScopeKey(realm, applicationId);
 
         // If realm caching is disabled, fetch only rules matching this user's identities
         if (!realmCacheEnabled) {
@@ -1202,7 +1267,9 @@ public class RuleContext {
                     pcontext != null ? java.util.Arrays.toString(pcontext.getRoles()) : "null",
                     identities, realm);
             }
-            Map<String, List<Rule>> result = policyRepo.getEffectiveRulesForIdentities(realm, defaults, identities);
+            Map<String, List<Rule>> result = policyRepo.getEffectiveRulesForIdentities(
+                    policyDatastoreRealm(realm), defaults, identities,
+                    applicationId, realm, !requireApplicationScope);
             if (Log.isDebugEnabled()) {
                 Log.debugf("RuleContext: getEffectiveRulesForIdentities returned %d identity->rules mappings: %s",
                     result.size(), result.keySet());
@@ -1211,42 +1278,43 @@ public class RuleContext {
         }
 
         // Check cache first
-        Map<String, List<Rule>> cached = cachedEffectiveRules.get(realm);
+        Map<String, List<Rule>> cached = cachedEffectiveRules.get(scopeKey);
         if (cached != null) {
             // Update LRU tracking for cache hit
             synchronized (evictionLock) {
-                realmAccessOrder.get(realm);
+                realmAccessOrder.get(scopeKey);
             }
             return cached;
         }
 
         // Cache miss - need to build. Use per-realm lock to prevent duplicate work
-        Object realmLock = realmBuildLocks.computeIfAbsent(realm, k -> new Object());
+        Object realmLock = realmBuildLocks.computeIfAbsent(scopeKey, k -> new Object());
 
         synchronized (realmLock) {
             // Double-check after acquiring lock
-            cached = cachedEffectiveRules.get(realm);
+            cached = cachedEffectiveRules.get(scopeKey);
             if (cached != null) {
                 return cached;
             }
 
             // Fetch from database
             List<Policy> defaults = getDefaultSystemPolicies();
-            Map<String, List<Rule>> effectiveRules = policyRepo.getEffectiveRules(realm, defaults);
+            Map<String, List<Rule>> effectiveRules = policyRepo.getEffectiveRules(
+                    policyDatastoreRealm(realm), defaults, applicationId, realm, !requireApplicationScope);
 
             // Store in cache
-            cachedEffectiveRules.put(realm, effectiveRules);
+            cachedEffectiveRules.put(scopeKey, effectiveRules);
 
             // Update LRU tracking and handle eviction
             synchronized (evictionLock) {
-                realmAccessOrder.put(realm, Boolean.TRUE);
+                realmAccessOrder.put(scopeKey, Boolean.TRUE);
 
                 // Evict oldest entries if we exceed maxRealms
                 if (realmAccessOrder.size() > indexMaxRealms) {
                     Iterator<String> it = realmAccessOrder.keySet().iterator();
                     while (it.hasNext() && realmAccessOrder.size() > indexMaxRealms) {
                         String oldestRealm = it.next();
-                        if (!oldestRealm.equals(realm)) {
+                        if (!oldestRealm.equals(scopeKey)) {
                             it.remove();
                             cachedEffectiveRules.remove(oldestRealm);
                             compiledIndexes.remove(oldestRealm);
@@ -1298,6 +1366,24 @@ public class RuleContext {
             Class<? extends UnversionedBaseModel> modelClass,
             Object resourceInstance,
             @NotNull RuleEffect defaultFinalEffect) {
+
+        AuthProvider selectedProvider = authProviderFactory == null
+                ? null
+                : authProviderFactory.getAuthProvider();
+        if (selectedProvider instanceof AuthorizationProvider authorizationProvider) {
+            SecurityCheckResponse delegated = authorizationProvider.checkRules(
+                    pcontext,
+                    rcontext,
+                    modelClass == null ? null : modelClass.getName(),
+                    resourceInstance,
+                    defaultFinalEffect,
+                    getEvalModeForThread());
+            if (delegated == null) {
+                throw new IllegalStateException(
+                        "Authorization provider returned no decision: " + selectedProvider.getName());
+            }
+            return delegated;
+        }
 
         // Request-scope memoization: return cached result if enabled and present
         if (requestCacheEnabled && !shouldSkipRequestCache()) {

@@ -119,9 +119,12 @@ public final class ApplicationAuthorizationResolver {
 
         if (wildcard) {
             // "*" = valid for any application: mint the wildcard audience instead of
-            // demanding a selection this layer cannot enumerate. azp = the app
-            // actively entered, when one was named or defaulted.
-            return Result.resolved(wildcardAudience(), requested != null ? requested : defaultApp, true);
+            // narrowing the audience, but application-scoped policy still requires
+            // an active application (azp). Without a request/default, require selection.
+            String active = requested != null ? requested : defaultApp;
+            return active == null
+                    ? Result.ambiguous(new ArrayList<>(concrete), true)
+                    : Result.resolved(wildcardAudience(), active, true);
         }
 
         if (requested != null) {
@@ -157,8 +160,12 @@ public final class ApplicationAuthorizationResolver {
 
         if (WILDCARD.equals(expression)) {
             // Same "*" semantics as a wildcard grant entry: the token is valid for
-            // any application, carried as the literal "*" audience.
-            return Result.resolved(wildcardAudience(), requested != null ? requested : defaultApp, true);
+            // any application, but a concrete active application remains mandatory
+            // so authorization can select the correct vocabulary and policies.
+            String active = requested != null ? requested : defaultApp;
+            return active == null
+                    ? Result.ambiguous(List.of(), true)
+                    : Result.resolved(wildcardAudience(), active, true);
         }
 
         if (requested != null) {

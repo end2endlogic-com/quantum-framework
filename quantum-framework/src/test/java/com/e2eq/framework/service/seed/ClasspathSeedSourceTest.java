@@ -27,7 +27,7 @@ import org.junit.jupiter.api.Test;
 @QuarkusTestResource(MongoDbInitResource.class)
 class ClasspathSeedSourceTest {
 
-    private static final String REALM = "classpath-seed-source-test";
+    private static final String REALM = "test-classpath-seed-source";
 
     @Inject
     MongoClient mongoClient;
