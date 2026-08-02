@@ -92,6 +92,7 @@ public class PermissionResource {
       public String identity; // userId or role
       public String[] roles; // optional additional roles
       public String realm; // optional, defaults to RuleContext default realm
+      public String applicationId; // optional only when inherited from the authenticated principal
       // DataDomain
       public String orgRefName;
       public String accountNumber;
@@ -121,6 +122,7 @@ public class PermissionResource {
    public static class EvaluateRequest {
       public String identity;         // userId or role (required)
       public String realm;            // optional
+      public String applicationId;    // optional only when inherited from the authenticated principal
       public String[] roles;          // optional extra roles
       // DataDomain scope (optional; falls back like /check)
       public String orgRefName;
@@ -599,6 +601,11 @@ public class PermissionResource {
       // Prefer explicit realm, then SecurityContext principal realm, then default
       String realm = (req.realm != null && !req.realm.isBlank()) ? req.realm :
               SecurityContext.getPrincipalContext().map(PrincipalContext::getDefaultRealm).orElse(ruleContext.getDefaultRealm());
+      String applicationId = (req.applicationId != null && !req.applicationId.isBlank()) ? req.applicationId :
+              SecurityContext.getPrincipalContext().map(PrincipalContext::getApplicationId).orElse(null);
+      if (applicationId == null || applicationId.isBlank()) {
+         return Response.status(Response.Status.BAD_REQUEST).entity("applicationId is required").build();
+      }
 
       // Build DataDomain with fallbacks (request -> SecurityContext principal -> framework default)
       String org = (req.orgRefName != null && !req.orgRefName.isBlank()) ? req.orgRefName :
@@ -632,6 +639,7 @@ public class PermissionResource {
 
       PrincipalContext pc = new PrincipalContext.Builder()
               .withDefaultRealm(realm)
+              .withApplicationId(applicationId)
               .withDataDomain(dd)
               .withUserId(req.identity)
               .withRoles(roles)
@@ -647,6 +655,7 @@ public class PermissionResource {
       // Do NOT override FunctionalDomain, Area, or Action if scripts supply them; use request or wildcard
       ResourceContext rc = new ResourceContext.Builder()
               .withRealm(realm)
+              .withApplicationId(applicationId)
               .withArea(req.area != null ? req.area : "*")
               .withFunctionalDomain(req.functionalDomain != null ? req.functionalDomain : "*")
               .withAction(normalizedAction != null ? normalizedAction : "*")
@@ -715,6 +724,11 @@ public class PermissionResource {
       }
       String realm = (req.realm != null && !req.realm.isBlank()) ? req.realm :
               SecurityContext.getPrincipalContext().map(PrincipalContext::getDefaultRealm).orElse(ruleContext.getDefaultRealm());
+      String applicationId = (req.applicationId != null && !req.applicationId.isBlank()) ? req.applicationId :
+              SecurityContext.getPrincipalContext().map(PrincipalContext::getApplicationId).orElse(null);
+      if (applicationId == null || applicationId.isBlank()) {
+         return Response.status(Response.Status.BAD_REQUEST).entity("applicationId is required").build();
+      }
 
       // Determine implied identities using centralized resolver. If identity is a role, returned set will just contain it.
       Set<String> identities = identityRoleResolver.resolveRolesForIdentity(req.identity, realm, securityIdentity);
@@ -802,6 +816,11 @@ public class PermissionResource {
       // Realm resolution (same as /check)
       String realm = (req.realm != null && !req.realm.isBlank()) ? req.realm :
               SecurityContext.getPrincipalContext().map(PrincipalContext::getDefaultRealm).orElse(ruleContext.getDefaultRealm());
+      String applicationId = (req.applicationId != null && !req.applicationId.isBlank()) ? req.applicationId :
+              SecurityContext.getPrincipalContext().map(PrincipalContext::getApplicationId).orElse(null);
+      if (applicationId == null || applicationId.isBlank()) {
+         return Response.status(Response.Status.BAD_REQUEST).entity("applicationId is required").build();
+      }
 
       // Build DataDomain with fallbacks
       String org = (req.orgRefName != null && !req.orgRefName.isBlank()) ? req.orgRefName :
@@ -832,6 +851,7 @@ public class PermissionResource {
       String[] rolesArr = roleSetForPc.isEmpty() ? new String[0] : roleSetForPc.toArray(new String[0]);
       PrincipalContext pc = new PrincipalContext.Builder()
               .withDefaultRealm(realm)
+              .withApplicationId(applicationId)
               .withDataDomain(dd)
               .withUserId(req.identity)
               .withRoles(rolesArr)
@@ -946,6 +966,7 @@ public class PermissionResource {
                   // Fallback to server-side evaluation for exact combination
                   ResourceContext rc = new ResourceContext.Builder()
                           .withRealm(realm)
+                          .withApplicationId(applicationId)
                           .withArea(areaKey)
                           .withFunctionalDomain(domainKey)
                           .withAction(action)
