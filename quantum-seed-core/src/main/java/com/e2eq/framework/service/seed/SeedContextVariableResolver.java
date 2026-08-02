@@ -12,6 +12,7 @@ import java.util.Optional;
  *   <li>{@code orgRefName} - the organization reference name</li>
  *   <li>{@code accountId} - the account identifier</li>
  *   <li>{@code ownerId} - the owner identifier</li>
+ *   <li>{@code adminUserId} - alias for the seed admin / principal owner</li>
  * </ul>
  *
  * <p>This resolver has the lowest priority (-100) so custom resolvers can override
@@ -40,7 +41,9 @@ public final class SeedContextVariableResolver implements SeedVariableResolver {
             case "tenantId" -> context.getTenantId();
             case "orgRefName" -> context.getOrgRefName();
             case "accountId" -> context.getAccountId();
-            case "ownerId" -> context.getOwnerId();
+            // Seed packs (e.g. quantum-billing-reference) use {adminUserId}; REST seed apply
+            // sets ownerId from the principal, so alias it here for startup/REST parity.
+            case "ownerId", "adminUserId" -> context.getOwnerId();
             default -> Optional.empty();
         };
     }

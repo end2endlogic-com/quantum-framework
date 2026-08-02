@@ -79,6 +79,14 @@ public class IdentityRoleResolver {
                                           CredentialUserIdPassword credential,
                                           String authorityRealm,
                                           String effectiveRealm) {
+        return resolveEffectiveRoles(identity, credential, authorityRealm, effectiveRealm, null);
+    }
+
+    public String[] resolveEffectiveRoles(SecurityIdentity identity,
+                                          CredentialUserIdPassword credential,
+                                          String authorityRealm,
+                                          String effectiveRealm,
+                                          String applicationId) {
         String targetRealm = requireRealm(effectiveRealm);
         LinkedHashMap<String, EnumSet<RoleSource>> provenance = new LinkedHashMap<>();
         if (identity != null) {
@@ -94,9 +102,9 @@ public class IdentityRoleResolver {
                                 credential.getUserId(), targetRealm, envConfigUtils.getSystemRealm())
                         .ifPresent(assignment -> addRoles(provenance, assignment.getRoles(), RoleSource.REALM));
 
-                addUserGroupRoles(provenance, credential, envConfigUtils.getSystemRealm());
+                addUserGroupRoles(provenance, credential, envConfigUtils.getSystemRealm(), applicationId);
                 if (!sameRealm(targetRealm, envConfigUtils.getSystemRealm())) {
-                    addUserGroupRoles(provenance, credential, targetRealm);
+                    addUserGroupRoles(provenance, credential, targetRealm, applicationId);
                 }
             } catch (RuntimeException e) {
                 throw new IllegalStateException(String.format(
@@ -134,6 +142,13 @@ public class IdentityRoleResolver {
      * only as a compatibility fallback for embedded auth mode.
      */
     public Map<String, EnumSet<RoleSource>> resolveRoleSources(String identity, String realm, SecurityIdentity securityIdentity) {
+        return resolveRoleSources(identity, realm, null, securityIdentity);
+    }
+
+    public Map<String, EnumSet<RoleSource>> resolveRoleSources(String identity,
+                                                               String realm,
+                                                               String applicationId,
+                                                               SecurityIdentity securityIdentity) {
         LinkedHashMap<String, EnumSet<RoleSource>> out = new LinkedHashMap<>();
         String targetRealm = requireRealm(realm);
         String systemRealm = envConfigUtils.getSystemRealm();
@@ -154,9 +169,9 @@ public class IdentityRoleResolver {
                             cred.getUserId(), targetRealm, systemRealm)
                     .ifPresent(assignment -> addRoles(out, assignment.getRoles(), RoleSource.REALM));
 
-            addUserGroupRoles(out, cred, systemRealm);
+            addUserGroupRoles(out, cred, systemRealm, applicationId);
             if (!sameRealm(targetRealm, systemRealm)) {
-                addUserGroupRoles(out, cred, targetRealm);
+                addUserGroupRoles(out, cred, targetRealm, applicationId);
             }
         }
         return out;
@@ -164,7 +179,8 @@ public class IdentityRoleResolver {
 
     private void addUserGroupRoles(Map<String, EnumSet<RoleSource>> target,
                                    CredentialUserIdPassword credential,
-                                   String groupRealm) {
+                                   String groupRealm,
+                                   String applicationId) {
         if (credential == null || credential.getSubject() == null || groupRealm == null || groupRealm.isBlank()) {
             return;
         }
@@ -178,10 +194,20 @@ public class IdentityRoleResolver {
             return;
         }
         for (UserGroup group : groups) {
-            if (group != null) {
+            if (group != null && groupAppliesToApplication(group, applicationId)) {
                 addRoles(target, group.getRoles(), RoleSource.USERGROUP);
             }
         }
+    }
+
+    static boolean groupAppliesToApplication(UserGroup group, String applicationId) {
+        String groupApplication = group.getApplicationId();
+        if (applicationId == null || applicationId.isBlank()) {
+            return true;
+        }
+        return groupApplication != null
+                && ("*".equals(groupApplication.trim())
+                    || groupApplication.trim().equalsIgnoreCase(applicationId.trim()));
     }
 
     private String credentialHomeRealm(CredentialUserIdPassword credential) {
@@ -257,6 +283,19 @@ public class IdentityRoleResolver {
         }
         java.util.List<RoleAssignment> assignments = toAssignments(provenance);
         return new RoleResolutionResult(roles, assignments);
+    }
+
+    public RoleResolutionResult buildRoleResolution(String identity,
+                                                     String realm,
+                                                     String applicationId,
+                                                     SecurityIdentity securityIdentity) {
+        Map<String, EnumSet<RoleSource>> provenance = resolveRoleSources(
+                identity, realm, applicationId, securityIdentity);
+        java.util.LinkedHashSet<String> roles = new java.util.LinkedHashSet<>();
+        for (String role : provenance.keySet()) {
+            if (role != null && !role.isBlank()) roles.add(role);
+        }
+        return new RoleResolutionResult(roles, toAssignments(provenance));
     }
 
     /** Utility to convert provenance map to role assignments list. */

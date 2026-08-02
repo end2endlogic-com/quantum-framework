@@ -50,7 +50,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @QuarkusTest
 public class TerritoryHierarchyComputedIT {
 
-    private static final String REALM = "territory-hierarchy-test";
+    private static final String REALM = "test-territory-hierarchy";
 
     @Inject
     MorphiaDataStoreWrapper dataStoreWrapper;

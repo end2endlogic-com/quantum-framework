@@ -805,6 +805,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                             "Governed aggregation requires a ResourceContext"));
             ResourceContext targetContext = new ResourceContext.Builder()
                     .withRealm(current.getRealm())
+                    .withApplicationId(current.getApplicationId())
                     .withArea(mapping.area())
                     .withFunctionalDomain(mapping.domain())
                     .withAction(current.getAction())
@@ -2119,6 +2120,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                 String actionString = action.getLabel().toUpperCase().replace(" ", "_");
 
                 ResourceContext rcontext = new ResourceContext.Builder()
+                        .withApplicationId(pcontext.getApplicationId())
                         .withFunctionalDomain(domain)
                         .withArea(area)
                         .withAction(actionString)

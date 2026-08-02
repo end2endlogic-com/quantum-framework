@@ -41,7 +41,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @QuarkusTest
 public class ChainInferenceAndReindexIT {
 
-    private static final String REALM = "chain-inference-test";
+    private static final String REALM = "test-chain-inference";
 
     @Inject
     MorphiaDataStoreWrapper dataStoreWrapper;

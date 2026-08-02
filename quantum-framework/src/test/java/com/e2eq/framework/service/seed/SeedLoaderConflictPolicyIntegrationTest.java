@@ -25,7 +25,7 @@ import org.junit.jupiter.api.Test;
 class SeedLoaderConflictPolicyIntegrationTest {
 
     private static final Path SEED_ROOT = Path.of("src", "test", "resources", "seed-packs");
-    private static final String REALM = "seed-loader-conflict-it";
+    private static final String REALM = "test-seed-loader-conflict-it";
 
     @Inject
     MongoClient mongoClient;

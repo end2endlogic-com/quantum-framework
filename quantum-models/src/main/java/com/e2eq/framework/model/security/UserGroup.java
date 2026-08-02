@@ -22,6 +22,9 @@ import java.util.List;
 @OntologyClass(id = "UserGroup")
 public class UserGroup extends BaseModel {
 
+   /** Application in which the group's roles are effective; {@code *} means every application. */
+   protected String applicationId;
+
    @OntologyProperty(id = "hasMember", ref = "UserProfile", materializeEdge = true)
    protected List<EntityReference> userProfiles;
    protected List<String> roles;

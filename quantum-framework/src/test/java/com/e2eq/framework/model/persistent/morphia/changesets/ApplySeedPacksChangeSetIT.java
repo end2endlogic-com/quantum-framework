@@ -26,7 +26,7 @@ import org.junit.jupiter.api.Test;
 @QuarkusTestResource(MongoDbInitResource.class)
 public class ApplySeedPacksChangeSetIT {
 
-    private static final String REALM = "seed-changeset-it";
+    private static final String REALM = "test-seed-changeset-it";
 
     @Inject
     MongoClient mongoClient;

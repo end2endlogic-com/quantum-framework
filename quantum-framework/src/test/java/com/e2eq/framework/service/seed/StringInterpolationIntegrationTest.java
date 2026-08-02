@@ -27,7 +27,7 @@ import static org.junit.jupiter.api.Assertions.*;
 public class StringInterpolationIntegrationTest {
 
     private static final Path SEED_ROOT = Path.of("src", "test", "resources", "seed-packs");
-    private static final String REALM = "interpolation-test-realm";
+    private static final String REALM = "test-interpolation-realm";
 
     @Inject
     MongoClient mongoClient;

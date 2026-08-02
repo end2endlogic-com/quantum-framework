@@ -51,10 +51,10 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 public class XRealmUserProvisioningIT extends BaseRepoTest {
 
     // Test target realm configuration (the "other" tenant)
-    private static final String TARGET_REALM_REF_NAME = "xrealm-provision-target";
+    private static final String TARGET_REALM_REF_NAME = "test-xrealm-provision-target";
     private static final String TARGET_EMAIL_DOMAIN = "xrealmtarget.com";
     private static final String TARGET_ORG = "XREALM-TARGET-ORG";
-    private static final String TARGET_TENANT = "xrealm-provision-target";
+    private static final String TARGET_TENANT = "test-xrealm-provision-target";
     private static final String TARGET_ACCOUNT = "XREALM-TARGET-ACCT";
 
     // Test users to be provisioned

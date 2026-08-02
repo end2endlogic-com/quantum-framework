@@ -6,17 +6,104 @@ import com.e2eq.framework.model.securityrules.SecurityURIHeader;
 
 import dev.morphia.query.filters.Filters;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 @ApplicationScoped
 public class PolicyRepo extends MorphiaRepo<Policy> {
+   @ConfigProperty(name = "quantum.security.policy-store-realm")
+   Optional<String> policyStoreRealm = Optional.empty();
+
+   @ConfigProperty(name = "quantum.security.policy-admission.enabled", defaultValue = "false")
+   boolean policyAdmissionEnabled;
+
+   @Inject
+   ApplicationRepo applicationRepo;
+
+   @Inject
+   FunctionalDomainRepo functionalDomainRepo;
+
+   @Override
+   public String getSecurityContextRealmId() {
+      return policyStoreRealm
+         .filter(value -> !value.isBlank())
+         .map(String::trim)
+         .orElseGet(super::getSecurityContextRealmId);
+   }
+
+   @Override
+   protected void setDefaultValues(Policy policy) {
+      super.setDefaultValues(policy);
+      if (policyAdmissionEnabled) validatePolicyScopeAndVocabulary(policy);
+   }
+
+   private void validatePolicyScopeAndVocabulary(Policy policy) {
+      String applicationId = required(policy.getApplicationId(), "Policy.applicationId is required");
+      required(policy.getRealmRefName(), "Policy.realmRefName is required (use * for every realm)");
+      if (!"*".equals(applicationId)
+            && applicationRepo.findByRefNameWithIgnoreRules(applicationId).isEmpty()) {
+         throw new IllegalArgumentException("Policy references unknown application: " + applicationId);
+      }
+      if ("*".equals(applicationId)) return;
+
+      Map<String, Set<String>> vocabulary = new HashMap<>();
+      for (var domain : functionalDomainRepo.findForApplicationWithIgnoreRules(applicationId)) {
+         if (domain.getArea() == null || domain.getRefName() == null) continue;
+         String key = axis(domain.getArea()) + "/" + axis(domain.getRefName());
+         Set<String> actions = vocabulary.computeIfAbsent(key, ignored -> new java.util.HashSet<>());
+         if (domain.getFunctionalActions() != null) {
+            for (var action : domain.getFunctionalActions()) {
+               if (action != null && action.getRefName() != null) actions.add(axis(action.getRefName()));
+            }
+         }
+      }
+      if (vocabulary.isEmpty()) {
+         throw new IllegalArgumentException(
+            "No functional-domain vocabulary is registered for application: " + applicationId);
+      }
+      if (policy.getRules() == null) return;
+      for (Rule rule : policy.getRules()) {
+         if (rule == null || rule.getSecurityURI() == null || rule.getSecurityURI().getHeader() == null) {
+            throw new IllegalArgumentException("Every policy rule must declare a SecurityURI header");
+         }
+         SecurityURIHeader header = rule.getSecurityURI().getHeader();
+         if (wildcard(header.getArea()) || wildcard(header.getFunctionalDomain())) continue;
+         String key = axis(header.getArea()) + "/" + axis(header.getFunctionalDomain());
+         Set<String> actions = vocabulary.get(key);
+         if (actions == null) {
+            throw new IllegalArgumentException(
+               "Policy rule '" + rule.getName() + "' references unknown functional area/domain: " + key);
+         }
+         if (!wildcard(header.getAction()) && !actions.contains(axis(header.getAction()))) {
+            throw new IllegalArgumentException(
+               "Policy rule '" + rule.getName() + "' references unknown action '"
+                  + header.getAction() + "' for " + key);
+         }
+      }
+   }
+
+   private static String required(String value, String message) {
+      if (value == null || value.isBlank()) throw new IllegalArgumentException(message);
+      return value.trim();
+   }
+
+   private static String axis(String value) {
+      return value.trim().toLowerCase(Locale.ROOT);
+   }
+
+   private static boolean wildcard(String value) {
+      return value == null || value.isBlank() || "*".equals(value.trim());
+   }
+
    /**
     * Returns all policies in the given realm bypassing permission filters and SecurityIdentity.
     * Intended for internal hydration of RuleContext.
@@ -27,6 +114,20 @@ public class PolicyRepo extends MorphiaRepo<Policy> {
       try (cursor) {
          return cursor.toList();
       }
+   }
+
+   /**
+    * Reads centrally stored policies for one application/operating-realm scope.
+    * The datastore realm identifies where policy is stored; {@code targetRealm}
+    * identifies the tenant realm to which a policy applies.
+    */
+   public List<Policy> getAllListIgnoreRules(String datastoreRealm,
+                                             String applicationId,
+                                             String targetRealm,
+                                             boolean includeLegacyUnscoped) {
+      return getAllListIgnoreRules(datastoreRealm).stream()
+         .filter(policy -> matchesScope(policy, applicationId, targetRealm, includeLegacyUnscoped))
+         .toList();
    }
 
    /**
@@ -53,6 +154,16 @@ public class PolicyRepo extends MorphiaRepo<Policy> {
       try (cursor) {
          return cursor.toList();
       }
+   }
+
+   public List<Policy> getPoliciesForIdentities(String datastoreRealm,
+                                                 Collection<String> identities,
+                                                 String applicationId,
+                                                 String targetRealm,
+                                                 boolean includeLegacyUnscoped) {
+      return getPoliciesForIdentities(datastoreRealm, identities).stream()
+         .filter(policy -> matchesScope(policy, applicationId, targetRealm, includeLegacyUnscoped))
+         .toList();
    }
 
    /**
@@ -116,6 +227,27 @@ public class PolicyRepo extends MorphiaRepo<Policy> {
       return rules;
    }
 
+   public Map<String, List<Rule>> getEffectiveRulesForIdentities(
+         String datastoreRealm,
+         List<Policy> defaultSystemPolicies,
+         Collection<String> identities,
+         String applicationId,
+         String targetRealm,
+         boolean includeLegacyUnscoped) {
+
+      List<Policy> scopedDefaults = defaultSystemPolicies == null
+         ? List.of()
+         : defaultSystemPolicies.stream()
+            .filter(policy -> matchesScope(policy, applicationId, targetRealm, includeLegacyUnscoped))
+            .toList();
+      Map<String, List<Rule>> rules = effectiveRulesFromPolicies(scopedDefaults, identities, false);
+      List<Policy> databasePolicies = getPoliciesForIdentities(
+         datastoreRealm, identities, applicationId, targetRealm, includeLegacyUnscoped);
+      mergePolicies(rules, databasePolicies, identities, true);
+      sortRules(rules);
+      return rules;
+   }
+
    /**
     * Returns effective policies: default system policies merged with database policies.
     * Database policies are always fetched fresh from the collection.
@@ -161,6 +293,78 @@ public class PolicyRepo extends MorphiaRepo<Policy> {
       }
       
       return rules;
+   }
+
+   public Map<String, List<Rule>> getEffectiveRules(String datastoreRealm,
+                                                     List<Policy> defaultSystemPolicies,
+                                                     String applicationId,
+                                                     String targetRealm,
+                                                     boolean includeLegacyUnscoped) {
+      Map<String, List<Rule>> rules = new HashMap<>();
+      mergePolicies(rules,
+         defaultSystemPolicies == null ? List.of() : defaultSystemPolicies.stream()
+            .filter(policy -> matchesScope(policy, applicationId, targetRealm, includeLegacyUnscoped))
+            .toList(),
+         null,
+         false);
+      mergePolicies(rules,
+         getAllListIgnoreRules(datastoreRealm, applicationId, targetRealm, includeLegacyUnscoped),
+         null,
+         true);
+      sortRules(rules);
+      return rules;
+   }
+
+   private Map<String, List<Rule>> effectiveRulesFromPolicies(List<Policy> policies,
+                                                               Collection<String> identities,
+                                                               boolean databasePolicy) {
+      Map<String, List<Rule>> rules = new HashMap<>();
+      mergePolicies(rules, policies, identities, databasePolicy);
+      return rules;
+   }
+
+   private void mergePolicies(Map<String, List<Rule>> rules,
+                              Collection<Policy> policies,
+                              Collection<String> identities,
+                              boolean databasePolicy) {
+      if (policies == null) return;
+      Set<String> identitySet = identities == null ? null : identities.stream()
+         .filter(identity -> identity != null && !identity.isBlank())
+         .map(identity -> identity.toLowerCase(Locale.ROOT))
+         .collect(Collectors.toSet());
+      for (Policy policy : policies) {
+         if (policy == null || policy.getRules() == null) continue;
+         if (databasePolicy) policy.setPolicySource("POLICY_COLLECTION");
+         for (Rule rule : policy.getRules()) {
+            String identity = extractIdentity(rule, policy);
+            if (identity == null || identity.isBlank()) continue;
+            if (identitySet != null && !identitySet.contains(identity)) continue;
+            rules.computeIfAbsent(identity, ignored -> new ArrayList<>()).add(rule);
+         }
+      }
+   }
+
+   private void sortRules(Map<String, List<Rule>> rules) {
+      for (List<Rule> list : rules.values()) {
+         if (list != null && list.size() > 1) {
+            list.sort((left, right) -> Integer.compare(left.getPriority(), right.getPriority()));
+         }
+      }
+   }
+
+   boolean matchesScope(Policy policy,
+                                String applicationId,
+                                String targetRealm,
+                                boolean includeLegacyUnscoped) {
+      return policy != null
+         && matchesValue(policy.getApplicationId(), applicationId, includeLegacyUnscoped)
+         && matchesValue(policy.getRealmRefName(), targetRealm, includeLegacyUnscoped);
+   }
+
+   private boolean matchesValue(String policyValue, String requestedValue, boolean includeLegacyUnscoped) {
+      if (policyValue == null || policyValue.isBlank()) return includeLegacyUnscoped;
+      if ("*".equals(policyValue.trim())) return true;
+      return requestedValue != null && policyValue.trim().equalsIgnoreCase(requestedValue.trim());
    }
    
    private String extractIdentity(Rule r, Policy p) {

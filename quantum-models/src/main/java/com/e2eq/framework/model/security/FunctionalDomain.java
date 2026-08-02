@@ -14,6 +14,9 @@ import java.util.List;
 @EqualsAndHashCode (callSuper = true)
 public class FunctionalDomain extends BaseModel {
 
+   /** Application whose authorization vocabulary contains this domain. */
+   protected String applicationId;
+
    protected String area;
 
    protected List<FunctionalAction> functionalActions;

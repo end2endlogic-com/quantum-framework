@@ -118,6 +118,7 @@ final class RepoSecurityContextResolver {
 
         PrincipalContext rebuiltContext = new PrincipalContext.Builder()
                 .withDefaultRealm(contextRealm)
+                .withApplicationId(identityAttribute("azp"))
                 .withDataDomain(dataDomain)
                 .withUserId(userId)
                 .withRoles(roles)
@@ -135,6 +136,14 @@ final class RepoSecurityContextResolver {
             Log.debugf("[MorphiaRepo] Principal Context %s from SecurityIdentity for user %s, roles=%s",
                     principalContext.isEmpty() ? "built" : "rebuilt", userId, Arrays.toString(roles));
         }
+    }
+
+    private String identityAttribute(String name) {
+        if (securityIdentity == null) return null;
+        Object value = securityIdentity.getAttribute(name);
+        if (value == null) return null;
+        String text = String.valueOf(value).trim();
+        return text.isEmpty() ? null : text;
     }
 
     String getSecurityContextRealmId() {

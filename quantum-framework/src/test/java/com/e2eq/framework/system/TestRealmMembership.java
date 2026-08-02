@@ -28,7 +28,7 @@ public class TestRealmMembership extends BaseRepoTest {
     @Inject UserRealmRoleRepo userRealmRoleRepo;
     @Inject SystemDirectory systemDirectory;
 
-    private static final String REALM = "membership-test-realm-com";
+    private static final String REALM = "test-membership-realm-com";
 
     @Test
     public void ownerAndParticipantsResolveAndUserRolesArePerRealm() {

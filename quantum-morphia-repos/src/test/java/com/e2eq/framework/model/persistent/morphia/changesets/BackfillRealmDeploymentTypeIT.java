@@ -21,7 +21,7 @@ class BackfillRealmDeploymentTypeIT {
     @Test
     void backfillsOnlyMissingAndNullValuesAndPreservesShared() {
         String databaseName =
-            "quantum_realm_type_migration_" + UUID.randomUUID().toString().replace("-", "");
+            "test-quantum-realm-type-migration-" + UUID.randomUUID().toString().replace("-", "");
         try (MongoClient mongoClient = MongoClients.create("mongodb://localhost:27017")) {
             MongoDatabase database = mongoClient.getDatabase(databaseName);
             database.getCollection("realm").insertMany(List.of(

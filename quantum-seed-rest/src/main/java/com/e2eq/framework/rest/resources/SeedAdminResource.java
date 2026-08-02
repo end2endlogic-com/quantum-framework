@@ -285,10 +285,14 @@ public class SeedAdminResource {
             PrincipalContext pc = principalContext.get();
             DataDomain dd = pc.getDataDomain();
             if (dd != null) {
+                String principalUserId = pc.getUserId();
                 builder.tenantId(dd.getTenantId())
                        .orgRefName(dd.getOrgRefName())
                        .accountId(dd.getAccountNum())
-                       .ownerId(pc.getUserId());
+                       .ownerId(principalUserId)
+                       // Match SeedStartupRunner so packs using {adminUserId} resolve under REST apply.
+                       .variable("adminUserId", principalUserId)
+                       .variable("ownerId", principalUserId);
             }
         } else {
             Log.warnf("SeedAdminResource: No security context available for realm %s. " +

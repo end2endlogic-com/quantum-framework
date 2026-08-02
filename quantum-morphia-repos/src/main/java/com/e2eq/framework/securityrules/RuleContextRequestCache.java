@@ -58,12 +58,15 @@ final class RuleContextRequestCache {
             RuleEffect defaultEffect) {
         String user = String.valueOf(pctx != null ? pctx.getUserId() : "<anon>");
         String realm = String.valueOf(pctx != null ? pctx.getDefaultRealm() : "<realm>");
+        String principalApplication = String.valueOf(pctx != null ? pctx.getApplicationId() : "<application>");
+        String resourceApplication = String.valueOf(rctx != null ? rctx.getApplicationId() : "<resource-application>");
         String scope = String.valueOf(pctx != null ? pctx.getScope() : "<scope>");
         String roles = Arrays.toString(pctx != null ? pctx.getRoles() : new String[0]);
         String area = String.valueOf(rctx != null ? rctx.getArea() : "<area>");
         String domain = String.valueOf(rctx != null ? rctx.getFunctionalDomain() : "<domain>");
         String action = String.valueOf(rctx != null ? rctx.getAction() : "<action>");
         String dd = String.valueOf(pctx != null && pctx.getDataDomain() != null ? pctx.getDataDomain().toString() : "<dd>");
-        return String.join("|", user, realm, scope, roles, area, domain, action, dd, String.valueOf(defaultEffect));
+        return String.join("|", user, realm, principalApplication, resourceApplication,
+                scope, roles, area, domain, action, dd, String.valueOf(defaultEffect));
     }
 }

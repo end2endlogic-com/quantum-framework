@@ -18,7 +18,7 @@ import static org.hamcrest.Matchers.*;
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class AgentConfigResourceIT {
 
-    private static final String REALM = "defaultRealm";
+    private static final String REALM = "test-agent-config-realm";
     private static final String REF_NAME = "test-supply-chain-agent";
 
     @Test

@@ -9,12 +9,37 @@ import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 @ApplicationScoped
 public class UserGroupRepo extends MorphiaRepo<UserGroup> {
+   @ConfigProperty(name = "quantum.security.identity-store-realm")
+   Optional<String> identityStoreRealm = Optional.empty();
+
+   @ConfigProperty(name = "quantum.security.group-scope.require-application", defaultValue = "false")
+   boolean requireApplicationScope;
+
+   @Override
+   public String getSecurityContextRealmId() {
+      return identityStoreRealm
+         .filter(value -> !value.isBlank())
+         .map(String::trim)
+         .orElseGet(super::getSecurityContextRealmId);
+   }
+
+   @Override
+   protected void setDefaultValues(UserGroup model) {
+      super.setDefaultValues(model);
+      if (requireApplicationScope
+            && (model.getApplicationId() == null || model.getApplicationId().isBlank())) {
+         throw new IllegalArgumentException("UserGroup.applicationId is required");
+      }
+   }
+
    // given a UserProfileEntityReference find all the userGroups associated with it
    public List<UserGroup> findByUserProfileRef(@Valid @NotNull EntityReference userProfileRef) {
       // query userGroups.userProfiles.entityRefName == userProfileRef.entityRefName
@@ -46,7 +71,11 @@ public class UserGroupRepo extends MorphiaRepo<UserGroup> {
       Query<UserGroup> query = ds.find(getPersistentClass())
           .filter(Filters.eq("userProfiles.entityRefName", userProfileRef.getEntityRefName()));
 
-      List<UserGroup> userGroups = query.iterator().toList();
+      List<UserGroup> userGroups;
+      dev.morphia.query.MorphiaCursor<UserGroup> cursor = query.iterator();
+      try (cursor) {
+         userGroups = cursor.toList();
+      }
 
       if (userGroups.isEmpty()) {
          Log.warnf("No userGroups found for userProfileRef:\"%s\" in realm:%s (ignoreRules=true)", userProfileRef.getEntityRefName(), realm);

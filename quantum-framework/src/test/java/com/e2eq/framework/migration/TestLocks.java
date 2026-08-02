@@ -23,7 +23,7 @@ public class TestLocks {
     @Test
     public void testLocks() {
         MongoCollection<Document> collection = mongoClient
-                .getDatabase("sherlock")
+                .getDatabase("test-sherlock")
                 .getCollection("locks");
 
         Sherlock sherlock = MongoSherlock.create(collection);
@@ -35,7 +35,7 @@ public class TestLocks {
     @Test
     public void testLocks2() throws InterruptedException {
         MongoCollection<Document> collection = mongoClient
-                .getDatabase("sherlock")
+                .getDatabase("test-sherlock")
                 .getCollection("locks");
 
         Sherlock sherlock = MongoSherlock.create(collection);
@@ -97,7 +97,7 @@ public class TestLocks {
     @Test
     public void testShirlockMigration() {
         MongoCollection<Document> collection = mongoClient
-                .getDatabase("sherlock")
+                .getDatabase("test-sherlock")
                 .getCollection("locks");
         Sherlock sherlock = MongoSherlock.create(collection);
         // first commit - all migrations are executed

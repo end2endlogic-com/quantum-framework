@@ -27,13 +27,11 @@ class ApplicationAuthorizationResolverTest {
     }
 
     @Test
-    void credentialWildcardPattern_noRequest_noDefault_mintsWildcardAudience() {
-        // "*" = no application restriction: mint the wildcard audience instead of
-        // demanding a selection from an empty candidate list (this layer cannot
-        // enumerate installed apps). Downstream admission = own id ∈ aud or "*" ∈ aud.
+    void credentialWildcardPattern_noRequest_noDefault_requiresApplicationSelection() {
+        // Wildcard admission does not identify which application's vocabulary applies.
         var r = ApplicationAuthorizationResolver.resolve(null, "*", null, null);
-        assertEquals(ApplicationAuthorizationResolver.Outcome.RESOLVED, r.outcome());
-        assertEquals(Set.of("*"), r.audiences());
+        assertEquals(ApplicationAuthorizationResolver.Outcome.AMBIGUOUS, r.outcome());
+        assertNull(r.audiences());
         assertNull(r.activeApplication());
         assertTrue(r.wildcard());
     }
@@ -139,12 +137,12 @@ class ApplicationAuthorizationResolverTest {
     }
 
     @Test
-    void wildcard_withoutRequest_mintsWildcardAudience_noAzp() {
+    void wildcard_withoutRequest_requiresAzpSelection() {
         var r = ApplicationAuthorizationResolver.resolve(List.of("*"), null, null);
-        assertTrue(r.resolved());
+        assertEquals(ApplicationAuthorizationResolver.Outcome.AMBIGUOUS, r.outcome());
         assertTrue(r.wildcard());
         assertNull(r.activeApplication());
-        assertEquals(List.of("*"), List.copyOf(r.audiences()));
+        assertNull(r.audiences());
     }
 
     @Test

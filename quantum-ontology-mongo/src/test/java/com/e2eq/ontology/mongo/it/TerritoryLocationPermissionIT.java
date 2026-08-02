@@ -44,7 +44,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @QuarkusTest
 public class TerritoryLocationPermissionIT {
 
-    private static final String REALM = "territory-permission-test";
+    private static final String REALM = "test-territory-permission";
 
     @Inject
     MorphiaDataStoreWrapper dataStoreWrapper;
