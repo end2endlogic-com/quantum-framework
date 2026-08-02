@@ -45,7 +45,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class MorphiaSeedRepositoryIntegrationTest {
 
     private static final Path SEED_ROOT = Path.of("src", "test", "resources", "seed-packs");
-    private static final String REALM = "morphia-seed-it";
+    private static final String REALM = "test-morphia-seed-it";
 
     @Inject
     MongoClient mongoClient;

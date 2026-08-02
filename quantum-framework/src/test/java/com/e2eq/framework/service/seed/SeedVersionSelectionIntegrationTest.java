@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 public class SeedVersionSelectionIntegrationTest {
 
     private static final Path SEED_ROOT = Path.of("src", "test", "resources", "seed-packs");
-    private static final String REALM = "seed-version-it";
+    private static final String REALM = "test-seed-version-it";
 
     @Inject
     MongoClient mongoClient;

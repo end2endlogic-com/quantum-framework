@@ -7,7 +7,7 @@ import java.util.Map;
 
 public class MigrationStartupRealmsTestProfile implements QuarkusTestProfile {
 
-    public static final String EXTRA_REALM = "startup-extra-apply-realms-it-com";
+    public static final String EXTRA_REALM = "test-startup-extra-apply-realms-it-com";
 
     @Override
     public Map<String, String> getConfigOverrides() {

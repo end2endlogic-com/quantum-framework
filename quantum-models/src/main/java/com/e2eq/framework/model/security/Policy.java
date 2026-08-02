@@ -33,6 +33,10 @@ public class Policy extends FullBaseModel {
       }
    }
 
+   /** Application whose authorization vocabulary this policy targets; {@code *} means every application. */
+   protected String applicationId;
+   /** Operating realm this policy targets; {@code *} means every realm. Policies remain centrally stored. */
+   protected String realmRefName;
    protected @NotNull String principalId;
    protected PrincipalType principalType = PrincipalType.ROLE;
    protected String description;

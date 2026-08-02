@@ -19,7 +19,7 @@ class MongoTenantDataExpirationProviderIT {
 
     @Test
     void stampsOnlyRequestedTenantAndCreatesAbsoluteTimeTtlIndex() {
-        String databaseName = "tenant-expiration-it-"
+        String databaseName = "test-tenant-expiration-it-"
             + UUID.randomUUID().toString().replace("-", "");
         try (MongoClient client = MongoClients.create("mongodb://localhost:27017")) {
             var collection = client.getDatabase(databaseName).getCollection("orders");
