@@ -438,8 +438,17 @@ public final class SecurityCallScope {
   public static PrincipalContext anonymous(String realm,
                                            DataDomain dataDomain,
                                            String anonymousUserId) {
+    return anonymous(realm, dataDomain, anonymousUserId, null);
+  }
+
+  /** Creates an application-scoped anonymous principal for public application endpoints. */
+  public static PrincipalContext anonymous(String realm,
+                                           DataDomain dataDomain,
+                                           String anonymousUserId,
+                                           String applicationId) {
     return new PrincipalContext.Builder()
         .withDefaultRealm(realm)
+        .withApplicationId(applicationId)
         .withDataDomain(dataDomain)
         .withUserId(anonymousUserId)
         .withRoles(new String[]{"ANONYMOUS"})
@@ -494,6 +503,7 @@ public final class SecurityCallScope {
     String realm = (realmOrNull != null) ? realmOrNull : principal.getDefaultRealm();
     return new ResourceContext.Builder()
         .withRealm(realm)
+        .withApplicationId(principal.getApplicationId())
         .withArea(area)
         .withFunctionalDomain(functionalDomain)
         .withAction(action)
@@ -511,6 +521,7 @@ public final class SecurityCallScope {
     String realm = (realmOrNull != null) ? realmOrNull : principal.getDefaultRealm();
     return new ResourceContext.Builder()
         .withRealm(realm)
+        .withApplicationId(principal.getApplicationId())
         .withArea(area)
         .withFunctionalDomain(functionalDomain)
         .withAction(action)

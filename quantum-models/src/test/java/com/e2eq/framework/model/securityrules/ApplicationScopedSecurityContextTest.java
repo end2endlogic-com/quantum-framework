@@ -41,6 +41,19 @@ class ApplicationScopedSecurityContextTest {
         assertNotEquals(scheduler, reporting);
     }
 
+    @Test
+    void applicationScopedAnonymousPrincipalPropagatesToResources() {
+        DataDomain dataDomain = new DataDomain("system", "0001", "system", 0, "system");
+        PrincipalContext principal = SecurityCallScope.anonymous(
+                "quantum-auth", dataDomain, "anonymous-registration", "quantum-auth");
+
+        ResourceContext resource = SecurityCallScope.resource(
+                principal, null, "SECURITY", "APPLICATION_REGISTRATION", "CREATE");
+
+        assertEquals("quantum-auth", principal.getApplicationId());
+        assertEquals("quantum-auth", resource.getApplicationId());
+    }
+
     private static PrincipalContext principal(DataDomain dataDomain, String applicationId) {
         return new PrincipalContext.Builder()
                 .withDefaultRealm("acme-com")
