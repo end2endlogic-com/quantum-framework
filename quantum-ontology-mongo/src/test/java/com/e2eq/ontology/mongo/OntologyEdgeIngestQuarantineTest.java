@@ -7,6 +7,7 @@ import com.e2eq.framework.model.security.DataDomainPolicyEntry;
 import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.ontology.core.DataDomainInfo;
 import com.e2eq.ontology.core.EdgeRecord;
@@ -50,14 +51,23 @@ public class OntologyEdgeIngestQuarantineTest {
     OntologyEdgeRepo edgeRepo;
 
     private DataDomain principalDD;
+    private SecurityCallScope.Scope privilegedRepoScope;
 
     @AfterEach
     void clearSecurityContext() {
+        if (privilegedRepoScope != null) {
+            privilegedRepoScope.close();
+            privilegedRepoScope = null;
+        }
         SecurityContext.clear();
     }
 
     @BeforeEach
     void setup() {
+        // This acceptance test exercises repository persistence directly, outside an authenticated
+        // resource request. Declare that privileged test boundary explicitly.
+        privilegedRepoScope = SecurityCallScope.openIgnoringRules();
+
         // A principal/security context so ingestEdges' upsert and ds() resolve to a known realm.
         principalDD = new DataDomain();
         principalDD.setOrgRefName("ingest-org");
