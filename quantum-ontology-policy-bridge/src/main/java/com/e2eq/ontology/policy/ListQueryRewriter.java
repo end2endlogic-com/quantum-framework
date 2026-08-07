@@ -84,17 +84,22 @@ public class ListQueryRewriter {
      * Realm used for LAZY/ONDEMAND inverse scans. Prefer the authenticated
      * principal's default realm (same pattern as {@link OntologyEdgeRepo});
      * fall back to tenantId when no security context is present (tests).
+     * Always normalize dots→hyphens so enumerator/loader realms match the
+     * datastore names used by the repository.
      */
     private static String realmHint(DataDomain dataDomain) {
+        String raw = null;
         try {
             var ctx = com.e2eq.framework.model.securityrules.SecurityContext.getPrincipalContext();
             if (ctx.isPresent() && ctx.get().getDefaultRealm() != null
                     && !ctx.get().getDefaultRealm().isBlank()) {
-                return ctx.get().getDefaultRealm();
+                raw = ctx.get().getDefaultRealm();
             }
         } catch (Throwable ignored) { }
-        if (dataDomain == null) return null;
-        return dataDomain.getTenantId();
+        if (raw == null && dataDomain != null) {
+            raw = dataDomain.getTenantId();
+        }
+        return ComputedEdgeReader.normalizeRealmId(raw);
     }
 
     private Set<String> srcIdsByDst(DataDomain dataDomain, String predicate, String dstId) {
