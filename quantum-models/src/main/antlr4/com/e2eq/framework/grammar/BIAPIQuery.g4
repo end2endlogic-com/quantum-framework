@@ -5,60 +5,66 @@ exprGroup: lp=LPAREN (exprGroup | compoundExpr) (exprOp (exprGroup | compoundExp
 compoundExpr: allowedExpr (exprOp allowedExpr)*;
 allowedExpr:   inExpr |  basicExpr |  nullExpr | existsExpr | booleanExpr | notExpr | regexExpr | elemMatchExpr | hasEdgeExpr | hasOutgoingEdgeExpr | hasIncomingEdgeExpr | expandExpr | textExpr;
 exprOp: op=(AND | OR);
-existsExpr: field=STRING op=EXISTS;
-booleanExpr: field=STRING op=(EQ | NEQ) value=(TRUE | FALSE);
-inExpr : field=STRING op=(IN|NIN) value=valueListExpr;
+
+// TEXT is a lexer keyword so text(...) can be recognized, but "text" is also a common
+// field name / unquoted value (e.g. type:text). Allow TEXT wherever STRING may appear
+// as an identifier so those queries remain valid.
+existsExpr: field=(STRING|TEXT) op=EXISTS;
+booleanExpr: field=(STRING|TEXT) op=(EQ | NEQ) value=(TRUE | FALSE);
+inExpr : field=(STRING|TEXT) op=(IN|NIN) value=valueListExpr;
 valueListExpr:
     lp=LBRKT
-    value=(STRING | QUOTED_STRING | VARIABLE | OID | REFERENCE) (COMMA value=(STRING | QUOTED_STRING | VARIABLE | OID | REFERENCE))*
+    value=(STRING | TEXT | QUOTED_STRING | VARIABLE | OID | REFERENCE) (COMMA value=(STRING | TEXT | QUOTED_STRING | VARIABLE | OID | REFERENCE))*
     rp=RBRKT;
 
-basicExpr: field=STRING op=(EQ|NEQ|LT|GT|LTE|GTE|EXISTS|IN) value=(STRING|VARIABLE|OID) caseMode? #stringExpr
-| field=STRING op=(EQ | NEQ ) value=QUOTED_STRING caseMode? #quotedExpr
-| field=STRING op=(EQ | LT | GT | NEQ | LTE | GTE) value=NUMBER #numberExpr
-| field=STRING op=(EQ | LT | GT | NEQ | LTE | GTE) value=WHOLENUMBER #wholenumberExpr
-| field=STRING op=(EQ | LT | GT | NEQ | LTE | GTE) value=DATE #dateExpr
-| field=STRING op=(EQ | LT | GT | NEQ | LTE | GTE) value=DATETIME #dateTimeExpr
-| field=STRING op=(EQ | NEQ) value=REFERENCE #referenceExpr;
+basicExpr: field=(STRING|TEXT) op=(EQ|NEQ|LT|GT|LTE|GTE|EXISTS|IN) value=(STRING|TEXT|VARIABLE|OID) caseMode? #stringExpr
+| field=(STRING|TEXT) op=(EQ | NEQ ) value=QUOTED_STRING caseMode? #quotedExpr
+| field=(STRING|TEXT) op=(EQ | LT | GT | NEQ | LTE | GTE) value=NUMBER #numberExpr
+| field=(STRING|TEXT) op=(EQ | LT | GT | NEQ | LTE | GTE) value=WHOLENUMBER #wholenumberExpr
+| field=(STRING|TEXT) op=(EQ | LT | GT | NEQ | LTE | GTE) value=DATE #dateExpr
+| field=(STRING|TEXT) op=(EQ | LT | GT | NEQ | LTE | GTE) value=DATETIME #dateTimeExpr
+| field=(STRING|TEXT) op=(EQ | NEQ) value=REFERENCE #referenceExpr;
 
 notExpr: NOT allowedExpr;
 
-regex: ((leftW=WILDCARD value=STRING rightW=WILDCARD)
+regex: ((leftW=WILDCARD value=(STRING|TEXT) rightW=WILDCARD)
 | (leftW=WILDCARD value=QUOTED_STRING rightW=WILDCARD)
-| (leftW=WILDCARD value=STRING)
+| (leftW=WILDCARD value=(STRING|TEXT))
 | (leftW=WILDCARD value=QUOTED_STRING)
-| (value=STRING rightW=WILDCARD)
+| (value=(STRING|TEXT) rightW=WILDCARD)
 | (value=QUOTED_STRING rightW=WILDCARD)) caseMode?;
 
 caseMode: CASE_SENSITIVE | CASE_INSENSITIVE;
 
-regexExpr: field=STRING op=(EQ | NEQ) regex;
+regexExpr: field=(STRING|TEXT) op=(EQ | NEQ) regex;
 
-nullExpr: field=STRING op=(EQ | NEQ) value=NULL;
+nullExpr: field=(STRING|TEXT) op=(EQ | NEQ) value=NULL;
 
-elemMatchExpr: field=STRING op=EQ lp=LBRCE nested=query rp=RBRCE;
+elemMatchExpr: field=(STRING|TEXT) op=EQ lp=LBRCE nested=query rp=RBRCE;
 
 // Ontology functions
 // hasEdge(predicate, dst) - find entities that have outgoing edges TO the given destination
 // Example: hasEdge(assignedTo, territoryId) finds associates assigned to that territory
-hasEdgeExpr: HASEDGE LPAREN predicate=(STRING|QUOTED_STRING|VARIABLE) COMMA dst=(STRING|QUOTED_STRING|VARIABLE|OID|REFERENCE) RPAREN;
+hasEdgeExpr: HASEDGE LPAREN predicate=(STRING|TEXT|QUOTED_STRING|VARIABLE) COMMA dst=(STRING|TEXT|QUOTED_STRING|VARIABLE|OID|REFERENCE) RPAREN;
 // hasOutgoingEdge(predicate, dst) - alias for hasEdge for symmetry with hasIncomingEdge
 // Example: hasOutgoingEdge(assignedTo, territoryId) finds associates assigned to that territory
-hasOutgoingEdgeExpr: HASOUTGOINGEDGE LPAREN predicate=(STRING|QUOTED_STRING|VARIABLE) COMMA dst=(STRING|QUOTED_STRING|VARIABLE|OID|REFERENCE) RPAREN;
+hasOutgoingEdgeExpr: HASOUTGOINGEDGE LPAREN predicate=(STRING|TEXT|QUOTED_STRING|VARIABLE) COMMA dst=(STRING|TEXT|QUOTED_STRING|VARIABLE|OID|REFERENCE) RPAREN;
 // hasIncomingEdge(predicate, src) - find entities that the given source has edges TO (inverse direction)
 // Example: hasIncomingEdge(canSeeLocation, associateId) finds locations the associate can see
-hasIncomingEdgeExpr: HASINCOMGINEDGE LPAREN predicate=(STRING|QUOTED_STRING|VARIABLE) COMMA src=(STRING|QUOTED_STRING|VARIABLE|OID|REFERENCE) RPAREN;
+hasIncomingEdgeExpr: HASINCOMGINEDGE LPAREN predicate=(STRING|TEXT|QUOTED_STRING|VARIABLE) COMMA src=(STRING|TEXT|QUOTED_STRING|VARIABLE|OID|REFERENCE) RPAREN;
 
 // Expansion directive (parsed but evaluation is handled elsewhere)
 // Support simple dotted paths and optional array wildcards [*] between segments.
 // Tokens come in as: STRING ('[' '*' ']')? (STRING ('[' '*' ']')? )*
-expandExpr: EXPAND LPAREN head=(STRING|VARIABLE) (LBRKT WILDCARD RBRKT)? ((seg=(STRING|VARIABLE)) (LBRKT WILDCARD RBRKT)? )* RPAREN;
-textExpr: TEXT LPAREN value=(STRING|QUOTED_STRING|VARIABLE) RPAREN;
+expandExpr: EXPAND LPAREN head=(STRING|TEXT|VARIABLE) (LBRKT WILDCARD RBRKT)? ((seg=(STRING|TEXT|VARIABLE)) (LBRKT WILDCARD RBRKT)? )* RPAREN;
+textExpr: TEXT LPAREN value=(STRING|TEXT|QUOTED_STRING|VARIABLE) RPAREN;
 
 HASEDGE: 'hasEdge';
 HASOUTGOINGEDGE: 'hasOutgoingEdge';
 HASINCOMGINEDGE: 'hasIncomingEdge';
 EXPAND: 'expand';
+// Must be declared before STRING so "text" is tokenized as TEXT (function keyword).
+// Field/value positions also accept TEXT so type:text and text:active remain valid.
 TEXT: 'text';
 CASE_SENSITIVE: '~cs';
 CASE_INSENSITIVE: '~ci';

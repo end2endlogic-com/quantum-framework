@@ -80,13 +80,18 @@ text("priority escalation")
 
 # Combine text search with other filters
 text("priority escalation") && status:"OPEN"
+
+# Valid: top-level text AND a grouped OR of non-text predicates
+text("priority") && (status:"OPEN" || status:"PENDING")
 ----
 
 Notes:
 
 - `text(...)` maps to MongoDB `$text` queries and is case-insensitive by default.
 - MongoDB allows only one `text(...)` clause per query.
-- Text search must be backed by a text index on the target collection.
+- Text search must be backed by a text index on the target collection. If the collection has no text index, MongoDB returns an error (Quantum does not pre-check index existence).
+- The lexer keyword `text` is also accepted as a normal field name or unquoted value, so queries such as `type:text` and `text:active` remain valid.
+- In-memory evaluation (policy/tests) approximates `$text` with case-insensitive **whole-word** matching (tokenized contains-any). It does not implement stemming or stop words. Example: `text("cat")` matches `"the cat sat"` but not `"category"`.
 
 IMPORTANT: MongoDB requires `$text` to be a top-level query operator. The following usages are **not allowed** and will be rejected at parse time:
 
