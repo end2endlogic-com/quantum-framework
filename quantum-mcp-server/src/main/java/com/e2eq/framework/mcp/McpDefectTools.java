@@ -2,6 +2,8 @@ package com.e2eq.framework.mcp;
 
 import com.e2eq.framework.mcp.defect.Defect;
 import com.e2eq.framework.mcp.defect.DefectRepo;
+import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkiverse.mcp.server.Tool;
 import io.quarkiverse.mcp.server.ToolArg;
@@ -40,10 +42,10 @@ public class McpDefectTools {
     String defect_create(
             @ToolArg(description = "Short summary line for the defect") String title,
             @ToolArg(description = "Full description: what is wrong, how to reproduce, and relevant context") String description,
-            @ToolArg(description = "Severity: low|medium|high|critical. Default: medium") String severity,
-            @ToolArg(description = "Subsystem/area, e.g. 'quantum-ontology-service'") String area,
-            @ToolArg(description = "Finer-grained component within the area (optional)") String component,
-            @ToolArg(description = "Who is reporting this (optional; defaults to the caller identity)") String reporter) {
+            @ToolArg(description = "Severity: low|medium|high|critical. Default: medium", required = false, defaultValue = "medium") String severity,
+            @ToolArg(description = "Subsystem/area, e.g. 'quantum-ontology-service' (optional)", required = false) String area,
+            @ToolArg(description = "Finer-grained component within the area (optional)", required = false) String component,
+            @ToolArg(description = "Who is reporting this (optional; defaults to the caller identity)", required = false) String reporter) {
         try {
             Defect defect = new Defect();
             defect.setRefName("defect-" + UUID.randomUUID());
@@ -54,7 +56,7 @@ public class McpDefectTools {
             defect.setStatus("open");
             defect.setArea(area);
             defect.setComponent(component);
-            defect.setReporter(reporter);
+            defect.setReporter(resolveReporter(reporter));
             Defect saved = defectRepo.save(defect);
             return objectMapper.writeValueAsString(toMap(saved));
         } catch (Exception e) {
@@ -65,9 +67,9 @@ public class McpDefectTools {
     @Tool(description = "List defects, optionally filtered by status (open|in-progress|resolved|closed), "
             + "severity (low|medium|high|critical), and/or area. Filters are case-insensitive.")
     String defect_list(
-            @ToolArg(description = "Optional status filter: open|in-progress|resolved|closed") String status,
-            @ToolArg(description = "Optional severity filter: low|medium|high|critical") String severity,
-            @ToolArg(description = "Optional area filter") String area) {
+            @ToolArg(description = "Optional status filter: open|in-progress|resolved|closed", required = false) String status,
+            @ToolArg(description = "Optional severity filter: low|medium|high|critical", required = false) String severity,
+            @ToolArg(description = "Optional area filter", required = false) String area) {
         try {
             List<Map<String, Object>> matches = defectRepo.getAllList().stream()
                     .filter(d -> blankOrEquals(status, d.getStatus()))
@@ -102,10 +104,10 @@ public class McpDefectTools {
             + "Use this to change status (open|in-progress|resolved|closed), record a resolution, reassign, or re-prioritize.")
     String defect_update(
             @ToolArg(description = "The defect refName to update") String refName,
-            @ToolArg(description = "New status: open|in-progress|resolved|closed (optional)") String status,
-            @ToolArg(description = "Resolution notes (optional)") String resolution,
-            @ToolArg(description = "Reassign to (optional)") String assignedTo,
-            @ToolArg(description = "New severity: low|medium|high|critical (optional)") String severity) {
+            @ToolArg(description = "New status: open|in-progress|resolved|closed (optional)", required = false) String status,
+            @ToolArg(description = "Resolution notes (optional)", required = false) String resolution,
+            @ToolArg(description = "Reassign to (optional)", required = false) String assignedTo,
+            @ToolArg(description = "New severity: low|medium|high|critical (optional)", required = false) String severity) {
         try {
             Optional<Defect> found = defectRepo.findByRefName(refName);
             if (found.isEmpty()) {
@@ -146,6 +148,20 @@ public class McpDefectTools {
         if (severity == null || severity.isBlank()) return "medium";
         String s = severity.trim().toLowerCase();
         return SEVERITIES.contains(s) ? s : "medium";
+    }
+
+    /**
+     * Prefer an explicit reporter arg; otherwise use the authenticated caller's
+     * userId / subjectId so omitted reporter does not persist as null.
+     */
+    private String resolveReporter(String reporter) {
+        if (isPresent(reporter)) return reporter.trim();
+        Optional<PrincipalContext> principal = SecurityContext.getPrincipalContext();
+        if (principal.isEmpty()) return null;
+        PrincipalContext ctx = principal.get();
+        if (isPresent(ctx.getUserId())) return ctx.getUserId().trim();
+        if (isPresent(ctx.getSubjectId())) return ctx.getSubjectId().trim();
+        return null;
     }
 
     private boolean blankOrEquals(String filter, String value) {
