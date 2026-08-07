@@ -21,6 +21,8 @@ import java.util.Set;
 
 @QuarkusTest
 public class TestCustTokenAuthProvider extends BaseRepoTest {
+    private static final String TEST_APPLICATION_ID = "quantum-framework-test";
+
     @Inject
     RuleContext ruleContext;
 
@@ -61,7 +63,8 @@ public class TestCustTokenAuthProvider extends BaseRepoTest {
                         testUtils.getSystemDataDomain(), "testuser", "testuser@example.test");
                 Set<String> roles = userManager.getUserRolesForSubject(subject);
                 Assert.assertTrue(roles.contains("user"));
-                AuthProvider.LoginResponse response = authProvider.login("testuser", "test123456");
+                AuthProvider.LoginResponse response = authProvider.login(
+                        "testuser", "test123456", TEST_APPLICATION_ID);
                 Assert.assertTrue(response.authenticated());
                 Assert.assertTrue(userManager.subjectExists(subject));
                 userManager.assignRolesForSubject(subject, Set.of("admin"));
@@ -95,7 +98,8 @@ public class TestCustTokenAuthProvider extends BaseRepoTest {
                         testUtils.getSystemDataDomain(), "testuser", "testuser@example.test");
                 Set<String> roles = userManager.getUserRolesForSubject(subject);
                 Assert.assertTrue(roles.contains("user"));
-                AuthProvider.LoginResponse response = authProvider.login("testuser", "test123456");
+                AuthProvider.LoginResponse response = authProvider.login(
+                        "testuser", "test123456", TEST_APPLICATION_ID);
                 Assert.assertTrue(response.authenticated());
                 Assert.assertTrue(userManager.subjectExists(subject));
                 userManager.assignRolesForUserId("testuser", Set.of("admin"));

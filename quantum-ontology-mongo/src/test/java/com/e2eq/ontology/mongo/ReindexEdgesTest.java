@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * and materializes them (explicit + inferred + computed).
  *
  * Usage:
- *   # Reindex the default realm (types-test):
+ *   # Reindex the default realm (test-ontology-types):
  *   mvn test -pl quantum-ontology-mongo -Dtest=ReindexEdgesTest -am
  *
  *   # Reindex a specific realm:
@@ -27,7 +27,7 @@ public class ReindexEdgesTest {
     @Inject
     OntologyReindexer reindexer;
 
-    @ConfigProperty(name = "reindex.realm", defaultValue = "types-test")
+    @ConfigProperty(name = "reindex.realm", defaultValue = "test-ontology-types")
     String realm;
 
     @Test

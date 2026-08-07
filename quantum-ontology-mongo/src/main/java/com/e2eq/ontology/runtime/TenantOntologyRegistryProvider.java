@@ -330,9 +330,14 @@ public class TenantOntologyRegistryProvider {
             Log.warnf("Failed to load TenantOntologyTBox for DataDomain: %s", t.getMessage());
         }
 
-        // Fall back to realm-level TBox using tenantId from the DataDomain
-        // (not getCurrentRealm() which depends on SecurityContext)
-        String realm = dataDomain.getTenantId();
+        // During a request, the authenticated realm is the database boundary;
+        // tenantId is a data-domain component and must not be treated as a Mongo
+        // database name. Standalone callers without a security context retain the
+        // historical tenantId fallback.
+        String realm = SecurityContext.getPrincipalContext()
+                .map(principal -> principal.getDefaultRealm())
+                .filter(value -> value != null && !value.isBlank())
+                .orElse(dataDomain.getTenantId());
         Log.debugf("No DataDomain-specific TBox found, falling back to realm-level for: %s (realm: %s)",
                 buildDataDomainCacheKey(dataDomain), realm);
         return getRegistryForRealm(realm);

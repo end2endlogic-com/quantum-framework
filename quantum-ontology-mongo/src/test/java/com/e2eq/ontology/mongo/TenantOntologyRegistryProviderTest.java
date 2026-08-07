@@ -39,8 +39,8 @@ public class TenantOntologyRegistryProviderTest {
         tboxRepo.deleteAll();
         provider.clearCache();
         
-        tenant1 = new DataDomain("org1", "acc1", "tenant1", 0, "user1");
-        tenant2 = new DataDomain("org1", "acc1", "tenant2", 0, "user2");
+        tenant1 = new DataDomain("org1", "acc1", "test-tenant1", 0, "user1");
+        tenant2 = new DataDomain("org1", "acc1", "test-tenant2", 0, "user2");
     }
 
     @AfterEach

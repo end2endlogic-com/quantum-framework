@@ -27,7 +27,7 @@ import java.util.Set;
  * Test resource that ensures MongoDB realm databases are initialized for tests.
  *
  * Responsibilities:
- * - For system and test realms, ensure DB exists and has a valid databaseVersion record
+ * - For system, test, and default realms, ensure DB exists and has a valid databaseVersion record
  *   with currentVersionString >= quantum.database.version. If not, drop DB and provision.
  * - Ensure system realm's catalog contains realm entries for system, test, and default realms.
  */
@@ -56,9 +56,11 @@ public class MongoDbInitResource implements QuarkusTestResourceLifecycleManager 
             String requiredVersionStr = ConfigProvider.getConfig().getValue("quantum.database.version", String.class);
             Semver required = Semver.parse(requiredVersionStr);
 
-            // Ensure system and test DBs are at required version; if not, drop (BaseRepoTest will migrate)
+            // Ensure every configured test DB is at the required version; if not,
+            // drop it and let BaseRepoTest provision/migrate it from a clean state.
             ensureRealmInitialized(systemRealm, required);
             ensureRealmInitialized(testRealm, required);
+            ensureRealmInitialized(defaultRealm, required);
 
             // Ensure system catalog contains system, test, and default realms
             ensureRealmCatalogEntries(systemRealm, defaultRealm, testRealm);
@@ -72,7 +74,22 @@ public class MongoDbInitResource implements QuarkusTestResourceLifecycleManager 
     @Override
     public void stop() {
         if (mongoClient != null) {
-            try { mongoClient.close(); } catch (Exception ignored) {}
+            try {
+                // Test databases are disposable by contract. Cleaning them at the
+                // resource boundary prevents a successful suite from polluting the
+                // developer's local catalog or consuming Atlas collection quotas.
+                java.util.List<String> databaseNames = mongoClient.listDatabaseNames()
+                        .into(new java.util.ArrayList<>());
+                for (String databaseName : databaseNames) {
+                    if (databaseName.startsWith(TEST_DATABASE_PREFIX)) {
+                        requireTestDatabaseName(databaseName, "database selected for test teardown");
+                        mongoClient.getDatabase(databaseName).drop();
+                        Log.infof("Dropped test database during suite teardown: %s", databaseName);
+                    }
+                }
+            } finally {
+                try { mongoClient.close(); } catch (Exception ignored) {}
+            }
         }
     }
 

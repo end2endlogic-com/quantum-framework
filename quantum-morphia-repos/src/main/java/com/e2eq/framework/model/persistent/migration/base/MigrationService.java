@@ -54,6 +54,10 @@ public class MigrationService {
    @ConfigProperty(name = "quantum.database.migration.enabled")
    protected boolean enabled;
 
+   /** Shared database used only for short-lived migration/seed coordination locks. */
+   @ConfigProperty(name = "quantum.database.coordination-database", defaultValue = "quantum-coordination-shared")
+   String coordinationDatabase;
+
    /**
     * Optional comma-separated list of additional realms to initialize on startup before seed packs run.
     * When unset, startup migration falls back to the historical behavior:
@@ -335,7 +339,7 @@ public class MigrationService {
 
    protected DistributedLock getMigrationLock (String realm) {
       MongoCollection<Document> collection = mongoClient
-                                                .getDatabase("sherlock")
+                                                .getDatabase(coordinationDatabase)
                                                 .getCollection("locks");
       Sherlock sherlock = MongoSherlock.create(collection);
       // create Lock name
@@ -652,6 +656,22 @@ public class MigrationService {
             });
          } else {
             log(String.format("-- No pending change sets found for realm: %s", realm), emitter);
+         }
+
+         // The target version describes the migration catalog this realm has fully
+         // processed, not only the last change set that mutated it. A change set may
+         // intentionally apply to a subset of realms (for example, a system-catalog
+         // migration). Tenant realms still need to advance past that version after
+         // the change set has been considered and skipped as non-applicable; leaving
+         // them at the prior version makes the request filter reject a clean database
+         // forever. This point is reached only after every applicable change set has
+         // completed successfully, so a failed migration can never stamp the target.
+         Datastore datastore = morphiaDataStoreWrapper.getDataStore(realm);
+         Optional<DatabaseVersion> current = getCurrentDatabaseVersion(datastore);
+         Semver target = Semver.parse(targetDatabaseVersion);
+         if (current.isEmpty() || current.get().getCurrentSemVersion().compareTo(target) < 0) {
+            saveDatabaseVersion(datastore, targetDatabaseVersion);
+            log(String.format("Advanced database version for realm %s to %s", realm, targetDatabaseVersion), emitter);
          }
    }
 

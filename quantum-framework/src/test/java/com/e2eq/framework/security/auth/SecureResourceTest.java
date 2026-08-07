@@ -24,6 +24,8 @@ import static io.restassured.RestAssured.given;
 
 @QuarkusTest
 public class SecureResourceTest {
+    private static final String TEST_APPLICATION_ID = "quantum-framework-test";
+
     @ConfigProperty(name = "auth.provider")
     String authProvider;
 
@@ -51,8 +53,12 @@ public class SecureResourceTest {
         ResourceContext rContext = testUtils.getResourceContext(testUtils.getArea(), "userProfile", "update");
         ruleContext.initDefaultRules("security","userProfile", testUtils.getTestUserId());
         try (final SecuritySession ss = new SecuritySession(pContext, rContext)) {
-            authFactory.getUserManager().removeUserWithUserId( "testuser@end2endlogic.com");
             if (authProvider.equals("custom")) {
+                if (authFactory.getUserManager().userIdExists("testuser@end2endlogic.com")) {
+                    TestDirectoryProfiles.remove(userProfileRepo, testUtils.getSystemRealm(),
+                            "testuser@end2endlogic.com");
+                    authFactory.getUserManager().removeUserWithUserId("testuser@end2endlogic.com");
+                }
                 // Create test user with roles
                 if (!authFactory.getUserManager().userIdExists("testuser@end2endlogic.com")) {
 
@@ -62,10 +68,15 @@ public class SecureResourceTest {
                 } else {
                     Log.info("User already exists, skipping creation");
                 }
+                TestDirectoryProfiles.ensure(userProfileRepo, credentialRepo, testUtils.getSystemRealm(),
+                        testUtils.getSystemDataDomain(), "testuser@end2endlogic.com",
+                        "testuser@end2endlogic.com");
                authFactory.getUserManager().enableRealmOverrideWithUserId("testuser@end2endlogic.com",  "*");
-                loginResponse = authFactory.getAuthProvider().login( "testuser@end2endlogic.com", "P@55w@rd");
+                loginResponse = authFactory.getAuthProvider().login(
+                        "testuser@end2endlogic.com", "P@55w@rd", TEST_APPLICATION_ID);
             } else {
-                loginResponse = authFactory.getAuthProvider().login( "system@system.com", "test123456");
+                loginResponse = authFactory.getAuthProvider().login(
+                        "system@system.com", "test123456", TEST_APPLICATION_ID);
             }
         }
 
@@ -139,7 +150,8 @@ public class SecureResourceTest {
                     testUtils.getSystemDataDomain(), "testadmin@end2endlogic.com", "testadmin@end2endlogic.com");
             authFactory.getUserManager().enableImpersonationWithUserId("testadmin@end2endlogic.com", "true", "*", testUtils.getSystemRealm());
 
-           loginResponse = authFactory.getAuthProvider().login("testadmin@end2endlogic.com", "P@55w@rd");
+           loginResponse = authFactory.getAuthProvider().login(
+                   "testadmin@end2endlogic.com", "P@55w@rd", TEST_APPLICATION_ID);
             Assertions.assertTrue(loginResponse.authenticated());
         }
 
