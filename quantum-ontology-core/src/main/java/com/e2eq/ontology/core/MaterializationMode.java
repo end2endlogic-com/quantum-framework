@@ -16,6 +16,15 @@ package com.e2eq.ontology.core;
  *       provider. Choose this only for inexpensive providers where freshness
  *       beats latency.</li>
  * </ul>
+ *
+ * <p><b>Read-path requirement:</b> LAZY and ONDEMAND edges are invisible to
+ * direct {@code OntologyEdgeRepo} queries. Callers that need the same edges
+ * for both source-keyed and destination-keyed lookups (including
+ * {@code hasEdge} / policy rewrites that use {@code srcIdsByDst}) must go
+ * through the mode-aware read facade ({@code ComputedEdgeReader}) with a
+ * registered source-entity loader and, for inverse lookups, a
+ * {@code SourceEntityEnumerator}. Prefer EAGER when destination-side filters
+ * are on a hot path.</p>
  */
 public enum MaterializationMode {
     EAGER,

@@ -6,6 +6,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.ontology.mongo.ComputedEdgeReader;
 import com.e2eq.ontology.repo.OntologyEdgeRepo;
 import com.e2eq.ontology.core.OntologyAliasResolver;
 import dev.morphia.query.filters.Filter;
@@ -16,6 +17,11 @@ import org.bson.conversions.Bson;
  * Rewrites list queries to incorporate ontology edge constraints.
  * All operations are scoped by DataDomain (orgRefName, accountNum, tenantId, dataSegment)
  * to ensure proper isolation across organizations and accounts.
+ *
+ * <p>When a {@link ComputedEdgeReader} is available, edge lookups go through it so
+ * LAZY/ONDEMAND computed edges participate in {@code hasEdge} / {@code hasIncomingEdge}
+ * rewrites the same way EAGER store rows do. Without the reader (unit tests with a
+ * hand-rolled repo), behavior falls back to direct {@link OntologyEdgeRepo} reads.</p>
  */
 @ApplicationScoped
 public class ListQueryRewriter {
@@ -28,13 +34,23 @@ public class ListQueryRewriter {
     @Inject
     Instance<OntologyAliasResolver> aliasResolverInstance;
 
+    // Mode-aware facade for LAZY/ONDEMAND computed edges (optional for tests).
+    @Inject
+    Instance<ComputedEdgeReader> computedEdgeReaderInstance;
+
     // Testing/legacy convenience: allow manual construction with a provided repo
     private OntologyEdgeRepo edgeRepo;
+    private ComputedEdgeReader computedEdgeReader;
 
     public ListQueryRewriter() { }
     
     public ListQueryRewriter(OntologyEdgeRepo edgeRepo) {
         this.edgeRepo = edgeRepo;
+    }
+
+    public ListQueryRewriter(OntologyEdgeRepo edgeRepo, ComputedEdgeReader computedEdgeReader) {
+        this.edgeRepo = edgeRepo;
+        this.computedEdgeReader = computedEdgeReader;
     }
 
     private String canon(String predicate) {
@@ -54,18 +70,57 @@ public class ListQueryRewriter {
         throw new IllegalStateException("OntologyEdgeRepo bean not available; provide via CDI or constructor");
     }
 
+    private ComputedEdgeReader getComputedEdgeReader() {
+        if (computedEdgeReader != null) return computedEdgeReader;
+        try {
+            if (computedEdgeReaderInstance != null && !computedEdgeReaderInstance.isUnsatisfied()) {
+                return computedEdgeReaderInstance.get();
+            }
+        } catch (Throwable ignored) { }
+        return null;
+    }
+
+    /**
+     * Realm used for LAZY/ONDEMAND inverse scans. Prefer the authenticated
+     * principal's default realm (same pattern as {@link OntologyEdgeRepo});
+     * fall back to tenantId when no security context is present (tests).
+     */
+    private static String realmHint(DataDomain dataDomain) {
+        try {
+            var ctx = com.e2eq.framework.model.securityrules.SecurityContext.getPrincipalContext();
+            if (ctx.isPresent() && ctx.get().getDefaultRealm() != null
+                    && !ctx.get().getDefaultRealm().isBlank()) {
+                return ctx.get().getDefaultRealm();
+            }
+        } catch (Throwable ignored) { }
+        if (dataDomain == null) return null;
+        return dataDomain.getTenantId();
+    }
+
     private Set<String> srcIdsByDst(DataDomain dataDomain, String predicate, String dstId) {
         String p = canon(predicate);
+        ComputedEdgeReader reader = getComputedEdgeReader();
+        if (reader != null) {
+            return reader.srcIdsByDst(realmHint(dataDomain), dataDomain, p, dstId);
+        }
         return getRepo().srcIdsByDst(dataDomain, p, dstId);
     }
 
     private Set<String> srcIdsByDstIn(DataDomain dataDomain, String predicate, Collection<String> dstIds) {
         String p = canon(predicate);
+        ComputedEdgeReader reader = getComputedEdgeReader();
+        if (reader != null) {
+            return reader.srcIdsByDstIn(realmHint(dataDomain), dataDomain, p, dstIds);
+        }
         return getRepo().srcIdsByDstIn(dataDomain, p, dstIds);
     }
 
     private Set<String> dstIdsBySrc(DataDomain dataDomain, String predicate, String srcId) {
         String p = canon(predicate);
+        ComputedEdgeReader reader = getComputedEdgeReader();
+        if (reader != null) {
+            return reader.dstIdsBySrc(realmHint(dataDomain), dataDomain, p, srcId);
+        }
         return getRepo().dstIdsBySrc(dataDomain, p, srcId);
     }
 
