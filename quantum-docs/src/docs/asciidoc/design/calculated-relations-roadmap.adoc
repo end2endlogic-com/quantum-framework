@@ -28,8 +28,10 @@ the current implementation, proposes targeted enhancements, and sequences them
 into a phased roadmap.
 
 For a usage-level introduction to ontology relationships, see
-`user-guide/ontology.adoc`. For the territory/location reference
-implementation, see `implementing-territory-location-edges.md`.
+xref:../user-guide/ontology.adoc[user-guide/ontology.adoc]
+(including the Territory → Location computed-edge example under
+_Custom Edge Providers_). A longer narrative guide also lives at
+link:../../implementing-territory-location-edges.md[`quantum-docs/src/docs/implementing-territory-location-edges.md`].
 
 == Background
 
@@ -79,8 +81,11 @@ edge sets grow:
   hierarchy node, node carries list of targets" pattern is implemented by
   hand in every provider, even though `HierarchyListEdgeProvider` already
   shapes the structure.
-. *No automatic cycle/depth guards in compute.* The reasoner caps iteration
-  at 10, but provider-side compute relies on the implementer to terminate.
+. *No automatic cycle/depth guards in compute.* The reasoner
+  (`ForwardChainingReasoner`) guards transitive expansion with
+  `MAX_TRANSITIVE_STEP_VISITS = 10_000` (visit budget, not a 10-iteration
+  cap), but provider-side compute historically relied on the implementer
+  to terminate (addressed by D4).
 . *Provenance bloat.* Per-edge provenance maps are stored inline on every
   `EdgeRecord`, inflating the working set for high-fanout providers.
 . *No bulk recompute / reconciliation tool.* When provider logic changes,
@@ -119,8 +124,9 @@ edge sets grow:
 * `ComputedEdgeCache` (per-process TTL'd map) at `quantum-ontology-core/.../core/ComputedEdgeCache.java`.
 * `OntologyWriteHook` skips non-EAGER providers at write time.
 * `ComputedEdgeReader` (in `quantum-ontology-mongo`) is the read-side
-  facade; `ComputedEdgeRecomputeHandler` punches the cache for LAZY and
-  no-ops for ONDEMAND on dependency changes.
+  facade for source-keyed *and* destination-keyed lookups used by
+  policy/`hasEdge` rewrites; `ComputedEdgeRecomputeHandler` punches the
+  cache for LAZY and no-ops for ONDEMAND on dependency changes.
 ====
 
 Add a `MaterializationMode` enum returned by a new
@@ -135,15 +141,37 @@ public enum MaterializationMode {
 }
 ----
 
-`OntologyEdgeRepo` gains a thin facade that, for `LAZY`/`ONDEMAND` providers,
-short-circuits a `findBySrcAndP` to the provider rather than the collection.
-The `LAZY` cache lives in a `ComputedEdgeCache` (Caffeine, per-realm,
-TTL-configurable per provider). Cache invalidation reuses the existing
+`ComputedEdgeReader` is the mode-aware facade. Callers that need correctness
+across all modes must use it (or APIs wired through it) rather than
+`OntologyEdgeRepo` alone:
+
+* *Source-keyed reads* (`edgesFor` / `dstIdsBySrc`): for `LAZY`/`ONDEMAND`,
+  short-circuit to the provider (with TTL cache for `LAZY`) instead of the
+  collection.
+* *Destination-keyed reads* (`srcIdsByDst`, used by `hasEdge` /
+  `ListQueryRewriter`, MCP incoming-graph tools, and similar): for
+  `LAZY`/`ONDEMAND`, enumerate candidate sources via
+  `SourceEntityEnumerator`, compute provider edges, and union with any
+  EAGER rows still in `ontology_edges`. Without an enumerator, inverse
+  results fall back to store-only and log a warning (incomplete for pure
+  LAZY providers).
+* `OntologyEdgeRepo` remains the pure store. Direct repo reads do *not*
+  see unmaterialized LAZY/ONDEMAND edges.
+
+The `LAZY` cache lives in a `ComputedEdgeCache` (per-process, TTL-
+configurable per provider). Cache invalidation reuses the existing
 `getAffectedSourceIds` machinery.
 
-*Acceptance:* an existing provider can opt into `LAZY` by overriding one
-method; reads return the same edges as before; writes that previously fanned
-out N edges no longer write any rows for that provider.
+*Acceptance:*
+
+* An existing provider can opt into `LAZY` by overriding one method.
+* Source-keyed and destination-keyed reads return the same edges as the
+  EAGER path when a `SourceEntityEnumerator` (and source loader) is
+  registered for the provider's source type.
+* Writes that previously fanned out N edges no longer write any rows for
+  that provider.
+* Inverse enumeration is bounded (visit budget) and may be expensive;
+  prefer `EAGER` when destination-side policy filters are hot paths.
 
 === D2. Dependency Validation and Loud Staleness
 
@@ -471,8 +499,11 @@ a|
   static/dynamic list machinery?
 . Should the recompute CLI emit an idempotent ledger so re-runs converge,
   or is the diff-and-apply path sufficient?
+. Should inverse LAZY scans maintain a secondary index (dst → src) instead
+  of enumerating sources on each `srcIdsByDst` call?
 
-These are deferred to the design discussion at the start of M1.
+These are deferred to design discussion as follow-ups after the initial
+modes land.
 
 == Out of Scope (For Now)
 
