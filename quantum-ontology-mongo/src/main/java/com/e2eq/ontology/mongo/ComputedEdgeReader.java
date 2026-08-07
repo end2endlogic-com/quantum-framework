@@ -204,6 +204,78 @@ public class ComputedEdgeReader {
     }
 
     /**
+     * Full relationship edges leaving {@code sourceId} for graph UIs / MCP discovery.
+     * Unions store rows (excluding stale non-EAGER provider rows) with LAZY/ONDEMAND
+     * provider computation. Optional {@code predicate} filters both sides.
+     *
+     * <p><b>Uniqueness:</b> returns a list with set semantics on edge identity
+     * {@code (srcId, predicate, dstId)} — first occurrence wins. Callers must not
+     * assume bag/multiset semantics; store∪compute can otherwise double-count.</p>
+     */
+    public List<Reasoner.Edge> relationshipEdgesFromSrc(String realmId, DataDomain dataDomain,
+                                                        String sourceId, String predicate) {
+        Objects.requireNonNull(sourceId, "sourceId");
+        realmId = normalizeRealmId(realmId);
+        String pred = blankToNull(predicate);
+        Set<String> nonEager = allNonEagerProviderIds();
+
+        // LinkedHashMap = ordered set of edges by (src, p, dst)
+        Map<String, Reasoner.Edge> unique = new LinkedHashMap<>();
+        List<OntologyEdge> store = pred != null
+                ? edgeRepo.findBySrcAndP(dataDomain, sourceId, pred)
+                : edgeRepo.findBySrc(dataDomain, sourceId);
+        for (OntologyEdge e : store) {
+            if (isStaleNonEagerStoreRow(e, nonEager)) continue;
+            putEdge(unique, toReasonerEdge(e));
+        }
+
+        for (ComputedEdgeProvider<?> provider : registry.getAllProviders()) {
+            if (provider.getMaterializationMode() == MaterializationMode.EAGER) continue;
+            if (pred != null && !pred.equals(provider.getPredicate())) continue;
+            for (Reasoner.Edge e : edgesFor(realmId, dataDomain, provider, sourceId)) {
+                if (sourceId.equals(e.srcId())) putEdge(unique, e);
+            }
+        }
+        return new ArrayList<>(unique.values());
+    }
+
+    /**
+     * Full relationship edges pointing at {@code dstId} for graph UIs / MCP discovery.
+     * Unions store rows (excluding stale non-EAGER provider rows) with LAZY/ONDEMAND
+     * inverse scans. Optional {@code predicate} filters both sides.
+     *
+     * <p><b>Uniqueness:</b> set semantics on {@code (srcId, predicate, dstId)} — same
+     * as {@link #relationshipEdgesFromSrc}.</p>
+     */
+    public List<Reasoner.Edge> relationshipEdgesToDst(String realmId, DataDomain dataDomain,
+                                                      String dstId, String predicate) {
+        Objects.requireNonNull(dstId, "dstId");
+        realmId = normalizeRealmId(realmId);
+        String pred = blankToNull(predicate);
+        Set<String> nonEager = allNonEagerProviderIds();
+
+        Map<String, Reasoner.Edge> unique = new LinkedHashMap<>();
+        List<OntologyEdge> store = pred != null
+                ? edgeRepo.findByDstAndP(dataDomain, dstId, pred)
+                : edgeRepo.findByDst(dataDomain, dstId);
+        for (OntologyEdge e : store) {
+            if (isStaleNonEagerStoreRow(e, nonEager)) continue;
+            putEdge(unique, toReasonerEdge(e));
+        }
+
+        for (ComputedEdgeProvider<?> provider : registry.getAllProviders()) {
+            if (provider.getMaterializationMode() == MaterializationMode.EAGER) continue;
+            if (pred != null && !pred.equals(provider.getPredicate())) continue;
+            for (String srcId : enumerateSourceIds(realmId, dataDomain, provider, DEFAULT_INVERSE_SOURCE_SCAN_LIMIT)) {
+                for (Reasoner.Edge e : edgesFor(realmId, dataDomain, provider, srcId)) {
+                    if (dstId.equals(e.dstId())) putEdge(unique, e);
+                }
+            }
+        }
+        return new ArrayList<>(unique.values());
+    }
+
+    /**
      * Invalidate the cached entry for a (provider, source) pair.
      * No-op for non-LAZY providers.
      */
@@ -234,6 +306,72 @@ public class ComputedEdgeReader {
             }
         }
         return ids;
+    }
+
+    private Set<String> allNonEagerProviderIds() {
+        Set<String> ids = new HashSet<>();
+        for (ComputedEdgeProvider<?> p : registry.getAllProviders()) {
+            if (p.getMaterializationMode() != MaterializationMode.EAGER) {
+                ids.add(p.getProviderId());
+            }
+        }
+        return ids;
+    }
+
+    private static String blankToNull(String s) {
+        return (s == null || s.isBlank()) ? null : s.trim();
+    }
+
+    /**
+     * Convert a stored edge without dropping provenance / derived status.
+     * Consumers (MCP/REST) treat {@code prov.rule == "computed"} as derived.
+     */
+    private static Reasoner.Edge toReasonerEdge(OntologyEdge e) {
+        boolean inferred = Boolean.TRUE.equals(e.isInferred());
+        boolean derived = Boolean.TRUE.equals(e.isDerived()) && !inferred;
+        Map<String, Object> stored = e.getProv();
+        Optional<Reasoner.Provenance> prov = Optional.empty();
+        if (derived) {
+            // Provenance.rule carries "computed" so REST/MCP can recover derived/origin.
+            Map<String, Object> inputs = stored != null
+                    ? new LinkedHashMap<>(stored)
+                    : new LinkedHashMap<>();
+            prov = Optional.of(new Reasoner.Provenance("computed", inputs));
+        } else if (inferred) {
+            Map<String, Object> inputs = stored != null
+                    ? new LinkedHashMap<>(stored)
+                    : new LinkedHashMap<>();
+            prov = Optional.of(new Reasoner.Provenance("inferred", inputs));
+        } else if (stored != null && !stored.isEmpty()) {
+            Object ruleObj = stored.get("rule");
+            String rule = ruleObj != null ? ruleObj.toString() : "explicit";
+            prov = Optional.of(new Reasoner.Provenance(rule, new LinkedHashMap<>(stored)));
+        }
+        return new Reasoner.Edge(
+                e.getSrc(), e.getSrcType(), e.getP(),
+                e.getDst(), e.getDstType(),
+                inferred,
+                prov);
+    }
+
+    /**
+     * Edge identity for set-style accumulation: source + predicate + destination.
+     * Null components are treated as empty strings so keys stay stable.
+     * Public so REST/MCP callers can merge multi-predicate results without
+     * reintroducing bag semantics.
+     */
+    public static String edgeKey(Reasoner.Edge e) {
+        if (e == null) return "";
+        return nullToEmpty(e.srcId()) + "|" + nullToEmpty(e.p()) + "|" + nullToEmpty(e.dstId());
+    }
+
+    private static String nullToEmpty(String s) {
+        return s == null ? "" : s;
+    }
+
+    private static void putEdge(Map<String, Reasoner.Edge> unique, Reasoner.Edge e) {
+        if (e == null) return;
+        unique.putIfAbsent(edgeKey(e), e);
     }
 
     /**

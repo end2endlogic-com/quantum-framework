@@ -50,7 +50,9 @@ public class ComputedEdgeReaderInverseTest {
         when(edgeRepo.dstIdsBySrc(any(DataDomain.class), anyString(), anyString())).thenReturn(Set.of());
         when(edgeRepo.findBySrcAndP(any(DataDomain.class), anyString(), anyString())).thenReturn(List.of());
         when(edgeRepo.findBySrcAndP(anyString(), any(DataDomain.class), anyString(), anyString())).thenReturn(List.of());
+        when(edgeRepo.findBySrc(any(DataDomain.class), anyString())).thenReturn(List.of());
         when(edgeRepo.findByDstAndP(any(DataDomain.class), anyString(), anyString())).thenReturn(List.of());
+        when(edgeRepo.findByDst(any(DataDomain.class), anyString())).thenReturn(List.of());
 
         sources = new ConcurrentHashMap<>();
 
@@ -143,6 +145,76 @@ public class ComputedEdgeReaderInverseTest {
         assertEquals("foo-bar-com", ComputedEdgeReader.normalizeRealmId("foo.bar.com"));
         assertEquals("already-hyphen", ComputedEdgeReader.normalizeRealmId("already-hyphen"));
         assertNull(ComputedEdgeReader.normalizeRealmId(null));
+    }
+
+    @Test
+    void relationshipEdgesToDstIncludesLazyProviderEdges() {
+        sources.put("assoc-1", new SourceEntity("assoc-1", List.of("loc-A", "loc-B")));
+        sources.put("assoc-2", new SourceEntity("assoc-2", List.of("loc-B")));
+        when(edgeRepo.findByDst(any(DataDomain.class), eq("loc-B"))).thenReturn(List.of());
+        when(edgeRepo.findByDstAndP(any(DataDomain.class), eq("loc-B"), anyString())).thenReturn(List.of());
+
+        var edges = reader.relationshipEdgesToDst("realm", domain, "loc-B", "canSeeLocation");
+        assertEquals(2, edges.size());
+        assertEquals(Set.of("assoc-1", "assoc-2"),
+                edges.stream().map(e -> e.srcId()).collect(java.util.stream.Collectors.toSet()));
+    }
+
+    @Test
+    void relationshipEdgesFromSrcIncludesLazyProviderEdges() {
+        sources.put("assoc-1", new SourceEntity("assoc-1", List.of("loc-A")));
+        when(edgeRepo.findBySrc(any(DataDomain.class), eq("assoc-1"))).thenReturn(List.of());
+        when(edgeRepo.findBySrcAndP(any(DataDomain.class), eq("assoc-1"), anyString())).thenReturn(List.of());
+
+        var edges = reader.relationshipEdgesFromSrc("realm", domain, "assoc-1", null);
+        assertEquals(1, edges.size());
+        assertEquals("loc-A", edges.get(0).dstId());
+        assertEquals("canSeeLocation", edges.get(0).p());
+    }
+
+    @Test
+    void relationshipEdgesFromSrcDoesNotDoubleCountStoreAndLazySameTriple() {
+        // Store already has the same edge the LAZY provider would produce — must not
+        // return two copies of (assoc-1, canSeeLocation, loc-A).
+        sources.put("assoc-1", new SourceEntity("assoc-1", List.of("loc-A")));
+        OntologyEdge storeDup = edge("assoc-1", "canSeeLocation", "loc-A", null); // no providerId = keep
+        when(edgeRepo.findBySrc(any(DataDomain.class), eq("assoc-1"))).thenReturn(List.of(storeDup));
+        when(edgeRepo.findBySrcAndP(any(DataDomain.class), eq("assoc-1"), anyString()))
+                .thenReturn(List.of(storeDup));
+
+        var edges = reader.relationshipEdgesFromSrc("realm", domain, "assoc-1", "canSeeLocation");
+        assertEquals(1, edges.size(), "store∪lazy must be set-like on (src,p,dst)");
+        assertEquals("loc-A", edges.get(0).dstId());
+    }
+
+    @Test
+    void srcIdsByDstIsSetNotBag() {
+        sources.put("assoc-1", new SourceEntity("assoc-1", List.of("loc-A")));
+        // Even if store also claims assoc-1 (without non-eager providerId), Set must stay size 1.
+        OntologyEdge storeRow = edge("assoc-1", "canSeeLocation", "loc-A", null);
+        when(edgeRepo.findByDstAndP(eq(domain), eq("loc-A"), eq("canSeeLocation")))
+                .thenReturn(List.of(storeRow, storeRow)); // bag in store query
+
+        Set<String> ids = reader.srcIdsByDst("realm", domain, "canSeeLocation", "loc-A");
+        assertEquals(Set.of("assoc-1"), ids);
+        assertEquals(1, ids.size());
+    }
+
+    @Test
+    void relationshipEdgesFromSrcPreservesEagerComputedProvenance() {
+        OntologyEdge eagerComputed = edge("assoc-1", "canSeeLocation", "loc-A",
+                Map.of("providerId", "SomeEagerProvider"));
+        eagerComputed.setDerived(true);
+        eagerComputed.setInferred(false);
+        when(edgeRepo.findBySrcAndP(any(DataDomain.class), eq("assoc-1"), eq("canSeeLocation")))
+                .thenReturn(List.of(eagerComputed));
+        when(edgeRepo.findBySrc(any(DataDomain.class), eq("assoc-1"))).thenReturn(List.of(eagerComputed));
+
+        var edges = reader.relationshipEdgesFromSrc("realm", domain, "assoc-1", "canSeeLocation");
+        assertEquals(1, edges.size());
+        assertTrue(edges.get(0).prov().isPresent(), "stored provenance must not be dropped");
+        assertEquals("computed", edges.get(0).prov().get().rule());
+        assertEquals("SomeEagerProvider", edges.get(0).prov().get().inputs().get("providerId"));
     }
 
     private static OntologyEdge edge(String src, String p, String dst, Map<String, Object> prov) {
