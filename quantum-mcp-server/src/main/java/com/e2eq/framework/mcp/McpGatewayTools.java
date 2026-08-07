@@ -55,10 +55,10 @@ public class McpGatewayTools {
             + "logical operators (&& || !!), and expand(path) for relationship hydration.")
     String query_find(
             @ToolArg(description = "Entity type (e.g. Order, Location). Use query_rootTypes to discover valid values.") String rootType,
-            @ToolArg(description = "BIAPI query string (e.g. 'refName:LOC-001', 'status:ACTIVE && region:West')") String query,
-            @ToolArg(description = "Optional tenant realm. When omitted, the caller's default realm is used.") String realm,
-            @ToolArg(description = "Optional max number of results to return (default 50)") Integer limit,
-            @ToolArg(description = "Optional number of results to skip for pagination (default 0)") Integer skip) {
+            @ToolArg(description = "Optional BIAPI query string (e.g. 'refName:LOC-001', 'status:ACTIVE && region:West'). Omit to return unfiltered results for the type.", required = false) String query,
+            @ToolArg(description = "Optional tenant realm. When omitted, the caller's default realm is used.", required = false) String realm,
+            @ToolArg(description = "Optional max number of results to return (default 50)", required = false) Integer limit,
+            @ToolArg(description = "Optional number of results to skip for pagination (default 0)", required = false) Integer skip) {
         Map<String, Object> args = new LinkedHashMap<>();
         args.put("rootType", rootType);
         if (query != null) args.put("query", query);
@@ -76,8 +76,8 @@ public class McpGatewayTools {
             + "More efficient than query_find when you only need the number of matching records.")
     String query_count(
             @ToolArg(description = "Entity type (e.g. Order, Location). Use query_rootTypes to discover valid values.") String rootType,
-            @ToolArg(description = "Optional BIAPI query string to filter which entities to count (e.g. 'status:ACTIVE'). If omitted, counts all entities of this type.") String query,
-            @ToolArg(description = "Optional tenant realm. When omitted, the caller's default realm is used.") String realm) {
+            @ToolArg(description = "Optional BIAPI query string to filter which entities to count (e.g. 'status:ACTIVE'). If omitted, counts all entities of this type.", required = false) String query,
+            @ToolArg(description = "Optional tenant realm. When omitted, the caller's default realm is used.", required = false) String realm) {
         Map<String, Object> args = new LinkedHashMap<>();
         args.put("rootType", rootType);
         if (query != null) args.put("query", query);
@@ -89,7 +89,7 @@ public class McpGatewayTools {
     String query_save(
             @ToolArg(description = "Entity type (e.g. Location, Order)") String rootType,
             @ToolArg(description = "Entity data as a JSON object (field names must match the schema for this rootType)") String entity,
-            @ToolArg(description = "Optional tenant realm") String realm) {
+            @ToolArg(description = "Optional tenant realm", required = false) String realm) {
         Map<String, Object> args = new LinkedHashMap<>();
         args.put("rootType", rootType);
         if (realm != null && !realm.isBlank()) args.put("realm", realm);
@@ -107,7 +107,7 @@ public class McpGatewayTools {
     String query_delete(
             @ToolArg(description = "Entity type (e.g. Location, Order)") String rootType,
             @ToolArg(description = "ObjectId hex string of the entity to delete") String id,
-            @ToolArg(description = "Optional tenant realm") String realm) {
+            @ToolArg(description = "Optional tenant realm", required = false) String realm) {
         Map<String, Object> args = new LinkedHashMap<>();
         args.put("rootType", rootType);
         args.put("id", id);
@@ -119,7 +119,7 @@ public class McpGatewayTools {
     String query_deleteMany(
             @ToolArg(description = "Entity type (e.g. Location, Order)") String rootType,
             @ToolArg(description = "BIAPI query string to match entities for deletion (e.g. 'status:INACTIVE')") String query,
-            @ToolArg(description = "Optional tenant realm") String realm) {
+            @ToolArg(description = "Optional tenant realm", required = false) String realm) {
         Map<String, Object> args = new LinkedHashMap<>();
         args.put("rootType", rootType);
         if (query != null) args.put("query", query);
@@ -137,10 +137,10 @@ public class McpGatewayTools {
     String query_import_analyze(
             @ToolArg(description = "Entity type (e.g. Location, Order). Use query_rootTypes to discover valid values.") String rootType,
             @ToolArg(description = "CSV content as a string including a header row followed by data rows") String csvContent,
-            @ToolArg(description = "Comma-separated list of entity field names matching CSV columns (e.g. 'refName,displayName,status')") String columns,
-            @ToolArg(description = "Optional tenant realm") String realm,
-            @ToolArg(description = "Optional field separator character (default ',')") String fieldSeparator,
-            @ToolArg(description = "Optional quote character (default '\"')") String quoteChar) {
+            @ToolArg(description = "Optional comma-separated list of entity field names matching CSV columns (e.g. 'refName,displayName,status'). When omitted, headers are inferred from the CSV.", required = false) String columns,
+            @ToolArg(description = "Optional tenant realm", required = false) String realm,
+            @ToolArg(description = "Optional field separator character (default ',')", required = false, defaultValue = ",") String fieldSeparator,
+            @ToolArg(description = "Optional quote character (default '\"')", required = false, defaultValue = "\"") String quoteChar) {
         Map<String, Object> args = new LinkedHashMap<>();
         args.put("rootType", rootType);
         args.put("csvContent", csvContent);
@@ -158,11 +158,11 @@ public class McpGatewayTools {
     String query_import_rows(
             @ToolArg(description = "Session ID returned by query_import_analyze") String sessionId,
             @ToolArg(description = "Entity type used in the original analyze call") String rootType,
-            @ToolArg(description = "Optional tenant realm") String realm,
-            @ToolArg(description = "Number of rows to skip (default 0)") Integer skip,
-            @ToolArg(description = "Max rows to return (default 50)") Integer limit,
-            @ToolArg(description = "Only return rows with errors (default false)") Boolean onlyErrors,
-            @ToolArg(description = "Filter by intent: INSERT, UPDATE, or SKIP") String intent) {
+            @ToolArg(description = "Optional tenant realm", required = false) String realm,
+            @ToolArg(description = "Number of rows to skip (default 0)", required = false) Integer skip,
+            @ToolArg(description = "Max rows to return (default 50)", required = false) Integer limit,
+            @ToolArg(description = "Only return rows with errors (default false)", required = false) Boolean onlyErrors,
+            @ToolArg(description = "Filter by intent: INSERT, UPDATE, or SKIP (optional)", required = false) String intent) {
         Map<String, Object> args = new LinkedHashMap<>();
         args.put("sessionId", sessionId);
         args.put("rootType", rootType);
@@ -179,7 +179,7 @@ public class McpGatewayTools {
     String query_import_commit(
             @ToolArg(description = "Session ID returned by query_import_analyze") String sessionId,
             @ToolArg(description = "Entity type used in the original analyze call") String rootType,
-            @ToolArg(description = "Optional tenant realm") String realm) {
+            @ToolArg(description = "Optional tenant realm", required = false) String realm) {
         Map<String, Object> args = new LinkedHashMap<>();
         args.put("sessionId", sessionId);
         args.put("rootType", rootType);
@@ -191,7 +191,7 @@ public class McpGatewayTools {
     String query_import_cancel(
             @ToolArg(description = "Session ID returned by query_import_analyze") String sessionId,
             @ToolArg(description = "Entity type used in the original analyze call") String rootType,
-            @ToolArg(description = "Optional tenant realm") String realm) {
+            @ToolArg(description = "Optional tenant realm", required = false) String realm) {
         Map<String, Object> args = new LinkedHashMap<>();
         args.put("sessionId", sessionId);
         args.put("rootType", rootType);
@@ -203,11 +203,11 @@ public class McpGatewayTools {
             + "results or writes to a file for large results. Use query_count first to estimate size.")
     String query_export(
             @ToolArg(description = "Entity type (e.g. Location, Order). Use query_rootTypes to discover valid values.") String rootType,
-            @ToolArg(description = "Optional BIAPI query to filter exported entities (e.g. 'status:ACTIVE')") String query,
-            @ToolArg(description = "Comma-separated list of columns to include in export (e.g. 'refName,displayName,status')") String columns,
-            @ToolArg(description = "Optional tenant realm") String realm,
-            @ToolArg(description = "Optional max rows to export (default: all)") Integer limit,
-            @ToolArg(description = "Optional rows to skip (default 0)") Integer skip) {
+            @ToolArg(description = "Optional BIAPI query to filter exported entities (e.g. 'status:ACTIVE')", required = false) String query,
+            @ToolArg(description = "Optional comma-separated list of columns to include in export (e.g. 'refName,displayName,status')", required = false) String columns,
+            @ToolArg(description = "Optional tenant realm", required = false) String realm,
+            @ToolArg(description = "Optional max rows to export (default: all)", required = false) Integer limit,
+            @ToolArg(description = "Optional rows to skip (default 0)", required = false) Integer skip) {
         Map<String, Object> args = new LinkedHashMap<>();
         args.put("rootType", rootType);
         if (query != null) args.put("query", query);
