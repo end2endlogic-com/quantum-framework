@@ -7,6 +7,7 @@ import com.e2eq.ontology.model.OntologyEdge;
 import com.e2eq.ontology.repo.OntologyEdgeRepo;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 
 import java.util.*;
@@ -26,19 +27,47 @@ import java.util.*;
  *
  * <p>For {@code LAZY} and {@code ONDEMAND}, source-entity loading uses the
  * {@link ComputedEdgeRecomputeHandler.SourceEntityLoader} that the application
- * registers at startup.</p>
+ * registers at startup. Destination-keyed lookups additionally need a
+ * {@link SourceEntityEnumerator} so candidate sources can be walked when no
+ * rows exist in {@code ontology_edges}.</p>
  *
- * <p>Callers that don't care about mode can keep using the repo directly; this
- * facade is the right entry when correctness across all modes matters.</p>
+ * <p><b>Why this facade exists:</b> policy rewrites ({@code hasEdge} /
+ * {@code ListQueryRewriter}), MCP graph tools, and similar callers query edges
+ * both by source ({@code findBySrcAndP} / {@code dstIdsBySrc}) and by
+ * destination ({@code findByDst*} / {@code srcIdsByDst}). Pure repo reads miss
+ * unmaterialized LAZY/ONDEMAND edges. Use this facade (or APIs wired through
+ * it) whenever correctness across all materialization modes matters.</p>
  */
 @ApplicationScoped
 public class ComputedEdgeReader {
+
+    /** Hard cap on source IDs walked for a single inverse LAZY/ONDEMAND query. */
+    public static final int DEFAULT_INVERSE_SOURCE_SCAN_LIMIT = 10_000;
 
     @Inject ComputedEdgeRegistry registry;
     @Inject ComputedEdgeRecomputeHandler recomputeHandler;
     @Inject OntologyEdgeRepo edgeRepo;
     @Inject ComputedEdgeCache cache;
     @Inject OntologyMetrics metrics;
+    @Inject Instance<SourceEntityEnumerator> enumerators;
+
+    /** CDI */
+    public ComputedEdgeReader() {}
+
+    /** Test-friendly constructor. */
+    ComputedEdgeReader(ComputedEdgeRegistry registry,
+                       ComputedEdgeRecomputeHandler recomputeHandler,
+                       OntologyEdgeRepo edgeRepo,
+                       ComputedEdgeCache cache,
+                       OntologyMetrics metrics,
+                       Instance<SourceEntityEnumerator> enumerators) {
+        this.registry = registry;
+        this.recomputeHandler = recomputeHandler;
+        this.edgeRepo = edgeRepo;
+        this.cache = cache;
+        this.metrics = metrics;
+        this.enumerators = enumerators;
+    }
 
     /** Edges produced by {@code provider} for {@code sourceId} under {@code dataDomain}. */
     @SuppressWarnings("unchecked")
@@ -48,6 +77,7 @@ public class ComputedEdgeReader {
                                         String sourceId) {
         Objects.requireNonNull(provider, "provider");
         Objects.requireNonNull(sourceId, "sourceId");
+        realmId = normalizeRealmId(realmId);
 
         MaterializationMode mode = provider.getMaterializationMode();
         switch (mode) {
@@ -81,6 +111,99 @@ public class ComputedEdgeReader {
     }
 
     /**
+     * Destination IDs reachable from {@code sourceId} via {@code predicate},
+     * unioning store rows (excluding stale non-EAGER provider rows) with
+     * LAZY/ONDEMAND provider computation.
+     */
+    public Set<String> dstIdsBySrc(String realmId, DataDomain dataDomain,
+                                   String predicate, String sourceId) {
+        Objects.requireNonNull(predicate, "predicate");
+        Objects.requireNonNull(sourceId, "sourceId");
+        realmId = normalizeRealmId(realmId);
+
+        Set<String> ids = storeDstIdsExcludingNonEager(dataDomain, predicate, sourceId);
+        for (ComputedEdgeProvider<?> provider : providersForPredicate(predicate)) {
+            if (provider.getMaterializationMode() == MaterializationMode.EAGER) {
+                continue; // already represented in the store (when write path ran)
+            }
+            for (Reasoner.Edge e : edgesFor(realmId, dataDomain, provider, sourceId)) {
+                if (predicate.equals(e.p()) && sourceId.equals(e.srcId()) && e.dstId() != null) {
+                    ids.add(e.dstId());
+                }
+            }
+        }
+        return ids;
+    }
+
+    /**
+     * Source IDs that have an edge with {@code predicate} pointing to {@code dstId}.
+     *
+     * <p>Unions store rows with LAZY/ONDEMAND providers. Store rows attributed to a
+     * currently non-EAGER provider are excluded so a mode switch EAGER→LAZY/ONDEMAND
+     * does not keep granting access via stale materialized rows. Non-EAGER providers
+     * require a {@link SourceEntityEnumerator}; without one, only eligible store rows
+     * are returned and a warning is logged.</p>
+     */
+    public Set<String> srcIdsByDst(String realmId, DataDomain dataDomain,
+                                   String predicate, String dstId) {
+        return srcIdsByDst(realmId, dataDomain, predicate, dstId, DEFAULT_INVERSE_SOURCE_SCAN_LIMIT);
+    }
+
+    public Set<String> srcIdsByDst(String realmId, DataDomain dataDomain,
+                                   String predicate, String dstId, int sourceScanLimit) {
+        Objects.requireNonNull(predicate, "predicate");
+        Objects.requireNonNull(dstId, "dstId");
+        realmId = normalizeRealmId(realmId);
+        int limit = Math.max(1, sourceScanLimit);
+
+        Set<String> ids = storeSrcIdsExcludingNonEager(dataDomain, predicate, dstId);
+        for (ComputedEdgeProvider<?> provider : providersForPredicate(predicate)) {
+            if (provider.getMaterializationMode() == MaterializationMode.EAGER) {
+                continue;
+            }
+            ids.addAll(srcIdsByDstFromProvider(realmId, dataDomain, provider, dstId, limit));
+        }
+        return ids;
+    }
+
+    /**
+     * Bulk form of {@link #srcIdsByDst(String, DataDomain, String, String)} for a set of destinations.
+     */
+    public Set<String> srcIdsByDstIn(String realmId, DataDomain dataDomain,
+                                     String predicate, Collection<String> dstIds) {
+        if (dstIds == null || dstIds.isEmpty()) return Set.of();
+        realmId = normalizeRealmId(realmId);
+        Set<String> wanted = new HashSet<>(dstIds);
+        Set<String> ids = new LinkedHashSet<>();
+        for (String dstId : wanted) {
+            ids.addAll(storeSrcIdsExcludingNonEager(dataDomain, predicate, dstId));
+        }
+        for (ComputedEdgeProvider<?> provider : providersForPredicate(predicate)) {
+            if (provider.getMaterializationMode() == MaterializationMode.EAGER) {
+                continue;
+            }
+            for (String srcId : enumerateSourceIds(realmId, dataDomain, provider, DEFAULT_INVERSE_SOURCE_SCAN_LIMIT)) {
+                for (Reasoner.Edge e : edgesFor(realmId, dataDomain, provider, srcId)) {
+                    if (predicate.equals(e.p()) && e.dstId() != null && wanted.contains(e.dstId()) && e.srcId() != null) {
+                        ids.add(e.srcId());
+                    }
+                }
+            }
+        }
+        return ids;
+    }
+
+    /**
+     * Normalize a realm/tenant id the same way {@code OntologyEdgeRepo} does:
+     * MongoDB database names cannot contain dots, so dots become hyphens.
+     * Package-visible for policy-bridge realm hints and tests.
+     */
+    public static String normalizeRealmId(String realmOrTenantId) {
+        if (realmOrTenantId == null || realmOrTenantId.isBlank()) return realmOrTenantId;
+        return realmOrTenantId.replace('.', '-');
+    }
+
+    /**
      * Invalidate the cached entry for a (provider, source) pair.
      * No-op for non-LAZY providers.
      */
@@ -91,6 +214,123 @@ public class ComputedEdgeReader {
     }
 
     // ────────── internal ──────────
+
+    private List<ComputedEdgeProvider<?>> providersForPredicate(String predicate) {
+        List<ComputedEdgeProvider<?>> out = new ArrayList<>();
+        for (ComputedEdgeProvider<?> p : registry.getAllProviders()) {
+            if (predicate.equals(p.getPredicate())) {
+                out.add(p);
+            }
+        }
+        return out;
+    }
+
+    /** Provider ids currently registered as LAZY/ONDEMAND for {@code predicate}. */
+    private Set<String> nonEagerProviderIds(String predicate) {
+        Set<String> ids = new HashSet<>();
+        for (ComputedEdgeProvider<?> p : providersForPredicate(predicate)) {
+            if (p.getMaterializationMode() != MaterializationMode.EAGER) {
+                ids.add(p.getProviderId());
+            }
+        }
+        return ids;
+    }
+
+    /**
+     * Store contribution for inverse queries: drop rows still attributed to a
+     * provider that is no longer EAGER (stale after an EAGER→LAZY/ONDEMAND switch).
+     */
+    private Set<String> storeSrcIdsExcludingNonEager(DataDomain dataDomain, String predicate, String dstId) {
+        Set<String> nonEager = nonEagerProviderIds(predicate);
+        if (nonEager.isEmpty()) {
+            return new LinkedHashSet<>(edgeRepo.srcIdsByDst(dataDomain, predicate, dstId));
+        }
+        List<OntologyEdge> rows = edgeRepo.findByDstAndP(dataDomain, dstId, predicate);
+        Set<String> ids = new LinkedHashSet<>();
+        for (OntologyEdge e : rows) {
+            if (isStaleNonEagerStoreRow(e, nonEager)) continue;
+            if (e.getSrc() != null) ids.add(e.getSrc());
+        }
+        return ids;
+    }
+
+    private Set<String> storeDstIdsExcludingNonEager(DataDomain dataDomain, String predicate, String sourceId) {
+        Set<String> nonEager = nonEagerProviderIds(predicate);
+        if (nonEager.isEmpty()) {
+            return new LinkedHashSet<>(edgeRepo.dstIdsBySrc(dataDomain, predicate, sourceId));
+        }
+        // Prefer realm-aware overload when possible; DataDomain-only path resolves realm internally.
+        List<OntologyEdge> rows = edgeRepo.findBySrcAndP(dataDomain, sourceId, predicate);
+        Set<String> ids = new LinkedHashSet<>();
+        for (OntologyEdge e : rows) {
+            if (isStaleNonEagerStoreRow(e, nonEager)) continue;
+            if (e.getDst() != null) ids.add(e.getDst());
+        }
+        return ids;
+    }
+
+    private static boolean isStaleNonEagerStoreRow(OntologyEdge e, Set<String> nonEagerProviderIds) {
+        if (e == null || nonEagerProviderIds.isEmpty()) return false;
+        String pid = extractProviderId(e.getProv());
+        return pid != null && nonEagerProviderIds.contains(pid);
+    }
+
+    private Set<String> srcIdsByDstFromProvider(String realmId, DataDomain dataDomain,
+                                                ComputedEdgeProvider<?> provider,
+                                                String dstId, int sourceScanLimit) {
+        Set<String> ids = new LinkedHashSet<>();
+        for (String srcId : enumerateSourceIds(realmId, dataDomain, provider, sourceScanLimit)) {
+            for (Reasoner.Edge e : edgesFor(realmId, dataDomain, provider, srcId)) {
+                if (dstId.equals(e.dstId()) && e.srcId() != null) {
+                    ids.add(e.srcId());
+                }
+            }
+        }
+        return ids;
+    }
+
+    private List<String> enumerateSourceIds(String realmId, DataDomain dataDomain,
+                                            ComputedEdgeProvider<?> provider, int sourceScanLimit) {
+        SourceEntityEnumerator enumerator = pickEnumerator(provider.getSourceType());
+        if (enumerator == null) {
+            Log.warnf(
+                    "ComputedEdgeReader: no SourceEntityEnumerator for %s (provider %s, mode %s). " +
+                    "Destination-keyed reads (srcIdsByDst / hasEdge) will miss unmaterialized edges. " +
+                    "Register an enumerator or use MaterializationMode.EAGER for this predicate.",
+                    provider.getSourceType().getName(),
+                    provider.getProviderId(),
+                    provider.getMaterializationMode());
+            return List.of();
+        }
+
+        List<String> all = new ArrayList<>();
+        String after = null;
+        int pageSize = Math.min(500, sourceScanLimit);
+        while (all.size() < sourceScanLimit) {
+            int remaining = sourceScanLimit - all.size();
+            List<String> page = enumerator.listIds(
+                    realmId, dataDomain, provider.getSourceType(), after, Math.min(pageSize, remaining));
+            if (page == null || page.isEmpty()) break;
+            all.addAll(page);
+            after = page.get(page.size() - 1);
+            if (page.size() < pageSize) break;
+        }
+        if (all.size() >= sourceScanLimit) {
+            Log.warnf(
+                    "ComputedEdgeReader: inverse source scan hit limit %d for provider %s predicate %s; " +
+                    "results may be incomplete. Prefer EAGER materialization for high-cardinality inverse queries.",
+                    sourceScanLimit, provider.getProviderId(), provider.getPredicate());
+        }
+        return all;
+    }
+
+    private SourceEntityEnumerator pickEnumerator(Class<?> sourceType) {
+        if (enumerators == null || enumerators.isUnsatisfied()) return null;
+        for (SourceEntityEnumerator e : enumerators) {
+            if (e.supports(sourceType)) return e;
+        }
+        return null;
+    }
 
     private List<Reasoner.Edge> readFromRepo(String realmId, DataDomain dataDomain,
                                              ComputedEdgeProvider<?> provider, String sourceId) {

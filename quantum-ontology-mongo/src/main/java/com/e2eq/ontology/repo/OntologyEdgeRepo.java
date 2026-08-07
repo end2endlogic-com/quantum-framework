@@ -761,6 +761,12 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
     /**
      * Find source IDs for edges with given predicate pointing to destination, within the DataDomain.
      * Use case: hasEdge(predicate, dst) - find entities that have edges TO the given destination.
+     *
+     * <p><b>Materialization note:</b> this is a pure store read. LAZY/ONDEMAND
+     * computed edges that were never written to {@code ontology_edges} will not
+     * appear here. Callers that must honor all {@link com.e2eq.ontology.core.MaterializationMode}
+     * values should use {@code ComputedEdgeReader#srcIdsByDst} (wired through
+     * {@code ListQueryRewriter} for policy hasEdge rewrites).</p>
      */
     public Set<String> srcIdsByDst(DataDomain dataDomain, String p, String dst) {
         validateDataDomain(dataDomain);
