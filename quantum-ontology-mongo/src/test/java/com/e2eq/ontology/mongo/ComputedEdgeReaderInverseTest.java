@@ -200,6 +200,23 @@ public class ComputedEdgeReaderInverseTest {
         assertEquals(1, ids.size());
     }
 
+    @Test
+    void relationshipEdgesFromSrcPreservesEagerComputedProvenance() {
+        OntologyEdge eagerComputed = edge("assoc-1", "canSeeLocation", "loc-A",
+                Map.of("providerId", "SomeEagerProvider"));
+        eagerComputed.setDerived(true);
+        eagerComputed.setInferred(false);
+        when(edgeRepo.findBySrcAndP(any(DataDomain.class), eq("assoc-1"), eq("canSeeLocation")))
+                .thenReturn(List.of(eagerComputed));
+        when(edgeRepo.findBySrc(any(DataDomain.class), eq("assoc-1"))).thenReturn(List.of(eagerComputed));
+
+        var edges = reader.relationshipEdgesFromSrc("realm", domain, "assoc-1", "canSeeLocation");
+        assertEquals(1, edges.size());
+        assertTrue(edges.get(0).prov().isPresent(), "stored provenance must not be dropped");
+        assertEquals("computed", edges.get(0).prov().get().rule());
+        assertEquals("SomeEagerProvider", edges.get(0).prov().get().inputs().get("providerId"));
+    }
+
     private static OntologyEdge edge(String src, String p, String dst, Map<String, Object> prov) {
         OntologyEdge e = new OntologyEdge();
         e.setSrc(src);

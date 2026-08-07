@@ -322,12 +322,36 @@ public class ComputedEdgeReader {
         return (s == null || s.isBlank()) ? null : s.trim();
     }
 
+    /**
+     * Convert a stored edge without dropping provenance / derived status.
+     * Consumers (MCP/REST) treat {@code prov.rule == "computed"} as derived.
+     */
     private static Reasoner.Edge toReasonerEdge(OntologyEdge e) {
+        boolean inferred = Boolean.TRUE.equals(e.isInferred());
+        boolean derived = Boolean.TRUE.equals(e.isDerived()) && !inferred;
+        Map<String, Object> stored = e.getProv();
+        Optional<Reasoner.Provenance> prov = Optional.empty();
+        if (derived) {
+            // Provenance.rule carries "computed" so REST/MCP can recover derived/origin.
+            Map<String, Object> inputs = stored != null
+                    ? new LinkedHashMap<>(stored)
+                    : new LinkedHashMap<>();
+            prov = Optional.of(new Reasoner.Provenance("computed", inputs));
+        } else if (inferred) {
+            Map<String, Object> inputs = stored != null
+                    ? new LinkedHashMap<>(stored)
+                    : new LinkedHashMap<>();
+            prov = Optional.of(new Reasoner.Provenance("inferred", inputs));
+        } else if (stored != null && !stored.isEmpty()) {
+            Object ruleObj = stored.get("rule");
+            String rule = ruleObj != null ? ruleObj.toString() : "explicit";
+            prov = Optional.of(new Reasoner.Provenance(rule, new LinkedHashMap<>(stored)));
+        }
         return new Reasoner.Edge(
                 e.getSrc(), e.getSrcType(), e.getP(),
                 e.getDst(), e.getDstType(),
-                Boolean.TRUE.equals(e.isInferred()),
-                Optional.empty());
+                inferred,
+                prov);
     }
 
     /**
