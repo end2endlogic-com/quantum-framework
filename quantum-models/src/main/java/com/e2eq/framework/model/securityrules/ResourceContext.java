@@ -1,6 +1,8 @@
 package com.e2eq.framework.model.securityrules;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonPOJOBuilder;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.graalvm.polyglot.HostAccess;
 
@@ -21,6 +23,7 @@ import java.util.Objects;
  */
 
 @RegisterForReflection
+@JsonDeserialize(builder = ResourceContext.Builder.class)
 public class ResourceContext {
   protected @NotNull String realm;              // The realm this resource is in
   protected String applicationId;               // application-scoped authorization vocabulary
@@ -71,6 +74,7 @@ public class ResourceContext {
               : Collections.unmodifiableMap(new HashMap<>(attributes));
    }
 
+   @JsonPOJOBuilder(withPrefix = "with", buildMethodName = "build")
    public static class Builder {
       String any = "*";
       String realm = any;

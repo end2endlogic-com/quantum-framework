@@ -6,12 +6,14 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.ToString;
 import lombok.experimental.SuperBuilder;
+import lombok.extern.jackson.Jacksonized;
 
 @Data
 @EqualsAndHashCode
 @ToString
 @RegisterForReflection
 @SuperBuilder
+@Jacksonized
 public class MatchEvent {
     String principalUriString;
     String ruleUriString;

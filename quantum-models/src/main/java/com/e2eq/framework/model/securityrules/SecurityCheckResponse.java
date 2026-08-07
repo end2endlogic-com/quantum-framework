@@ -72,6 +72,11 @@ public class SecurityCheckResponse {
    // did not run (e.g., LIST without resource). Additive shape for clients that care.
    protected List<RuleFilterInfo> filterConstraints = new ArrayList<>();
 
+   // Deny-wins union of field paths excluded by the applicable ALLOW rules.
+   // This is an explicit authorization-result contract so remote providers do not
+   // need to reconstruct Rule objects to preserve field-level policy.
+   protected List<String> excludedFields = new ArrayList<>();
+
    // New: explicit section to expose rules deemed NOT_APPLICABLE (NA) with reasons
    protected List<NotApplicableInfo> notApplicable = new ArrayList<>();
 
