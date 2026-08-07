@@ -169,6 +169,30 @@ public class QueryToPredicateJsonListenerTest {
     }
 
     @Test
+    void testTextSearchUsesWordBoundariesNotSubstrings() {
+        // MongoDB $text is word-oriented; in-memory must not match substrings.
+        JsonNode category = nodeOf(Map.of("title", "category"));
+        JsonNode cat = nodeOf(Map.of("title", "cat"));
+        JsonNode catInSentence = nodeOf(Map.of("title", "the cat sat"));
+
+        assertFalse(pred("text(\"cat\")").test(category));
+        assertTrue(pred("text(\"cat\")").test(cat));
+        assertTrue(pred("text(\"cat\")").test(catInSentence));
+    }
+
+    @Test
+    void testTextKeywordAsFieldAndValueStillParses() {
+        // TEXT is a lexer keyword for text(...), but "text" remains a valid
+        // unquoted field name / value so existing queries keep working.
+        JsonNode n = nodeOf(Map.of("type", "text", "text", "active"));
+
+        assertTrue(pred("type:text").test(n));
+        assertTrue(pred("text:active").test(n));
+        assertTrue(pred("type:^ [text]").test(n));
+        assertFalse(pred("type:plain").test(n));
+    }
+
+    @Test
     void testTextSearchCombinedWithOtherFilters() {
         Map<String, Object> m = Map.of(
                 "title", "Priority Escalation Runbook",
@@ -178,12 +202,43 @@ public class QueryToPredicateJsonListenerTest {
 
         assertTrue(pred("text(\"priority escalation\")&&status:OPEN").test(n));
         assertFalse(pred("text(\"priority escalation\")&&status:CLOSED").test(n));
+        // Valid: text at top level AND'd with an OR group of non-text predicates
+        assertTrue(pred("text(\"priority\")&&(status:OPEN||status:CLOSED)").test(n));
     }
 
     @Test
     void testDuplicateTextSearchThrows() {
         IllegalStateException ex = assertThrows(IllegalStateException.class,
                 () -> pred("text(\"one\")&&text(\"two\")"));
-        assertTrue(ex.getMessage().contains("text"));
+        assertTrue(ex.getMessage().toLowerCase().contains("multiple"));
+    }
+
+    @Test
+    void testTextInsideNotThrows() {
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> pred("!!text(\"foo\")"));
+        assertTrue(ex.getMessage().contains("text(...)"));
+        assertTrue(ex.getMessage().contains("NOT") || ex.getMessage().toLowerCase().contains("negat"));
+    }
+
+    @Test
+    void testTextInsideOrThrows() {
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> pred("text(\"foo\")||status:OPEN"));
+        assertTrue(ex.getMessage().toLowerCase().contains("or"));
+    }
+
+    @Test
+    void testTextInsideElemMatchThrows() {
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> pred("tags:{text(\"foo\")}"));
+        assertTrue(ex.getMessage().toLowerCase().contains("elemmatch"));
+    }
+
+    @Test
+    void testEmptyTextSearchThrows() {
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> pred("text(\"\")"));
+        assertTrue(ex.getMessage().toLowerCase().contains("empty") || ex.getMessage().contains("non-empty"));
     }
 }

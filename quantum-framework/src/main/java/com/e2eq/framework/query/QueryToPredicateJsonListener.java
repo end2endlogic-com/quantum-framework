@@ -34,7 +34,13 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
     private int queryDepth = 0;
     private boolean textClauseSeen = false;
 
+    // Track nesting so text(...) is rejected in positions MongoDB forbids for $text.
+    private int notNestingDepth = 0;
+    private int elemMatchNestingDepth = 0;
+
     private static final Pattern SPECIAL_REGEX_CHARS = Pattern.compile("[{}()\\[\\].+*?^$\\\\|\\-]");
+    /** Split field values into word tokens (letters/digits); approximates MongoDB $text word matching. */
+    private static final Pattern WORD_SPLIT = Pattern.compile("[^\\p{L}\\p{N}]+");
 
     /**
      * Creates a listener with no variable substitution. Useful for queries without ${vars} or object variables.
@@ -75,9 +81,62 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
 
     private void registerTextClause() {
         if (textClauseSeen) {
-            throw new IllegalStateException("Multiple text(...) clauses are not supported in a single query.");
+            throw new IllegalStateException(
+                    "Multiple text(...) clauses are not supported in a single query; MongoDB allows only one $text operator per query.");
+        }
+        // MongoDB requires $text to be a top-level query operator.
+        if (notNestingDepth > 0) {
+            throw new IllegalStateException(
+                    "text(...) cannot be negated with NOT (!!). " +
+                    "MongoDB requires $text to be a top-level query operator. " +
+                    "Example invalid query: !!text(\"foo\")");
+        }
+        if (elemMatchNestingDepth > 0) {
+            throw new IllegalStateException(
+                    "text(...) cannot be used inside an elemMatch expression. " +
+                    "MongoDB requires $text to be a top-level query operator. " +
+                    "Example invalid query: arrayField:{text(\"foo\")}");
         }
         textClauseSeen = true;
+    }
+
+    /**
+     * Marker for predicates that include text(...) so OR composition can reject
+     * nesting that MongoDB forbids for $text.
+     */
+    private interface TextBearing {
+        boolean containsText();
+    }
+
+    private static final class TextBearingPredicate implements Predicate<JsonNode>, TextBearing {
+        private final Predicate<JsonNode> delegate;
+        private final boolean containsText;
+
+        TextBearingPredicate(Predicate<JsonNode> delegate, boolean containsText) {
+            this.delegate = delegate;
+            this.containsText = containsText;
+        }
+
+        @Override
+        public boolean test(JsonNode node) {
+            return delegate.test(node);
+        }
+
+        @Override
+        public boolean containsText() {
+            return containsText;
+        }
+    }
+
+    private static boolean isTextBearing(Predicate<JsonNode> p) {
+        return p instanceof TextBearing tb && tb.containsText();
+    }
+
+    private static Predicate<JsonNode> wrap(Predicate<JsonNode> p, boolean containsText) {
+        if (p instanceof TextBearingPredicate tbp && tbp.containsText == containsText) {
+            return tbp;
+        }
+        return new TextBearingPredicate(p, containsText);
     }
 
     // ---- Parsing lifecycle ----
@@ -173,10 +232,20 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
     }
 
     private static Predicate<JsonNode> allOf(List<Predicate<JsonNode>> list) {
-        return obj -> list.stream().allMatch(p -> p.test(obj));
+        boolean text = list.stream().anyMatch(QueryToPredicateJsonListener::isTextBearing);
+        return wrap(obj -> list.stream().allMatch(p -> p.test(obj)), text);
     }
     private static Predicate<JsonNode> anyOf(List<Predicate<JsonNode>> list) {
-        return obj -> list.stream().anyMatch(p -> p.test(obj));
+        // MongoDB requires $text to be top-level; it cannot appear inside $or.
+        for (Predicate<JsonNode> p : list) {
+            if (isTextBearing(p)) {
+                throw new IllegalStateException(
+                        "text(...) cannot be used inside an OR expression. " +
+                        "MongoDB requires $text to be a top-level query operator. " +
+                        "Example invalid query: text(\"foo\") || status:OPEN");
+            }
+        }
+        return wrap(obj -> list.stream().anyMatch(p -> p.test(obj)), false);
     }
 
     // ---- Operators and groups ----
@@ -188,10 +257,17 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
     @Override public void enterExprOp(BIAPIQueryParser.ExprOpContext ctx) { opTypeStack.push(ctx.op.getType()); }
 
     /** {@inheritDoc} */
+    @Override public void enterNotExpr(BIAPIQueryParser.NotExprContext ctx) {
+        notNestingDepth++;
+    }
+
+    /** {@inheritDoc} */
     @Override public void exitNotExpr(BIAPIQueryParser.NotExprContext ctx) {
+        notNestingDepth--;
         if (predicateStack.isEmpty()) throw new IllegalStateException("NOT with empty stack");
         Predicate<JsonNode> inner = predicateStack.pop();
-        predicateStack.push(inner.negate());
+        // Negation preserves text-bearing-ness for nested OR validation edge cases.
+        predicateStack.push(wrap(inner.negate(), isTextBearing(inner)));
     }
 
     // ---- Leaf expressions ----
@@ -245,12 +321,12 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
         if (trimmed.isBlank()) {
             throw new IllegalArgumentException("text(...) search value must be non-empty.");
         }
-        List<String> terms = Arrays.stream(trimmed.split("\\s+"))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .map(String::toLowerCase)
-                .toList();
-        predicateStack.push(node -> matchesTextSearch(node, terms));
+        List<String> terms = tokenizeSearchTerms(trimmed);
+        if (terms.isEmpty()) {
+            throw new IllegalArgumentException("text(...) search value must be non-empty.");
+        }
+        // Tag as text-bearing so OR composition can reject MongoDB-illegal nesting.
+        predicateStack.push(wrap(node -> matchesTextSearch(node, terms), true));
     }
 
     /** {@inheritDoc} */
@@ -291,22 +367,24 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
     @Override public void enterElemMatchExpr(BIAPIQueryParser.ElemMatchExprContext ctx) {
         opTypeMarkers.push(opTypeStack.size());
         predStackMarkers.push(predicateStack.size());
+        elemMatchNestingDepth++;
     }
     /** {@inheritDoc} */
     @Override public void exitElemMatchExpr(BIAPIQueryParser.ElemMatchExprContext ctx) {
+        elemMatchNestingDepth--;
         int startOp = opTypeMarkers.pop();
         int startPred = predStackMarkers.pop();
         buildCompositeSince(startOp, startPred);
         if (predicateStack.size() <= startPred) throw new IllegalStateException("elemMatch produced no inner predicate");
         Predicate<JsonNode> inner = predicateStack.pop();
         String field = ctx.field.getText();
-        predicateStack.push(node -> {
+        predicateStack.push(wrap(node -> {
             JsonNode fv = getNodeAt(node, field);
             if (fv != null && fv.isArray()) {
                 for (JsonNode el : fv) if (inner.test(el)) return true;
             }
             return false;
-        });
+        }, isTextBearing(inner)));
     }
 
     // ---- helpers ----
@@ -324,7 +402,9 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
         boolean caseInsensitiveStringEquality = originalToken != null
                 && !caseSensitive
                 && (opTok.getType() == BIAPIQueryParser.EQ || opTok.getType() == BIAPIQueryParser.NEQ)
-                && (originalToken.getType() == BIAPIQueryParser.STRING || originalToken.getType() == BIAPIQueryParser.QUOTED_STRING);
+                && (originalToken.getType() == BIAPIQueryParser.STRING
+                        || originalToken.getType() == BIAPIQueryParser.TEXT
+                        || originalToken.getType() == BIAPIQueryParser.QUOTED_STRING);
         Object value = coerceFromTokenMaybeSubstitute(valueObj);
         return switch (opTok.getType()) {
             case BIAPIQueryParser.EQ -> node -> compare(node, field, value, caseInsensitiveStringEquality);
@@ -344,7 +424,7 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
                 tokenOrValue = sub.replace(tok.getText());
             }
             switch (t) {
-                case BIAPIQueryParser.STRING, BIAPIQueryParser.QUOTED_STRING -> { return tok.getText(); }
+                case BIAPIQueryParser.STRING, BIAPIQueryParser.TEXT, BIAPIQueryParser.QUOTED_STRING -> { return tok.getText(); }
                 case BIAPIQueryParser.OID -> { return new ObjectId(tok.getText()); }
                 case BIAPIQueryParser.VARIABLE -> { String rep = (sub != null) ? sub.replace(tok.getText()) : tok.getText(); return coerceValue(rep); }
                 case BIAPIQueryParser.NUMBER -> { return Double.parseDouble(tok.getText()); }
@@ -400,6 +480,25 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
         return SPECIAL_REGEX_CHARS.matcher(input).replaceAll("\\\\$0");
     }
 
+    /**
+     * Tokenize a text(...) search string into lower-case word terms.
+     * Whitespace-separated; leading/trailing punctuation on each token is stripped.
+     */
+    static List<String> tokenizeSearchTerms(String search) {
+        if (search == null || search.isBlank()) return List.of();
+        return Arrays.stream(search.trim().split("\\s+"))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .map(s -> s.replaceAll("^[\\p{Punct}]+|[\\p{Punct}]+$", ""))
+                .filter(s -> !s.isEmpty())
+                .map(String::toLowerCase)
+                .toList();
+    }
+
+    /**
+     * In-memory approximation of MongoDB $text: tokenized contains-any with
+     * whole-word matching (not substring). Does not implement stemming/stop words.
+     */
     private boolean matchesTextSearch(JsonNode node, List<String> terms) {
         if (node == null || terms == null || terms.isEmpty()) return false;
         List<String> values = new ArrayList<>();
@@ -407,9 +506,20 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
         if (values.isEmpty()) return false;
         for (String term : terms) {
             for (String value : values) {
-                if (value.toLowerCase().contains(term)) {
+                if (valueHasWord(value, term)) {
                     return true;
                 }
+            }
+        }
+        return false;
+    }
+
+    /** True if {@code value} contains {@code term} as a whole word (case-insensitive). */
+    static boolean valueHasWord(String value, String term) {
+        if (value == null || term == null || term.isEmpty()) return false;
+        for (String word : WORD_SPLIT.split(value.toLowerCase())) {
+            if (!word.isEmpty() && word.equals(term)) {
+                return true;
             }
         }
         return false;
@@ -560,7 +670,7 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
         if (list != null && list.children != null) {
             long varCount = list.children.stream().filter(c -> c instanceof org.antlr.v4.runtime.tree.TerminalNode tn && tn.getSymbol().getType() == BIAPIQueryParser.VARIABLE).count();
             long valCount = list.children.stream().filter(c -> c instanceof org.antlr.v4.runtime.tree.TerminalNode tn && switch (tn.getSymbol().getType()) {
-                case BIAPIQueryParser.STRING, BIAPIQueryParser.QUOTED_STRING, BIAPIQueryParser.VARIABLE, BIAPIQueryParser.OID, BIAPIQueryParser.REFERENCE -> true; default -> false; }).count();
+                case BIAPIQueryParser.STRING, BIAPIQueryParser.TEXT, BIAPIQueryParser.QUOTED_STRING, BIAPIQueryParser.VARIABLE, BIAPIQueryParser.OID, BIAPIQueryParser.REFERENCE -> true; default -> false; }).count();
             singleVarOnly = (varCount == 1 && valCount == 1);
         }
         if (singleVarOnly && sub != null) {
@@ -580,7 +690,7 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
                 int t = tn.getSymbol().getType();
                 switch (t) {
                     case BIAPIQueryParser.QUOTED_STRING -> values.add(tn.getText());
-                    case BIAPIQueryParser.STRING -> values.add(coerceValue(tn.getText()));
+                    case BIAPIQueryParser.STRING, BIAPIQueryParser.TEXT -> values.add(coerceValue(tn.getText()));
                     case BIAPIQueryParser.OID -> values.add(new ObjectId(tn.getText()));
                     case BIAPIQueryParser.REFERENCE -> values.add(tn.getText());
                     case BIAPIQueryParser.VARIABLE -> { String replaced = (sub != null) ? sub.replace(tn.getText()) : tn.getText(); if (replaced != null && !replaced.isBlank()) for (String part : replaced.split(",")) values.add(coerceValue(part.trim())); }

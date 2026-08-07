@@ -123,4 +123,45 @@ public class QueryToFilterListenerTextValidationTest {
         assertNotNull(f);
         assertEquals("$text", f.getName());
     }
+
+    @Test
+    public void testTextKeywordAsFieldAndValueStillParses() {
+        // TEXT is a lexer keyword for text(...), but unquoted "text" remains
+        // valid as a field name and as a comparison value.
+        Filter typeIsText = MorphiaUtils.convertToFilter("type:text", DummyModel.class);
+        assertNotNull(typeIsText);
+        // Case-insensitive string equality may be implemented as $eq or $regex.
+        assertTrue("$eq".equals(typeIsText.getName()) || "$regex".equals(typeIsText.getName()),
+            "Expected equality/regex filter for type:text, got: " + typeIsText.getName());
+
+        Filter textField = MorphiaUtils.convertToFilter("text:active", DummyModel.class);
+        assertNotNull(textField);
+        assertTrue("$eq".equals(textField.getName()) || "$regex".equals(textField.getName()),
+            "Expected equality/regex filter for text:active, got: " + textField.getName());
+
+        Filter inList = MorphiaUtils.convertToFilter("type:^ [text]", DummyModel.class);
+        assertNotNull(inList);
+        assertEquals("$in", inList.getName());
+    }
+
+    @Test
+    public void testTextCombinedWithAndAndGroupedOr() {
+        // Valid MongoDB shape: top-level $text AND'd with a nested non-text OR
+        String q = "text(\"search\")&&(status:OPEN||status:PENDING)";
+        Filter f = MorphiaUtils.convertToFilter(q, DummyModel.class);
+        assertNotNull(f);
+        String filterStr = f.toString();
+        assertTrue(filterStr.contains("$text") || "$and".equals(f.getName()) || "$text".equals(f.getName()),
+            "Expected combined filter containing $text: " + filterStr);
+    }
+
+    @Test
+    public void testTextInsideOrThrows() {
+        String q = "text(\"foo\")||status:OPEN";
+        IllegalStateException ex = assertThrows(IllegalStateException.class, () -> {
+            MorphiaUtils.convertToFilter(q, DummyModel.class);
+        });
+        assertTrue(ex.getMessage().toLowerCase().contains("or") || ex.getMessage().contains("text(...)"),
+            "Error should mention OR or text(): " + ex.getMessage());
+    }
 }
