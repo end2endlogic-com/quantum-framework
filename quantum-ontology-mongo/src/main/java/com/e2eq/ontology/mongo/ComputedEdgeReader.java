@@ -204,6 +204,70 @@ public class ComputedEdgeReader {
     }
 
     /**
+     * Full relationship edges leaving {@code sourceId} for graph UIs / MCP discovery.
+     * Unions store rows (excluding stale non-EAGER provider rows) with LAZY/ONDEMAND
+     * provider computation. Optional {@code predicate} filters both sides.
+     */
+    public List<Reasoner.Edge> relationshipEdgesFromSrc(String realmId, DataDomain dataDomain,
+                                                        String sourceId, String predicate) {
+        Objects.requireNonNull(sourceId, "sourceId");
+        realmId = normalizeRealmId(realmId);
+        String pred = blankToNull(predicate);
+        Set<String> nonEager = allNonEagerProviderIds();
+
+        List<Reasoner.Edge> out = new ArrayList<>();
+        List<OntologyEdge> store = pred != null
+                ? edgeRepo.findBySrcAndP(dataDomain, sourceId, pred)
+                : edgeRepo.findBySrc(dataDomain, sourceId);
+        for (OntologyEdge e : store) {
+            if (isStaleNonEagerStoreRow(e, nonEager)) continue;
+            out.add(toReasonerEdge(e));
+        }
+
+        for (ComputedEdgeProvider<?> provider : registry.getAllProviders()) {
+            if (provider.getMaterializationMode() == MaterializationMode.EAGER) continue;
+            if (pred != null && !pred.equals(provider.getPredicate())) continue;
+            for (Reasoner.Edge e : edgesFor(realmId, dataDomain, provider, sourceId)) {
+                if (sourceId.equals(e.srcId())) out.add(e);
+            }
+        }
+        return dedupeEdges(out);
+    }
+
+    /**
+     * Full relationship edges pointing at {@code dstId} for graph UIs / MCP discovery.
+     * Unions store rows (excluding stale non-EAGER provider rows) with LAZY/ONDEMAND
+     * inverse scans. Optional {@code predicate} filters both sides.
+     */
+    public List<Reasoner.Edge> relationshipEdgesToDst(String realmId, DataDomain dataDomain,
+                                                      String dstId, String predicate) {
+        Objects.requireNonNull(dstId, "dstId");
+        realmId = normalizeRealmId(realmId);
+        String pred = blankToNull(predicate);
+        Set<String> nonEager = allNonEagerProviderIds();
+
+        List<Reasoner.Edge> out = new ArrayList<>();
+        List<OntologyEdge> store = pred != null
+                ? edgeRepo.findByDstAndP(dataDomain, dstId, pred)
+                : edgeRepo.findByDst(dataDomain, dstId);
+        for (OntologyEdge e : store) {
+            if (isStaleNonEagerStoreRow(e, nonEager)) continue;
+            out.add(toReasonerEdge(e));
+        }
+
+        for (ComputedEdgeProvider<?> provider : registry.getAllProviders()) {
+            if (provider.getMaterializationMode() == MaterializationMode.EAGER) continue;
+            if (pred != null && !pred.equals(provider.getPredicate())) continue;
+            for (String srcId : enumerateSourceIds(realmId, dataDomain, provider, DEFAULT_INVERSE_SOURCE_SCAN_LIMIT)) {
+                for (Reasoner.Edge e : edgesFor(realmId, dataDomain, provider, srcId)) {
+                    if (dstId.equals(e.dstId())) out.add(e);
+                }
+            }
+        }
+        return dedupeEdges(out);
+    }
+
+    /**
      * Invalidate the cached entry for a (provider, source) pair.
      * No-op for non-LAZY providers.
      */
@@ -234,6 +298,38 @@ public class ComputedEdgeReader {
             }
         }
         return ids;
+    }
+
+    private Set<String> allNonEagerProviderIds() {
+        Set<String> ids = new HashSet<>();
+        for (ComputedEdgeProvider<?> p : registry.getAllProviders()) {
+            if (p.getMaterializationMode() != MaterializationMode.EAGER) {
+                ids.add(p.getProviderId());
+            }
+        }
+        return ids;
+    }
+
+    private static String blankToNull(String s) {
+        return (s == null || s.isBlank()) ? null : s.trim();
+    }
+
+    private static Reasoner.Edge toReasonerEdge(OntologyEdge e) {
+        return new Reasoner.Edge(
+                e.getSrc(), e.getSrcType(), e.getP(),
+                e.getDst(), e.getDstType(),
+                Boolean.TRUE.equals(e.isInferred()),
+                Optional.empty());
+    }
+
+    private static List<Reasoner.Edge> dedupeEdges(List<Reasoner.Edge> edges) {
+        Map<String, Reasoner.Edge> byKey = new LinkedHashMap<>();
+        for (Reasoner.Edge e : edges) {
+            if (e == null) continue;
+            String key = e.srcId() + "|" + e.p() + "|" + e.dstId();
+            byKey.putIfAbsent(key, e);
+        }
+        return new ArrayList<>(byKey.values());
     }
 
     /**

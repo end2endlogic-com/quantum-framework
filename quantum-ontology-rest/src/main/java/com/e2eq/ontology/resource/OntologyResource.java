@@ -10,8 +10,10 @@ import com.e2eq.ontology.core.OntologyRegistry.ClassDef;
 import com.e2eq.ontology.core.OntologyRegistry.PropertyChainDef;
 import com.e2eq.ontology.core.OntologyRegistry.PropertyDef;
 import com.e2eq.ontology.core.OntologyRegistry.TBox;
+import com.e2eq.ontology.core.Reasoner;
 import com.e2eq.ontology.model.OntologyEdge;
 import com.e2eq.framework.annotations.FunctionalMapping;
+import com.e2eq.ontology.mongo.ComputedEdgeReader;
 import com.e2eq.ontology.repo.OntologyEdgeRepo;
 import com.e2eq.ontology.runtime.TenantOntologyRegistryProvider;
 import io.smallrye.mutiny.Multi;
@@ -53,6 +55,9 @@ public class OntologyResource {
 
     @Inject
     OntologyEdgeRepo edgeRepo;
+
+    @Inject
+    ComputedEdgeReader computedEdgeReader;
 
     @Inject
     TenantOntologyRegistryProvider registryProvider;
@@ -420,6 +425,16 @@ public class OntologyResource {
                     e.isInferred(), e.isDerived(), e.getProv(), origin
             );
         }
+
+        public static EdgeDTO from(Reasoner.Edge e) {
+            boolean computed = e.prov().isPresent() && "computed".equals(e.prov().get().rule());
+            String origin = e.inferred() ? "inferred" : (computed ? "computed" : "explicit");
+            Map<String, Object> prov = e.prov().map(Reasoner.Provenance::inputs).orElse(null);
+            return new EdgeDTO(
+                    e.srcId(), e.srcType(), e.p(), e.dstId(), e.dstType(),
+                    e.inferred(), computed, prov, origin
+            );
+        }
     }
 
     @GET
@@ -507,19 +522,18 @@ public class OntologyResource {
 
         List<EdgeDTO> outgoing = new ArrayList<>();
         List<EdgeDTO> incoming = new ArrayList<>();
+        String realmId = effectiveRealmId();
 
         if (includeOutgoing) {
-            for (OntologyEdge e : edgeRepo.findBySrc(dataDomain, id)) {
-                if (!type.equals(e.getSrcType())) continue;
-                if (predicateFilter != null && !predicateFilter.contains(e.getP())) continue;
+            for (Reasoner.Edge e : collectFromSrc(realmId, dataDomain, id, predicateFilter)) {
+                if (type != null && e.srcType() != null && !type.equals(e.srcType())) continue;
                 outgoing.add(EdgeDTO.from(e));
             }
         }
 
         if (includeIncoming) {
-            for (OntologyEdge e : edgeRepo.findByDst(dataDomain, id)) {
-                if (!type.equals(e.getDstType())) continue;
-                if (predicateFilter != null && !predicateFilter.contains(e.getP())) continue;
+            for (Reasoner.Edge e : collectToDst(realmId, dataDomain, id, predicateFilter)) {
+                if (type != null && e.dstType() != null && !type.equals(e.dstType())) continue;
                 incoming.add(EdgeDTO.from(e));
             }
         }
@@ -729,6 +743,42 @@ public class OntologyResource {
         return dataDomain;
     }
 
+    private String effectiveRealmId() {
+        return SecurityContext.getPrincipalContext()
+                .map(PrincipalContext::getDefaultRealm)
+                .filter(r -> r != null && !r.isBlank())
+                .map(ComputedEdgeReader::normalizeRealmId)
+                .orElse(null);
+    }
+
+    /**
+     * Mode-aware outgoing edges. When multiple predicates are requested, query each;
+     * otherwise a single null-predicate call returns all.
+     */
+    private List<Reasoner.Edge> collectFromSrc(String realmId, DataDomain dataDomain,
+                                               String srcId, Set<String> predicateFilter) {
+        if (predicateFilter == null || predicateFilter.isEmpty()) {
+            return computedEdgeReader.relationshipEdgesFromSrc(realmId, dataDomain, srcId, null);
+        }
+        List<Reasoner.Edge> out = new ArrayList<>();
+        for (String p : predicateFilter) {
+            out.addAll(computedEdgeReader.relationshipEdgesFromSrc(realmId, dataDomain, srcId, p));
+        }
+        return out;
+    }
+
+    private List<Reasoner.Edge> collectToDst(String realmId, DataDomain dataDomain,
+                                             String dstId, Set<String> predicateFilter) {
+        if (predicateFilter == null || predicateFilter.isEmpty()) {
+            return computedEdgeReader.relationshipEdgesToDst(realmId, dataDomain, dstId, null);
+        }
+        List<Reasoner.Edge> out = new ArrayList<>();
+        for (String p : predicateFilter) {
+            out.addAll(computedEdgeReader.relationshipEdgesToDst(realmId, dataDomain, dstId, p));
+        }
+        return out;
+    }
+
     @GET
     @Path("graph/instances/jointjs")
     @Operation(summary = "Instance graph as JointJS cells[] given a src id and type")
@@ -774,19 +824,18 @@ public class OntologyResource {
                 ? predicates.stream().filter(Objects::nonNull).map(String::trim).filter(s -> !s.isEmpty()).collect(Collectors.toSet())
                 : null;
 
-        // Collect edges using full DataDomain scoping
-        List<OntologyEdge> edges = new ArrayList<>();
+        // Collect edges using mode-aware facade (includes LAZY/ONDEMAND computed edges)
+        List<Reasoner.Edge> edges = new ArrayList<>();
+        String realmId = effectiveRealmId();
         if (includeOut) {
-            for (OntologyEdge e : edgeRepo.findBySrc(dataDomain, src)) {
-                if (!type.equals(e.getSrcType())) continue; // ensure type matches the provided one for the focus node
-                if (predicateFilter != null && !predicateFilter.contains(e.getP())) continue;
+            for (Reasoner.Edge e : collectFromSrc(realmId, dataDomain, src, predicateFilter)) {
+                if (type != null && e.srcType() != null && !type.equals(e.srcType())) continue;
                 edges.add(e);
             }
         }
         if (includeIn) {
-            for (OntologyEdge e : edgeRepo.findByDst(dataDomain, src)) {
-                if (!type.equals(e.getDstType())) continue; // when incoming, focus matches dst side
-                if (predicateFilter != null && !predicateFilter.contains(e.getP())) continue;
+            for (Reasoner.Edge e : collectToDst(realmId, dataDomain, src, predicateFilter)) {
+                if (type != null && e.dstType() != null && !type.equals(e.dstType())) continue;
                 edges.add(e);
             }
         }
@@ -802,18 +851,18 @@ public class OntologyResource {
         String focusId = instanceId(type, src);
         elements.put(focusId, instanceRect(focusId, type, src, true));
 
-        for (OntologyEdge e : edges) {
-            boolean isOutgoing = src.equals(e.getSrc());
+        for (Reasoner.Edge e : edges) {
+            boolean isOutgoing = src.equals(e.srcId());
             String otherId;
-            String label = e.getP();
+            String label = e.p();
             if (isOutgoing) {
-                otherId = instanceId(e.getDstType(), e.getDst());
-                elements.putIfAbsent(otherId, instanceRect(otherId, e.getDstType(), e.getDst(), false));
-                links.add(link("Edge:" + e.getSrc() + ":" + e.getP() + ":" + e.getDst(), focusId, otherId, label, e.isInferred()));
+                otherId = instanceId(e.dstType(), e.dstId());
+                elements.putIfAbsent(otherId, instanceRect(otherId, e.dstType(), e.dstId(), false));
+                links.add(link("Edge:" + e.srcId() + ":" + e.p() + ":" + e.dstId(), focusId, otherId, label, e.inferred()));
             } else {
-                otherId = instanceId(e.getSrcType(), e.getSrc());
-                elements.putIfAbsent(otherId, instanceRect(otherId, e.getSrcType(), e.getSrc(), false));
-                links.add(link("Edge:" + e.getSrc() + ":" + e.getP() + ":" + e.getDst(), otherId, focusId, label, e.isInferred()));
+                otherId = instanceId(e.srcType(), e.srcId());
+                elements.putIfAbsent(otherId, instanceRect(otherId, e.srcType(), e.srcId(), false));
+                links.add(link("Edge:" + e.srcId() + ":" + e.p() + ":" + e.dstId(), otherId, focusId, label, e.inferred()));
             }
         }
 
