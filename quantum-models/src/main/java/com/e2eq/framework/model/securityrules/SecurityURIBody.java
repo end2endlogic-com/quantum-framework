@@ -1,5 +1,6 @@
 package com.e2eq.framework.model.securityrules;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 
 import jakarta.validation.constraints.NotNull;
@@ -154,7 +155,7 @@ public final class SecurityURIBody {
       return resourceId;
    }
    public void setResourceId (String resourceId) {
-      this.resourceId = resourceId.toLowerCase();
+      this.resourceId = resourceId != null ? resourceId.toLowerCase() : null;
    }
 
    public SecurityURIBody clone () {
@@ -169,7 +170,7 @@ public final class SecurityURIBody {
          .build();
    }
 
-
+   @JsonProperty(value = "URIString", access = JsonProperty.Access.READ_ONLY)
    public String getURIString() {
       String rc = realm + ":" + orgRefName + ":" + accountNumber + ":" + tenantId + ":" + dataSegment + ":" + ownerId;
 

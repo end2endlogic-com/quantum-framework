@@ -45,6 +45,7 @@ class RuleContextFieldPolicyTest {
         SecurityCheckResponse response = new SecurityCheckResponse(principal, resource);
         response.setFinalEffect(RuleEffect.ALLOW);
         response.setMatchedRuleResults(List.of(allowResult, denyResult));
+        response.setExcludedFields(List.of("description", "nested.secret"));
 
         RuleContext ruleContext = new RuleContext() {
             @Override

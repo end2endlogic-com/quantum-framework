@@ -1,5 +1,6 @@
 package com.e2eq.framework.model.securityrules;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.validation.constraints.NotNull;
 import lombok.EqualsAndHashCode;
@@ -142,8 +143,7 @@ public final class SecurityURIHeader {
                 .build();
     }
 
-
-
+    @JsonProperty(value = "URIString", access = JsonProperty.Access.READ_ONLY)
     public String getURIString() {
         return identity + ":" + area + ":" + functionalDomain + ":" + action;
     }

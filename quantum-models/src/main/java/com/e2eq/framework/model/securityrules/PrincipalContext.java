@@ -3,6 +3,8 @@ package com.e2eq.framework.model.securityrules;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.security.DataDomainPolicy;
 import com.e2eq.framework.model.security.DomainContext;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonPOJOBuilder;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.graalvm.polyglot.HostAccess;
 
@@ -21,6 +23,7 @@ import java.util.Map;
  * The scope of the authentication that is taking place
  */
 @RegisterForReflection
+@JsonDeserialize(builder = PrincipalContext.Builder.class)
 public final class PrincipalContext {
    @NotNull( message = "defaultRealm must be non null, needs to be the realm that this principal will use by default")
    String defaultRealm;           // The realm that this Principal came from
@@ -99,6 +102,7 @@ public final class PrincipalContext {
 
 
 
+   @JsonPOJOBuilder(withPrefix = "with", buildMethodName = "build")
    public static class Builder {
 
       String defaultRealm = null;
@@ -243,6 +247,7 @@ public final class PrincipalContext {
                impersonatedBySubject, impersonatedByUserId, actingOnBehalfOfUserId, actingOnBehalfOfSubject);
          pc.area2RealmOverrides = this.area2RealmOverrides;
          pc.applicationId = this.applicationId;
+         pc.subjectId = this.subjectId;
          pc.dataDomainPolicy = this.dataDomainPolicy;
          pc.realmOverrideActive = this.realmOverrideActive;
          pc.originalDataDomain = this.originalDataDomain;
@@ -296,6 +301,11 @@ public final class PrincipalContext {
    }
    public void setUserId (String userId) {
       this.userId = userId;
+   }
+
+   @HostAccess.Export
+   public String getSubjectId() {
+      return subjectId;
    }
 
    @HostAccess.Export

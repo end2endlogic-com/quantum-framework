@@ -1,6 +1,8 @@
 package com.e2eq.framework.model.securityrules;
 
 import com.e2eq.framework.model.security.Rule;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 
 import jakarta.validation.constraints.NotNull;
@@ -12,7 +14,8 @@ public class RuleResult {
    protected Rule rule;
    protected RuleDeterminedEffect determinedEffect = RuleDeterminedEffect.NOT_APPLICABLE;
 
-   public RuleResult(@NotNull Rule r) {
+   @JsonCreator
+   public RuleResult(@JsonProperty(value = "rule", required = true) @NotNull Rule r) {
       rule = r;
    }
 

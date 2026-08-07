@@ -230,11 +230,21 @@ public class RuleContext {
     public java.util.Set<String> getExcludedFieldPaths(
             @Valid @NotNull(message = "Principal Context can not be null") PrincipalContext pcontext,
             @Valid @NotNull(message = "Resource Context can not be null") ResourceContext rcontext) {
-        java.util.LinkedHashSet<String> excluded = new java.util.LinkedHashSet<>();
         SecurityCheckResponse response = this.checkRules(pcontext, rcontext);
+        if (response == null || response.getExcludedFields() == null) {
+            return new java.util.LinkedHashSet<>();
+        }
+        return response.getExcludedFields().stream()
+                .filter(path -> path != null && !path.isBlank())
+                .map(String::trim)
+                .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+    }
+
+    private static List<String> collectExcludedFieldPaths(SecurityCheckResponse response) {
+        java.util.LinkedHashSet<String> excluded = new java.util.LinkedHashSet<>();
         if (response == null || response.getFinalEffect() != RuleEffect.ALLOW
                 || response.getMatchedRuleResults() == null) {
-            return excluded;
+            return new ArrayList<>();
         }
         for (RuleResult result : response.getMatchedRuleResults()) {
             if (result == null || result.getRule() == null) {
@@ -259,7 +269,7 @@ public class RuleContext {
                 }
             }
         }
-        return excluded;
+        return new ArrayList<>(excluded);
     }
 
     private List<SecurityCheckResponse.RuleFilterInfo> collectMatchedAllowFilterRules(SecurityCheckResponse response) {
@@ -1889,6 +1899,8 @@ public class RuleContext {
                 }
             }
         } catch (Throwable ignored) { }
+
+        response.setExcludedFields(collectExcludedFieldPaths(response));
 
         // Store in request cache if enabled
         if (requestCacheEnabled && !shouldSkipRequestCache()) {
