@@ -9,11 +9,13 @@ import com.e2eq.framework.model.security.UserProfile;
 import com.e2eq.framework.persistent.BaseRepoTest;
 import com.e2eq.framework.seeds.ArchetypeSeeder;
 import com.e2eq.framework.security.runtime.RuleContext;
+import com.mongodb.client.MongoClient;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
 import jakarta.enterprise.context.control.ActivateRequestContext;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.AfterEach;
 
 import java.util.Optional;
 
@@ -22,10 +24,26 @@ import static org.junit.jupiter.api.Assertions.*;
 @QuarkusTest
 public class SeedArchetypeBasicPermissionsImportTest extends BaseRepoTest {
 
+    private static final java.util.Set<String> LEGACY_ACCIDENTAL_DATABASES = java.util.Set.of(
+            "auth", "userProfile", "home", "item", "user-login-allow",
+            "user-userprofile-self", "browse-public", "user-delete-deny",
+            "power-user-standard", "tenant-admin-full");
+
     @Inject UserProfileRepo userProfileRepo;
     @Inject CredentialRepo credentialRepo;
     @Inject PolicyRepo policyRepo;
     @Inject RuleContext ruleContext;
+    @Inject MongoClient mongoClient;
+
+    @AfterEach
+    void removeLegacyAccidentalDatabases() {
+        // These names were produced by the historical refName/realm argument
+        // inversion in this fixture. Keep teardown exact so a failing regression
+        // test cannot leave those accidental databases behind.
+        for (String databaseName : LEGACY_ACCIDENTAL_DATABASES) {
+            mongoClient.getDatabase(databaseName).drop();
+        }
+    }
 
     @Test
     @ActivateRequestContext
@@ -37,6 +55,11 @@ public class SeedArchetypeBasicPermissionsImportTest extends BaseRepoTest {
         ArchetypeSeeder.ImportResult res = ArchetypeSeeder.importArchetype("basic-permissions-v1-test", realm, dd, true);
         assertNotNull(res);
         assertTrue(res.performedWrites, "Seeder should perform writes in test mode");
+        java.util.Set<String> databaseNames = new java.util.HashSet<>(
+                mongoClient.listDatabaseNames().into(new java.util.ArrayList<>()));
+        assertTrue(java.util.Collections.disjoint(databaseNames, LEGACY_ACCIDENTAL_DATABASES),
+                () -> "Seed import created databases from entity names: "
+                        + LEGACY_ACCIDENTAL_DATABASES.stream().filter(databaseNames::contains).toList());
 
         // Verify credentials and profiles for the three users defined in the seed
         checkUser(realm, "test-user@end2endlogic.com");

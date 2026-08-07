@@ -64,6 +64,9 @@ public class SeedStartupRunner {
     @ConfigProperty(name = "quantum.database.migration.enabled", defaultValue = "true")
     boolean migrationEnabled;
 
+    @ConfigProperty(name = "quantum.database.coordination-database", defaultValue = "quantum-coordination-shared")
+    String coordinationDatabase;
+
     @Inject
     SystemRealmOwnership systemRealmOwnership;
 
@@ -459,7 +462,7 @@ public class SeedStartupRunner {
 
     private DistributedLock getSeedLock(String realm) {
         MongoCollection<Document> collection = mongoClient
-                .getDatabase("sherlock")
+                .getDatabase(coordinationDatabase)
                 .getCollection("locks");
         Sherlock sherlock = MongoSherlock.create(collection);
         return sherlock.createLock(String.format("seed-lock-%s", realm));

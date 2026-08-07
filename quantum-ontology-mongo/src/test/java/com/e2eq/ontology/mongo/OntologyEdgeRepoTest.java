@@ -10,6 +10,7 @@ import com.e2eq.ontology.exceptions.CardinalityViolationException;
 import com.e2eq.ontology.repo.OntologyEdgeRepo;
 import dev.morphia.MorphiaDatastore;
 import io.quarkus.test.junit.QuarkusTest;
+import io.quarkus.test.common.QuarkusTestResource;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,6 +23,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.*;
 
 @QuarkusTest
+@QuarkusTestResource(TestDatabaseCleanupResource.class)
 public class OntologyEdgeRepoTest {
 
     @Inject
@@ -48,19 +50,19 @@ public class OntologyEdgeRepoTest {
         // These tests exercise the repository contract directly, outside an authenticated
         // resource request. Declare that privileged test boundary explicitly.
         privilegedRepoScope = SecurityCallScope.openIgnoringRules();
-        edgeRepo.deleteAll("types-test");
+        edgeRepo.deleteAll("test-ontology-types");
         // Create test DataDomains for isolation testing
         testDataDomain = new DataDomain();
         testDataDomain.setOrgRefName("test-org-a");
         testDataDomain.setAccountNum("1111111111");
-        testDataDomain.setTenantId("types-test");
+        testDataDomain.setTenantId("test-ontology-types");
         testDataDomain.setOwnerId("system");
         testDataDomain.setDataSegment(0);
         
         testDataDomainOrgB = new DataDomain();
         testDataDomainOrgB.setOrgRefName("test-org-b");
         testDataDomainOrgB.setAccountNum("2222222222");
-        testDataDomainOrgB.setTenantId("types-test");
+        testDataDomainOrgB.setTenantId("test-ontology-types");
         testDataDomainOrgB.setOwnerId("system");
         testDataDomainOrgB.setDataSegment(0);
     }
@@ -214,12 +216,12 @@ public class OntologyEdgeRepoTest {
         mismatchedDomain.setOwnerId("system@system.com");
         mismatchedDomain.setDataSegment(0);
 
-        edgeRepo.deleteAll("realm-mismatch-test");
-        edgeRepo.upsert("realm-mismatch-test", mismatchedDomain, "Obligation", "OBL-1", "obligationFor", "LegalEntity", "LE-1", false, Map.of());
+        edgeRepo.deleteAll("test-realm-mismatch");
+        edgeRepo.upsert("test-realm-mismatch", mismatchedDomain, "Obligation", "OBL-1", "obligationFor", "LegalEntity", "LE-1", false, Map.of());
 
         DomainContext domainContext = DomainContext.builder()
             .tenantId("system.com")
-            .defaultRealm("realm-mismatch-test")
+            .defaultRealm("test-realm-mismatch")
             .orgRefName("mrisys")
             .accountId("0000000000")
             .dataSegment(0)
@@ -227,7 +229,7 @@ public class OntologyEdgeRepoTest {
 
         PrincipalContext principal = new PrincipalContext.Builder()
             .withUserId("system@system.com")
-            .withDefaultRealm("realm-mismatch-test")
+            .withDefaultRealm("test-realm-mismatch")
             .withDomainContext(domainContext)
             .withDataDomain(mismatchedDomain)
             .withRoles(new String[] { "admin" })

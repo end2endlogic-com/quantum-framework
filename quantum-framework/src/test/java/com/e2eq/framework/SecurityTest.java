@@ -34,6 +34,8 @@ import static io.restassured.RestAssured.given;
 @QuarkusTest
 public class SecurityTest extends BaseRepoTest {
 
+    private static final String TEST_APPLICATION_ID = "quantum-framework-test";
+
     @ConfigProperty(name = "auth.provider", defaultValue = "custom")
     String authProvider;
 
@@ -183,6 +185,7 @@ public class SecurityTest extends BaseRepoTest {
             request.setPassword("P@55w@rd");
            // request.setTenantId(securityUtils.getSystemTenantId());
         }
+        request.setApplicationId(TEST_APPLICATION_ID);
 
         ObjectMapper mapper = new ObjectMapper();
         String value = mapper.writeValueAsString(request);
@@ -224,6 +227,7 @@ public class SecurityTest extends BaseRepoTest {
             request.setPassword("P@55w@rd");
            // request.setTenantId(securityUtils.getSystemTenantId());
         }
+        request.setApplicationId(TEST_APPLICATION_ID);
 
         ObjectMapper mapper = new ObjectMapper();
         String value = mapper.writeValueAsString(request);
