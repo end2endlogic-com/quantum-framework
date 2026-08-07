@@ -274,7 +274,8 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
 
     private void registerTextClause() {
         if (textClauseSeen) {
-            throw new IllegalStateException("Multiple text(...) clauses are not supported in a single query.");
+            throw new IllegalStateException(
+                "Multiple text(...) clauses are not supported in a single query; MongoDB allows only one $text operator per query.");
         }
         // MongoDB requires $text to be a top-level query operator.
         // It cannot be nested inside $not/$nor or $elemMatch.
@@ -721,6 +722,7 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
                               .filter(c -> c instanceof org.antlr.v4.runtime.tree.TerminalNode tn &&
                                               switch (tn.getSymbol().getType()) {
                                                  case BIAPIQueryParser.STRING,
+                                                      BIAPIQueryParser.TEXT,
                                                       BIAPIQueryParser.QUOTED_STRING,
                                                       BIAPIQueryParser.VARIABLE,
                                                       BIAPIQueryParser.OID,
@@ -793,8 +795,10 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
                   values.add(coerceValue(new StringLiteral(tn.getText())));
                   break;
                }
-               case BIAPIQueryParser.STRING: {
+               case BIAPIQueryParser.STRING:
+               case BIAPIQueryParser.TEXT: {
                   // Allow coercion (numbers, booleans, dates, ObjectId, etc.)
+                  // TEXT is the keyword token for "text" used as an unquoted value.
                   values.add(coerceValue(tn.getText()));
                   break;
                }
@@ -979,11 +983,15 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         caseInsensitiveStringEquality = originalToken != null
                 && !caseSensitive
                 && (op.getType() == BIAPIQueryParser.EQ || op.getType() == BIAPIQueryParser.NEQ)
-                && (originalToken.getType() == BIAPIQueryParser.STRING || originalToken.getType() == BIAPIQueryParser.QUOTED_STRING);
+                && (originalToken.getType() == BIAPIQueryParser.STRING
+                        || originalToken.getType() == BIAPIQueryParser.TEXT
+                        || originalToken.getType() == BIAPIQueryParser.QUOTED_STRING);
 
         if (value instanceof CommonToken tok) {
             switch (tok.getType()) {
                 case BIAPIQueryParser.STRING:
+                case BIAPIQueryParser.TEXT:
+                    // TEXT is the keyword token for the literal "text" used as a field value.
                     value = tok.getText();
                     break;
                 case BIAPIQueryParser.QUOTED_STRING:
