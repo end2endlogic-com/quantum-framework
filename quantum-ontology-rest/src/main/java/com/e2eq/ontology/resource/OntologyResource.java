@@ -760,11 +760,15 @@ public class OntologyResource {
         if (predicateFilter == null || predicateFilter.isEmpty()) {
             return computedEdgeReader.relationshipEdgesFromSrc(realmId, dataDomain, srcId, null);
         }
-        List<Reasoner.Edge> out = new ArrayList<>();
+        // Set-style merge if the client passes overlapping/repeated predicates.
+        Map<String, Reasoner.Edge> unique = new LinkedHashMap<>();
         for (String p : predicateFilter) {
-            out.addAll(computedEdgeReader.relationshipEdgesFromSrc(realmId, dataDomain, srcId, p));
+            for (Reasoner.Edge e : computedEdgeReader.relationshipEdgesFromSrc(realmId, dataDomain, srcId, p)) {
+                if (e == null) continue;
+                unique.putIfAbsent(ComputedEdgeReader.edgeKey(e), e);
+            }
         }
-        return out;
+        return new ArrayList<>(unique.values());
     }
 
     private List<Reasoner.Edge> collectToDst(String realmId, DataDomain dataDomain,
@@ -772,11 +776,14 @@ public class OntologyResource {
         if (predicateFilter == null || predicateFilter.isEmpty()) {
             return computedEdgeReader.relationshipEdgesToDst(realmId, dataDomain, dstId, null);
         }
-        List<Reasoner.Edge> out = new ArrayList<>();
+        Map<String, Reasoner.Edge> unique = new LinkedHashMap<>();
         for (String p : predicateFilter) {
-            out.addAll(computedEdgeReader.relationshipEdgesToDst(realmId, dataDomain, dstId, p));
+            for (Reasoner.Edge e : computedEdgeReader.relationshipEdgesToDst(realmId, dataDomain, dstId, p)) {
+                if (e == null) continue;
+                unique.putIfAbsent(ComputedEdgeReader.edgeKey(e), e);
+            }
         }
-        return out;
+        return new ArrayList<>(unique.values());
     }
 
     @GET

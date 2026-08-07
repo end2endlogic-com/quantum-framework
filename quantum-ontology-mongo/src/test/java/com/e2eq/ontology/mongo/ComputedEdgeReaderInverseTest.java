@@ -172,6 +172,34 @@ public class ComputedEdgeReaderInverseTest {
         assertEquals("canSeeLocation", edges.get(0).p());
     }
 
+    @Test
+    void relationshipEdgesFromSrcDoesNotDoubleCountStoreAndLazySameTriple() {
+        // Store already has the same edge the LAZY provider would produce — must not
+        // return two copies of (assoc-1, canSeeLocation, loc-A).
+        sources.put("assoc-1", new SourceEntity("assoc-1", List.of("loc-A")));
+        OntologyEdge storeDup = edge("assoc-1", "canSeeLocation", "loc-A", null); // no providerId = keep
+        when(edgeRepo.findBySrc(any(DataDomain.class), eq("assoc-1"))).thenReturn(List.of(storeDup));
+        when(edgeRepo.findBySrcAndP(any(DataDomain.class), eq("assoc-1"), anyString()))
+                .thenReturn(List.of(storeDup));
+
+        var edges = reader.relationshipEdgesFromSrc("realm", domain, "assoc-1", "canSeeLocation");
+        assertEquals(1, edges.size(), "store∪lazy must be set-like on (src,p,dst)");
+        assertEquals("loc-A", edges.get(0).dstId());
+    }
+
+    @Test
+    void srcIdsByDstIsSetNotBag() {
+        sources.put("assoc-1", new SourceEntity("assoc-1", List.of("loc-A")));
+        // Even if store also claims assoc-1 (without non-eager providerId), Set must stay size 1.
+        OntologyEdge storeRow = edge("assoc-1", "canSeeLocation", "loc-A", null);
+        when(edgeRepo.findByDstAndP(eq(domain), eq("loc-A"), eq("canSeeLocation")))
+                .thenReturn(List.of(storeRow, storeRow)); // bag in store query
+
+        Set<String> ids = reader.srcIdsByDst("realm", domain, "canSeeLocation", "loc-A");
+        assertEquals(Set.of("assoc-1"), ids);
+        assertEquals(1, ids.size());
+    }
+
     private static OntologyEdge edge(String src, String p, String dst, Map<String, Object> prov) {
         OntologyEdge e = new OntologyEdge();
         e.setSrc(src);
