@@ -2,6 +2,8 @@ package com.e2eq.framework.mcp;
 
 import com.e2eq.framework.mcp.defect.Defect;
 import com.e2eq.framework.mcp.defect.DefectRepo;
+import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkiverse.mcp.server.Tool;
 import io.quarkiverse.mcp.server.ToolArg;
@@ -54,7 +56,7 @@ public class McpDefectTools {
             defect.setStatus("open");
             defect.setArea(area);
             defect.setComponent(component);
-            defect.setReporter(reporter);
+            defect.setReporter(resolveReporter(reporter));
             Defect saved = defectRepo.save(defect);
             return objectMapper.writeValueAsString(toMap(saved));
         } catch (Exception e) {
@@ -146,6 +148,20 @@ public class McpDefectTools {
         if (severity == null || severity.isBlank()) return "medium";
         String s = severity.trim().toLowerCase();
         return SEVERITIES.contains(s) ? s : "medium";
+    }
+
+    /**
+     * Prefer an explicit reporter arg; otherwise use the authenticated caller's
+     * userId / subjectId so omitted reporter does not persist as null.
+     */
+    private String resolveReporter(String reporter) {
+        if (isPresent(reporter)) return reporter.trim();
+        Optional<PrincipalContext> principal = SecurityContext.getPrincipalContext();
+        if (principal.isEmpty()) return null;
+        PrincipalContext ctx = principal.get();
+        if (isPresent(ctx.getUserId())) return ctx.getUserId().trim();
+        if (isPresent(ctx.getSubjectId())) return ctx.getSubjectId().trim();
+        return null;
     }
 
     private boolean blankOrEquals(String filter, String value) {

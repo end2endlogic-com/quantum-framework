@@ -137,14 +137,15 @@ public class McpGatewayTools {
     String query_import_analyze(
             @ToolArg(description = "Entity type (e.g. Location, Order). Use query_rootTypes to discover valid values.") String rootType,
             @ToolArg(description = "CSV content as a string including a header row followed by data rows") String csvContent,
-            @ToolArg(description = "Optional comma-separated list of entity field names matching CSV columns (e.g. 'refName,displayName,status'). When omitted, headers are inferred from the CSV.", required = false) String columns,
+            @ToolArg(description = "Comma-separated list of entity field names matching CSV columns (e.g. 'refName,displayName,status'). Required; importAnalyze does not infer headers.") String columns,
             @ToolArg(description = "Optional tenant realm", required = false) String realm,
             @ToolArg(description = "Optional field separator character (default ',')", required = false, defaultValue = ",") String fieldSeparator,
             @ToolArg(description = "Optional quote character (default '\"')", required = false, defaultValue = "\"") String quoteChar) {
         Map<String, Object> args = new LinkedHashMap<>();
         args.put("rootType", rootType);
         args.put("csvContent", csvContent);
-        if (columns != null) {
+        // columns is required by QueryGatewayResource.importAnalyze (no header inference path).
+        if (columns != null && !columns.isBlank()) {
             args.put("columns", java.util.Arrays.asList(columns.split(",")));
         }
         if (realm != null && !realm.isBlank()) args.put("realm", realm);
