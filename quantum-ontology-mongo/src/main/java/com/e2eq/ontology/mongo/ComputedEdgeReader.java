@@ -77,6 +77,7 @@ public class ComputedEdgeReader {
                                         String sourceId) {
         Objects.requireNonNull(provider, "provider");
         Objects.requireNonNull(sourceId, "sourceId");
+        realmId = normalizeRealmId(realmId);
 
         MaterializationMode mode = provider.getMaterializationMode();
         switch (mode) {
@@ -111,14 +112,16 @@ public class ComputedEdgeReader {
 
     /**
      * Destination IDs reachable from {@code sourceId} via {@code predicate},
-     * unioning EAGER store rows with LAZY/ONDEMAND provider computation.
+     * unioning store rows (excluding stale non-EAGER provider rows) with
+     * LAZY/ONDEMAND provider computation.
      */
     public Set<String> dstIdsBySrc(String realmId, DataDomain dataDomain,
                                    String predicate, String sourceId) {
         Objects.requireNonNull(predicate, "predicate");
         Objects.requireNonNull(sourceId, "sourceId");
+        realmId = normalizeRealmId(realmId);
 
-        Set<String> ids = new LinkedHashSet<>(edgeRepo.dstIdsBySrc(dataDomain, predicate, sourceId));
+        Set<String> ids = storeDstIdsExcludingNonEager(dataDomain, predicate, sourceId);
         for (ComputedEdgeProvider<?> provider : providersForPredicate(predicate)) {
             if (provider.getMaterializationMode() == MaterializationMode.EAGER) {
                 continue; // already represented in the store (when write path ran)
@@ -135,10 +138,11 @@ public class ComputedEdgeReader {
     /**
      * Source IDs that have an edge with {@code predicate} pointing to {@code dstId}.
      *
-     * <p>Unions store rows with LAZY/ONDEMAND providers. Non-EAGER providers require a
-     * {@link SourceEntityEnumerator} for their source type; without one, only store
-     * rows are returned and a warning is logged (policy {@code hasEdge} would otherwise
-     * silently miss computed edges).</p>
+     * <p>Unions store rows with LAZY/ONDEMAND providers. Store rows attributed to a
+     * currently non-EAGER provider are excluded so a mode switch EAGER→LAZY/ONDEMAND
+     * does not keep granting access via stale materialized rows. Non-EAGER providers
+     * require a {@link SourceEntityEnumerator}; without one, only eligible store rows
+     * are returned and a warning is logged.</p>
      */
     public Set<String> srcIdsByDst(String realmId, DataDomain dataDomain,
                                    String predicate, String dstId) {
@@ -149,9 +153,10 @@ public class ComputedEdgeReader {
                                    String predicate, String dstId, int sourceScanLimit) {
         Objects.requireNonNull(predicate, "predicate");
         Objects.requireNonNull(dstId, "dstId");
+        realmId = normalizeRealmId(realmId);
         int limit = Math.max(1, sourceScanLimit);
 
-        Set<String> ids = new LinkedHashSet<>(edgeRepo.srcIdsByDst(dataDomain, predicate, dstId));
+        Set<String> ids = storeSrcIdsExcludingNonEager(dataDomain, predicate, dstId);
         for (ComputedEdgeProvider<?> provider : providersForPredicate(predicate)) {
             if (provider.getMaterializationMode() == MaterializationMode.EAGER) {
                 continue;
@@ -167,8 +172,12 @@ public class ComputedEdgeReader {
     public Set<String> srcIdsByDstIn(String realmId, DataDomain dataDomain,
                                      String predicate, Collection<String> dstIds) {
         if (dstIds == null || dstIds.isEmpty()) return Set.of();
-        Set<String> ids = new LinkedHashSet<>(edgeRepo.srcIdsByDstIn(dataDomain, predicate, dstIds));
+        realmId = normalizeRealmId(realmId);
         Set<String> wanted = new HashSet<>(dstIds);
+        Set<String> ids = new LinkedHashSet<>();
+        for (String dstId : wanted) {
+            ids.addAll(storeSrcIdsExcludingNonEager(dataDomain, predicate, dstId));
+        }
         for (ComputedEdgeProvider<?> provider : providersForPredicate(predicate)) {
             if (provider.getMaterializationMode() == MaterializationMode.EAGER) {
                 continue;
@@ -182,6 +191,16 @@ public class ComputedEdgeReader {
             }
         }
         return ids;
+    }
+
+    /**
+     * Normalize a realm/tenant id the same way {@code OntologyEdgeRepo} does:
+     * MongoDB database names cannot contain dots, so dots become hyphens.
+     * Package-visible for policy-bridge realm hints and tests.
+     */
+    public static String normalizeRealmId(String realmOrTenantId) {
+        if (realmOrTenantId == null || realmOrTenantId.isBlank()) return realmOrTenantId;
+        return realmOrTenantId.replace('.', '-');
     }
 
     /**
@@ -204,6 +223,56 @@ public class ComputedEdgeReader {
             }
         }
         return out;
+    }
+
+    /** Provider ids currently registered as LAZY/ONDEMAND for {@code predicate}. */
+    private Set<String> nonEagerProviderIds(String predicate) {
+        Set<String> ids = new HashSet<>();
+        for (ComputedEdgeProvider<?> p : providersForPredicate(predicate)) {
+            if (p.getMaterializationMode() != MaterializationMode.EAGER) {
+                ids.add(p.getProviderId());
+            }
+        }
+        return ids;
+    }
+
+    /**
+     * Store contribution for inverse queries: drop rows still attributed to a
+     * provider that is no longer EAGER (stale after an EAGER→LAZY/ONDEMAND switch).
+     */
+    private Set<String> storeSrcIdsExcludingNonEager(DataDomain dataDomain, String predicate, String dstId) {
+        Set<String> nonEager = nonEagerProviderIds(predicate);
+        if (nonEager.isEmpty()) {
+            return new LinkedHashSet<>(edgeRepo.srcIdsByDst(dataDomain, predicate, dstId));
+        }
+        List<OntologyEdge> rows = edgeRepo.findByDstAndP(dataDomain, dstId, predicate);
+        Set<String> ids = new LinkedHashSet<>();
+        for (OntologyEdge e : rows) {
+            if (isStaleNonEagerStoreRow(e, nonEager)) continue;
+            if (e.getSrc() != null) ids.add(e.getSrc());
+        }
+        return ids;
+    }
+
+    private Set<String> storeDstIdsExcludingNonEager(DataDomain dataDomain, String predicate, String sourceId) {
+        Set<String> nonEager = nonEagerProviderIds(predicate);
+        if (nonEager.isEmpty()) {
+            return new LinkedHashSet<>(edgeRepo.dstIdsBySrc(dataDomain, predicate, sourceId));
+        }
+        // Prefer realm-aware overload when possible; DataDomain-only path resolves realm internally.
+        List<OntologyEdge> rows = edgeRepo.findBySrcAndP(dataDomain, sourceId, predicate);
+        Set<String> ids = new LinkedHashSet<>();
+        for (OntologyEdge e : rows) {
+            if (isStaleNonEagerStoreRow(e, nonEager)) continue;
+            if (e.getDst() != null) ids.add(e.getDst());
+        }
+        return ids;
+    }
+
+    private static boolean isStaleNonEagerStoreRow(OntologyEdge e, Set<String> nonEagerProviderIds) {
+        if (e == null || nonEagerProviderIds.isEmpty()) return false;
+        String pid = extractProviderId(e.getProv());
+        return pid != null && nonEagerProviderIds.contains(pid);
     }
 
     private Set<String> srcIdsByDstFromProvider(String realmId, DataDomain dataDomain,

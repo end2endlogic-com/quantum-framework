@@ -6,6 +6,7 @@ import com.e2eq.ontology.core.ComputedEdgeProvider;
 import com.e2eq.ontology.core.ComputedEdgeRegistry;
 import com.e2eq.ontology.core.MaterializationMode;
 import com.e2eq.ontology.metrics.OntologyMetrics;
+import com.e2eq.ontology.model.OntologyEdge;
 import com.e2eq.ontology.repo.OntologyEdgeRepo;
 import jakarta.enterprise.inject.Instance;
 import jakarta.enterprise.util.TypeLiteral;
@@ -47,7 +48,9 @@ public class ComputedEdgeReaderInverseTest {
         when(edgeRepo.srcIdsByDst(any(DataDomain.class), anyString(), anyString())).thenReturn(Set.of());
         when(edgeRepo.srcIdsByDstIn(any(DataDomain.class), anyString(), any())).thenReturn(Set.of());
         when(edgeRepo.dstIdsBySrc(any(DataDomain.class), anyString(), anyString())).thenReturn(Set.of());
+        when(edgeRepo.findBySrcAndP(any(DataDomain.class), anyString(), anyString())).thenReturn(List.of());
         when(edgeRepo.findBySrcAndP(anyString(), any(DataDomain.class), anyString(), anyString())).thenReturn(List.of());
+        when(edgeRepo.findByDstAndP(any(DataDomain.class), anyString(), anyString())).thenReturn(List.of());
 
         sources = new ConcurrentHashMap<>();
 
@@ -108,11 +111,48 @@ public class ComputedEdgeReaderInverseTest {
     @Test
     void srcIdsByDstUnionsStoreEagerRowsWithLazy() {
         sources.put("assoc-lazy", new SourceEntity("assoc-lazy", List.of("loc-X")));
-        when(edgeRepo.srcIdsByDst(eq(domain), eq("canSeeLocation"), eq("loc-X")))
-                .thenReturn(new LinkedHashSet<>(Set.of("assoc-store")));
+        // Store row without non-EAGER provider provenance (explicit or other EAGER provider)
+        OntologyEdge storeRow = edge("assoc-store", "canSeeLocation", "loc-X", null);
+        when(edgeRepo.findByDstAndP(eq(domain), eq("loc-X"), eq("canSeeLocation")))
+                .thenReturn(List.of(storeRow));
 
         Set<String> ids = reader.srcIdsByDst("realm", domain, "canSeeLocation", "loc-X");
         assertEquals(Set.of("assoc-lazy", "assoc-store"), ids);
+    }
+
+    @Test
+    void srcIdsByDstDropsStaleRowsFromNonEagerProviders() {
+        // Provider now LAZY and only grants loc-A; store still has stale loc-Y from when it was EAGER.
+        sources.put("assoc-1", new SourceEntity("assoc-1", List.of("loc-A")));
+        OntologyEdge stale = edge("assoc-1", "canSeeLocation", "loc-Y",
+                Map.of("providerId", "LazyProvider"));
+        when(edgeRepo.findByDstAndP(eq(domain), eq("loc-Y"), eq("canSeeLocation")))
+                .thenReturn(List.of(stale));
+        when(edgeRepo.srcIdsByDst(eq(domain), eq("canSeeLocation"), eq("loc-Y")))
+                .thenReturn(Set.of("assoc-1"));
+
+        Set<String> forStale = reader.srcIdsByDst("realm", domain, "canSeeLocation", "loc-Y");
+        assertTrue(forStale.isEmpty(), "stale non-EAGER store row must not grant access");
+
+        Set<String> forFresh = reader.srcIdsByDst("realm", domain, "canSeeLocation", "loc-A");
+        assertEquals(Set.of("assoc-1"), forFresh);
+    }
+
+    @Test
+    void normalizeRealmIdReplacesDotsLikeOntologyEdgeRepo() {
+        assertEquals("foo-bar-com", ComputedEdgeReader.normalizeRealmId("foo.bar.com"));
+        assertEquals("already-hyphen", ComputedEdgeReader.normalizeRealmId("already-hyphen"));
+        assertNull(ComputedEdgeReader.normalizeRealmId(null));
+    }
+
+    private static OntologyEdge edge(String src, String p, String dst, Map<String, Object> prov) {
+        OntologyEdge e = new OntologyEdge();
+        e.setSrc(src);
+        e.setP(p);
+        e.setDst(dst);
+        e.setProv(prov);
+        e.setDerived(prov != null);
+        return e;
     }
 
     // ── fixtures ──────────────────────────────────────────────────────────
