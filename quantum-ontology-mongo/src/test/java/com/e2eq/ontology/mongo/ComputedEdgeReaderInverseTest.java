@@ -148,6 +148,38 @@ public class ComputedEdgeReaderInverseTest {
     }
 
     @Test
+    void srcIdsByDstInUsesBulkStoreLookupWhenNoNonEagerProviders() {
+        // Register only EAGER path via empty registry of LAZY providers: drop LazyProvider
+        // and use store bulk API alone.
+        registry = new ComputedEdgeRegistry();
+        reader = new ComputedEdgeReader(
+                registry,
+                new ComputedEdgeRecomputeHandler(),
+                edgeRepo,
+                new ComputedEdgeCache(),
+                new OntologyMetrics(),
+                new SingleInstance<>(null));
+        when(edgeRepo.srcIdsByDstIn(eq(domain), eq("p"), any()))
+                .thenReturn(Set.of("s1", "s2"));
+
+        Set<String> ids = reader.srcIdsByDstIn("realm", domain, "p", List.of("d1", "d2"));
+        assertEquals(Set.of("s1", "s2"), ids);
+        verify(edgeRepo, times(1)).srcIdsByDstIn(eq(domain), eq("p"), any());
+        verify(edgeRepo, never()).srcIdsByDst(eq(domain), anyString(), anyString());
+    }
+
+    @Test
+    void inverseScanTruncationFailsClosed() {
+        for (int i = 0; i < 5; i++) {
+            sources.put("assoc-" + i, new SourceEntity("assoc-" + i, List.of("loc-A")));
+        }
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> reader.srcIdsByDst("realm", domain, "canSeeLocation", "loc-A", 3));
+        assertTrue(ex.getMessage().toLowerCase().contains("limit"));
+        assertTrue(ex.getMessage().toLowerCase().contains("inverse"));
+    }
+
+    @Test
     void relationshipEdgesToDstIncludesLazyProviderEdges() {
         sources.put("assoc-1", new SourceEntity("assoc-1", List.of("loc-A", "loc-B")));
         sources.put("assoc-2", new SourceEntity("assoc-2", List.of("loc-B")));

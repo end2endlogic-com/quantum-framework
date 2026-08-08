@@ -181,6 +181,15 @@ public class QueryToPredicateJsonListenerTest {
     }
 
     @Test
+    void testTextSearchHyphenatedTermMatchesHyphenatedFieldValue() {
+        // Query and document must share the same non-letter/non-digit tokenizer.
+        JsonNode hyphenated = nodeOf(Map.of("title", "foo-bar"));
+        assertTrue(pred("text(\"foo-bar\")").test(hyphenated));
+        assertTrue(pred("text(\"foo\")").test(hyphenated));
+        assertTrue(pred("text(\"bar\")").test(hyphenated));
+    }
+
+    @Test
     void testTextKeywordAsFieldAndValueStillParses() {
         // TEXT is a lexer keyword for text(...), but "text" remains a valid
         // unquoted field name / value so existing queries keep working.

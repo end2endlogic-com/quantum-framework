@@ -482,17 +482,18 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
 
     /**
      * Tokenize a text(...) search string into lower-case word terms.
-     * Whitespace-separated; leading/trailing punctuation on each token is stripped.
+     * Uses the same non-letter/non-digit split as {@link #valueHasWord} so
+     * {@code text("foo-bar")} matches a document field value {@code "foo-bar"}.
      */
     static List<String> tokenizeSearchTerms(String search) {
         if (search == null || search.isBlank()) return List.of();
-        return Arrays.stream(search.trim().split("\\s+"))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .map(s -> s.replaceAll("^[\\p{Punct}]+|[\\p{Punct}]+$", ""))
-                .filter(s -> !s.isEmpty())
-                .map(String::toLowerCase)
-                .toList();
+        List<String> terms = new ArrayList<>();
+        for (String word : WORD_SPLIT.split(search.toLowerCase())) {
+            if (!word.isEmpty()) {
+                terms.add(word);
+            }
+        }
+        return terms;
     }
 
     /**
