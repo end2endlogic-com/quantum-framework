@@ -172,12 +172,12 @@ public class ComputedEdgeReader {
     public Set<String> srcIdsByDstIn(String realmId, DataDomain dataDomain,
                                      String predicate, Collection<String> dstIds) {
         if (dstIds == null || dstIds.isEmpty()) return Set.of();
+        Objects.requireNonNull(predicate, "predicate");
         realmId = normalizeRealmId(realmId);
         Set<String> wanted = new HashSet<>(dstIds);
-        Set<String> ids = new LinkedHashSet<>();
-        for (String dstId : wanted) {
-            ids.addAll(storeSrcIdsExcludingNonEager(dataDomain, predicate, dstId));
-        }
+        // Bulk store lookup when no non-EAGER providers need provenance filtering;
+        // otherwise filter per-row so stale LAZY/ONDEMAND materializations drop out.
+        Set<String> ids = storeSrcIdsExcludingNonEagerIn(dataDomain, predicate, wanted);
         for (ComputedEdgeProvider<?> provider : providersForPredicate(predicate)) {
             if (provider.getMaterializationMode() == MaterializationMode.EAGER) {
                 continue;
@@ -392,6 +392,20 @@ public class ComputedEdgeReader {
         return ids;
     }
 
+    /** Bulk store contribution for multi-destination inverse queries. */
+    private Set<String> storeSrcIdsExcludingNonEagerIn(DataDomain dataDomain, String predicate,
+                                                       Collection<String> dstIds) {
+        Set<String> nonEager = nonEagerProviderIds(predicate);
+        if (nonEager.isEmpty()) {
+            return new LinkedHashSet<>(edgeRepo.srcIdsByDstIn(dataDomain, predicate, dstIds));
+        }
+        Set<String> ids = new LinkedHashSet<>();
+        for (String dstId : dstIds) {
+            ids.addAll(storeSrcIdsExcludingNonEager(dataDomain, predicate, dstId));
+        }
+        return ids;
+    }
+
     private Set<String> storeDstIdsExcludingNonEager(DataDomain dataDomain, String predicate, String sourceId) {
         Set<String> nonEager = nonEagerProviderIds(predicate);
         if (nonEager.isEmpty()) {
@@ -453,11 +467,19 @@ public class ComputedEdgeReader {
             after = page.get(page.size() - 1);
             if (page.size() < pageSize) break;
         }
+        // Fail closed: truncated inverse sets make notHasEdge / negation rewrites
+        // grant access to unseen sources that still hold the edge.
         if (all.size() >= sourceScanLimit) {
-            Log.warnf(
-                    "ComputedEdgeReader: inverse source scan hit limit %d for provider %s predicate %s; " +
-                    "results may be incomplete. Prefer EAGER materialization for high-cardinality inverse queries.",
-                    sourceScanLimit, provider.getProviderId(), provider.getPredicate());
+            List<String> probe = enumerator.listIds(
+                    realmId, dataDomain, provider.getSourceType(), after, 1);
+            if (probe != null && !probe.isEmpty()) {
+                throw new IllegalStateException(
+                        "ComputedEdgeReader inverse source scan exceeded limit " + sourceScanLimit
+                                + " for provider " + provider.getProviderId()
+                                + " predicate " + provider.getPredicate()
+                                + "; refusing incomplete inverse results (prefer EAGER materialization "
+                                + "or raise DEFAULT_INVERSE_SOURCE_SCAN_LIMIT for this workload).");
+            }
         }
         return all;
     }
@@ -538,11 +560,13 @@ public class ComputedEdgeReader {
 
     private static ComputedEdgeCache.Key cacheKey(String realmId, DataDomain dataDomain,
                                                   ComputedEdgeProvider<?> provider, String sourceId) {
+        // Always normalize so put/invalidate agree when callers pass dotted tenant ids.
+        String normalizedRealm = normalizeRealmId(realmId);
         String org = dataDomain == null ? null : dataDomain.getOrgRefName();
         String acct = dataDomain == null ? null : dataDomain.getAccountNum();
         String tenant = dataDomain == null ? null : dataDomain.getTenantId();
         int seg = dataDomain == null ? 0 : dataDomain.getDataSegment();
-        return new ComputedEdgeCache.Key(provider.getProviderId(), realmId, org, acct, tenant, seg, sourceId);
+        return new ComputedEdgeCache.Key(provider.getProviderId(), normalizedRealm, org, acct, tenant, seg, sourceId);
     }
 
     /** Same trick as BulkRecomputeService for accessing the registered loader. */
