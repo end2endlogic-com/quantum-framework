@@ -14,7 +14,7 @@ import java.util.Map;
  *
  * <p>When {@code quantum.ontology.provenance.split=true}, computed-edge provenance
  * (hierarchy paths, resolved lists) is written here keyed by {@code edgeId} rather
- * than inlined on {@link OntologyEdge#getProv()}. This keeps the working set of
+ * than inlined on {@link OntologyEdge#prov}. This keeps the working set of
  * the primary edges collection small for high-fanout providers, and lets large
  * provenance trails be loaded only on demand.</p>
  *

@@ -5,7 +5,7 @@ import jakarta.ws.rs.Path;
 
 /**
  * REST CRUD for {@link Defect} (also usable via the generated helixor-sdk-gen binding).
- * The same repo is exposed over MCP by {@link McpDefectTools}.
+ * The same repo is exposed over MCP by {@link com.e2eq.framework.mcp.McpDefectTools}.
  */
 @Path("/mcp/defects")
 public class DefectResource extends BaseResource<Defect, DefectRepo> {

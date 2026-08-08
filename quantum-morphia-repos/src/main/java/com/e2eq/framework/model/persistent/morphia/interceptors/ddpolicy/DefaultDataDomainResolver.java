@@ -139,13 +139,13 @@ public class DefaultDataDomainResolver implements DataDomainResolver {
      * Build the precedence-ordered policy key list for the source/ingestion (4-arg) path.
      *
      * <p>When {@code attrs} carries a non-blank {@code sourceId}, a source-scoped namespace is
-     * searched FIRST, most-specific to least-specific:
+     * searched FIRST, most-specific to least-specific:</p>
      * <pre>
      *   src/{sourceId}/{entityType}  (only when entityType is non-blank)
      *   src/{sourceId}/*
      *   src/*&#47;{entityType}            (only when entityType is non-blank)
      * </pre>
-     * followed by the existing principal-namespace keys
+     * <p>followed by the existing principal-namespace keys
      * ({@code fa:fd → fa:* → *:fd → *:*}).</p>
      *
      * <p>When {@code attrs} is null or its {@code sourceId} is blank, the returned list is EXACTLY
