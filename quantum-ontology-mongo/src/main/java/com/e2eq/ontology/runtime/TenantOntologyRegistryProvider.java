@@ -30,8 +30,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Realm-aware ontology registry provider that maintains separate ontology instances per realm (database).
- * <p>
- * This provider supports true multi-tenancy by:
+ * <p>This provider supports true multi-tenancy by:</p>
  * <ul>
  *   <li>Caching OntologyRegistry instances per realm (MongoDB database)</li>
  *   <li>Rebuilding TBox from Morphia scan + YAML when no persisted TBox exists</li>
@@ -110,6 +109,7 @@ public class TenantOntologyRegistryProvider {
      * SecurityContext, falling back to {@code defaultRealm}), then reads the realm's
      * ACTIVE {@link TenantOntologyTBox} fresh (NOT cached — admission state changes
      * out-of-band). Returns:
+     * </p>
      * <ul>
      *   <li>{@link AdmittedVocabularyResult#governed(java.util.Set)} when an active
      *       tenant TBox exists and its {@code admittedPredicates} field is non-null
@@ -126,8 +126,7 @@ public class TenantOntologyRegistryProvider {
      *       legacy/all-admitted. We do NOT silently downgrade a GOVERNED realm on a
      *       transient Mongo failure.</li>
      * </ul>
-     * Read fresh on every call and fully null-safe.
-     * </p>
+     * <p>Read fresh on every call and fully null-safe.</p>
      *
      * <p><b>Availability tradeoff (surfaced for review):</b> mapping the read
      * failure to UNAVAILABLE means that during a Mongo outage, security-rule

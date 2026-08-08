@@ -14,7 +14,7 @@ import java.util.Map;
 /**
  * Admin-only endpoints for secrets encryption migration and KEK management.
  *
- * <h3>Migration workflow:</h3>
+ * <h2>Migration workflow:</h2>
  * <ol>
  *   <li>Generate a KEK: {@code POST /settings/secrets/admin/generate-kek}</li>
  *   <li>Configure it in {@code application.properties}: {@code quantum.secrets.kek.v1=<base64-key>}</li>

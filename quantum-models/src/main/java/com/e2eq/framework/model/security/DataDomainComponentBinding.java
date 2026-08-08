@@ -14,14 +14,13 @@ import lombok.Data;
  * accountNum), or a reference to a named attribute of the ingested row whose value is read at
  * resolution time (e.g. {@code tenantId = fromAttribute("tenant_id")}).</p>
  *
- * <p>Typical configuration:
+ * <p>Typical configuration:</p>
  * <ul>
  *   <li>{@code orgRefName} / {@code accountNum} = literal (source-bound)</li>
  *   <li>{@code tenantId} = fromAttribute("tenant_id")</li>
  *   <li>{@code dataSegment} = literal("0") (default)</li>
  *   <li>{@code ownerId} = literal("system") (default)</li>
  * </ul>
- * </p>
  */
 @Entity
 @RegisterForReflection

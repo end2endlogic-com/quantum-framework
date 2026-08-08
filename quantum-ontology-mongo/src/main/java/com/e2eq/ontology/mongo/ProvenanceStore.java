@@ -16,7 +16,7 @@ import java.util.Optional;
  *
  * <p>Behavior is gated by config {@code quantum.ontology.provenance.split}:</p>
  * <ul>
- *   <li>{@code false} (default): provenance is inlined on {@link OntologyEdge#getProv()}.
+ *   <li>{@code false} (default): provenance is inlined on {@link OntologyEdge#prov}.
  *       This module is then a thin pass-through over the inline storage so callers
  *       can use the same API regardless of mode.</li>
  *   <li>{@code true}: provenance is written to {@link OntologyEdgeProvenanceDoc}
