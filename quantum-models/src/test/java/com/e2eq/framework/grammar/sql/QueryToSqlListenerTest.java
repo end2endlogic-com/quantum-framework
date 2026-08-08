@@ -76,6 +76,14 @@ class QueryToSqlListenerTest {
     }
 
     @Test
+    void inListAcceptsTextKeywordToken() {
+        // TEXT is a lexer keyword for text(...), but unquoted "text" in IN lists
+        // must still translate (keyword-collision fix for type:^ [text]).
+        assertWhere("type:^[text]", "type IN (?)", List.of("text"));
+        assertWhere("type:^[plain,text]", "type IN (?, ?)", List.of("plain", "text"));
+    }
+
+    @Test
     void inComposesWithScalar_paramsStayAligned() {
         assertWhere("status:ACTIVE && region:^[west,east]",
                 "(region IN (?, ?) AND status = ?)", List.of("west", "east", "ACTIVE"));
