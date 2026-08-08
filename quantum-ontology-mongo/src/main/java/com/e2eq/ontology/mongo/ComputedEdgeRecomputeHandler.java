@@ -176,13 +176,16 @@ public class ComputedEdgeRecomputeHandler {
         }
         if (mode == MaterializationMode.LAZY) {
             // No stored edges to refresh; just punch the cache so the next read
-            // recomputes against the new dependency state.
+            // recomputes against the new dependency state. Normalize realm the same
+            // way ComputedEdgeReader.cacheKey does (dots → hyphens) so invalidation
+            // hits entries written from dotted tenant ids.
             String org = dataDomain == null ? null : dataDomain.getOrgRefName();
             String acct = dataDomain == null ? null : dataDomain.getAccountNum();
             String tenant = dataDomain == null ? null : dataDomain.getTenantId();
             int seg = dataDomain == null ? 0 : dataDomain.getDataSegment();
+            String normalizedRealm = ComputedEdgeReader.normalizeRealmId(realmId);
             computedEdgeCache.invalidate(new ComputedEdgeCache.Key(
-                    provider.getProviderId(), realmId, org, acct, tenant, seg, sourceId));
+                    provider.getProviderId(), normalizedRealm, org, acct, tenant, seg, sourceId));
             return true;
         }
 

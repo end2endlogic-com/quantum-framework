@@ -301,6 +301,7 @@ public class QueryToSqlListener extends BIAPIQueryBaseListener {
                     switch (t) {
                         case BIAPIQueryParser.STRING:
                         case BIAPIQueryParser.QUOTED_STRING:
+                        case BIAPIQueryParser.TEXT:
                         case BIAPIQueryParser.OID:
                         case BIAPIQueryParser.REFERENCE:
                             placeholders.add(newParam(tn.getText()));
