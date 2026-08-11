@@ -6,6 +6,7 @@ import org.eclipse.microprofile.rest.client.RestClientBuilder;
 
 import java.net.URI;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 /**
  * Builds the control-plane client (the SDK-generated JAX-RS interface
@@ -19,11 +20,20 @@ public final class ControlPlaneClientFactory {
     }
 
     public static DefaultEndpoint build(String baseUrl, Optional<String> bearerToken) {
+        return build(baseUrl, () -> bearerToken);
+    }
+
+    public static DefaultEndpoint build(
+        String baseUrl,
+        Supplier<Optional<String>> bearerToken
+    ) {
         RestClientBuilder builder = RestClientBuilder.newBuilder()
             .baseUri(URI.create(baseUrl.replaceAll("/+$", "")));
-        bearerToken.filter(t -> !t.isBlank()).ifPresent(token ->
-            builder.register((ClientRequestFilter) ctx ->
-                ctx.getHeaders().putSingle("Authorization", "Bearer " + token)));
+        builder.register((ClientRequestFilter) ctx ->
+            bearerToken.get()
+                .filter(token -> !token.isBlank())
+                .ifPresent(token -> ctx.getHeaders().putSingle(
+                    "Authorization", "Bearer " + token)));
         return builder.build(DefaultEndpoint.class);
     }
 }

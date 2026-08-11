@@ -10,6 +10,7 @@ import com.e2eq.framework.model.security.RealmTenantMembership;
 import com.e2eq.framework.model.security.UserRealmRole;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.bson.types.ObjectId;
 
 import java.nio.charset.StandardCharsets;
@@ -44,6 +45,9 @@ public class RealmMembershipService {
     @Inject
     SystemDirectory systemDirectory;
 
+    @Inject
+    JsonWebToken jwt;
+
     @ConfigProperty(name = "quantum.system-service.token")
     java.util.Optional<String> serviceToken;
 
@@ -55,9 +59,22 @@ public class RealmMembershipService {
             remoteClient = new RemoteMembershipClient(
                 quantumModeConfig.systemServiceBaseUrl().orElseThrow(() ->
                     new IllegalStateException("quantum.system-service.base-url is required for remote membership resolution")),
-                serviceToken);
+                this::requestBearerToken);
         }
         return remoteClient;
+    }
+
+    Optional<String> requestBearerToken() {
+        try {
+            String inboundToken = jwt.getRawToken();
+            if (inboundToken != null && !inboundToken.isBlank()) {
+                return Optional.of(inboundToken);
+            }
+        } catch (RuntimeException ignored) {
+            // No active request context (for example, startup). Use a configured
+            // service token when present; otherwise the remote call fails closed.
+        }
+        return serviceToken.filter(token -> !token.isBlank());
     }
 
     /** All realm memberships for an org (owner and participant alike). */

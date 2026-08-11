@@ -11,6 +11,7 @@ import jakarta.ws.rs.WebApplicationException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 /**
  * Phase C (2/2): membership/role resolution over the control-plane API,
@@ -25,6 +26,13 @@ public class RemoteMembershipClient {
     private final DefaultEndpoint client;
 
     public RemoteMembershipClient(String baseUrl, Optional<String> bearerToken) {
+        this(ControlPlaneClientFactory.build(baseUrl, bearerToken));
+    }
+
+    public RemoteMembershipClient(
+        String baseUrl,
+        Supplier<Optional<String>> bearerToken
+    ) {
         this(ControlPlaneClientFactory.build(baseUrl, bearerToken));
     }
 
