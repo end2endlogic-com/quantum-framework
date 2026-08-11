@@ -51,17 +51,17 @@ public class RealmMembershipService {
     @ConfigProperty(name = "quantum.system-service.token")
     java.util.Optional<String> serviceToken;
 
-    private volatile RemoteMembershipClient remoteClient;
-
-    /** Phase C: in remote mode membership resolution goes to the control plane. */
+    /**
+     * Phase C: in remote mode membership resolution goes to the control plane.
+     * Capture the bearer while still on the inbound request thread. The REST
+     * client may execute filters on another thread where the request-scoped JWT
+     * proxy is no longer available.
+     */
     private RemoteMembershipClient remote() {
-        if (remoteClient == null) {
-            remoteClient = new RemoteMembershipClient(
-                quantumModeConfig.systemServiceBaseUrl().orElseThrow(() ->
-                    new IllegalStateException("quantum.system-service.base-url is required for remote membership resolution")),
-                this::requestBearerToken);
-        }
-        return remoteClient;
+        return new RemoteMembershipClient(
+            quantumModeConfig.systemServiceBaseUrl().orElseThrow(() ->
+                new IllegalStateException("quantum.system-service.base-url is required for remote membership resolution")),
+            requestBearerToken());
     }
 
     Optional<String> requestBearerToken() {
