@@ -48,4 +48,18 @@ class ServiceTokenRealmClaimTest {
         assertFalse(claims.contains("\"realm\""), claims);
         assertFalse(claims.contains("\"azp\""), claims);
     }
+
+    @Test
+    void applicationScopedServiceTokenCarriesAuthorizedPartyWithoutAudience() throws Exception {
+        TokenUtils.configure("privateKey.pem", "publicKey.pem");
+
+        String jwt = TokenUtils.generateServiceToken(
+                "svc-helixor-code", Set.of("service", "system"), "helixor-code",
+                TokenUtils.expiresAt(3600), "https://auth.example.com");
+
+        String claims = payloadJson(jwt);
+        assertTrue(claims.contains("\"azp\":\"helixor-code\""), claims);
+        assertFalse(claims.contains("\"aud\""), claims);
+        assertFalse(claims.contains("\"realm\""), claims);
+    }
 }
