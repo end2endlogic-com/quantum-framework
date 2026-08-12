@@ -187,6 +187,13 @@ public class RealmMembershipService {
                 assignment.getUserId(), assignment.getRealmRefName(), systemRealmId);
         if (existingRole.isPresent()) {
             UserRealmRole existing = existingRole.get();
+            if (assignment.getDataDomain() == null) {
+                // The public control-plane membership contract intentionally omits
+                // internal tenant storage scope. An update through that seam must
+                // preserve the authoritative assignment instead of being treated as
+                // an attempt to clear or move it.
+                assignment.setDataDomain(existing.getDataDomain());
+            }
             if (!java.util.Objects.equals(existing.getDataDomain(), assignment.getDataDomain())) {
                 throw new IllegalStateException(
                     "A user may have only one tenant DataDomain assignment per realm. "
