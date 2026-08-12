@@ -13,6 +13,8 @@ public class UserRealmRoleEntry {
     private String realmRefName;
     @NotNull
     private List<String> roles;
+    private List<String> authorizedApplications;
+    private String defaultApplication;
     private String sponsoringOrgRefName;
     private String status;
 
@@ -33,6 +35,18 @@ public class UserRealmRoleEntry {
 
     @JsonProperty("roles")
     public void setRoles(List<String> roles) { this.roles = roles; }
+
+    @JsonProperty("authorizedApplications")
+    public List<String> getAuthorizedApplications() { return authorizedApplications; }
+
+    @JsonProperty("authorizedApplications")
+    public void setAuthorizedApplications(List<String> authorizedApplications) { this.authorizedApplications = authorizedApplications; }
+
+    @JsonProperty("defaultApplication")
+    public String getDefaultApplication() { return defaultApplication; }
+
+    @JsonProperty("defaultApplication")
+    public void setDefaultApplication(String defaultApplication) { this.defaultApplication = defaultApplication; }
 
     @JsonProperty("sponsoringOrgRefName")
     public String getSponsoringOrgRefName() { return sponsoringOrgRefName; }

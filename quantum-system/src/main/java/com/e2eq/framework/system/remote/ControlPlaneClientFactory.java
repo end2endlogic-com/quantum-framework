@@ -21,9 +21,11 @@ public final class ControlPlaneClientFactory {
     public static DefaultEndpoint build(String baseUrl, Optional<String> bearerToken) {
         RestClientBuilder builder = RestClientBuilder.newBuilder()
             .baseUri(URI.create(baseUrl.replaceAll("/+$", "")));
-        bearerToken.filter(t -> !t.isBlank()).ifPresent(token ->
-            builder.register((ClientRequestFilter) ctx ->
-                ctx.getHeaders().putSingle("Authorization", "Bearer " + token)));
+        builder.register((ClientRequestFilter) ctx ->
+            bearerToken
+                .filter(token -> !token.isBlank())
+                .ifPresent(token -> ctx.getHeaders().putSingle(
+                    "Authorization", "Bearer " + token)));
         return builder.build(DefaultEndpoint.class);
     }
 }

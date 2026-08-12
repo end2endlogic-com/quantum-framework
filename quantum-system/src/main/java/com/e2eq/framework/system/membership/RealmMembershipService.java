@@ -10,6 +10,7 @@ import com.e2eq.framework.model.security.RealmTenantMembership;
 import com.e2eq.framework.model.security.UserRealmRole;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.bson.types.ObjectId;
 
 import java.nio.charset.StandardCharsets;
@@ -44,20 +45,36 @@ public class RealmMembershipService {
     @Inject
     SystemDirectory systemDirectory;
 
+    @Inject
+    JsonWebToken jwt;
+
     @ConfigProperty(name = "quantum.system-service.token")
     java.util.Optional<String> serviceToken;
 
-    private volatile RemoteMembershipClient remoteClient;
-
-    /** Phase C: in remote mode membership resolution goes to the control plane. */
+    /**
+     * Phase C: in remote mode membership resolution goes to the control plane.
+     * Capture the bearer while still on the inbound request thread. The REST
+     * client may execute filters on another thread where the request-scoped JWT
+     * proxy is no longer available.
+     */
     private RemoteMembershipClient remote() {
-        if (remoteClient == null) {
-            remoteClient = new RemoteMembershipClient(
-                quantumModeConfig.systemServiceBaseUrl().orElseThrow(() ->
-                    new IllegalStateException("quantum.system-service.base-url is required for remote membership resolution")),
-                serviceToken);
+        return new RemoteMembershipClient(
+            quantumModeConfig.systemServiceBaseUrl().orElseThrow(() ->
+                new IllegalStateException("quantum.system-service.base-url is required for remote membership resolution")),
+            requestBearerToken());
+    }
+
+    Optional<String> requestBearerToken() {
+        try {
+            String inboundToken = jwt.getRawToken();
+            if (inboundToken != null && !inboundToken.isBlank()) {
+                return Optional.of(inboundToken);
+            }
+        } catch (RuntimeException ignored) {
+            // No active request context (for example, startup). Use a configured
+            // service token when present; otherwise the remote call fails closed.
         }
-        return remoteClient;
+        return serviceToken.filter(token -> !token.isBlank());
     }
 
     /** All realm memberships for an org (owner and participant alike). */
@@ -77,8 +94,8 @@ public class RealmMembershipService {
         if (quantumModeConfig.isRemote()) {
             return remote().membersOfRealm(realmRefName);
         }
-        return membershipRepo.getListByQuery(0, -1,
-            "realmRefName:" + realmRefName);
+        return membershipRepo.findByRealmRefNameWithIgnoreRules(
+            systemDirectory.systemRealmId(), realmRefName);
     }
 
     /** Create or update an org/account membership through the owning control plane. */
@@ -145,7 +162,8 @@ public class RealmMembershipService {
         if (quantumModeConfig.isRemote()) {
             return remote().realmsForUser(userId);
         }
-        return userRealmRoleRepo.getListByQuery(0, -1, "userId:" + userId);
+        return userRealmRoleRepo.findByUserIdWithIgnoreRules(
+            userId, systemDirectory.systemRealmId());
     }
 
     /** Create or update a user's role assignment through the owning control plane. */
@@ -169,6 +187,13 @@ public class RealmMembershipService {
                 assignment.getUserId(), assignment.getRealmRefName(), systemRealmId);
         if (existingRole.isPresent()) {
             UserRealmRole existing = existingRole.get();
+            if (assignment.getDataDomain() == null) {
+                // The public control-plane membership contract intentionally omits
+                // internal tenant storage scope. An update through that seam must
+                // preserve the authoritative assignment instead of being treated as
+                // an attempt to clear or move it.
+                assignment.setDataDomain(existing.getDataDomain());
+            }
             if (!java.util.Objects.equals(existing.getDataDomain(), assignment.getDataDomain())) {
                 throw new IllegalStateException(
                     "A user may have only one tenant DataDomain assignment per realm. "
