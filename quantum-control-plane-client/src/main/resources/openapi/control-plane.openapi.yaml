@@ -66,6 +66,24 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/RealmMembershipEntry' }
+  /control/realms/{refName}/members/{organizationRefName}:
+    put:
+      operationId: upsertRealmMembership
+      summary: Create or update an organization membership in a realm
+      parameters:
+        - { name: refName, in: path, required: true, schema: { type: string } }
+        - { name: organizationRefName, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RealmMembershipEntry' }
+      responses:
+        '200':
+          description: reconciled realm membership
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RealmMembershipEntry' }
   /control/users/{userId}/realms:
     get:
       operationId: realmsForUser
@@ -79,6 +97,24 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/UserRealmRoleEntry' }
+  /control/users/{userId}/realms/{realmRefName}:
+    put:
+      operationId: upsertUserRealmRole
+      summary: Create or update a user's role assignment in a realm
+      parameters:
+        - { name: userId, in: path, required: true, schema: { type: string } }
+        - { name: realmRefName, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserRealmRoleEntry' }
+      responses:
+        '200':
+          description: reconciled user realm-role assignment
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserRealmRoleEntry' }
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -118,5 +154,7 @@ components:
         userId: { type: string }
         realmRefName: { type: string }
         roles: { type: array, items: { type: string } }
+        authorizedApplications: { type: array, items: { type: string } }
+        defaultApplication: { type: string }
         sponsoringOrgRefName: { type: string }
         status: { type: string, enum: [active, invited, suspended] }

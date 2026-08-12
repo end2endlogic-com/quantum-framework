@@ -234,6 +234,20 @@ public class TokenUtils {
 										 Set<String> groups,
 										 long expiresAt,
 										 String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+		return generateServiceToken(subject, groups, null, expiresAt, issuer);
+	}
+
+	/**
+	 * Trusted service identity scoped to the application selected by the
+	 * authenticated minting session. The application is authorization context
+	 * ({@code azp}), not a resource audience, so service tokens remain free of an
+	 * {@code aud} claim.
+	 */
+	public static String generateServiceToken(String subject,
+										 Set<String> groups,
+										 String activeApplication,
+										 long expiresAt,
+										 String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
 		Objects.requireNonNull(subject, "subject cannot be null");
 		Objects.requireNonNull(issuer, "Issuer cannot be null");
 		if (expiresAt <= REFRESH_ADDITIONAL_DURATION_SECONDS) {
@@ -242,7 +256,7 @@ public class TokenUtils {
 
 		PrivateKey privateKey = cachedPrivateKey != null ? cachedPrivateKey : readPrivateKey(privateKeyLocation);
 		long currentTimeInSecs = currentTimeInSecs();
-		return Jwt.claims()
+		JwtClaimsBuilder claimsBuilder = Jwt.claims()
 				.issuer(issuer)
 				.subject(subject)
 				.issuedAt(currentTimeInSecs)
@@ -250,8 +264,11 @@ public class TokenUtils {
 				.groups(groups)
 				.claim("scope", AUTH_SCOPE)
 				.claim(com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.TOKEN_TYPE_CLAIM,
-						com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.SERVICE_TOKEN_TYPE)
-				.jws().keyId(resolveSigningKeyId()).sign(privateKey);
+						com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.SERVICE_TOKEN_TYPE);
+		if (activeApplication != null && !activeApplication.isBlank()) {
+			claimsBuilder.claim("azp", activeApplication.trim());
+		}
+		return claimsBuilder.jws().keyId(resolveSigningKeyId()).sign(privateKey);
 	}
 
 	/**

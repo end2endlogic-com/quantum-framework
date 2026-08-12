@@ -127,10 +127,20 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
     */
    public String generateServiceToken(String subject, Set<String> roles, Long expirationSeconds,
                                       String realm, Set<String> audiences) {
+      return generateServiceToken(subject, roles, expirationSeconds, realm, audiences, null);
+   }
+
+   /**
+    * Application-scoped service passport. The active application comes from
+    * the authenticated minting session and is signed as {@code azp}; realm and
+    * audiences remain deliberately excluded from service identity.
+    */
+   public String generateServiceToken(String subject, Set<String> roles, Long expirationSeconds,
+                                      String realm, Set<String> audiences, String activeApplication) {
       long duration = (expirationSeconds != null) ? expirationSeconds : 60L * 60 * 24 * 365 * 100;
       try {
          return TokenUtils.generateServiceToken(
-                 subject, roles, TokenUtils.expiresAt(duration), issuer);
+                 subject, roles, activeApplication, TokenUtils.expiresAt(duration), issuer);
       } catch (IOException | NoSuchAlgorithmException | InvalidKeySpecException e) {
          throw new RuntimeException("Failed to generate service token", e);
       }
