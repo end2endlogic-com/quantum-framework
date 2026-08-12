@@ -29,7 +29,9 @@ public class TestRemoteSystemDirectoryClient {
         @Override public RealmCatalogEntry findRealmByRefName(String refName) { throw new NotFoundException(); }
         @Override public RealmCatalogEntry registerRealm(RealmCatalogEntry body) { return body; }
         @Override public List<RealmMembershipEntry> membersOfRealm(String refName) { return List.of(); }
+        @Override public RealmMembershipEntry upsertRealmMembership(String r, String o, RealmMembershipEntry body) { return body; }
         @Override public List<UserRealmRoleEntry> realmsForUser(String userId) { return List.of(); }
+        @Override public UserRealmRoleEntry upsertUserRealmRole(String u, String r, UserRealmRoleEntry body) { return body; }
     }
 
     @Test
