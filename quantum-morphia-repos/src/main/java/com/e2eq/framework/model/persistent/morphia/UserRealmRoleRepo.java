@@ -11,6 +11,15 @@ import java.util.Optional;
 @ApplicationScoped
 public class UserRealmRoleRepo extends MorphiaRepo<UserRealmRole> {
 
+    public List<UserRealmRole> findByUserIdWithIgnoreRules(String userId, String systemRealmId) {
+        MorphiaDatastore ds = morphiaDataStoreWrapper.getDataStore(systemRealmId);
+        try (var cursor = ds.find(UserRealmRole.class)
+                .filter(Filters.eq("userId", userId))
+                .iterator()) {
+            return cursor.toList();
+        }
+    }
+
     public List<UserRealmRole> findByRealmRefNameWithIgnoreRules(String realmRefName, String systemRealmId) {
         MorphiaDatastore ds = morphiaDataStoreWrapper.getDataStore(systemRealmId);
         try (var cursor = ds.find(UserRealmRole.class)

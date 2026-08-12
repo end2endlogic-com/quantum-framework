@@ -94,8 +94,8 @@ public class RealmMembershipService {
         if (quantumModeConfig.isRemote()) {
             return remote().membersOfRealm(realmRefName);
         }
-        return membershipRepo.getListByQuery(0, -1,
-            "realmRefName:" + realmRefName);
+        return membershipRepo.findByRealmRefNameWithIgnoreRules(
+            systemDirectory.systemRealmId(), realmRefName);
     }
 
     /** Create or update an org/account membership through the owning control plane. */
@@ -162,7 +162,8 @@ public class RealmMembershipService {
         if (quantumModeConfig.isRemote()) {
             return remote().realmsForUser(userId);
         }
-        return userRealmRoleRepo.getListByQuery(0, -1, "userId:" + userId);
+        return userRealmRoleRepo.findByUserIdWithIgnoreRules(
+            userId, systemDirectory.systemRealmId());
     }
 
     /** Create or update a user's role assignment through the owning control plane. */
