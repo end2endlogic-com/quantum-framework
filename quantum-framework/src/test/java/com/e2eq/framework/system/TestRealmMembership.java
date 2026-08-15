@@ -105,13 +105,16 @@ public class TestRealmMembership extends BaseRepoTest {
     }
 
     private void seed() {
-        membershipRepo.save(membership("acme.com", RealmTenantMembership.MEMBERSHIP_ROLE_OWNER));
-        membershipRepo.save(membership("fastfreight.com", RealmTenantMembership.MEMBERSHIP_ROLE_PARTICIPANT));
-        membershipRepo.save(membership("partsco.com", RealmTenantMembership.MEMBERSHIP_ROLE_PARTICIPANT));
+        membershipService.upsertMembership(membership("acme.com", RealmTenantMembership.MEMBERSHIP_ROLE_OWNER));
+        membershipService.upsertMembership(membership("fastfreight.com", RealmTenantMembership.MEMBERSHIP_ROLE_PARTICIPANT));
+        membershipService.upsertMembership(membership("partsco.com", RealmTenantMembership.MEMBERSHIP_ROLE_PARTICIPANT));
 
-        userRealmRoleRepo.save(role("pat@acme.com", REALM, List.of("admin"), UserRealmRole.STATUS_ACTIVE));
-        userRealmRoleRepo.save(role("pat@acme.com", "other-realm-com", List.of("viewer"), UserRealmRole.STATUS_ACTIVE));
-        userRealmRoleRepo.save(role("suspended@acme.com", REALM, List.of("admin"), UserRealmRole.STATUS_SUSPENDED));
+        membershipService.upsertUserRealmRole(
+            role("pat@acme.com", REALM, List.of("admin"), UserRealmRole.STATUS_ACTIVE));
+        membershipService.upsertUserRealmRole(
+            role("pat@acme.com", "other-realm-com", List.of("viewer"), UserRealmRole.STATUS_ACTIVE));
+        membershipService.upsertUserRealmRole(
+            role("suspended@acme.com", REALM, List.of("admin"), UserRealmRole.STATUS_SUSPENDED));
     }
 
     private RealmTenantMembership membership(String org, String role) {
@@ -141,12 +144,13 @@ public class TestRealmMembership extends BaseRepoTest {
 
     private void cleanup() {
         try (final SecuritySession ignored = new SecuritySession(pContext, rContext)) {
-            membershipRepo.getListByQuery(0, -1, "realmRefName:" + REALM)
-                .forEach(this::deleteQuietly);
-            userRealmRoleRepo.getListByQuery(0, -1, "userId:pat@acme.com")
-                .forEach(this::deleteRoleQuietly);
-            userRealmRoleRepo.getListByQuery(0, -1, "userId:suspended@acme.com")
-                .forEach(this::deleteRoleQuietly);
+            String systemRealmId = systemDirectory.systemRealmId();
+            membershipRepo.findByRealmRefNameWithIgnoreRules(systemRealmId, REALM)
+                .forEach(value -> deleteQuietly(systemRealmId, value));
+            userRealmRoleRepo.findByUserIdWithIgnoreRules("pat@acme.com", systemRealmId)
+                .forEach(value -> deleteRoleQuietly(systemRealmId, value));
+            userRealmRoleRepo.findByUserIdWithIgnoreRules("suspended@acme.com", systemRealmId)
+                .forEach(value -> deleteRoleQuietly(systemRealmId, value));
         }
     }
 

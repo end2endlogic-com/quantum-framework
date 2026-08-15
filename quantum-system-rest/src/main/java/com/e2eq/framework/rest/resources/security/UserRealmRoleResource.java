@@ -179,6 +179,8 @@ public class UserRealmRoleResource extends BaseResource<UserRealmRole, UserRealm
             // "*" is an admin-only, deliberate grant — audit every time it is written.
             Log.warnf("Wildcard application grant WRITTEN (audit): user=%s realm=%s by=%s",
                     userId, realmRefName, callerName());
+            apps = List.of(UserRealmRole.APPLICATION_WILDCARD);
+            defaultApp = null;
          }
 
          // Grants must reference registered applications; the wildcard is
