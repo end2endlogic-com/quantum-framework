@@ -7,6 +7,7 @@ import com.e2eq.framework.model.persistent.migration.base.MigrationService;
 import com.e2eq.framework.model.persistent.morphia.DatabaseVersionRepo;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityCallScope;
+import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.security.runtime.RuleContext;
 import com.e2eq.framework.util.EnvConfigUtils;
 import com.e2eq.framework.util.SecurityUtils;
@@ -38,6 +39,9 @@ public class MigrationResource {
 
    @ConfigProperty(name = "quantum.database.migration.enabled", defaultValue = "true")
    boolean enabled;
+
+   @ConfigProperty(name = "quantum.migration.application-id")
+   Optional<String> migrationApplicationId;
 
    @Inject
    MigrationService migrationService;
@@ -130,8 +134,9 @@ public class MigrationResource {
    public void executeChangeSet (@Context HttpHeaders headers, @PathParam("realm") String realm, @PathParam(
       "beanRefName") String beanRefName, @Context SseEventSink eventSink, @Context Sse sse) {
       if (!identity.isAnonymous() && identity.hasRole("admin")) {
+         String applicationId = currentMigrationApplicationId();
 
-         Multi.createFrom().publisher(runChangeBeanTask(beanRefName, realm))
+         Multi.createFrom().publisher(runChangeBeanTask(beanRefName, realm, applicationId))
             .emitOn(managedExecutor)
             .subscribe().with(
                message -> {
@@ -164,8 +169,9 @@ public class MigrationResource {
    public void initializeDatabase (@PathParam("realm") String realm, @Context SseEventSink eventSink, @Context Sse sse) {
 
       if (!identity.isAnonymous() && identity.hasRole("admin")) {
+         String applicationId = currentMigrationApplicationId();
 
-         Multi.createFrom().publisher(initializeDatabaseTask(realm))
+         Multi.createFrom().publisher(initializeDatabaseTask(realm, applicationId))
             .emitOn(managedExecutor)
             .subscribe().with(
                message -> {
@@ -196,7 +202,8 @@ public class MigrationResource {
    @FunctionalMapping(area="MIGRATION", domain="DATABASE")
    @FunctionalAction(value = "RUN_ALL", bypassDataScoping = true)
    public void startTask (@Context SseEventSink eventSink, @Context Sse sse) {
-      Multi.createFrom().publisher(runMigrateAllTask())
+      String applicationId = currentMigrationApplicationId();
+      Multi.createFrom().publisher(runMigrateAllTask(applicationId))
          .emitOn(managedExecutor)
          .subscribe().with(
             message -> {
@@ -226,7 +233,8 @@ public class MigrationResource {
    @FunctionalMapping(area="MIGRATION", domain="DATABASE")
    @FunctionalAction(value = "RUN", bypassDataScoping = true)
    public void startSpecificTask (@PathParam("realm") String realm, @Context SseEventSink eventSink, @Context Sse sse) {
-      Multi.createFrom().publisher(runMigrateSpecificTask(realm))
+      String applicationId = currentMigrationApplicationId();
+      Multi.createFrom().publisher(runMigrateSpecificTask(realm, applicationId))
          .emitOn(managedExecutor)
          .subscribe().with(
             message -> {
@@ -249,7 +257,7 @@ public class MigrationResource {
          );
    }
 
-   private Multi<String> initializeDatabaseTask (String realm) {
+   private Multi<String> initializeDatabaseTask (String realm, String applicationId) {
       Objects.requireNonNull(realm);
       return Multi.createFrom().emitter(emitter -> {
          try {
@@ -257,7 +265,7 @@ public class MigrationResource {
             ruleContext.ensureDefaultRules();
             securityUtils.setSecurityContext();
             try {
-               runWithMigrationScope(realm, "INITIALIZE", () -> {
+               runWithMigrationScope(realm, applicationId, "INITIALIZE", () -> {
                   Log.infof("----Running migrations for system realm:%s---- ", realm);
                   migrationService.runAllUnRunMigrations(realm, emitter);
                });
@@ -272,7 +280,7 @@ public class MigrationResource {
       });
    }
 
-   private Multi<String> runChangeBeanTask (String beanRefName, String realm) {
+   private Multi<String> runChangeBeanTask (String beanRefName, String realm, String applicationId) {
 
       Objects.requireNonNull(beanRefName);
       return Multi.createFrom().emitter(emitter -> {
@@ -281,7 +289,7 @@ public class MigrationResource {
             ruleContext.ensureDefaultRules();
             securityUtils.setSecurityContext();
             try {
-               runWithMigrationScope(realm, "EXECUTE_CHANGE_SET", () -> {
+               runWithMigrationScope(realm, applicationId, "EXECUTE_CHANGE_SET", () -> {
                   Log.infof("----Running changeSet for bean:%s---- ", beanRefName);
                   migrationService.runChangeSetBean(beanRefName, realm, emitter);
                });
@@ -296,7 +304,7 @@ public class MigrationResource {
       });
    }
 
-   private Multi<String> runMigrateAllTask () {
+   private Multi<String> runMigrateAllTask (String applicationId) {
       return Multi.createFrom().emitter(emitter -> {
          try {
 
@@ -306,12 +314,12 @@ public class MigrationResource {
             securityUtils.setSecurityContext();
             try {
                Log.info("----Running migrations for test realm:---- " + envConfigUtils.getTestRealm());
-               runWithMigrationScope(envConfigUtils.getTestRealm(), "RUN", () -> migrationService.runAllUnRunMigrations(envConfigUtils.getTestRealm(), emitter));
+               runWithMigrationScope(envConfigUtils.getTestRealm(), applicationId, "RUN", () -> migrationService.runAllUnRunMigrations(envConfigUtils.getTestRealm(), emitter));
                Log.info("----Running migrations for system realm:---- " + envConfigUtils.getSystemRealm());
-               runWithMigrationScope(envConfigUtils.getSystemRealm(), "RUN", () -> migrationService.runAllUnRunMigrations(envConfigUtils.getSystemRealm(), emitter));
+               runWithMigrationScope(envConfigUtils.getSystemRealm(), applicationId, "RUN", () -> migrationService.runAllUnRunMigrations(envConfigUtils.getSystemRealm(), emitter));
                if (!envConfigUtils.getSystemRealm().equals(envConfigUtils.getDefaultRealm())) {
                   Log.info("----Running migrations for Default realm:---- " + envConfigUtils.getDefaultRealm());
-                  runWithMigrationScope(envConfigUtils.getDefaultRealm(), "RUN", () -> migrationService.runAllUnRunMigrations(envConfigUtils.getDefaultRealm(), emitter));
+                  runWithMigrationScope(envConfigUtils.getDefaultRealm(), applicationId, "RUN", () -> migrationService.runAllUnRunMigrations(envConfigUtils.getDefaultRealm(), emitter));
                }
             } finally {
                securityUtils.clearSecurityContext();
@@ -324,7 +332,7 @@ public class MigrationResource {
       });
    }
 
-   private Multi<String> runMigrateSpecificTask (String realm) {
+   private Multi<String> runMigrateSpecificTask (String realm, String applicationId) {
       return Multi.createFrom().emitter(emitter -> {
          try {
 
@@ -333,7 +341,7 @@ public class MigrationResource {
             ruleContext.ensureDefaultRules();
             securityUtils.setSecurityContext();
             try {
-               runWithMigrationScope(realm, "RUN", () -> {
+               runWithMigrationScope(realm, applicationId, "RUN", () -> {
                   Log.info("----Running migrations for realm:---- " + realm);
                   migrationService.runAllUnRunMigrations(realm, emitter);
                });
@@ -348,9 +356,26 @@ public class MigrationResource {
 	      });
 	   }
 
-   private void runWithMigrationScope(String realm, String action, MigrationOperation operation) throws Exception {
+   String currentMigrationApplicationId() {
+      return SecurityContext.getPrincipalContext()
+         .map(principal -> normalizeApplicationId(principal.getApplicationId()))
+         .filter(value -> value != null)
+         .orElseGet(() -> migrationApplicationId
+            .map(this::normalizeApplicationId)
+            .orElse(null));
+   }
+
+   private String normalizeApplicationId(String applicationId) {
+      if (applicationId == null || applicationId.isBlank()) {
+         return null;
+      }
+      return applicationId.trim().toLowerCase();
+   }
+
+   private void runWithMigrationScope(String realm, String applicationId, String action, MigrationOperation operation) throws Exception {
       ResourceContext migrationResource = new ResourceContext.Builder()
          .withRealm(realm)
+         .withApplicationId(applicationId)
          .withArea("MIGRATION")
          .withFunctionalDomain("DATABASE")
          .withAction(action)
