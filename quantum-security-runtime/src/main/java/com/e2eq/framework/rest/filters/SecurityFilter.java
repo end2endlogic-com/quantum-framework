@@ -23,9 +23,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.logging.Log;
 import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
+import jakarta.annotation.Priority;
 import jakarta.annotation.security.PermitAll;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.Priorities;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ContainerRequestFilter;
 import jakarta.ws.rs.core.HttpHeaders;
@@ -46,9 +48,13 @@ import java.util.stream.Collectors;
 
 
 @Provider
+@Priority(SecurityFilter.SECURITY_FILTER_PRIORITY)
 //@PreMatching
 //@PermissionCheck
 public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.container.ContainerResponseFilter {
+
+    /** Security context setup precedes post-auth governance; cleanup follows its response observation. */
+    public static final int SECURITY_FILTER_PRIORITY = Priorities.USER;
 
     @jakarta.ws.rs.core.Context
     jakarta.ws.rs.container.ResourceInfo resourceInfo;
@@ -1290,6 +1296,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 .withDomainContext(targetDomainContext)
                 .withDataDomain(effectiveDataDomain)
                 .withUserId(context.getUserId())
+                .withSubjectId(context.getSubjectId())
                 .withRoles(context.getRoles())
                 .withScope(context.getScope())
                 .withArea2RealmOverrides(context.getArea2RealmOverrides())

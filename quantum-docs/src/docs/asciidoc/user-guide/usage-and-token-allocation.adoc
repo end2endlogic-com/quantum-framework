@@ -1,93 +1,177 @@
-// Usage metering and token allocation per tenant for usage-based billing
-// Token consumption and allocation; scoping to API sets and Tools/LLM configurations.
+// Post-auth REST usage admission and observation; durable metering is a separate downstream concern.
 
 [[usage-and-token-allocation]]
-= Usage Metering and Token Allocation
+= REST Usage Governance and Metering Boundaries
 
-This section describes how to meter API and LLM usage per tenant and how to allocate **token pools** that can be assigned to different sets of APIs and Tools/LLM configurations for usage-based billing and quotas.
+Quantum REST usage governance is opt-in and defaults to `OFF`. It provides
+automatic post-authentication endpoint admission, a bounded per-JVM token
+bucket, and an OSS observation SPI. It does not use a MongoDB request counter,
+does not poll, and does not enable a pre-authentication network limiter.
 
-**Opt-in:** Token metering is **disabled by default**. To use it you must enable it in `application.properties` (see <<configuration>>). When disabled, no usage is recorded and no quotas apply.
+== Runtime modes
 
-== Overview
+`OFF`:: The default. The filter performs no policy lookup, bucket allocation,
+or observation.
 
-* **Usage records** — Each API call and each LLM/agent tool invocation can be recorded with tenant, caller (or runAs user), and API/tool identity. Records are persisted so you can aggregate by tenant, user, API, or tool for billing.
-* **Token allocation** — Per tenant you define **allocations**: a token type (e.g. API calls, LLM requests, input/output tokens), a **scope** (which APIs or tools this pool applies to), an allocated amount per period, and a **billing interval** and **replenishment** (frequency and amount). Consumption is debited from the matching allocation when usage is recorded. When the period ends, the allocation is replenished (consumed reset, period advanced).
-* **Token types** — Different kinds of tokens can be assigned to different API sets and Tools/LLM configs. For example: one pool for "Premium API" (integration/query/find, integration/query/save), another for "LLM Standard" (tools query_find, query_save with a specific LLM config key).
-* **Blocking when tokens run out** — When enforce-quota is enabled, APIs and tools covered by an allocation are **blocked** when tokens run out. The framework returns HTTP 402 (Payment Required) with a message that includes the allocation name and the **next replenishment date** when configured.
+`OBSERVE`:: The filter resolves the same trusted endpoint and principal
+identity used by enforcement, consumes the local bucket, and emits an
+observation. Exhaustion is recorded as `WOULD_REJECT`; the request continues.
+Unavailable enforcement state is recorded as `ENFORCEMENT_ERROR`; the request
+continues. Registry capacity pressure is recorded as `CAPACITY_BYPASSED`; the
+request continues without allocating an unbounded key.
 
-== Token Types
+`ENFORCE`:: Exhaustion returns HTTP 429 with the typed
+`QuantumUsageGovernanceError` body and a whole-second `Retry-After` header.
+Missing endpoint identity, trusted principal identity, or policy state returns
+a typed HTTP 503 and does not invoke the endpoint. Bucket-registry capacity is
+never allowed to become a cross-tenant 503 primitive.
 
-The framework supports these consumable token kinds:
+== Stable identity
 
-| Token type | Unit | Typical scope |
-|------------|------|----------------|
-| `API_CALL` | 1 per API request | API identifiers (area/domain/action) |
-| `LLM_REQUEST` | 1 per tool invocation | Tool names (e.g. query_find, query_save) |
-| `LLM_INPUT_TOKENS` | Token count | Tool names and/or LLM config keys |
-| `LLM_OUTPUT_TOKENS` | Token count | Tool names and/or LLM config keys |
+The policy key is:
 
-You create a **TenantTokenAllocation** per tenant: name, token type, scope (which APIs/tools/LLM configs), allocated amount, **billing interval** (e.g. MONTHLY, YEARLY), and **replenishment amount** (tokens added each period). When usage is recorded, the framework finds an allocation whose scope matches the request, replenishes the allocation if its period has ended, then debits consumption.
+----
+policy id/version + functional area/domain/OpenAPI operationId + tenant + subject
+----
 
-== Scope: Assigning Pools to APIs and Tools/LLM Configs
+The area and domain come from `@FunctionalMapping`, including model mappings
+made available by the security runtime. The operation identity comes from an
+explicit `@Operation(operationId = "...")`; the stable JAX-RS method name is
+the runtime fallback and requires the matching SmallRye `METHOD` OpenAPI
+operation-ID strategy. Mutable URL paths are not policy identity. When governance is
+active, OpenAPI generation validates that operation IDs are present and unique
+and that exact configured selectors refer to generated operations.
 
-Each allocation has a **UsageScope** that defines which usage consumes from that pool:
+Tenant and subject are read only from the effective framework
+`PrincipalContext` established by `SecurityFilter`. The tenant is the effective
+data-domain tenant after validated realm override; the subject is the provider
+subject with framework user ID as fallback. Raw identity attributes, headers,
+query parameters, and payload fields are not identity authorities.
+Endpoints explicitly annotated `@PermitAll` are outside this post-auth layer
+and need separately managed edge/network controls where appropriate. A
+class-level `@PermitAll` does not exempt a method that declares
+`@Authenticated`, `@RolesAllowed`, or `@DenyAll`.
 
-* **API scope** — List of API identifiers in the form `area/domain/action` (e.g. `integration/query/find`, `integration/query/save`). Only API calls that match one of these identifiers consume from this allocation.
-* **Tool scope** — List of agent tool names (e.g. `query_find`, `query_save`). Only LLM/tool invocations that match one of these names consume from this allocation.
-* **LLM config scope** — Optional list of LLM config keys. When present, only usage for those LLM configurations consumes from this allocation. This lets you assign different token pools to different LLM configurations (e.g. "Standard" vs "Premium" model).
+== Property manifest
 
-You can combine scope types: for example, one allocation with tool scope `[query_find, query_save]` and llmConfigKeys `[standard]`, and another with the same tools and llmConfigKeys `[premium]`, so that standard and premium LLM usage are billed from different pools.
+[cols="2,1,4",options="header"]
+|===
+|Property |Default |Description
 
-== Usage Records
+|`quantum.rest.usage.mode`
+|`OFF`
+|`OFF`, `OBSERVE`, or `ENFORCE`.
 
-* **ApiCallUsageRecord** — One record per API call: realm, callerUserId, area, functionalDomain, action, optional path, timestamp. Optional link to the allocation that was debited.
-* **LlmUsageRecord** — One record per LLM/agent tool use: realm, runAsUserId (effective user), toolName, optional llmConfigKey, optional inputTokens/outputTokens, timestamp. Optional link to the allocation that was debited.
+|`quantum.rest.usage.policy.id`
+|`default-rest-usage`
+|Stable policy identifier.
 
-Records are stored in the tenant's realm database so you can query by tenant, user, time range, or allocation for billing and reporting.
+|`quantum.rest.usage.policy.version`
+|`1`
+|Policy version included in bucket identity.
 
-== Billing Interval and Replenishment (per tenant)
+|`quantum.rest.usage.policy.request-limit`
+|`1000`
+|Bucket capacity and refill token count.
 
-Each **TenantTokenAllocation** can have:
+|`quantum.rest.usage.policy.refill-period`
+|`PT5S`
+|Positive ISO-8601 refill period.
 
-* **Billing interval** — `BillingInterval.MONTHLY` or `BillingInterval.YEARLY`. Defines the period length; when the period ends, the allocation is replenished.
-* **Replenishment amount** — Number of tokens to add at the start of each period (often the same as the allocated amount). When the period ends, consumed is reset to 0 and allocated amount is set to this value (or unchanged if 0).
-* **Period start / period end** — The current period window. The framework advances the period automatically when it has ended and the allocation is next used.
+|`quantum.rest.usage.policy.endpoints`
+|`*`
+|Comma-separated `area:domain:operationId` selectors or `*`.
 
-Replenishment is applied lazily: when a matching API or tool is used and the allocation's period has ended, the framework resets consumed, advances the period, and then checks quota. This avoids a separate scheduler; you can still run a job to advance periods if you prefer.
+|`quantum.rest.usage.allow-unmatched-endpoints`
+|`true`
+|When `ENFORCE` resolves a trusted endpoint but the policy source returns no
+matching policy, admit it as `BYPASSED`. Set to `false` to fail closed with the
+typed `USAGE_POLICY_NOT_FOUND` 503. This flag never covers indeterminate
+endpoint, identity, source, or bucket state; those always fail closed.
 
-== Blocking When Tokens Run Out
+|`quantum.rest.usage.bucket.max-tracked-keys`
+|`10000`
+|Strict per-JVM bound for policy/endpoint/tenant/subject keys.
 
-When `quantum.metering.enforce-quota` is `true` and a request would exceed the matching allocation's remaining amount:
+|`quantum.rest.usage.bucket.idle-timeout`
+|`PT10M`
+|Positive ISO-8601 idle period before request-triggered eviction.
 
-* The framework throws `UsageMeteringService.QuotaExceededException`.
-* The exception is mapped to **HTTP 402 Payment Required** with a JSON body that includes a clear message, for example: *"Usage limit reached for \"Premium API\". The associated APIs or tools are blocked until the next replenishment on 2025-03-01."*
-* When no replenishment is configured (no billing interval), the message states that the associated APIs or tools are blocked and no replenishment is configured.
+|`mp.openapi.extensions.smallrye.operationIdStrategy`
+|none
+|Must be explicitly set to `METHOD` whenever governance is active so generated
+OpenAPI and runtime operation identities cannot diverge.
+|===
 
-Clients can use the response body to show the user when the limit will reset.
+Invalid active configuration stops startup. `OFF` deliberately leaves dormant
+policy values unparsed so an upgrade remains inert. A typical observation-first
+rollout is:
 
-[[configuration]]
-== Configuration
+[source,properties]
+----
+quantum.rest.usage.mode=OBSERVE
+mp.openapi.extensions.smallrye.operationIdStrategy=METHOD
+quantum.rest.usage.policy.id=standard-api
+quantum.rest.usage.policy.version=2026-08-15
+quantum.rest.usage.policy.request-limit=100
+quantum.rest.usage.policy.refill-period=PT1M
+quantum.rest.usage.policy.endpoints=sales:order:listOrders,sales:order:createOrder
+quantum.rest.usage.allow-unmatched-endpoints=true
+----
 
-Token metering is **opt-in**. By default it is **not** used; you must enable it in `application.properties` to record usage or enforce quotas.
+== Extension contracts
 
-| Property | Default | Description |
-|----------|---------|-------------|
-| `quantum.metering.enabled` | `false` | Set to `true` to enable token metering. When false, no usage is recorded and no quotas apply. |
-| `quantum.metering.enforce-quota` | `false` | When true (and metering enabled), APIs/tools covered by an allocation are blocked when tokens run out (HTTP 402 with message including next replenishment date when available). |
+The reusable policy, admission, observation, identity, and error contracts live
+in `quantum-contract-core`. This is the acyclic leaf: `quantum-rest-core` was
+rejected because it depends on `quantum-morphia-repos`, and `quantum-models`
+was rejected because it directly carries Morphia persistence types.
 
-Morphia must map the usage entities: include `com.e2eq.framework.model.persistent.usage` in `quarkus.morphia.packages`.
+`UsagePolicySource` is the policy lookup SPI. Its default CDI implementation is
+`PropertyUsagePolicySource`; applications can provide another implementation
+without changing the filter. A source receives `UsageRequest` and returns
+`Optional<UsagePolicy>`. Returning an inapplicable policy, returning `null`, or
+throwing is an explicit policy-state failure.
 
-== Integrating Metering
+`UsageObserver` is the downstream observation SPI. `UsageObservation` contains:
 
-* **API calls** — Call `UsageMeteringService.recordApiCall(realm, callerUserId, area, functionalDomain, action, path)` from a request filter or after successful API handling. The service records the usage and, if a matching API_CALL allocation exists, debits it.
-* **LLM/agent tool usage** — Call `UsageMeteringService.recordLlmUsage(realm, runAsUserId, toolName, llmConfigKey, inputTokens, outputTokens)` from the agent execute path (e.g. after `AgentExecuteHandler.execute`). The service records the usage and, if a matching LLM allocation exists, debits by request count or token count.
+* endpoint, tenant, subject, and HTTP method;
+* response status and latency;
+* request and response byte counts (`-1` when unknown); and
+* `ADMITTED`, `WOULD_REJECT`, `REJECTED`, `BYPASSED`, `CAPACITY_BYPASSED`, or
+  `ENFORCEMENT_ERROR`, plus policy/retry/error details in the admission result.
 
-When `enforce-quota` is true, recording throws `UsageMeteringService.QuotaExceededException` if the allocation would be exceeded; the framework maps this to HTTP 402 with a message that includes the allocation name and next replenishment date when available.
+Observers run after a response exists. Tenant and subject identifiers are
+sensitive; trusted observer implementations must not log them unredacted or
+export them to untrusted sinks. An observer can bridge to metrics,
+events, or durable billing, but its failure cannot retroactively change
+admission. Keep exporters bounded and nonblocking.
 
-== Billing and Reporting
+== Storage and scaling boundary
 
-* **By tenant** — Query usage records by realm and time range; optionally group by callerUserId, area/domain/action, or toolName.
-* **By allocation** — Usage records can store the allocationId that was debited; you can aggregate consumption per allocation for billing.
-* **Remaining quota** — `TenantTokenAllocation.getRemainingAmount()` returns allocated minus consumed for the current period. Allocations have periodStart/periodEnd and optional billing interval (MONTHLY, YEARLY) for replenishment.
+The admission bucket is a framework-owned atomic in-memory token bucket with
+an injectable monotonic clock. The registry is strictly bounded and evicts
+idle entries opportunistically during requests; there is no polling, scheduler,
+or third-party bucket runtime. When the bound is reached, a new key is admitted
+without a bucket and observed as `CAPACITY_BYPASSED`; this preserves the memory
+bound without allowing one tenant's cardinality to deny another tenant.
 
-See the implementation classes: `TenantTokenAllocation`, `BillingInterval`, `UsageScope`, `ApiCallUsageRecord`, `LlmUsageRecord`, `UsageMeteringService`, and the usage repos in `com.e2eq.framework.model.persistent.morphia.usage`.
+Each application replica has its own allowance. Therefore a deployment with
+three replicas has approximately three times the configured aggregate request
+capacity. Phase 1 intentionally prefers a deterministic, bounded OSS request
+path over a MongoDB read/modify/write counter. Cluster-wide entitlement and
+durable billing can consume the OSS contracts in a later, separately reviewed
+integration.
+
+The existing `UsageMeteringService` and persistent token-allocation models are
+manual durable metering APIs. They are not called by `UsageGovernanceFilter`
+and must not be inserted into its admission path. If used, connect them
+downstream through an observer or event boundary with explicit delivery and
+backpressure semantics.
+
+== Network guard boundary
+
+Post-auth usage governance does not protect public authentication work.
+Deployments that need source-network denial-of-service protection
+should configure an edge or HTTP-layer guard separately. Such a guard uses a
+network identity and must never be described as tenant, subject, quota, or
+billing enforcement.
