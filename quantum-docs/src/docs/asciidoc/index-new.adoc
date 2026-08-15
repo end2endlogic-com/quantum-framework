@@ -47,6 +47,7 @@ include::user-guide/email-templates.adoc[]
 include::user-guide/bootstrap-packs.adoc[]
 include::user-guide/migrations.adoc[]
 include::user-guide/testing.adoc[]
+include::user-guide/usage-and-token-allocation.adoc[]
 
 == Tutorials
 
