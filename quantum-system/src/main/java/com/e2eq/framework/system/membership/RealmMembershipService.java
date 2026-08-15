@@ -85,8 +85,8 @@ public class RealmMembershipService {
                 + "(contracts/control-plane.openapi.yaml) — extend the contract before using "
                 + "this query from a tier-2 deployment; failing loud, no local fallback.");
         }
-        return membershipRepo.getListByQuery(0, -1,
-            "organizationRefName:" + orgRefName);
+        return membershipRepo.findByOrganizationRefNameWithIgnoreRules(
+            systemDirectory.systemRealmId(), orgRefName);
     }
 
     /** Every org/account participating in a realm (the collaboration roster). */
@@ -151,10 +151,12 @@ public class RealmMembershipService {
                 .filter(m -> RealmTenantMembership.MEMBERSHIP_ROLE_OWNER.equals(m.getMembershipRole()))
                 .findFirst();
         }
-        return membershipRepo.getListByQuery(0, 2,
-                "realmRefName:" + realmRefName
-                + "&&membershipRole:" + RealmTenantMembership.MEMBERSHIP_ROLE_OWNER)
-            .stream().findFirst();
+        return membershipRepo.findByRealmRefNameWithIgnoreRules(
+                systemDirectory.systemRealmId(), realmRefName)
+            .stream()
+            .filter(membership -> RealmTenantMembership.MEMBERSHIP_ROLE_OWNER.equals(
+                membership.getMembershipRole()))
+            .findFirst();
     }
 
     /** A user's per-realm role assignments (the GitHub-model membership list). */
@@ -226,13 +228,8 @@ public class RealmMembershipService {
                 .map(UserRealmRole::getRoles)
                 .orElse(List.of());
         }
-        return userRealmRoleRepo.getListByQuery(0, 1,
-                "userId:" + userId + "&&realmRefName:" + realmRefName)
-            .stream()
-            .filter(a -> !UserRealmRole.STATUS_SUSPENDED.equals(a.getStatus()))
-            .findFirst()
-            .map(UserRealmRole::getRoles)
-            .orElse(List.of());
+        return userRealmRoleRepo.findActiveRolesForRealmWithIgnoreRules(
+            userId, realmRefName, systemDirectory.systemRealmId());
     }
 
     private ObjectId stableObjectId(String recordType, String first, String second) {

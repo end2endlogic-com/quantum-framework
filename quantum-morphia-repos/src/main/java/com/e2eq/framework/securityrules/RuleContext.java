@@ -731,6 +731,32 @@ public class RuleContext {
                 .withFinalRule(true).build();
         this.addRule(header, systemRoleRule);
 
+        SecurityURIHeader migrationHeader = new SecurityURIHeader.Builder()
+                .withIdentity("system")
+                .withArea("migration")
+                .withFunctionalDomain("*")
+                .withAction("*")
+                .build();
+        SecurityURIBody migrationBody = new SecurityURIBody.Builder()
+                .withOrgRefName("*")
+                .withAccountNumber("*")
+                .withRealm("*")
+                .withTenantId("*")
+                .withOwnerId("*")
+                .withDataSegment("*")
+                .build();
+        SecurityURI migrationUri = new SecurityURI(migrationHeader, migrationBody);
+
+        Rule systemMigrationRule = new Rule.Builder()
+                .withName("SysRoleAnyActionMigration")
+                .withDescription("system role can administer database migrations during realm bootstrap")
+                .withSecurityURI(migrationUri)
+                .withEffect(RuleEffect.ALLOW)
+                .withPriority(-100)
+                .withFinalRule(true)
+                .build();
+        this.addRule(migrationHeader, systemMigrationRule);
+
         //-----------------------
        // Now lets add a tenant admin id
 

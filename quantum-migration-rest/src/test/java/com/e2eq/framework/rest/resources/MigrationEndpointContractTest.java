@@ -2,15 +2,25 @@ package com.e2eq.framework.rest.resources;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.SecurityContext;
 import jakarta.ws.rs.HttpMethod;
 import jakarta.ws.rs.Path;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
 import java.util.LinkedHashSet;
+import java.util.Optional;
 import java.util.Set;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 class MigrationEndpointContractTest {
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContext.clear();
+    }
 
     @Test
     void preservesMigrationAdministrationEndpoints() {
@@ -26,6 +36,31 @@ class MigrationEndpointContractTest {
                 "GET /system/migration/start",
                 "GET /system/migration/start/{realm}"),
                 endpoints(MigrationResource.class));
+    }
+
+    @Test
+    void resolvesMigrationApplicationFromCurrentPrincipalBeforeSystemContextReplacement() {
+        MigrationResource resource = new MigrationResource();
+        resource.migrationApplicationId = Optional.of("fallback-app");
+        SecurityContext.setPrincipalContext(principal("quantum-system"));
+
+        assertEquals("quantum-system", resource.currentMigrationApplicationId());
+    }
+
+    @Test
+    void fallsBackToConfiguredMigrationApplicationForGeneratedSystemCalls() {
+        MigrationResource resource = new MigrationResource();
+        resource.migrationApplicationId = Optional.of(" quantum-system ");
+
+        assertEquals("quantum-system", resource.currentMigrationApplicationId());
+    }
+
+    @Test
+    void allowsMissingConfiguredMigrationApplication() {
+        MigrationResource resource = new MigrationResource();
+        resource.migrationApplicationId = Optional.empty();
+
+        assertEquals(null, resource.currentMigrationApplicationId());
     }
 
     private static Set<String> endpoints(Class<?> resourceClass) {
@@ -57,5 +92,16 @@ class MigrationEndpointContractTest {
             return root;
         }
         return root.replaceAll("/+$", "") + "/" + child.replaceAll("^/+", "");
+    }
+
+    private static PrincipalContext principal(String applicationId) {
+        return new PrincipalContext.Builder()
+                .withDefaultRealm("quantum-auth")
+                .withApplicationId(applicationId)
+                .withDataDomain(new DataDomain("system.com", "0000000000", "system.com", 0, "system"))
+                .withUserId("system")
+                .withRoles(new String[]{"system", "admin"})
+                .withScope("SYSTEM")
+                .build();
     }
 }
