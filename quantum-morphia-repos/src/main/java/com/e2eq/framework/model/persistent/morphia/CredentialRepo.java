@@ -41,6 +41,14 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
    com.e2eq.framework.util.SecurityUtils securityUtils;
 
    @Override
+   protected void setDefaultValues(CredentialUserIdPassword credential) {
+      super.setDefaultValues(credential);
+      if (credential.getActiveStatus() == null) {
+         credential.setActiveStatus(ActiveStatus.ACTIVE);
+      }
+   }
+
+   @Override
    public String getDatabaseName () {
       //return morphiaDataStore.getDataStore(securityUtils.getSystemRealm()).getDatabase().getName();
       return envConfigUtils.getSystemRealm();

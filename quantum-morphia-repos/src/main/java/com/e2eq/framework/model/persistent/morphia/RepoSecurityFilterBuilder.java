@@ -19,6 +19,10 @@ final class RepoSecurityFilterBuilder {
     }
 
     List<Filter> buildSecuredFilters(List<Filter> filters, Class<? extends UnversionedBaseModel> modelClass) {
+        if (SecurityContext.isIgnoringRules()) {
+            return filters;
+        }
+
         if (SecurityContext.getResourceContext().isEmpty() || SecurityContext.getPrincipalContext().isEmpty()) {
             securityContextResolver.ensureSecurityContextFromIdentity();
         }

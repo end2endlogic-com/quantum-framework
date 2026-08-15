@@ -92,6 +92,7 @@ public class AddAnonymousAuthAndRegistrationRules extends ChangeSetBase {
         emitter.emit(String.format("Adding anonymous auth and registration security rules: %s", realm));
 
         Policy policy = policyRepo.findByRefName(session, DEFAULT_ANONYMOUS_POLICY).orElseGet(this::newAnonymousPolicy);
+        ensureExplicitScope(policy);
         addRuleIfMissing(policy, "SECURITY", "CREDENTIAL_USERID_PASSWORD", "authenticate",
                 "allow anonymous users to authenticate through explicit login scope");
         addRuleIfMissing(policy, "SECURITY", "APPLICATION_REGISTRATION", "view",
@@ -108,7 +109,22 @@ public class AddAnonymousAuthAndRegistrationRules extends ChangeSetBase {
         policy.setDisplayName("anonymous policy");
         policy.setDescription("Anonymous users may use only explicitly scoped public platform entry points.");
         policy.setRefName(DEFAULT_ANONYMOUS_POLICY);
+        policy.setApplicationId(SecurityUtils.any);
+        policy.setRealmRefName(SecurityUtils.any);
+        policy.setPrincipalType(Policy.PrincipalType.ROLE);
         return policy;
+    }
+
+    private void ensureExplicitScope(Policy policy) {
+        if (policy.getApplicationId() == null || policy.getApplicationId().isBlank()) {
+            policy.setApplicationId(SecurityUtils.any);
+        }
+        if (policy.getRealmRefName() == null || policy.getRealmRefName().isBlank()) {
+            policy.setRealmRefName(SecurityUtils.any);
+        }
+        if (policy.getPrincipalType() == null) {
+            policy.setPrincipalType(Policy.PrincipalType.ROLE);
+        }
     }
 
     private void addRuleIfMissing(Policy policy, String area, String domain, String action, String name) {
