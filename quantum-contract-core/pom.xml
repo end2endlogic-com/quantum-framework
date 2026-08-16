@@ -15,7 +15,8 @@
     <name>Quantum Contract Core</name>
     <description>
         Endpoint-free OpenAPI contract hashing and generated-SDK compatibility
-        checks shared by service hosts and client providers.
+        checks plus reusable usage-governance contracts shared by service hosts
+        and client providers.
     </description>
     <packaging>jar</packaging>
 
@@ -27,7 +28,6 @@
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
-            <version>5.10.2</version>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -36,4 +36,34 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>3.5.0</version>
+                <executions>
+                    <execution>
+                        <id>enforce-oss-usage-contract-boundary</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <bannedDependencies>
+                                    <searchTransitive>true</searchTransitive>
+                                    <excludes>
+                                        <exclude>com.helixor:*</exclude>
+                                        <exclude>com.helixor.*:*</exclude>
+                                        <exclude>com.end2endlogic:quantum-enterprise</exclude>
+                                    </excludes>
+                                </bannedDependencies>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 </project>

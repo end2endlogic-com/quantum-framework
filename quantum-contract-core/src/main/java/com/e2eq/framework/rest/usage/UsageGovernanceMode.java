@@ -1,14 +1,14 @@
-package com.e2eq.framework.rest.ratelimit;
+package com.e2eq.framework.rest.usage;
 
 import java.util.Locale;
 
-/** Activation semantics for the Quantum REST rate limiter. */
-public enum RateLimitMode {
+/** Contract posture for REST usage governance. */
+public enum UsageGovernanceMode {
     OFF,
-    MONITOR,
+    OBSERVE,
     ENFORCE;
 
-    static RateLimitMode parse(String value) {
+    public static UsageGovernanceMode parse(String value) {
         if (value == null || value.isBlank()) {
             return OFF;
         }
@@ -16,7 +16,7 @@ public enum RateLimitMode {
             return valueOf(value.trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException exception) {
             throw new IllegalStateException(
-                    "Invalid rate-limit mode '" + value + "'; expected OFF, MONITOR, or ENFORCE",
+                    "quantum.rest.usage.mode must be OFF, OBSERVE, or ENFORCE; was '" + value + "'",
                     exception);
         }
     }
