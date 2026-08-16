@@ -27,6 +27,11 @@
         </dependency>
         <dependency>
             <groupId>com.end2endlogic</groupId>
+            <artifactId>quantum-contract-core</artifactId>
+            <version>${quantum.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.end2endlogic</groupId>
             <artifactId>quantum-util</artifactId>
             <version>${quantum.version}</version>
         </dependency>
@@ -89,19 +94,13 @@
             <version>${apachecommons.lang3.version}</version>
         </dependency>
         <dependency>
-            <groupId>com.bucket4j</groupId>
-            <artifactId>bucket4j-core</artifactId>
-            <version>8.0.1</version>
-        </dependency>
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <version>5.10.2</version>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-junit5</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
-            <artifactId>quarkus-junit</artifactId>
+            <artifactId>quarkus-test-security</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -113,6 +112,31 @@
 
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>3.5.0</version>
+                <executions>
+                    <execution>
+                        <id>enforce-oss-usage-runtime-boundary</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <bannedDependencies>
+                                    <searchTransitive>true</searchTransitive>
+                                    <excludes>
+                                        <exclude>com.helixor:*</exclude>
+                                        <exclude>com.helixor.*:*</exclude>
+                                        <exclude>com.end2endlogic:quantum-enterprise</exclude>
+                                    </excludes>
+                                </bannedDependencies>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>io.smallrye</groupId>
                 <artifactId>jandex-maven-plugin</artifactId>
