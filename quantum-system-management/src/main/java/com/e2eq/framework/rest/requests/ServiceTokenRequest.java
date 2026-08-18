@@ -16,6 +16,7 @@ import java.util.Set;
  *                          request context, not part of service identity.
  * @param audiences         retained for wire compatibility; ignored. A service
  *                          token identifies its caller and is not resource-bound.
+ * @param authorizedTenantIds tenants the service may select within {@code realm}
  */
 @RegisterForReflection
 public record ServiceTokenRequest(
@@ -23,5 +24,6 @@ public record ServiceTokenRequest(
         Long expirationSeconds,
         String description,
         String realm,
-        Set<String> audiences
+        Set<String> audiences,
+        Set<String> authorizedTenantIds
 ) {}

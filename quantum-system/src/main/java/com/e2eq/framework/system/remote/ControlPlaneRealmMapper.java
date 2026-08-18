@@ -6,6 +6,7 @@ import com.e2eq.framework.controlplane.model.UserRealmRoleEntry;
 import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.model.security.RealmDeploymentType;
+import com.e2eq.framework.model.security.RealmTenancyMode;
 import com.e2eq.framework.model.security.RealmTenantMembership;
 import com.e2eq.framework.model.security.UserRealmRole;
 
@@ -20,6 +21,7 @@ public final class ControlPlaneRealmMapper {
         realm.setDisplayName(entry.getDisplayName());
         realm.setDatabaseName(entry.getDatabaseName());
         realm.setDeploymentType(parseDeploymentType(entry.getDeploymentType()));
+        realm.setTenancyMode(parseTenancyMode(entry.getTenancyMode()));
         realm.setEmailDomain(entry.getEmailDomain());
         realm.setConnectionString(entry.getConnectionString());
         if (hasText(entry.getTenantId()) && hasText(entry.getOrgRefName())
@@ -40,6 +42,7 @@ public final class ControlPlaneRealmMapper {
         entry.setDisplayName(realm.getDisplayName());
         entry.setDatabaseName(realm.getDatabaseName());
         entry.setDeploymentType(realm.getDeploymentType().name());
+        entry.setTenancyMode(realm.getTenancyMode().name());
         entry.setEmailDomain(realm.getEmailDomain());
         entry.setConnectionString(realm.getConnectionString());
         if (realm.getDomainContext() != null) {
@@ -82,6 +85,7 @@ public final class ControlPlaneRealmMapper {
         role.setRoles(entry.getRoles());
         role.setAuthorizedApplications(entry.getAuthorizedApplications());
         role.setDefaultApplication(entry.getDefaultApplication());
+        role.setAuthorizedTenantIds(entry.getAuthorizedTenantIds());
         role.setSponsoringOrgRefName(entry.getSponsoringOrgRefName());
         role.setStatus(entry.getStatus());
         return role;
@@ -94,6 +98,7 @@ public final class ControlPlaneRealmMapper {
         entry.setRoles(role.getRoles());
         entry.setAuthorizedApplications(role.getAuthorizedApplications());
         entry.setDefaultApplication(role.getDefaultApplication());
+        entry.setAuthorizedTenantIds(role.getAuthorizedTenantIds());
         entry.setSponsoringOrgRefName(role.getSponsoringOrgRefName());
         entry.setStatus(role.getStatus());
         return entry;
@@ -112,6 +117,19 @@ public final class ControlPlaneRealmMapper {
         } catch (IllegalArgumentException error) {
             throw new IllegalStateException(
                 "Unsupported realm deploymentType from control plane: " + value,
+                error);
+        }
+    }
+
+    private static RealmTenancyMode parseTenancyMode(String value) {
+        if (!hasText(value)) {
+            return RealmTenancyMode.SINGLE_TENANT;
+        }
+        try {
+            return RealmTenancyMode.valueOf(value);
+        } catch (IllegalArgumentException error) {
+            throw new IllegalStateException(
+                "Unsupported realm tenancyMode from control plane: " + value,
                 error);
         }
     }

@@ -1,6 +1,8 @@
 package com.e2eq.framework.system.remote;
 
 import com.e2eq.framework.controlplane.model.RealmMembershipEntry;
+import com.e2eq.framework.controlplane.model.RealmCatalogEntry;
+import com.e2eq.framework.model.security.RealmTenancyMode;
 import com.e2eq.framework.controlplane.model.UserRealmRoleEntry;
 import com.e2eq.framework.model.security.RealmTenantMembership;
 import com.e2eq.framework.model.security.UserRealmRole;
@@ -11,6 +13,22 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class ControlPlaneRealmMapperTest {
+
+    @Test
+    void mapsRealmTenancyModeWithoutConflatingItWithDeploymentType() {
+        RealmCatalogEntry entry = new RealmCatalogEntry();
+        entry.setRefName("pooled-realm");
+        entry.setDatabaseName("pooled-realm");
+        entry.setEmailDomain("pooled.example.test");
+        entry.setDeploymentType("SHARED");
+        entry.setTenancyMode("MULTI_TENANT");
+
+        var realm = ControlPlaneRealmMapper.fromEntry(entry);
+
+        assertEquals(RealmTenancyMode.MULTI_TENANT, realm.getTenancyMode());
+        assertEquals("MULTI_TENANT",
+            ControlPlaneRealmMapper.toEntry(realm).getTenancyMode());
+    }
 
     @Test
     void mapsRealmMembershipWritesWithoutDroppingOwnership() {
@@ -37,6 +55,7 @@ class ControlPlaneRealmMapperTest {
         entry.setRoles(List.of("system", "admin", "user"));
         entry.setAuthorizedApplications(List.of("helixor-code", "helixor-reasoning-ux"));
         entry.setDefaultApplication("helixor-code");
+        entry.setAuthorizedTenantIds(List.of("tenant-a", "tenant-b"));
         entry.setSponsoringOrgRefName("HelixorAI");
         entry.setStatus("active");
 
@@ -44,6 +63,7 @@ class ControlPlaneRealmMapperTest {
 
         assertEquals("mingardia@helixor.ai-helixor-code-D1", role.getRefName());
         assertEquals(entry.getAuthorizedApplications(), role.getAuthorizedApplications());
+        assertEquals(entry.getAuthorizedTenantIds(), role.getAuthorizedTenantIds());
         assertEquals("HelixorAI", ControlPlaneRealmMapper.toEntry(role).getSponsoringOrgRefName());
     }
 }

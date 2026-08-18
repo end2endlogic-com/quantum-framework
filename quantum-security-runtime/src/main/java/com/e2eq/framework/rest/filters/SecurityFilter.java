@@ -10,6 +10,8 @@ import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.morphia.UserGroupRepo;
 import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import com.e2eq.framework.model.security.Realm;
+import com.e2eq.framework.model.security.RealmTenancyMode;
+import com.e2eq.framework.model.security.RealmTenantMembership;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
@@ -17,6 +19,7 @@ import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import com.e2eq.framework.api.system.SystemDirectory;
+import com.e2eq.framework.system.membership.RealmMembershipService;
 import com.e2eq.framework.util.EnvConfigUtils;
 import com.e2eq.framework.util.SecurityUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -78,6 +81,9 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
     @Inject
     SystemDirectory systemDirectory;
+
+    @Inject
+    RealmMembershipService realmMembershipService;
 
     @Inject
     CredentialRepo credentialRepo;
@@ -540,6 +546,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         validateContextInputs(requestContext);
 
         String realm = requestContext.getHeaderString("X-Realm");
+        String tenantId = requestContext.getHeaderString("X-Tenant-Id");
         String authHeader = requestContext.getHeaderString(HttpHeaders.AUTHORIZATION);
 
         // Build context and track credentials for property resolvers
@@ -549,9 +556,10 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
         PrincipalContext contextWithImpersonation = handleImpersonation(requestContext, baseContext);
         PrincipalContext contextWithRealm = applyRealmOverride(contextWithImpersonation, realm);
+        PrincipalContext contextWithTenant = applyTenantSelection(contextWithRealm, tenantId);
 
         // Apply custom property resolvers
-        return applyCustomProperties(requestContext, contextWithRealm, credentials);
+        return applyCustomProperties(requestContext, contextWithTenant, credentials);
     }
 
     /**
@@ -1309,6 +1317,89 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 .withRealmOverrideActive(true)
                 .withOriginalDataDomain(context.getDataDomain())
                 .build();
+    }
+
+    /**
+     * Applies the tenant selected inside the effective realm. A legacy or
+     * explicitly single-tenant realm derives its tenant from the realm's
+     * DomainContext and therefore does not require X-Tenant-Id. An explicitly
+     * multi-tenant realm requires the header and validates both the user's
+     * assignment and the realm's tenant membership before changing context.
+     */
+    PrincipalContext applyTenantSelection(PrincipalContext context, String requestedTenantId) {
+        String effectiveRealm = context.getDefaultRealm();
+        Optional<Realm> realmOpt = systemDirectory.findRealmByRefName(effectiveRealm);
+        if (realmOpt.isEmpty()) {
+            if (requestedTenantId != null && !requestedTenantId.isBlank()) {
+                throw new jakarta.ws.rs.ForbiddenException(
+                    "X-Tenant-Id cannot be resolved because realm '" + effectiveRealm + "' is not registered");
+            }
+            return context;
+        }
+
+        Realm realm = realmOpt.get();
+        String tenantId = requestedTenantId == null ? null : requestedTenantId.trim();
+        if (realm.getTenancyMode() != RealmTenancyMode.MULTI_TENANT) {
+            String defaultTenantId = realm.getDomainContext() == null
+                ? null
+                : realm.getDomainContext().getTenantId();
+            if (tenantId != null && !tenantId.isBlank()
+                    && !tenantId.equals(defaultTenantId)) {
+                throw new jakarta.ws.rs.ForbiddenException(
+                    "X-Tenant-Id does not match the single tenant configured for realm '"
+                        + effectiveRealm + "'");
+            }
+            return context;
+        }
+
+        if (tenantId == null || tenantId.isBlank()) {
+            throw new jakarta.ws.rs.BadRequestException(
+                "X-Tenant-Id is required for multi-tenant realm '" + effectiveRealm + "'");
+        }
+
+        com.e2eq.framework.model.security.UserRealmRole assignment = realmMembershipService
+            .assignmentForUser(context.getUserId(), effectiveRealm)
+            .orElseThrow(() -> new jakarta.ws.rs.ForbiddenException(
+                "Principal has no active assignment in realm '" + effectiveRealm + "'"));
+        List<String> authorizedTenantIds = assignment.getAuthorizedTenantIds();
+        if (authorizedTenantIds == null || !authorizedTenantIds.contains(tenantId)) {
+            throw new jakarta.ws.rs.ForbiddenException(
+                "Principal is not assigned to tenant '" + tenantId
+                    + "' in realm '" + effectiveRealm + "'");
+        }
+
+        RealmTenantMembership membership = realmMembershipService
+            .tenantInRealm(effectiveRealm, tenantId)
+            .orElseThrow(() -> new jakarta.ws.rs.ForbiddenException(
+                "Tenant '" + tenantId + "' is not active in realm '" + effectiveRealm + "'"));
+        com.e2eq.framework.model.security.DomainContext tenantContext =
+            com.e2eq.framework.model.security.DomainContext.builder()
+                .defaultRealm(effectiveRealm)
+                .tenantId(tenantId)
+                .orgRefName(membership.getOrganizationRefName())
+                .accountId(membership.getAccountId())
+                .dataSegment(0)
+                .build();
+        DataDomain effectiveDataDomain = tenantContext.toDataDomain(context.getUserId());
+
+        return new PrincipalContext.Builder()
+            .withDefaultRealm(effectiveRealm)
+            .withApplicationId(context.getApplicationId())
+            .withDomainContext(tenantContext)
+            .withDataDomain(effectiveDataDomain)
+            .withUserId(context.getUserId())
+            .withSubjectId(context.getSubjectId())
+            .withRoles(context.getRoles())
+            .withScope(context.getScope())
+            .withArea2RealmOverrides(context.getArea2RealmOverrides())
+            .withDataDomainPolicy(context.getDataDomainPolicy())
+            .withImpersonatedBySubject(context.getImpersonatedBySubject())
+            .withImpersonatedByUserId(context.getImpersonatedByUserId())
+            .withActingOnBehalfOfSubject(context.getActingOnBehalfOfSubject())
+            .withActingOnBehalfOfUserId(context.getActingOnBehalfOfUserId())
+            .withRealmOverrideActive(context.isRealmOverrideActive())
+            .withOriginalDataDomain(context.getOriginalDataDomain())
+            .build();
     }
 
     /**

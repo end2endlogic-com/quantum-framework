@@ -72,7 +72,8 @@ public class ServiceTokenCLI implements Runnable {
             // Based on ServiceTokenRequest JavaDoc: null for non-expiring (100-year token)
             Long apiExpiration = (expirationSeconds == -1) ? null : expirationSeconds;
 
-            ServiceTokenRequest tokenRequest = new ServiceTokenRequest(roles, apiExpiration, description, realm, audiences);
+            ServiceTokenRequest tokenRequest = new ServiceTokenRequest(
+                roles, apiExpiration, description, realm, audiences, null);
             Map<String, Object> result = authClient.generateServiceToken(bearerToken, tokenRequest);
 
             if (result != null && result.containsKey("accessToken")) {

@@ -196,10 +196,11 @@ public class RealmMembershipService {
                 // an attempt to clear or move it.
                 assignment.setDataDomain(existing.getDataDomain());
             }
+            // DataDomain is the user's default within the realm. Explicit
+            // multi-tenant grants live in authorizedTenantIds and must not
+            // rewrite that default when another tenant is added.
             if (!java.util.Objects.equals(existing.getDataDomain(), assignment.getDataDomain())) {
-                throw new IllegalStateException(
-                    "A user may have only one tenant DataDomain assignment per realm. "
-                        + "Use a distinct identity or realm until explicit tenant selection is supported.");
+                assignment.setDataDomain(existing.getDataDomain());
             }
             existing.setRefName(assignment.getRefName());
             existing.setUserId(assignment.getUserId());
@@ -208,6 +209,7 @@ public class RealmMembershipService {
             existing.setRoles(assignment.getRoles());
             existing.setAuthorizedApplications(assignment.getAuthorizedApplications());
             existing.setDefaultApplication(assignment.getDefaultApplication());
+            existing.setAuthorizedTenantIds(assignment.getAuthorizedTenantIds());
             existing.setSponsoringOrgRefName(assignment.getSponsoringOrgRefName());
             existing.setStatus(assignment.getStatus());
             existing.setDisplayName(assignment.getDisplayName());
@@ -230,6 +232,23 @@ public class RealmMembershipService {
         }
         return userRealmRoleRepo.findActiveRolesForRealmWithIgnoreRules(
             userId, realmRefName, systemDirectory.systemRealmId());
+    }
+
+    /** Resolve an active user's complete assignment within one realm. */
+    public Optional<UserRealmRole> assignmentForUser(String userId, String realmRefName) {
+        return realmsForUser(userId).stream()
+            .filter(assignment -> realmRefName.equals(assignment.getRealmRefName()))
+            .filter(assignment -> !UserRealmRole.STATUS_SUSPENDED.equals(assignment.getStatus()))
+            .findFirst();
+    }
+
+    /** Resolve an active tenant membership inside a realm. */
+    public Optional<RealmTenantMembership> tenantInRealm(String realmRefName, String tenantId) {
+        return membersOfRealm(realmRefName).stream()
+            .filter(membership -> tenantId.equals(membership.getTenantId()))
+            .filter(membership -> !RealmTenantMembership.PARTICIPATION_STATUS_SUSPENDED.equals(
+                membership.getParticipationStatus()))
+            .findFirst();
     }
 
     private ObjectId stableObjectId(String recordType, String first, String second) {

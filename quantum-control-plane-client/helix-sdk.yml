@@ -1,0 +1,9 @@
+languages:
+  - java
+package_name: quantum-control-plane-client
+package_version: 1.4.2-SNAPSHOT
+java_package: com.e2eq.framework.controlplane
+diagnostics:
+  fail_on_error: true
+  fail_on_warning: false
+  emit_coverage: true

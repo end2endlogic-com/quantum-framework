@@ -61,6 +61,9 @@ public class RemoteMembershipClient {
             assignment.setSponsoringOrgRefName(entry.getSponsoringOrgRefName());
             assignment.setStatus(entry.getStatus());
             assignment.setRoles(entry.getRoles() == null ? List.of() : new ArrayList<>(entry.getRoles()));
+            assignment.setAuthorizedApplications(entry.getAuthorizedApplications());
+            assignment.setDefaultApplication(entry.getDefaultApplication());
+            assignment.setAuthorizedTenantIds(entry.getAuthorizedTenantIds());
             assignments.add(assignment);
         }
         return assignments;

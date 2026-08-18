@@ -131,6 +131,11 @@ components:
           enum: [DEDICATED, SHARED]
           default: DEDICATED
           description: "realm persistence topology; absent legacy values mean DEDICATED"
+        tenancyMode:
+          type: string
+          enum: [SINGLE_TENANT, MULTI_TENANT]
+          default: SINGLE_TENANT
+          description: "tenant-selection contract; multi-tenant realms require X-Tenant-Id"
         emailDomain: { type: string }
         tenantId: { type: string }
         orgRefName: { type: string }
@@ -156,5 +161,6 @@ components:
         roles: { type: array, items: { type: string } }
         authorizedApplications: { type: array, items: { type: string } }
         defaultApplication: { type: string }
+        authorizedTenantIds: { type: array, items: { type: string } }
         sponsoringOrgRefName: { type: string }
         status: { type: string, enum: [active, invited, suspended] }

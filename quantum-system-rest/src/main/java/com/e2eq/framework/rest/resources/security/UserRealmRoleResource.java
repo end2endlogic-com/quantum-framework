@@ -9,10 +9,12 @@ import com.e2eq.framework.model.security.UserRealmRole;
 import com.e2eq.framework.rest.models.ApplicationAccessEvaluation;
 import com.e2eq.framework.rest.models.ApplicationGrantRequest;
 import com.e2eq.framework.rest.models.RestError;
+import com.e2eq.framework.rest.models.TenantGrantRequest;
 import com.e2eq.framework.rest.core.BaseResource;
 import com.e2eq.framework.service.application.ApplicationRegistryUnavailableException;
 import com.e2eq.framework.service.application.ApplicationRegistryValidator;
 import com.e2eq.framework.util.EnvConfigUtils;
+import com.e2eq.framework.system.membership.RealmMembershipService;
 import io.quarkus.arc.properties.IfBuildProperty;
 import io.quarkus.logging.Log;
 import jakarta.annotation.security.RolesAllowed;
@@ -59,6 +61,9 @@ public class UserRealmRoleResource extends BaseResource<UserRealmRole, UserRealm
 
    @Inject
    RealmRepo realmRepo;
+
+   @Inject
+   RealmMembershipService realmMembershipService;
 
    protected UserRealmRoleResource(UserRealmRoleRepo repo) {
       super(repo);
@@ -234,6 +239,54 @@ public class UserRealmRoleResource extends BaseResource<UserRealmRole, UserRealm
       membership.setAuthorizedApplications(null);
       membership.setDefaultApplication(null);
       UserRealmRole saved = repo.save(envConfigUtils.getSystemRealm(), membership);
+      return Response.ok(saved).build();
+   }
+
+   /** Read the tenant-selection grant for a (user, realm) assignment. */
+   @GET
+   @Path("{userId}/{realmRefName}/tenants")
+   @Produces(MediaType.APPLICATION_JSON)
+   public Response getTenantGrant(@PathParam("userId") String userId,
+                                  @PathParam("realmRefName") String realmRefName) {
+      Optional<UserRealmRole> membership = loadMembership(userId, realmRefName);
+      return membership.<Response>map(value -> Response.ok(value).build())
+          .orElseGet(() -> notFound(userId, realmRefName));
+   }
+
+   /**
+    * Replace the tenants a principal may select inside one realm. Every grant
+    * must resolve to an active RealmTenantMembership; unknown tenants fail
+    * closed and leave the existing assignment unchanged.
+    */
+   @PUT
+   @Path("{userId}/{realmRefName}/tenants")
+   @Consumes(MediaType.APPLICATION_JSON)
+   @Produces(MediaType.APPLICATION_JSON)
+   public Response setTenantGrant(@PathParam("userId") String userId,
+                                  @PathParam("realmRefName") String realmRefName,
+                                  TenantGrantRequest request) {
+      Optional<UserRealmRole> membershipOp = loadMembership(userId, realmRefName);
+      if (membershipOp.isEmpty()) {
+         return notFound(userId, realmRefName);
+      }
+      List<String> tenants = normalize(
+          request == null ? null : request.getAuthorizedTenantIds());
+      for (String tenantId : tenants) {
+         if (realmMembershipService.tenantInRealm(realmRefName, tenantId).isEmpty()) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                .entity(RestError.builder()
+                    .status(Response.Status.BAD_REQUEST.getStatusCode())
+                    .statusMessage("Tenant '" + tenantId
+                        + "' is not active in realm '" + realmRefName + "'")
+                    .build())
+                .build();
+         }
+      }
+      UserRealmRole membership = membershipOp.get();
+      membership.setAuthorizedTenantIds(tenants);
+      UserRealmRole saved = repo.save(envConfigUtils.getSystemRealm(), membership);
+      Log.infof("Tenant grant WRITTEN (audit): user=%s realm=%s tenants=%s by=%s",
+          userId, realmRefName, tenants, callerName());
       return Response.ok(saved).build();
    }
 
