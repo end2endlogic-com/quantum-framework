@@ -25,6 +25,32 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class SecurityFilterTenantSelectionTest {
 
     @Test
+    void anonymousRequestWithoutTenantDoesNotRequireControlPlane() {
+        SecurityFilter filter = new SecurityFilter();
+        filter.systemDirectory = new StubDirectory(Map.of()) {
+            @Override
+            public Optional<Realm> findRealmByRefName(String refName) {
+                throw new IllegalStateException("remote control plane rejected service token");
+            }
+        };
+
+        PrincipalContext anonymous = new PrincipalContext.Builder()
+            .withDefaultRealm("quantum-auth")
+            .withDataDomain(DataDomain.builder()
+                .tenantId("quantum-auth")
+                .orgRefName("system")
+                .accountNum("system")
+                .ownerId("anonymous")
+                .build())
+            .withUserId("anonymous")
+            .withRoles(new String[]{"ANONYMOUS"})
+            .withScope("systemGenerated")
+            .build();
+
+        assertSame(anonymous, filter.applyTenantSelection(anonymous, null));
+    }
+
+    @Test
     void singleTenantRealmNeedsNoTenantHeader() {
         Realm realm = realm("dedicated", RealmTenancyMode.SINGLE_TENANT, "tenant-a");
         SecurityFilter filter = filter(realm, null, null);
@@ -130,7 +156,13 @@ class SecurityFilterTenantSelectionTest {
             .build();
     }
 
-    private record StubDirectory(Map<String, Realm> realms) implements SystemDirectory {
+    private static class StubDirectory implements SystemDirectory {
+        private final Map<String, Realm> realms;
+
+        private StubDirectory(Map<String, Realm> realms) {
+            this.realms = realms;
+        }
+
         @Override public String systemRealmId() { return "system"; }
         @Override public Optional<Realm> findRealmByEmailDomain(String emailDomain) { return Optional.empty(); }
         @Override public Optional<Realm> findRealmByRefName(String refName) {
