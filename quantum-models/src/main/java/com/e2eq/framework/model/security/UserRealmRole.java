@@ -75,6 +75,14 @@ public class UserRealmRole extends BaseModel {
     */
    protected String defaultApplication;
 
+   /**
+    * Tenants this user may select inside this realm. Required for explicit
+    * tenant selection in a MULTI_TENANT realm. A null/empty value does not
+    * grant access; legacy single-tenant realms continue to use the realm's
+    * default DomainContext.
+    */
+   protected List<String> authorizedTenantIds;
+
    public static final String APPLICATION_WILDCARD = "*";
 
    /** Org within the realm that sponsored/invited this user (provenance). */

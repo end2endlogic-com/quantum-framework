@@ -12,6 +12,7 @@ import com.e2eq.framework.util.SecurityUtils;
 import jakarta.inject.Inject;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.HeaderParam;
+import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.POST;
@@ -22,6 +23,13 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
+import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -43,6 +51,20 @@ public class PolicyResource extends BaseResource<Policy, PolicyRepo> {
 
    protected PolicyResource (PolicyRepo repo) {
       super(repo);
+   }
+
+   @Override
+   @Path("refName")
+   @GET
+   @Operation(summary = "Get The entity by refName", description = "Will get the entity or return a 404 if not found")
+   @SecurityRequirement(name = "bearerAuth")
+   @APIResponses({
+         @APIResponse(responseCode = "200", description = "Entity found", content = @Content(mediaType = MediaType.APPLICATION_JSON, schema = @Schema(implementation = Policy.class))),
+         @APIResponse(responseCode = "404", description = "Entity not found")
+   })
+   public Response byRefName(@Context HttpHeaders headers,
+         @Parameter(description = "Reference name of the entity", required = true) @QueryParam("refName") String refName) {
+      return super.byRefName(headers, refName);
    }
 
    /**

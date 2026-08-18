@@ -25,6 +25,23 @@ import java.util.Date;
 public class Realm extends BaseModel {
 
    /**
+    * Tenant-selection contract for this realm. Legacy realm records remain
+    * single-tenant unless they are explicitly marked multi-tenant.
+    */
+   @Builder.Default
+   protected RealmTenancyMode tenancyMode = RealmTenancyMode.SINGLE_TENANT;
+
+   public RealmTenancyMode getTenancyMode() {
+      return tenancyMode == null ? RealmTenancyMode.SINGLE_TENANT : tenancyMode;
+   }
+
+   public void setTenancyMode(RealmTenancyMode tenancyMode) {
+      this.tenancyMode = tenancyMode == null
+         ? RealmTenancyMode.SINGLE_TENANT
+         : tenancyMode;
+   }
+
+   /**
     * Persistence topology for this realm. Missing legacy values are resolved
     * as DEDICATED; a realm is shared only when it is explicitly marked SHARED.
     */

@@ -34,6 +34,7 @@ import com.e2eq.framework.model.security.Organization;
 import com.e2eq.framework.model.security.Application;
 import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.model.security.RealmDeploymentType;
+import com.e2eq.framework.model.security.RealmTenancyMode;
 import com.e2eq.framework.model.security.RealmTenantMembership;
 import com.e2eq.framework.model.security.RealmSetupStatus;
 import com.e2eq.framework.model.security.UserGroup;
@@ -312,6 +313,9 @@ public class TenantProvisioningService implements TenantLifecycle {
             .refName(realmId)
             .displayName(normalizedTenantDisplayName)
             .deploymentType(toRealmDeploymentType(deploymentTopology))
+            .tenancyMode(deploymentTopology == TenantDeploymentTopology.POOLED_REALM
+                ? RealmTenancyMode.MULTI_TENANT
+                : RealmTenancyMode.SINGLE_TENANT)
             .emailDomain(command.getTenantEmailDomain())
             .databaseName(realmId)
             .domainContext(dc)
@@ -1106,6 +1110,12 @@ public class TenantProvisioningService implements TenantLifecycle {
         assignment.setSubject(subject);
         assignment.setRealmRefName(realmId);
         assignment.setRoles(roles.stream().sorted(String.CASE_INSENSITIVE_ORDER).toList());
+        Set<String> authorizedTenantIds = new LinkedHashSet<>();
+        if (assignment.getAuthorizedTenantIds() != null) {
+            authorizedTenantIds.addAll(assignment.getAuthorizedTenantIds());
+        }
+        authorizedTenantIds.add(domainContext.getTenantId());
+        assignment.setAuthorizedTenantIds(List.copyOf(authorizedTenantIds));
         assignment.setSponsoringOrgRefName(domainContext.getOrgRefName());
         assignment.setStatus(UserRealmRole.STATUS_ACTIVE);
         assignment.setDataDomain(DataDomain.builder()

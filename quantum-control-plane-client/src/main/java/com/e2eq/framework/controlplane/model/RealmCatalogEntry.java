@@ -11,6 +11,7 @@ public class RealmCatalogEntry {
     private String displayName;
     private String databaseName;
     private String deploymentType;
+    private String tenancyMode;
     private String emailDomain;
     private String tenantId;
     private String orgRefName;
@@ -45,6 +46,12 @@ public class RealmCatalogEntry {
     public void setDeploymentType(String deploymentType) {
         this.deploymentType = deploymentType == null ? "DEDICATED" : deploymentType;
     }
+
+    @JsonProperty("tenancyMode")
+    public String getTenancyMode() { return tenancyMode; }
+
+    @JsonProperty("tenancyMode")
+    public void setTenancyMode(String tenancyMode) { this.tenancyMode = tenancyMode; }
 
     @JsonProperty("emailDomain")
     public String getEmailDomain() { return emailDomain; }
