@@ -63,6 +63,9 @@ public class MorphiaDataStoreWrapper {
    @ConfigProperty(name = "quantum.morphia.tenant-excluded-entity-classes")
    Optional<String> tenantExcludedEntityClasses;
 
+   @ConfigProperty(name = "quantum.mode", defaultValue = "embedded")
+   String quantumMode;
+
 
 
   // @ConfigProperty(name = "quarkus.mongodb.database") public String databaseName;
@@ -166,6 +169,7 @@ public class MorphiaDataStoreWrapper {
           envConfigUtils.getSystemRealm(),
           entityType,
           mapGlobalResourcesToTenantRealms,
+          "remote".equalsIgnoreCase(quantumMode),
           tenantExcludedEntityPackagePrefixes,
           tenantExcludedEntityClasses.orElse("")
       );

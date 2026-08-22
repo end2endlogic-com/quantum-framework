@@ -12,6 +12,7 @@ import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.RuleEffect;
 import com.e2eq.framework.model.securityrules.SecurityCheckResponse;
+import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.security.runtime.RuleContext;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -52,8 +53,14 @@ public class PermissionActionDependencyResolver implements ActionDependencyResol
             resolvedIdentities.addAll(Arrays.asList(context.getRoles()));
         }
 
+        String applicationId = SecurityContext.getPrincipalContext()
+                .map(PrincipalContext::getApplicationId)
+                .filter(value -> value != null && !value.isBlank())
+                .orElseGet(this::identityApplicationId);
+
         PrincipalContext principalContext = new PrincipalContext.Builder()
                 .withDefaultRealm(context.getRealm())
+                .withApplicationId(applicationId)
                 .withDataDomain(context.getDataDomain())
                 .withUserId(context.getIdentity())
                 .withRoles(resolvedIdentities.toArray(new String[0]))
@@ -67,6 +74,7 @@ public class PermissionActionDependencyResolver implements ActionDependencyResol
 
         ResourceContext resourceContext = new ResourceContext.Builder()
                 .withRealm(context.getRealm())
+                .withApplicationId(applicationId)
                 .withArea(context.getScopedAction().normalizedArea())
                 .withFunctionalDomain(context.getScopedAction().normalizedFunctionalDomain())
                 .withAction(normalizedAction)
@@ -96,6 +104,21 @@ public class PermissionActionDependencyResolver implements ActionDependencyResol
                 .build();
 
         return DependencyResolutionResult.blocked(blocker);
+    }
+
+    private String identityApplicationId() {
+        if (securityIdentity == null) {
+            return null;
+        }
+        Object value = securityIdentity.getAttribute("azp");
+        if (value == null && securityIdentity.getPrincipal() instanceof org.eclipse.microprofile.jwt.JsonWebToken jwt) {
+            value = jwt.getClaim("azp");
+        }
+        if (value == null) {
+            return null;
+        }
+        String applicationId = String.valueOf(value).trim();
+        return applicationId.isEmpty() ? null : applicationId;
     }
 
     private String buildPermissionMessage(SecurityCheckResponse response, EnablementEvaluationContext context) {

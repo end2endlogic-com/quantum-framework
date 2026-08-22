@@ -67,6 +67,12 @@ public class TenantOntologyTBox extends UnversionedBaseModel {
     // Metadata
     private Integer version;            // Optional version number
     private String description;         // Optional description
+    /** Pack id from TBoxSubmitRequest.id. Part of CanonicalTBoxHasher PackMetadata; must survive GET. */
+    private String packId;
+    /** Pack display name from TBoxSubmitRequest.name. */
+    private String packName;
+    /** Openness from TBoxSubmitRequest.openness (hasher default "open" when omitted on submit). */
+    private String openness;
 
     // B5: realm-governance vocabulary tier. The set of ontology predicates ADMITTED
     // for policy (security-rule) use in this realm. null == legacy "all declared

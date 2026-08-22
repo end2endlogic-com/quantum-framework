@@ -2,6 +2,7 @@ package com.e2eq.framework.model.persistent.base;
 
 import dev.morphia.annotations.Entity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
+import jakarta.validation.Valid;
 import java.time.Instant;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
@@ -22,8 +23,18 @@ public class ShareLink extends BaseModel {
 
     private String publicId;
 
+    /** Governed target for newly created share links. */
+    @Valid
+    private EntityReference mediaReference;
+
+    /** @deprecated use mediaReference; retained for stored-link compatibility. */
+    @Deprecated
     private String bucket;
+    /** @deprecated use mediaReference; retained for stored-link compatibility. */
+    @Deprecated
     private String region;
+    /** @deprecated use mediaReference; retained for stored-link compatibility. */
+    @Deprecated
     private String objectKey;
 
     private Instant expiresAt;

@@ -268,12 +268,14 @@ public class SeedStartupRunner {
                         .withUserId(pcUserId)
                         .withRoles(new String[]{"admin"})
                         .withScope("systemGenerated")
+                        .withApplicationId("*")
                         .build();
                 resourceContext = new com.e2eq.framework.model.securityrules.ResourceContext.Builder()
                         .withRealm(realm)
                         .withArea("SEED")
                         .withFunctionalDomain("SEED")
                         .withAction("APPLY")
+                        .withApplicationId("*")
                         .build();
             } else {
                 Log.warnf("SeedStartupRunner: failed to establish SecurityContext for admin user %s in realm %s attempting to use system@system.com", adminUserId, realm);

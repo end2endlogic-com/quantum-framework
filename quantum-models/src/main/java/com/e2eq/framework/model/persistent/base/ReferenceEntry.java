@@ -1,6 +1,7 @@
 package com.e2eq.framework.model.persistent.base;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import dev.morphia.annotations.Entity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
@@ -8,6 +9,7 @@ import org.bson.types.ObjectId;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
+@Entity(useDiscriminator = false)
 @RegisterForReflection
 @EqualsAndHashCode
 @NoArgsConstructor

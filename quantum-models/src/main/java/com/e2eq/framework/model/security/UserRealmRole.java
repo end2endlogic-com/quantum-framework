@@ -83,6 +83,14 @@ public class UserRealmRole extends BaseModel {
     */
    protected List<String> authorizedTenantIds;
 
+   /**
+    * Optional full-string, case-insensitive tenant entitlement expression for
+    * shared realms. Explicit tenant ids and this expression are unioned; an
+    * invalid expression grants nothing. Dedicated realms ignore this field and
+    * expose only the tenant bound to the realm.
+    */
+   protected String authorizedTenantRegEx;
+
    public static final String APPLICATION_WILDCARD = "*";
 
    /** Org within the realm that sponsored/invited this user (provenance). */

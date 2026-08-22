@@ -14,4 +14,5 @@ import java.util.List;
 @AllArgsConstructor
 public class TenantGrantRequest {
     private List<String> authorizedTenantIds;
+    private String authorizedTenantRegEx;
 }

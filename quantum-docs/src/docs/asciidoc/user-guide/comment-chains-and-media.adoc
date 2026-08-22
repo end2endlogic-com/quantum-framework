@@ -1,0 +1,20 @@
+[[comment-chains-and-media]]
+= Comment Chains and Media References
+
+Quantum comment chains attach an independently persisted, hierarchical discussion to either a Quantum model or an external application model. A chain's subject contains exactly one `quantumEntity` or `externalEntity`. External subjects use the stable tuple `sourceSystem`, `entityType`, and `externalId`; that tuple is unique inside the governed tenant context.
+
+Comments are separate records linked by `chainId` and optional `parentCommentId`. Quantum assigns the authenticated author and creation time, enforces a maximum depth, preserves parent/chain/author identity after creation, and supports request-id idempotency. Applications should append comments instead of embedding a mutable history array in their own model.
+
+The REST surface is rooted at `/comment-chains`. It supports chain creation and lookup, external-subject resolution, chronological comment listing, comment creation, and direct-reply listing. Generate client seams from the published OpenAPI operations rather than hand-writing service HTTP calls.
+
+== Media references
+
+`MediaReference` stores governed metadata and object identity only. It never stores object bytes or signed URLs. The upload flow is:
+
+. `POST /media-references/uploads` creates metadata and returns a short-lived direct-upload grant.
+. The client uploads bytes to that grant using its required headers.
+. `POST /media-references/{id}/upload-completion` verifies trusted object metadata and advances scan/status state.
+. Comments and application models persist only the `MediaReference` identity.
+. `POST /media-references/{id}/download-grants` returns a fresh short-lived URL only when the object is available.
+
+Deployments must provide exactly one CDI `MediaStorageGateway` bean for the selected object store. Quantum fails closed when no unique gateway is configured, when uploaded length/type/checksum differs from the prepared reference, or when the object is not available for download. Configure `quantum.media.grant-lifetime` and `quantum.media.max-content-length` for deployment policy.
