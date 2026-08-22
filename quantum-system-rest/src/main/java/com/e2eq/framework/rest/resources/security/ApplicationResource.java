@@ -4,6 +4,11 @@ import com.e2eq.framework.annotations.FunctionalMapping;
 import com.e2eq.framework.model.persistent.morphia.ApplicationRepo;
 import com.e2eq.framework.model.security.Application;
 import com.e2eq.framework.rest.core.BaseResource;
+import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
+import com.e2eq.framework.model.securityrules.SecurityContext;
+import com.e2eq.framework.util.SecurityUtils;
+import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
@@ -26,6 +31,9 @@ import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement
 @Consumes(MediaType.APPLICATION_JSON)
 @FunctionalMapping(area = "security", domain = "application")
 public class ApplicationResource extends BaseResource<Application, ApplicationRepo> {
+   @Inject
+   SecurityUtils securityUtils;
+
    protected ApplicationResource (ApplicationRepo repo) {
       super(repo);
    }
@@ -42,5 +50,38 @@ public class ApplicationResource extends BaseResource<Application, ApplicationRe
    public Response byRefName(@Context HttpHeaders headers,
          @Parameter(description = "Reference name of the entity", required = true) @QueryParam("refName") String refName) {
       return super.byRefName(headers, refName);
+   }
+
+   /**
+    * The application collection is a global system-plane registry. A caller's omitted X-Realm
+    * means "use my default realm", not "filter global registry rows using my tenant domain".
+    * Keep the authenticated identity, roles, audience and resource policy context, but resolve
+    * row visibility against the authoritative system data domain for the headerless default.
+    */
+   @Override
+   public com.e2eq.framework.rest.models.Collection<Application> getList(
+         HttpHeaders headers, int skip, int limit, String filter, String sort,
+         String projection, Boolean uiActions) {
+      if (headers.getHeaderString("X-Realm") != null) {
+         return super.getList(headers, skip, limit, filter, sort, projection, uiActions);
+      }
+      PrincipalContext current = SecurityContext.getPrincipalContext().orElse(null);
+      var resource = SecurityContext.getResourceContext().orElse(null);
+      if (current == null || resource == null) {
+         return super.getList(headers, skip, limit, filter, sort, projection, uiActions);
+      }
+      PrincipalContext registryPrincipal = new PrincipalContext.Builder()
+         .withDefaultRealm(current.getDefaultRealm())
+         .withApplicationId(current.getApplicationId())
+         .withDomainContext(current.getDomainContext())
+         .withDataDomain(securityUtils.getSystemDataDomain())
+         .withUserId(current.getUserId())
+         .withSubjectId(current.getSubjectId())
+         .withRoles(current.getRoles())
+         .withScope(current.getScope())
+         .withDataDomainPolicy(current.getDataDomainPolicy())
+         .build();
+      return SecurityCallScope.runWithContexts(registryPrincipal, resource,
+         () -> super.getList(headers, skip, limit, filter, sort, projection, uiActions));
    }
 }

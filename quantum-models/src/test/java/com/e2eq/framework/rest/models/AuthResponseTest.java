@@ -34,7 +34,26 @@ class AuthResponseTest {
         assertFalse(payload.has("authProvider"));
         assertFalse(payload.has("applications"));
         assertFalse(payload.has("activeApplication"));
+        assertFalse(payload.has("activeApplicationId"));
         assertFalse(payload.has("accessibleRealms"));
+        assertFalse(payload.has("accessibleTenants"));
+    }
+
+    @Test
+    void serializesNewAndLegacyActiveApplicationNames() throws Exception {
+        AuthResponse response = new AuthResponse("access", "refresh", 123L);
+        response.setActiveApplicationId("worker-platform");
+
+        JsonNode payload = objectMapper.readTree(objectMapper.writeValueAsString(response));
+
+        assertEquals("worker-platform", payload.get("activeApplicationId").asText());
+        assertEquals("worker-platform", payload.get("activeApplication").asText());
+
+        AuthResponse legacy = objectMapper.readValue(
+                "{\"access_token\":\"a\",\"refresh_token\":\"r\",\"expires_at\":1,"
+                        + "\"activeApplication\":\"legacy-app\"}",
+                AuthResponse.class);
+        assertEquals("legacy-app", legacy.getActiveApplicationId());
     }
 
     @Test

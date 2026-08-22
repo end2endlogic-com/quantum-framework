@@ -12,6 +12,8 @@ import com.e2eq.framework.rest.responses.TenantOnboardingRunResponse;
 import com.e2eq.framework.rest.responses.TenantOnboardingRunTaskResponse;
 import com.e2eq.framework.rest.responses.TenantOnboardingWorkflowStepResponse;
 import com.e2eq.framework.rest.responses.TenantOnboardingWorkflowResponse;
+import com.e2eq.framework.model.securityrules.ResourceContext;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.arc.DefaultBean;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -47,14 +49,14 @@ public class TenantOnboardingWorkflowService implements TenantOnboardingFlowServ
     public TenantOnboardingWorkflowResponse getCurrentWorkflow(String realm) {
         TenantOnboardingWorkflow workflow = workflowRepo.findActive(realm)
             .or(() -> workflowRepo.findDefault(realm))
-            .orElseGet(() -> createDefaultWorkflow(realm));
+            .orElseGet(this::buildDefaultWorkflow);
         return toResponse(realm, workflow);
     }
 
     @Override
     public TenantOnboardingWorkflowResponse saveCurrentWorkflow(String realm, TenantOnboardingWorkflowRequest request) {
         TenantOnboardingWorkflow workflow = workflowRepo.findDefault(realm)
-            .orElseGet(() -> createDefaultWorkflow(realm));
+            .orElseGet(this::buildDefaultWorkflow);
 
         workflow.setRefName(nonBlank(request.getRefName(), workflow.getRefName(), TenantOnboardingWorkflow.DEFAULT_REF_NAME));
         workflow.setDisplayName(nonBlank(request.getDisplayName(), workflow.getDisplayName(), "Tenant User Onboarding"));
@@ -91,7 +93,7 @@ public class TenantOnboardingWorkflowService implements TenantOnboardingFlowServ
         }
         workflow.setWorkflowDefinitionJson(workflowDefinitionJson);
 
-        workflow = workflowRepo.save(realm, workflow);
+        workflow = persistWorkflow(realm, workflow);
         return toResponse(realm, workflow);
     }
 
@@ -140,7 +142,11 @@ public class TenantOnboardingWorkflowService implements TenantOnboardingFlowServ
     }
 
     protected TenantOnboardingWorkflow createDefaultWorkflow(String realm) {
-        TenantOnboardingWorkflow workflow = TenantOnboardingWorkflow.builder()
+        return persistWorkflow(realm, buildDefaultWorkflow());
+    }
+
+    protected TenantOnboardingWorkflow buildDefaultWorkflow() {
+        return TenantOnboardingWorkflow.builder()
             .refName(TenantOnboardingWorkflow.DEFAULT_REF_NAME)
             .displayName("Tenant User Onboarding")
             .description("Review, approve, and activate tenant users through the standard onboarding journey.")
@@ -161,7 +167,20 @@ public class TenantOnboardingWorkflowService implements TenantOnboardingFlowServ
                 true
             ))
             .build();
-        return workflowRepo.save(realm, workflow);
+    }
+
+    private TenantOnboardingWorkflow persistWorkflow(String realm, TenantOnboardingWorkflow workflow) {
+        String action = workflow.getId() == null ? "create" : "update";
+        ResourceContext writeContext = new ResourceContext.Builder()
+            .withRealm(realm)
+            .withArea(workflow.bmFunctionalArea())
+            .withFunctionalDomain(workflow.bmFunctionalDomain())
+            .withAction(action)
+            .withResourceId(workflow.getRefName())
+            .build();
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.openResourceOnly(writeContext)) {
+            return workflowRepo.save(realm, workflow);
+        }
     }
 
     protected TenantOnboardingWorkflowResponse toResponse(String realm, TenantOnboardingWorkflow workflow) {

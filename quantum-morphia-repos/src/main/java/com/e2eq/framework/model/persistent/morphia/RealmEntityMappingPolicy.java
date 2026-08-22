@@ -20,6 +20,16 @@ public final class RealmEntityMappingPolicy {
             + "com.e2eq.framework.model.persistent.security.,"
             + "com.e2eq.framework.oauth.model.";
 
+    /**
+     * Identity collections owned by quantum-auth-service. Remote application
+     * JVMs must not map these even in their configured system realm.
+     */
+    public static final String DEFAULT_IDENTITY_ENTITY_CLASSES =
+        "com.e2eq.framework.model.security.UserProfile,"
+            + "com.e2eq.framework.model.security.UserGroup,"
+            + "com.e2eq.framework.model.security.CredentialUserIdPassword,"
+            + "com.e2eq.framework.model.security.CredentialRefreshToken";
+
     private RealmEntityMappingPolicy() {
     }
 
@@ -27,6 +37,23 @@ public final class RealmEntityMappingPolicy {
                                            String systemRealm,
                                            Class<?> entityType,
                                            boolean mapGlobalResourcesToTenantRealms,
+                                           String tenantExcludedEntityPackagePrefixesCsv,
+                                           String tenantExcludedEntityClassesCsv) {
+        return shouldMapToRealm(
+            realm,
+            systemRealm,
+            entityType,
+            mapGlobalResourcesToTenantRealms,
+            false,
+            tenantExcludedEntityPackagePrefixesCsv,
+            tenantExcludedEntityClassesCsv);
+    }
+
+    public static boolean shouldMapToRealm(String realm,
+                                           String systemRealm,
+                                           Class<?> entityType,
+                                           boolean mapGlobalResourcesToTenantRealms,
+                                           boolean remoteMode,
                                            String tenantExcludedEntityPackagePrefixesCsv,
                                            String tenantExcludedEntityClassesCsv) {
         if (realm == null || realm.isBlank()) {
@@ -38,10 +65,17 @@ public final class RealmEntityMappingPolicy {
         if (entityType == null) {
             throw new IllegalArgumentException("entityType must be non-null");
         }
+        if (remoteMode && isIdentityEntity(entityType)) {
+            return false;
+        }
         if (realm.equals(systemRealm) || mapGlobalResourcesToTenantRealms) {
             return true;
         }
         return !isTenantExcludedEntity(entityType, tenantExcludedEntityPackagePrefixesCsv, tenantExcludedEntityClassesCsv);
+    }
+
+    public static boolean isIdentityEntity(Class<?> entityType) {
+        return entityType != null && parseCsv(DEFAULT_IDENTITY_ENTITY_CLASSES).contains(entityType.getName());
     }
 
     public static boolean isTenantExcludedEntity(Class<?> entityType,

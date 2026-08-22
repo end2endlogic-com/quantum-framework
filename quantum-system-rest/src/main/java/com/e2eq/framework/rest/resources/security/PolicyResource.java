@@ -130,38 +130,81 @@ public class PolicyResource extends BaseResource<Policy, PolicyRepo> {
            String filter,
            String sort,
            String projection) {
+      return getList(headers, skip, limit, filter, sort, projection, null);
+   }
 
-      // Get default system policies
-      List<Policy> defaultPolicies = ruleContext.getDefaultSystemPolicies();
+   /**
+    * JAX-RS binds {@code GET /list} to the 7-argument signature (optional
+    * {@code uiActions}). The 6-argument override is never the resource method,
+    * so the default-system policies that {@link #getCount} already includes
+    * must be merged here or the hub count and directory list disagree.
+    */
+   @Override
+   public com.e2eq.framework.rest.models.Collection<Policy> getList(
+           jakarta.ws.rs.core.HttpHeaders headers,
+           int skip,
+           int limit,
+           String filter,
+           String sort,
+           String projection,
+           Boolean uiActions) {
+      return mergeDefaultPolicies(
+            super.getList(headers, skip, limit, filter, sort, projection, uiActions),
+            filter,
+            skip,
+            limit,
+            headers.getHeaderString("X-Realm"));
+   }
 
-      // Apply filtering to default policies using QueryPredicates if filter is present
-      List<Policy> filteredDefaults = new ArrayList<>();
-      if (filter != null && !filter.isEmpty()) {
-         filteredDefaults = applyFilterToPolicies(defaultPolicies, filter);
-      } else {
-         filteredDefaults = new ArrayList<>(defaultPolicies);
-      }
+   static com.e2eq.framework.rest.models.Collection<Policy> mergePolicyCollections(
+           List<Policy> defaultPolicies,
+           com.e2eq.framework.rest.models.Collection<Policy> dbCollection,
+           String filter,
+           int skip,
+           int limit,
+           String realmId,
+           String fallbackRealm) {
+      List<Policy> filteredDefaults = defaultPolicies == null
+            ? new ArrayList<>()
+            : new ArrayList<>(defaultPolicies);
+      List<Policy> databaseRows = dbCollection == null || dbCollection.getRows() == null
+            ? List.of()
+            : dbCollection.getRows();
+      long databaseTotal = dbCollection == null ? 0L : dbCollection.getTotalCount();
 
-      // Get database policies using parent implementation
-      com.e2eq.framework.rest.models.Collection<Policy> dbCollection = super.getList(headers, skip, limit, filter, sort, projection);
-
-      // Merge: default policies first, then database policies
-      List<Policy> mergedList = new ArrayList<>();
+      List<Policy> mergedList = new ArrayList<>(filteredDefaults.size() + databaseRows.size());
       mergedList.addAll(filteredDefaults);
-      mergedList.addAll(dbCollection.getRows());
+      mergedList.addAll(databaseRows);
 
-      // Adjust count to include default policies
-      long totalCount = filteredDefaults.size() + dbCollection.getTotalCount();
-
-      // Create merged collection
       com.e2eq.framework.rest.models.Collection<Policy> mergedCollection =
-         new com.e2eq.framework.rest.models.Collection<>(mergedList, skip, limit, filter, totalCount);
-
+            new com.e2eq.framework.rest.models.Collection<>(
+                  mergedList, skip, limit, filter, filteredDefaults.size() + databaseTotal);
       mergedCollection.setFilter(filter);
-      String realmId = headers.getHeaderString("X-Realm");
-      mergedCollection.setRealm(realmId == null ? repo.getDatabaseName() : realmId);
-
+      mergedCollection.setRealm(realmId == null || realmId.isBlank() ? fallbackRealm : realmId);
+      if (dbCollection != null) {
+         mergedCollection.setActionList(dbCollection.getActionList());
+      }
       return mergedCollection;
+   }
+
+   private com.e2eq.framework.rest.models.Collection<Policy> mergeDefaultPolicies(
+           com.e2eq.framework.rest.models.Collection<Policy> dbCollection,
+           String filter,
+           int skip,
+           int limit,
+           String realmId) {
+      List<Policy> defaultPolicies = ruleContext.getDefaultSystemPolicies();
+      List<Policy> filteredDefaults = (filter != null && !filter.isEmpty())
+            ? applyFilterToPolicies(defaultPolicies, filter)
+            : new ArrayList<>(defaultPolicies);
+      return mergePolicyCollections(
+            filteredDefaults,
+            dbCollection,
+            filter,
+            skip,
+            limit,
+            realmId,
+            repo.getDatabaseName());
    }
 
    @Override

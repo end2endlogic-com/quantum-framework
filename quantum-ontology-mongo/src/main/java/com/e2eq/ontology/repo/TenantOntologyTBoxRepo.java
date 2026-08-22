@@ -128,6 +128,18 @@ public class TenantOntologyTBoxRepo extends MorphiaRepo<TenantOntologyTBox> {
     }
 
     /**
+     * List every TBox document for a tenant (active and inactive), newest submit first.
+     */
+    public List<TenantOntologyTBox> listByDataDomain(DataDomain dataDomain) {
+        validateDataDomain(dataDomain);
+        Query<TenantOntologyTBox> q = ds().find(TenantOntologyTBox.class)
+                .filter(dataDomainFilters(dataDomain));
+        FindOptions options = new FindOptions()
+                .sort(Sort.descending("appliedAt"));
+        return q.iterator(options).toList();
+    }
+
+    /**
      * Deactivate all TBoxes for a tenant (before activating a new one)
      */
     public void deactivateAll(DataDomain dataDomain) {

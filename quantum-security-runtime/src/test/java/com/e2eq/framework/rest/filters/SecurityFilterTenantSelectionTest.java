@@ -2,6 +2,7 @@ package com.e2eq.framework.rest.filters;
 
 import com.e2eq.framework.api.system.SystemDirectory;
 import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.persistent.base.EntityReference;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.security.Realm;
@@ -70,6 +71,126 @@ class SecurityFilterTenantSelectionTest {
 
         assertThrows(ForbiddenException.class,
             () -> filter.applyTenantSelection(context("pooled", "tenant-a"), "tenant-b"));
+    }
+
+    @Test
+    void realmSelectionRejectsRealmOwnedByAnotherApplication() {
+        Realm realm = realm("other-app-realm", RealmTenancyMode.SINGLE_TENANT, "tenant-a");
+        realm.setApplicationRef(EntityReference.builder()
+                .entityRefName("other-application")
+                .entityDisplayName("Other application")
+                .build());
+        SecurityFilter filter = filter(realm, null, null);
+        PrincipalContext context = new PrincipalContext.Builder()
+                .withDefaultRealm("home-realm")
+                .withApplicationId("requested-application")
+                .withDataDomain(DataDomain.builder()
+                        .tenantId("home-tenant")
+                        .orgRefName("default-org")
+                        .accountNum("default-account")
+                        .ownerId("user@example.test")
+                        .build())
+                .withUserId("user@example.test")
+                .withRoles(new String[]{"user"})
+                .withScope("AUTHENTICATED")
+                .build();
+
+        assertThrows(ForbiddenException.class,
+                () -> filter.applyRealmOverride(context, "other-app-realm"));
+    }
+
+    @Test
+    void realmSelectionAllowsGrantedApplicationOnSharedRealm() {
+        Realm realm = realm("helixor-code-P1", RealmTenancyMode.SINGLE_TENANT, "helixor-code-P1");
+        realm.setApplicationRef(EntityReference.builder()
+                .entityRefName("helixor-code")
+                .entityDisplayName("Helixor Code")
+                .build());
+        UserRealmRole grant = UserRealmRole.builder()
+                .userId("user@example.test")
+                .realmRefName("helixor-code-P1")
+                .status(UserRealmRole.STATUS_ACTIVE)
+                .authorizedApplications(List.of("helixor-code", "quantum-b2bi"))
+                .build();
+        SecurityFilter filter = filter(realm, grant, null);
+        PrincipalContext context = new PrincipalContext.Builder()
+                .withDefaultRealm("helixor-code-P1")
+                .withApplicationId("quantum-b2bi")
+                .withDataDomain(DataDomain.builder()
+                        .tenantId("helixor-code-P1")
+                        .orgRefName("default-org")
+                        .accountNum("default-account")
+                        .ownerId("user@example.test")
+                        .build())
+                .withUserId("user@example.test")
+                .withRoles(new String[]{"user"})
+                .withScope("AUTHENTICATED")
+                .build();
+
+        assertSame(context, filter.applyRealmOverride(context, "helixor-code-P1"));
+    }
+
+    @Test
+    void realmSelectionAllowsCurrentSessionRealmWhenMembershipGrantOmitsApplication() {
+        Realm realm = realm("helixor-code-P1", RealmTenancyMode.SINGLE_TENANT, "helixor-code-P1");
+        realm.setApplicationRef(EntityReference.builder()
+                .entityRefName("helixor-code")
+                .entityDisplayName("Helixor Code")
+                .build());
+        UserRealmRole staleGrant = UserRealmRole.builder()
+                .userId("user@example.test")
+                .realmRefName("helixor-code-P1")
+                .status(UserRealmRole.STATUS_ACTIVE)
+                .authorizedApplications(List.of("helixor-code"))
+                .build();
+        SecurityFilter filter = filter(realm, staleGrant, null);
+        PrincipalContext context = new PrincipalContext.Builder()
+                .withDefaultRealm("helixor-code-P1")
+                .withApplicationId("quantum-b2bi")
+                .withDataDomain(DataDomain.builder()
+                        .tenantId("helixor-code-P1")
+                        .orgRefName("default-org")
+                        .accountNum("default-account")
+                        .ownerId("user@example.test")
+                        .build())
+                .withUserId("user@example.test")
+                .withRoles(new String[]{"user"})
+                .withScope("AUTHENTICATED")
+                .build();
+
+        assertSame(context, filter.applyRealmOverride(context, "helixor-code-P1"));
+    }
+
+    @Test
+    void realmSelectionRejectsDifferentRealmWhenMembershipGrantOmitsApplication() {
+        Realm realm = realm("other-app-realm", RealmTenancyMode.SINGLE_TENANT, "tenant-a");
+        realm.setApplicationRef(EntityReference.builder()
+                .entityRefName("other-application")
+                .entityDisplayName("Other application")
+                .build());
+        UserRealmRole staleGrant = UserRealmRole.builder()
+                .userId("user@example.test")
+                .realmRefName("other-app-realm")
+                .status(UserRealmRole.STATUS_ACTIVE)
+                .authorizedApplications(List.of("helixor-code"))
+                .build();
+        SecurityFilter filter = filter(realm, staleGrant, null);
+        PrincipalContext context = new PrincipalContext.Builder()
+                .withDefaultRealm("helixor-code-P1")
+                .withApplicationId("quantum-b2bi")
+                .withDataDomain(DataDomain.builder()
+                        .tenantId("helixor-code-P1")
+                        .orgRefName("default-org")
+                        .accountNum("default-account")
+                        .ownerId("user@example.test")
+                        .build())
+                .withUserId("user@example.test")
+                .withRoles(new String[]{"user"})
+                .withScope("AUTHENTICATED")
+                .build();
+
+        assertThrows(ForbiddenException.class,
+                () -> filter.applyRealmOverride(context, "other-app-realm"));
     }
 
     private static SecurityFilter filter(

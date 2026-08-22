@@ -79,6 +79,25 @@ public class TenantOntologyTBoxRepoTest {
     }
 
     @Test
+    void testListByDataDomainIncludesInactive() {
+        TenantOntologyTBox active = new TenantOntologyTBox(sampleTBox, "hash-active", "yaml", "test.yaml", "1.0.0");
+        active.setDataDomain(tenant1);
+        active.setRefName("tbox-active");
+        active.setActive(true);
+        repo.save(active);
+
+        TenantOntologyTBox inactive = new TenantOntologyTBox(sampleTBox, "hash-inactive", "yaml", "test.yaml", "1.0.0");
+        inactive.setDataDomain(tenant1);
+        inactive.setRefName("tbox-inactive");
+        inactive.setActive(false);
+        repo.save(inactive);
+
+        List<TenantOntologyTBox> listed = repo.listByDataDomain(tenant1);
+        assertEquals(2, listed.size());
+        assertTrue(listed.stream().anyMatch(doc -> "hash-inactive".equals(doc.getTboxHash())));
+    }
+
+    @Test
     void testTenantIsolation() {
         // Create TBox for tenant1
         TenantOntologyTBox tbox1 = new TenantOntologyTBox(sampleTBox, "hash1", "yamlHash1", "test1.yaml", "1.0.0");

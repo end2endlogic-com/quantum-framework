@@ -210,6 +210,7 @@ public class RealmMembershipService {
             existing.setAuthorizedApplications(assignment.getAuthorizedApplications());
             existing.setDefaultApplication(assignment.getDefaultApplication());
             existing.setAuthorizedTenantIds(assignment.getAuthorizedTenantIds());
+            existing.setAuthorizedTenantRegEx(assignment.getAuthorizedTenantRegEx());
             existing.setSponsoringOrgRefName(assignment.getSponsoringOrgRefName());
             existing.setStatus(assignment.getStatus());
             existing.setDisplayName(assignment.getDisplayName());

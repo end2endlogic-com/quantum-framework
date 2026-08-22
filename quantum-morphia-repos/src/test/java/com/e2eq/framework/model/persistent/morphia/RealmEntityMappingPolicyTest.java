@@ -2,6 +2,7 @@ package com.e2eq.framework.model.persistent.morphia;
 
 import com.e2eq.framework.model.persistent.base.CodeList;
 import com.e2eq.framework.model.persistent.migration.base.DatabaseVersion;
+import com.e2eq.framework.model.security.AccessInvite;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.Policy;
 import com.e2eq.framework.model.security.Realm;
@@ -42,6 +43,37 @@ class RealmEntityMappingPolicyTest {
     void compatibilityFlagCanMapGlobalEntitiesToTenantRealm() {
         assertTrue(shouldMap(TENANT_REALM, CredentialUserIdPassword.class, true));
         assertTrue(shouldMap(TENANT_REALM, Policy.class, true));
+    }
+
+    @Test
+    void remoteModeNeverMapsIdentityEntitiesEvenInTheSystemRealm() {
+        assertFalse(RealmEntityMappingPolicy.shouldMapToRealm(
+            SYSTEM_REALM,
+            SYSTEM_REALM,
+            UserProfile.class,
+            false,
+            true,
+            RealmEntityMappingPolicy.DEFAULT_TENANT_EXCLUDED_ENTITY_PACKAGE_PREFIXES,
+            ""
+        ));
+        assertFalse(RealmEntityMappingPolicy.shouldMapToRealm(
+            SYSTEM_REALM,
+            SYSTEM_REALM,
+            CredentialUserIdPassword.class,
+            true,
+            true,
+            RealmEntityMappingPolicy.DEFAULT_TENANT_EXCLUDED_ENTITY_PACKAGE_PREFIXES,
+            ""
+        ));
+        assertTrue(RealmEntityMappingPolicy.shouldMapToRealm(
+            SYSTEM_REALM,
+            SYSTEM_REALM,
+            AccessInvite.class,
+            false,
+            true,
+            RealmEntityMappingPolicy.DEFAULT_TENANT_EXCLUDED_ENTITY_PACKAGE_PREFIXES,
+            ""
+        ));
     }
 
     @Test

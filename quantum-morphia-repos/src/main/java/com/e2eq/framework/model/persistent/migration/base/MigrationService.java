@@ -54,6 +54,13 @@ public class MigrationService {
    @ConfigProperty(name = "quantum.database.migration.enabled")
    protected boolean enabled;
 
+   @ConfigProperty(name = "quantum.migration.application-id")
+   Optional<String> migrationApplicationId;
+
+   /** Mirrors RuleContext's fail-closed switch; when true, migrations must carry an application id. */
+   @ConfigProperty(name = "quantum.security.policy-scope.require-application", defaultValue = "false")
+   boolean requireApplicationScope;
+
    /** Shared database used only for short-lived migration/seed coordination locks. */
    @ConfigProperty(name = "quantum.database.coordination-database", defaultValue = "quantum-coordination-shared")
    String coordinationDatabase;
@@ -181,9 +188,52 @@ public class MigrationService {
 
    private void migrateRealmSynchronously(String realm) {
       MultiEmitter<String> emitter = newLoggingEmitter();
+      String applicationId = migrationApplicationId
+         .map(String::trim)
+         .filter(value -> !value.isEmpty())
+         .orElse(null);
+
+      if (applicationId == null) {
+         // Application-scoped policy evaluation is opt-in (quantum.security.policy-scope.require-application).
+         // When it is off, policies are still evaluated unscoped, so an unset migration application id is
+         // legal: fall back to the historical system contexts rather than failing startup. When it is on,
+         // RuleContext would fail closed anyway, so fail here with the actionable message.
+         if (requireApplicationScope) {
+            throw new IllegalStateException(
+               "quantum.migration.application-id is required for startup migrations when "
+                  + "quantum.security.policy-scope.require-application=true");
+         }
+         SecurityCallScope.runWithContexts(
+            securityUtils.getSystemPrincipalContext(),
+            securityUtils.getSystemSecurityResourceContext(),
+            () -> {
+               runAllUnRunMigrations(realm, emitter);
+               applyAllIndexes(realm);
+            }
+         );
+         return;
+      }
+
+      var systemPrincipal = securityUtils.getSystemPrincipalContext();
+      var migrationPrincipal = new com.e2eq.framework.model.securityrules.PrincipalContext.Builder()
+         .withDefaultRealm(systemPrincipal.getDefaultRealm())
+         .withApplicationId(applicationId)
+         .withDomainContext(systemPrincipal.getDomainContext())
+         .withDataDomain(systemPrincipal.getDataDomain())
+         .withUserId(systemPrincipal.getUserId())
+         .withRoles(systemPrincipal.getRoles())
+         .withScope(systemPrincipal.getScope())
+         .build();
+      var migrationResource = new com.e2eq.framework.model.securityrules.ResourceContext.Builder()
+         .withRealm(realm)
+         .withApplicationId(applicationId)
+         .withArea("MIGRATION")
+         .withFunctionalDomain("DATABASE")
+         .withAction("APPLY")
+         .build();
       SecurityCallScope.runWithContexts(
-         securityUtils.getSystemPrincipalContext(),
-         securityUtils.getSystemSecurityResourceContext(),
+         migrationPrincipal,
+         migrationResource,
          () -> {
             runAllUnRunMigrations(realm, emitter);
             applyAllIndexes(realm);
@@ -297,8 +347,10 @@ public class MigrationService {
             Log.warnf(e, "applyAllIndexes: failed to ensure indexes for %s in %s", entity.collectionName(), realmId);
          }
       }
-      datastore.applyIndexes();
-      Log.infof("applyAllIndexes: completed for realm %s", realmId);
+      // Each mapped entity was handled above. Do not invoke Datastore.applyIndexes() as a
+      // second global pass: it repeats every operation and turns an intentionally isolated,
+      // logged legacy-index conflict into a fatal startup exception.
+      Log.infof("applyAllIndexes: completed best-effort index reconciliation for realm %s", realmId);
    }
 
    public void dropAllIndexes (String realmId) {

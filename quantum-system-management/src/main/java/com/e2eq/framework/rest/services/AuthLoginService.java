@@ -1,14 +1,19 @@
 package com.e2eq.framework.rest.services;
 
+import com.e2eq.framework.model.auth.AccessibleTenantResolver;
 import com.e2eq.framework.model.auth.AuthProvider;
 import com.e2eq.framework.model.auth.AuthProviderFactory;
 import com.e2eq.framework.model.auth.RoleAssignment;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
+import com.e2eq.framework.model.security.Realm;
+import com.e2eq.framework.model.security.UserRealmRole;
 import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.rest.models.AccessibleRealmInfo;
+import com.e2eq.framework.rest.models.AccessibleTenantInfo;
 import com.e2eq.framework.rest.models.AuthResponse;
+import com.e2eq.framework.system.membership.RealmMembershipService;
 import com.e2eq.framework.rest.models.RestError;
 import com.e2eq.framework.util.EnvConfigUtils;
 import com.e2eq.framework.util.SecurityUtils;
@@ -35,6 +40,9 @@ public class AuthLoginService {
 
     @Inject
     RealmRepo realmRepo;
+
+    @Inject
+    RealmMembershipService realmMembershipService;
 
     @Inject
     EnvConfigUtils envConfigUtils;
@@ -220,13 +228,32 @@ public class AuthLoginService {
         response.setRoles(positive.roleAssignments().stream().map(RoleAssignment::toString).collect(Collectors.toList()));
         response.setAuthProvider(authProvider.getName());
         response.setAccessibleRealms(resolveAccessibleRealms(credential));
+        response.setAccessibleTenants(resolveAccessibleTenants(positive.realm(), credential));
         // Application-scoped auth: surface the token's aud set + azp so the UI can
         // render an app switcher and know the active app (null when not configured).
         if (positive.audiences() != null) {
             response.setApplications(new ArrayList<>(positive.audiences()));
         }
-        response.setActiveApplication(positive.activeApplication());
+        response.setActiveApplicationId(positive.activeApplication());
         return response;
+    }
+
+    List<AccessibleTenantInfo> resolveAccessibleTenants(String activeRealm, CredentialUserIdPassword credential) {
+        if (activeRealm == null || activeRealm.isBlank()) {
+            return List.of();
+        }
+        Optional<Realm> realm = realmRepo.findByRefName(activeRealm, true, envConfigUtils.getSystemRealm());
+        if (realm.isEmpty()) {
+            return List.of();
+        }
+        UserRealmRole assignment = credential == null || credential.getUserId() == null
+                ? null
+                : realmMembershipService.assignmentForUser(credential.getUserId(), activeRealm).orElse(null);
+        List<com.e2eq.framework.model.security.RealmTenantMembership> memberships =
+                AccessibleTenantResolver.sharedMultiTenant(realm.get())
+                        ? realmMembershipService.membersOfRealm(activeRealm)
+                        : List.of();
+        return AccessibleTenantResolver.resolve(realm.get(), assignment, memberships);
     }
 
     private String loginFailure(AuthProvider authProvider, AuthProvider.LoginResponse loginResponse) {

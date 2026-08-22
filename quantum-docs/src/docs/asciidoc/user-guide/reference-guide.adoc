@@ -39,6 +39,7 @@ Use it to jump directly to a subject and then explore details in context.
 - Multiple auth providers: xref:./multiple-auth-providers.adoc[Multiple Authentication Providers] (issuer resolution, per-tenant key pairs, external identity providers)
 - Key pair management: xref:./multiple-auth-providers.adoc#per-tenant-key-pairs[Key Pair Management] (default keys module, configurable paths, production setup)
 - Shared links: xref:./shared-links.adoc[Shared Links] (time-bound link sharing, HMAC signing, access logging, revocation)
+- Comment chains and media: xref:./comment-chains-and-media.adoc[Comment Chains and Media References] (hierarchical discussion, governed object metadata, short-lived grants)
 - OAuth server: xref:./oauth-server.adoc[OAuth Server Module] (built-in OAuth 2.0/OIDC authorization server, ChatGPT/Gemini/Grok integration, no external IdP needed)
 - Permissions: xref:../tutorials/quantum-tutorial.adoc#sec-security[Permissions]
 - Security annotations: xref:../tutorials/quantum-tutorial.adoc#sec-security[Security annotations]

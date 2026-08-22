@@ -1,6 +1,7 @@
 package com.e2eq.framework.rest.filters;
 
 
+import com.e2eq.framework.model.auth.ApplicationAuthorizationResolver;
 import com.e2eq.framework.model.auth.AuthProvider;
 import com.e2eq.framework.model.auth.AuthProviderFactory;
 import com.e2eq.framework.model.auth.ClaimsAuthProvider;
@@ -12,6 +13,7 @@ import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.model.security.RealmTenancyMode;
 import com.e2eq.framework.model.security.RealmTenantMembership;
+import com.e2eq.framework.model.security.UserRealmRole;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
@@ -1256,9 +1258,9 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
      * @param realm the target realm from X-Realm header (may be null)
      * @return updated PrincipalContext with realm's DataDomain, or original context if no override needed
      */
-    private PrincipalContext applyRealmOverride(PrincipalContext context, String realm) {
-        // No realm override requested, or already on that realm
-        if (realm == null || realm.isBlank() || realm.equals(context.getDefaultRealm())) {
+    PrincipalContext applyRealmOverride(PrincipalContext context, String realm) {
+        // No realm selection requested.
+        if (realm == null || realm.isBlank()) {
             return context;
         }
 
@@ -1279,6 +1281,27 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         }
 
         com.e2eq.framework.model.security.Realm targetRealm = targetRealmOpt.get();
+        String applicationId = context.getApplicationId();
+        String realmApplicationId = targetRealm.getApplicationRef() == null
+                ? null
+                : targetRealm.getApplicationRef().getEntityRefName();
+        if (applicationId != null && !applicationId.isBlank()
+                && !applicationAdmittedInRealm(
+                        context.getUserId(),
+                        realm,
+                        applicationId,
+                        realmApplicationId,
+                        context.getDefaultRealm())) {
+            throw new jakarta.ws.rs.ForbiddenException(
+                    "Realm '" + realm + "' is not assigned to application '"
+                            + applicationId + "'");
+        }
+
+        // An explicit selection of the already-active realm still needs the
+        // application ownership check above, but does not require rebuilding context.
+        if (realm.equals(context.getDefaultRealm())) {
+            return context;
+        }
         com.e2eq.framework.model.security.DomainContext targetDomainContext = targetRealm.getDomainContext();
 
         if (targetDomainContext == null) {
@@ -1317,6 +1340,37 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 .withRealmOverrideActive(true)
                 .withOriginalDataDomain(context.getDataDomain())
                 .build();
+    }
+
+    private boolean applicationAdmittedInRealm(
+            String userId,
+            String realmRefName,
+            String applicationId,
+            String realmHomeApplicationId,
+            String sessionRealm) {
+        if (realmHomeApplicationId != null && applicationId.equalsIgnoreCase(realmHomeApplicationId)) {
+            return true;
+        }
+        // Auth already minted this session for applicationId in sessionRealm.
+        // Control-plane copies of UserRealmRole can lag or omit authorizedApplications
+        // (system-service had only the home app while the identity grant included
+        // this application). Trust the verified token pair for the current realm.
+        if (sessionRealm != null && sessionRealm.equals(realmRefName)) {
+            return true;
+        }
+        if (userId == null || userId.isBlank() || realmMembershipService == null) {
+            return false;
+        }
+        Optional<UserRealmRole> assignment = realmMembershipService.assignmentForUser(userId, realmRefName);
+        if (assignment.isEmpty()) {
+            return false;
+        }
+        List<String> granted = assignment.get().getAuthorizedApplications();
+        if (granted == null || granted.isEmpty()) {
+            return false;
+        }
+        return granted.stream().anyMatch(app ->
+                app != null && ApplicationAuthorizationResolver.matches(app.trim(), applicationId));
     }
 
     /**
@@ -1361,8 +1415,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             .assignmentForUser(context.getUserId(), effectiveRealm)
             .orElseThrow(() -> new jakarta.ws.rs.ForbiddenException(
                 "Principal has no active assignment in realm '" + effectiveRealm + "'"));
-        List<String> authorizedTenantIds = assignment.getAuthorizedTenantIds();
-        if (authorizedTenantIds == null || !authorizedTenantIds.contains(tenantId)) {
+        if (!com.e2eq.framework.model.auth.AccessibleTenantResolver.isAuthorized(assignment, tenantId)) {
             throw new jakarta.ws.rs.ForbiddenException(
                 "Principal is not assigned to tenant '" + tenantId
                     + "' in realm '" + effectiveRealm + "'");

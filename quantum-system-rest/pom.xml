@@ -42,6 +42,11 @@
       <artifactId>quantum-jwt-provider</artifactId>
       <version>${quantum.version}</version>
     </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>

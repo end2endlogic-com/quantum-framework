@@ -24,6 +24,7 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement;
 
 import java.lang.reflect.Method;
 import java.util.*;
@@ -195,6 +196,8 @@ public class PermissionResource {
    @Consumes(MediaType.APPLICATION_JSON)
    @Produces(MediaType.APPLICATION_JSON)
    @FunctionalAction("roleProvenance")
+   @Authenticated
+   @SecurityRequirement(name = "bearerAuth")
    public RoleProvenanceResponse roleProvenance(RoleProvenanceRequest req) {
       if (req == null || req.userId == null || req.userId.isBlank()) {
          throw new BadRequestException("userId is required");
@@ -403,6 +406,8 @@ public class PermissionResource {
    @Path("/entities")
    @Produces(MediaType.APPLICATION_JSON)
    @FunctionalAction("entities")
+   @Authenticated
+   @SecurityRequirement(name = "bearerAuth")
    public Response entities() {
       return Response.ok(getInfoList()).build();
    }
@@ -410,6 +415,8 @@ public class PermissionResource {
    @GET
    @Path("/fd")
    @Produces(MediaType.APPLICATION_JSON)
+   @Authenticated
+   @SecurityRequirement(name = "bearerAuth")
    public Response functionalDomains(@QueryParam("includeActions") @DefaultValue("false") boolean includeActions) {
       // Unified structure: area -> domain -> actions (case-insensitive)
       Map<String, Map<String, Set<String>>> areaDomainActions = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);

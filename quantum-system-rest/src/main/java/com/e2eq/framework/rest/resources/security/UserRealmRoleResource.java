@@ -69,6 +69,65 @@ public class UserRealmRoleResource extends BaseResource<UserRealmRole, UserRealm
       super(repo);
    }
 
+   /**
+    * Users granted {@code applicationId} in the identity store (system realm
+    * UserRealmRole), not tenant userProfile collections. Optional
+    * {@code realmRefName} limits the directory to one operating realm.
+    */
+   @GET
+   @Path("assigned-users")
+   @Produces(MediaType.APPLICATION_JSON)
+   public Response listAssignedUsers(@jakarta.ws.rs.QueryParam("applicationId") String applicationId,
+                                     @jakarta.ws.rs.QueryParam("realmRefName") String realmRefName) {
+      String application = trimToNull(applicationId);
+      if (application == null) {
+         return Response.status(Response.Status.BAD_REQUEST)
+                 .entity(RestError.builder()
+                         .status(Response.Status.BAD_REQUEST.getStatusCode())
+                         .statusMessage("applicationId is required")
+                         .build())
+                 .build();
+      }
+      String systemRealm = envConfigUtils.getSystemRealm();
+      String realm = trimToNull(realmRefName);
+      List<UserRealmRole> assignments = realm == null
+              ? repo.findAllWithIgnoreRules(systemRealm)
+              : repo.findByRealmRefNameWithIgnoreRules(realm, systemRealm);
+      List<UserRealmRole> granted = assignmentsGrantingApplication(assignments, application);
+      com.e2eq.framework.rest.models.Collection<UserRealmRole> collection =
+              new com.e2eq.framework.rest.models.Collection<>(
+                      granted, 0, granted.size(), null, (long) granted.size());
+      collection.setRealm(realm == null ? systemRealm : realm);
+      return Response.ok(collection).build();
+   }
+
+   static List<UserRealmRole> assignmentsGrantingApplication(
+           List<UserRealmRole> assignments, String applicationId) {
+      if (assignments == null || assignments.isEmpty()) {
+         return List.of();
+      }
+      List<UserRealmRole> granted = new ArrayList<>();
+      for (UserRealmRole assignment : assignments) {
+         if (assignment == null || UserRealmRole.STATUS_SUSPENDED.equalsIgnoreCase(
+                 assignment.getStatus() == null ? "" : assignment.getStatus())) {
+            continue;
+         }
+         if (grantsApplication(assignment, applicationId)) {
+            granted.add(assignment);
+         }
+      }
+      return granted;
+   }
+
+   static boolean grantsApplication(UserRealmRole assignment, String applicationId) {
+      List<String> granted = assignment.getAuthorizedApplications();
+      if (granted == null || granted.isEmpty()) {
+         return false;
+      }
+      return granted.stream().anyMatch(app ->
+              app != null && ApplicationAuthorizationResolver.matches(app.trim(), applicationId));
+   }
+
    /** Read the current application grant for a (user, realm) membership. */
    @GET
    @Path("{userId}/{realmRefName}/applications")
@@ -271,6 +330,20 @@ public class UserRealmRoleResource extends BaseResource<UserRealmRole, UserRealm
       }
       List<String> tenants = normalize(
           request == null ? null : request.getAuthorizedTenantIds());
+      String tenantPattern = trimToNull(
+          request == null ? null : request.getAuthorizedTenantRegEx());
+      if (tenantPattern != null && !"*".equals(tenantPattern)) {
+         try {
+            java.util.regex.Pattern.compile(tenantPattern, java.util.regex.Pattern.CASE_INSENSITIVE);
+         } catch (java.util.regex.PatternSyntaxException invalidPattern) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                .entity(RestError.builder()
+                    .status(Response.Status.BAD_REQUEST.getStatusCode())
+                    .statusMessage("authorizedTenantRegEx is invalid: " + invalidPattern.getDescription())
+                    .build())
+                .build();
+         }
+      }
       for (String tenantId : tenants) {
          if (realmMembershipService.tenantInRealm(realmRefName, tenantId).isEmpty()) {
             return Response.status(Response.Status.BAD_REQUEST)
@@ -284,9 +357,10 @@ public class UserRealmRoleResource extends BaseResource<UserRealmRole, UserRealm
       }
       UserRealmRole membership = membershipOp.get();
       membership.setAuthorizedTenantIds(tenants);
+      membership.setAuthorizedTenantRegEx(tenantPattern);
       UserRealmRole saved = repo.save(envConfigUtils.getSystemRealm(), membership);
-      Log.infof("Tenant grant WRITTEN (audit): user=%s realm=%s tenants=%s by=%s",
-          userId, realmRefName, tenants, callerName());
+      Log.infof("Tenant grant WRITTEN (audit): user=%s realm=%s tenants=%s tenantPattern=%s by=%s",
+          userId, realmRefName, tenants, tenantPattern, callerName());
       return Response.ok(saved).build();
    }
 

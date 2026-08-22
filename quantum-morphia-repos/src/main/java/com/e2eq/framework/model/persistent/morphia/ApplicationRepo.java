@@ -42,12 +42,22 @@ public class ApplicationRepo extends MorphiaRepo<Application> {
      */
     public Application ensureRegistered(String refName,
                                         com.e2eq.framework.model.persistent.base.DataDomain dataDomain) {
-        return findByRefNameWithIgnoreRules(refName).orElseGet(() -> {
-            Application application = new Application();
-            application.setRefName(refName.trim());
-            application.setDisplayName(refName.trim());
-            application.setDataDomain(dataDomain);
-            return save(getSecurityContextRealmId(), application);
-        });
+        java.util.Optional<Application> existing = findByRefNameWithIgnoreRules(refName);
+        if (existing.isPresent()) {
+            Application application = existing.get();
+            if (!java.util.Objects.equals(application.getDataDomain(), dataDomain)) {
+                // Applications are global system-plane records. Converge legacy rows that were
+                // stamped with an application/realm tenant domain; otherwise ordinary policy
+                // filtering makes the registry appear empty to valid system-realm principals.
+                application.setDataDomain(dataDomain);
+                return save(getSecurityContextRealmId(), application);
+            }
+            return application;
+        }
+        Application application = new Application();
+        application.setRefName(refName.trim());
+        application.setDisplayName(refName.trim());
+        application.setDataDomain(dataDomain);
+        return save(getSecurityContextRealmId(), application);
     }
 }

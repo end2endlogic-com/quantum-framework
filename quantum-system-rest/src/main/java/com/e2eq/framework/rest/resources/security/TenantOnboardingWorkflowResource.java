@@ -1,5 +1,7 @@
 package com.e2eq.framework.rest.resources.security;
 
+import com.e2eq.framework.annotations.FunctionalAction;
+import com.e2eq.framework.annotations.FunctionalMapping;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
@@ -26,6 +28,7 @@ import io.quarkus.arc.properties.IfBuildProperty;
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 @RolesAllowed({"user", "admin", "system"})
+@FunctionalMapping(area = "SECURITY", domain = "TENANT_ONBOARDING")
 @Tag(name = "onboarding", description = "Operations related to tenant onboarding workflow configuration")
 @IfBuildProperty(name = "quantum.system-rest.enabled", stringValue = "true", enableIfMissing = true) // control-plane admin surface; one-switch opt-out (CONTROL_PLANE_SPLIT_DESIGN.md Phase B, wp3 tier 1)
 public class TenantOnboardingWorkflowResource {
@@ -38,6 +41,7 @@ public class TenantOnboardingWorkflowResource {
 
     @GET
     @Path("current")
+    @FunctionalAction("view")
     @Operation(summary = "Get the current tenant onboarding workflow")
     @SecurityRequirement(name = "bearerAuth")
     public Response getCurrent() {
@@ -50,6 +54,7 @@ public class TenantOnboardingWorkflowResource {
 
     @POST
     @Path("current")
+    @FunctionalAction("update")
     @RolesAllowed({"admin", "system"})
     @Operation(summary = "Save the current tenant onboarding workflow")
     @SecurityRequirement(name = "bearerAuth")

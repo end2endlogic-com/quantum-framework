@@ -31,6 +31,8 @@ public class AccessibleRealmInfo {
     private Date setupLastUpdated;
     /** Owning application refName (every realm belongs to exactly one application). */
     private String application;
+    private String tenancyMode;
+    private String deploymentType;
 
     public AccessibleRealmInfo(String refName, String displayName) {
         this.refName = refName;
@@ -77,6 +79,12 @@ public class AccessibleRealmInfo {
         );
         if (realm.getApplicationRef() != null) {
             info.setApplication(realm.getApplicationRef().getEntityRefName());
+        }
+        if (realm.getTenancyMode() != null) {
+            info.setTenancyMode(realm.getTenancyMode().name());
+        }
+        if (realm.getDeploymentType() != null) {
+            info.setDeploymentType(realm.getDeploymentType().name());
         }
         return info;
     }
