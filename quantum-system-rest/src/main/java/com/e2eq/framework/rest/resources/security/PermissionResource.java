@@ -221,17 +221,25 @@ public class PermissionResource {
       // Build provenance using centralized resolver (handles TOKEN, CREDENTIAL, USERGROUP via profile)
       Map<String, java.util.EnumSet<RoleSource>> provenance = identityRoleResolver.resolveRoleSources(req.userId, realm, securityIdentity);
 
-      // Credential and profile/group exploration for display
+      // Credential and profile/group exploration for display. Keep these lookups aligned
+      // with IdentityRoleResolver so the explanatory flags cannot contradict the net roles.
       CredentialUserIdPassword cred=null;
+      String systemRealm = envConfigUtils.getSystemRealm();
       try {
-         var ocreds = credentialRepo.findByUserId(req.userId, realm, true);
+         var ocreds = credentialRepo.findByUserId(req.userId, systemRealm, true);
+         if (ocreds.isEmpty() && !Objects.equals(systemRealm, realm)) {
+            ocreds = credentialRepo.findByUserId(req.userId, realm, true);
+         }
          if (ocreds.isPresent()) {
             resp.credentialFound = true;
             cred = ocreds.get();
             if (cred.getRoles() != null) resp.credentialRoles = Arrays.asList(cred.getRoles());
 
             try {
-               Optional<UserProfile> userProfileOpt = userProfileRepo.getBySubject(cred.getSubject());
+               Optional<UserProfile> userProfileOpt = userProfileRepo.getBySubject(systemRealm, cred.getSubject());
+               if (userProfileOpt.isEmpty() && !Objects.equals(systemRealm, realm)) {
+                  userProfileOpt = userProfileRepo.getBySubject(realm, cred.getSubject());
+               }
                if (userProfileOpt.isPresent()) {
                   resp.userProfileFound = true;
                   var groups = userGroupRepo.findByUserProfileRef(userProfileOpt.get().createEntityReference());
