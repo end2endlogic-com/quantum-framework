@@ -1381,6 +1381,16 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
      * assignment and the realm's tenant membership before changing context.
      */
     PrincipalContext applyTenantSelection(PrincipalContext context, String requestedTenantId) {
+        // Public endpoints (OIDC discovery, JWKS, provider discovery, and login)
+        // are processed through this filter before a principal exists.  Do not
+        // make their availability depend on the remote control plane when no
+        // tenant was explicitly selected.  Authenticated requests still load
+        // the realm so multi-tenant realms can require X-Tenant-Id.
+        if ((requestedTenantId == null || requestedTenantId.isBlank())
+                && java.util.Arrays.asList(context.getRoles()).contains("ANONYMOUS")) {
+            return context;
+        }
+
         String effectiveRealm = context.getDefaultRealm();
         Optional<Realm> realmOpt = systemDirectory.findRealmByRefName(effectiveRealm);
         if (realmOpt.isEmpty()) {
