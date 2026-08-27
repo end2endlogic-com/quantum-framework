@@ -3,6 +3,7 @@ package com.e2eq.framework.service.seed;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -83,5 +84,38 @@ class ScopeMatcherRealmFilterTest {
     void validate_acceptsNeitherSet() {
         SeedScope scope = new SeedScope();
         assertDoesNotThrow(() -> scope.validate("test-manifest"));
+    }
+
+    @Test
+    void unlabeledPackIsProductionLifecycle() {
+        assertEquals(SeedScope.LIFECYCLE_PRODUCTION, ScopeMatcher.normalizeLifecycle(null));
+        assertEquals(SeedScope.LIFECYCLE_PRODUCTION, ScopeMatcher.normalizeLifecycle(""));
+        assertEquals(Set.of(SeedScope.LIFECYCLE_PRODUCTION), ScopeMatcher.parseLifecycles(null));
+    }
+
+    @Test
+    void productionRuntimeRejectsDemoPacks() {
+        SeedScope demo = new SeedScope();
+        demo.setLifecycle(SeedScope.LIFECYCLE_DEMO);
+        SeedScope production = new SeedScope();
+        production.setLifecycle(SeedScope.LIFECYCLE_PRODUCTION);
+
+        Set<String> productionOnly = ScopeMatcher.parseLifecycles("production");
+        assertTrue(productionOnly.contains(ScopeMatcher.normalizeLifecycle(production.getLifecycle())));
+        assertFalse(productionOnly.contains(ScopeMatcher.normalizeLifecycle(demo.getLifecycle())));
+    }
+
+    @Test
+    void demoRuntimeCanAdmitBothLifecycles() {
+        Set<String> both = ScopeMatcher.parseLifecycles("production,demo");
+        assertTrue(both.contains(SeedScope.LIFECYCLE_PRODUCTION));
+        assertTrue(both.contains(SeedScope.LIFECYCLE_DEMO));
+    }
+
+    @Test
+    void validate_rejectsUnknownLifecycle() {
+        SeedScope scope = new SeedScope();
+        scope.setLifecycle("staging");
+        assertThrows(IllegalStateException.class, () -> scope.validate("test-manifest"));
     }
 }

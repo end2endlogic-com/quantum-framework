@@ -3,6 +3,8 @@ package com.e2eq.framework.model.persistent.morphia;
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.base.EntityReference;
+import com.e2eq.framework.model.persistent.base.ProjectionField;
+import com.e2eq.framework.model.persistent.base.SortField;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.security.UserProfile;
@@ -25,11 +27,24 @@ import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.NonNull;
+import org.bson.types.ObjectId;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
 
+/**
+ * User profiles are identity-plane records. When
+ * {@code quantum.security.identity-store-realm} is set (quantum-auth-service),
+ * list/get/save must use that database. The caller's operating tenant realm from
+ * DomainContext / JWT {@code defaultRealm} / {@code X-Realm} remains request
+ * context for DataDomain filters; it is never the identity datastore.
+ */
 @ApplicationScoped
 public class UserProfileRepo extends MorphiaRepo<UserProfile> {
+
+   @ConfigProperty(name = "quantum.security.identity-store-realm")
+   Optional<String> identityStoreRealm = Optional.empty();
 
    @Inject
    CredentialRepo credRepo;
@@ -43,12 +58,58 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
    @Inject
    CredentialRepo credentialRepo;
 
+   @Override
+   public String getSecurityContextRealmId() {
+      return identityStoreRealm
+         .filter(value -> !value.isBlank())
+         .map(String::trim)
+         .orElseGet(super::getSecurityContextRealmId);
+   }
+
+   String resolveIdentityStoreRealm(String requestedRealm) {
+      return identityStoreRealm
+         .filter(value -> !value.isBlank())
+         .map(String::trim)
+         .orElse(requestedRealm);
+   }
+
+   @Override
+   public List<UserProfile> getListByQuery(String realmId, int skip, int limit, @Nullable String query,
+                                           List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields) {
+      return super.getListByQuery(resolveIdentityStoreRealm(realmId), skip, limit, query, sortFields, projectionFields);
+   }
+
+   @Override
+   public long getCount(String realmId, @Nullable String query) {
+      return super.getCount(resolveIdentityStoreRealm(realmId), query);
+   }
+
+   @Override
+   public Optional<UserProfile> findById(ObjectId id, String realmId) {
+      return super.findById(id, resolveIdentityStoreRealm(realmId));
+   }
+
+   @Override
+   public Optional<UserProfile> findById(ObjectId id, String realmId, boolean ignoreRules) {
+      return super.findById(id, resolveIdentityStoreRealm(realmId), ignoreRules);
+   }
+
+   @Override
+   public Optional<UserProfile> findByRefName(String refName, String realmId) {
+      return super.findByRefName(refName, resolveIdentityStoreRealm(realmId));
+   }
+
+   @Override
+   public UserProfile save(String realmId, UserProfile value) {
+      return super.save(resolveIdentityStoreRealm(realmId), value);
+   }
+
    public Optional<UserProfile> updateStatus( @NotNull String userId, @NotNull UserProfile.Status status) {
       return updateStatus(getSecurityContextRealmId(), userId, status);
    }
 
    public Optional<UserProfile> updateStatus(String realm, @NotNull String userId, @NotNull UserProfile.Status status) {
-     UserProfile p = this.morphiaDataStoreWrapper.getDataStore(realm)
+     UserProfile p = this.morphiaDataStoreWrapper.getDataStore(resolveIdentityStoreRealm(realm))
              .find(UserProfile.class)
              .filter(Filters.eq("userId", userId)).modify(new ModifyOptions().returnDocument(ReturnDocument.AFTER), UpdateOperators.set("status", status.value()));
 
@@ -60,7 +121,7 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
    }
 
    public Optional<UserProfile> getBySubject(String realm, @NotNull String subject) {
-      return getBySubject(  morphiaDataStoreWrapper.getDataStore(realm), subject);
+      return getBySubject(  morphiaDataStoreWrapper.getDataStore(resolveIdentityStoreRealm(realm)), subject);
    }
 
    public Optional<UserProfile> getBySubject(Datastore datastore,@NotNull String subject) {
@@ -105,7 +166,7 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
    }
 
    public Optional<UserProfile> getByUserId(@NotNull String realm, @NotNull String userId) {
-      return getByUserId(  morphiaDataStoreWrapper.getDataStore(realm), userId );
+      return getByUserId(  morphiaDataStoreWrapper.getDataStore(resolveIdentityStoreRealm(realm)), userId );
    }
 
    /**
@@ -121,7 +182,7 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
       Log.debugf("UserProfileRepo.getByUserIdWithIgnoreRules: querying realm=%s for userId=%s (bypassing security rules)",
           realm, userId);
 
-      Datastore ds = morphiaDataStoreWrapper.getDataStore(realm);
+      Datastore ds = morphiaDataStoreWrapper.getDataStore(resolveIdentityStoreRealm(realm));
       Query<UserProfile> q = ds.find(getPersistentClass()).filter(
          Filters.or(
             Filters.eq("userId", userId),
@@ -137,7 +198,7 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
          return save(realm, profile);
       }
 
-      Datastore datastore = morphiaDataStoreWrapper.getDataStore(realm);
+      Datastore datastore = morphiaDataStoreWrapper.getDataStore(resolveIdentityStoreRealm(realm));
       List<UpdateOperator> ops = new ArrayList<>();
       ops.add(UpdateOperators.set("refName", profile.getRefName()));
       ops.add(UpdateOperators.set("userId", profile.getUserId()));
@@ -318,7 +379,7 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
          }
       }
 
-      ret= super.delete(realmId, obj);
+      ret= super.delete(resolveIdentityStoreRealm(realmId), obj);
 
       return ret;
    }
