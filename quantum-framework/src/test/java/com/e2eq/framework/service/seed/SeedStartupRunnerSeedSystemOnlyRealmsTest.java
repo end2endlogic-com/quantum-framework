@@ -41,11 +41,20 @@ class SeedStartupRunnerSeedSystemOnlyRealmsTest {
     }
 
     private static SeedStartupRunner newRunner(boolean seedSystemOnly, Optional<String> applyRealmsCsv) {
+        return newRunner(seedSystemOnly, applyRealmsCsv, true, new NoFlaggedRealmsRepo());
+    }
+
+    private static SeedStartupRunner newRunner(
+            boolean seedSystemOnly,
+            Optional<String> applyRealmsCsv,
+            boolean honorRealmFlags,
+            RealmRepo realmRepo) {
         SeedStartupRunner runner = new SeedStartupRunner();
         runner.envConfigUtils = envConfig();
-        runner.realmRepo = new NoFlaggedRealmsRepo();
+        runner.realmRepo = realmRepo;
         runner.startupRealmsCsv = applyRealmsCsv;
         runner.seedSystemOnly = seedSystemOnly;
+        runner.honorRealmFlags = honorRealmFlags;
         return runner;
     }
 
@@ -82,11 +91,57 @@ class SeedStartupRunnerSeedSystemOnlyRealmsTest {
         assertEquals(1, realms.size(), "only the explicitly opted-in realm is resolved (no fallback when CSV set)");
     }
 
+    @Test
+    void productAppsStillUnionFlaggedCatalogRealms() throws Exception {
+        List<String> realms = resolve(newRunner(
+                false,
+                Optional.of("system-com"),
+                true,
+                new FlaggedRealmsRepo("demo-simple", "helixor")));
+
+        assertTrue(realms.contains("system-com"));
+        assertTrue(realms.contains("demo-simple"));
+        assertTrue(realms.contains("helixor"));
+        assertEquals(3, realms.size());
+    }
+
+    @Test
+    void controlPlaneDoesNotSeedFlaggedTenantDatabases() throws Exception {
+        List<String> realms = resolve(newRunner(
+                true,
+                Optional.of("quantum-auth"),
+                false,
+                new FlaggedRealmsRepo("demo-simple", "helixor", "northstar-field-service-com")));
+
+        assertEquals(List.of("quantum-auth"), realms);
+    }
+
     /** Stub RealmRepo returning no applySeedsOnStartup-flagged realms; keeps the test off Mongo. */
     private static final class NoFlaggedRealmsRepo extends RealmRepo {
         @Override
         public List<Realm> findRealmsWithSeedsEnabled() {
             return Collections.emptyList();
+        }
+    }
+
+    private static final class FlaggedRealmsRepo extends RealmRepo {
+        private final List<Realm> flagged;
+
+        FlaggedRealmsRepo(String... databaseNames) {
+            List<Realm> realms = new java.util.ArrayList<>();
+            for (String databaseName : databaseNames) {
+                Realm realm = new Realm();
+                realm.setRefName(databaseName);
+                realm.setDatabaseName(databaseName);
+                realm.setApplySeedsOnStartup(true);
+                realms.add(realm);
+            }
+            this.flagged = List.copyOf(realms);
+        }
+
+        @Override
+        public List<Realm> findRealmsWithSeedsEnabled() {
+            return flagged;
         }
     }
 }

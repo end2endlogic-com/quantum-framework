@@ -87,11 +87,11 @@ public class SeedStartupRunner {
 
     /**
      * Comma-separated list of realms to apply seeds to on startup.
-     * This list is unioned with realms that have applySeedsOnStartup=true
-     * in the Realm collection (stored in system-com).
+     * When {@code quantum.seed-pack.apply.honor-realm-flags=true} this list is
+     * also unioned with catalog realms that have applySeedsOnStartup=true.
      *
-     * If not specified and no realms have the flag set, defaults to system/default/test realms.
-     * Set to empty string or "none" to disable CSV-based realms (flag-based realms will still apply).
+     * If not specified and no flagged realms apply, defaults to system/default/test realms.
+     * Set to empty string or "none" to disable CSV-based realms.
      * Example: "system-com,mycompany-com,test-com"
      */
     @ConfigProperty(name = "quantum.seed-pack.apply.realms")
@@ -101,13 +101,24 @@ public class SeedStartupRunner {
      * When true, the default (fallback) startup seed realm set is restricted to the cross-tenant
      * SYSTEM realm only: the tenant-shaped TEST realm and the DEFAULT realm are not scanned (the
      * default realm is kept only when it equals the system realm). Explicit
-     * {@code quantum.seed-pack.apply.realms} entries and {@code applySeedsOnStartup=true} realm
-     * flags are still honored, so a caller can opt a specific realm back in. Reuses the existing
-     * {@code quantum.realm.seed-system-only} flag so a "system-only" database neither creates nor
-     * even scans the test realm. Defaults to false so existing behavior is unchanged (non-breaking).
+     * {@code quantum.seed-pack.apply.realms} entries still opt a realm back in. Catalog
+     * {@code applySeedsOnStartup} flags are controlled separately by
+     * {@code quantum.seed-pack.apply.honor-realm-flags}. Defaults to false so existing
+     * product-app behavior is unchanged.
      */
     @ConfigProperty(name = "quantum.realm.seed-system-only", defaultValue = "false")
     boolean seedSystemOnly;
+
+    /**
+     * When true (default, product-app behavior), realms whose catalog records have
+     * {@code applySeedsOnStartup=true} are unioned into the startup seed list.
+     * Control-plane issuers such as quantum-auth-service hold the environment realm
+     * catalog and must set this false so they seed only
+     * {@code quantum.seed-pack.apply.realms} — not every tenant/demo database those
+     * catalog records point at.
+     */
+    @ConfigProperty(name = "quantum.seed-pack.apply.honor-realm-flags", defaultValue = "true")
+    boolean honorRealmFlags;
 
     public void onStart() {
         if (!enabled || !applyOnStartup) {
@@ -394,10 +405,11 @@ public class SeedStartupRunner {
      * Resolves which realms should receive seeds on startup.
      * Unions realms from:
      * 1. Configuration property quantum.seed-pack.apply.realms (CSV list)
-     * 2. Realms with applySeedsOnStartup=true flag in the Realm collection
+     * 2. Realms with applySeedsOnStartup=true in the catalog, when
+     *    {@code quantum.seed-pack.apply.honor-realm-flags=true}
      *
-     * If quantum.seed-pack.apply.realms is set to "none" or empty, only realms
-     * with the applySeedsOnStartup flag will receive seeds.
+     * If quantum.seed-pack.apply.realms is set to "none" or empty, only flagged
+     * catalog realms receive seeds (and only when honor-realm-flags is true).
      *
      * If neither is configured, falls back to system/default/test realms.
      *
@@ -422,18 +434,25 @@ public class SeedStartupRunner {
             }
         }
 
-        // Second, query realms with applySeedsOnStartup=true from system-com
-        try {
-            List<Realm> flaggedRealms = realmRepo.findRealmsWithSeedsEnabled();
-            for (Realm r : flaggedRealms) {
-                String realmName = r.getDatabaseName();
-                if (realmName != null && !realmName.isEmpty() && !realms.contains(realmName)) {
-                    realms.add(realmName);
-                    Log.debugf("SeedStartupRunner: adding realm %s (applySeedsOnStartup=true)", realmName);
+        // Second, optionally query catalog realms with applySeedsOnStartup=true.
+        // Identity/control-plane hosts keep this off: they store tenant realm
+        // records but do not own those tenant databases.
+        if (honorRealmFlags) {
+            try {
+                List<Realm> flaggedRealms = realmRepo.findRealmsWithSeedsEnabled();
+                for (Realm r : flaggedRealms) {
+                    String realmName = r.getDatabaseName();
+                    if (realmName != null && !realmName.isEmpty() && !realms.contains(realmName)) {
+                        realms.add(realmName);
+                        Log.debugf("SeedStartupRunner: adding realm %s (applySeedsOnStartup=true)", realmName);
+                    }
                 }
+            } catch (Exception e) {
+                Log.warnf("SeedStartupRunner: failed to query realms with applySeedsOnStartup flag: %s", e.getMessage());
             }
-        } catch (Exception e) {
-            Log.warnf("SeedStartupRunner: failed to query realms with applySeedsOnStartup flag: %s", e.getMessage());
+        } else {
+            Log.infof("SeedStartupRunner: ignoring applySeedsOnStartup catalog flags; seeding only %s",
+                    csvConfigured ? realms : "the system-only fallback");
         }
 
         // If we found realms from config or flags, use them
@@ -448,8 +467,8 @@ public class SeedStartupRunner {
             if (seedSystemOnly) {
                 // System-only mode: do NOT scan the default or test realms. The system realm above
                 // is the only fallback; the default realm is implicitly included only when it
-                // equals the system realm (already added). Explicit apply.realms / realm flags above
-                // can still opt a specific realm back in.
+                // equals the system realm (already added). Explicit apply.realms still opts a
+                // realm back in. Catalog applySeedsOnStartup flags do not.
                 Log.debug("SeedStartupRunner: quantum.realm.seed-system-only=true, restricting default startup realms to the system realm");
             } else {
                 String def = envConfigUtils.getDefaultRealm();

@@ -6,10 +6,21 @@ import lombok.Data;
 import java.util.List;
 
 /**
- * Optional scope filter for a seed pack manifest. When present and scopes are enabled,
- * determines whether a seed pack is applicable to the current SeedContext.
+ * Optional scope filter for a seed pack manifest.
  *
- * Realm filtering is an additional constraint that applies regardless of scope type:
+ * {@code type} is tenant/realm breadth (GLOBAL vs PER_TENANT vs ARCHETYPE). It is
+ * not an environment classifier: GLOBAL does not mean "safe for production".
+ *
+ * {@code lifecycle} is the environment classifier:
+ * <ul>
+ *   <li>{@code production} — issuer/product baseline; applied when
+ *       {@code quantum.seed-pack.lifecycle} includes production (the default)</li>
+ *   <li>{@code demo} — lab/demo data; applied only when the runtime lifecycle
+ *       explicitly includes {@code demo}</li>
+ * </ul>
+ * Unlabeled packs are treated as production for compatibility.
+ *
+ * Realm filtering is an additional constraint:
  * <ul>
  *   <li>{@code includeRealms} — seed pack applies ONLY to listed realms</li>
  *   <li>{@code excludeRealms} — seed pack applies to ALL realms EXCEPT those listed</li>
@@ -21,7 +32,11 @@ import java.util.List;
 public class SeedScope {
     public enum ScopeType { GLOBAL, PER_TENANT, TENANT_LIST, ARCHETYPE, CUSTOM }
 
+    public static final String LIFECYCLE_PRODUCTION = "production";
+    public static final String LIFECYCLE_DEMO = "demo";
+
     private ScopeType type;            // one of GLOBAL, PER_TENANT, TENANT_LIST, ARCHETYPE, CUSTOM
+    private String lifecycle;          // production | demo; blank = production
     private List<String> tenants;      // when type = TENANT_LIST
     private List<String> archetypes;   // when type = ARCHETYPE
     private List<String> includeRealms; // apply ONLY to these realms (mutually exclusive with excludeRealms)
@@ -38,6 +53,14 @@ public class SeedScope {
         if (hasInclude && hasExclude) {
             throw new IllegalStateException(
                     "includeRealms and excludeRealms are mutually exclusive in manifest " + source);
+        }
+        if (lifecycle != null && !lifecycle.isBlank()) {
+            String normalized = lifecycle.trim().toLowerCase(java.util.Locale.ROOT);
+            if (!LIFECYCLE_PRODUCTION.equals(normalized) && !LIFECYCLE_DEMO.equals(normalized)) {
+                throw new IllegalStateException(
+                        "scope.lifecycle must be 'production' or 'demo' in manifest " + source
+                                + ", found: " + lifecycle);
+            }
         }
     }
 }
