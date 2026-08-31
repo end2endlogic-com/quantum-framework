@@ -54,6 +54,26 @@ class PolicyRepoApplicationScopeTest {
     }
 
     @Test
+    void admissionRejectsApplicationWithNoFunctionalDomainCatalog() {
+        PolicyRepo admissionRepo = admissionRepo("read");
+        admissionRepo.functionalDomainRepo = new FunctionalDomainRepo() {
+            @Override
+            public List<FunctionalDomain> findForApplicationWithIgnoreRules(String applicationId) {
+                return List.of();
+            }
+        };
+        Policy policy = policy("scheduler", "acme-com");
+        policy.setRules(List.of(rule("read")));
+
+        IllegalArgumentException thrown = assertThrows(
+                IllegalArgumentException.class,
+                () -> admissionRepo.setDefaultValues(policy));
+        assertTrue(thrown.getMessage().contains("scheduler"));
+        assertTrue(thrown.getMessage().contains("functional-domain vocabulary"));
+        assertTrue(thrown.getMessage().contains("functionalDomain catalog"));
+    }
+
+    @Test
     void admissionAcceptsApplicationScopedCatalogActions() {
         PolicyRepo admissionRepo = admissionRepo("read");
         Policy valid = policy("scheduler", "acme-com");

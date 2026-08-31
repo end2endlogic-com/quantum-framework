@@ -42,6 +42,8 @@ paths:
     put:
       operationId: registerRealm
       summary: Create or update a realm catalog entry (owner-plane operation)
+      parameters:
+        - { name: refName, in: path, required: true, schema: { type: string } }
       requestBody:
         required: true
         content:

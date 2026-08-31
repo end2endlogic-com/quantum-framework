@@ -1,5 +1,6 @@
 package com.e2eq.framework.rest.filters;
 
+import com.e2eq.framework.annotations.FunctionalMapping;
 import com.e2eq.framework.api.system.SystemDirectory;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.base.EntityReference;
@@ -13,8 +14,11 @@ import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.system.membership.RealmMembershipService;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.ForbiddenException;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.container.ResourceInfo;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -71,6 +75,53 @@ class SecurityFilterTenantSelectionTest {
 
         assertThrows(BadRequestException.class,
             () -> filter.applyTenantSelection(context("pooled", "tenant-a"), null));
+    }
+
+    @Test
+    void controlPlaneDirectoryDoesNotRequireTenantHeader() {
+        Realm realm = realm("helixor-code-D1", RealmTenancyMode.MULTI_TENANT, "tenant-a");
+        SecurityFilter filter = filter(realm, assignment("helixor-code-D1", "tenant-a"),
+            membership("helixor-code-D1", "tenant-a", "org-a", "account-a"));
+        filter.resourceInfo = resourceInfo(ControlPlaneDirectoryStub.class, null);
+        PrincipalContext context = context("helixor-code-D1", "tenant-a");
+
+        assertSame(context, filter.applyTenantSelection(context, null));
+    }
+
+    @Test
+    void serviceTokenMintDoesNotRequireTenantHeader() throws Exception {
+        Realm realm = realm("helixor-code-D1", RealmTenancyMode.MULTI_TENANT, "tenant-a");
+        SecurityFilter filter = filter(realm, assignment("helixor-code-D1", "tenant-a"),
+            membership("helixor-code-D1", "tenant-a", "org-a", "account-a"));
+        filter.resourceInfo = resourceInfo(
+            ServiceTokenStub.class, ServiceTokenStub.class.getDeclaredMethod("generate"));
+        PrincipalContext context = context("helixor-code-D1", "tenant-a");
+
+        assertSame(context, filter.applyTenantSelection(context, null));
+    }
+
+    @Test
+    void identityCurrentDoesNotRequireTenantHeader() throws Exception {
+        Realm realm = realm("helixor-code-D1", RealmTenancyMode.MULTI_TENANT, "tenant-a");
+        SecurityFilter filter = filter(realm, assignment("helixor-code-D1", "tenant-a"),
+            membership("helixor-code-D1", "tenant-a", "org-a", "account-a"));
+        filter.resourceInfo = resourceInfo(
+            IdentityCurrentStub.class, IdentityCurrentStub.class.getDeclaredMethod("validateToken"));
+        PrincipalContext context = context("helixor-code-D1", "tenant-a");
+
+        assertSame(context, filter.applyTenantSelection(context, null));
+    }
+
+    @Test
+    void controlPlaneDirectoryPathDoesNotRequireTenantHeader() throws Exception {
+        Realm realm = realm("helixor-code-D1", RealmTenancyMode.MULTI_TENANT, "tenant-a");
+        SecurityFilter filter = filter(realm, assignment("helixor-code-D1", "tenant-a"),
+            membership("helixor-code-D1", "tenant-a", "org-a", "account-a"));
+        filter.resourceInfo = resourceInfo(
+            AuthControlPlaneStub.class, AuthControlPlaneStub.class.getDeclaredMethod("findRealm"));
+        PrincipalContext context = context("helixor-code-D1", "tenant-a");
+
+        assertSame(context, filter.applyTenantSelection(context, null));
     }
 
     @Test
@@ -217,6 +268,46 @@ class SecurityFilterTenantSelectionTest {
 
         assertThrows(ForbiddenException.class,
                 () -> filter.applyRealmOverride(context, "other-app-realm"));
+    }
+
+    @FunctionalMapping(area = "system", domain = "control_plane_directory")
+    private static final class ControlPlaneDirectoryStub {
+    }
+
+    @Path("/security")
+    private static final class ServiceTokenStub {
+        @Path("/service-token")
+        public void generate() {
+        }
+    }
+
+    @Path("/control")
+    private static final class AuthControlPlaneStub {
+        @Path("/realms/{refName}")
+        public void findRealm() {
+        }
+    }
+
+    @Path("/v1/auth/identity")
+    @FunctionalMapping(area = "security", domain = "identity")
+    private static final class IdentityCurrentStub {
+        @Path("/current")
+        public void validateToken() {
+        }
+    }
+
+    private static ResourceInfo resourceInfo(Class<?> resourceClass, Method resourceMethod) {
+        return new ResourceInfo() {
+            @Override
+            public Method getResourceMethod() {
+                return resourceMethod;
+            }
+
+            @Override
+            public Class<?> getResourceClass() {
+                return resourceClass;
+            }
+        };
     }
 
     private static SecurityFilter filter(
