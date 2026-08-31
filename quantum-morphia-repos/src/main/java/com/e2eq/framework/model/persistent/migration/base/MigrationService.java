@@ -203,14 +203,11 @@ public class MigrationService {
                "quantum.migration.application-id is required for startup migrations when "
                   + "quantum.security.policy-scope.require-application=true");
          }
-         SecurityCallScope.runWithContexts(
+         runStartupMigrationRulesOff(
             securityUtils.getSystemPrincipalContext(),
             securityUtils.getSystemSecurityResourceContext(),
-            () -> {
-               runAllUnRunMigrations(realm, emitter);
-               applyAllIndexes(realm);
-            }
-         );
+            realm,
+            emitter);
          return;
       }
 
@@ -231,14 +228,53 @@ public class MigrationService {
          .withFunctionalDomain("DATABASE")
          .withAction("APPLY")
          .build();
-      SecurityCallScope.runWithContexts(
-         migrationPrincipal,
-         migrationResource,
-         () -> {
-            runAllUnRunMigrations(realm, emitter);
-            applyAllIndexes(realm);
-         }
-      );
+      runStartupMigrationRulesOff(migrationPrincipal, migrationResource, realm, emitter);
+   }
+
+   /**
+    * Run startup migration for one realm with rule evaluation switched off.
+    *
+    * <p>Startup migration cannot evaluate policy, and the reason is structural rather than
+    * incidental. Applying a changeset saves bookkeeping records through {@code MorphiaRepo},
+    * which resolves field-level policy, which asks {@code RuleContext}. Where the deployment
+    * delegates authorization to the central auth service, that provider requires a
+    * <em>request-scoped</em> bearer token — and a {@code StartupEvent} has no request. The
+    * result was a {@code SecurityException} thrown several frames deep in a Morphia save,
+    * before the HTTP port ever opened.</p>
+    *
+    * <p>Supplying the system identity alone is not enough: it establishes <em>who</em> the
+    * caller is, while the delegating provider still tries to go and ask about them. The
+    * ignore-rules scope is the declaration this codebase already provides for exactly this
+    * case — {@code RepoSecurityFilterBuilder.buildExcludedFieldPaths} tests it first and
+    * short-circuits, and its own diagnostic points here: <em>"Use an explicit ignore-rules
+    * scope only for authorized internal reads."</em></p>
+    *
+    * <p>The system identity is still established inside the scope. Rules-off is not
+    * anonymity: the migration records remain stamped with the system principal and its data
+    * domain, so what was written at startup, and under whose identity, stays attributable.
+    * The scope is depth-counted and closed in a finally block by try-with-resources, so
+    * nested work cannot leave the thread elevated after migration returns.</p>
+    *
+    * <p>This is deliberately all startup migration rather than only the bookkeeping saves:
+    * a migration that could half-apply — some statements rules-off, others fail-closed
+    * against an unreachable auth service — is a worse outcome than one that is uniformly
+    * privileged and uniformly attributable.</p>
+    */
+   private void runStartupMigrationRulesOff(
+      com.e2eq.framework.model.securityrules.PrincipalContext principal,
+      com.e2eq.framework.model.securityrules.ResourceContext resource,
+      String realm,
+      MultiEmitter<String> emitter) {
+      try (SecurityCallScope.Scope ignoredRules = SecurityCallScope.openIgnoringRules()) {
+         SecurityCallScope.runWithContexts(
+            principal,
+            resource,
+            () -> {
+               runAllUnRunMigrations(realm, emitter);
+               applyAllIndexes(realm);
+            }
+         );
+      }
    }
 
    @SuppressWarnings("unchecked")
