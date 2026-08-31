@@ -34,7 +34,9 @@ public interface DefaultEndpoint {
     @PUT
     @Path("/control/realms/{refName}")
     @Consumes(MediaType.APPLICATION_JSON)
-    @Valid RealmCatalogEntry registerRealm(@Valid @NotNull RealmCatalogEntry body);
+    @Valid RealmCatalogEntry registerRealm(
+        @PathParam("refName") @NotNull String refName,
+        @Valid @NotNull RealmCatalogEntry body);
 
     @GET
     @Path("/control/realms/{refName}/members")

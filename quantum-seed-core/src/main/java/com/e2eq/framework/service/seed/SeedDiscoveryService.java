@@ -149,6 +149,10 @@ public class SeedDiscoveryService {
     public List<SeedPackDescriptor> filterByScope(List<SeedPackDescriptor> descriptors, SeedContext context) {
         List<SeedPackDescriptor> filtered = new ArrayList<>(descriptors);
         filtered.removeIf(d -> !ScopeMatcher.isApplicable(d, context));
+        if (filtered.size() != descriptors.size()) {
+            Log.infof("SeedDiscoveryService: scope/lifecycle filtered %d of %d seed pack(s) for realm %s",
+                    descriptors.size() - filtered.size(), descriptors.size(), context.getRealm());
+        }
         return filtered;
     }
 

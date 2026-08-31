@@ -5,6 +5,7 @@ import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.Realm;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.util.EnvConfigUtils;
 
 import java.util.Optional;
@@ -56,7 +57,15 @@ public class LocalSystemDirectory implements SystemDirectory {
 
     @Override
     public Realm registerRealm(Realm realm) {
-        return realmRepo.save(systemRealmId(), realm);
+        // Catalog writes are framework directory operations. MorphiaRepo.save
+        // otherwise evaluates policy through QuantumAuthServiceAuthProvider, which
+        // handshakes the issuer's /contract-hash. Auth bootstrap publishes realms
+        // during StartupEvent, before that HTTP listener is up, so the handshake
+        // times out, registerRealm returns 500, bootstrap swallows it, and every
+        // later X-Realm mint fails with "Realm is not registered".
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+            return realmRepo.save(systemRealmId(), realm);
+        }
     }
 
     @Override

@@ -68,7 +68,8 @@ public class PolicyRepo extends MorphiaRepo<Policy> {
       }
       if (vocabulary.isEmpty()) {
          throw new IllegalArgumentException(
-            "No functional-domain vocabulary is registered for application: " + applicationId);
+            "No functional-domain vocabulary is registered for application: " + applicationId
+               + ". Seed that application's functionalDomain catalog before its policies.");
       }
       if (policy.getRules() == null) return;
       for (Rule rule : policy.getRules()) {

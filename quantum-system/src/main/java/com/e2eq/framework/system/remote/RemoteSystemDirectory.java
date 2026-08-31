@@ -107,8 +107,11 @@ public class RemoteSystemDirectory implements SystemDirectory {
     @Override
     public Realm registerRealm(Realm realm) {
         try {
+            if (realm.getRefName() == null || realm.getRefName().isBlank()) {
+                throw new IllegalArgumentException("registerRealm requires realm.refName");
+            }
             Realm saved = ControlPlaneRealmMapper.fromEntry(
-                client().registerRealm(ControlPlaneRealmMapper.toEntry(realm)));
+                client().registerRealm(realm.getRefName(), ControlPlaneRealmMapper.toEntry(realm)));
             cache(saved, System.nanoTime());
             return saved;
         } catch (WebApplicationException e) {
@@ -146,8 +149,20 @@ public class RemoteSystemDirectory implements SystemDirectory {
         } catch (NotFoundException e) {
             return Optional.empty();
         } catch (WebApplicationException e) {
+            // Quarkus Rest Client maps HTTP 404 to WebApplicationException, not the
+            // server-side NotFoundException the in-process stub throws. A missing
+            // catalog row is Optional.empty(). Client errors (400/403) must stay
+            // 4xx — wrapping them as IllegalStateException becomes HTTP 500 and
+            // Helixor Code retries that as a cold start for 90s.
+            int status = e.getResponse() == null ? 0 : e.getResponse().getStatus();
+            if (status == 404) {
+                return Optional.empty();
+            }
+            if (status >= 400 && status < 500) {
+                throw e;
+            }
             throw new IllegalStateException("Control plane returned HTTP "
-                + e.getResponse().getStatus() + " for " + what, e);
+                + status + " for " + what, e);
         } catch (ProcessingException e) {
             throw unreachable(what, e);
         }

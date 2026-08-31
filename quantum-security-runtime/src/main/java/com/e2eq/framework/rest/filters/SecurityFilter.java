@@ -1,6 +1,7 @@
 package com.e2eq.framework.rest.filters;
 
 
+import com.e2eq.framework.annotations.FunctionalMapping;
 import com.e2eq.framework.model.auth.ApplicationAuthorizationResolver;
 import com.e2eq.framework.model.auth.AuthProvider;
 import com.e2eq.framework.model.auth.AuthProviderFactory;
@@ -31,6 +32,7 @@ import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.annotation.Priority;
 import jakarta.annotation.security.PermitAll;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.Path;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.Priorities;
 import jakarta.ws.rs.container.ContainerRequestContext;
@@ -1390,6 +1392,15 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 && java.util.Arrays.asList(context.getRoles()).contains("ANONYMOUS")) {
             return context;
         }
+        // Catalog reads and service-token mint are platform operations. The
+        // service identity's home realm on develop is the shared Helixor Code
+        // realm (MULTI_TENANT). Requiring X-Tenant-Id here makes catalog lookup
+        // and mint fail, which auth then surfaces as HTTP 500 and the Code API
+        // retries for 90s as a "cold start".
+        if ((requestedTenantId == null || requestedTenantId.isBlank())
+                && isPlatformTenantExemptRequest()) {
+            return context;
+        }
 
         String effectiveRealm = context.getDefaultRealm();
         Optional<Realm> realmOpt = systemDirectory.findRealmByRefName(effectiveRealm);
@@ -1463,6 +1474,58 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             .withRealmOverrideActive(context.isRealmOverrideActive())
             .withOriginalDataDomain(context.getOriginalDataDomain())
             .build();
+    }
+
+    boolean isPlatformTenantExemptRequest() {
+        if (resourceInfo == null || resourceInfo.getResourceClass() == null) {
+            return false;
+        }
+        Class<?> resourceClass = resourceInfo.getResourceClass();
+        if (hasControlPlaneDirectoryMapping(resourceClass) || hasIdentityDirectoryMapping(resourceClass)) {
+            return true;
+        }
+        String combined = combinedResourcePath(resourceClass, resourceInfo.getResourceMethod());
+        String normalized = combined.toLowerCase(Locale.ROOT).replace("//", "/");
+        return normalized.contains("service-token")
+                || normalized.contains("/control/realms")
+                || normalized.contains("/v1/auth/identity");
+    }
+
+    static boolean hasControlPlaneDirectoryMapping(Class<?> type) {
+        return hasFunctionalMapping(type, "system", "control_plane_directory");
+    }
+
+    static boolean hasIdentityDirectoryMapping(Class<?> type) {
+        return hasFunctionalMapping(type, "security", "identity");
+    }
+
+    private static boolean hasFunctionalMapping(Class<?> type, String area, String domain) {
+        Class<?> current = type;
+        while (current != null && current != Object.class) {
+            if (matchesFunctionalMapping(current.getAnnotation(FunctionalMapping.class), area, domain)) {
+                return true;
+            }
+            for (Class<?> iface : current.getInterfaces()) {
+                if (matchesFunctionalMapping(iface.getAnnotation(FunctionalMapping.class), area, domain)) {
+                    return true;
+                }
+            }
+            current = current.getSuperclass();
+        }
+        return false;
+    }
+
+    private static boolean matchesFunctionalMapping(FunctionalMapping mapping, String area, String domain) {
+        return mapping != null
+                && area.equalsIgnoreCase(mapping.area())
+                && domain.equalsIgnoreCase(mapping.domain());
+    }
+
+    private static String combinedResourcePath(Class<?> resourceClass, java.lang.reflect.Method resourceMethod) {
+        Path classPath = resourceClass.getAnnotation(Path.class);
+        Path methodPath = resourceMethod == null ? null : resourceMethod.getAnnotation(Path.class);
+        return (classPath == null ? "" : classPath.value())
+                + (methodPath == null ? "" : methodPath.value());
     }
 
     /**

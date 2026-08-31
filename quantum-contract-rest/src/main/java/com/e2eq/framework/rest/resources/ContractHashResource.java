@@ -1,5 +1,6 @@
 package com.e2eq.framework.rest.resources;
 
+import com.e2eq.framework.service.contract.CanonicalOperationHash;
 import com.e2eq.framework.service.contract.CanonicalSpecHash;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -23,10 +24,9 @@ import java.util.Optional;
 /**
  * Serves this application's contract identity for generated-SDK drift checks.
  *
- * <p>Generated clients embed the canonical hash of the OpenAPI document they
- * were generated from ({@code GeneratedContract.SPEC_SHA256}); at handshake
- * they compare it against this endpoint and fail fast on mismatch — the
- * generated code is out of date and must be regenerated.
+ * <p>Generated clients embed {@code SPEC_SHA256} (whole document, diagnostic)
+ * and per-operation wire hashes. Login compatibility uses
+ * {@code operations["POST /security/login"].sha256}, not the document hash.
  *
  * <p>{@code quantum.contract.openapi-location} names the authoritative
  * checked-in contract document (classpath resource, or a filesystem path for
@@ -42,7 +42,7 @@ public class ContractHashResource {
     @ConfigProperty(name = "quantum.contract.openapi-location")
     Optional<String> openapiLocation;
 
-    private volatile Map<String, String> cached;
+    private volatile Map<String, Object> cached;
 
     @GET
     @PermitAll
@@ -55,7 +55,7 @@ public class ContractHashResource {
                     "This service does not declare a generated contract (quantum.contract.openapi-location is unset)"))
                 .build();
         }
-        Map<String, String> body = cached;
+        Map<String, Object> body = cached;
         if (body == null) {
             body = computeContractIdentity(openapiLocation.get().trim());
             cached = body;
@@ -63,7 +63,7 @@ public class ContractHashResource {
         return Response.ok(body).build();
     }
 
-    private Map<String, String> computeContractIdentity(String location) {
+    private Map<String, Object> computeContractIdentity(String location) {
         try {
             JsonNode spec = readSpec(location);
             String hash = CanonicalSpecHash.sha256(spec);
@@ -72,13 +72,16 @@ public class ContractHashResource {
                 throw new IllegalStateException(
                     "Contract document has no info.version (required for the semver compatibility handshake): " + location);
             }
-            Log.infof("Contract identity: location=%s algorithm=%s spec_sha256=%s contract_version=%s",
-                location, CanonicalSpecHash.ALGORITHM, hash, version.textValue());
+            Map<String, Map<String, String>> operations = CanonicalOperationHash.sha256ByOperation(spec);
+            Log.infof("Contract identity: location=%s algorithm=%s spec_sha256=%s contract_version=%s operations=%d",
+                location, CanonicalSpecHash.ALGORITHM, hash, version.textValue(), operations.size());
             return Map.of(
                 "spec_sha256", hash,
                 "algorithm", CanonicalSpecHash.ALGORITHM,
                 "contract_version", version.textValue(),
-                "source", location);
+                "source", location,
+                "operation_algorithm", CanonicalOperationHash.ALGORITHM,
+                "operations", operations);
         } catch (IOException | RuntimeException e) {
             throw new IllegalStateException(
                 "Unable to compute contract hash from configured quantum.contract.openapi-location=" + location, e);
