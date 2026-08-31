@@ -128,6 +128,26 @@ public class AddSystemUserCredential extends ChangeSetBase {
         Log.infof("AddSystemUserCredential: ensuring system user %s exists in realm %s", systemUserId, realmName);
         emitter.emit(String.format("AddSystemUserCredential: realm=%s, systemUserId=%s", realmName, systemUserId));
 
+        // Where identity is delegated, this service does not own users and must not mint
+        // credentials of its own. The delegating provider deliberately does not implement
+        // UserManagement, so asking the factory for one throws and takes startup down with
+        // it -- a service failing to boot because it tried to do something it is correctly
+        // forbidden from doing.
+        //
+        // The system credential is contributed to the issuer instead, as an identity
+        // contribution admitted into quantum-auth-service. See
+        // quantum-auth-service/contracts/identity-contributions/README.md.
+        if (!authProviderFactory.supportsUserManagement()) {
+            String providerName = authProviderFactory.getAuthProvider().getName();
+            Log.infof("AddSystemUserCredential: auth provider '%s' delegates identity and does not manage "
+                + "users; skipping local credential creation for %s in realm %s. The system credential is "
+                + "expected from the issuer's identity contribution.", providerName, systemUserId, realmName);
+            emitter.emit(String.format(
+                "AddSystemUserCredential: skipped -- identity delegated to '%s'; the system credential comes "
+                    + "from the issuer, not from this realm.", providerName));
+            return;
+        }
+
         UserManagement userManagement = authProviderFactory.getUserManager();
         if (userManagement.userIdExists(systemUserId)) {
             Log.infof("System user %s already exists in %s; checking password hash", systemUserId, realmName);
