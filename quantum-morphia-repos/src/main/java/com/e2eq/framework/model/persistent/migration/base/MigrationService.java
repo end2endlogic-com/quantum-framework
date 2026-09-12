@@ -112,7 +112,7 @@ public class MigrationService {
    /**
     * Run startup migrations, optionally excluding the system realm. In remote
     * mode (control-plane split, {@code quantum.mode=remote}) the control plane
-    * owns the system realm's lifecycle, so the caller (FrameworkStartupCoordinator)
+    * owns the system realm's lifecycle, so the caller (FrameworkStartupCoordinator, quantum-seed-core)
     * passes {@code includeSystemRealm=false}; app-realm migrations still run
     * locally. This class stays mode-unaware — the deployment mode is resolved
     * above it.

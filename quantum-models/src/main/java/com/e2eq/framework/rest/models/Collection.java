@@ -31,6 +31,7 @@ public  class Collection<T> {
    protected int rowCount;
    protected Long totalCount = null;
 
+   @Schema(nullable = true, description = "Query filter the page was produced with; null when the list was not filtered")
    protected String filter;
    protected String realm;
 
