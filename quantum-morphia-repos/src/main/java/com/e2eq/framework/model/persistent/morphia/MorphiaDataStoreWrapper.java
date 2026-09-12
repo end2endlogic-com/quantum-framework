@@ -4,7 +4,15 @@ package com.e2eq.framework.model.persistent.morphia;
 import com.e2eq.framework.model.persistent.morphia.interceptors.*;
 
 import com.e2eq.framework.util.EnvConfigUtils;
+import com.coditory.sherlock.connector.AcquireResult;
+import com.coditory.sherlock.DistributedLock;
+import com.coditory.sherlock.Sherlock;
+import com.coditory.sherlock.mongo.MongoSherlock;
 import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoCollection;
+import org.bson.Document;
+
+import java.time.Duration;
 import dev.morphia.Datastore;
 import dev.morphia.MorphiaDatastore;
 import dev.morphia.config.MorphiaConfig;
@@ -93,6 +101,28 @@ public class MorphiaDataStoreWrapper {
       return datastoreMap.computeIfAbsent(realm, r -> createMorphiaDatastore(r));
    }
 
+   /** Shared database used only for short-lived coordination locks; mirrors MigrationService. */
+   @ConfigProperty(name = "quantum.database.coordination-database", defaultValue = "quantum-coordination-shared")
+   String coordinationDatabase;
+
+   /**
+    * How long the index lock is held before it expires.
+    *
+    * <p>An expiry is required, not optional: a process killed mid-build would
+    * otherwise hold the lock forever and no realm could ever create indexes again.
+    * It must comfortably exceed a cold index build for the largest realm.</p>
+    */
+   @ConfigProperty(name = "quantum.database.index-lock-duration-seconds", defaultValue = "300")
+   long indexLockDurationSeconds;
+
+   private DistributedLock indexLock(String realm) {
+      MongoCollection<Document> collection = mongoClient
+              .getDatabase(coordinationDatabase)
+              .getCollection("locks");
+      Sherlock sherlock = MongoSherlock.create(collection);
+      return sherlock.createLock(String.format("index-lock-%s", realm));
+   }
+
    private MorphiaDatastore createMorphiaDatastore(String realm) {
       Log.infof("Creating MorphiaDatastore for realm/database: %s", realm);
 
@@ -131,13 +161,39 @@ public class MorphiaDataStoreWrapper {
          );
       }
 
-      // Apply indexes and document validations
-      if (baseConfig.applyIndexes()) {
-         mdatastore.applyIndexes();
-      }
-
-      if (baseConfig.applyDocumentValidations()) {
-         mdatastore.applyDocumentValidations();
+      // Apply indexes and document validations under a per-realm coordination lock.
+      //
+      // The first process to touch a realm builds its indexes. When two do it at
+      // once -- an application provisioning a new realm while the control plane
+      // opens a datastore for that same realm to project its status -- MongoDB is
+      // handed two identical createIndexes for one collection and the second build
+      // parks in "draining writes received during build" forever. It survives
+      // killOp; only dropIndexes clears it. Every later index build on that
+      // collection then queues behind it, so an install that reported completed
+      // hangs for minutes on its next write. Observed twice, on two different
+      // realms, both on `policy`.
+      //
+      // Serializing on the same coordination database the migration lock uses
+      // makes index creation exclusive per realm. The lock name is deliberately
+      // NOT the migration lock's: migration holds that one while opening
+      // datastores, and these locks are not reentrant.
+      if (baseConfig.applyIndexes() || baseConfig.applyDocumentValidations()) {
+         DistributedLock lock = indexLock(realm);
+         AcquireResult result = lock.runLocked(Duration.ofSeconds(indexLockDurationSeconds), () -> {
+            if (baseConfig.applyIndexes()) {
+               mdatastore.applyIndexes();
+            }
+            if (baseConfig.applyDocumentValidations()) {
+               mdatastore.applyDocumentValidations();
+            }
+         });
+         if (!result.acquired()) {
+            // Another process holds the lock and is building the very same indexes.
+            // Skipping is the point: running anyway is exactly the concurrent build
+            // this exists to prevent, and the holder creates what this realm needs.
+            Log.warnf("Index creation for realm/database %s skipped: another process holds "
+                    + "the index lock and is building the same indexes", realm);
+         }
       }
 
       return mdatastore;

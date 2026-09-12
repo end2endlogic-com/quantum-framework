@@ -109,6 +109,37 @@ aws.cognito.jwks.url=https://cognito-idp.${aws.cognito.region}.amazonaws.com/${a
 
 See xref:../user-guide/multiple-auth-providers.adoc[Multiple Authentication Providers] for details on configuring external identity providers.
 
+===== Application Registration (optional module)
+
+The `quantum-application-registration` module lets an application announce itself to its environment at startup, so first arrival can install, seed and migrate it. It is inert unless enabled, and requires an `ApplicationRegistrar` implementation on the classpath.
+
+[source,properties]
+----
+# Off by default; the framework starts identically without this.
+quantum.application-registration.enabled=false
+
+# Selects the registrar: matches its getName() OR its fully-qualified class name.
+quantum.application-registration.provider=system-manager
+
+# Required when enabled. Never inferred -- a service that guesses its
+# environment can register into the wrong one.
+quantum.application-registration.application-id=my-app
+quantum.application-registration.environment=production
+
+# Realms this application reads and writes, comma separated.
+quantum.application-registration.realms=my-app-P1
+
+# Build identity; participates in the already-registered fingerprint.
+quantum.application-registration.application-version=1.4.2
+
+# Whether a failed registration stops the service. Defaults to true.
+quantum.application-registration.fail-on-error=true
+----
+
+Registration is attempted once per fingerprint (application + version + environment + realms). On every later boot the registrar's cheap local check short-circuits it, so a restart costs one indexed read rather than a call to the control plane.
+
+See xref:../user-guide/application-registration.adoc[Application Registration] for the SPI and implementation rules.
+
 ===== OAuth Server (optional module)
 
 The `quantum-oauth-server` module uses the same JWT configuration properties listed above (`mp.jwt.verify.issuer`, `mp.jwt.verify.publickey.location`, `com.b2bi.jwt.duration`). No additional properties are required. The OAuth endpoints (`/oauth/authorize`, `/oauth/token`, `/oauth/jwks`, `/.well-known/openid-configuration`, `/oauth/userinfo`) activate automatically when the module is on the classpath.

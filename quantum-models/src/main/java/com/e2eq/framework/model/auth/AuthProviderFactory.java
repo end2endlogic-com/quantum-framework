@@ -157,6 +157,21 @@ public class AuthProviderFactory {
                 "No configured authentication provider matches issuer '%s'", issuer));
     }
 
+    /**
+     * True when the active provider owns users locally and can create or update them.
+     *
+     * <p>False means identity is delegated -- the issuer owns users, and this service may
+     * authenticate against them but must not mint them. Callers that seed or repair
+     * credentials should ask this first and skip, rather than calling
+     * {@link #getUserManager()} and treating the resulting exception as a failure: a
+     * delegating provider not implementing {@link UserManagement} is the design, not a
+     * misconfiguration. Where a delegated deployment still needs a credential to exist,
+     * it is contributed to the issuer as an identity contribution.</p>
+     */
+    public boolean supportsUserManagement() {
+        return this.getAuthProvider() instanceof UserManagement;
+    }
+
     public UserManagement getUserManager() {
         AuthProvider authProvider = this.getAuthProvider();
         if (authProvider instanceof UserManagement um) {

@@ -78,6 +78,7 @@
         <module>quantum-control-plane-client</module>
         <module>quantum-system</module>
         <module>quantum-bootstrap-core</module>
+        <module>quantum-application-registration</module>
         <module>quantum-bootstrap-rest</module>
         <module>quantum-seed-core</module>
         <module>quantum-seed-rest</module>
