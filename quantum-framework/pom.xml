@@ -187,6 +187,11 @@
       <artifactId>quantum-bootstrap-core</artifactId>
       <version>${quantum.version}</version>
     </dependency>
+    <dependency>
+      <groupId>com.end2endlogic</groupId>
+      <artifactId>quantum-application-registration</artifactId>
+      <version>${quantum.version}</version>
+    </dependency>
     <!-- Bootstrap-pack administration is control-plane-only. Keep the REST
          adapter off the framework runtime classpath while retaining the
          historical integration harness as coverage. -->
