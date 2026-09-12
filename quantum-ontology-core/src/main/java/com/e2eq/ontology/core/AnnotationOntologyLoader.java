@@ -139,8 +139,17 @@ public final class AnnotationOntologyLoader {
         }
         Set<String> superProps = new LinkedHashSet<>(Arrays.asList(pa.subPropertyOf()));
         Optional<String> inverseOf = pa.inverseOf().isEmpty() ? Optional.empty() : Optional.of(pa.inverseOf());
+        // A declared half-life is vocabulary, so it belongs in the hashed TBox metadata. It is
+        // written only when actually declared: a property that leaves it unset contributes no
+        // key, so existing canonical pack hashes stay byte-identical.
+        Map<String, Object> propertyMetadata = Map.of();
+        long halfLifeSeconds = pa.expectedValidityHalfLifeSeconds();
+        if (halfLifeSeconds > 0) {
+            propertyMetadata = Map.of(OntologyProperty.HALF_LIFE_METADATA_KEY, halfLifeSeconds);
+        }
         OntologyRegistry.PropertyDef def = new OntologyRegistry.PropertyDef(
-                pid, domainOpt, rangeOpt, inverseOf.isPresent(), inverseOf, pa.transitive(), pa.symmetric(), functional, superProps
+                pid, domainOpt, rangeOpt, inverseOf.isPresent(), inverseOf, pa.transitive(), pa.symmetric(),
+                functional, superProps, false, null, Set.of(), propertyMetadata
         );
         props.put(pid, def);
     }
