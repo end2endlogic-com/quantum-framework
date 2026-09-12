@@ -2131,6 +2131,30 @@ public class RuleContext {
             String userQuery,
             @Valid @NotNull(message = "Principal Context can not be null") PrincipalContext pcontext,
             @Valid @NotNull(message = "Resource Context can not be null") ResourceContext rcontext) {
+        return projectGovernedFilter(userQuery, pcontext, rcontext).filter();
+    }
+
+    /**
+     * Compose the governed filter and keep the record of what produced it.
+     *
+     * <p>Same resolution as {@link #getGovernedFilterString}, which now delegates here so the
+     * two cannot drift: a filter and an explanation of that filter derived by separate code
+     * paths would eventually disagree, and a disagreement between them is an audit finding
+     * rather than a bug report.
+     *
+     * <p>The per-rule attribution has to be captured at composition time. It cannot be
+     * recovered from the returned string, which is a conjunction of substituted clauses with
+     * no attribution left in it, and re-running the rules later would apply today's policy to
+     * yesterday's decision.
+     *
+     * @return the governed filter plus its trim record
+     * @throws SecurityException if access is not ALLOW or a matched filter rule cannot be fully
+     *                           resolved to concrete values
+     */
+    public com.e2eq.framework.model.securityrules.GovernedFilterProjection projectGovernedFilter(
+            String userQuery,
+            @Valid @NotNull(message = "Principal Context can not be null") PrincipalContext pcontext,
+            @Valid @NotNull(message = "Resource Context can not be null") ResourceContext rcontext) {
 
         SecurityCheckResponse response = this.checkRules(pcontext, rcontext);
         if (response.getFinalEffect() != RuleEffect.ALLOW) {
@@ -2161,6 +2185,8 @@ public class RuleContext {
                 MorphiaUtils.buildVariableBundle(pcontext, rcontext, null).strings);
 
         List<String> governedClauses = new ArrayList<>();
+        List<com.e2eq.framework.model.securityrules.GovernedFilterProjection.RuleTrim> ruleTrims =
+                new ArrayList<>();
         for (SecurityCheckResponse.RuleFilterInfo info : filterInfos) {
             String andClause = resolveGovernedClause(info.getAndFilterString(), sub, info.getRuleName());
             String orClause = resolveGovernedClause(info.getOrFilterString(), sub, info.getRuleName());
@@ -2178,7 +2204,22 @@ public class RuleContext {
                 continue;
             }
             governedClauses.add("(" + clause + ")");
+            // Captured here, in composition order, because the composed string below keeps no
+            // attribution and the rules cannot be re-run later against the same policy state.
+            ruleTrims.add(new com.e2eq.framework.model.securityrules.GovernedFilterProjection.RuleTrim(
+                    info.getRuleName(),
+                    info.getAndFilterString(),
+                    info.getOrFilterString(),
+                    info.getJoinOp(),
+                    clause));
         }
+
+        java.util.Set<String> excludedFields = (response.getExcludedFields() == null)
+                ? new java.util.LinkedHashSet<>()
+                : response.getExcludedFields().stream()
+                        .filter(path -> path != null && !path.isBlank())
+                        .map(String::trim)
+                        .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
 
         List<String> all = new ArrayList<>();
         if (userQuery != null && !userQuery.isBlank()) {
@@ -2186,13 +2227,16 @@ public class RuleContext {
         }
         all.addAll(governedClauses);
         if (all.isEmpty()) {
-            return java.util.Optional.empty();
+            // No clause constrained the read, but field exclusions still may have.
+            return com.e2eq.framework.model.securityrules.GovernedFilterProjection.of(
+                    null, response.getFinalEffect(), ruleTrims, excludedFields);
         }
         String governed = String.join(" && ", all);
 
         // Fail closed: the composed governed string must be a valid BIAPIQuery.
         MorphiaUtils.validateQueryString(governed);
-        return java.util.Optional.of(governed);
+        return com.e2eq.framework.model.securityrules.GovernedFilterProjection.of(
+                governed, response.getFinalEffect(), ruleTrims, excludedFields);
     }
 
     private static String resolveGovernedClause(String filterString,
