@@ -57,6 +57,12 @@
         <quarkus.platform.version>3.31.2</quarkus.platform.version>
         <skipITs>true</skipITs>
         <surefire-plugin.version>3.2.5</surefire-plugin.version>
+        <!-- Referenced by the maven-failsafe-plugin entry in pluginManagement
+             below. Previously undefined, so any module inheriting this parent
+             directly could not resolve the plugin and its *IT tests never ran.
+             quantum-enterprise already pins 3.2.5; matched here. skipITs stays
+             true; modules opt in by setting it false. -->
+        <failsafe-plugin.version>3.2.5</failsafe-plugin.version>
         <lombrok.version>1.18.38</lombrok.version>
         <quantum.version>1.4.2-SNAPSHOT</quantum.version>
         <apachecommons.lang3.version>3.18.0</apachecommons.lang3.version>

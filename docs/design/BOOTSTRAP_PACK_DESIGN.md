@@ -105,7 +105,7 @@ This is a startup/replay concern, not a workflow-platform-only concern.
 
 That is visible in the current framework shape already:
 - migrations are coordinated centrally by
-  [FrameworkStartupCoordinator.java](/Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-framework/src/main/java/com/e2eq/framework/service/startup/FrameworkStartupCoordinator.java)
+  [FrameworkStartupCoordinator.java](/Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-seed-core/src/main/java/com/e2eq/framework/service/startup/FrameworkStartupCoordinator.java)
 - applications such as B2BI currently layer their own bootstrap behavior on top
   of the startup path
 
@@ -400,7 +400,7 @@ Current startup coordination already runs:
 4. pending seed logging
 
 See
-[FrameworkStartupCoordinator.java](/Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-framework/src/main/java/com/e2eq/framework/service/startup/FrameworkStartupCoordinator.java).
+[FrameworkStartupCoordinator.java](/Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-seed-core/src/main/java/com/e2eq/framework/service/startup/FrameworkStartupCoordinator.java).
 
 Suggested ordering with bootstrap packs:
 1. migrations

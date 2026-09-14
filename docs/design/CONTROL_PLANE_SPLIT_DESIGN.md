@@ -320,7 +320,9 @@ Phase B progress (2026-06-10, branch the integration branch):
   `RealmCatalogService`; `SystemDirectory` retained only for the credential
   lookup (identity seam lands in Phase D).
 - (3/n) Mode seam: `quantum.mode` (embedded default) via `QuantumModeConfig` +
-  `SystemRealmOwnership`; in remote mode `FrameworkStartupCoordinator` skips
+  `SystemRealmOwnership`; in remote mode `FrameworkStartupCoordinator` (in
+  `quantum-seed-core`, so tenant planes run it from properties alone; the aggregate
+  adds baseline identity and bootstrap packs via `FrameworkStartupHook`) skips
   system-realm migrations and baseline identity, and the seed/bootstrap
   startup runners exclude the system realm from their realm lists while
   app-realm work proceeds locally (wp3 tier-2 semantics).
