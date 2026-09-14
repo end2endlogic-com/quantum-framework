@@ -47,7 +47,7 @@
 ## Phase 3. Startup and Admin Surfaces
 
 - [x] Extend
-  [FrameworkStartupCoordinator.java](/Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-framework/src/main/java/com/e2eq/framework/service/startup/FrameworkStartupCoordinator.java)
+  [FrameworkStartupCoordinator.java](/Users/mingardia/dev/mrisys/end2endlogic/quantum/framework/quantum-seed-core/src/main/java/com/e2eq/framework/service/startup/FrameworkStartupCoordinator.java)
   with bootstrap-pack startup apply
 - [x] Add pending bootstrap logging similar to pending seeds
 - [x] Add framework admin endpoints for list/apply/validate
