@@ -8,6 +8,9 @@ public enum CredentialType {
     /** Traditional userId/password credential used for interactive login. */
     PASSWORD,
 
+    /** Mailbox possession verified by an authority-owned single-use challenge; no password hash. */
+    EMAIL,
+
     /** Long-lived token credential for MCP servers, service accounts, and API integrations. */
     SERVICE_TOKEN,
 

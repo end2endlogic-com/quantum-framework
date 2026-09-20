@@ -133,6 +133,11 @@ public interface AuthProvider {
         return login(userId, password, applicationId);
     }
 
+    /** Internal authority boundary, never a public login request accepting a verified flag. */
+    default LoginResponse loginWithVerifiedEmail(EmailChallenge proof, String realmId) {
+        throw new UnsupportedOperationException("This provider does not support email authentication");
+    }
+
     LoginResponse refreshTokens(String refreshToken);
 
     /**

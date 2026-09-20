@@ -64,6 +64,26 @@ public class AuthLoginService {
         return login(userId, password, null, null, null);
     }
 
+    /** Called only after atomic proof verification inside the authentication authority. */
+    public LoginResult loginWithVerifiedEmail(com.e2eq.framework.model.auth.EmailChallenge proof,
+                                              String providerName, String realmId) {
+        if (proof == null || proof.state() != com.e2eq.framework.model.auth.EmailChallenge.State.VERIFIED) {
+            throw new SecurityException("EMAIL_PROOF_INVALID");
+        }
+        List<AuthProvider> providers = authProviderFactory.getLoginProviders(providerName);
+        if (providers.size() != 1) throw new SecurityException("EMAIL_PROVIDER_AMBIGUOUS");
+        AuthProvider provider = providers.get(0);
+        AuthProvider.LoginResponse result = withAnonymousAuthenticationAccess(
+                () -> provider.loginWithVerifiedEmail(proof, realmId));
+        if (!result.authenticated() || result.positiveResponse() == null) {
+            return LoginResult.failure(List.of("email: authentication or authorization rejected"));
+        }
+        Optional<CredentialUserIdPassword> credential = withAnonymousAuthenticationAccess(
+                () -> findCredential(null, result.positiveResponse().userId()));
+        return LoginResult.success(toAuthResponse(provider, result, credential.orElseThrow(
+                () -> new SecurityException("EMAIL_IDENTITY_MISSING"))));
+    }
+
     public LoginResult login(String userId, String password, String providerOverride) {
         return login(userId, password, providerOverride, null, null);
     }

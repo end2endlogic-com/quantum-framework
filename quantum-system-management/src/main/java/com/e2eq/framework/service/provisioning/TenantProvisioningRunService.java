@@ -39,11 +39,30 @@ public class TenantProvisioningRunService {
     EnvConfigUtils envConfigUtils;
 
     public TenantProvisioningRunResponse startProvisioning(TenantProvisioningService.ProvisionTenantCommand command) {
+        return startProvisioning(command, newExecutionRef());
+    }
+
+    /** Caller-supplied authority key makes explicit retries resume the same durable run. */
+    public TenantProvisioningRunResponse startProvisioning(TenantProvisioningService.ProvisionTenantCommand command,
+                                                          String executionRef) {
         String systemRealm = envConfigUtils.getSystemRealm();
+        if (executionRef == null || !executionRef.matches("[A-Za-z0-9_-]{16,128}")) {
+            throw new IllegalArgumentException("PROVISIONING_REQUEST_ID_INVALID");
+        }
+        var existing = runRepo.findByExecutionRef(systemRealm, executionRef);
+        if (existing.isPresent()) {
+            var run = existing.get();
+            if (!java.util.Objects.equals(run.getAdminUserId(), command.getAdminUserId())
+                    || !java.util.Objects.equals(run.getApplicationId(), command.getApplicationId())
+                    || !java.util.Objects.equals(run.getOrgRefName(), command.getOrgRefName())) {
+                throw new IllegalArgumentException("PROVISIONING_REQUEST_CONFLICT");
+            }
+            return run.getStatus() == TenantProvisioningRun.Status.FAILED
+                    ? retry(executionRef, command.getAdminPassword()) : toResponse(run);
+        }
         TenantProvisioningService.ProvisioningContext context = provisioningService.initializeContext(command);
         TenantProvisioningWorkflow workflow = workflowService.resolveCurrentWorkflow(systemRealm);
         List<TenantProvisioningWorkflowStepResponse> workflowSteps = workflowDefaults.validateSteps(workflow.getWorkflowDefinitionJson());
-        String executionRef = newExecutionRef();
 
         TenantProvisioningRun run = TenantProvisioningRun.builder()
             .refName(executionRef)
@@ -60,7 +79,10 @@ public class TenantProvisioningRunService {
             .orgRefName(command.getOrgRefName())
             .accountId(command.getAccountId())
             .adminUserId(command.getAdminUserId())
+            .adminDisplayName(command.getAdminDisplayName())
             .adminSubject(command.getAdminSubject())
+            .adminCredentialType(command.getAdminCredentialType())
+            .applicationId(command.getApplicationId())
             .overwriteAll(command.isOverwriteAll())
             .requestedArchetypes(new ArrayList<>(context.getArchetypes()))
             .steps(toStepStates(workflowSteps))
@@ -89,7 +111,10 @@ public class TenantProvisioningRunService {
             .orgRefName(run.getOrgRefName())
             .accountId(run.getAccountId())
             .adminUserId(run.getAdminUserId())
+            .adminDisplayName(run.getAdminDisplayName())
             .adminSubject(run.getAdminSubject())
+            .adminCredentialType(run.getAdminCredentialType())
+            .applicationId(run.getApplicationId())
             .adminPassword(adminPassword)
             .deploymentTopology(parseDeploymentTopology(run.getDeploymentTopology()))
             .placementRealmId(run.getRealmId())
@@ -98,6 +123,9 @@ public class TenantProvisioningRunService {
             .build();
 
         TenantProvisioningService.ProvisioningContext context = provisioningService.initializeContext(command);
+        if (!runRepo.claimFailedRun(systemRealm, executionRef)) {
+            return getRun(executionRef);
+        }
         resetForRetry(run);
         run = runRepo.save(systemRealm, run);
         return toResponse(execute(systemRealm, run, context));
@@ -156,7 +184,8 @@ public class TenantProvisioningRunService {
                 run.setStatus(TenantProvisioningRun.Status.FAILED);
                 run.setFailureReason("Tenant provisioning failed at step '" + step.getLabel() + "'.");
                 run.setFailureDetail(message);
-                run.setRetryRequiresAdminPassword(requiresPasswordForRetry(step.getKey()));
+                run.setRetryRequiresAdminPassword(context.getCommand().getAdminCredentialType()
+                    != com.e2eq.framework.model.security.CredentialType.EMAIL && requiresPasswordForRetry(step.getKey()));
                 run.setUpdatedAt(step.getUpdatedAt());
                 copyResult(run, context.getResult());
                 runRepo.save(systemRealm, run);

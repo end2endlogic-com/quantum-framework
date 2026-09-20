@@ -174,8 +174,10 @@ public class TenantProvisioningService implements TenantLifecycle {
         private String orgRefName;
         private String accountId;
         private String adminUserId;
+        private String adminDisplayName;
         private String adminSubject;
         private String adminPassword;
+        private com.e2eq.framework.model.security.CredentialType adminCredentialType;
         /** Owning application for the realm; falls back to quantum.tenant.provisioning.default-application. */
         private String applicationId;
         /** Optional command override; otherwise the deployment configuration applies. */
@@ -666,7 +668,9 @@ public class TenantProvisioningService implements TenantLifecycle {
     }
 
     public void ensureTenantIdentities(ProvisioningContext context) {
-        if (context.getCommand().getAdminPassword() == null || context.getCommand().getAdminPassword().isBlank()) {
+        boolean emailCredential = context.getCommand().getAdminCredentialType()
+            == com.e2eq.framework.model.security.CredentialType.EMAIL;
+        if (!emailCredential && (context.getCommand().getAdminPassword() == null || context.getCommand().getAdminPassword().isBlank())) {
             throw new IllegalArgumentException("adminPassword cannot be null");
         }
 
@@ -676,6 +680,10 @@ public class TenantProvisioningService implements TenantLifecycle {
             Log.warnf("Creating initial admin user %s with password provided, however since we are creating it the subject passed in %s will be ignored",
                 context.getCommand().getAdminUserId(),
                 context.getCommand().getAdminSubject());
+            if (emailCredential) {
+                userManagement.createEmailUser(context.getCommand().getAdminUserId(),
+                    context.getDesiredRoles(), context.getDomainContext(), context.getCommand().getApplicationId());
+            } else {
             userManagement.createUser(
                 context.getCommand().getAdminUserId(),
                 context.getCommand().getAdminPassword(),
@@ -683,6 +691,7 @@ public class TenantProvisioningService implements TenantLifecycle {
                 context.getDesiredRoles(),
                 context.getDomainContext()
             );
+            }
             context.getResult().userCreated = true;
         } else {
             Optional<CredentialUserIdPassword> credOpt = credentialRepo.findByUserId(
@@ -698,6 +707,9 @@ public class TenantProvisioningService implements TenantLifecycle {
                 ));
             }
             CredentialUserIdPassword cred = credOpt.get();
+            if (emailCredential && cred.getCredentialType() != com.e2eq.framework.model.security.CredentialType.EMAIL) {
+                throw new SecurityException("AUTHENTICATION_METHOD_NOT_ADMITTED");
+            }
             Set<String> storedRoles = cred.getRoles() == null ? Collections.emptySet() : new HashSet<>(Arrays.asList(cred.getRoles()));
             boolean subjectCompatible = cred.getSubject() != null && !cred.getSubject().isBlank();
             boolean pooledAdmission =
@@ -749,7 +761,8 @@ public class TenantProvisioningService implements TenantLifecycle {
             context.getCommand().getAdminUserId(),
             context.getCommand().getAdminUserId(),
             context.getDesiredRoles(),
-            context.getDomainContext()
+            context.getDomainContext(),
+            context.getCommand().getAdminDisplayName()
         );
 
         ensureUserProfileProjectionIfEnabled(
@@ -999,6 +1012,11 @@ public class TenantProvisioningService implements TenantLifecycle {
                                           String email,
                                           Set<String> roles,
                                           DomainContext domainContext) {
+        ensureUserProfileInRealm(realmId, userId, email, roles, domainContext, null);
+    }
+
+    private void ensureUserProfileInRealm(String realmId, String userId, String email,
+                                          Set<String> roles, DomainContext domainContext, String displayName) {
         Optional<CredentialUserIdPassword> credential = systemDirectory.findCredentialByUserId(userId);
         if (credential.isEmpty()) {
             throw new IllegalStateException("Credential was not found for provisioned userId: " + userId);
@@ -1029,7 +1047,7 @@ public class TenantProvisioningService implements TenantLifecycle {
 
         UserProfile profile = UserProfile.builder()
                 .refName(userId)
-                .displayName(userId)
+                .displayName(displayName == null || displayName.isBlank() ? userId : displayName.trim())
                 .userId(userId)
                 .email(email)
                 .credentialUserIdPasswordRef(credentialRef)

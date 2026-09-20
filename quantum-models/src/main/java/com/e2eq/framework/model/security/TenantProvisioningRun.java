@@ -52,7 +52,10 @@ public class TenantProvisioningRun extends BaseModel {
     private String orgRefName;
     private String accountId;
     private String adminUserId;
+    private String adminDisplayName;
     private String adminSubject;
+    private CredentialType adminCredentialType;
+    private String applicationId;
 
     @Builder.Default
     private boolean overwriteAll = true;
