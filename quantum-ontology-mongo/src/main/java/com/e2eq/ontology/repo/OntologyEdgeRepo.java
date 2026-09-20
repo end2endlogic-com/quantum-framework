@@ -309,7 +309,19 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
                        String dst,
                        boolean inferred,
                        Map<String, Object> prov) {
-        upsert(resolveRealmId(dataDomain), dataDomain, srcType, src, p, dstType, dst, inferred, prov);
+        upsert(resolveRealmId(dataDomain), dataDomain, srcType, src, p, dstType, dst, inferred, prov, null);
+    }
+
+    public void upsert(DataDomain dataDomain,
+                       String srcType,
+                       String src,
+                       String p,
+                       String dstType,
+                       String dst,
+                       boolean inferred,
+                       Map<String, Object> prov,
+                       Map<String, Object> props) {
+        upsert(resolveRealmId(dataDomain), dataDomain, srcType, src, p, dstType, dst, inferred, prov, props);
     }
 
     public void upsert(String realmId,
@@ -321,6 +333,19 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
                        String dst,
                        boolean inferred,
                        Map<String, Object> prov) {
+        upsert(realmId, dataDomain, srcType, src, p, dstType, dst, inferred, prov, null);
+    }
+
+    public void upsert(String realmId,
+                       DataDomain dataDomain,
+                       String srcType,
+                       String src,
+                       String p,
+                       String dstType,
+                       String dst,
+                       boolean inferred,
+                       Map<String, Object> prov,
+                       Map<String, Object> props) {
         validateDataDomain(dataDomain);
         if (srcType == null || srcType.isBlank()) {
             throw new IllegalArgumentException("srcType must be provided for edge " + src + "-" + p + "-" + dst);
@@ -370,6 +395,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
         edge.setDstType(dstType);
         edge.setInferred(inferred);
         edge.setProv(prov);
+        edge.setProps(props);
         edge.setTs(new Date());
         save(d, edge);
     }
@@ -420,11 +446,15 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
                     .append("p", e.getP())
                     .append("dst", e.getDst())
                     .append("dstType", e.getDstType());
+            Document setDoc = new Document("inferred", e.isInferred())
+                    .append("derived", e.isDerived())
+                    .append("prov", e.getProv() == null ? new Document() : new Document(e.getProv()))
+                    .append("ts", e.getTs() == null ? now : e.getTs());
+            if (e.getProps() != null) {
+                setDoc.append("props", new Document(e.getProps()));
+            }
             Document update = new Document("$setOnInsert", setOnInsert)
-                    .append("$set", new Document("inferred", e.isInferred())
-                            .append("derived", e.isDerived())
-                            .append("prov", e.getProv() == null ? new Document() : new Document(e.getProv()))
-                            .append("ts", e.getTs() == null ? now : e.getTs()));
+                    .append("$set", setDoc);
             if (e.getSupport() != null) {
                 List<Document> sup = new ArrayList<>();
                 for (EdgeRecord.Support s : e.getSupport()) {
@@ -964,7 +994,19 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
                               String dst,
                               List<EdgeRecord.Support> support,
                               Map<String, Object> prov) {
-        upsertDerived(resolveRealmId(dataDomain), dataDomain, srcType, src, p, dstType, dst, support, prov);
+        upsertDerived(resolveRealmId(dataDomain), dataDomain, srcType, src, p, dstType, dst, support, prov, null);
+    }
+
+    public void upsertDerived(DataDomain dataDomain,
+                              String srcType,
+                              String src,
+                              String p,
+                              String dstType,
+                              String dst,
+                              List<EdgeRecord.Support> support,
+                              Map<String, Object> prov,
+                              Map<String, Object> props) {
+        upsertDerived(resolveRealmId(dataDomain), dataDomain, srcType, src, p, dstType, dst, support, prov, props);
     }
 
     public void upsertDerived(String realmId,
@@ -976,6 +1018,19 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
                               String dst,
                               List<EdgeRecord.Support> support,
                               Map<String, Object> prov) {
+        upsertDerived(realmId, dataDomain, srcType, src, p, dstType, dst, support, prov, null);
+    }
+
+    public void upsertDerived(String realmId,
+                              DataDomain dataDomain,
+                              String srcType,
+                              String src,
+                              String p,
+                              String dstType,
+                              String dst,
+                              List<EdgeRecord.Support> support,
+                              Map<String, Object> prov,
+                              Map<String, Object> props) {
         validateDataDomain(dataDomain);
         if (srcType == null || srcType.isBlank()) {
             throw new IllegalArgumentException("srcType must be provided for edge " + src + "-" + p + "-" + dst);
@@ -1040,6 +1095,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
             edge.setSupport(null);
         }
         edge.setProv(prov);
+        edge.setProps(props);
         edge.setTs(new Date());
         save(d, edge);
     }
