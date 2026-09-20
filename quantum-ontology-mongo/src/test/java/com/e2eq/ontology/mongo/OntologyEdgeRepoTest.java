@@ -243,4 +243,47 @@ public class OntologyEdgeRepoTest {
         assertEquals(1, edges.size(), "Edge lookup should use the active security-context realm when tenantId does not match realm naming");
         assertEquals("obligationFor", edges.get(0).getP());
     }
+
+    @Test
+    void upsertWithProps_persistsAndRetrievesProps() {
+        Map<String, Object> props = Map.of(
+            "role", "PRIMARY",
+            "status", "ACTIVE",
+            "priority", 1
+        );
+        edgeRepo.upsert(testDataDomain, "Order", "ORDER-PROP-1", "assignedTo", "Location", "LOC-1", false, Map.of(), props);
+
+        List<com.e2eq.ontology.model.OntologyEdge> edges = edgeRepo.findBySrc(testDataDomain, "ORDER-PROP-1");
+        assertEquals(1, edges.size());
+        com.e2eq.ontology.model.OntologyEdge edge = edges.get(0);
+        assertNotNull(edge.getProps());
+        assertEquals("PRIMARY", edge.getProperty("role"));
+        assertEquals("ACTIVE", edge.getProperty("status"));
+        assertEquals(1, edge.getProperty("priority"));
+        assertTrue(edge.hasProperty("role"));
+        assertFalse(edge.hasProperty("nonExistent"));
+    }
+
+    @Test
+    void bulkUpsertWithProps_persistsProps() {
+        com.e2eq.ontology.core.DataDomainInfo ddi = new com.e2eq.ontology.core.DataDomainInfo(
+            testDataDomain.getOrgRefName(),
+            testDataDomain.getAccountNum(),
+            testDataDomain.getTenantId(),
+            testDataDomain.getDataSegment()
+        );
+        Map<String, Object> props = Map.of("role", "SECONDARY", "status", "INACTIVE");
+        com.e2eq.ontology.core.EdgeRecord record = new com.e2eq.ontology.core.EdgeRecord(
+            ddi, "Order", "ORDER-BULK-PROP", "assignedTo", "Location", "LOC-2", false, props, Map.of(), new java.util.Date()
+        );
+
+        edgeRepo.bulkUpsertEdgeRecords(List.of(record));
+
+        List<com.e2eq.ontology.model.OntologyEdge> edges = edgeRepo.findBySrc(testDataDomain, "ORDER-BULK-PROP");
+        assertEquals(1, edges.size());
+        com.e2eq.ontology.model.OntologyEdge edge = edges.get(0);
+        assertNotNull(edge.getProps());
+        assertEquals("SECONDARY", edge.getProperty("role"));
+        assertEquals("INACTIVE", edge.getProperty("status"));
+    }
 }

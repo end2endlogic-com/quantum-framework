@@ -68,4 +68,21 @@ public @Data class DataDomainComponentBinding {
     protected Binding tenantId;
     protected Binding dataSegment;
     protected Binding ownerId;
+
+    /**
+     * Open admitted facet bindings mapping facet names (e.g. "jurisdiction", "department")
+     * to their respective component bindings (literal or fromAttribute).
+     */
+    protected java.util.Map<String, Binding> facets = new java.util.HashMap<>();
+
+    public Binding getFacetBinding(String facetName) {
+        return facets != null ? facets.get(facetName) : null;
+    }
+
+    public void setFacetBinding(String facetName, Binding binding) {
+        if (this.facets == null) {
+            this.facets = new java.util.HashMap<>();
+        }
+        this.facets.put(facetName, binding);
+    }
 }
