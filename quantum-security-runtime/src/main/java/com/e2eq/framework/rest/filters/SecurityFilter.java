@@ -1272,6 +1272,13 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             return context;
         }
 
+        // A delegated resource server has no local identity catalog. Repeating
+        // the issuer-admitted realm does not request a new realm or application.
+        // Different realms continue through the explicit directory admission below.
+        if (trustTokenClaims && realm.equals(context.getDefaultRealm())) {
+            return context;
+        }
+
         // Look up the target realm to get its default DomainContext
         // Use system realm for the lookup since realms are typically stored there
         Optional<com.e2eq.framework.model.security.Realm> targetRealmOpt =
