@@ -1,23 +1,26 @@
 package annotations;
 
 import com.e2eq.framework.model.persistent.base.MailingAddress;
-import io.quarkus.test.junit.QuarkusTest;
-import jakarta.inject.Inject;
 import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.util.Set;
 
 
-@QuarkusTest
 public class TestValidator {
-    @Inject
-    Validator validator;
+    private static Validator validator;
+
+    @BeforeAll
+    static void setUpValidator() {
+        validator = Validation.buildDefaultValidatorFactory().getValidator();
+    }
+
     @Test
     public void test() {
-        //Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
         MailingAddress ma = MailingAddress.builder()
                 .addressName("John Doe")
                 .addressLine1("123 Main St")

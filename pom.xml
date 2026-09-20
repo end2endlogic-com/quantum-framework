@@ -230,6 +230,10 @@
                             >org.jboss.logmanager.LogManager</java.util.logging.manager>
                             <maven.home>${maven.home}</maven.home>
                             <maven.repo>${settings.localRepository}</maven.repo>
+                            <!-- Docker (and other local services) commonly occupy 8081,
+                                 Quarkus's default test HTTP port. 0 picks a free port. -->
+                            <quarkus.http.test-port>0</quarkus.http.test-port>
+                            <quarkus.http.test-ssl-port>0</quarkus.http.test-ssl-port>
                         </systemPropertyVariables>
                     </configuration>
                 </plugin>
@@ -242,6 +246,8 @@
                             >org.jboss.logmanager.LogManager</java.util.logging.manager>
                             <maven.home>${maven.home}</maven.home>
                             <maven.repo>${settings.localRepository}</maven.repo>
+                            <quarkus.http.test-port>0</quarkus.http.test-port>
+                            <quarkus.http.test-ssl-port>0</quarkus.http.test-ssl-port>
                         </systemPropertyVariables>
                     </configuration>
                 </plugin>
