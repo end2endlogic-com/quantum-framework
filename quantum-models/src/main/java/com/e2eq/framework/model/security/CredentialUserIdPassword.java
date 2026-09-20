@@ -54,7 +54,7 @@ public class CredentialUserIdPassword extends BaseModel {
                                                                                             CollationStrength.SECONDARY)))
    @NotNull(message = "userId must be provided for userIdPassword credential")
    @NonNull
-   @Size(min = 3, max = 50, message = "userId length must be less than or equal to 50 and greater than or equal to 3 " +
+   @Size(min = 3, max = 254, message = "userId length must be less than or equal to 254 and greater than or equal to 3 " +
                                          "characters")
    protected String userId;
 
@@ -133,6 +133,9 @@ public class CredentialUserIdPassword extends BaseModel {
     */
    public void setPassword(String password) {
       if (password != null) {
+         if (credentialType == CredentialType.EMAIL) {
+            throw new IllegalStateException("EMAIL_CREDENTIAL_PASSWORD_FORBIDDEN");
+         }
          this.passwordHash = EncryptionUtils.hashPassword(password);
          this.hashingAlgorithm = EncryptionUtils.hashAlgorithm();
       }
@@ -156,6 +159,9 @@ public class CredentialUserIdPassword extends BaseModel {
    @Override
    public void validate () {
       super.validate();
+      if (credentialType == CredentialType.EMAIL && passwordHash != null) {
+         throw new IllegalArgumentException("EMAIL_CREDENTIAL_PASSWORD_FORBIDDEN");
+      }
       if (roles != null) {
          // check that roles array does not include null or empty strings
          for (String role : roles) {

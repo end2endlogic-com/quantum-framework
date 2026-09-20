@@ -276,6 +276,38 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
 
    }
 
+   @Override
+   public String createEmailUser(String email, Set<String> roles, DomainContext domainContext,
+                                 String applicationId) {
+      Objects.requireNonNull(email, "Email is required");
+      Objects.requireNonNull(domainContext, "Domain context is required");
+      if (applicationId == null || applicationId.isBlank()) {
+         throw new IllegalArgumentException("Application is required");
+      }
+      if (credentialRepo.findByUserId(email, envConfigUtils.getSystemRealm(), true).isPresent()) {
+         throw new SecurityException("IDENTITY_ALREADY_EXISTS");
+      }
+      CredentialUserIdPassword credential = new CredentialUserIdPassword();
+      String subject = UUID.randomUUID().toString();
+      credential.setUserId(email);
+      credential.setEmailOfResponsibleParty(email);
+      credential.setRefName(subject);
+      credential.setSubject(subject);
+      credential.setForceChangePassword(false);
+      credential.setCredentialType(com.e2eq.framework.model.security.CredentialType.EMAIL);
+      credential.setAccountType(com.e2eq.framework.model.security.AccountType.USER);
+      credential.setPasswordHash(null);
+      // The legacy metadata field remains populated; EMAIL credentials carry no hash
+      // and are admitted only through loginWithVerifiedEmail.
+      credential.setDomainContext(domainContext);
+      credential.setRoles(roles.toArray(new String[0]));
+      credential.setLastUpdate(new Date());
+      credential.setAuthProviderName(getName());
+      credential.setApplicationRegEx(java.util.regex.Pattern.quote(applicationId));
+      credentialRepo.save(envConfigUtils.getSystemRealm(), credential);
+      return subject;
+   }
+
    // Main implementation that accepts explicit DataDomain
    @Override
    public String createUser(String userId, String password, Boolean forceChangePassword,
@@ -561,6 +593,21 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
 
    @Override
    public LoginResponse login (String userId, String password, String applicationId, String requestedRealm) {
+      return loginInternal(userId, password, applicationId, requestedRealm, false);
+   }
+
+   @Override
+   public LoginResponse loginWithVerifiedEmail(com.e2eq.framework.model.auth.EmailChallenge proof, String realmId) {
+      Objects.requireNonNull(proof, "Verified email proof is required");
+      if (proof.state() != com.e2eq.framework.model.auth.EmailChallenge.State.VERIFIED
+            || !java.time.Instant.now().isBefore(proof.expiresAt())) {
+         throw new SecurityException("EMAIL_PROOF_INVALID");
+      }
+      return loginInternal(proof.email(), null, proof.applicationId(), realmId, true);
+   }
+
+   private LoginResponse loginInternal(String userId, String password, String applicationId,
+                                       String requestedRealm, boolean verifiedEmail) {
       try {
          String configuredRealm = envConfigUtils.getSystemRealm();
          Log.infof("CustomProvider: Checking for auth against %s realm", configuredRealm);
@@ -625,9 +672,16 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                      envConfigUtils.getSystemRealm())
                );
             }
+            // Email login is opt-in per credential. External/SSO/service identities and
+            // legacy password credentials cannot acquire a weaker authentication path.
+            boolean emailCredential = credential.getCredentialType()
+                  == com.e2eq.framework.model.security.CredentialType.EMAIL;
+            if (verifiedEmail != emailCredential) {
+               throw new SecurityException("AUTHENTICATION_METHOD_NOT_ADMITTED");
+            }
             String alg = credential.getHashingAlgorithm();
-            if (alg != null && (alg.equalsIgnoreCase("BCrypt.default") || alg.toLowerCase().startsWith("bcrypt") || alg.toLowerCase().equals(EncryptionUtils.hashAlgorithm().toLowerCase()))) {
-               boolean isCredentialValid = EncryptionUtils.checkPassword(password, credential.getPasswordHash());
+            if (verifiedEmail || (alg != null && (alg.equalsIgnoreCase("BCrypt.default") || alg.toLowerCase().startsWith("bcrypt") || alg.toLowerCase().equals(EncryptionUtils.hashAlgorithm().toLowerCase())))) {
+               boolean isCredentialValid = verifiedEmail || EncryptionUtils.checkPassword(password, credential.getPasswordHash());
                if (isCredentialValid) {
                   // String authToken = generateAuthToken(userId);
                   String credentialRealm = (credential.getDomainContext() != null)

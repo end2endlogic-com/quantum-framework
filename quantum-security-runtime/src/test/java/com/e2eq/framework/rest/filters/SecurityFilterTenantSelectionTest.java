@@ -30,6 +30,20 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class SecurityFilterTenantSelectionTest {
 
     @Test
+    void delegatedSameRealmSelectionDoesNotRequireLocalIdentityCatalog() {
+        SecurityFilter filter = new SecurityFilter();
+        filter.trustTokenClaims = true;
+        PrincipalContext context = new PrincipalContext.Builder()
+                .withDefaultRealm("test-app-P1")
+                .withApplicationId("test-app")
+                .withUserId("user@example.test")
+                .withRoles(new String[]{"user"})
+                .withScope("AUTHENTICATED")
+                .build();
+        assertSame(context, filter.applyRealmOverride(context, "test-app-P1"));
+    }
+
+    @Test
     void anonymousRequestWithoutTenantDoesNotRequireControlPlane() {
         SecurityFilter filter = new SecurityFilter();
         filter.systemDirectory = new StubDirectory(Map.of()) {

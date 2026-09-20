@@ -21,6 +21,10 @@
 
     <dependencies>
         <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-qute</artifactId>
+        </dependency>
+        <dependency>
             <groupId>com.end2endlogic</groupId>
             <artifactId>quantum-models</artifactId>
             <version>${quantum.version}</version>

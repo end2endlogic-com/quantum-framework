@@ -82,6 +82,15 @@ public abstract class HierarchicalRepo<
         return super.delete(datastore, node);
     }
 
+    /** Realm-aware REST saves must retain hierarchy validation and link maintenance. */
+    @Override
+    public T save(@NotNull String realmId, @Valid T value) {
+        if (!Objects.equals(realmId, getSecurityContextRealmId())) {
+            throw new SecurityException("Hierarchy save requires the active security realm");
+        }
+        return save(value);
+    }
+
     @Override
     public T save(@Valid T value) {
         T saved;
