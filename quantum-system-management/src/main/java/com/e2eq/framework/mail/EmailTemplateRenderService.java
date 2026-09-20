@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.qute.Engine;
 import io.quarkus.qute.Template;
+import io.quarkus.qute.Variant;
 import io.quarkus.qute.TemplateInstance;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -41,9 +42,9 @@ public class EmailTemplateRenderService {
 
     public RenderedTemplate render(EmailTemplateDefinition template, Object context) {
         Map<String, Object> renderData = toRenderData(context);
-        String subject = renderTemplate(template.subjectTemplate(), renderData);
-        String htmlBody = renderTemplate(template.htmlTemplate(), renderData);
-        String textBody = renderTemplate(template.textTemplate(), renderData);
+        String subject = renderTemplate(template.subjectTemplate(), renderData, Variant.TEXT_PLAIN);
+        String htmlBody = renderTemplate(template.htmlTemplate(), renderData, Variant.TEXT_HTML);
+        String textBody = renderTemplate(template.textTemplate(), renderData, Variant.TEXT_PLAIN);
 
         if (subject == null || subject.isBlank()) {
             throw new IllegalStateException("Rendered email subject is blank for template key " + template.templateKey());
@@ -55,11 +56,11 @@ public class EmailTemplateRenderService {
         return new RenderedTemplate(template.templateKey(), template.origin(), subject, htmlBody, textBody);
     }
 
-    private String renderTemplate(String templateContent, Map<String, Object> renderData) {
+    private String renderTemplate(String templateContent, Map<String, Object> renderData, String contentType) {
         if (templateContent == null || templateContent.isBlank()) {
             return null;
         }
-        Template template = engine.parse(templateContent);
+        Template template = engine.parse(templateContent, Variant.forContentType(contentType));
         TemplateInstance instance = template.instance();
         for (Map.Entry<String, Object> entry : renderData.entrySet()) {
             instance.data(entry.getKey(), entry.getValue());

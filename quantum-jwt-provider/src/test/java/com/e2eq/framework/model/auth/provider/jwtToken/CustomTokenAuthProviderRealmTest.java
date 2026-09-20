@@ -11,8 +11,17 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class CustomTokenAuthProviderRealmTest {
+
+    @Test
+    void emailCredentialsDoNotAcquireAPassword() {
+        var credential = new CredentialUserIdPassword();
+        credential.setCredentialType(com.e2eq.framework.model.security.CredentialType.EMAIL);
+        assertThrows(IllegalStateException.class, () -> credential.setPassword("not-an-email-proof"));
+        assertEquals(null, credential.getPasswordHash());
+    }
 
     @Test
     void credentialRolesApplyOnlyToCredentialDefaultRealm() {

@@ -32,6 +32,13 @@ public class TokenUtilsConfigurer {
     void onStart(@jakarta.enterprise.event.Observes io.quarkus.runtime.StartupEvent ev) {
         List<String> activeProfiles = ConfigUtils.getProfiles();
         SmallRyeConfig config = ConfigProvider.getConfig().unwrap(SmallRyeConfig.class);
+        boolean signingEnabled = config.getOptionalValue("quantum.jwt.signing-enabled", Boolean.class).orElse(true);
+        TokenUtils.configureSigningEnabled(signingEnabled);
+        if (!signingEnabled) {
+            // Resource servers validate with SmallRye JWT/JWKS and never load an issuer key.
+            Log.info("JWT issuer signing disabled for this resource server");
+            return;
+        }
         ConfigValue privateKeyConfig = config.getConfigValue(PRIVATE_KEY_CONFIG);
         ConfigValue publicKeyConfig = config.getConfigValue(PUBLIC_KEY_CONFIG);
         String privLoc = privateKeyConfig.getValue();

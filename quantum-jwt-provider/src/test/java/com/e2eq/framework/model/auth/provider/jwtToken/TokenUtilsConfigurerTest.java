@@ -14,8 +14,17 @@ class TokenUtilsConfigurerTest {
 
     @AfterEach
     void resetDefaults() {
+        TokenUtils.configureSigningEnabled(true);
         TokenUtils.configureKeyResolver(new DefaultJwtKeyResolver());
         TokenUtils.configure("privateKey.pem", "publicKey.pem");
+    }
+
+    @Test
+    void resourceServerCannotMintTokensWhenSigningDisabled() {
+        TokenUtils.configureSigningEnabled(false);
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> TokenUtils.generateRefreshToken("subject", 300, "test-issuer"));
+        assertEquals("JWT_SIGNING_DISABLED", error.getMessage());
     }
 
     @Test

@@ -9,6 +9,12 @@ import java.util.Set;
 
 public interface UserManagement extends UserManagementBase{
 
+    /** Provision an explicitly passwordless human identity through the owning authority. */
+    default String createEmailUser(String email, Set<String> roles, DomainContext domainContext,
+                                   String applicationId) {
+        throw new UnsupportedOperationException("This provider does not support email credentials");
+    }
+
 
     boolean removeUserWithSubject(String subject) throws ReferentialIntegrityViolationException;
     boolean removeUserWithUserId( String userId) throws ReferentialIntegrityViolationException;

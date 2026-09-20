@@ -49,6 +49,17 @@ public class TokenUtils {
         // match the kid published in the JWKS so JWKS-based verifiers can resolve the key. When
         // null, we fall back to the private key location for backward compatibility.
         private static volatile String signingKeyId = null;
+        private static volatile boolean signingEnabled = true;
+
+        public static void configureSigningEnabled(boolean enabled) {
+                signingEnabled = enabled;
+        }
+
+        private static PrivateKey signingKey() throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+                if (!signingEnabled) throw new IllegalStateException("JWT_SIGNING_DISABLED");
+                return cachedPrivateKey != null ? cachedPrivateKey : readPrivateKey(privateKeyLocation);
+        }
+
 
         private static volatile PrivateKey cachedPrivateKey;
         private static volatile PublicKey cachedPublicKey;
@@ -165,7 +176,7 @@ public class TokenUtils {
 			throw new ValidationException("Duration must be greater than" + REFRESH_ADDITIONAL_DURATION_SECONDS + " seconds");
 		}
 
-                PrivateKey privateKey = cachedPrivateKey != null ? cachedPrivateKey : readPrivateKey(privateKeyLocation);
+                PrivateKey privateKey = signingKey();
 
 		JwtClaimsBuilder claimsBuilder = Jwt.claims();
 		long currentTimeInSecs = currentTimeInSecs();
@@ -210,7 +221,7 @@ public class TokenUtils {
 			throw new ValidationException("Duration must be greater than" + REFRESH_ADDITIONAL_DURATION_SECONDS + " seconds");
 		}
 
-		PrivateKey privateKey = cachedPrivateKey != null ? cachedPrivateKey : readPrivateKey(privateKeyLocation);
+		PrivateKey privateKey = signingKey();
 		JwtClaimsBuilder claimsBuilder = Jwt.claims();
 		long currentTimeInSecs = currentTimeInSecs();
 		claimsBuilder.issuer(issuer);
@@ -254,7 +265,7 @@ public class TokenUtils {
 			throw new ValidationException("Duration must be greater than" + REFRESH_ADDITIONAL_DURATION_SECONDS + " seconds");
 		}
 
-		PrivateKey privateKey = cachedPrivateKey != null ? cachedPrivateKey : readPrivateKey(privateKeyLocation);
+		PrivateKey privateKey = signingKey();
 		long currentTimeInSecs = currentTimeInSecs();
 		JwtClaimsBuilder claimsBuilder = Jwt.claims()
 				.issuer(issuer)
@@ -334,7 +345,7 @@ public class TokenUtils {
 			throw new ValidationException("Duration must be greater than" + REFRESH_ADDITIONAL_DURATION_SECONDS + " seconds");
 		}
 
-		PrivateKey privateKey = cachedPrivateKey != null ? cachedPrivateKey : readPrivateKey(privateKeyLocation);
+		PrivateKey privateKey = signingKey();
 
 		JwtClaimsBuilder claimsBuilder = Jwt.claims();
 		long currentTimeInSecs = currentTimeInSecs();
@@ -371,7 +382,7 @@ public class TokenUtils {
 		if (durationInSeconds <= 0) {
 			throw new ValidationException("Refresh-token duration must be greater than zero seconds");
 		}
-                PrivateKey privateKey = cachedPrivateKey != null ? cachedPrivateKey : readPrivateKey(privateKeyLocation);
+                PrivateKey privateKey = signingKey();
 		JwtClaimsBuilder claimsBuilder = Jwt.claims();
 		long currentTimeInSecs = currentTimeInSecs();
 		claimsBuilder.issuer(issuer);
