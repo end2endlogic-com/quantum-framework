@@ -798,17 +798,27 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
      * values should use {@code ComputedEdgeReader#srcIdsByDst} (wired through
      * {@code ListQueryRewriter} for policy hasEdge rewrites).</p>
      */
-    public Set<String> srcIdsByDst(DataDomain dataDomain, String p, String dst) {
+    public Set<String> srcIdsByDst(DataDomain dataDomain, String p, String dst, Filter... edgeFilters) {
         validateDataDomain(dataDomain);
         Set<String> ids = new HashSet<>();
         Query<OntologyEdge> q = ds(resolveRealmId(dataDomain)).find(OntologyEdge.class);
         for (Filter f : dataDomainFilters(dataDomain)) {
             q.filter(f);
         }
-        for (OntologyEdge e : q.filter(Filters.eq("p", p)).filter(Filters.eq("dst", dst))) {
+        q.filter(Filters.eq("p", p)).filter(Filters.eq("dst", dst));
+        if (edgeFilters != null) {
+            for (Filter ef : edgeFilters) {
+                if (ef != null) q.filter(ef);
+            }
+        }
+        for (OntologyEdge e : q) {
             ids.add(e.getSrc());
         }
         return ids;
+    }
+
+    public Set<String> srcIdsByDst(DataDomain dataDomain, String p, String dst) {
+        return srcIdsByDst(dataDomain, p, dst, (Filter[]) null);
     }
 
     /**
@@ -839,23 +849,33 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
      * For example, if Associate -> canSeeLocation -> Location, then dstIdsBySrc("canSeeLocation", associateId)
      * returns all Location IDs that the associate can see.
      */
-    public Set<String> dstIdsBySrc(DataDomain dataDomain, String p, String src) {
+    public Set<String> dstIdsBySrc(DataDomain dataDomain, String p, String src, Filter... edgeFilters) {
         validateDataDomain(dataDomain);
         Set<String> ids = new HashSet<>();
         Query<OntologyEdge> q = ds(resolveRealmId(dataDomain)).find(OntologyEdge.class);
         for (Filter f : dataDomainFilters(dataDomain)) {
             q.filter(f);
         }
-        for (OntologyEdge e : q.filter(Filters.eq("p", p)).filter(Filters.eq("src", src))) {
+        q.filter(Filters.eq("p", p)).filter(Filters.eq("src", src));
+        if (edgeFilters != null) {
+            for (Filter ef : edgeFilters) {
+                if (ef != null) q.filter(ef);
+            }
+        }
+        for (OntologyEdge e : q) {
             ids.add(e.getDst());
         }
         return ids;
     }
 
+    public Set<String> dstIdsBySrc(DataDomain dataDomain, String p, String src) {
+        return dstIdsBySrc(dataDomain, p, src, (Filter[]) null);
+    }
+
     /**
      * Find destination IDs for edges with given predicate originating from any source in set, within the DataDomain.
      */
-    public Set<String> dstIdsBySrcIn(DataDomain dataDomain, String p, Collection<String> srcIds) {
+    public Set<String> dstIdsBySrcIn(DataDomain dataDomain, String p, Collection<String> srcIds, Filter... edgeFilters) {
         if (srcIds == null || srcIds.isEmpty()) return Set.of();
         validateDataDomain(dataDomain);
         Set<String> ids = new HashSet<>();
@@ -863,16 +883,26 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
         for (Filter f : dataDomainFilters(dataDomain)) {
             q.filter(f);
         }
-        for (OntologyEdge e : q.filter(Filters.eq("p", p)).filter(Filters.in("src", srcIds))) {
+        q.filter(Filters.eq("p", p)).filter(Filters.in("src", srcIds));
+        if (edgeFilters != null) {
+            for (Filter ef : edgeFilters) {
+                if (ef != null) q.filter(ef);
+            }
+        }
+        for (OntologyEdge e : q) {
             ids.add(e.getDst());
         }
         return ids;
     }
 
+    public Set<String> dstIdsBySrcIn(DataDomain dataDomain, String p, Collection<String> srcIds) {
+        return dstIdsBySrcIn(dataDomain, p, srcIds, (Filter[]) null);
+    }
+
     /**
      * Find source IDs for edges with given predicate pointing to any destination in set, within the DataDomain.
      */
-    public Set<String> srcIdsByDstIn(DataDomain dataDomain, String p, Collection<String> dstIds) {
+    public Set<String> srcIdsByDstIn(DataDomain dataDomain, String p, Collection<String> dstIds, Filter... edgeFilters) {
         if (dstIds == null || dstIds.isEmpty()) return Set.of();
         validateDataDomain(dataDomain);
         Set<String> ids = new HashSet<>();
@@ -880,10 +910,20 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
         for (Filter f : dataDomainFilters(dataDomain)) {
             q.filter(f);
         }
-        for (OntologyEdge e : q.filter(Filters.eq("p", p)).filter(Filters.in("dst", dstIds))) {
+        q.filter(Filters.eq("p", p)).filter(Filters.in("dst", dstIds));
+        if (edgeFilters != null) {
+            for (Filter ef : edgeFilters) {
+                if (ef != null) q.filter(ef);
+            }
+        }
+        for (OntologyEdge e : q) {
             ids.add(e.getSrc());
         }
         return ids;
+    }
+
+    public Set<String> srcIdsByDstIn(DataDomain dataDomain, String p, Collection<String> dstIds) {
+        return srcIdsByDstIn(dataDomain, p, dstIds, (Filter[]) null);
     }
 
     /**
