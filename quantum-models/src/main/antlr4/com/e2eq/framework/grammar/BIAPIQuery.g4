@@ -43,15 +43,15 @@ nullExpr: field=(STRING|TEXT) op=(EQ | NEQ) value=NULL;
 elemMatchExpr: field=(STRING|TEXT) op=EQ lp=LBRCE nested=query rp=RBRCE;
 
 // Ontology functions
-// hasEdge(predicate, dst) - find entities that have outgoing edges TO the given destination
-// Example: hasEdge(assignedTo, territoryId) finds associates assigned to that territory
-hasEdgeExpr: HASEDGE LPAREN predicate=(STRING|TEXT|QUOTED_STRING|VARIABLE) COMMA dst=(STRING|TEXT|QUOTED_STRING|VARIABLE|OID|REFERENCE) RPAREN;
-// hasOutgoingEdge(predicate, dst) - alias for hasEdge for symmetry with hasIncomingEdge
-// Example: hasOutgoingEdge(assignedTo, territoryId) finds associates assigned to that territory
-hasOutgoingEdgeExpr: HASOUTGOINGEDGE LPAREN predicate=(STRING|TEXT|QUOTED_STRING|VARIABLE) COMMA dst=(STRING|TEXT|QUOTED_STRING|VARIABLE|OID|REFERENCE) RPAREN;
-// hasIncomingEdge(predicate, src) - find entities that the given source has edges TO (inverse direction)
-// Example: hasIncomingEdge(canSeeLocation, associateId) finds locations the associate can see
-hasIncomingEdgeExpr: HASINCOMGINEDGE LPAREN predicate=(STRING|TEXT|QUOTED_STRING|VARIABLE) COMMA src=(STRING|TEXT|QUOTED_STRING|VARIABLE|OID|REFERENCE) RPAREN;
+// hasEdge(predicate, dst, { edgeFilter }?) - find entities that have outgoing edges TO the given destination
+// Example: hasEdge(assignedTo, territoryId, { role: 'PRIMARY' && status: 'ACTIVE' }) finds associates assigned to that territory with matching edge properties
+hasEdgeExpr: HASEDGE LPAREN predicate=(STRING|TEXT|QUOTED_STRING|VARIABLE) COMMA dst=(STRING|TEXT|QUOTED_STRING|VARIABLE|OID|REFERENCE) (COMMA lp=LBRCE edgeFilter=query rp=RBRCE)? RPAREN;
+// hasOutgoingEdge(predicate, dst, { edgeFilter }?) - alias for hasEdge for symmetry with hasIncomingEdge
+// Example: hasOutgoingEdge(assignedTo, territoryId, { role: 'PRIMARY' }) finds associates assigned to that territory with matching edge properties
+hasOutgoingEdgeExpr: HASOUTGOINGEDGE LPAREN predicate=(STRING|TEXT|QUOTED_STRING|VARIABLE) COMMA dst=(STRING|TEXT|QUOTED_STRING|VARIABLE|OID|REFERENCE) (COMMA lp=LBRCE edgeFilter=query rp=RBRCE)? RPAREN;
+// hasIncomingEdge(predicate, src, { edgeFilter }?) - find entities that the given source has edges TO (inverse direction)
+// Example: hasIncomingEdge(canSeeLocation, associateId, { role: 'PRIMARY' }) finds locations the associate can see with matching edge properties
+hasIncomingEdgeExpr: HASINCOMGINEDGE LPAREN predicate=(STRING|TEXT|QUOTED_STRING|VARIABLE) COMMA src=(STRING|TEXT|QUOTED_STRING|VARIABLE|OID|REFERENCE) (COMMA lp=LBRCE edgeFilter=query rp=RBRCE)? RPAREN;
 
 // Expansion directive (parsed but evaluation is handled elsewhere)
 // Support simple dotted paths and optional array wildcards [*] between segments.

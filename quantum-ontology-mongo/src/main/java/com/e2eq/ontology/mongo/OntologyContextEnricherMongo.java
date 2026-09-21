@@ -62,9 +62,15 @@ public class OntologyContextEnricherMongo {
         for (OntologyEdge e : edges) {
             Map<String, Object> edgeMap = new HashMap<>();
             edgeMap.put("p", e.getP());
+            edgeMap.put("src", e.getSrc());
             edgeMap.put("dst", e.getDst());
+            edgeMap.put("srcType", e.getSrcType() != null ? e.getSrcType() : "");
             edgeMap.put("dstType", e.getDstType() != null ? e.getDstType() : "");
             edgeMap.put("inferred", e.isInferred());
+            edgeMap.put("derived", e.isDerived());
+            if (e.getProps() != null && !e.getProps().isEmpty()) {
+                edgeMap.put("props", e.getProps());
+            }
 
             // Add resolved display name if available
             String displayName = displayNameCache.get(e.getDst());

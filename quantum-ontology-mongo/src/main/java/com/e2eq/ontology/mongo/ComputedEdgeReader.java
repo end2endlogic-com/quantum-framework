@@ -5,6 +5,7 @@ import com.e2eq.ontology.core.*;
 import com.e2eq.ontology.metrics.OntologyMetrics;
 import com.e2eq.ontology.model.OntologyEdge;
 import com.e2eq.ontology.repo.OntologyEdgeRepo;
+import dev.morphia.query.filters.Filter;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
@@ -116,12 +117,12 @@ public class ComputedEdgeReader {
      * LAZY/ONDEMAND provider computation.
      */
     public Set<String> dstIdsBySrc(String realmId, DataDomain dataDomain,
-                                   String predicate, String sourceId) {
+                                   String predicate, String sourceId, Filter... edgeFilters) {
         Objects.requireNonNull(predicate, "predicate");
         Objects.requireNonNull(sourceId, "sourceId");
         realmId = normalizeRealmId(realmId);
 
-        Set<String> ids = storeDstIdsExcludingNonEager(dataDomain, predicate, sourceId);
+        Set<String> ids = storeDstIdsExcludingNonEager(dataDomain, predicate, sourceId, edgeFilters);
         for (ComputedEdgeProvider<?> provider : providersForPredicate(predicate)) {
             if (provider.getMaterializationMode() == MaterializationMode.EAGER) {
                 continue; // already represented in the store (when write path ran)
@@ -135,6 +136,11 @@ public class ComputedEdgeReader {
         return ids;
     }
 
+    public Set<String> dstIdsBySrc(String realmId, DataDomain dataDomain,
+                                   String predicate, String sourceId) {
+        return dstIdsBySrc(realmId, dataDomain, predicate, sourceId, (Filter[]) null);
+    }
+
     /**
      * Source IDs that have an edge with {@code predicate} pointing to {@code dstId}.
      *
@@ -145,18 +151,23 @@ public class ComputedEdgeReader {
      * are returned and a warning is logged.</p>
      */
     public Set<String> srcIdsByDst(String realmId, DataDomain dataDomain,
-                                   String predicate, String dstId) {
-        return srcIdsByDst(realmId, dataDomain, predicate, dstId, DEFAULT_INVERSE_SOURCE_SCAN_LIMIT);
+                                   String predicate, String dstId, Filter... edgeFilters) {
+        return srcIdsByDst(realmId, dataDomain, predicate, dstId, DEFAULT_INVERSE_SOURCE_SCAN_LIMIT, edgeFilters);
     }
 
     public Set<String> srcIdsByDst(String realmId, DataDomain dataDomain,
-                                   String predicate, String dstId, int sourceScanLimit) {
+                                   String predicate, String dstId) {
+        return srcIdsByDst(realmId, dataDomain, predicate, dstId, DEFAULT_INVERSE_SOURCE_SCAN_LIMIT, (Filter[]) null);
+    }
+
+    public Set<String> srcIdsByDst(String realmId, DataDomain dataDomain,
+                                   String predicate, String dstId, int sourceScanLimit, Filter... edgeFilters) {
         Objects.requireNonNull(predicate, "predicate");
         Objects.requireNonNull(dstId, "dstId");
         realmId = normalizeRealmId(realmId);
         int limit = Math.max(1, sourceScanLimit);
 
-        Set<String> ids = storeSrcIdsExcludingNonEager(dataDomain, predicate, dstId);
+        Set<String> ids = storeSrcIdsExcludingNonEager(dataDomain, predicate, dstId, edgeFilters);
         for (ComputedEdgeProvider<?> provider : providersForPredicate(predicate)) {
             if (provider.getMaterializationMode() == MaterializationMode.EAGER) {
                 continue;
@@ -166,18 +177,23 @@ public class ComputedEdgeReader {
         return ids;
     }
 
+    public Set<String> srcIdsByDst(String realmId, DataDomain dataDomain,
+                                   String predicate, String dstId, int sourceScanLimit) {
+        return srcIdsByDst(realmId, dataDomain, predicate, dstId, sourceScanLimit, (Filter[]) null);
+    }
+
     /**
      * Bulk form of {@link #srcIdsByDst(String, DataDomain, String, String)} for a set of destinations.
      */
     public Set<String> srcIdsByDstIn(String realmId, DataDomain dataDomain,
-                                     String predicate, Collection<String> dstIds) {
+                                     String predicate, Collection<String> dstIds, Filter... edgeFilters) {
         if (dstIds == null || dstIds.isEmpty()) return Set.of();
         Objects.requireNonNull(predicate, "predicate");
         realmId = normalizeRealmId(realmId);
         Set<String> wanted = new HashSet<>(dstIds);
         // Bulk store lookup when no non-EAGER providers need provenance filtering;
         // otherwise filter per-row so stale LAZY/ONDEMAND materializations drop out.
-        Set<String> ids = storeSrcIdsExcludingNonEagerIn(dataDomain, predicate, wanted);
+        Set<String> ids = storeSrcIdsExcludingNonEagerIn(dataDomain, predicate, wanted, edgeFilters);
         for (ComputedEdgeProvider<?> provider : providersForPredicate(predicate)) {
             if (provider.getMaterializationMode() == MaterializationMode.EAGER) {
                 continue;
@@ -191,6 +207,11 @@ public class ComputedEdgeReader {
             }
         }
         return ids;
+    }
+
+    public Set<String> srcIdsByDstIn(String realmId, DataDomain dataDomain,
+                                     String predicate, Collection<String> dstIds) {
+        return srcIdsByDstIn(realmId, dataDomain, predicate, dstIds, (Filter[]) null);
     }
 
     /**
@@ -378,12 +399,17 @@ public class ComputedEdgeReader {
      * Store contribution for inverse queries: drop rows still attributed to a
      * provider that is no longer EAGER (stale after an EAGER→LAZY/ONDEMAND switch).
      */
-    private Set<String> storeSrcIdsExcludingNonEager(DataDomain dataDomain, String predicate, String dstId) {
+    private Set<String> storeSrcIdsExcludingNonEager(DataDomain dataDomain, String predicate, String dstId, Filter... edgeFilters) {
         Set<String> nonEager = nonEagerProviderIds(predicate);
+        boolean hasFilters = edgeFilters != null && edgeFilters.length > 0;
         if (nonEager.isEmpty()) {
-            return new LinkedHashSet<>(edgeRepo.srcIdsByDst(dataDomain, predicate, dstId));
+            return hasFilters
+                    ? new LinkedHashSet<>(edgeRepo.srcIdsByDst(dataDomain, predicate, dstId, edgeFilters))
+                    : new LinkedHashSet<>(edgeRepo.srcIdsByDst(dataDomain, predicate, dstId));
         }
-        List<OntologyEdge> rows = edgeRepo.findByDstAndP(dataDomain, dstId, predicate);
+        List<OntologyEdge> rows = hasFilters
+                ? edgeRepo.findByDstAndP(dataDomain, dstId, predicate, edgeFilters)
+                : edgeRepo.findByDstAndP(dataDomain, dstId, predicate);
         Set<String> ids = new LinkedHashSet<>();
         for (OntologyEdge e : rows) {
             if (isStaleNonEagerStoreRow(e, nonEager)) continue;
@@ -394,25 +420,33 @@ public class ComputedEdgeReader {
 
     /** Bulk store contribution for multi-destination inverse queries. */
     private Set<String> storeSrcIdsExcludingNonEagerIn(DataDomain dataDomain, String predicate,
-                                                       Collection<String> dstIds) {
+                                                       Collection<String> dstIds, Filter... edgeFilters) {
         Set<String> nonEager = nonEagerProviderIds(predicate);
+        boolean hasFilters = edgeFilters != null && edgeFilters.length > 0;
         if (nonEager.isEmpty()) {
-            return new LinkedHashSet<>(edgeRepo.srcIdsByDstIn(dataDomain, predicate, dstIds));
+            return hasFilters
+                    ? new LinkedHashSet<>(edgeRepo.srcIdsByDstIn(dataDomain, predicate, dstIds, edgeFilters))
+                    : new LinkedHashSet<>(edgeRepo.srcIdsByDstIn(dataDomain, predicate, dstIds));
         }
         Set<String> ids = new LinkedHashSet<>();
         for (String dstId : dstIds) {
-            ids.addAll(storeSrcIdsExcludingNonEager(dataDomain, predicate, dstId));
+            ids.addAll(storeSrcIdsExcludingNonEager(dataDomain, predicate, dstId, edgeFilters));
         }
         return ids;
     }
 
-    private Set<String> storeDstIdsExcludingNonEager(DataDomain dataDomain, String predicate, String sourceId) {
+    private Set<String> storeDstIdsExcludingNonEager(DataDomain dataDomain, String predicate, String sourceId, Filter... edgeFilters) {
         Set<String> nonEager = nonEagerProviderIds(predicate);
+        boolean hasFilters = edgeFilters != null && edgeFilters.length > 0;
         if (nonEager.isEmpty()) {
-            return new LinkedHashSet<>(edgeRepo.dstIdsBySrc(dataDomain, predicate, sourceId));
+            return hasFilters
+                    ? new LinkedHashSet<>(edgeRepo.dstIdsBySrc(dataDomain, predicate, sourceId, edgeFilters))
+                    : new LinkedHashSet<>(edgeRepo.dstIdsBySrc(dataDomain, predicate, sourceId));
         }
         // Prefer realm-aware overload when possible; DataDomain-only path resolves realm internally.
-        List<OntologyEdge> rows = edgeRepo.findBySrcAndP(dataDomain, sourceId, predicate);
+        List<OntologyEdge> rows = hasFilters
+                ? edgeRepo.findBySrcAndP(dataDomain, sourceId, predicate, edgeFilters)
+                : edgeRepo.findBySrcAndP(dataDomain, sourceId, predicate);
         Set<String> ids = new LinkedHashSet<>();
         for (OntologyEdge e : rows) {
             if (isStaleNonEagerStoreRow(e, nonEager)) continue;

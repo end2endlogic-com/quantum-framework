@@ -102,39 +102,55 @@ public class ListQueryRewriter {
         return ComputedEdgeReader.normalizeRealmId(raw);
     }
 
-    private Set<String> srcIdsByDst(DataDomain dataDomain, String predicate, String dstId) {
+    private Set<String> srcIdsByDst(DataDomain dataDomain, String predicate, String dstId, Filter... edgeFilters) {
         String p = canon(predicate);
+        boolean hasFilters = edgeFilters != null && edgeFilters.length > 0;
         ComputedEdgeReader reader = getComputedEdgeReader();
         if (reader != null) {
-            return reader.srcIdsByDst(realmHint(dataDomain), dataDomain, p, dstId);
+            return hasFilters
+                    ? reader.srcIdsByDst(realmHint(dataDomain), dataDomain, p, dstId, edgeFilters)
+                    : reader.srcIdsByDst(realmHint(dataDomain), dataDomain, p, dstId);
         }
-        return getRepo().srcIdsByDst(dataDomain, p, dstId);
+        return hasFilters
+                ? getRepo().srcIdsByDst(dataDomain, p, dstId, edgeFilters)
+                : getRepo().srcIdsByDst(dataDomain, p, dstId);
     }
 
-    private Set<String> srcIdsByDstIn(DataDomain dataDomain, String predicate, Collection<String> dstIds) {
+    private Set<String> srcIdsByDstIn(DataDomain dataDomain, String predicate, Collection<String> dstIds, Filter... edgeFilters) {
         String p = canon(predicate);
+        boolean hasFilters = edgeFilters != null && edgeFilters.length > 0;
         ComputedEdgeReader reader = getComputedEdgeReader();
         if (reader != null) {
-            return reader.srcIdsByDstIn(realmHint(dataDomain), dataDomain, p, dstIds);
+            return hasFilters
+                    ? reader.srcIdsByDstIn(realmHint(dataDomain), dataDomain, p, dstIds, edgeFilters)
+                    : reader.srcIdsByDstIn(realmHint(dataDomain), dataDomain, p, dstIds);
         }
-        return getRepo().srcIdsByDstIn(dataDomain, p, dstIds);
+        return hasFilters
+                ? getRepo().srcIdsByDstIn(dataDomain, p, dstIds, edgeFilters)
+                : getRepo().srcIdsByDstIn(dataDomain, p, dstIds);
     }
 
-    private Set<String> dstIdsBySrc(DataDomain dataDomain, String predicate, String srcId) {
+    private Set<String> dstIdsBySrc(DataDomain dataDomain, String predicate, String srcId, Filter... edgeFilters) {
         String p = canon(predicate);
+        boolean hasFilters = edgeFilters != null && edgeFilters.length > 0;
         ComputedEdgeReader reader = getComputedEdgeReader();
         if (reader != null) {
-            return reader.dstIdsBySrc(realmHint(dataDomain), dataDomain, p, srcId);
+            return hasFilters
+                    ? reader.dstIdsBySrc(realmHint(dataDomain), dataDomain, p, srcId, edgeFilters)
+                    : reader.dstIdsBySrc(realmHint(dataDomain), dataDomain, p, srcId);
         }
-        return getRepo().dstIdsBySrc(dataDomain, p, srcId);
+        return hasFilters
+                ? getRepo().dstIdsBySrc(dataDomain, p, srcId, edgeFilters)
+                : getRepo().dstIdsBySrc(dataDomain, p, srcId);
     }
 
     /**
      * Build a Morphia filter for entities that have an edge with the given predicate pointing to dstId.
      * 
-     * @param dataDomain the DataDomain context (orgRefName, accountNum, tenantId, dataSegment)
-     * @param predicate  the edge predicate/property
-     * @param dstId      the destination entity ID
+     * @param dataDomain  the DataDomain context (orgRefName, accountNum, tenantId, dataSegment)
+     * @param predicate   the edge predicate/property
+     * @param dstId       the destination entity ID
+     * @param edgeFilters optional additional edge property filters (e.g. Filters.eq("props.role", "PRIMARY"))
      * @return a Filter that matches entities with the edge
      */
     /**
@@ -161,8 +177,8 @@ public class ListQueryRewriter {
         return Filters.in("_id", objectIds);
     }
 
-    public Filter hasEdge(DataDomain dataDomain, String predicate, String dstId) {
-        Set<String> srcIds = srcIdsByDst(dataDomain, predicate, dstId);
+    public Filter hasEdge(DataDomain dataDomain, String predicate, String dstId, Filter... edgeFilters) {
+        Set<String> srcIds = srcIdsByDst(dataDomain, predicate, dstId, edgeFilters);
         if (srcIds.isEmpty()) {
             // force empty result: impossible equality on _id
             return Filters.eq("_id", "__none__");
@@ -170,76 +186,99 @@ public class ListQueryRewriter {
         return idsFilter(srcIds);
     }
 
+    public Filter hasEdge(DataDomain dataDomain, String predicate, String dstId) {
+        return hasEdge(dataDomain, predicate, dstId, (Filter[]) null);
+    }
+
     /**
      * Build a Morphia filter for entities (targets) that have an edge with the given predicate coming FROM srcId.
      *
-     * @param dataDomain the DataDomain context
-     * @param predicate  the edge predicate/property
-     * @param srcId      the source entity ID
+     * @param dataDomain  the DataDomain context
+     * @param predicate   the edge predicate/property
+     * @param srcId       the source entity ID
+     * @param edgeFilters optional additional edge property filters
      * @return a Filter that matches entities being the target of the edge
      */
-    public Filter hasIncomingEdge(DataDomain dataDomain, String predicate, String srcId) {
-        Set<String> dstIds = dstIdsBySrc(dataDomain, predicate, srcId);
+    public Filter hasIncomingEdge(DataDomain dataDomain, String predicate, String srcId, Filter... edgeFilters) {
+        Set<String> dstIds = dstIdsBySrc(dataDomain, predicate, srcId, edgeFilters);
         if (dstIds.isEmpty()) {
             return Filters.eq("_id", "__none__");
         }
         return idsFilter(dstIds);
     }
 
+    public Filter hasIncomingEdge(DataDomain dataDomain, String predicate, String srcId) {
+        return hasIncomingEdge(dataDomain, predicate, srcId, (Filter[]) null);
+    }
+
     /**
      * Rewrites a base BSON filter to include a hasEdge constraint.
      */
-    public Bson rewriteForHasEdge(Bson base, String tenantId, String predicate, String dstId) {
+    public Bson rewriteForHasEdge(Bson base, String tenantId, String predicate, String dstId, Filter... edgeFilters) {
         DataDomain dd = new DataDomain();
         dd.setTenantId(tenantId);
         dd.setOrgRefName("ontology");
         dd.setAccountNum("0000000000");
-        Set<String> ids = srcIdsByDst(dd, predicate, dstId);
+        Set<String> ids = srcIdsByDst(dd, predicate, dstId, edgeFilters);
         if (ids.isEmpty()) return com.mongodb.client.model.Filters.and(base, com.mongodb.client.model.Filters.eq("_id", "__none__"));
         return com.mongodb.client.model.Filters.and(base, com.mongodb.client.model.Filters.in("_id", ids));
+    }
+
+    public Bson rewriteForHasEdge(Bson base, String tenantId, String predicate, String dstId) {
+        return rewriteForHasEdge(base, tenantId, predicate, dstId, (Filter[]) null);
     }
 
     /**
      * Rewrites a base BSON filter to include a hasIncomingEdge constraint.
      */
-    public Bson rewriteForHasIncomingEdge(Bson base, String tenantId, String predicate, String srcId) {
+    public Bson rewriteForHasIncomingEdge(Bson base, String tenantId, String predicate, String srcId, Filter... edgeFilters) {
         DataDomain dd = new DataDomain();
         dd.setTenantId(tenantId);
         dd.setOrgRefName("ontology");
         dd.setAccountNum("0000000000");
-        Set<String> ids = dstIdsBySrc(dd, predicate, srcId);
+        Set<String> ids = dstIdsBySrc(dd, predicate, srcId, edgeFilters);
         if (ids.isEmpty()) return com.mongodb.client.model.Filters.and(base, com.mongodb.client.model.Filters.eq("_id", "__none__"));
         return com.mongodb.client.model.Filters.and(base, com.mongodb.client.model.Filters.in("_id", ids));
+    }
+
+    public Bson rewriteForHasIncomingEdge(Bson base, String tenantId, String predicate, String srcId) {
+        return rewriteForHasIncomingEdge(base, tenantId, predicate, srcId, (Filter[]) null);
     }
 
     /**
      * Build a Morphia filter for entities that have an edge with the given predicate pointing to any of the dstIds.
      *
-     * @param dataDomain the DataDomain context
-     * @param predicate  the edge predicate/property
-     * @param dstIds     the set of destination entity IDs (OR semantics)
+     * @param dataDomain  the DataDomain context
+     * @param predicate   the edge predicate/property
+     * @param dstIds      the set of destination entity IDs (OR semantics)
+     * @param edgeFilters optional additional edge property filters
      * @return a Filter that matches entities with any of the edges
      */
-    public Filter hasEdgeAny(DataDomain dataDomain, String predicate, Collection<String> dstIds) {
+    public Filter hasEdgeAny(DataDomain dataDomain, String predicate, Collection<String> dstIds, Filter... edgeFilters) {
         if (dstIds == null || dstIds.isEmpty()) {
             return Filters.eq("_id", "__none__");
         }
-        Set<String> srcIds = srcIdsByDstIn(dataDomain, predicate, dstIds);
+        Set<String> srcIds = srcIdsByDstIn(dataDomain, predicate, dstIds, edgeFilters);
         if (srcIds.isEmpty()) {
             return Filters.eq("_id", "__none__");
         }
         return idsFilter(srcIds);
     }
 
+    public Filter hasEdgeAny(DataDomain dataDomain, String predicate, Collection<String> dstIds) {
+        return hasEdgeAny(dataDomain, predicate, dstIds, (Filter[]) null);
+    }
+
     /**
      * Build a Morphia filter for entities that have edges to ALL the provided dstIds for the same predicate.
      *
-     * @param dataDomain the DataDomain context
-     * @param predicate  the edge predicate/property
-     * @param dstIds     the set of destination entity IDs (AND semantics via set intersection)
+     * @param dataDomain  the DataDomain context
+     * @param predicate   the edge predicate/property
+     * @param dstIds      the set of destination entity IDs (AND semantics via set intersection)
+     * @param edgeFilters optional additional edge property filters
      * @return a Filter that matches entities with all the edges
      */
-    public Filter hasEdgeAll(DataDomain dataDomain, String predicate, Collection<String> dstIds) {
+    public Filter hasEdgeAll(DataDomain dataDomain, String predicate, Collection<String> dstIds, Filter... edgeFilters) {
         if (dstIds == null || dstIds.isEmpty()) {
             // no constraint
             return Filters.exists("_id");
@@ -248,7 +287,7 @@ public class ListQueryRewriter {
         Set<String> intersection = null;
         while (it.hasNext()) {
             String dst = it.next();
-            Set<String> srcIds = srcIdsByDst(dataDomain, predicate, dst);
+            Set<String> srcIds = srcIdsByDst(dataDomain, predicate, dst, edgeFilters);
             if (intersection == null) {
                 intersection = new HashSet<>(srcIds);
             } else {
@@ -259,6 +298,10 @@ public class ListQueryRewriter {
             }
         }
         return idsFilter(intersection);
+    }
+
+    public Filter hasEdgeAll(DataDomain dataDomain, String predicate, Collection<String> dstIds) {
+        return hasEdgeAll(dataDomain, predicate, dstIds, (Filter[]) null);
     }
 
     /**
@@ -282,13 +325,14 @@ public class ListQueryRewriter {
     /**
      * Build a Morphia filter for entities that do NOT have an edge with the given predicate pointing to dstId.
      *
-     * @param dataDomain the DataDomain context
-     * @param predicate  the edge predicate/property
-     * @param dstId      the destination entity ID to exclude
+     * @param dataDomain  the DataDomain context
+     * @param predicate   the edge predicate/property
+     * @param dstId       the destination entity ID to exclude
+     * @param edgeFilters optional additional edge property filters
      * @return a Filter that excludes entities with the edge
      */
-    public Filter notHasEdge(DataDomain dataDomain, String predicate, String dstId) {
-        Set<String> srcIds = srcIdsByDst(dataDomain, predicate, dstId);
+    public Filter notHasEdge(DataDomain dataDomain, String predicate, String dstId, Filter... edgeFilters) {
+        Set<String> srcIds = srcIdsByDst(dataDomain, predicate, dstId, edgeFilters);
         if (srcIds.isEmpty()) {
             // nothing to exclude
             return Filters.exists("_id");
@@ -296,27 +340,41 @@ public class ListQueryRewriter {
         return Filters.nor(idsFilter(srcIds));
     }
 
+    public Filter notHasEdge(DataDomain dataDomain, String predicate, String dstId) {
+        return notHasEdge(dataDomain, predicate, dstId, (Filter[]) null);
+    }
+
     /**
      * Get the set of source IDs that have an edge with the given predicate pointing to dstId.
      *
-     * @param dataDomain the DataDomain context
-     * @param predicate  the edge predicate/property
-     * @param dstId      the destination entity ID
+     * @param dataDomain  the DataDomain context
+     * @param predicate   the edge predicate/property
+     * @param dstId       the destination entity ID
+     * @param edgeFilters optional additional edge property filters
      * @return set of source entity IDs
      */
+    public Set<String> idsForHasEdge(DataDomain dataDomain, String predicate, String dstId, Filter... edgeFilters) {
+        return srcIdsByDst(dataDomain, predicate, dstId, edgeFilters);
+    }
+
     public Set<String> idsForHasEdge(DataDomain dataDomain, String predicate, String dstId) {
-        return srcIdsByDst(dataDomain, predicate, dstId);
+        return idsForHasEdge(dataDomain, predicate, dstId, (Filter[]) null);
     }
 
     /**
      * Get the set of source IDs that have an edge with the given predicate pointing to any of the dstIds.
      *
-     * @param dataDomain the DataDomain context
-     * @param predicate  the edge predicate/property
-     * @param dstIds     the set of destination entity IDs
+     * @param dataDomain  the DataDomain context
+     * @param predicate   the edge predicate/property
+     * @param dstIds      the set of destination entity IDs
+     * @param edgeFilters optional additional edge property filters
      * @return set of source entity IDs
      */
+    public Set<String> idsForHasEdgeAny(DataDomain dataDomain, String predicate, Collection<String> dstIds, Filter... edgeFilters) {
+        return srcIdsByDstIn(dataDomain, predicate, dstIds, edgeFilters);
+    }
+
     public Set<String> idsForHasEdgeAny(DataDomain dataDomain, String predicate, Collection<String> dstIds) {
-        return srcIdsByDstIn(dataDomain, predicate, dstIds);
+        return idsForHasEdgeAny(dataDomain, predicate, dstIds, (Filter[]) null);
     }
 }

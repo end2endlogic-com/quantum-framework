@@ -9,6 +9,7 @@ import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.ontology.exceptions.CardinalityViolationException;
 import com.e2eq.ontology.repo.OntologyEdgeRepo;
 import dev.morphia.MorphiaDatastore;
+import dev.morphia.query.filters.Filters;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.common.QuarkusTestResource;
 import jakarta.inject.Inject;
@@ -242,5 +243,89 @@ public class OntologyEdgeRepoTest {
         List<com.e2eq.ontology.model.OntologyEdge> edges = edgeRepo.findBySrc(mismatchedDomain, "OBL-1");
         assertEquals(1, edges.size(), "Edge lookup should use the active security-context realm when tenantId does not match realm naming");
         assertEquals("obligationFor", edges.get(0).getP());
+    }
+
+    @Test
+    void upsertWithProps_persistsAndRetrievesProps() {
+        Map<String, Object> props = Map.of(
+            "role", "PRIMARY",
+            "status", "ACTIVE",
+            "priority", 1
+        );
+        edgeRepo.upsert(testDataDomain, "Order", "ORDER-PROP-1", "assignedTo", "Location", "LOC-1", false, Map.of(), props);
+
+        List<com.e2eq.ontology.model.OntologyEdge> edges = edgeRepo.findBySrc(testDataDomain, "ORDER-PROP-1");
+        assertEquals(1, edges.size());
+        com.e2eq.ontology.model.OntologyEdge edge = edges.get(0);
+        assertNotNull(edge.getProps());
+        assertEquals("PRIMARY", edge.getProperty("role"));
+        assertEquals("ACTIVE", edge.getProperty("status"));
+        assertEquals(1, edge.getProperty("priority"));
+        assertTrue(edge.hasProperty("role"));
+        assertFalse(edge.hasProperty("nonExistent"));
+    }
+
+    @Test
+    void bulkUpsertWithProps_persistsProps() {
+        com.e2eq.ontology.core.DataDomainInfo ddi = new com.e2eq.ontology.core.DataDomainInfo(
+            testDataDomain.getOrgRefName(),
+            testDataDomain.getAccountNum(),
+            testDataDomain.getTenantId(),
+            testDataDomain.getDataSegment()
+        );
+        Map<String, Object> props = Map.of("role", "SECONDARY", "status", "INACTIVE");
+        com.e2eq.ontology.core.EdgeRecord record = new com.e2eq.ontology.core.EdgeRecord(
+            ddi, "Order", "ORDER-BULK-PROP", "assignedTo", "Location", "LOC-2", false, props, Map.of(), new java.util.Date()
+        );
+
+        edgeRepo.bulkUpsertEdgeRecords(List.of(record));
+
+        List<com.e2eq.ontology.model.OntologyEdge> edges = edgeRepo.findBySrc(testDataDomain, "ORDER-BULK-PROP");
+        assertEquals(1, edges.size());
+        com.e2eq.ontology.model.OntologyEdge edge = edges.get(0);
+        assertNotNull(edge.getProps());
+        assertEquals("SECONDARY", edge.getProperty("role"));
+        assertEquals("INACTIVE", edge.getProperty("status"));
+    }
+
+    @Test
+    void edgePropertyFilterPushdown_filtersCorrectly() {
+        // Insert two edges to LOC-FILTER-1 with different roles
+        edgeRepo.upsert(testDataDomain, "Order", "ORDER-F-1", "assignedTo", "Location", "LOC-FILTER-1", false, Map.of(), Map.of("role", "PRIMARY", "tier", 1));
+        edgeRepo.upsert(testDataDomain, "Order", "ORDER-F-2", "assignedTo", "Location", "LOC-FILTER-1", false, Map.of(), Map.of("role", "SECONDARY", "tier", 2));
+        // Insert an edge from ORDER-F-1 to another location
+        edgeRepo.upsert(testDataDomain, "Order", "ORDER-F-1", "assignedTo", "Location", "LOC-FILTER-2", false, Map.of(), Map.of("role", "BACKUP", "tier", 3));
+
+        // srcIdsByDst with edgeFilter
+        java.util.Set<String> primarySrcs = edgeRepo.srcIdsByDst(testDataDomain, "assignedTo", "LOC-FILTER-1", Filters.eq("props.role", "PRIMARY"));
+        assertEquals(java.util.Set.of("ORDER-F-1"), primarySrcs);
+
+        java.util.Set<String> allSrcs = edgeRepo.srcIdsByDst(testDataDomain, "assignedTo", "LOC-FILTER-1");
+        assertEquals(java.util.Set.of("ORDER-F-1", "ORDER-F-2"), allSrcs);
+
+        // dstIdsBySrc with edgeFilter
+        java.util.Set<String> primaryDsts = edgeRepo.dstIdsBySrc(testDataDomain, "assignedTo", "ORDER-F-1", Filters.eq("props.role", "PRIMARY"));
+        assertEquals(java.util.Set.of("LOC-FILTER-1"), primaryDsts);
+
+        java.util.Set<String> backupDsts = edgeRepo.dstIdsBySrc(testDataDomain, "assignedTo", "ORDER-F-1", Filters.eq("props.role", "BACKUP"));
+        assertEquals(java.util.Set.of("LOC-FILTER-2"), backupDsts);
+
+        // srcIdsByDstIn with edgeFilter
+        java.util.Set<String> inSrcs = edgeRepo.srcIdsByDstIn(testDataDomain, "assignedTo", List.of("LOC-FILTER-1", "LOC-FILTER-2"), Filters.eq("props.role", "SECONDARY"));
+        assertEquals(java.util.Set.of("ORDER-F-2"), inSrcs);
+
+        // dstIdsBySrcIn with edgeFilter
+        java.util.Set<String> inDsts = edgeRepo.dstIdsBySrcIn(testDataDomain, "assignedTo", List.of("ORDER-F-1", "ORDER-F-2"), Filters.eq("props.tier", 1));
+        assertEquals(java.util.Set.of("LOC-FILTER-1"), inDsts);
+
+        // findByDstAndP with edgeFilter
+        List<com.e2eq.ontology.model.OntologyEdge> dstAndPEdges = edgeRepo.findByDstAndP(testDataDomain, "LOC-FILTER-1", "assignedTo", Filters.eq("props.role", "PRIMARY"));
+        assertEquals(1, dstAndPEdges.size());
+        assertEquals("ORDER-F-1", dstAndPEdges.get(0).getSrc());
+
+        // findBySrcAndP with edgeFilter
+        List<com.e2eq.ontology.model.OntologyEdge> srcAndPEdges = edgeRepo.findBySrcAndP(testDataDomain, "ORDER-F-1", "assignedTo", Filters.eq("props.role", "BACKUP"));
+        assertEquals(1, srcAndPEdges.size());
+        assertEquals("LOC-FILTER-2", srcAndPEdges.get(0).getDst());
     }
 }

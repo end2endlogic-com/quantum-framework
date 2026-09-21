@@ -5,6 +5,8 @@ import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.security.DataDomainComponentBinding;
 import com.e2eq.framework.model.security.DataDomainPolicy;
 import com.e2eq.framework.model.security.DataDomainPolicyEntry;
+import com.e2eq.framework.model.security.DataDomainResolution;
+import com.e2eq.framework.model.security.SourceAttributes;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import io.quarkus.arc.DefaultBean;
@@ -364,6 +366,121 @@ public class DefaultDataDomainResolver implements DataDomainResolver {
         }
         // LITERAL (default)
         return b.getLiteralValue();
+    }
+
+    @Override
+    public DataDomainResolution resolveForQuery(PrincipalContext principal,
+                                                 String functionalArea,
+                                                 String functionalDomain,
+                                                 Class<?> modelClass) {
+        if (principal == null) {
+            return DataDomainResolution.unresolvable("No principal context provided for query resolution");
+        }
+
+        String fa = safe(functionalArea);
+        String fd = safe(functionalDomain);
+        List<String> keys = Arrays.asList(
+                fa + ":" + fd,
+                fa + ":*",
+                "*:" + fd,
+                "*:*"
+        );
+
+        // 1) Principal-attached policy
+        DataDomainPolicy principalPolicy = principal.getDataDomainPolicy();
+        DataDomainResolution res = resolveQueryFromPolicy(principalPolicy, keys, principal);
+        if (res != null) return res;
+
+        // 2) Global policy provider
+        if (globalPolicyProvider != null) {
+            DataDomainPolicy global = globalPolicyProvider.getPolicy().orElse(null);
+            res = resolveQueryFromPolicy(global, keys, principal);
+            if (res != null) return res;
+        }
+
+        // 3) Fallback to principal's credential domain
+        if (principal.getDataDomain() != null) {
+            return DataDomainResolution.resolved(principal.getDataDomain());
+        }
+
+        return DataDomainResolution.unresolvable("Unable to resolve query DataDomain coordinate for " + fa + ":" + fd);
+    }
+
+    @Override
+    public DataDomainResolution resolveForHop(PrincipalContext principal,
+                                               String edgeType,
+                                               String targetFunctionalArea,
+                                               String targetFunctionalDomain) {
+        if (principal == null) {
+            return DataDomainResolution.unresolvable("No principal context provided for edge traversal hop");
+        }
+        if (edgeType == null || edgeType.isBlank()) {
+            return DataDomainResolution.unresolvable("Edge type must not be blank for traversal hop");
+        }
+
+        String fa = safe(targetFunctionalArea);
+        String fd = safe(targetFunctionalDomain);
+        List<String> keys = Arrays.asList(
+                "edge/" + edgeType + "/" + fa + ":" + fd,
+                "edge/" + edgeType + "/*",
+                "hop/" + fa + ":" + fd,
+                fa + ":" + fd,
+                fa + ":*",
+                "*:" + fd,
+                "*:*"
+        );
+
+        // 1) Principal-attached policy
+        DataDomainPolicy principalPolicy = principal.getDataDomainPolicy();
+        DataDomainResolution res = resolveQueryFromPolicy(principalPolicy, keys, principal);
+        if (res != null) return res;
+
+        // 2) Global policy provider
+        if (globalPolicyProvider != null) {
+            DataDomainPolicy global = globalPolicyProvider.getPolicy().orElse(null);
+            res = resolveQueryFromPolicy(global, keys, principal);
+            if (res != null) return res;
+        }
+
+        // 3) Fallback to principal's credential domain
+        if (principal.getDataDomain() != null) {
+            return DataDomainResolution.resolved(principal.getDataDomain());
+        }
+
+        return DataDomainResolution.unresolvable("Unable to resolve hop DataDomain coordinate for edge " + edgeType + " to " + fa + ":" + fd);
+    }
+
+    private DataDomainResolution resolveQueryFromPolicy(DataDomainPolicy policy, List<String> keys, PrincipalContext principal) {
+        if (policy == null || policy.getPolicyEntries() == null || policy.getPolicyEntries().isEmpty()) {
+            return null;
+        }
+        for (String key : keys) {
+            DataDomainPolicyEntry entry = policy.getPolicyEntries().get(key);
+            if (entry == null) {
+                for (Map.Entry<String, DataDomainPolicyEntry> e : policy.getPolicyEntries().entrySet()) {
+                    if (e.getKey() != null && e.getKey().equalsIgnoreCase(key)) {
+                        entry = e.getValue();
+                        break;
+                    }
+                }
+            }
+            if (entry != null) {
+                DataDomainPolicyEntry.ResolutionMode mode = entry.getResolutionMode() != null
+                        ? entry.getResolutionMode()
+                        : DataDomainPolicyEntry.ResolutionMode.FROM_CREDENTIAL;
+                if (mode == DataDomainPolicyEntry.ResolutionMode.FIXED) {
+                    if (entry.getDataDomains() != null && !entry.getDataDomains().isEmpty()) {
+                        DataDomain dd = entry.getDataDomains().get(0);
+                        if (dd != null) return DataDomainResolution.resolved(dd, entry.getFilter(), entry.getFacetFilters());
+                    }
+                } else if (mode == DataDomainPolicyEntry.ResolutionMode.FROM_CREDENTIAL) {
+                    if (principal != null && principal.getDataDomain() != null) {
+                        return DataDomainResolution.resolved(principal.getDataDomain(), entry.getFilter(), entry.getFacetFilters());
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     private boolean isBlank(String v) {

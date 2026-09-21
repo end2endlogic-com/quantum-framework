@@ -1,4 +1,4 @@
-package com.e2eq.framework.model.persistent.morphia.interceptors.ddpolicy;
+package com.e2eq.framework.model.security;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -7,11 +7,10 @@ import java.util.Map;
 /**
  * Read-only wrapper over the values of an ingested source row together with the
  * source-binding metadata (sourceId, entityType) used by the
- * {@link com.e2eq.framework.model.security.DataDomainPolicyEntry.ResolutionMode#FROM_SOURCE}
- * resolution path.
+ * {@link DataDomainPolicyEntry.ResolutionMode#FROM_SOURCE} resolution path.
  *
- * <p>This is a plain value holder with no persistence or framework coupling so the
- * FROM_SOURCE resolution can be exercised in pure unit tests (no Mongo, no Quarkus boot).</p>
+ * <p>This is a plain value holder with no persistence or framework coupling so that
+ * coordinate resolution can be exercised in pure store-free POJO environments.</p>
  */
 public final class SourceAttributes {
 
@@ -22,7 +21,6 @@ public final class SourceAttributes {
     public SourceAttributes(String sourceId, String entityType, Map<String, Object> values) {
         this.sourceId = sourceId;
         this.entityType = entityType;
-        // Defensive copy; the wrapper is read-only from the caller's perspective.
         this.values = (values == null)
                 ? Collections.emptyMap()
                 : Collections.unmodifiableMap(new HashMap<>(values));

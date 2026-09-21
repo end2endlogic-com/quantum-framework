@@ -73,6 +73,28 @@ import java.util.Map;
                @Field("dataDomain.dataSegment"),
                @Field("src"),
                @Field("inferred")
+           }),
+    // Read-optimizing index for edge traversal queries with property filters on destination
+    @Index(options = @IndexOptions(name = "idx_domain_p_dst_props"),
+           fields = {
+               @Field("dataDomain.orgRefName"),
+               @Field("dataDomain.accountNum"),
+               @Field("dataDomain.tenantId"),
+               @Field("dataDomain.dataSegment"),
+               @Field("p"),
+               @Field("dst"),
+               @Field("props")
+           }),
+    // Read-optimizing index for edge traversal queries with property filters on source
+    @Index(options = @IndexOptions(name = "idx_domain_src_p_props"),
+           fields = {
+               @Field("dataDomain.orgRefName"),
+               @Field("dataDomain.accountNum"),
+               @Field("dataDomain.tenantId"),
+               @Field("dataDomain.dataSegment"),
+               @Field("src"),
+               @Field("p"),
+               @Field("props")
            })
 })
 public class OntologyEdge extends UnversionedBaseModel {
@@ -84,9 +106,25 @@ public class OntologyEdge extends UnversionedBaseModel {
     protected String dstType;
     protected boolean inferred;
     protected boolean derived; // true for implied edges
+    protected Map<String, Object> props; // open edge properties map (qualifiers, roles, status)
     protected Map<String, Object> prov;
     protected List<Support> support; // provenance support for derived edges
     protected Date ts;
+
+    public Object getProperty(String key) {
+        return props != null ? props.get(key) : null;
+    }
+
+    public void setProperty(String key, Object val) {
+        if (props == null) {
+            props = new java.util.HashMap<>();
+        }
+        props.put(key, val);
+    }
+
+    public boolean hasProperty(String key) {
+        return props != null && props.containsKey(key);
+    }
 
     @Data
     @NoArgsConstructor

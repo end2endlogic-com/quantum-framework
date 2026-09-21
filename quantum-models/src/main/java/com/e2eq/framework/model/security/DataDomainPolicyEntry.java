@@ -29,8 +29,42 @@ public @Data class DataDomainPolicyEntry {
     // If mode == FIXED, the first entry (if present) will be used as the fixed value
     protected List<DataDomain> dataDomains;
 
-    // Optional: future use for filtering/validation
+    /**
+     * Facet scope filter expression (e.g. {@code jurisdiction == 'EU' && dataSegment <= 2})
+     * evaluated to constrain data reach for matching capability grants.
+     */
     protected String filter;
+
+    /**
+     * Optional structured facet scope constraints mapping facet names to required values,
+     * ranges, or allowable sets.
+     */
+    protected java.util.Map<String, Object> facetFilters;
+
+    /**
+     * Checks if a string-based scope filter is configured on this policy entry.
+     */
+    public boolean hasFilter() {
+        return filter != null && !filter.trim().isEmpty();
+    }
+
+    /**
+     * Checks if structured facet filters are configured on this policy entry.
+     */
+    public boolean hasFacetFilters() {
+        return facetFilters != null && !facetFilters.isEmpty();
+    }
+
+    public Object getFacetFilter(String facetName) {
+        return facetFilters != null ? facetFilters.get(facetName) : null;
+    }
+
+    public void setFacetFilter(String facetName, Object value) {
+        if (this.facetFilters == null) {
+            this.facetFilters = new java.util.HashMap<>();
+        }
+        this.facetFilters.put(facetName, value);
+    }
 
     // New: how to resolve the dataDomain for a matching rule. Defaults to FROM_CREDENTIAL
     protected ResolutionMode resolutionMode = ResolutionMode.FROM_CREDENTIAL;

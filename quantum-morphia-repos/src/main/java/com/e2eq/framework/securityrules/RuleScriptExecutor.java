@@ -10,6 +10,7 @@ import org.graalvm.polyglot.Engine;
 import org.graalvm.polyglot.HostAccess;
 import org.graalvm.polyglot.Value;
 import org.graalvm.polyglot.io.IOAccess;
+import org.graalvm.polyglot.proxy.ProxyArray;
 import org.graalvm.polyglot.proxy.ProxyExecutable;
 import org.graalvm.polyglot.proxy.ProxyObject;
 
@@ -168,6 +169,7 @@ final class RuleScriptExecutor {
             bindHelper(jsBindings, "isA", helperBindings.get("isA"));
             bindHelper(jsBindings, "hasLabel", helperBindings.get("hasLabel"));
             bindHelper(jsBindings, "hasEdge", helperBindings.get("hasEdge"));
+            bindHelper(jsBindings, "hasIncomingEdge", helperBindings.get("hasIncomingEdge"));
             bindHelper(jsBindings, "hasAnyEdge", helperBindings.get("hasAnyEdge"));
             bindHelper(jsBindings, "hasAllEdges", helperBindings.get("hasAllEdges"));
             bindHelper(jsBindings, "relatedIds", helperBindings.get("relatedIds"));
@@ -206,6 +208,11 @@ final class RuleScriptExecutor {
             resourceBindings.put("labels", new ArrayList<>(resourceLabels));
             resourceBindings.put("getLabels", (ProxyExecutable) args -> new ArrayList<>(resourceLabels));
         } catch (Throwable ignored) {
+        }
+        if (rcontext != null && rcontext.getAttributes() != null) {
+            for (Map.Entry<String, Object> entry : rcontext.getAttributes().entrySet()) {
+                resourceBindings.putIfAbsent(entry.getKey(), entry.getValue());
+            }
         }
         return resourceBindings;
     }
@@ -285,10 +292,29 @@ final class RuleScriptExecutor {
         jsBindings.putMember(name, (ProxyExecutable) args -> {
             Object[] invocationArgs = new Object[applyMethod.getParameterCount()];
             for (int i = 0; i < invocationArgs.length; i++) {
-                invocationArgs[i] = i < args.length ? args[i].as(Object.class) : null;
+                if (i < args.length) {
+                    if (args[i] != null && args[i].canExecute()) {
+                        Value fnVal = args[i];
+                        invocationArgs[i] = (java.util.function.Function<Object, Object>) p -> {
+                            Object arg = (p instanceof Map<?, ?> m) ? ProxyObject.fromMap((Map<String, Object>) m) : p;
+                            Value res = fnVal.execute(arg);
+                            return res != null ? res.as(Object.class) : null;
+                        };
+                    } else if (args[i] != null) {
+                        invocationArgs[i] = args[i].as(Object.class);
+                    } else {
+                        invocationArgs[i] = null;
+                    }
+                } else {
+                    invocationArgs[i] = null;
+                }
             }
             try {
-                return applyMethod.invoke(helper, invocationArgs);
+                Object result = applyMethod.invoke(helper, invocationArgs);
+                if (result instanceof List<?> list) {
+                    return ProxyArray.fromList((List<Object>) list);
+                }
+                return result;
             } catch (ReflectiveOperationException e) {
                 throw new RuntimeException("Failed to invoke script helper " + name, e);
             }
@@ -296,11 +322,36 @@ final class RuleScriptExecutor {
     }
 
     private Method findApplyMethod(Object helper) {
-        for (Method method : helper.getClass().getMethods()) {
-            if ("apply".equals(method.getName()) && method.getParameterCount() <= 2) {
-                return method;
+        Method best = null;
+        for (Class<?> iface : helper.getClass().getInterfaces()) {
+            for (Method method : iface.getMethods()) {
+                if ("apply".equals(method.getName()) && method.getParameterCount() <= 3) {
+                    if (best == null || method.getParameterCount() > best.getParameterCount()) {
+                        best = method;
+                    }
+                }
             }
         }
-        return null;
+        if (best != null) {
+            try {
+                best.setAccessible(true);
+            } catch (Throwable ignored) {
+            }
+            return best;
+        }
+        for (Method method : helper.getClass().getMethods()) {
+            if ("apply".equals(method.getName()) && method.getParameterCount() <= 3) {
+                if (best == null || method.getParameterCount() > best.getParameterCount()) {
+                    best = method;
+                }
+            }
+        }
+        if (best != null) {
+            try {
+                best.setAccessible(true);
+            } catch (Throwable ignored) {
+            }
+        }
+        return best;
     }
 }
